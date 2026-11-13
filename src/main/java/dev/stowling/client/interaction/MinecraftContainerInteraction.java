@@ -187,7 +187,6 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             return pending(attempt, transaction.baselineRevision, "opening source container");
         }
         transaction.sourceView = view(menu, source);
-        transaction.remaining = remaining(transaction.transfer.items());
         transaction.phase = Phase.EXTRACT;
         return pending(attempt, revision(menu), "source container is ready");
     }
@@ -555,7 +554,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     private static final class Transaction {
         private final ContainerTransfer transfer;
         private final long baselineRevision;
-        private final Map<String, Integer> remaining = new HashMap<>();
+        private final Map<String, Integer> remaining;
         private Phase phase;
         private ContainerView sourceView;
         private ContainerView destinationView;
@@ -572,6 +571,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         ) {
             this.transfer = transfer;
             this.baselineRevision = baselineRevision;
+            this.remaining = remaining(transfer.items());
             this.phase = hasSource ? Phase.OPEN_SOURCE : Phase.OPEN_DESTINATION;
         }
     }

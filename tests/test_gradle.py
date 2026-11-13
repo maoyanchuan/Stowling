@@ -23,6 +23,11 @@ def test_java_tests_and_quality_checks() -> None:
         check=False,
         text=True,
         capture_output=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
-    assert result.returncode == 0, result.stdout + result.stderr
+    output = "\n".join(
+        part for part in (result.stdout, result.stderr) if part is not None
+    )
+    assert result.returncode == 0, output or "Gradle produced no captured output"

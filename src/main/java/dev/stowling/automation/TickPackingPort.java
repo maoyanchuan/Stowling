@@ -304,20 +304,8 @@ public final class TickPackingPort implements PackingPort {
                     }
                 }
             }
-            String packingRequestId = request.taskId() + ":" + item.itemId;
-            String stationDimension = workcell.station().dimension();
-            int requestedQuantity = Math.max(1, item.remainingPack);
-            dev.stowling.packing.PackingRequest packingRequest =
-                    new dev.stowling.packing.PackingRequest(
-                            packingRequestId,
-                            stationDimension,
-                            item.itemId,
-                            requestedQuantity,
-                            route,
-                            overflowContainer()
-                    );
             PackingRunResult result = orchestrator.pack(
-                    packingRequest,
+                    createPackingRequest(item, workcell),
                     List.of(item.candidate()),
                     stationPort
             );
@@ -340,6 +328,23 @@ public final class TickPackingPort implements PackingPort {
                 }
             }
             return PackingDisposition.PENDING;
+        }
+
+        private dev.stowling.packing.PackingRequest createPackingRequest(
+                ItemState item,
+                PackingWorkcell workcell
+        ) {
+            String requestId = request.taskId() + ":" + item.itemId;
+            String dimension = workcell.station().dimension();
+            int quantity = Math.max(1, item.remainingPack);
+            return new dev.stowling.packing.PackingRequest(
+                    requestId,
+                    dimension,
+                    item.itemId,
+                    quantity,
+                    route,
+                    overflowContainer()
+            );
         }
 
         private PackingDisposition tickAwaitProduct(ItemState item) {

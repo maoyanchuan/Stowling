@@ -66,6 +66,9 @@ public final class FakeControlService implements StowlingControlService {
         if (!"north".equals(request.siteId())) {
             throw new PickupSiteNotFoundException();
         }
+        if (activePickup) {
+            throw new ActiveTaskConflictException();
+        }
         UUID id = UUID.fromString("22222222-2222-2222-2222-222222222222");
         TaskInfo task = task(id, "PENDING");
         tasks.put(id, task);

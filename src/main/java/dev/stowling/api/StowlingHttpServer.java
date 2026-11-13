@@ -211,7 +211,7 @@ public final class StowlingHttpServer implements AutoCloseable {
                     exchange,
                     409,
                     "active_task_conflict",
-                    "Coordinates cannot change while a pickup task is active"
+                    "Another pickup task is active"
             );
         } catch (PickupSiteNotFoundException exception) {
             sendErrorQuietly(

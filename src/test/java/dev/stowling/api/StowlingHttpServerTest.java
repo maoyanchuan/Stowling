@@ -316,6 +316,22 @@ class StowlingHttpServerTest {
     }
 
     @Test
+    void reportsRunningPickupConflictAsHttp409() throws Exception {
+        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
+
+        HttpResponse<String> response = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"siteId\":\"north\"}",
+                TOKEN
+        );
+
+        assertEquals(409, response.statusCode());
+        assertTrue(response.body().contains("\"code\":\"active_task_conflict\""));
+        assertTrue(response.body().contains("Another pickup task is active"));
+    }
+
+    @Test
     void returnsConfiguredPickupSites() throws Exception {
         HttpResponse<String> response = send("GET", "/v1/pickup-sites", null, TOKEN);
 

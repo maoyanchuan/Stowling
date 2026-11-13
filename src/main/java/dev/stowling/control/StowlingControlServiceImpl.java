@@ -121,7 +121,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     public synchronized TaskInfo requestPickup(PickupRequest request) {
         Objects.requireNonNull(request, "request");
         if (activePickup != null) {
-            throw new IllegalStateException("another pickup task is active");
+            replaceDisconnectedPickupOrThrow();
         }
         PickupSite site = config.pickupSites().stream()
                 .filter(candidate -> candidate.id().equals(request.siteId()))
@@ -143,6 +143,33 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         activePickup = new ActivePickup(taskId, site.id(), engine, engine.snapshot());
         clientExecutor.accept(engine::start);
         return toInfo(snapshot);
+    }
+
+    private void replaceDisconnectedPickupOrThrow() {
+        ActivePickup existing = activePickup;
+        if (existing == null || !isDisconnectedPause(existing.lastSnapshot)) {
+            throw new ActiveTaskConflictException();
+        }
+        clientExecutor.accept(existing.engine::cancel);
+        TaskSnapshot task = tasks.findById(existing.taskId).orElseThrow();
+        tasks.save(new TaskSnapshot(
+                task.id(),
+                task.kind(),
+                TaskStatus.CANCELLED,
+                task.automationState(),
+                task.createdAt(),
+                Instant.now(),
+                Optional.of("replaced by a new pickup request after disconnect")
+        ));
+        activePickup = null;
+    }
+
+    static boolean isDisconnectedPause(AutomationSnapshot snapshot) {
+        return snapshot.stage() == PickupStage.PAUSED
+                && snapshot.pauseReason()
+                        .map(AutomationPauseReason::code)
+                        .filter("DISCONNECTED"::equals)
+                        .isPresent();
     }
 
     @Override

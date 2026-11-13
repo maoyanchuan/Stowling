@@ -8,6 +8,9 @@ import dev.stowling.config.ConfigFileStore;
 import dev.stowling.config.ConfigLoader;
 import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.StowlingConfig;
+import dev.stowling.automation.AutomationPauseReason;
+import dev.stowling.automation.AutomationSnapshot;
+import dev.stowling.automation.PickupStage;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
@@ -49,6 +52,23 @@ class StowlingControlServiceImplTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void identifiesOnlyDisconnectedPausedPickupsAsReplaceable() {
+        AutomationSnapshot disconnected = snapshot(
+                PickupStage.PAUSED,
+                Optional.of(new AutomationPauseReason("DISCONNECTED", "offline"))
+        );
+        AutomationSnapshot running = snapshot(PickupStage.COLLECT, Optional.empty());
+        AutomationSnapshot controlPaused = snapshot(
+                PickupStage.PAUSED,
+                Optional.of(new AutomationPauseReason("CONTROL_PAUSED", "paused"))
+        );
+
+        assertTrue(StowlingControlServiceImpl.isDisconnectedPause(disconnected));
+        assertTrue(!StowlingControlServiceImpl.isDisconnectedPause(running));
+        assertTrue(!StowlingControlServiceImpl.isDisconnectedPause(controlPaused));
+    }
 
     @Test
     void exposesConfiguredPickupSitesAsReadOnlyControlDtos() {
@@ -345,6 +365,21 @@ class StowlingControlServiceImplTest {
         Path path = tempDir.resolve(fileName);
         loader.write(path, config);
         return new ConfigFileStore(path, loader);
+    }
+
+    private static AutomationSnapshot snapshot(
+            PickupStage stage,
+            Optional<AutomationPauseReason> pauseReason
+    ) {
+        return new AutomationSnapshot(
+                UUID.randomUUID(),
+                stage,
+                pauseReason,
+                Optional.empty(),
+                Optional.empty(),
+                0,
+                0
+        );
     }
 
     private static InventorySource source(InventoryCapture capture) {

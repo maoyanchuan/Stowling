@@ -65,6 +65,27 @@ item-route conflicts.
 The overflow container is mandatory. Unmatched items must be routed there rather than
 discarded.
 
+## Web console
+
+When Stowling starts, its local REST service also serves a browser control console. Open
+the following address on the same computer as the running game:
+
+```text
+http://127.0.0.1:8765/
+```
+
+Paste the contents of `config/stowling-api.token` from the game instance into the page and
+select **Verify and connect**. The token is kept only in the current tab's
+`sessionStorage`; it is never added to the URL, cookies, project configuration, or logs.
+Use **Clear token** to remove it from the current browser session.
+
+The console shows runtime status, tasks, containers, and inventory snapshots. It can start
+pickup tasks, cancel tasks, pause or resume automation, request audits, and reload config.
+Status data refreshes every 10 seconds, and an expired token prompts for re-entry.
+
+The page is available only through the loopback listener. Static assets load without a
+token, while every `/v1/*` API request still requires the correct Bearer token.
+
 ## HeadlessMC operation
 
 The Windows supervisor scripts can be inspected without launching HeadlessMC:

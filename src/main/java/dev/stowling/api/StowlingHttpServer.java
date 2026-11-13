@@ -21,6 +21,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
@@ -34,6 +35,16 @@ public final class StowlingHttpServer implements AutoCloseable {
     public static final int DEFAULT_MAX_REQUEST_BYTES = 64 * 1024;
 
     private static final String JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+    private static final String STATIC_CSP = String.join(
+            "; ",
+            "default-src 'self'",
+            "connect-src 'self'",
+            "object-src 'none'",
+            "frame-src 'none'",
+            "frame-ancestors 'none'",
+            "base-uri 'none'",
+            "form-action 'self'"
+    );
     private static final int HASH_BYTES = 32;
 
     private final InetSocketAddress bindAddress;
@@ -41,6 +52,7 @@ public final class StowlingHttpServer implements AutoCloseable {
     private final byte[] expectedTokenHash;
     private final int maxRequestBytes;
     private final StrictRequestParser requestParser = new StrictRequestParser();
+    private final Map<String, StaticContent> staticContent;
 
     private HttpServer server;
     private ExecutorService executor;
@@ -62,6 +74,7 @@ public final class StowlingHttpServer implements AutoCloseable {
         }
         this.expectedTokenHash = hashToken(bearerToken);
         this.maxRequestBytes = maxRequestBytes;
+        this.staticContent = loadStaticContent();
     }
 
     public static StowlingHttpServer loopback(
@@ -144,6 +157,15 @@ public final class StowlingHttpServer implements AutoCloseable {
 
     private void handle(HttpExchange exchange) {
         try {
+            String path = exchange.getRequestURI().getRawPath();
+            if (staticContent.containsKey(path)) {
+                serveStatic(exchange, staticContent.get(path));
+                return;
+            }
+            if (!isVersionedApiPath(path)) {
+                sendError(exchange, 404, "not_found", "Route not found");
+                return;
+            }
             if (!isAuthorized(exchange.getRequestHeaders())) {
                 exchange.getResponseHeaders().set(
                         "WWW-Authenticate",
@@ -183,6 +205,75 @@ public final class StowlingHttpServer implements AutoCloseable {
             );
         } finally {
             exchange.close();
+        }
+    }
+
+    private static boolean isVersionedApiPath(String path) {
+        return "/v1".equals(path) || path.startsWith("/v1/");
+    }
+
+    private static void serveStatic(HttpExchange exchange, StaticContent content)
+            throws IOException {
+        setStaticSecurityHeaders(exchange.getResponseHeaders());
+        String method = exchange.getRequestMethod();
+        if (!"GET".equals(method) && !"HEAD".equals(method)) {
+            exchange.getResponseHeaders().set("Allow", "GET, HEAD");
+            sendError(exchange, 405, "method_not_allowed", "Method not allowed");
+            return;
+        }
+        exchange.getResponseHeaders().set("Content-Type", content.contentType());
+        if ("HEAD".equals(method)) {
+            exchange.getResponseHeaders().set(
+                    "Content-Length",
+                    Integer.toString(content.bytes().length)
+            );
+            exchange.sendResponseHeaders(200, -1);
+            return;
+        }
+        exchange.sendResponseHeaders(200, content.bytes().length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(content.bytes());
+        }
+    }
+
+    private static void setStaticSecurityHeaders(Headers headers) {
+        headers.set("Content-Security-Policy", STATIC_CSP);
+        headers.set("X-Frame-Options", "DENY");
+        headers.set("X-Content-Type-Options", "nosniff");
+        headers.set("Referrer-Policy", "no-referrer");
+        headers.set("Cache-Control", "no-store");
+    }
+
+    private static Map<String, StaticContent> loadStaticContent() {
+        return Map.of(
+                "/",
+                readStaticContent(
+                        "stowling-web/index.html",
+                        "text/html; charset=utf-8"
+                ),
+                "/app.js",
+                readStaticContent(
+                        "stowling-web/app.js",
+                        "text/javascript; charset=utf-8"
+                ),
+                "/styles.css",
+                readStaticContent(
+                        "stowling-web/styles.css",
+                        "text/css; charset=utf-8"
+                )
+        );
+    }
+
+    private static StaticContent readStaticContent(String resourceName, String contentType) {
+        try (InputStream input = StowlingHttpServer.class.getClassLoader()
+                .getResourceAsStream(resourceName)) {
+            if (input == null) {
+                throw new IllegalStateException("Missing static resource: " + resourceName);
+            }
+            return new StaticContent(input.readAllBytes(), contentType);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not read static resource: " + resourceName,
+                    exception);
         }
     }
 
@@ -430,6 +521,9 @@ public final class StowlingHttpServer implements AutoCloseable {
     }
 
     private record RouteMatch(Route route, String taskId) {
+    }
+
+    private record StaticContent(byte[] bytes, String contentType) {
     }
 
     private static final class ControlThreadFactory implements ThreadFactory {

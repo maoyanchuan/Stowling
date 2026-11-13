@@ -53,9 +53,11 @@ class StowlingHttpServerTest {
     void rejectsMissingAndWrongTokensBeforeCallingService() throws Exception {
         HttpResponse<String> missing = send("GET", "/v1/status", null, null);
         HttpResponse<String> wrong = send("GET", "/v1/status", null, "wrong-token");
+        HttpResponse<String> unknownApi = send("GET", "/v1/not-real", null, null);
 
         assertEquals(401, missing.statusCode());
         assertEquals(401, wrong.statusCode());
+        assertEquals(401, unknownApi.statusCode());
         assertTrue(missing.body().contains("\"code\":\"unauthorized\""));
         assertEquals(0, service.calls());
     }
@@ -67,6 +69,90 @@ class StowlingHttpServerTest {
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("\"state\":\"RUNNING\""));
         assertEquals(1, service.calls());
+    }
+
+    @Test
+    void servesPackagedWebConsoleWithoutAuthentication() throws Exception {
+        HttpResponse<String> page = send("GET", "/", null, null);
+        HttpResponse<String> script = send("GET", "/app.js", null, null);
+        HttpResponse<String> styles = send("GET", "/styles.css", null, null);
+
+        assertEquals(200, page.statusCode());
+        assertEquals(200, script.statusCode());
+        assertEquals(200, styles.statusCode());
+        assertTrue(page.body().contains("Stowling 控制台"));
+        assertTrue(page.body().contains("href=\"/styles.css\""));
+        assertTrue(page.body().contains("src=\"/app.js\""));
+        assertTrue(script.body().contains("Authorization"));
+        assertTrue(script.body().contains("sessionStorage"));
+        assertFalse(script.body().contains("localStorage"));
+        assertTrue(styles.body().contains("@media (max-width: 760px)"));
+        assertEquals(
+                "text/html; charset=utf-8",
+                page.headers().firstValue("Content-Type").orElseThrow()
+        );
+        assertEquals(
+                "text/javascript; charset=utf-8",
+                script.headers().firstValue("Content-Type").orElseThrow()
+        );
+        assertEquals(
+                "text/css; charset=utf-8",
+                styles.headers().firstValue("Content-Type").orElseThrow()
+        );
+        assertEquals(0, service.calls());
+    }
+
+    @Test
+    void staticResourcesSetSecurityHeadersAndSupportHead() throws Exception {
+        HttpResponse<String> page = send("GET", "/", null, null);
+        HttpResponse<String> head = send("HEAD", "/styles.css", null, null);
+
+        assertEquals(200, page.statusCode());
+        assertEquals("no-store", page.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals(
+                "nosniff",
+                page.headers().firstValue("X-Content-Type-Options").orElseThrow()
+        );
+        assertEquals("DENY", page.headers().firstValue("X-Frame-Options").orElseThrow());
+        assertEquals(
+                "no-referrer",
+                page.headers().firstValue("Referrer-Policy").orElseThrow()
+        );
+        String csp = page.headers().firstValue("Content-Security-Policy").orElseThrow();
+        assertTrue(csp.contains("default-src 'self'"));
+        assertTrue(csp.contains("connect-src 'self'"));
+        assertTrue(csp.contains("object-src 'none'"));
+        assertTrue(csp.contains("frame-ancestors 'none'"));
+        assertTrue(csp.contains("base-uri 'none'"));
+        assertEquals(200, head.statusCode());
+        assertEquals(0, head.body().length());
+    }
+
+    @Test
+    void staticResourcesRejectUnsupportedMethods() throws Exception {
+        HttpResponse<String> response = send("POST", "/app.js", null, null);
+
+        assertEquals(405, response.statusCode());
+        assertEquals("GET, HEAD", response.headers().firstValue("Allow").orElseThrow());
+        assertTrue(response.body().contains("\"code\":\"method_not_allowed\""));
+        assertEquals(0, service.calls());
+    }
+
+    @Test
+    void unknownAndTraversalLikeResourcesDoNotReadArbitraryFiles() throws Exception {
+        HttpResponse<String> unknown = send("GET", "/missing.css", null, null);
+        HttpResponse<String> unknownApi = send("GET", "/v1/not-real", null, TOKEN);
+        HttpResponse<String> packagedPath = send(
+                "GET",
+                "/stowling-web/index.html",
+                null,
+                TOKEN
+        );
+
+        assertEquals(404, unknown.statusCode());
+        assertEquals(404, unknownApi.statusCode());
+        assertEquals(404, packagedPath.statusCode());
+        assertEquals(0, service.calls());
     }
 
     @Test

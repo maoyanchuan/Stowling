@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Stowling 控制台</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">S</span>
+            <div>
+                <h1>Stowling 控制台</h1>
+                <p>Minecraft 26.2 · Fabric 客户端自动化</p>
+            </div>
+        </div>
+        <div class="connection-state">
+            <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
+            <span id="connection-label">未连接</span>
+        </div>
+    </header>
+
+    <main>
+        <section class="panel auth-panel" aria-labelledby="auth-title">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">本地安全连接</p>
+                    <h2 id="auth-title">连接到 Stowling</h2>
+                </div>
+                <span class="loopback-tag">127.0.0.1</span>
+            </div>
+            <p class="muted">
+                输入游戏实例中 <code>config/stowling-api.token</code> 的内容。令牌仅保存在
+                当前浏览器标签页的会话存储中。
+            </p>
+            <form id="auth-form" class="token-form">
+                <label for="token-input">Bearer Token</label>
+                <div class="inline-control">
+                    <input id="token-input" type="password" autocomplete="off"
+                           spellcheck="false" placeholder="粘贴访问令牌" required>
+                    <button id="connect-button" class="primary" type="submit">验证并连接</button>
+                    <button id="clear-token-button" class="secondary" type="button">
+                        清除令牌
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <div id="workspace" class="workspace" aria-hidden="true">
+            <section class="panel status-panel" aria-labelledby="status-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">实时概览</p>
+                        <h2 id="status-title">运行状态</h2>
+                    </div>
+                    <button id="refresh-button" class="secondary compact" type="button">
+                        刷新
+                    </button>
+                </div>
+                <div class="status-grid">
+                    <article class="metric">
+                        <span>自动化状态</span>
+                        <strong id="status-state">--</strong>
+                    </article>
+                    <article class="metric">
+                        <span>暂停</span>
+                        <strong id="status-paused">--</strong>
+                    </article>
+                    <article class="metric">
+                        <span>观测时间</span>
+                        <strong id="status-observed">--</strong>
+                    </article>
+                </div>
+            </section>
+
+            <section class="panel" aria-labelledby="quick-actions-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">常用操作</p>
+                        <h2 id="quick-actions-title">运行控制</h2>
+                    </div>
+                </div>
+                <div class="action-row">
+                    <button id="pause-button" class="secondary" type="button">暂停</button>
+                    <button id="resume-button" class="secondary" type="button">恢复</button>
+                    <button id="reload-button" class="secondary" type="button">
+                        重载配置
+                    </button>
+                </div>
+            </section>
+
+            <section class="panel" aria-labelledby="pickup-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">工作任务</p>
+                        <h2 id="pickup-title">启动拾取</h2>
+                    </div>
+                </div>
+                <form id="pickup-form" class="pickup-form">
+                    <label for="site-input">拾取点 siteId</label>
+                    <div class="inline-control">
+                        <input id="site-input" list="known-sites" maxlength="128"
+                               placeholder="例如 north-cache" required>
+                        <datalist id="known-sites"></datalist>
+                        <button class="primary" type="submit">开始任务</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel wide" aria-labelledby="tasks-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">队列</p>
+                        <h2 id="tasks-title">任务列表</h2>
+                    </div>
+                    <button id="refresh-tasks-button" class="ghost compact" type="button">
+                        更新列表
+                    </button>
+                </div>
+                <div id="tasks-list" class="card-list" aria-live="polite"></div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="containers-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">仓库索引</p>
+                        <h2 id="containers-title">容器与盘点</h2>
+                    </div>
+                    <button id="refresh-containers-button" class="ghost compact" type="button">
+                        更新容器
+                    </button>
+                </div>
+                <form id="audit-form">
+                    <div id="containers-list" class="container-grid"></div>
+                    <div class="action-row end">
+                        <button class="primary" type="submit">盘点所选容器</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel wide" aria-labelledby="inventory-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">库存快照</p>
+                        <h2 id="inventory-title">仓库物品</h2>
+                    </div>
+                    <button id="refresh-inventory-button" class="ghost compact" type="button">
+                        更新库存
+                    </button>
+                </div>
+                <div id="inventory-list" class="inventory-list"></div>
+            </section>
+        </div>
+    </main>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script src="/app.js" defer></script>
+</body>
+</html>

@@ -38,7 +38,13 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         Objects.requireNonNull(taskId, "taskId");
         return tasks.findRecordById(taskId)
                 .flatMap(PersistedTask::recoveryCheckpoint)
-                .map(value -> readCheckpoint(taskId, value));
+                .map(value -> parseCheckpoint(taskId, value));
+    }
+
+    public static Optional<String> readPlanReference(UUID taskId, String value) {
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(value, "value");
+        return parseCheckpoint(taskId, value).planReference();
     }
 
     @Override
@@ -125,7 +131,7 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         return GSON.toJson(root);
     }
 
-    private static AutomationCheckpoint readCheckpoint(UUID taskId, String value) {
+    private static AutomationCheckpoint parseCheckpoint(UUID taskId, String value) {
         if (value.stripLeading().startsWith("{")) {
             return readJsonCheckpoint(taskId, value);
         }
@@ -182,9 +188,13 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
             Optional<String> planReference,
             String stage
     ) {
+        PickupStage parsedStage = PickupStage.valueOf(stage);
+        if (parsedStage == PickupStage.PAUSED || parsedStage == PickupStage.FAILED) {
+            throw new IllegalArgumentException("legacy checkpoint has no resumable stage");
+        }
         return new AutomationCheckpoint(
                 taskId,
-                PickupStage.valueOf(stage),
+                parsedStage,
                 planReference,
                 Set.of(),
                 Optional.empty(),

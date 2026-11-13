@@ -348,19 +348,48 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 failTask(plan.taskId(), "missing high-level recovery checkpoint");
                 continue;
             }
-            Optional<PickupSite> site = siteFromCheckpoint(plan.checkpoint().orElseThrow());
+            Optional<PickupSite> site;
+            try {
+                site = siteFromCheckpoint(
+                        plan.taskId(),
+                        plan.checkpoint().orElseThrow()
+                );
+            } catch (RuntimeException exception) {
+                failTask(plan.taskId(), "invalid high-level recovery checkpoint");
+                continue;
+            }
             if (site.isEmpty()) {
                 failTask(plan.taskId(), "recovery pickup site is unavailable");
                 continue;
             }
-            PickupAutomationEngine engine = pickupFactory.create(plan(plan.taskId(), site.get()));
-            activePickup = new ActivePickup(
-                    plan.taskId(),
-                    site.get().id(),
-                    engine,
-                    engine.snapshot()
-            );
-            clientExecutor.accept(engine::start);
+            try {
+                PickupAutomationEngine engine = pickupFactory.create(
+                        plan(plan.taskId(), site.get())
+                );
+                ActivePickup active = new ActivePickup(
+                        plan.taskId(),
+                        site.get().id(),
+                        engine,
+                        engine.snapshot()
+                );
+                activePickup = active;
+                clientExecutor.accept(() -> startRecoveredPickup(active));
+            } catch (RuntimeException exception) {
+                activePickup = null;
+                failTask(plan.taskId(), "pickup recovery initialization failed");
+            }
+        }
+    }
+
+    private synchronized void startRecoveredPickup(ActivePickup active) {
+        if (activePickup != active) {
+            return;
+        }
+        try {
+            active.engine.start();
+        } catch (RuntimeException exception) {
+            failTask(active.taskId, "pickup recovery start failed");
+            activePickup = null;
         }
     }
 
@@ -378,7 +407,8 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     private void persistSnapshot(ActivePickup active, AutomationSnapshot snapshot) {
-        TaskSnapshot existing = tasks.findById(active.taskId).orElseThrow();
+        PersistedTask current = tasks.findRecordById(active.taskId).orElseThrow();
+        TaskSnapshot existing = current.snapshot();
         TaskStatus status = SqliteAutomationCheckpointStore.statusOf(snapshot.stage());
         AutomationState state = SqliteAutomationCheckpointStore.automationStateOf(
                 snapshot.stage()
@@ -397,8 +427,8 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         );
         Optional<String> checkpoint = isTerminal(snapshot.stage())
                 ? Optional.empty()
-                : Optional.of(active.siteId + "|" + snapshot.stage().name());
-        tasks.save(new PersistedTask(updated, checkpoint, 0));
+                : current.recoveryCheckpoint();
+        tasks.save(new PersistedTask(updated, checkpoint, current.retryCount()));
     }
 
     private void failTask(UUID taskId, String reason) {
@@ -446,9 +476,13 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         tasks.save(finished);
     }
 
-    private Optional<PickupSite> siteFromCheckpoint(String checkpoint) {
-        int separator = checkpoint.indexOf('|');
-        String siteId = separator < 0 ? "" : checkpoint.substring(0, separator);
+    private Optional<PickupSite> siteFromCheckpoint(UUID taskId, String checkpoint) {
+        Optional<String> planReference =
+                SqliteAutomationCheckpointStore.readPlanReference(taskId, checkpoint);
+        if (planReference.isEmpty()) {
+            return Optional.empty();
+        }
+        String siteId = planReference.orElseThrow();
         return config.pickupSites().stream()
                 .filter(site -> site.id().equals(siteId))
                 .findFirst();

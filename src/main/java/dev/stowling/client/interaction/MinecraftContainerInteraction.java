@@ -42,7 +42,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Confirms each container action from a newer menu state before issuing another click.
+ * Confirms each container action from a stable predicted menu state before another click.
  */
 public final class MinecraftContainerInteraction implements ContainerInteraction {
     private static final Duration OPEN_TIMEOUT = Duration.ofSeconds(5);
@@ -161,6 +161,10 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         }
         AbstractContainerMenu menu = currentContainerMenu();
         if (menu == null) {
+            if (transaction.pendingClick != null) {
+                transactions.remove(attempt.attemptId());
+                return unavailable(attempt, "container closed before click confirmation");
+            }
             ContainerRef target = transaction.phase == Phase.EXTRACT
                     ? transaction.transfer.source().orElseThrow()
                     : transaction.transfer.destination();
@@ -172,13 +176,27 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             pendingOpen = null;
             pendingOpenedAt = null;
         }
-        if (transaction.pendingRevision >= 0) {
-            long revision = revision(menu);
-            if (revision <= transaction.pendingRevision) {
-                return pending(attempt, revision, "waiting for server slot confirmation");
+        if (transaction.pendingClick != null) {
+            ContainerClickConfirmation.Snapshot observed = clickSnapshot(
+                    menu,
+                    transaction.pendingSlot,
+                    transaction.pendingClick.itemId()
+            );
+            ContainerClickConfirmation.Evaluation evaluation =
+                    ContainerClickConfirmation.evaluate(
+                    transaction.pendingClick,
+                    observed
+            );
+            if (!evaluation.confirmed()) {
+                transactions.remove(attempt.attemptId());
+                return rejected(
+                        attempt,
+                        menu,
+                        "container click prediction was corrected or inconsistent"
+                );
             }
-            applyConfirmedClick(transaction, menu);
-            transaction.pendingRevision = -1;
+            applyConfirmedClick(transaction, evaluation.moved());
+            transaction.pendingClick = null;
         }
         return switch (transaction.phase) {
             case OPEN_SOURCE -> openSource(attempt, transaction);
@@ -245,13 +263,25 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             if (wanted <= 0) {
                 continue;
             }
+            ContainerClickConfirmation.Snapshot before = clickSnapshot(
+                    menu,
+                    slotIndex,
+                    itemId
+            );
             click(menu, slotIndex, 0, ContainerInput.QUICK_MOVE);
-            transaction.pendingRevision = revision(menu);
-            transaction.pendingClick = PendingClick.EXTRACT;
+            ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
+                    menu,
+                    slotIndex,
+                    itemId
+            );
+            transaction.pendingClick = new ContainerClickConfirmation.Pending(
+                    ContainerClickConfirmation.ClickType.EXTRACT,
+                    itemId,
+                    before,
+                    predicted
+            );
             transaction.pendingSlot = slotIndex;
-            transaction.pendingItemId = itemId;
-            transaction.pendingCount = stack.getCount();
-            return pending(attempt, transaction.pendingRevision, "source transfer sent");
+            return pending(attempt, revision(menu), "source transfer sent");
         }
         return rejected(attempt, menu, "requested items are absent from the source");
     }
@@ -300,13 +330,26 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 return rejected(attempt, menu, "player inventory lacks the requested quantity");
             }
             ItemStack pickedStack = menu.getSlot(picked).getItem();
+            String pickedItemId = itemId(pickedStack);
+            ContainerClickConfirmation.Snapshot before = clickSnapshot(
+                    menu,
+                    picked,
+                    pickedItemId
+            );
             click(menu, picked, 0, ContainerInput.PICKUP);
-            transaction.pendingRevision = revision(menu);
-            transaction.pendingClick = PendingClick.PICK_UP;
+            ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
+                    menu,
+                    picked,
+                    pickedItemId
+            );
+            transaction.pendingClick = new ContainerClickConfirmation.Pending(
+                    ContainerClickConfirmation.ClickType.PICK_UP,
+                    pickedItemId,
+                    before,
+                    predicted
+            );
             transaction.pendingSlot = picked;
-            transaction.pendingItemId = itemId(pickedStack);
-            transaction.pendingCount = pickedStack.getCount();
-            return pending(attempt, transaction.pendingRevision, "player stack pickup sent");
+            return pending(attempt, revision(menu), "player stack pickup sent");
         }
         String carriedItem = itemId(carried);
         int wanted = transaction.remaining.getOrDefault(carriedItem, 0);
@@ -318,49 +361,63 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             return rejected(attempt, menu, "destination container has no compatible slot");
         }
         int button = carried.getCount() <= wanted ? 0 : 1;
+        ContainerClickConfirmation.Snapshot before = clickSnapshot(
+                menu,
+                destinationSlot,
+                carriedItem
+        );
         click(menu, destinationSlot, button, ContainerInput.PICKUP);
-        transaction.pendingRevision = revision(menu);
-        transaction.pendingClick = PendingClick.PLACE;
+        ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
+                menu,
+                destinationSlot,
+                carriedItem
+        );
+        transaction.pendingClick = new ContainerClickConfirmation.Pending(
+                ContainerClickConfirmation.ClickType.PLACE,
+                carriedItem,
+                before,
+                predicted
+        );
         transaction.pendingSlot = destinationSlot;
-        transaction.pendingItemId = carriedItem;
-        transaction.pendingCount = carried.getCount();
-        return pending(attempt, transaction.pendingRevision, "destination slot click sent");
+        return pending(attempt, revision(menu), "destination slot click sent");
     }
 
-    private void applyConfirmedClick(Transaction transaction, AbstractContainerMenu menu) {
-        if (transaction.pendingClick == PendingClick.NONE) {
-            return;
+    private static void applyConfirmedClick(Transaction transaction, int moved) {
+        ContainerClickConfirmation.Pending pending = transaction.pendingClick;
+        if (pending.type() == ContainerClickConfirmation.ClickType.EXTRACT
+                || pending.type() == ContainerClickConfirmation.ClickType.PLACE) {
+            decrement(transaction.remaining, pending.itemId(), moved);
         }
-        String pendingItem = transaction.pendingItemId;
-        int before = transaction.pendingCount;
-        int after;
-        if (transaction.pendingClick == PendingClick.EXTRACT) {
-            after = menu.getSlot(transaction.pendingSlot).getItem().getCount();
-        } else if (transaction.pendingClick == PendingClick.PICK_UP) {
-            ItemStack carried = menu.getCarried();
-            after = carried.isEmpty() || !pendingItem.equals(itemId(carried))
-                    ? 0
-                    : carried.getCount();
-        } else if (transaction.pendingClick == PendingClick.PLACE) {
-            ItemStack carried = menu.getCarried();
-            after = carried.isEmpty() || !pendingItem.equals(itemId(carried))
-                    ? 0
-                    : carried.getCount();
-        } else {
-            after = before;
-        }
-        runChanges(transaction, pendingItem, before, after);
-        transaction.pendingClick = PendingClick.NONE;
     }
 
-    private void runChanges(Transaction transaction, String itemId, int before, int after) {
-        if (transaction.pendingClick == PendingClick.EXTRACT) {
-            int moved = Math.max(0, before - after);
-            decrement(transaction.remaining, itemId, moved);
-        } else if (transaction.pendingClick == PendingClick.PLACE) {
-            int moved = Math.max(0, before - after);
-            decrement(transaction.remaining, itemId, moved);
+    private static ContainerClickConfirmation.Snapshot clickSnapshot(
+            AbstractContainerMenu menu,
+            int slot,
+            String itemId
+    ) {
+        return new ContainerClickConfirmation.Snapshot(
+                menu.containerId,
+                stackState(menu.getSlot(slot).getItem()),
+                stackState(menu.getCarried()),
+                playerItemCount(menu, itemId)
+        );
+    }
+
+    private static ContainerClickConfirmation.StackState stackState(ItemStack stack) {
+        return stack.isEmpty()
+                ? new ContainerClickConfirmation.StackState("", 0)
+                : new ContainerClickConfirmation.StackState(itemId(stack), stack.getCount());
+    }
+
+    private static int playerItemCount(AbstractContainerMenu menu, String itemId) {
+        int count = 0;
+        for (int slot : slotClassification(menu).playerSlots()) {
+            ItemStack stack = menu.getSlot(slot).getItem();
+            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+                count = Math.addExact(count, stack.getCount());
+            }
         }
+        return count;
     }
 
     private static void decrement(Map<String, Integer> remaining, String itemId, int amount) {
@@ -641,13 +698,6 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         PLACE
     }
 
-    private enum PendingClick {
-        NONE,
-        EXTRACT,
-        PICK_UP,
-        PLACE
-    }
-
     private static final class Transaction {
         private final ContainerTransfer transfer;
         private final long baselineRevision;
@@ -655,11 +705,8 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         private Phase phase;
         private ContainerView sourceView;
         private ContainerView destinationView;
-        private long pendingRevision = -1;
-        private PendingClick pendingClick = PendingClick.NONE;
+        private ContainerClickConfirmation.Pending pendingClick;
         private int pendingSlot = -1;
-        private String pendingItemId;
-        private int pendingCount;
 
         private Transaction(
                 ContainerTransfer transfer,

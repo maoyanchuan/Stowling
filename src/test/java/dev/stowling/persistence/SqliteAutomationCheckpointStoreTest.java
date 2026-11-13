@@ -1,6 +1,7 @@
 package dev.stowling.persistence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.AutomationCheckpoint;
@@ -43,7 +44,21 @@ class SqliteAutomationCheckpointStoreTest {
                 .recoveryCheckpoint()
                 .orElseThrow();
         assertTrue(persisted.startsWith("{\"version\":1,"), persisted);
+        assertEquals(
+                Optional.of("quarry"),
+                SqliteAutomationCheckpointStore.readPlanReference(taskId, persisted)
+        );
         assertEquals(Optional.of(checkpoint), store.load(taskId));
+    }
+
+    @Test
+    void safelyRejectsLegacyPausedCheckpoint() {
+        assertLegacyTerminalCheckpointRejected("PAUSED");
+    }
+
+    @Test
+    void safelyRejectsLegacyFailedCheckpoint() {
+        assertLegacyTerminalCheckpointRejected("FAILED");
     }
 
     @Test
@@ -69,6 +84,20 @@ class SqliteAutomationCheckpointStoreTest {
 
     private SqliteTaskRepository repository(String fileName) {
         return new SqliteTaskRepository(new StowlingDatabase(tempDir.resolve(fileName)));
+    }
+
+    private void assertLegacyTerminalCheckpointRejected(String stage) {
+        SqliteTaskRepository tasks = repository("legacy-" + stage + ".db");
+        UUID taskId = saveTask(tasks);
+        PersistedTask current = tasks.findRecordById(taskId).orElseThrow();
+        tasks.save(new PersistedTask(
+                current.snapshot(),
+                Optional.of("quarry|" + stage),
+                0
+        ));
+        SqliteAutomationCheckpointStore store = new SqliteAutomationCheckpointStore(tasks);
+
+        assertThrows(IllegalArgumentException.class, () -> store.load(taskId));
     }
 
     private static UUID saveTask(SqliteTaskRepository repository) {

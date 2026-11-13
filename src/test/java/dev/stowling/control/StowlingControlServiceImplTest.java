@@ -21,10 +21,15 @@ import dev.stowling.inventory.InventoryItem;
 import dev.stowling.inventory.InventoryItemKind;
 import dev.stowling.inventory.InventorySource;
 import dev.stowling.persistence.NestedInventoryScope;
+import dev.stowling.persistence.PersistedTask;
 import dev.stowling.persistence.SqliteInventoryRepository;
 import dev.stowling.persistence.SqliteTaskRepository;
 import dev.stowling.persistence.StoredInventorySnapshot;
 import dev.stowling.persistence.StowlingDatabase;
+import dev.stowling.task.AutomationState;
+import dev.stowling.task.TaskKind;
+import dev.stowling.task.TaskSnapshot;
+import dev.stowling.task.TaskStatus;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,7 +37,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -236,6 +243,67 @@ class StowlingControlServiceImplTest {
                 Optional.of("cache"),
                 List.of(new InventoryItem("minecraft:diamond", 6, InventoryItemKind.BOXED))
         )), stored.nestedScopes());
+    }
+
+    @Test
+    void legacyPausedRecoveryFailsWithoutBlockingANewPickup() {
+        assertInvalidRecoveryDoesNotBlock("farm|PAUSED", "legacy-paused");
+    }
+
+    @Test
+    void damagedRecoveryFailsWithoutBlockingANewPickup() {
+        assertInvalidRecoveryDoesNotBlock("{damaged-json", "damaged");
+    }
+
+    private void assertInvalidRecoveryDoesNotBlock(String checkpoint, String suffix) {
+        ContainerRef cache = container("cache", 0);
+        StowlingConfig config = config(cache, container("overflow", 10));
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("recovery-" + suffix + ".db")
+        );
+        SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+        UUID oldTaskId = UUID.randomUUID();
+        Instant now = Instant.now();
+        TaskSnapshot pausedTask = new TaskSnapshot(
+                oldTaskId,
+                TaskKind.PICKUP,
+                TaskStatus.PAUSED,
+                AutomationState.FAILED,
+                now,
+                now,
+                Optional.empty()
+        );
+        tasks.save(new PersistedTask(
+                pausedTask,
+                Optional.of(checkpoint),
+                0
+        ));
+        AtomicInteger factoryCalls = new AtomicInteger();
+        StowlingControlServiceImpl service = new StowlingControlServiceImpl(
+                config,
+                tasks,
+                new SqliteInventoryRepository(database),
+                source(capture(cache)),
+                ignored -> {
+                    factoryCalls.incrementAndGet();
+                    throw new AssertionError("pickup factory reached");
+                },
+                Runnable::run,
+                () -> config,
+                ignored -> {
+                },
+                configStore(config, "recovery-" + suffix + ".json")
+        );
+
+        service.recoverPendingPickups();
+
+        assertEquals(TaskStatus.FAILED, tasks.findById(oldTaskId).orElseThrow().status());
+        assertEquals(0, factoryCalls.get());
+        assertThrows(
+                AssertionError.class,
+                () -> service.requestPickup(new PickupRequest("farm"))
+        );
+        assertEquals(1, factoryCalls.get());
     }
 
     private StowlingControlServiceImpl service(

@@ -1,5 +1,7 @@
 # Stowling
 
+English | [简体中文](README_zh-CN.md)
+
 Stowling is a Minecraft 26.2 Fabric client mod for pickup, container transfer, inventory
 auditing, and shulker-box packing automation. It uses Baritone for navigation and is
 designed to run in a normal client or a HeadlessMC client.

@@ -12,7 +12,6 @@ import dev.stowling.domain.PackingTrigger;
 import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.packing.PackingBoxContents;
-import dev.stowling.packing.PackingStationException;
 import dev.stowling.packing.PackingStationTickPort;
 import dev.stowling.packing.PackingWorkcell;
 import java.time.Duration;
@@ -112,17 +111,18 @@ class TickPackingPortTest {
                     routeThreshold,
                     stations.stream().map(PackingStation::id).toList()
             );
+            PickupSite pickupSite = new PickupSite(
+                    "site",
+                    DIMENSION,
+                    new BlockPosition(0, 64, 0),
+                    16,
+                    buffer,
+                    Duration.ofSeconds(60)
+            );
             StowlingConfig config = new StowlingConfig(
                     1,
                     Duration.ofSeconds(60),
-                    List.of(new PickupSite(
-                            "site",
-                            DIMENSION,
-                            new BlockPosition(0, 64, 0),
-                            16,
-                            buffer,
-                            Duration.ofSeconds(60)
-                    )),
+                    List.of(pickupSite),
                     List.of(route),
                     stations,
                     List.of(),

@@ -8,7 +8,6 @@ import dev.stowling.domain.PackingTrigger;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.packing.PackingReleaseMode;
 import dev.stowling.packing.PackingRunResult;
-import dev.stowling.packing.PackingRunStatus;
 import dev.stowling.packing.PackingStationCandidate;
 import dev.stowling.packing.PackingStationException;
 import dev.stowling.packing.PackingStationPool;
@@ -305,15 +304,20 @@ public final class TickPackingPort implements PackingPort {
                     }
                 }
             }
-            PackingRunResult result = orchestrator.pack(
+            String packingRequestId = request.taskId() + ":" + item.itemId;
+            String stationDimension = workcell.station().dimension();
+            int requestedQuantity = Math.max(1, item.remainingPack);
+            dev.stowling.packing.PackingRequest packingRequest =
                     new dev.stowling.packing.PackingRequest(
-                            request.taskId() + ":" + item.itemId,
-                            workcell.station().dimension(),
+                            packingRequestId,
+                            stationDimension,
                             item.itemId,
-                            Math.max(1, item.remainingPack),
+                            requestedQuantity,
                             route,
                             overflowContainer()
-                    ),
+                    );
+            PackingRunResult result = orchestrator.pack(
+                    packingRequest,
                     List.of(item.candidate()),
                     stationPort
             );

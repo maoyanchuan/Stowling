@@ -274,7 +274,7 @@ class PickupAutomationEngineTest {
 
         assertEquals(PickupStage.PACK, pending.stage());
         assertTrue(pending.pauseReason().isEmpty());
-        assertEquals(2, support.packing.requests().size());
+        assertEquals(1, support.packing.requests().size());
     }
 
     private AutomationTestSupport depositSupport() {

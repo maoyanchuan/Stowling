@@ -11,7 +11,6 @@ import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
 import dev.stowling.packing.PackingBoxContents;
 import dev.stowling.packing.PackingStationException;
-import dev.stowling.packing.PackingStationPort;
 import dev.stowling.packing.PackingStationTickPort;
 import dev.stowling.packing.PackingStationTimeoutException;
 import dev.stowling.packing.PackingWorkcell;

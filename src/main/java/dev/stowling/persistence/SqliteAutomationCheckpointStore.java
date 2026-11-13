@@ -1,11 +1,20 @@
 package dev.stowling.persistence;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.stowling.automation.AutomationCheckpoint;
 import dev.stowling.automation.AutomationCheckpointStore;
 import dev.stowling.automation.PickupStage;
 import dev.stowling.task.AutomationState;
 import dev.stowling.task.TaskSnapshot;
 import dev.stowling.task.TaskStatus;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -16,6 +25,8 @@ import java.util.UUID;
  * Persists only the resumable pickup stage, never slot-level attempts or clicks.
  */
 public final class SqliteAutomationCheckpointStore implements AutomationCheckpointStore {
+    private static final int CHECKPOINT_VERSION = 1;
+    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private final SqliteTaskRepository tasks;
 
     public SqliteAutomationCheckpointStore(SqliteTaskRepository tasks) {
@@ -27,15 +38,7 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         Objects.requireNonNull(taskId, "taskId");
         return tasks.findRecordById(taskId)
                 .flatMap(PersistedTask::recoveryCheckpoint)
-                .map(SqliteAutomationCheckpointStore::readCheckpoint)
-                .map(parts -> new AutomationCheckpoint(
-                        taskId,
-                        PickupStage.valueOf(parts.stage()),
-                        Optional.ofNullable(parts.siteId()),
-                        Set.of(),
-                        Optional.empty(),
-                        Map.of()
-                ));
+                .map(value -> readCheckpoint(taskId, value));
     }
 
     @Override
@@ -91,20 +94,132 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
     }
 
     private static String writeCheckpoint(AutomationCheckpoint checkpoint) {
-        String siteId = checkpoint.planReference().orElse("");
-        return siteId + "|" + checkpoint.stage().name();
+        JsonObject root = new JsonObject();
+        root.addProperty("version", CHECKPOINT_VERSION);
+        root.addProperty("taskId", checkpoint.taskId().toString());
+        root.addProperty("stage", checkpoint.stage().name());
+        checkpoint.planReference().ifPresent(value ->
+                root.addProperty("planReference", value)
+        );
+        JsonArray observedInputs = new JsonArray();
+        checkpoint.observedInputKeys().stream().sorted().forEach(observedInputs::add);
+        root.add("observedInputKeys", observedInputs);
+        checkpoint.idleSince().ifPresent(value ->
+                root.addProperty("idleSince", value.toString())
+        );
+        JsonObject inventoryBaseline = new JsonObject();
+        checkpoint.inventoryBaseline().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> inventoryBaseline.addProperty(
+                        entry.getKey(),
+                        entry.getValue()
+                ));
+        root.add("inventoryBaseline", inventoryBaseline);
+        checkpoint.selectedCacheId().ifPresent(value ->
+                root.addProperty("selectedCacheId", value)
+        );
+        root.addProperty(
+                "classificationCacheIndex",
+                checkpoint.classificationCacheIndex()
+        );
+        return GSON.toJson(root);
     }
 
-    private static CheckpointParts readCheckpoint(String value) {
+    private static AutomationCheckpoint readCheckpoint(UUID taskId, String value) {
+        if (value.stripLeading().startsWith("{")) {
+            return readJsonCheckpoint(taskId, value);
+        }
+        return readLegacyCheckpoint(taskId, value);
+    }
+
+    private static AutomationCheckpoint readJsonCheckpoint(UUID taskId, String value) {
+        JsonElement parsed = JsonParser.parseString(value);
+        if (!parsed.isJsonObject()) {
+            throw new IllegalArgumentException("automation checkpoint must be a JSON object");
+        }
+        JsonObject root = parsed.getAsJsonObject();
+        int version = root.get("version").getAsInt();
+        if (version != CHECKPOINT_VERSION) {
+            throw new IllegalArgumentException("unsupported checkpoint version: " + version);
+        }
+        UUID storedTaskId = UUID.fromString(root.get("taskId").getAsString());
+        if (!taskId.equals(storedTaskId)) {
+            throw new IllegalArgumentException("checkpoint task id does not match task record");
+        }
+        PickupStage stage = PickupStage.valueOf(root.get("stage").getAsString());
+        Optional<String> planReference = optionalString(root, "planReference");
+        Optional<Instant> idleSince = optionalString(root, "idleSince")
+                .map(Instant::parse);
+        Optional<String> selectedCacheId = optionalString(root, "selectedCacheId");
+        int classificationCacheIndex = root.get("classificationCacheIndex").getAsInt();
+        return new AutomationCheckpoint(
+                taskId,
+                stage,
+                planReference,
+                readStringSet(root.get("observedInputKeys")),
+                idleSince,
+                readInventoryBaseline(root.get("inventoryBaseline")),
+                selectedCacheId,
+                classificationCacheIndex
+        );
+    }
+
+    private static AutomationCheckpoint readLegacyCheckpoint(UUID taskId, String value) {
         int separator = value.lastIndexOf('|');
         if (separator < 0) {
-            return new CheckpointParts(null, value);
+            return legacyCheckpoint(taskId, Optional.empty(), value);
         }
         String siteId = value.substring(0, separator);
         String stage = value.substring(separator + 1);
-        return new CheckpointParts(siteId.isEmpty() ? null : siteId, stage);
+        Optional<String> planReference = siteId.isEmpty()
+                ? Optional.empty()
+                : Optional.of(siteId);
+        return legacyCheckpoint(taskId, planReference, stage);
     }
 
-    private record CheckpointParts(String siteId, String stage) {
+    private static AutomationCheckpoint legacyCheckpoint(
+            UUID taskId,
+            Optional<String> planReference,
+            String stage
+    ) {
+        return new AutomationCheckpoint(
+                taskId,
+                PickupStage.valueOf(stage),
+                planReference,
+                Set.of(),
+                Optional.empty(),
+                Map.of()
+        );
+    }
+
+    private static Optional<String> optionalString(JsonObject root, String fieldName) {
+        JsonElement value = root.get(fieldName);
+        if (value == null || value.isJsonNull()) {
+            return Optional.empty();
+        }
+        return Optional.of(value.getAsString());
+    }
+
+    private static Set<String> readStringSet(JsonElement element) {
+        if (element == null || !element.isJsonArray()) {
+            throw new IllegalArgumentException("observedInputKeys must be an array");
+        }
+        JsonArray values = element.getAsJsonArray();
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (JsonElement value : values) {
+            result.add(value.getAsString());
+        }
+        return Set.copyOf(result);
+    }
+
+    private static Map<String, Integer> readInventoryBaseline(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            throw new IllegalArgumentException("inventoryBaseline must be an object");
+        }
+        Map<String, Integer> result = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+            result.put(entry.getKey(), entry.getValue().getAsInt());
+        }
+        return Map.copyOf(result);
     }
 }

@@ -95,6 +95,7 @@ final class AutomationFakes {
         private NavigationStatus startStatus = NavigationStatus.NAVIGATING;
         private NavigationStatus status = NavigationStatus.ARRIVED;
         private int cancelCount;
+        private final List<BlockPosition> startedTargets = new ArrayList<>();
 
         FakeNavigation(BlockPosition position) {
             this.position = position;
@@ -102,6 +103,7 @@ final class AutomationFakes {
 
         @Override
         public NavigationStatus start(BlockPosition target) {
+            startedTargets.add(target);
             if (position.equals(target)) {
                 return NavigationStatus.ARRIVED;
             }
@@ -132,12 +134,17 @@ final class AutomationFakes {
         void setStatus(NavigationStatus status) {
             this.status = status;
         }
+
+        List<BlockPosition> startedTargets() {
+            return List.copyOf(startedTargets);
+        }
     }
 
     static final class FakeContainers implements ContainerInteraction {
         private final Map<String, ContainerView> views = new HashMap<>();
         private final Deque<ContainerAttemptResult> results = new ArrayDeque<>();
         private final List<ContainerAttempt> attempts = new ArrayList<>();
+        private final List<String> observedContainers = new ArrayList<>();
         private final Instant attemptStartedAt;
         private int cancelCount;
 
@@ -147,6 +154,7 @@ final class AutomationFakes {
 
         @Override
         public Optional<ContainerView> observe(ContainerRef container) {
+            observedContainers.add(container.id());
             return Optional.ofNullable(views.get(container.id()));
         }
 
@@ -191,6 +199,10 @@ final class AutomationFakes {
 
         List<ContainerAttempt> attempts() {
             return List.copyOf(attempts);
+        }
+
+        List<String> observedContainers() {
+            return List.copyOf(observedContainers);
         }
     }
 

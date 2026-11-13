@@ -27,6 +27,12 @@ final class AutomationTestSupport {
             new BlockPosition(10, 64, 0),
             ContainerType.CHEST
     );
+    final ContainerRef secondaryCache = new ContainerRef(
+            "secondary-cache",
+            DIMENSION,
+            new BlockPosition(14, 64, 0),
+            ContainerType.CHEST
+    );
     final ContainerRef bulk = new ContainerRef(
             "bulk",
             DIMENSION,
@@ -63,9 +69,17 @@ final class AutomationTestSupport {
             new InMemoryAutomationCheckpointStore();
 
     PickupAutomationEngine engine(List<StorageRoute> routes, int retries) {
+        return engineFor(site, routes, retries);
+    }
+
+    PickupAutomationEngine engineFor(
+            PickupSite pickupSite,
+            List<StorageRoute> routes,
+            int retries
+    ) {
         PickupAutomationPlan plan = new PickupAutomationPlan(
                 TASK_ID,
-                site,
+                pickupSite,
                 routes,
                 overflow,
                 2,
@@ -85,6 +99,17 @@ final class AutomationTestSupport {
         );
     }
 
+    PickupSite multiCacheSite() {
+        return new PickupSite(
+                "quarry-multi-cache",
+                DIMENSION,
+                new BlockPosition(0, 64, 0),
+                16,
+                List.of(cache, secondaryCache),
+                Duration.ofSeconds(60)
+        );
+    }
+
     void checkpoint(
             PickupStage stage,
             Optional<Instant> idleSince,
@@ -96,6 +121,25 @@ final class AutomationTestSupport {
                 Set.of(),
                 idleSince,
                 baseline
+        ));
+    }
+
+    void checkpoint(
+            PickupStage stage,
+            Optional<Instant> idleSince,
+            Map<String, Integer> baseline,
+            Optional<String> selectedCacheId,
+            int classificationCacheIndex
+    ) {
+        checkpoints.save(new AutomationCheckpoint(
+                TASK_ID,
+                stage,
+                Optional.of(site.id()),
+                Set.of(),
+                idleSince,
+                baseline,
+                selectedCacheId,
+                classificationCacheIndex
         ));
     }
 

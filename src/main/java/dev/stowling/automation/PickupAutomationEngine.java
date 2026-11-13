@@ -31,10 +31,14 @@ public final class PickupAutomationEngine {
     private final DeliveryPlanner deliveryPlanner = new DeliveryPlanner();
 
     private final Set<String> observedInputs = new HashSet<>();
+    private final Set<Integer> failedDepositCaches = new HashSet<>();
     private Map<String, Integer> inventoryBaseline = Map.of();
     private Optional<Instant> idleSince = Optional.empty();
     private List<DeliveryIntent> deliveries = List.of();
     private int deliveryIndex;
+    private int selectedCacheIndex;
+    private int classificationCacheIndex;
+    private int classificationFailures;
     private ContainerFlow containerFlow;
     private PickupStage stage = PickupStage.NAVIGATE_PICKUP;
     private PickupStage resumeStage = PickupStage.NAVIGATE_PICKUP;
@@ -114,6 +118,8 @@ public final class PickupAutomationEngine {
         }
         stage = resumeStage;
         pauseReason = Optional.empty();
+        failedDepositCaches.clear();
+        classificationFailures = 0;
         reconcileAfterRecovery();
         saveCheckpoint();
     }
@@ -164,13 +170,13 @@ public final class PickupAutomationEngine {
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
         if (inventory.freeSlots() <= plan.inventoryReserveSlots()) {
             clearNavigation();
-            enter(PickupStage.DEPOSIT_BUFFER);
+            beginDeposit();
             return;
         }
         if (items.isEmpty()) {
             clearNavigation();
             if (!inventoryDelta(inventory).isEmpty()) {
-                enter(PickupStage.DEPOSIT_BUFFER);
+                beginDeposit();
             } else {
                 startIdleTimerIfNeeded();
                 enter(PickupStage.WAIT_FOR_IDLE);
@@ -194,9 +200,13 @@ public final class PickupAutomationEngine {
     }
 
     private void tickDepositBuffer() {
-        NavigationStatus travel = moveTo(plan.pickupSite().cacheContainer().position());
+        ContainerRef buffer = selectedCache();
+        NavigationStatus travel = moveTo(buffer.position());
         if (travel == NavigationStatus.FAILED) {
-            pause("PATH_FAILED", "navigation to pickup buffer failed");
+            depositCacheFailed(
+                    "PATH_FAILED",
+                    "navigation to pickup buffer " + buffer.id() + " failed"
+            );
             return;
         }
         if (travel != NavigationStatus.ARRIVED) {
@@ -214,13 +224,28 @@ public final class PickupAutomationEngine {
         ContainerTransfer transfer = new ContainerTransfer(
                 plan.taskId() + ":deposit-buffer",
                 Optional.empty(),
-                plan.pickupSite().cacheContainer(),
+                buffer,
                 collected
         );
-        if (transfer(transfer, "BUFFER_UNAVAILABLE")) {
-            inventoryBaseline = inventoryAdapter.observe().itemCounts();
-            startIdleTimerIfNeeded();
-            enter(PickupStage.WAIT_FOR_IDLE);
+        TransferResult result = transfer(
+                transfer,
+                "BUFFER_UNAVAILABLE",
+                TransferMode.DEPOSIT_CACHE
+        );
+        switch (result.status()) {
+            case ACKNOWLEDGED -> {
+                inventoryBaseline = inventoryAdapter.observe().itemCounts();
+                failedDepositCaches.clear();
+                startIdleTimerIfNeeded();
+                enter(PickupStage.WAIT_FOR_IDLE);
+            }
+            case PENDING -> {
+                // Wait for the server's destination revision before changing inventory baseline.
+            }
+            case FAILED -> depositCacheFailed(
+                    result.failureCode(),
+                    "cache " + buffer.id() + " rejected the deposit"
+            );
         }
     }
 
@@ -232,21 +257,30 @@ public final class PickupAutomationEngine {
         }
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
         if (!inventoryDelta(inventory).isEmpty()) {
-            enter(PickupStage.DEPOSIT_BUFFER);
+            beginDeposit();
             return;
         }
         startIdleTimerIfNeeded();
         Duration idle = Duration.between(idleSince.orElseThrow(), clock.now());
         if (idle.compareTo(plan.pickupSite().idleDelay()) >= 0) {
+            classificationCacheIndex = 0;
+            classificationFailures = 0;
             enter(PickupStage.CLASSIFY_BUFFER);
         }
     }
 
     private void tickClassifyBuffer() {
-        ContainerRef buffer = plan.pickupSite().cacheContainer();
+        if (classificationCacheIndex >= plan.pickupSite().cacheContainers().size()) {
+            enter(PickupStage.COMPLETE);
+            return;
+        }
+        ContainerRef buffer = plan.pickupSite().cacheContainers().get(classificationCacheIndex);
         NavigationStatus travel = moveTo(buffer.position());
         if (travel == NavigationStatus.FAILED) {
-            pause("PATH_FAILED", "navigation to buffer for classification failed");
+            retryClassificationOrPause(
+                    "PATH_FAILED",
+                    "navigation to cache " + buffer.id() + " failed"
+            );
             return;
         }
         if (travel != NavigationStatus.ARRIVED) {
@@ -257,13 +291,22 @@ public final class PickupAutomationEngine {
         Optional<ContainerView> view = containers.observe(buffer);
         if (view.isEmpty()) {
             if (containerObservationTimedOut()) {
-                pause("BUFFER_UNAVAILABLE", "pickup buffer could not be observed");
+                retryClassificationOrPause(
+                        "BUFFER_UNAVAILABLE",
+                        "cache " + buffer.id() + " could not be observed"
+                );
             }
             return;
         }
+        classificationFailures = 0;
         containerObservationStartedAt = Optional.empty();
         if (view.orElseThrow().isEmpty()) {
-            enter(PickupStage.COMPLETE);
+            classificationCacheIndex++;
+            deliveries = List.of();
+            deliveryIndex = 0;
+            if (classificationCacheIndex >= plan.pickupSite().cacheContainers().size()) {
+                enter(PickupStage.COMPLETE);
+            }
             return;
         }
         try {
@@ -297,9 +340,19 @@ public final class PickupAutomationEngine {
         String failureCode = isOverflow(intent)
                 ? "OVERFLOW_UNAVAILABLE"
                 : "DELIVERY_CONTAINER_UNAVAILABLE";
-        if (transfer(intent.asTransfer(), failureCode)) {
-            deliveryIndex++;
-            enterCurrentDeliveryStage();
+        TransferResult result = transfer(intent.asTransfer(), failureCode, TransferMode.DELIVERY);
+        switch (result.status()) {
+            case ACKNOWLEDGED -> {
+                deliveryIndex++;
+                enterCurrentDeliveryStage();
+            }
+            case PENDING -> {
+                // The current delivery remains active until the server confirms it.
+            }
+            case FAILED -> pause(
+                    result.failureCode(),
+                    "storage destination exhausted its retry budget"
+            );
         }
     }
 
@@ -337,14 +390,18 @@ public final class PickupAutomationEngine {
         }
     }
 
-    private boolean transfer(ContainerTransfer transfer, String unavailableCode) {
+    private TransferResult transfer(
+            ContainerTransfer transfer,
+            String unavailableCode,
+            TransferMode mode
+    ) {
         containers.prepare(transfer.destination());
         Optional<ContainerView> before = containers.observe(transfer.destination());
         if (before.isEmpty()) {
             if (containerObservationTimedOut()) {
-                pause(unavailableCode, "destination container is unavailable");
+                return TransferResult.failed(unavailableCode);
             }
-            return false;
+            return TransferResult.pending();
         }
         containerObservationStartedAt = Optional.empty();
         ensureContainerFlow(transfer, before.orElseThrow());
@@ -359,44 +416,47 @@ public final class PickupAutomationEngine {
             }
             case ACKNOWLEDGED -> {
                 if (!isPlausibleAcknowledgement(attempt, result)) {
-                    return retryOrPause("CONTAINER_ACK_INVALID");
+                    return retryOrFail("CONTAINER_ACK_INVALID", true);
                 }
                 containerFlow = null;
-                return true;
+                return TransferResult.acknowledged();
             }
             case REJECTED -> {
-                return retryOrPause("CONTAINER_REJECTED");
+                return retryOrFail("CONTAINER_REJECTED", mode == TransferMode.DELIVERY);
             }
             case UNAVAILABLE -> {
-                return retryOrPause(unavailableCode);
+                return retryOrFail(unavailableCode, mode == TransferMode.DELIVERY);
             }
             default -> throw new IllegalStateException("unknown attempt result");
         }
     }
 
-    private boolean handlePendingAttempt(String unavailableCode) {
+    private TransferResult handlePendingAttempt(String unavailableCode) {
         Instant startedAt = containerFlow.attempt.startedAt();
         if (Duration.between(startedAt, clock.now()).compareTo(
                 plan.containerAckTimeout()
         ) < 0) {
-            return false;
+            return TransferResult.pending();
         }
         containers.cancel(containerFlow.attempt);
         containerFlow.attempt = null;
-        return retryOrPause("CONTAINER_ACK_TIMEOUT");
+        return retryOrFail("CONTAINER_ACK_TIMEOUT", true);
     }
 
-    private boolean retryOrPause(String failureCode) {
+    private TransferResult retryOrFail(
+            String failureCode,
+            boolean retryCurrentDestination
+    ) {
         if (containerFlow.attempt != null) {
             containers.cancel(containerFlow.attempt);
             containerFlow.attempt = null;
         }
-        if (containerFlow.attemptsStarted > plan.maxContainerRetries()) {
-            pause(failureCode, "container transaction exhausted retry budget");
-            return false;
+        if (!retryCurrentDestination
+                || containerFlow.attemptsStarted > plan.maxContainerRetries()) {
+            return TransferResult.failed(failureCode);
         }
         beginContainerAttempt();
-        return false;
+        return TransferResult.pending();
     }
 
     private void ensureContainerFlow(ContainerTransfer transfer, ContainerView before) {
@@ -432,7 +492,7 @@ public final class PickupAutomationEngine {
 
     private void enterCurrentDeliveryStage() {
         if (deliveryIndex >= deliveries.size()) {
-            enter(PickupStage.COMPLETE);
+            enter(PickupStage.CLASSIFY_BUFFER);
             return;
         }
         DeliveryIntent intent = deliveries.get(deliveryIndex);
@@ -441,6 +501,65 @@ public final class PickupAutomationEngine {
         } else {
             enter(PickupStage.DELIVER_LOOSE);
         }
+    }
+
+    private void beginDeposit() {
+        failedDepositCaches.clear();
+        classificationFailures = 0;
+        selectedCacheIndex = nearestCacheIndex();
+        abortContainerFlow();
+        containerObservationStartedAt = Optional.empty();
+        enter(PickupStage.DEPOSIT_BUFFER);
+    }
+
+    private void depositCacheFailed(String failureCode, String detail) {
+        failedDepositCaches.add(selectedCacheIndex);
+        abortContainerFlow();
+        clearNavigation();
+        containerObservationStartedAt = Optional.empty();
+        List<ContainerRef> caches = plan.pickupSite().cacheContainers();
+        for (int offset = 1; offset <= caches.size(); offset++) {
+            int candidate = (selectedCacheIndex + offset) % caches.size();
+            if (!failedDepositCaches.contains(candidate)) {
+                selectedCacheIndex = candidate;
+                return;
+            }
+        }
+        pause(failureCode, detail + "; all configured caches failed");
+    }
+
+    private boolean retryClassificationOrPause(String failureCode, String detail) {
+        if (classificationFailures >= plan.maxContainerRetries()) {
+            pause(failureCode, detail + "; classification retry budget exhausted");
+            return false;
+        }
+        classificationFailures++;
+        abortContainerFlow();
+        clearNavigation();
+        containerObservationStartedAt = Optional.empty();
+        return true;
+    }
+
+    private int nearestCacheIndex() {
+        BlockPosition position = currentPosition();
+        int nearestIndex = 0;
+        int nearestDistance = distanceSquared(
+                position,
+                plan.pickupSite().cacheContainers().getFirst().position()
+        );
+        for (int index = 1; index < plan.pickupSite().cacheContainers().size(); index++) {
+            BlockPosition candidate = plan.pickupSite().cacheContainers().get(index).position();
+            int distance = distanceSquared(position, candidate);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = index;
+            }
+        }
+        return nearestIndex;
+    }
+
+    private ContainerRef selectedCache() {
+        return plan.pickupSite().cacheContainers().get(selectedCacheIndex);
     }
 
     private Optional<DeliveryIntent> activeDelivery() {
@@ -565,26 +684,14 @@ public final class PickupAutomationEngine {
             stage = PickupStage.DEPOSIT_BUFFER;
             return;
         }
-        Optional<ContainerView> buffer = containers.observe(plan.pickupSite().cacheContainer());
-        if (buffer.isEmpty()) {
-            pause("RECOVERY_BUFFER_UNAVAILABLE", "buffer unavailable during recovery");
-            return;
-        }
-        ContainerView view = buffer.orElseThrow();
-        if (!view.isEmpty()) {
-            if (stage == PickupStage.WAIT_FOR_IDLE && idleSince.isPresent()) {
-                return;
-            }
-            stage = PickupStage.CLASSIFY_BUFFER;
-            return;
-        }
         if (stage == PickupStage.WAIT_FOR_IDLE) {
             return;
         }
         if (stage == PickupStage.CLASSIFY_BUFFER
                 || stage == PickupStage.DELIVER_LOOSE
-                || stage == PickupStage.PACK) {
-            stage = PickupStage.COMPLETE;
+                || stage == PickupStage.PACK
+                || stage == PickupStage.DEPOSIT_BUFFER) {
+            stage = PickupStage.CLASSIFY_BUFFER;
             return;
         }
         stage = PickupStage.NAVIGATE_PICKUP;
@@ -596,6 +703,28 @@ public final class PickupAutomationEngine {
         observedInputs.addAll(checkpoint.observedInputKeys());
         idleSince = checkpoint.idleSince();
         inventoryBaseline = checkpoint.inventoryBaseline();
+        selectedCacheIndex = indexOfCache(checkpoint.selectedCacheId());
+        if (checkpoint.selectedCacheId().isEmpty()
+                && worldObserver.observeWorld().playerPosition().isPresent()) {
+            selectedCacheIndex = nearestCacheIndex();
+        }
+        classificationCacheIndex = Math.min(
+                checkpoint.classificationCacheIndex(),
+                plan.pickupSite().cacheContainers().size() - 1
+        );
+    }
+
+    private int indexOfCache(Optional<String> cacheId) {
+        if (cacheId.isEmpty()) {
+            return 0;
+        }
+        List<ContainerRef> caches = plan.pickupSite().cacheContainers();
+        for (int index = 0; index < caches.size(); index++) {
+            if (caches.get(index).id().equals(cacheId.orElseThrow())) {
+                return index;
+            }
+        }
+        return 0;
     }
 
     private void enter(PickupStage next) {
@@ -650,8 +779,35 @@ public final class PickupAutomationEngine {
                 Optional.of(plan.pickupSite().id()),
                 observedInputs,
                 idleSince,
-                inventoryBaseline
+                inventoryBaseline,
+                Optional.of(selectedCache().id()),
+                classificationCacheIndex
         ));
+    }
+
+    private record TransferResult(TransferStatus status, String failureCode) {
+        private static TransferResult acknowledged() {
+            return new TransferResult(TransferStatus.ACKNOWLEDGED, "");
+        }
+
+        private static TransferResult pending() {
+            return new TransferResult(TransferStatus.PENDING, "");
+        }
+
+        private static TransferResult failed(String failureCode) {
+            return new TransferResult(TransferStatus.FAILED, failureCode);
+        }
+    }
+
+    private enum TransferStatus {
+        ACKNOWLEDGED,
+        PENDING,
+        FAILED
+    }
+
+    private enum TransferMode {
+        DEPOSIT_CACHE,
+        DELIVERY
     }
 
     private static final class ContainerFlow {

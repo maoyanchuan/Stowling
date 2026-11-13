@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.PickupSite;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -275,6 +276,243 @@ class PickupAutomationEngineTest {
         assertEquals(PickupStage.PACK, pending.stage());
         assertTrue(pending.pauseReason().isEmpty());
         assertEquals(1, support.packing.requests().size());
+    }
+
+    @Test
+    void depositSelectsNearestConfiguredCacheInitially() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(support.secondaryCache.position());
+        support.world.setWorld(AutomationTestSupport.connectedAt(
+                support.secondaryCache.position()
+        ));
+        support.inventory.setSnapshot(AutomationFakes.inventory(STONE, 1));
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                1,
+                List.of()
+        ));
+        support.containers.addResult(AutomationFakes.acknowledged(
+                support.secondaryCache,
+                2,
+                List.of(new ContainerSlot(0, STONE, 1))
+        ));
+        support.checkpoint(PickupStage.DEPOSIT_BUFFER, Optional.empty(), Map.of());
+        PickupAutomationEngine engine = support.engineFor(site, List.of(), 1);
+
+        engine.start();
+        AutomationSnapshot snapshot = engine.tick();
+
+        assertEquals(PickupStage.WAIT_FOR_IDLE, snapshot.stage());
+        assertEquals(
+                support.secondaryCache,
+                support.containers.attempts().getFirst().transfer().destination()
+        );
+    }
+
+    @Test
+    void depositFailsOverWhenFirstCacheRejectsTransfer() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(support.cache.position());
+        support.inventory.setSnapshot(AutomationFakes.inventory(STONE, 1));
+        support.containers.putView(AutomationFakes.view(support.cache, 1, List.of()));
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                1,
+                List.of()
+        ));
+        support.containers.addResult(new ContainerAttemptResult(
+                ContainerAttemptStatus.REJECTED,
+                1,
+                Optional.empty(),
+                Optional.empty(),
+                "cache rejected the transfer"
+        ));
+        support.containers.addResult(AutomationFakes.acknowledged(
+                support.secondaryCache,
+                2,
+                List.of(new ContainerSlot(0, STONE, 1))
+        ));
+        support.checkpoint(PickupStage.DEPOSIT_BUFFER, Optional.empty(), Map.of());
+        PickupAutomationEngine engine = support.engineFor(site, List.of(), 1);
+
+        engine.start();
+        assertEquals(PickupStage.DEPOSIT_BUFFER, engine.tick().stage());
+        support.navigation.setPosition(support.secondaryCache.position());
+        AutomationSnapshot snapshot = engine.tick();
+
+        assertEquals(PickupStage.WAIT_FOR_IDLE, snapshot.stage());
+        assertEquals(2, support.containers.attempts().size());
+        assertEquals(
+                support.secondaryCache,
+                support.containers.attempts().getLast().transfer().destination()
+        );
+    }
+
+    @Test
+    void depositFailsOverAfterCacheObservationTimeout() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(support.cache.position());
+        support.inventory.setSnapshot(AutomationFakes.inventory(STONE, 1));
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                1,
+                List.of()
+        ));
+        support.containers.addResult(AutomationFakes.acknowledged(
+                support.secondaryCache,
+                2,
+                List.of(new ContainerSlot(0, STONE, 1))
+        ));
+        support.checkpoint(PickupStage.DEPOSIT_BUFFER, Optional.empty(), Map.of());
+        PickupAutomationEngine engine = support.engineFor(site, List.of(), 1);
+
+        engine.start();
+        assertEquals(PickupStage.DEPOSIT_BUFFER, engine.tick().stage());
+        support.clock.advance(Duration.ofSeconds(5));
+        assertEquals(PickupStage.DEPOSIT_BUFFER, engine.tick().stage());
+        support.navigation.setPosition(support.secondaryCache.position());
+        AutomationSnapshot snapshot = engine.tick();
+
+        assertEquals(PickupStage.WAIT_FOR_IDLE, snapshot.stage());
+        assertEquals(
+                support.secondaryCache,
+                support.containers.attempts().getFirst().transfer().destination()
+        );
+    }
+
+    @Test
+    void pausesOnlyAfterEveryConfiguredCacheFails() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(new BlockPosition(-5, 64, 0));
+        support.navigation.setStartStatus(NavigationStatus.FAILED);
+        support.inventory.setSnapshot(AutomationFakes.inventory(STONE, 1));
+        support.checkpoint(PickupStage.DEPOSIT_BUFFER, Optional.empty(), Map.of());
+        PickupAutomationEngine engine = support.engineFor(site, List.of(), 1);
+
+        engine.start();
+        assertEquals(PickupStage.DEPOSIT_BUFFER, engine.tick().stage());
+        AutomationSnapshot snapshot = engine.tick();
+
+        assertEquals(PickupStage.PAUSED, snapshot.stage());
+        assertEquals("PATH_FAILED", snapshot.pauseReason().orElseThrow().code());
+        assertEquals(2, support.navigation.startedTargets().size());
+    }
+
+    @Test
+    void classifiesEveryCacheInConfigurationOrderBeforeCompleting() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(support.cache.position());
+        support.containers.putView(AutomationFakes.view(support.cache, 1, List.of()));
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                2,
+                List.of(new ContainerSlot(0, DIAMOND, 1))
+        ));
+        support.containers.putView(AutomationFakes.view(support.bulk, 1, List.of()));
+        support.containers.addResult(AutomationFakes.acknowledged(
+                support.bulk,
+                2,
+                List.of(new ContainerSlot(0, DIAMOND, 1))
+        ));
+        support.checkpoint(
+                PickupStage.CLASSIFY_BUFFER,
+                Optional.empty(),
+                Map.of(),
+                Optional.of(support.cache.id()),
+                0
+        );
+        PickupAutomationEngine engine = support.engineFor(
+                site,
+                List.of(AutomationTestSupport.looseRoute(DIAMOND)),
+                1
+        );
+
+        engine.start();
+        assertEquals(PickupStage.CLASSIFY_BUFFER, engine.tick().stage());
+        support.navigation.setPosition(support.secondaryCache.position());
+        AutomationSnapshot delivery = engine.tick();
+
+        assertEquals(PickupStage.DELIVER_LOOSE, delivery.stage());
+        assertEquals(support.secondaryCache, delivery.activeDelivery().orElseThrow().buffer());
+        assertEquals(
+                List.of(support.cache.id(), support.secondaryCache.id()),
+                support.containers.observedContainers()
+        );
+
+        assertEquals(PickupStage.CLASSIFY_BUFFER, engine.tick().stage());
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                3,
+                List.of()
+        ));
+        assertEquals(PickupStage.COMPLETE, engine.tick().stage());
+    }
+
+    @Test
+    void pausesWhenACacheStaysUnavailableBeyondClassificationBudget() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(support.cache.position());
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                1,
+                List.of()
+        ));
+        support.checkpoint(
+                PickupStage.CLASSIFY_BUFFER,
+                Optional.empty(),
+                Map.of(),
+                Optional.of(support.cache.id()),
+                0
+        );
+        PickupAutomationEngine engine = support.engineFor(site, List.of(), 1);
+
+        engine.start();
+        assertEquals(PickupStage.CLASSIFY_BUFFER, engine.tick().stage());
+        support.clock.advance(Duration.ofSeconds(5));
+        assertEquals(PickupStage.CLASSIFY_BUFFER, engine.tick().stage());
+        assertEquals(PickupStage.CLASSIFY_BUFFER, engine.tick().stage());
+        support.clock.advance(Duration.ofSeconds(5));
+        AutomationSnapshot snapshot = engine.tick();
+
+        assertEquals(PickupStage.PAUSED, snapshot.stage());
+        assertEquals("BUFFER_UNAVAILABLE", snapshot.pauseReason().orElseThrow().code());
+    }
+
+    @Test
+    void recoveryFromPackReturnsToClassificationWithoutContainerScreen() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupSite site = support.multiCacheSite();
+        support.navigation.setPosition(support.secondaryCache.position());
+        support.containers.putView(AutomationFakes.view(
+                support.secondaryCache,
+                2,
+                List.of(new ContainerSlot(0, DIAMOND, 1))
+        ));
+        support.checkpoint(
+                PickupStage.PACK,
+                Optional.empty(),
+                Map.of(),
+                Optional.of(support.secondaryCache.id()),
+                1
+        );
+        PickupAutomationEngine engine = support.engineFor(
+                site,
+                List.of(AutomationTestSupport.packingRoute(DIAMOND)),
+                1
+        );
+
+        engine.start();
+
+        assertEquals(PickupStage.CLASSIFY_BUFFER, engine.snapshot().stage());
+        assertTrue(support.containers.observedContainers().isEmpty());
+        assertTrue(support.containers.attempts().isEmpty());
+        assertEquals(PickupStage.PACK, engine.tick().stage());
     }
 
     private AutomationTestSupport depositSupport() {

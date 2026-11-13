@@ -16,7 +16,9 @@ public record AutomationCheckpoint(
         Optional<String> planReference,
         Set<String> observedInputKeys,
         Optional<Instant> idleSince,
-        Map<String, Integer> inventoryBaseline
+        Map<String, Integer> inventoryBaseline,
+        Optional<String> selectedCacheId,
+        int classificationCacheIndex
 ) {
     public AutomationCheckpoint {
         Objects.requireNonNull(taskId, "taskId");
@@ -31,9 +33,33 @@ public record AutomationCheckpoint(
                 inventoryBaseline,
                 "inventoryBaseline"
         ));
+        selectedCacheId = Objects.requireNonNull(selectedCacheId, "selectedCacheId");
+        if (classificationCacheIndex < 0) {
+            throw new IllegalArgumentException("classificationCacheIndex must not be negative");
+        }
         if (stage == PickupStage.PAUSED || stage == PickupStage.FAILED) {
             throw new IllegalArgumentException("checkpoint must store a resumable stage");
         }
+    }
+
+    public AutomationCheckpoint(
+            UUID taskId,
+            PickupStage stage,
+            Optional<String> planReference,
+            Set<String> observedInputKeys,
+            Optional<Instant> idleSince,
+            Map<String, Integer> inventoryBaseline
+    ) {
+        this(
+                taskId,
+                stage,
+                planReference,
+                observedInputKeys,
+                idleSince,
+                inventoryBaseline,
+                Optional.empty(),
+                0
+        );
     }
 
     public AutomationCheckpoint(
@@ -49,7 +75,9 @@ public record AutomationCheckpoint(
                 Optional.empty(),
                 observedInputKeys,
                 idleSince,
-                inventoryBaseline
+                inventoryBaseline,
+                Optional.empty(),
+                0
         );
     }
 }

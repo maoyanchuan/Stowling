@@ -24,6 +24,7 @@ final class ContainerClickConfirmation {
         }
         return switch (pending.type()) {
             case EXTRACT -> extractAmount(pending.itemId(), before, predicted);
+            case QUICK_MOVE -> quickMoveAmount(pending.itemId(), before, predicted);
             case PICK_UP -> pickupAmount(pending.itemId(), before, predicted);
             case PLACE -> placeAmount(pending.itemId(), before, predicted);
             case RETURN_CURSOR -> returnAmount(pending.itemId(), before, predicted);
@@ -37,7 +38,30 @@ final class ContainerClickConfirmation {
     ) {
         int removed = count(before.slot(), itemId) - count(predicted.slot(), itemId);
         int received = predicted.playerItemCount() - before.playerItemCount();
-        return removed > 0 && removed == received ? removed : 0;
+        int containerRemoved = before.containerItemCount()
+                - predicted.containerItemCount();
+        return removed > 0 && removed == received && removed == containerRemoved
+                ? removed
+                : 0;
+    }
+
+    private static int quickMoveAmount(
+            String itemId,
+            Snapshot before,
+            Snapshot predicted
+    ) {
+        int slotRemoved = count(before.slot(), itemId) - count(predicted.slot(), itemId);
+        int playerRemoved = before.playerItemCount() - predicted.playerItemCount();
+        int containerAdded = predicted.containerItemCount()
+                - before.containerItemCount();
+        boolean cursorStayedEmpty = before.carried().count() == 0
+                && predicted.carried().count() == 0;
+        return slotRemoved > 0
+                && slotRemoved == playerRemoved
+                && slotRemoved == containerAdded
+                && cursorStayedEmpty
+                ? slotRemoved
+                : 0;
     }
 
     private static int pickupAmount(
@@ -82,6 +106,7 @@ final class ContainerClickConfirmation {
 
     enum ClickType {
         EXTRACT,
+        QUICK_MOVE,
         PICK_UP,
         PLACE,
         RETURN_CURSOR
@@ -100,13 +125,14 @@ final class ContainerClickConfirmation {
             int menuId,
             StackState slot,
             StackState carried,
-            int playerItemCount
+            int playerItemCount,
+            int containerItemCount
     ) {
         Snapshot {
             slot = Objects.requireNonNull(slot, "slot");
             carried = Objects.requireNonNull(carried, "carried");
-            if (playerItemCount < 0) {
-                throw new IllegalArgumentException("playerItemCount must not be negative");
+            if (playerItemCount < 0 || containerItemCount < 0) {
+                throw new IllegalArgumentException("item counts must not be negative");
             }
         }
     }

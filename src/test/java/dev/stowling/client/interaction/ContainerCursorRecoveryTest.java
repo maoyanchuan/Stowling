@@ -16,16 +16,16 @@ class ContainerCursorRecoveryTest {
     void returnsSixtyThreeItemsBeforeAcknowledgingSingleItemTransfer() {
         ContainerClickConfirmation.Pending pickup = pending(
                 ContainerClickConfirmation.ClickType.PICK_UP,
-                snapshot(stack(STONE, 64), EMPTY, 64),
-                snapshot(EMPTY, stack(STONE, 64), 0)
+                snapshot(stack(STONE, 64), EMPTY, 64, 0),
+                snapshot(EMPTY, stack(STONE, 64), 0, 0)
         );
         ContainerClickConfirmation.Evaluation picked = confirm(pickup);
         assertEquals(64, picked.moved());
 
         ContainerClickConfirmation.Pending placeOne = pending(
                 ContainerClickConfirmation.ClickType.PLACE,
-                snapshot(EMPTY, stack(STONE, 64), 0),
-                snapshot(stack(STONE, 1), stack(STONE, 63), 0)
+                snapshot(EMPTY, stack(STONE, 64), 0, 0),
+                snapshot(stack(STONE, 1), stack(STONE, 63), 0, 1)
         );
         ContainerClickConfirmation.Evaluation placed = confirm(placeOne);
         assertEquals(1, placed.moved());
@@ -42,8 +42,8 @@ class ContainerCursorRecoveryTest {
         assertEquals(12, originSlot);
         ContainerClickConfirmation.Pending returnCursor = pending(
                 ContainerClickConfirmation.ClickType.RETURN_CURSOR,
-                snapshot(EMPTY, stack(STONE, 63), 0),
-                snapshot(stack(STONE, 63), EMPTY, 63)
+                snapshot(EMPTY, stack(STONE, 63), 0, 1),
+                snapshot(stack(STONE, 63), EMPTY, 63, 1)
         );
         ContainerClickConfirmation.Evaluation returned = confirm(returnCursor);
 
@@ -109,9 +109,16 @@ class ContainerCursorRecoveryTest {
     private static ContainerClickConfirmation.Snapshot snapshot(
             ContainerClickConfirmation.StackState slot,
             ContainerClickConfirmation.StackState carried,
-            int playerCount
+            int playerCount,
+            int containerCount
     ) {
-        return new ContainerClickConfirmation.Snapshot(7, slot, carried, playerCount);
+        return new ContainerClickConfirmation.Snapshot(
+                7,
+                slot,
+                carried,
+                playerCount,
+                containerCount
+        );
     }
 
     private static ContainerClickConfirmation.StackState stack(String itemId, int count) {

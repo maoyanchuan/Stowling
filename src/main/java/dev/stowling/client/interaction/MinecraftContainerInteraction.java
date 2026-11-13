@@ -233,6 +233,9 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         if (menu == null || !source.equals(openedContainer)) {
             return pending(attempt, transaction.baselineRevision, "opening source container");
         }
+        if (!transaction.sourceStability.observe(menuSnapshot(menu))) {
+            return pending(attempt, revision(menu), "waiting for source contents to stabilize");
+        }
         transaction.sourceView = view(menu, source);
         transaction.phase = Phase.EXTRACT;
         return pending(attempt, revision(menu), "source container is ready");
@@ -307,6 +310,13 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         if (menu == null || !destination.equals(openedContainer)) {
             return pending(attempt, revisionOrBaseline(menu, transaction), "opening destination");
         }
+        if (!transaction.destinationStability.observe(menuSnapshot(menu))) {
+            return pending(
+                    attempt,
+                    revision(menu),
+                    "waiting for destination contents to stabilize"
+            );
+        }
         transaction.destinationView = view(menu, destination);
         transaction.phase = Phase.PLACE;
         return pending(attempt, revision(menu), "destination container is ready");
@@ -336,6 +346,34 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             return pending(attempt, revision(menu), "returning cursor stack to inventory");
         }
         if (carried.isEmpty()) {
+            int quickMoveSlot = findQuickMovePlayerSlot(
+                    menu,
+                    slots,
+                    transaction.remaining
+            );
+            if (quickMoveSlot >= 0) {
+                ItemStack quickMoveStack = menu.getSlot(quickMoveSlot).getItem();
+                String quickMoveItem = itemId(quickMoveStack);
+                ContainerClickConfirmation.Snapshot before = clickSnapshot(
+                        menu,
+                        quickMoveSlot,
+                        quickMoveItem
+                );
+                click(menu, quickMoveSlot, 0, ContainerInput.QUICK_MOVE);
+                ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
+                        menu,
+                        quickMoveSlot,
+                        quickMoveItem
+                );
+                transaction.pendingClick = new ContainerClickConfirmation.Pending(
+                        ContainerClickConfirmation.ClickType.QUICK_MOVE,
+                        quickMoveItem,
+                        before,
+                        predicted
+                );
+                transaction.pendingSlot = quickMoveSlot;
+                return pending(attempt, revision(menu), "player quick move sent");
+            }
             int picked = pickNextPlayerStack(menu, slots.playerSlots(), transaction.remaining);
             if (picked < 0) {
                 return rejected(attempt, menu, "player inventory lacks the requested quantity");
@@ -457,6 +495,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     private static void applyConfirmedClick(Transaction transaction, int moved) {
         ContainerClickConfirmation.Pending pending = transaction.pendingClick;
         if (pending.type() == ContainerClickConfirmation.ClickType.EXTRACT
+                || pending.type() == ContainerClickConfirmation.ClickType.QUICK_MOVE
                 || pending.type() == ContainerClickConfirmation.ClickType.PLACE) {
             decrement(transaction.remaining, pending.itemId(), moved);
         }
@@ -471,7 +510,22 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 menu.containerId,
                 stackState(menu.getSlot(slot).getItem()),
                 stackState(menu.getCarried()),
-                playerItemCount(menu, itemId)
+                playerItemCount(menu, itemId),
+                containerItemCount(menu, itemId)
+        );
+    }
+
+    private static ContainerMenuStability.Snapshot menuSnapshot(
+            AbstractContainerMenu menu
+    ) {
+        List<ContainerClickConfirmation.StackState> slots = new ArrayList<>();
+        for (Slot slot : menu.slots) {
+            slots.add(stackState(slot.getItem()));
+        }
+        return new ContainerMenuStability.Snapshot(
+                menu.containerId,
+                slots,
+                stackState(menu.getCarried())
         );
     }
 
@@ -484,6 +538,17 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     private static int playerItemCount(AbstractContainerMenu menu, String itemId) {
         int count = 0;
         for (int slot : slotClassification(menu).playerSlots()) {
+            ItemStack stack = menu.getSlot(slot).getItem();
+            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+                count = Math.addExact(count, stack.getCount());
+            }
+        }
+        return count;
+    }
+
+    private static int containerItemCount(AbstractContainerMenu menu, String itemId) {
+        int count = 0;
+        for (int slot : slotClassification(menu).containerSlots()) {
             ItemStack stack = menu.getSlot(slot).getItem();
             if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
                 count = Math.addExact(count, stack.getCount());
@@ -524,6 +589,49 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             }
         }
         return -1;
+    }
+
+    private static int findQuickMovePlayerSlot(
+            AbstractContainerMenu menu,
+            MenuSlotClassification slots,
+            Map<String, Integer> remaining
+    ) {
+        List<ContainerQuickMovePlan.Candidate> candidates = new ArrayList<>();
+        for (int slot : slots.playerSlots()) {
+            ItemStack stack = menu.getSlot(slot).getItem();
+            if (stack.isEmpty()) {
+                continue;
+            }
+            candidates.add(new ContainerQuickMovePlan.Candidate(
+                    slot,
+                    itemId(stack),
+                    stack.getCount(),
+                    destinationCapacity(menu, slots.containerSlots(), stack)
+            ));
+        }
+        return ContainerQuickMovePlan.selectPlayerSlot(candidates, remaining);
+    }
+
+    private static int destinationCapacity(
+            AbstractContainerMenu menu,
+            List<Integer> containerSlots,
+            ItemStack stack
+    ) {
+        int capacity = 0;
+        for (int slot : containerSlots) {
+            Slot candidate = menu.getSlot(slot);
+            if (!candidate.mayPlace(stack)) {
+                continue;
+            }
+            ItemStack existing = candidate.getItem();
+            int maximum = candidate.getMaxStackSize(stack);
+            if (existing.isEmpty()) {
+                capacity = Math.addExact(capacity, maximum);
+            } else if (ItemStack.isSameItemSameComponents(stack, existing)) {
+                capacity = Math.addExact(capacity, Math.max(0, maximum - existing.getCount()));
+            }
+        }
+        return capacity;
     }
 
     private static int findDestinationSlot(
@@ -800,6 +908,9 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         private final ContainerTransfer transfer;
         private final long baselineRevision;
         private final Map<String, Integer> remaining;
+        private final ContainerMenuStability sourceStability = new ContainerMenuStability();
+        private final ContainerMenuStability destinationStability =
+                new ContainerMenuStability();
         private Phase phase;
         private ContainerView sourceView;
         private ContainerView destinationView;

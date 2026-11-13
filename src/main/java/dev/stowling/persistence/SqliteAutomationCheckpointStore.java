@@ -51,8 +51,8 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
                 state,
                 current.createdAt(),
                 current.updatedAt().isAfter(java.time.Instant.now())
-                        ? current.updatedAt()
-                        : java.time.Instant.now(),
+                ? current.updatedAt()
+                : java.time.Instant.now(),
                 current.failureReason()
         );
         tasks.save(new PersistedTask(

@@ -190,8 +190,8 @@ class SqliteInventoryRepositoryTest {
         List<NestedInventoryScope> invalidScopes = List.of(invalid);
         assertThrows(IllegalArgumentException.class,
                 () -> repository.replaceSnapshot(
-                        container, original, PersistenceFixtures.OBSERVED_AT, invalidScopes
-                ));
+                container, original, PersistenceFixtures.OBSERVED_AT, invalidScopes
+        ));
 
         InventorySnapshot loaded = repository.findSnapshot(container.id())
                 .orElseThrow()

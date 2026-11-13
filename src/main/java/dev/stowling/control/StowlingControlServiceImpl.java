@@ -207,10 +207,10 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                     Instant.now(),
                     "UNKNOWN",
                     List.of(new InventoryItemInfo(
-                            aggregate.itemId(),
-                            Math.toIntExact(aggregate.totalCount()),
-                            aggregate.kind().name()
-                    ))
+                    aggregate.itemId(),
+                    Math.toIntExact(aggregate.totalCount()),
+                    aggregate.kind().name()
+            ))
             ));
         }
         return List.copyOf(result);

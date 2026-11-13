@@ -88,8 +88,8 @@ public final class StowlingRuntime implements AutoCloseable {
                 new SqliteAutomationCheckpointStore(tasks);
         BaritoneAutomationNavigation navigation = new BaritoneAutomationNavigation(
                 new dev.stowling.navigation.BaritoneNavigationService(
-                        BaritoneAPI.getProvider()
-                ),
+                BaritoneAPI.getProvider()
+        ),
                 worldObserver
         );
         StowlingControlServiceImpl service = new StowlingControlServiceImpl(
@@ -98,15 +98,15 @@ public final class StowlingRuntime implements AutoCloseable {
                 inventories,
                 inventorySource,
                 plan -> new dev.stowling.automation.PickupAutomationEngine(
-                        plan,
-                        worldObserver,
-                        worldObserver,
-                        navigation,
-                        containers,
-                        request -> PackingDisposition.UNAVAILABLE,
+                plan,
+                worldObserver,
+                worldObserver,
+                navigation,
+                containers,
+                request -> PackingDisposition.UNAVAILABLE,
                         new SystemAutomationClock(),
-                        checkpoints
-                ),
+                checkpoints
+        ),
                 scheduler::execute,
                 () -> configLoader.load(configPath),
                 loaded -> inventories.upsertContainers(allContainers(loaded))

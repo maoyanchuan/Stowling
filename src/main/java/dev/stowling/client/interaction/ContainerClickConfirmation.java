@@ -26,6 +26,7 @@ final class ContainerClickConfirmation {
             case EXTRACT -> extractAmount(pending.itemId(), before, predicted);
             case PICK_UP -> pickupAmount(pending.itemId(), before, predicted);
             case PLACE -> placeAmount(pending.itemId(), before, predicted);
+            case RETURN_CURSOR -> returnAmount(pending.itemId(), before, predicted);
         };
     }
 
@@ -64,6 +65,17 @@ final class ContainerClickConfirmation {
                 : 0;
     }
 
+    private static int returnAmount(
+            String itemId,
+            Snapshot before,
+            Snapshot predicted
+    ) {
+        int carried = count(before.carried(), itemId) - count(predicted.carried(), itemId);
+        int returned = count(predicted.slot(), itemId) - count(before.slot(), itemId);
+        int inventoryAdded = predicted.playerItemCount() - before.playerItemCount();
+        return carried > 0 && carried == returned && carried == inventoryAdded ? carried : 0;
+    }
+
     private static int count(StackState stack, String itemId) {
         return stack.itemId().equals(itemId) ? stack.count() : 0;
     }
@@ -71,7 +83,8 @@ final class ContainerClickConfirmation {
     enum ClickType {
         EXTRACT,
         PICK_UP,
-        PLACE
+        PLACE,
+        RETURN_CURSOR
     }
 
     record StackState(String itemId, int count) {

@@ -203,6 +203,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             case EXTRACT -> extract(attempt, transaction, menu);
             case OPEN_DESTINATION -> openDestination(attempt, transaction);
             case PLACE -> place(attempt, transaction, menu);
+            case RETURN_CURSOR -> returnCursor(attempt, transaction, menu);
         };
     }
 
@@ -263,6 +264,16 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             if (wanted <= 0) {
                 continue;
             }
+            if (!ContainerCursorRecovery.canQuickMoveWholeStack(
+                    stack.getCount(),
+                    wanted
+            )) {
+                return rejected(
+                        attempt,
+                        menu,
+                        "partial source stack extraction is not safely supported"
+                );
+            }
             ContainerClickConfirmation.Snapshot before = clickSnapshot(
                     menu,
                     slotIndex,
@@ -311,19 +322,19 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             prepare(destination);
             return pending(attempt, revision(menu), "destination container is no longer open");
         }
-        if (transaction.remaining.isEmpty()) {
-            ContainerView destinationView = view(menu, destination);
-            transactions.remove(attempt.attemptId());
-            return new ContainerAttemptResult(
-                    ContainerAttemptStatus.ACKNOWLEDGED,
-                    revision(menu),
-                    Optional.ofNullable(transaction.sourceView),
-                    Optional.of(destinationView),
-                    "all requested slots were confirmed by the server"
-            );
-        }
         MenuSlotClassification slots = slotClassification(menu);
         ItemStack carried = menu.getCarried();
+        ContainerCursorRecovery.NextStep nextStep = ContainerCursorRecovery.nextStep(
+                !transaction.remaining.isEmpty(),
+                stackState(carried)
+        );
+        if (nextStep == ContainerCursorRecovery.NextStep.ACKNOWLEDGE) {
+            return acknowledged(attempt, transaction, menu);
+        }
+        if (nextStep == ContainerCursorRecovery.NextStep.RETURN_CURSOR) {
+            transaction.phase = Phase.RETURN_CURSOR;
+            return pending(attempt, revision(menu), "returning cursor stack to inventory");
+        }
         if (carried.isEmpty()) {
             int picked = pickNextPlayerStack(menu, slots.playerSlots(), transaction.remaining);
             if (picked < 0) {
@@ -349,6 +360,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                     predicted
             );
             transaction.pendingSlot = picked;
+            transaction.pickupOriginSlot = picked;
             return pending(attempt, revision(menu), "player stack pickup sent");
         }
         String carriedItem = itemId(carried);
@@ -380,6 +392,66 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         );
         transaction.pendingSlot = destinationSlot;
         return pending(attempt, revision(menu), "destination slot click sent");
+    }
+
+    private ContainerAttemptResult returnCursor(
+            ContainerAttempt attempt,
+            Transaction transaction,
+            AbstractContainerMenu menu
+    ) {
+        ContainerRef destination = transaction.transfer.destination();
+        if (!destination.equals(openedContainer)) {
+            return rejected(attempt, menu, "destination closed before cursor was returned");
+        }
+        ItemStack carried = menu.getCarried();
+        if (carried.isEmpty()) {
+            return acknowledged(attempt, transaction, menu);
+        }
+        String carriedItem = itemId(carried);
+        int returnSlot = findReturnSlot(
+                menu,
+                slotClassification(menu).playerSlots(),
+                transaction.pickupOriginSlot,
+                carried
+        );
+        if (returnSlot < 0) {
+            return rejected(attempt, menu, "player inventory has no slot for cursor stack");
+        }
+        ContainerClickConfirmation.Snapshot before = clickSnapshot(
+                menu,
+                returnSlot,
+                carriedItem
+        );
+        click(menu, returnSlot, 0, ContainerInput.PICKUP);
+        ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
+                menu,
+                returnSlot,
+                carriedItem
+        );
+        transaction.pendingClick = new ContainerClickConfirmation.Pending(
+                ContainerClickConfirmation.ClickType.RETURN_CURSOR,
+                carriedItem,
+                before,
+                predicted
+        );
+        transaction.pendingSlot = returnSlot;
+        return pending(attempt, revision(menu), "cursor return sent");
+    }
+
+    private ContainerAttemptResult acknowledged(
+            ContainerAttempt attempt,
+            Transaction transaction,
+            AbstractContainerMenu menu
+    ) {
+        ContainerView destinationView = view(menu, transaction.transfer.destination());
+        transactions.remove(attempt.attemptId());
+        return new ContainerAttemptResult(
+                ContainerAttemptStatus.ACKNOWLEDGED,
+                revision(menu),
+                Optional.ofNullable(transaction.sourceView),
+                Optional.of(destinationView),
+                "all requested slots and the cursor were confirmed by the server"
+        );
     }
 
     private static void applyConfirmedClick(Transaction transaction, int moved) {
@@ -472,6 +544,31 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             }
         }
         return -1;
+    }
+
+    private static int findReturnSlot(
+            AbstractContainerMenu menu,
+            List<Integer> playerSlots,
+            int originSlot,
+            ItemStack carried
+    ) {
+        List<ContainerCursorRecovery.SlotState> slots = new ArrayList<>();
+        for (int slot : playerSlots) {
+            Slot candidate = menu.getSlot(slot);
+            ItemStack existing = candidate.getItem();
+            slots.add(new ContainerCursorRecovery.SlotState(
+                    slot,
+                    existing.isEmpty() ? "" : itemId(existing),
+                    existing.getCount(),
+                    candidate.getMaxStackSize(carried),
+                    candidate.mayPlace(carried)
+            ));
+        }
+        return ContainerCursorRecovery.selectReturnSlot(
+                slots,
+                originSlot,
+                itemId(carried)
+        );
     }
 
     private void openBlock(ContainerRef container) {
@@ -695,7 +792,8 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         OPEN_SOURCE,
         EXTRACT,
         OPEN_DESTINATION,
-        PLACE
+        PLACE,
+        RETURN_CURSOR
     }
 
     private static final class Transaction {
@@ -707,6 +805,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         private ContainerView destinationView;
         private ContainerClickConfirmation.Pending pendingClick;
         private int pendingSlot = -1;
+        private int pickupOriginSlot = -1;
 
         private Transaction(
                 ContainerTransfer transfer,

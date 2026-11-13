@@ -1,0 +1,260 @@
+package dev.stowling.automation;
+
+import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.PickupSite;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+final class AutomationFakes {
+    private AutomationFakes() {
+    }
+
+    static final class MutableClock implements AutomationClock {
+        private Instant current;
+
+        MutableClock(Instant current) {
+            this.current = current;
+        }
+
+        @Override
+        public Instant now() {
+            return current;
+        }
+
+        void advance(Duration duration) {
+            current = current.plus(duration);
+        }
+    }
+
+    static final class FakeWorldObserver implements WorldObserver {
+        private WorldObservation world;
+        private List<GroundItem> groundItems = List.of();
+        private final Map<String, Set<String>> tags = new HashMap<>();
+
+        FakeWorldObserver(WorldObservation world) {
+            this.world = world;
+        }
+
+        @Override
+        public WorldObservation observeWorld() {
+            return world;
+        }
+
+        @Override
+        public List<GroundItem> observeGroundItems(PickupSite site) {
+            return groundItems;
+        }
+
+        @Override
+        public Set<String> tagsFor(String itemId) {
+            return tags.getOrDefault(itemId, Set.of());
+        }
+
+        void setWorld(WorldObservation world) {
+            this.world = world;
+        }
+
+        void setGroundItems(List<GroundItem> groundItems) {
+            this.groundItems = List.copyOf(groundItems);
+        }
+
+        void setTags(String itemId, Set<String> itemTags) {
+            tags.put(itemId, Set.copyOf(itemTags));
+        }
+    }
+
+    static final class FakeInventory implements PlayerInventoryAdapter {
+        private PlayerInventorySnapshot snapshot;
+
+        FakeInventory(PlayerInventorySnapshot snapshot) {
+            this.snapshot = snapshot;
+        }
+
+        @Override
+        public PlayerInventorySnapshot observe() {
+            return snapshot;
+        }
+
+        void setSnapshot(PlayerInventorySnapshot snapshot) {
+            this.snapshot = snapshot;
+        }
+    }
+
+    static final class FakeNavigation implements NavigationPort {
+        private BlockPosition position;
+        private NavigationStatus startStatus = NavigationStatus.NAVIGATING;
+        private NavigationStatus status = NavigationStatus.ARRIVED;
+        private int cancelCount;
+
+        FakeNavigation(BlockPosition position) {
+            this.position = position;
+        }
+
+        @Override
+        public NavigationStatus start(BlockPosition target) {
+            if (position.equals(target)) {
+                return NavigationStatus.ARRIVED;
+            }
+            return startStatus;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target) {
+            if (position.equals(target)) {
+                return NavigationStatus.ARRIVED;
+            }
+            return status;
+        }
+
+        @Override
+        public void cancel() {
+            cancelCount++;
+        }
+
+        void setPosition(BlockPosition position) {
+            this.position = position;
+        }
+
+        void setStartStatus(NavigationStatus startStatus) {
+            this.startStatus = startStatus;
+        }
+
+        void setStatus(NavigationStatus status) {
+            this.status = status;
+        }
+    }
+
+    static final class FakeContainers implements ContainerInteraction {
+        private final Map<String, ContainerView> views = new HashMap<>();
+        private final Deque<ContainerAttemptResult> results = new ArrayDeque<>();
+        private final List<ContainerAttempt> attempts = new ArrayList<>();
+        private final Instant attemptStartedAt;
+        private int cancelCount;
+
+        FakeContainers(Instant attemptStartedAt) {
+            this.attemptStartedAt = attemptStartedAt;
+        }
+
+        @Override
+        public Optional<ContainerView> observe(ContainerRef container) {
+            return Optional.ofNullable(views.get(container.id()));
+        }
+
+        @Override
+        public ContainerAttempt begin(ContainerTransfer transfer, long baselineRevision) {
+            ContainerAttempt attempt = new ContainerAttempt(
+                    "attempt-" + attempts.size(),
+                    transfer,
+                    baselineRevision,
+                    attemptStartedAt
+            );
+            attempts.add(attempt);
+            return attempt;
+        }
+
+        @Override
+        public ContainerAttemptResult poll(ContainerAttempt attempt) {
+            if (results.isEmpty()) {
+                return new ContainerAttemptResult(
+                        ContainerAttemptStatus.PENDING,
+                        attempt.baselineRevision(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        "awaiting server acknowledgement"
+                );
+            }
+            return results.removeFirst();
+        }
+
+        @Override
+        public void cancel(ContainerAttempt attempt) {
+            cancelCount++;
+        }
+
+        void putView(ContainerView view) {
+            views.put(view.containerId(), view);
+        }
+
+        void addResult(ContainerAttemptResult result) {
+            results.addLast(result);
+        }
+
+        List<ContainerAttempt> attempts() {
+            return List.copyOf(attempts);
+        }
+    }
+
+    static final class FakePacking implements PackingPort {
+        private PackingDisposition disposition = PackingDisposition.ACCEPTED;
+        private final List<PackingRequest> requests = new ArrayList<>();
+
+        @Override
+        public PackingDisposition submit(PackingRequest request) {
+            requests.add(request);
+            return disposition;
+        }
+
+        void setDisposition(PackingDisposition disposition) {
+            this.disposition = disposition;
+        }
+
+        List<PackingRequest> requests() {
+            return List.copyOf(requests);
+        }
+    }
+
+    static ContainerView view(
+            ContainerRef container,
+            long revision,
+            List<ContainerSlot> slots
+    ) {
+        return new ContainerView(
+                container.id(),
+                container.dimension(),
+                revision,
+                container.type() == dev.stowling.domain.ContainerType.SHULKER_BOX ? 27 : 54,
+                slots
+        );
+    }
+
+    static ContainerAttemptResult acknowledged(
+            ContainerRef destination,
+            long revision,
+            List<ContainerSlot> slots
+    ) {
+        return new ContainerAttemptResult(
+                ContainerAttemptStatus.ACKNOWLEDGED,
+                revision,
+                Optional.empty(),
+                Optional.of(view(destination, revision, slots)),
+                "server revision and slots confirmed"
+        );
+    }
+
+    static PlayerInventorySnapshot emptyInventory() {
+        return new PlayerInventorySnapshot(36, List.of());
+    }
+
+    static PlayerInventorySnapshot inventory(String itemId, int count) {
+        return new PlayerInventorySnapshot(
+                36,
+                List.of(new PlayerInventorySlot(0, itemId, count))
+        );
+    }
+
+    static Set<String> keys(String value) {
+        Set<String> result = new HashSet<>();
+        result.add(value);
+        return Set.copyOf(result);
+    }
+}

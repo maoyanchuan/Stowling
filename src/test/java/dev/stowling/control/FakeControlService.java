@@ -1,5 +1,6 @@
 package dev.stowling.control;
 
+import dev.stowling.config.ConfigRevisionConflictException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,9 @@ public final class FakeControlService implements StowlingControlService {
     private final AtomicBoolean paused = new AtomicBoolean();
     private final AtomicInteger calls = new AtomicInteger();
     private volatile boolean failStatus;
+    private volatile boolean activePickup;
+    private volatile String coordinateRevision = "revision-1";
+    private volatile ContainerPosition coordinatePosition = new ContainerPosition(1, -44, 4);
 
     public FakeControlService() {
         tasks.put(TASK_ID, task(TASK_ID, "RUNNING"));
@@ -65,6 +69,7 @@ public final class FakeControlService implements StowlingControlService {
         UUID id = UUID.fromString("22222222-2222-2222-2222-222222222222");
         TaskInfo task = task(id, "PENDING");
         tasks.put(id, task);
+        activePickup = true;
         return task;
     }
 
@@ -77,6 +82,7 @@ public final class FakeControlService implements StowlingControlService {
         }
         TaskInfo cancelled = task(taskId, "CANCELLED");
         tasks.put(taskId, cancelled);
+        activePickup = false;
         return cancelled;
     }
 
@@ -134,6 +140,52 @@ public final class FakeControlService implements StowlingControlService {
     public ConfigReloadResult reloadConfig() {
         calls.incrementAndGet();
         return new ConfigReloadResult(true, NOW);
+    }
+
+    @Override
+    public ConfigCoordinatesSnapshot configCoordinates() {
+        calls.incrementAndGet();
+        return coordinateSnapshot();
+    }
+
+    @Override
+    public ConfigCoordinatesSnapshot updateConfigCoordinates(
+            ConfigCoordinatesUpdateRequest request
+    ) {
+        calls.incrementAndGet();
+        if (activePickup) {
+            throw new ActiveTaskConflictException();
+        }
+        if (!coordinateRevision.equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        if (request.coordinates().isEmpty()) {
+            throw new InvalidConfigCoordinatesException("Coordinate keys are missing");
+        }
+        if (request.coordinates().size() > 1) {
+            throw new InvalidConfigCoordinatesException("Duplicate coordinate key");
+        }
+        ConfigCoordinateUpdate update = request.coordinates().getFirst();
+        if (!"pickup-site/north/center".equals(update.key())) {
+            throw new InvalidConfigCoordinatesException("Unknown coordinate key");
+        }
+        coordinatePosition = new ContainerPosition(update.x(), update.y(), update.z());
+        coordinateRevision = "revision-2";
+        return coordinateSnapshot();
+    }
+
+    private ConfigCoordinatesSnapshot coordinateSnapshot() {
+        return new ConfigCoordinatesSnapshot(
+                coordinateRevision,
+                List.of(new ConfigCoordinateInfo(
+                        "pickup-site/north/center",
+                        "PICKUP_SITE_CENTER",
+                        "north",
+                        "Pickup site north",
+                        "minecraft:overworld",
+                        coordinatePosition
+                ))
+        );
     }
 
     private static TaskInfo task(UUID id, String status) {

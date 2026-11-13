@@ -6,7 +6,11 @@ import dev.stowling.automation.PickupAutomationEngine;
 import dev.stowling.automation.PickupAutomationPlan;
 import dev.stowling.automation.PickupStage;
 import dev.stowling.config.ConfigValidator;
+import dev.stowling.config.ConfigFileSnapshot;
+import dev.stowling.config.ConfigFileStore;
+import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.StowlingConfig;
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PickupSite;
@@ -31,7 +35,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -53,6 +59,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     private final Consumer<Runnable> clientExecutor;
     private final Supplier<StowlingConfig> configReloader;
     private final Consumer<StowlingConfig> configActivated;
+    private final ConfigFileStore configFileStore;
 
     private StowlingConfig config;
     private ActivePickup activePickup;
@@ -66,7 +73,8 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             PickupRuntimeFactory pickupFactory,
             Consumer<Runnable> clientExecutor,
             Supplier<StowlingConfig> configReloader,
-            Consumer<StowlingConfig> configActivated
+            Consumer<StowlingConfig> configActivated,
+            ConfigFileStore configFileStore
     ) {
         this.config = Objects.requireNonNull(config, "config");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
@@ -76,6 +84,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         this.clientExecutor = Objects.requireNonNull(clientExecutor, "clientExecutor");
         this.configReloader = Objects.requireNonNull(configReloader, "configReloader");
         this.configActivated = Objects.requireNonNull(configActivated, "configActivated");
+        this.configFileStore = Objects.requireNonNull(configFileStore, "configFileStore");
     }
 
     @Override
@@ -280,6 +289,35 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return new ConfigReloadResult(true, Instant.now());
     }
 
+    @Override
+    public synchronized ConfigCoordinatesSnapshot configCoordinates() {
+        return toCoordinateSnapshot(configFileStore.read());
+    }
+
+    @Override
+    public synchronized ConfigCoordinatesSnapshot updateConfigCoordinates(
+            ConfigCoordinatesUpdateRequest request
+    ) {
+        Objects.requireNonNull(request, "request");
+        if (activePickup != null) {
+            throw new ActiveTaskConflictException();
+        }
+        ConfigFileSnapshot current = configFileStore.read();
+        if (!current.revision().equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        List<ConfigCoordinateInfo> currentCoordinates = coordinateInfos(current.config());
+        Map<String, BlockPosition> updates = validateCoordinateUpdates(
+                currentCoordinates,
+                request.coordinates()
+        );
+        StowlingConfig updated = withCoordinates(current.config(), updates);
+        ConfigFileSnapshot saved = configFileStore.save(request.revision(), updated);
+        configActivated.accept(saved.config());
+        config = saved.config();
+        return toCoordinateSnapshot(saved);
+    }
+
     public synchronized void tickOnClientThread() {
         if (paused || activePickup == null) {
             return;
@@ -444,6 +482,185 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             result.add(station.productContainer());
         }
         return List.copyOf(result);
+    }
+
+    private static ConfigCoordinatesSnapshot toCoordinateSnapshot(ConfigFileSnapshot snapshot) {
+        return new ConfigCoordinatesSnapshot(
+                snapshot.revision(),
+                coordinateInfos(snapshot.config())
+        );
+    }
+
+    private static List<ConfigCoordinateInfo> coordinateInfos(StowlingConfig config) {
+        LinkedHashMap<String, ConfigCoordinateInfo> result = new LinkedHashMap<>();
+        for (PickupSite site : config.pickupSites()) {
+            String key = "pickup-site/" + site.id() + "/center";
+            result.put(key, coordinateInfo(
+                    key,
+                    "PICKUP_SITE_CENTER",
+                    site.id(),
+                    "Pickup site " + site.id(),
+                    site.dimension(),
+                    site.center()
+            ));
+            for (ContainerRef container : site.cacheContainers()) {
+                registerContainer(result, container, "Cache container " + container.id());
+            }
+        }
+        for (StorageRoute route : config.storageRoutes()) {
+            ContainerRef container = route.bulkContainer();
+            registerContainer(result, container, "Storage container " + container.id());
+        }
+        for (PackingStation station : config.packingStations()) {
+            String key = "packing-station/" + station.id() + "/shulker-box";
+            result.put(key, coordinateInfo(
+                    key,
+                    "PACKING_STATION_SHULKER_BOX",
+                    station.id(),
+                    "Packing station " + station.id(),
+                    station.dimension(),
+                    station.shulkerBoxPosition()
+            ));
+            ContainerRef container = station.productContainer();
+            registerContainer(result, container, "Product container " + container.id());
+        }
+        ContainerRef overflow = config.overflowContainer();
+        registerContainer(result, overflow, "Overflow container " + overflow.id());
+        return List.copyOf(result.values());
+    }
+
+    private static void registerContainer(
+            Map<String, ConfigCoordinateInfo> coordinates,
+            ContainerRef container,
+            String label
+    ) {
+        String key = "container/" + container.id();
+        coordinates.putIfAbsent(key, coordinateInfo(
+                key,
+                "CONTAINER",
+                container.id(),
+                label,
+                container.dimension(),
+                container.position()
+        ));
+    }
+
+    private static ConfigCoordinateInfo coordinateInfo(
+            String key,
+            String kind,
+            String ownerId,
+            String label,
+            String dimension,
+            BlockPosition position
+    ) {
+        return new ConfigCoordinateInfo(
+                key,
+                kind,
+                ownerId,
+                label,
+                dimension,
+                new ContainerPosition(position.x(), position.y(), position.z())
+        );
+    }
+
+    private static Map<String, BlockPosition> validateCoordinateUpdates(
+            List<ConfigCoordinateInfo> current,
+            List<ConfigCoordinateUpdate> requested
+    ) {
+        Set<String> expectedKeys = new HashSet<>();
+        for (ConfigCoordinateInfo coordinate : current) {
+            expectedKeys.add(coordinate.key());
+        }
+        Map<String, BlockPosition> updates = new LinkedHashMap<>();
+        for (ConfigCoordinateUpdate update : requested) {
+            if (!expectedKeys.contains(update.key())) {
+                throw new InvalidConfigCoordinatesException(
+                        "Unknown coordinate key: " + update.key()
+                );
+            }
+            BlockPosition previous = updates.putIfAbsent(
+                    update.key(),
+                    new BlockPosition(update.x(), update.y(), update.z())
+            );
+            if (previous != null) {
+                throw new InvalidConfigCoordinatesException(
+                        "Duplicate coordinate key: " + update.key()
+                );
+            }
+        }
+        if (!updates.keySet().equals(expectedKeys)) {
+            throw new InvalidConfigCoordinatesException("Coordinate keys are missing");
+        }
+        return Map.copyOf(updates);
+    }
+
+    private static StowlingConfig withCoordinates(
+            StowlingConfig source,
+            Map<String, BlockPosition> updates
+    ) {
+        List<PickupSite> pickupSites = new ArrayList<>();
+        for (PickupSite site : source.pickupSites()) {
+            List<ContainerRef> caches = new ArrayList<>();
+            for (ContainerRef container : site.cacheContainers()) {
+                caches.add(withCoordinates(container, updates));
+            }
+            pickupSites.add(new PickupSite(
+                    site.id(),
+                    site.dimension(),
+                    updates.get("pickup-site/" + site.id() + "/center"),
+                    site.radius(),
+                    caches,
+                    site.idleDelay()
+            ));
+        }
+        List<StorageRoute> routes = new ArrayList<>();
+        for (StorageRoute route : source.storageRoutes()) {
+            routes.add(new StorageRoute(
+                    route.id(),
+                    route.itemIds(),
+                    route.itemTags(),
+                    route.priority(),
+                    withCoordinates(route.bulkContainer(), updates),
+                    route.packingThresholdMode(),
+                    route.packingThreshold(),
+                    route.packingStationIds()
+            ));
+        }
+        List<PackingStation> stations = new ArrayList<>();
+        for (PackingStation station : source.packingStations()) {
+            String key = "packing-station/" + station.id() + "/shulker-box";
+            stations.add(new PackingStation(
+                    station.id(),
+                    station.dimension(),
+                    updates.get(key),
+                    withCoordinates(station.productContainer(), updates),
+                    station.completionTrigger(),
+                    station.completionThreshold()
+            ));
+        }
+        StowlingConfig updated = new StowlingConfig(
+                source.schemaVersion(),
+                source.defaultIdleDelay(),
+                pickupSites,
+                routes,
+                stations,
+                source.auditSchedules(),
+                withCoordinates(source.overflowContainer(), updates)
+        );
+        ConfigValidator.requireValid(updated);
+        return updated;
+    }
+
+    private static ContainerRef withCoordinates(
+            ContainerRef container,
+            Map<String, BlockPosition> updates
+    ) {
+        return new ContainerRef(
+                container.id(),
+                container.dimension(),
+                updates.get("container/" + container.id()),
+                container.type()
+        );
     }
 
     private static boolean isTerminal(PickupStage stage) {

@@ -356,6 +356,84 @@ select:disabled {
     max-width: 570px;
 }
 
+.coordinate-help {
+    margin-bottom: 0.8rem;
+}
+
+.coordinate-groups {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.coordinate-group {
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.38);
+}
+
+.coordinate-group h3 {
+    margin: 0 0 0.65rem;
+    font-size: 0.9rem;
+}
+
+.coordinate-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.coordinate-row {
+    display: grid;
+    grid-template-columns: minmax(210px, 1.4fr) repeat(3, minmax(80px, 0.45fr));
+    align-items: end;
+    gap: 0.55rem;
+    padding: 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.coordinate-identity strong,
+.coordinate-identity span {
+    display: block;
+}
+
+.coordinate-identity strong {
+    margin-bottom: 0.25rem;
+    font-size: 0.84rem;
+}
+
+.coordinate-identity span {
+    overflow-wrap: anywhere;
+    color: var(--muted);
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 0.68rem;
+    line-height: 1.45;
+}
+
+.coordinate-axis label {
+    margin-bottom: 0.25rem;
+}
+
+.coordinate-axis input {
+    padding: 0.58rem 0.62rem;
+}
+
+.coordinate-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+.coordinate-footer .dirty {
+    color: var(--warning);
+    font-weight: 700;
+}
+
 .card-list,
 .inventory-list {
     display: grid;
@@ -576,6 +654,19 @@ select:disabled {
     .status-grid {
         grid-template-columns: 1fr;
     }
+
+    .coordinate-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .coordinate-row {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .coordinate-identity {
+        grid-column: 1 / -1;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -606,8 +697,11 @@ select:disabled {
     }
 
     input,
+    select,
     .metric,
     .task-card,
+    .coordinate-group,
+    .coordinate-row,
     .container-option,
     .inventory-card {
         background: rgba(255, 255, 255, 0.035);

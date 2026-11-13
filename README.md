@@ -85,6 +85,12 @@ The pickup selector automatically lists each configured `pickupSites` ID with it
 coordinates, so coordinates are never entered in place of a site ID. Status data refreshes
 every 10 seconds, and an expired token prompts for re-entry.
 
+The **Coordinate configuration** panel permanently edits every supported coordinate in
+`config/stowling.json`. Only X, Y, and Z are editable. **Save all coordinates** validates
+the complete configuration, writes through an atomic replacement, and keeps the previous
+file as `config/stowling.json.bak`. Saving is blocked while a pickup task is active. If the
+file was edited externally, use **Discard changes / reload** before trying again.
+
 The page is available only through the loopback listener. Static assets load without a
 token, while every `/v1/*` API request still requires the correct Bearer token.
 

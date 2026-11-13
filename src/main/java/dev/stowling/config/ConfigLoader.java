@@ -9,9 +9,13 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.Set;
 
 public final class ConfigLoader {
@@ -25,8 +29,17 @@ public final class ConfigLoader {
             "overflowContainer"
     );
     private final Gson gson;
+    private final AtomicFileReplacer atomicFileReplacer;
 
     public ConfigLoader() {
+        this(ConfigLoader::replaceAtomically);
+    }
+
+    ConfigLoader(AtomicFileReplacer atomicFileReplacer) {
+        this.atomicFileReplacer = Objects.requireNonNull(
+                atomicFileReplacer,
+                "atomicFileReplacer"
+        );
         this.gson = new GsonBuilder()
                 .registerTypeAdapter(Duration.class, new DurationJsonAdapter())
                 .setPrettyPrinting()
@@ -81,6 +94,67 @@ public final class ConfigLoader {
         } catch (IOException exception) {
             throw new ConfigLoadException("Unable to write config: " + path, exception);
         }
+    }
+
+    public void writeAtomicWithBackup(Path path, StowlingConfig config) {
+        ConfigValidator.requireValid(config);
+        Path target = path.toAbsolutePath();
+        Path parent = target.getParent();
+        Path backup = target.resolveSibling(target.getFileName() + ".bak");
+        Path temporary = null;
+        try {
+            Files.createDirectories(parent);
+            temporary = Files.createTempFile(parent, target.getFileName() + ".", ".tmp");
+            Files.writeString(
+                    temporary,
+                    gson.toJson(config),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            );
+            if (Files.isRegularFile(target)) {
+                Files.copy(
+                        target,
+                        backup,
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.COPY_ATTRIBUTES
+                );
+            }
+            atomicFileReplacer.replace(temporary, target);
+            temporary = null;
+        } catch (IOException exception) {
+            throw new ConfigLoadException("Unable to atomically write config: " + path, exception);
+        } finally {
+            deleteTemporaryFile(temporary);
+        }
+    }
+
+    private static void replaceAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(
+                    source,
+                    target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        } catch (AtomicMoveNotSupportedException exception) {
+            throw new IOException("Atomic config replacement is not supported", exception);
+        }
+    }
+
+    private static void deleteTemporaryFile(Path temporary) {
+        if (temporary == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(temporary);
+        } catch (IOException ignored) {
+            // The original configuration remains intact even if temporary cleanup fails.
+        }
+    }
+
+    @FunctionalInterface
+    interface AtomicFileReplacer {
+        void replace(Path source, Path target) throws IOException;
     }
 
     private static void requireObject(JsonElement element) {

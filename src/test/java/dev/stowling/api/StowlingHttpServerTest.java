@@ -39,7 +39,7 @@ class StowlingHttpServerTest {
                 InetAddress.getByName("127.0.0.1"),
                 0
         );
-        server = new StowlingHttpServer(address, service, TOKEN, 128);
+        server = new StowlingHttpServer(address, service, TOKEN, 4096);
         server.start();
         baseUri = URI.create("http://127.0.0.1:" + server.localAddress().getPort());
     }
@@ -69,6 +69,8 @@ class StowlingHttpServerTest {
                 new ApiCall("GET", "/v1/status", null),
                 new ApiCall("GET", "/v1/tasks", null),
                 new ApiCall("GET", "/v1/pickup-sites", null),
+                new ApiCall("GET", "/v1/config/coordinates", null),
+                new ApiCall("PUT", "/v1/config/coordinates", coordinateUpdate("revision-1")),
                 new ApiCall("POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}"),
                 new ApiCall("POST", cancelPath, null),
                 new ApiCall("POST", "/v1/audits", "{\"containerIds\":[]}"),
@@ -110,8 +112,10 @@ class StowlingHttpServerTest {
         assertTrue(script.body().contains("sessionStorage"));
         assertTrue(script.body().contains("/v1/pickup-sites"));
         assertTrue(script.body().contains("pickup_site_not_found"));
+        assertTrue(script.body().contains("/v1/config/coordinates"));
         assertTrue(script.body().contains("配置中找不到这个拾取点"));
         assertTrue(page.body().contains("<select id=\"site-select\""));
+        assertTrue(page.body().contains("id=\"coordinates-panel\""));
         assertFalse(page.body().contains("id=\"site-input\""));
         assertFalse(script.body().contains("localStorage"));
         assertTrue(styles.body().contains("@media (max-width: 760px)"));
@@ -188,6 +192,8 @@ class StowlingHttpServerTest {
         assertStatus(200, "GET", "/v1/status", null);
         assertStatus(200, "GET", "/v1/tasks", null);
         assertStatus(200, "GET", "/v1/pickup-sites", null);
+        assertStatus(200, "GET", "/v1/config/coordinates", null);
+        assertStatus(200, "PUT", "/v1/config/coordinates", coordinateUpdate("revision-1"));
         assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
         assertStatus(
                 200,
@@ -201,6 +207,112 @@ class StowlingHttpServerTest {
         assertStatus(200, "POST", "/v1/pause", null);
         assertStatus(200, "POST", "/v1/resume", null);
         assertStatus(200, "POST", "/v1/config/reload", null);
+    }
+
+    @Test
+    void readsAndSavesCoordinateConfiguration() throws Exception {
+        HttpResponse<String> read = send(
+                "GET",
+                "/v1/config/coordinates",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> saved = send(
+                "PUT",
+                "/v1/config/coordinates",
+                coordinateUpdate("revision-1"),
+                TOKEN
+        );
+
+        assertEquals(200, read.statusCode());
+        assertTrue(read.body().contains("\"revision\":\"revision-1\""));
+        assertTrue(read.body().contains("\"key\":\"pickup-site/north/center\""));
+        assertTrue(read.body().contains("\"position\":{\"x\":1,\"y\":-44,\"z\":4}"));
+        assertEquals(200, saved.statusCode());
+        assertTrue(saved.body().contains("\"revision\":\"revision-2\""));
+        assertTrue(saved.body().contains("\"position\":{\"x\":2,\"y\":-43,\"z\":5}"));
+    }
+
+    @Test
+    void rejectsStrictCoordinateJsonViolations() throws Exception {
+        String unknownBody = coordinateUpdate("revision-1").replace(
+                "pickup-site/north/center",
+                "unknown"
+        );
+        String duplicateBody = "{\"revision\":\"revision-1\",\"coordinates\":["
+                + "{\"key\":\"pickup-site/north/center\",\"x\":2,\"y\":-43,\"z\":5},"
+                + "{\"key\":\"pickup-site/north/center\",\"x\":2,\"y\":-43,\"z\":5}]}";
+        HttpResponse<String> extra = send(
+                "PUT",
+                "/v1/config/coordinates",
+                coordinateUpdate("revision-1").replace("\"z\":5", "\"z\":5,\"type\":\"x\""),
+                TOKEN
+        );
+        HttpResponse<String> missing = send(
+                "PUT",
+                "/v1/config/coordinates",
+                coordinateUpdate("revision-1").replace(",\"z\":5", ""),
+                TOKEN
+        );
+        HttpResponse<String> decimal = send(
+                "PUT",
+                "/v1/config/coordinates",
+                coordinateUpdate("revision-1").replace("\"x\":2", "\"x\":2.5"),
+                TOKEN
+        );
+        HttpResponse<String> unknown = send(
+                "PUT",
+                "/v1/config/coordinates",
+                unknownBody,
+                TOKEN
+        );
+        HttpResponse<String> duplicateKey = send(
+                "PUT",
+                "/v1/config/coordinates",
+                duplicateBody,
+                TOKEN
+        );
+        HttpResponse<String> missingKey = send(
+                "PUT",
+                "/v1/config/coordinates",
+                "{\"revision\":\"revision-1\",\"coordinates\":[]}",
+                TOKEN
+        );
+
+        assertEquals(400, extra.statusCode());
+        assertEquals(400, missing.statusCode());
+        assertEquals(400, decimal.statusCode());
+        assertEquals(400, unknown.statusCode());
+        assertEquals(400, duplicateKey.statusCode());
+        assertEquals(400, missingKey.statusCode());
+        assertTrue(extra.body().contains("Unknown JSON field"));
+        assertTrue(missing.body().contains("Missing JSON field: z"));
+        assertTrue(decimal.body().contains("x must be an integer"));
+        assertTrue(unknown.body().contains("invalid_config_coordinates"));
+        assertTrue(duplicateKey.body().contains("Duplicate coordinate key"));
+        assertTrue(missingKey.body().contains("Coordinate keys are missing"));
+    }
+
+    @Test
+    void reportsCoordinateRevisionAndActiveTaskConflicts() throws Exception {
+        HttpResponse<String> revision = send(
+                "PUT",
+                "/v1/config/coordinates",
+                coordinateUpdate("stale"),
+                TOKEN
+        );
+        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
+        HttpResponse<String> active = send(
+                "PUT",
+                "/v1/config/coordinates",
+                coordinateUpdate("revision-1"),
+                TOKEN
+        );
+
+        assertEquals(409, revision.statusCode());
+        assertTrue(revision.body().contains("\"code\":\"config_revision_conflict\""));
+        assertEquals(409, active.statusCode());
+        assertTrue(active.body().contains("\"code\":\"active_task_conflict\""));
     }
 
     @Test
@@ -270,7 +382,7 @@ class StowlingHttpServerTest {
 
     @Test
     void rejectsOversizedBodies() throws Exception {
-        String body = "{\"siteId\":\"" + "a".repeat(200) + "\"}";
+        String body = "{\"siteId\":\"" + "a".repeat(5000) + "\"}";
 
         HttpResponse<String> response = send(
                 "POST",
@@ -287,10 +399,21 @@ class StowlingHttpServerTest {
     @Test
     void reportsMethodErrorsWithAllowHeader() throws Exception {
         HttpResponse<String> response = send("POST", "/v1/status", null, TOKEN);
+        HttpResponse<String> coordinates = send(
+                "POST",
+                "/v1/config/coordinates",
+                null,
+                TOKEN
+        );
 
         assertEquals(405, response.statusCode());
         assertEquals("GET", response.headers().firstValue("Allow").orElseThrow());
         assertTrue(response.body().contains("\"code\":\"method_not_allowed\""));
+        assertEquals(405, coordinates.statusCode());
+        assertEquals(
+                "GET, PUT",
+                coordinates.headers().firstValue("Allow").orElseThrow()
+        );
     }
 
     @Test
@@ -432,6 +555,12 @@ class StowlingHttpServerTest {
                 .header("Content-Type", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString(body))
                 .build();
+    }
+
+    private static String coordinateUpdate(String revision) {
+        return "{\"revision\":\"" + revision + "\",\"coordinates\":[{"
+                + "\"key\":\"pickup-site/north/center\","
+                + "\"x\":2,\"y\":-43,\"z\":5}]}";
     }
 
     private record ApiCall(String method, String path, String body) {

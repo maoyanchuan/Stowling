@@ -13,6 +13,7 @@ import dev.stowling.client.interaction.MinecraftPackingStationPort;
 import dev.stowling.client.interaction.MinecraftWorldObserver;
 import dev.stowling.client.interaction.ScreenInventorySource;
 import dev.stowling.config.ConfigLoader;
+import dev.stowling.config.ConfigFileStore;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.control.PickupRuntimeFactory;
 import dev.stowling.control.StowlingControlServiceImpl;
@@ -129,7 +130,8 @@ public final class StowlingRuntime implements AutoCloseable {
                 pickupFactory,
                 scheduler::execute,
                 () -> configLoader.load(configPath),
-                loaded -> inventories.upsertContainers(allContainers(loaded))
+                loaded -> inventories.upsertContainers(allContainers(loaded)),
+                new ConfigFileStore(configPath, configLoader)
         );
 
         int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);

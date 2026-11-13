@@ -112,6 +112,37 @@
                 </form>
             </section>
 
+            <section id="coordinates-panel" class="panel wide"
+                     aria-labelledby="coordinates-title">
+                <div class="panel-heading coordinate-heading">
+                    <div>
+                        <p class="eyebrow">永久配置</p>
+                        <h2 id="coordinates-title">坐标配置</h2>
+                    </div>
+                    <div class="action-row">
+                        <button id="coordinates-discard" class="secondary compact"
+                                type="button">
+                            放弃修改/重新读取
+                        </button>
+                        <button id="coordinates-save" class="primary compact"
+                                type="submit" form="coordinates-form" disabled>
+                            保存全部坐标
+                        </button>
+                    </div>
+                </div>
+                <p class="muted coordinate-help">
+                    这里只能修改 X、Y、Z。保存会永久写入
+                    <code>config/stowling.json</code>，并备份旧版本。
+                </p>
+                <form id="coordinates-form">
+                    <div id="coordinates-list" class="coordinate-groups"></div>
+                </form>
+                <div class="coordinate-footer">
+                    <span id="coordinates-status">尚未读取坐标</span>
+                    <code id="coordinates-revision">revision: --</code>
+                </div>
+            </section>
+
             <section class="panel wide" aria-labelledby="tasks-title">
                 <div class="panel-heading">
                     <div>

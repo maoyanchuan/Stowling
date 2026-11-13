@@ -2,12 +2,19 @@ package dev.stowling.control;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.config.ConfigFileStore;
+import dev.stowling.config.ConfigLoader;
+import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.PackingStation;
+import dev.stowling.domain.PackingTrigger;
 import dev.stowling.domain.PickupSite;
+import dev.stowling.domain.StorageRoute;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryFreshness;
 import dev.stowling.inventory.InventoryItem;
@@ -24,7 +31,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -72,6 +81,131 @@ class StowlingControlServiceImplTest {
     }
 
     @Test
+    void savesEveryCoordinateAndUpdatesReusedContainersInFileAndMemory() {
+        ContainerRef shared = container("shared", 8);
+        ContainerRef product = container("product", 30);
+        ContainerRef overflow = container("overflow", 40);
+        PickupSite site = new PickupSite(
+                "farm",
+                DIMENSION,
+                new BlockPosition(1, 64, 2),
+                16,
+                shared,
+                Duration.ZERO
+        );
+        StorageRoute route = new StorageRoute(
+                "stone",
+                List.of("minecraft:stone"),
+                List.of(),
+                1,
+                shared,
+                PackingTrigger.ON_ITEM_COUNT,
+                null,
+                List.of()
+        );
+        PackingStation station = new PackingStation(
+                "packer",
+                DIMENSION,
+                new BlockPosition(20, 64, 0),
+                product,
+                PackingTrigger.ON_ITEM_COUNT,
+                64
+        );
+        StowlingConfig config = new StowlingConfig(
+                1,
+                Duration.ZERO,
+                List.of(site),
+                List.of(route),
+                List.of(station),
+                List.of(),
+                overflow
+        );
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("coordinates.json");
+        loader.write(configPath, config);
+        AtomicReference<StowlingConfig> activated = new AtomicReference<>();
+        StowlingControlServiceImpl service = service(
+                config,
+                source(capture(shared)),
+                new ConfigFileStore(configPath, loader),
+                activated::set
+        );
+        ConfigCoordinatesSnapshot before = service.configCoordinates();
+        Set<String> keys = before.coordinates().stream()
+                .map(ConfigCoordinateInfo::key)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of(
+                "pickup-site/farm/center",
+                "container/shared",
+                "packing-station/packer/shulker-box",
+                "container/product",
+                "container/overflow"
+        ), keys);
+        List<ConfigCoordinateUpdate> updates = before.coordinates().stream()
+                .map(StowlingControlServiceImplTest::movedUpdate)
+                .toList();
+
+        ConfigCoordinatesSnapshot saved = service.updateConfigCoordinates(
+                new ConfigCoordinatesUpdateRequest(before.revision(), updates)
+        );
+
+        StowlingConfig disk = loader.load(configPath);
+        assertEquals(new BlockPosition(108, 65, -10), disk.pickupSites()
+                .getFirst().cacheContainer().position());
+        assertEquals(
+                disk.pickupSites().getFirst().cacheContainer(),
+                disk.storageRoutes().getFirst().bulkContainer()
+        );
+        assertEquals(disk, activated.get());
+        assertEquals(101, service.pickupSites().getFirst().center().x());
+        assertTrue(service.containers().stream().anyMatch(container ->
+                container.id().equals("shared") && container.position().x() == 108));
+        assertTrue(saved.revision().matches("[0-9a-f]{64}"));
+        assertTrue(java.nio.file.Files.isRegularFile(
+                tempDir.resolve("coordinates.json.bak")
+        ));
+    }
+
+    @Test
+    void rejectsExternallyModifiedConfigRevision() {
+        ContainerRef cache = container("cache", 0);
+        ContainerRef overflow = container("overflow", 10);
+        StowlingConfig config = config(cache, overflow);
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("revision.json");
+        loader.write(configPath, config);
+        StowlingControlServiceImpl service = service(
+                config,
+                source(capture(cache)),
+                new ConfigFileStore(configPath, loader),
+                ignored -> {
+                }
+        );
+        ConfigCoordinatesSnapshot snapshot = service.configCoordinates();
+        loader.write(configPath, new StowlingConfig(
+                config.schemaVersion(),
+                Duration.ofSeconds(5),
+                config.pickupSites(),
+                config.storageRoutes(),
+                config.packingStations(),
+                config.auditSchedules(),
+                config.overflowContainer()
+        ));
+        List<ConfigCoordinateUpdate> unchanged = snapshot.coordinates().stream()
+                .map(StowlingControlServiceImplTest::unchangedUpdate)
+                .toList();
+        ConfigCoordinatesUpdateRequest request = new ConfigCoordinatesUpdateRequest(
+                snapshot.revision(),
+                unchanged
+        );
+
+        assertThrows(
+                ConfigRevisionConflictException.class,
+                () -> service.updateConfigCoordinates(request)
+        );
+    }
+
+    @Test
     void auditPersistsDetailedNestedCapture() {
         ContainerRef cache = container("cache", 0);
         ContainerRef overflow = container("overflow", 10);
@@ -89,7 +223,8 @@ class StowlingControlServiceImplTest {
                 },
                 Runnable::run,
                 () -> config,
-                Objects::requireNonNull
+                Objects::requireNonNull,
+                configStore(config, "audit.json")
         );
 
         service.requestAudit(new AuditRequest(List.of(cache.id())));
@@ -107,6 +242,20 @@ class StowlingControlServiceImplTest {
             StowlingConfig config,
             InventorySource inventorySource
     ) {
+        return service(
+                config,
+                inventorySource,
+                configStore(config, "control.json"),
+                Objects::requireNonNull
+        );
+    }
+
+    private StowlingControlServiceImpl service(
+            StowlingConfig config,
+            InventorySource inventorySource,
+            ConfigFileStore configFileStore,
+            java.util.function.Consumer<StowlingConfig> configActivated
+    ) {
         StowlingDatabase database = new StowlingDatabase(tempDir.resolve("control.db"));
         return new StowlingControlServiceImpl(
                 config,
@@ -118,8 +267,16 @@ class StowlingControlServiceImplTest {
                 },
                 Runnable::run,
                 () -> config,
-                Objects::requireNonNull
+                configActivated,
+                configFileStore
         );
+    }
+
+    private ConfigFileStore configStore(StowlingConfig config, String fileName) {
+        ConfigLoader loader = new ConfigLoader();
+        Path path = tempDir.resolve(fileName);
+        loader.write(path, config);
+        return new ConfigFileStore(path, loader);
     }
 
     private static InventorySource source(InventoryCapture capture) {
@@ -179,6 +336,24 @@ class StowlingControlServiceImplTest {
                 DIMENSION,
                 new BlockPosition(x, 64, 0),
                 ContainerType.CHEST
+        );
+    }
+
+    private static ConfigCoordinateUpdate movedUpdate(ConfigCoordinateInfo coordinate) {
+        return new ConfigCoordinateUpdate(
+                coordinate.key(),
+                coordinate.position().x() + 100,
+                coordinate.position().y() + 1,
+                coordinate.position().z() - 10
+        );
+    }
+
+    private static ConfigCoordinateUpdate unchangedUpdate(ConfigCoordinateInfo coordinate) {
+        return new ConfigCoordinateUpdate(
+                coordinate.key(),
+                coordinate.position().x(),
+                coordinate.position().y(),
+                coordinate.position().z()
         );
     }
 }

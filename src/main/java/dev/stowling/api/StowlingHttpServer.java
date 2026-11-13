@@ -3,8 +3,12 @@ package dev.stowling.api;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import dev.stowling.config.ConfigRevisionConflictException;
+import dev.stowling.control.ActiveTaskConflictException;
 import dev.stowling.control.AuditRequest;
+import dev.stowling.control.ConfigCoordinatesUpdateRequest;
 import dev.stowling.control.ContainerNotFoundException;
+import dev.stowling.control.InvalidConfigCoordinatesException;
 import dev.stowling.control.PickupRequest;
 import dev.stowling.control.PickupSiteNotFoundException;
 import dev.stowling.control.StowlingControlService;
@@ -184,18 +188,31 @@ public final class StowlingHttpServer implements AutoCloseable {
                 sendError(exchange, 404, "not_found", "Route not found");
                 return;
             }
-            if (!route.route().method().equals(exchange.getRequestMethod())) {
-                exchange.getResponseHeaders().set("Allow", route.route().method());
-                sendError(exchange, 405, "method_not_allowed", "Method not allowed");
-                return;
-            }
-
             String body = readRequestBody(exchange.getRequestBody());
             dispatch(exchange, route, body);
         } catch (RequestTooLargeException exception) {
             sendErrorQuietly(exchange, 413, "request_too_large", exception.getMessage());
         } catch (InvalidRequestException exception) {
             sendErrorQuietly(exchange, 400, "invalid_request", exception.getMessage());
+        } catch (InvalidConfigCoordinatesException exception) {
+            sendErrorQuietly(exchange, 400, "invalid_config_coordinates", exception.getMessage());
+        } catch (MethodNotAllowedException exception) {
+            exchange.getResponseHeaders().set("Allow", exception.allowedMethods());
+            sendErrorQuietly(exchange, 405, "method_not_allowed", "Method not allowed");
+        } catch (ConfigRevisionConflictException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    409,
+                    "config_revision_conflict",
+                    "Configuration was modified outside this request"
+            );
+        } catch (ActiveTaskConflictException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    409,
+                    "active_task_conflict",
+                    "Coordinates cannot change while a pickup task is active"
+            );
         } catch (PickupSiteNotFoundException exception) {
             sendErrorQuietly(
                     exchange,
@@ -335,6 +352,15 @@ public final class StowlingHttpServer implements AutoCloseable {
                 requestParser.requireEmpty(body);
                 sendJson(exchange, 200, service.reloadConfig());
             }
+            case CONFIG_COORDINATES_GET -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, service.configCoordinates());
+            }
+            case CONFIG_COORDINATES_PUT -> {
+                ConfigCoordinatesUpdateRequest request =
+                        requestParser.parseCoordinateUpdate(body);
+                sendJson(exchange, 200, service.updateConfigCoordinates(request));
+            }
         }
     }
 
@@ -356,18 +382,28 @@ public final class StowlingHttpServer implements AutoCloseable {
         return MessageDigest.isEqual(expectedTokenHash, hashToken(token));
     }
 
-    private RouteMatch matchRoute(HttpExchange exchange) throws InvalidRequestException {
+    private RouteMatch matchRoute(HttpExchange exchange)
+            throws InvalidRequestException, MethodNotAllowedException {
         String path = exchange.getRequestURI().getRawPath();
-        Route route = Route.forPath(path);
-        if (route != null) {
-            return new RouteMatch(route, null);
+        String method = exchange.getRequestMethod();
+        List<Route> routes = Route.forPath(path);
+        if (!routes.isEmpty()) {
+            for (Route route : routes) {
+                if (route.method().equals(method)) {
+                    return new RouteMatch(route, null);
+                }
+            }
+            throw new MethodNotAllowedException(Route.allowedMethods(routes));
         }
         String prefix = "/v1/tasks/";
         String suffix = "/cancel";
         if (path.startsWith(prefix) && path.endsWith(suffix)) {
             String taskId = path.substring(prefix.length(), path.length() - suffix.length());
             if (!taskId.isEmpty() && taskId.indexOf('/') < 0) {
-                return new RouteMatch(Route.CANCEL, taskId);
+                if (Route.CANCEL.method().equals(method)) {
+                    return new RouteMatch(Route.CANCEL, taskId);
+                }
+                throw new MethodNotAllowedException(Route.CANCEL.method());
             }
         }
         return null;
@@ -512,7 +548,9 @@ public final class StowlingHttpServer implements AutoCloseable {
         CONTAINERS("GET", "/v1/containers"),
         PAUSE("POST", "/v1/pause"),
         RESUME("POST", "/v1/resume"),
-        CONFIG_RELOAD("POST", "/v1/config/reload");
+        CONFIG_RELOAD("POST", "/v1/config/reload"),
+        CONFIG_COORDINATES_GET("GET", "/v1/config/coordinates"),
+        CONFIG_COORDINATES_PUT("PUT", "/v1/config/coordinates");
 
         private final String method;
         private final String path;
@@ -526,13 +564,20 @@ public final class StowlingHttpServer implements AutoCloseable {
             return method;
         }
 
-        private static Route forPath(String path) {
+        private static List<Route> forPath(String path) {
+            java.util.ArrayList<Route> result = new java.util.ArrayList<>();
             for (Route route : values()) {
                 if (route.path != null && route.path.equals(path)) {
-                    return route;
+                    result.add(route);
                 }
             }
-            return null;
+            return List.copyOf(result);
+        }
+
+        private static String allowedMethods(List<Route> routes) {
+            return routes.stream().map(Route::method).distinct().collect(
+                    java.util.stream.Collectors.joining(", ")
+            );
         }
     }
 

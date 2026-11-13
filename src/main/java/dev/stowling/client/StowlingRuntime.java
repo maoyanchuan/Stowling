@@ -3,12 +3,13 @@ package dev.stowling.client;
 import baritone.api.BaritoneAPI;
 import dev.stowling.Stowling;
 import dev.stowling.api.StowlingHttpServer;
-import dev.stowling.automation.PackingDisposition;
 import dev.stowling.automation.PickupAutomationEngine;
 import dev.stowling.automation.SystemAutomationClock;
+import dev.stowling.automation.TickPackingPort;
 import dev.stowling.client.interaction.BaritoneAutomationNavigation;
 import dev.stowling.client.interaction.MinecraftClientActionScheduler;
 import dev.stowling.client.interaction.MinecraftContainerInteraction;
+import dev.stowling.client.interaction.MinecraftPackingStationPort;
 import dev.stowling.client.interaction.MinecraftWorldObserver;
 import dev.stowling.client.interaction.ScreenInventorySource;
 import dev.stowling.config.ConfigLoader;
@@ -82,6 +83,11 @@ public final class StowlingRuntime implements AutoCloseable {
                 minecraft,
                 scheduler
         );
+        MinecraftPackingStationPort packingStations = new MinecraftPackingStationPort(
+                minecraft,
+                scheduler,
+                containers
+        );
         ScreenInventorySource inventorySource = new ScreenInventorySource(
                 scheduler,
                 containers
@@ -94,6 +100,14 @@ public final class StowlingRuntime implements AutoCloseable {
         ),
                 worldObserver
         );
+        TickPackingPort packingPort = new TickPackingPort(
+                () -> configLoader.load(configPath),
+                worldObserver,
+                navigation,
+                containers,
+                packingStations,
+                new SystemAutomationClock()
+        );
         PickupRuntimeFactory pickupFactory = plan -> {
             SystemAutomationClock clock = new SystemAutomationClock();
             return new PickupAutomationEngine(
@@ -102,7 +116,7 @@ public final class StowlingRuntime implements AutoCloseable {
                     worldObserver,
                     navigation,
                     containers,
-                    request -> PackingDisposition.UNAVAILABLE,
+                    packingPort,
                     clock,
                     checkpoints
             );

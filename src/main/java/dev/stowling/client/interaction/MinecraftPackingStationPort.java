@@ -12,6 +12,7 @@ import dev.stowling.domain.ContainerType;
 import dev.stowling.packing.PackingBoxContents;
 import dev.stowling.packing.PackingStationException;
 import dev.stowling.packing.PackingStationPort;
+import dev.stowling.packing.PackingStationTickPort;
 import dev.stowling.packing.PackingStationTimeoutException;
 import dev.stowling.packing.PackingWorkcell;
 import java.util.HashMap;
@@ -28,11 +29,14 @@ import net.minecraft.core.BlockPos;
  * <p>Live orchestration only consumes confirmed menu states. A call that would
  * need another client tick reports a timeout so callers retry with a new attempt.
  */
-public final class MinecraftPackingStationPort implements PackingStationPort {
+public final class MinecraftPackingStationPort implements PackingStationTickPort {
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
     private final MinecraftContainerInteraction containers;
     private final Map<String, PendingInsert> pendingInserts = new HashMap<>();
+    private final Map<String, Integer> confirmedInsertions = new HashMap<>();
+    private final Map<String, Optional<ContainerRef>> insertionSources = new HashMap<>();
+    private final Map<String, String> awaitingPackedBoxes = new HashMap<>();
 
     public MinecraftPackingStationPort(
             Minecraft minecraft,
@@ -42,6 +46,54 @@ public final class MinecraftPackingStationPort implements PackingStationPort {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.containers = Objects.requireNonNull(containers, "containers");
+    }
+
+    @Override
+    public boolean prepare(PackingWorkcell workcell) throws PackingStationException {
+        requireClientThread();
+        String stationId = workcell.station().id();
+        PendingInsert pending = pendingInserts.get(stationId);
+        if (pending != null) {
+            ContainerAttemptResult result = containers.poll(pending.attempt());
+            if (result.status() == ContainerAttemptStatus.PENDING) {
+                return false;
+            }
+            pendingInserts.remove(stationId);
+            if (result.status() == ContainerAttemptStatus.ACKNOWLEDGED) {
+                confirmedInsertions.merge(stationId, pending.quantity(), Math::addExact);
+            } else {
+                throw new PackingStationException(result.detail());
+            }
+        }
+        ContainerRef box = boxRef(workcell);
+        containers.prepare(box);
+        return containers.observe(box).isPresent();
+    }
+
+    @Override
+    public int takeConfirmedInsertion(PackingWorkcell workcell) {
+        String stationId = workcell.station().id();
+        Integer quantity = confirmedInsertions.remove(stationId);
+        return quantity == null ? 0 : quantity;
+    }
+
+    @Override
+    public void setInsertionSource(
+            PackingWorkcell workcell,
+            Optional<ContainerRef> source
+    ) {
+        Optional<ContainerRef> checkedSource = Objects.requireNonNull(source, "source");
+        insertionSources.put(workcell.station().id(), checkedSource);
+    }
+
+    @Override
+    public boolean awaitingPackedBox(PackingWorkcell workcell) {
+        return awaitingPackedBoxes.containsKey(workcell.station().id());
+    }
+
+    @Override
+    public void clearAwaitingPackedBox(PackingWorkcell workcell) {
+        awaitingPackedBoxes.remove(workcell.station().id());
     }
 
     @Override
@@ -84,7 +136,7 @@ public final class MinecraftPackingStationPort implements PackingStationPort {
             }
             ContainerTransfer transfer = new ContainerTransfer(
                     stationId + ":pack:" + itemId,
-                    Optional.empty(),
+                    insertionSources.getOrDefault(stationId, Optional.empty()),
                     box,
                     List.of(new ItemAmount(itemId, quantity))
             );
@@ -115,6 +167,7 @@ public final class MinecraftPackingStationPort implements PackingStationPort {
             minecraft.player.closeContainer();
         }
         pendingInserts.remove(workcell.station().id());
+        insertionSources.remove(workcell.station().id());
     }
 
     @Override
@@ -146,13 +199,20 @@ public final class MinecraftPackingStationPort implements PackingStationPort {
     ) throws PackingStationException {
         requireClientThread();
         Objects.requireNonNull(itemId, "itemId");
+        awaitingPackedBoxes.put(workcell.station().id(), itemId);
         ContainerRef product = workcell.station().productContainer();
         containers.prepare(product);
         Optional<ContainerView> view = containers.observe(product);
         if (view.isEmpty()) {
             return false;
         }
-        return view.orElseThrow().itemCounts().getOrDefault(itemId, 0) > 0;
+        return view.orElseThrow().itemCounts().keySet().stream()
+                .anyMatch(MinecraftPackingStationPort::isShulkerBox);
+    }
+
+    private static boolean isShulkerBox(String itemId) {
+        return itemId.equals("minecraft:shulker_box")
+                || itemId.endsWith("_shulker_box");
     }
 
     private static int capacity(ContainerView view, String itemId) {

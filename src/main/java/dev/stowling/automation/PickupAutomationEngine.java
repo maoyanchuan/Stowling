@@ -321,11 +321,19 @@ public final class PickupAutomationEngine {
                 intent.packingStationIds(),
                 intent.items()
         );
-        if (packing.submit(request) == PackingDisposition.ACCEPTED) {
-            deliveryIndex++;
-            enterCurrentDeliveryStage();
-        } else {
-            pause("PACKING_UNAVAILABLE", "packing station rejected the delivery");
+        PackingDisposition disposition = packing.submit(request);
+        switch (disposition) {
+            case ACCEPTED -> {
+                deliveryIndex++;
+                enterCurrentDeliveryStage();
+            }
+            case PENDING -> {
+                // The packing port advances only after confirmed server-side changes.
+            }
+            case UNAVAILABLE -> pause(
+                    "PACKING_UNAVAILABLE",
+                    "packing station rejected the delivery"
+            );
         }
     }
 

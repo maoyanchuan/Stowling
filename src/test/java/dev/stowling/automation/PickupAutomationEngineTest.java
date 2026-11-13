@@ -259,6 +259,24 @@ class PickupAutomationEngineTest {
         assertEquals("PACKING_UNAVAILABLE", snapshot.pauseReason().orElseThrow().code());
     }
 
+    @Test
+    void pendingPackingRemainsInPackStage() {
+        AutomationTestSupport support = bufferSupport(DIAMOND);
+        support.packing.setDisposition(PackingDisposition.PENDING);
+        PickupAutomationEngine engine = support.engine(
+                List.of(AutomationTestSupport.packingRoute(DIAMOND)),
+                1
+        );
+
+        engine.start();
+        assertEquals(PickupStage.PACK, engine.tick().stage());
+        AutomationSnapshot pending = engine.tick();
+
+        assertEquals(PickupStage.PACK, pending.stage());
+        assertTrue(pending.pauseReason().isEmpty());
+        assertEquals(2, support.packing.requests().size());
+    }
+
     private AutomationTestSupport depositSupport() {
         AutomationTestSupport support = new AutomationTestSupport();
         support.navigation.setPosition(support.cache.position());

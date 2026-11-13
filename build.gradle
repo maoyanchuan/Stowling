@@ -20,6 +20,8 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "org.xerial:sqlite-jdbc:3.54.1.0"
+    include "org.xerial:sqlite-jdbc:3.54.1.0"
 
     compileOnly files('libs/baritone-api-fabric-1.19.0.jar')
 

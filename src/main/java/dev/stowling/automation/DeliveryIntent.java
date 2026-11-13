@@ -12,7 +12,7 @@ public record DeliveryIntent(
         List<ItemAmount> items,
         DeliveryMode mode,
         Optional<String> routeId,
-        Optional<String> packingStationId
+        List<String> packingStationIds
 ) {
     public DeliveryIntent {
         key = requireText(key, "key");
@@ -21,16 +21,23 @@ public record DeliveryIntent(
         items = List.copyOf(Objects.requireNonNull(items, "items"));
         Objects.requireNonNull(mode, "mode");
         routeId = Objects.requireNonNull(routeId, "routeId");
-        packingStationId = Objects.requireNonNull(packingStationId, "packingStationId");
+        packingStationIds = List.copyOf(Objects.requireNonNull(
+                packingStationIds,
+                "packingStationIds"
+        ));
         if (items.isEmpty()) {
             throw new IllegalArgumentException("items must not be empty");
         }
-        if (mode == DeliveryMode.PACK && packingStationId.isEmpty()) {
-            throw new IllegalArgumentException("packing delivery requires a station id");
+        if (mode == DeliveryMode.PACK && packingStationIds.isEmpty()) {
+            throw new IllegalArgumentException("packing delivery requires station ids");
         }
-        if (mode == DeliveryMode.LOOSE && packingStationId.isPresent()) {
-            throw new IllegalArgumentException("loose delivery cannot have a station id");
+        if (mode == DeliveryMode.LOOSE && !packingStationIds.isEmpty()) {
+            throw new IllegalArgumentException("loose delivery cannot have station ids");
         }
+    }
+
+    public Optional<String> packingStationId() {
+        return packingStationIds.stream().findFirst();
     }
 
     public ContainerTransfer asTransfer() {

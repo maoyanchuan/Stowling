@@ -13,6 +13,7 @@ import java.util.UUID;
 public record AutomationCheckpoint(
         UUID taskId,
         PickupStage stage,
+        Optional<String> planReference,
         Set<String> observedInputKeys,
         Optional<Instant> idleSince,
         Map<String, Integer> inventoryBaseline
@@ -20,6 +21,7 @@ public record AutomationCheckpoint(
     public AutomationCheckpoint {
         Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(stage, "stage");
+        planReference = Objects.requireNonNull(planReference, "planReference");
         observedInputKeys = Set.copyOf(Objects.requireNonNull(
                 observedInputKeys,
                 "observedInputKeys"
@@ -32,5 +34,22 @@ public record AutomationCheckpoint(
         if (stage == PickupStage.PAUSED || stage == PickupStage.FAILED) {
             throw new IllegalArgumentException("checkpoint must store a resumable stage");
         }
+    }
+
+    public AutomationCheckpoint(
+            UUID taskId,
+            PickupStage stage,
+            Set<String> observedInputKeys,
+            Optional<Instant> idleSince,
+            Map<String, Integer> inventoryBaseline
+    ) {
+        this(
+                taskId,
+                stage,
+                Optional.empty(),
+                observedInputKeys,
+                idleSince,
+                inventoryBaseline
+        );
     }
 }

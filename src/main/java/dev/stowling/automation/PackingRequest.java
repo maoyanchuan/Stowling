@@ -9,14 +9,20 @@ public record PackingRequest(
         UUID taskId,
         ContainerRef buffer,
         String routeId,
-        String stationId,
+        List<String> stationIds,
         List<ItemAmount> items
 ) {
     public PackingRequest {
         Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(buffer, "buffer");
         routeId = requireText(routeId, "routeId");
-        stationId = requireText(stationId, "stationId");
+        stationIds = List.copyOf(Objects.requireNonNull(stationIds, "stationIds"));
+        if (stationIds.isEmpty()) {
+            throw new IllegalArgumentException("stationIds must not be empty");
+        }
+        for (String stationId : stationIds) {
+            requireText(stationId, "stationId");
+        }
         items = List.copyOf(Objects.requireNonNull(items, "items"));
         if (items.isEmpty()) {
             throw new IllegalArgumentException("items must not be empty");

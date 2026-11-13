@@ -22,6 +22,12 @@ public final class ClientThreadContainerInteraction implements ContainerInteract
     }
 
     @Override
+    public void prepare(ContainerRef container) {
+        requireClientThread();
+        delegate.prepare(container);
+    }
+
+    @Override
     public Optional<ContainerView> observe(ContainerRef container) {
         requireClientThread();
         return delegate.observe(container);

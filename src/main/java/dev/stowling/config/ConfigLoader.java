@@ -2,6 +2,7 @@ package dev.stowling.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -46,6 +47,7 @@ public final class ConfigLoader {
             requireObject(element);
             JsonObject root = element.getAsJsonObject();
             rejectUnknownRootFields(root);
+            normalizeCompatibilityFields(root);
             StowlingConfig config = gson.fromJson(root, StowlingConfig.class);
             if (config == null) {
                 throw new ConfigLoadException("Configuration root must be a JSON object");
@@ -91,6 +93,52 @@ public final class ConfigLoader {
         for (String field : root.keySet()) {
             if (!ROOT_FIELDS.contains(field)) {
                 throw new ConfigLoadException("Unknown configuration field: " + field);
+            }
+        }
+    }
+
+    private static void normalizeCompatibilityFields(JsonObject root) {
+        normalizePickupSites(root);
+        normalizeStorageRoutes(root);
+    }
+
+    private static void normalizePickupSites(JsonObject root) {
+        JsonElement sitesElement = root.get("pickupSites");
+        if (sitesElement == null || !sitesElement.isJsonArray()) {
+            return;
+        }
+        for (JsonElement siteElement : sitesElement.getAsJsonArray()) {
+            if (!siteElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject site = siteElement.getAsJsonObject();
+            JsonElement single = site.remove("cacheContainer");
+            if (single != null && !site.has("cacheContainers")) {
+                JsonArray containers = new JsonArray();
+                containers.add(single);
+                site.add("cacheContainers", containers);
+            }
+        }
+    }
+
+    private static void normalizeStorageRoutes(JsonObject root) {
+        JsonElement routesElement = root.get("storageRoutes");
+        if (routesElement == null || !routesElement.isJsonArray()) {
+            return;
+        }
+        for (JsonElement routeElement : routesElement.getAsJsonArray()) {
+            if (!routeElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject route = routeElement.getAsJsonObject();
+            JsonElement single = route.remove("packingStationId");
+            if (single != null && !single.isJsonNull() && !route.has("packingStationIds")) {
+                JsonArray stations = new JsonArray();
+                stations.add(single);
+                route.add("packingStationIds", stations);
+            }
+            if (!route.has("packingThresholdMode")) {
+                route.addProperty("packingThresholdMode", "ON_ITEM_COUNT");
             }
         }
     }

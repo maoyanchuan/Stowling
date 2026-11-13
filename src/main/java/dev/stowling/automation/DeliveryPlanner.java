@@ -63,7 +63,7 @@ public final class DeliveryPlanner {
                     overflow,
                     DeliveryMode.LOOSE,
                     Optional.of("overflow"),
-                    Optional.empty()
+                    List.of()
             );
         }
         StorageRoute matched = route.orElseThrow();
@@ -72,14 +72,14 @@ public final class DeliveryPlanner {
                     matched.bulkContainer(),
                     DeliveryMode.PACK,
                     Optional.of(matched.id()),
-                    Optional.of(matched.packingStationId())
+                    matched.packingStationIds()
             );
         }
         return new PlacementKey(
                 matched.bulkContainer(),
                 DeliveryMode.LOOSE,
                 Optional.of(matched.id()),
-                Optional.empty()
+                List.of()
         );
     }
 
@@ -87,7 +87,7 @@ public final class DeliveryPlanner {
             ContainerRef destination,
             DeliveryMode mode,
             Optional<String> routeId,
-            Optional<String> stationId
+            List<String> stationIds
     ) {
     }
 
@@ -115,7 +115,7 @@ public final class DeliveryPlanner {
                     items,
                     key.mode(),
                     key.routeId(),
-                    key.stationId()
+                    key.stationIds()
             );
         }
     }

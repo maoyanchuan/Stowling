@@ -35,17 +35,16 @@ public final class ConfigValidator {
             PickupSite site = config.pickupSites().get(index);
             String path = "pickupSites[" + index + "]";
             requireUnique(violations, pickupSiteIds, site.id(), path + ".id");
-            registerContainer(
-                    violations,
-                    containers,
-                    path + ".cacheContainer",
-                    site.cacheContainer()
-            );
-            if (!site.dimension().equals(site.cacheContainer().dimension())) {
-                violations.add(new ConfigViolation(
-                        path + ".cacheContainer.dimension",
-                        "cache container must be in the pickup site dimension"
-                ));
+            for (int cacheIndex = 0; cacheIndex < site.cacheContainers().size(); cacheIndex++) {
+                ContainerRef cache = site.cacheContainers().get(cacheIndex);
+                String cachePath = path + ".cacheContainers[" + cacheIndex + "]";
+                registerContainer(violations, containers, cachePath, cache);
+                if (!site.dimension().equals(cache.dimension())) {
+                    violations.add(new ConfigViolation(
+                            cachePath + ".dimension",
+                            "cache container must be in the pickup site dimension"
+                    ));
+                }
             }
         }
 
@@ -79,11 +78,16 @@ public final class ConfigValidator {
                     path + ".bulkContainer",
                     route.bulkContainer()
             );
-            if (route.packingEnabled() && !stationIds.containsKey(route.packingStationId())) {
-                violations.add(new ConfigViolation(
-                        path + ".packingStationId",
-                        "packing station does not exist"
-                ));
+            for (int stationIndex = 0;
+                    stationIndex < route.packingStationIds().size();
+                    stationIndex++) {
+                String stationId = route.packingStationIds().get(stationIndex);
+                if (!stationIds.containsKey(stationId)) {
+                    violations.add(new ConfigViolation(
+                            path + ".packingStationIds[" + stationIndex + "]",
+                            "packing station does not exist"
+                    ));
+                }
             }
             registerSelectors(
                     violations,

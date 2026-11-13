@@ -41,6 +41,7 @@ public final class PickupAutomationEngine {
     private Optional<AutomationPauseReason> pauseReason = Optional.empty();
     private Optional<BlockPosition> navigationTarget = Optional.empty();
     private Optional<Instant> navigationStartedAt = Optional.empty();
+    private Optional<Instant> containerObservationStartedAt = Optional.empty();
     private boolean started;
     private boolean recovered;
 
@@ -115,6 +116,23 @@ public final class PickupAutomationEngine {
         pauseReason = Optional.empty();
         reconcileAfterRecovery();
         saveCheckpoint();
+    }
+
+    public synchronized void pauseForControl() {
+        pause("CONTROL_PAUSED", "automation paused by the control surface");
+    }
+
+    public synchronized void cancel() {
+        if (stage == PickupStage.COMPLETE || stage == PickupStage.FAILED) {
+            return;
+        }
+        clearNavigation();
+        abortContainerFlow();
+        pauseReason = Optional.of(new AutomationPauseReason(
+                "CANCELLED",
+                "pickup task was cancelled"
+        ));
+        stage = PickupStage.FAILED;
     }
 
     public synchronized AutomationSnapshot snapshot() {
@@ -235,11 +253,15 @@ public final class PickupAutomationEngine {
             return;
         }
         clearNavigation();
+        containers.prepare(buffer);
         Optional<ContainerView> view = containers.observe(buffer);
         if (view.isEmpty()) {
-            pause("BUFFER_UNAVAILABLE", "pickup buffer could not be observed");
+            if (containerObservationTimedOut()) {
+                pause("BUFFER_UNAVAILABLE", "pickup buffer could not be observed");
+            }
             return;
         }
+        containerObservationStartedAt = Optional.empty();
         if (view.orElseThrow().isEmpty()) {
             enter(PickupStage.COMPLETE);
             return;
@@ -296,7 +318,7 @@ public final class PickupAutomationEngine {
                 plan.taskId(),
                 intent.buffer(),
                 intent.routeId().orElseThrow(),
-                intent.packingStationId().orElseThrow(),
+                intent.packingStationIds(),
                 intent.items()
         );
         if (packing.submit(request) == PackingDisposition.ACCEPTED) {
@@ -308,11 +330,15 @@ public final class PickupAutomationEngine {
     }
 
     private boolean transfer(ContainerTransfer transfer, String unavailableCode) {
+        containers.prepare(transfer.destination());
         Optional<ContainerView> before = containers.observe(transfer.destination());
         if (before.isEmpty()) {
-            pause(unavailableCode, "destination container is unavailable");
+            if (containerObservationTimedOut()) {
+                pause(unavailableCode, "destination container is unavailable");
+            }
             return false;
         }
+        containerObservationStartedAt = Optional.empty();
         ensureContainerFlow(transfer, before.orElseThrow());
         if (containerFlow.attempt == null) {
             beginContainerAttempt();
@@ -570,6 +596,7 @@ public final class PickupAutomationEngine {
             abortContainerFlow();
         }
         stage = next;
+        containerObservationStartedAt = Optional.empty();
         if (next != PickupStage.PAUSED && next != PickupStage.FAILED) {
             resumeStage = next;
         }
@@ -594,6 +621,16 @@ public final class PickupAutomationEngine {
         containerFlow = null;
     }
 
+    private boolean containerObservationTimedOut() {
+        Instant now = clock.now();
+        if (containerObservationStartedAt.isEmpty()) {
+            containerObservationStartedAt = Optional.of(now);
+            return false;
+        }
+        Duration elapsed = Duration.between(containerObservationStartedAt.orElseThrow(), now);
+        return elapsed.compareTo(plan.containerAckTimeout()) >= 0;
+    }
+
     private void saveCheckpoint() {
         PickupStage checkpointStage = stage == PickupStage.PAUSED ? resumeStage : stage;
         if (checkpointStage == PickupStage.FAILED) {
@@ -602,6 +639,7 @@ public final class PickupAutomationEngine {
         checkpoints.save(new AutomationCheckpoint(
                 plan.taskId(),
                 checkpointStage,
+                Optional.of(plan.pickupSite().id()),
                 observedInputs,
                 idleSince,
                 inventoryBaseline

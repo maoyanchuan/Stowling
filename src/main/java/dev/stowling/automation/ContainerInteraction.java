@@ -11,6 +11,9 @@ import java.util.Optional;
  * have both been observed. It must not cache or replay low-level click packets.
  */
 public interface ContainerInteraction {
+    default void prepare(ContainerRef container) {
+    }
+
     Optional<ContainerView> observe(ContainerRef container);
 
     ContainerAttempt begin(ContainerTransfer transfer, long baselineRevision);

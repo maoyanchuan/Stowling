@@ -1,0 +1,71 @@
+{
+    "schemaVersion": 1,
+    "defaultIdleDelay": 60,
+    "pickupSites": [
+        {
+            "id": "north-farm",
+            "dimension": "minecraft:overworld",
+            "center": {
+                "x": 0,
+                "y": 64,
+                "z": 0
+            },
+            "radius": 32,
+            "cacheContainer": {
+                "id": "north-cache",
+                "dimension": "minecraft:overworld",
+                "position": {
+                    "x": 8,
+                    "y": 64,
+                    "z": 0
+                },
+                "type": "CHEST"
+            },
+            "idleDelay": 60
+        }
+    ],
+    "storageRoutes": [
+        {
+            "id": "cobblestone",
+            "itemIds": [
+                "minecraft:cobblestone"
+            ],
+            "itemTags": [],
+            "priority": 100,
+            "bulkContainer": {
+                "id": "bulk-cobblestone",
+                "dimension": "minecraft:overworld",
+                "position": {
+                    "x": 20,
+                    "y": 64,
+                    "z": 0
+                },
+                "type": "CHEST"
+            },
+            "packingThreshold": null,
+            "packingStationId": null
+        }
+    ],
+    "packingStations": [],
+    "auditSchedules": [
+        {
+            "id": "manual-check",
+            "mode": "MANUAL",
+            "interval": 0,
+            "containerIds": [
+                "north-cache",
+                "bulk-cobblestone"
+            ]
+        }
+    ],
+    "overflowContainer": {
+        "id": "overflow",
+        "dimension": "minecraft:overworld",
+        "position": {
+            "x": 24,
+            "y": 64,
+            "z": 0
+        },
+        "type": "CHEST"
+    }
+}

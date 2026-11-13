@@ -1,0 +1,12 @@
+.gradle/
+.idea/
+.vscode/
+build/
+out/
+run/
+depend/
+*.iml
+*.log
+.env
+.pytest_cache/
+__pycache__/

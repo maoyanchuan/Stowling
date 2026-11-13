@@ -1,0 +1,27 @@
+{
+    "schemaVersion": 1,
+    "id": "stowling",
+    "version": "${version}",
+    "name": "Stowling",
+    "description": "Baritone-backed pickup, sorting, packing, and inventory automation.",
+    "authors": [
+        "Stowling contributors"
+    ],
+    "license": "MIT",
+    "environment": "client",
+    "entrypoints": {
+        "main": [
+            "dev.stowling.Stowling"
+        ],
+        "client": [
+            "dev.stowling.client.StowlingClient"
+        ]
+    },
+    "depends": {
+        "fabricloader": ">=0.20.1",
+        "minecraft": "~26.2",
+        "java": ">=25",
+        "fabric-api": "*",
+        "baritone": ">=1.19.0"
+    }
+}

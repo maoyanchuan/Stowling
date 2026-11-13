@@ -17,6 +17,53 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class PickupAutomationEngineTest {
+    private static final String COBBLESTONE = "minecraft:cobblestone";
+
+    @Test
+    void freshTaskDepositsExistingRoutedInventory() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        support.inventory.setSnapshot(AutomationFakes.inventory(COBBLESTONE, 192));
+        PickupAutomationEngine engine = support.engine(
+                List.of(AutomationTestSupport.looseRoute(COBBLESTONE)),
+                1
+        );
+
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        assertEquals(PickupStage.DEPOSIT_BUFFER, engine.tick().stage());
+    }
+
+    @Test
+    void freshTaskProtectsExistingUnroutedInventory() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        support.inventory.setSnapshot(AutomationFakes.inventory(DIAMOND, 64));
+        PickupAutomationEngine engine = support.engine(
+                List.of(AutomationTestSupport.looseRoute(COBBLESTONE)),
+                1
+        );
+
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        assertEquals(PickupStage.WAIT_FOR_IDLE, engine.tick().stage());
+        assertTrue(support.containers.attempts().isEmpty());
+    }
+
+    @Test
+    void recoveredTaskKeepsPersistedInventoryBaseline() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        support.inventory.setSnapshot(AutomationFakes.inventory(COBBLESTONE, 192));
+        support.checkpoint(
+                PickupStage.NAVIGATE_PICKUP,
+                Optional.empty(),
+                Map.of(COBBLESTONE, 192)
+        );
+        PickupAutomationEngine engine = support.engine(
+                List.of(AutomationTestSupport.looseRoute(COBBLESTONE)),
+                1
+        );
+
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        assertEquals(PickupStage.WAIT_FOR_IDLE, engine.tick().stage());
+    }
+
     @Test
     void keepsCollectingWhenArrivedGroundItemRemainsForSeveralTicks() {
         AutomationTestSupport support = new AutomationTestSupport();

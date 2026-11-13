@@ -2,9 +2,11 @@ package dev.stowling.automation;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.StorageRoute;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,7 @@ public final class PickupAutomationEngine {
     private final AutomationClock clock;
     private final AutomationCheckpointStore checkpoints;
     private final DeliveryPlanner deliveryPlanner = new DeliveryPlanner();
+    private final StorageRouteMatcher routeMatcher = new StorageRouteMatcher();
 
     private final Set<String> observedInputs = new HashSet<>();
     private final Set<Integer> failedDepositCaches = new HashSet<>();
@@ -81,9 +84,31 @@ public final class PickupAutomationEngine {
             recovered = true;
             reconcileAfterRecovery();
         } else {
-            inventoryBaseline = inventoryAdapter.observe().itemCounts();
+            try {
+                inventoryBaseline = initialInventoryBaseline(inventoryAdapter.observe());
+            } catch (StorageRouteMatchException exception) {
+                pause("ROUTE_CONFLICT", "multiple storage routes claim an item");
+                return;
+            }
         }
         saveCheckpoint();
+    }
+
+    private Map<String, Integer> initialInventoryBaseline(
+            PlayerInventorySnapshot inventory
+    ) {
+        Map<String, Integer> baseline = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : inventory.itemCounts().entrySet()) {
+            Optional<StorageRoute> route = routeMatcher.match(
+                    entry.getKey(),
+                    worldObserver.tagsFor(entry.getKey()),
+                    plan.storageRoutes()
+            );
+            if (route.isEmpty()) {
+                baseline.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Map.copyOf(baseline);
     }
 
     public synchronized AutomationSnapshot tick() {

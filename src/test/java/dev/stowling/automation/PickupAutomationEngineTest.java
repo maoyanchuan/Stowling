@@ -18,6 +18,59 @@ import org.junit.jupiter.api.Test;
 
 class PickupAutomationEngineTest {
     @Test
+    void keepsCollectingWhenArrivedGroundItemRemainsForSeveralTicks() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        GroundItem item = new GroundItem(
+                "drop-waiting",
+                STONE,
+                1,
+                new BlockPosition(3, 64, 0)
+        );
+
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        support.world.setGroundItems(List.of(item));
+        support.navigation.setStatus(NavigationStatus.ARRIVED);
+        support.navigation.setFailWhenInactive(true);
+
+        for (int tick = 0; tick < 5; tick++) {
+            AutomationSnapshot snapshot = engine.tick();
+            assertEquals(PickupStage.COLLECT, snapshot.stage(), snapshot.toString());
+            assertTrue(snapshot.pauseReason().isEmpty(), snapshot.toString());
+        }
+        long starts = support.navigation.startedTargets().stream()
+                .filter(item.position()::equals)
+                .count();
+        assertTrue(starts >= 2);
+    }
+
+    @Test
+    void depositsAfterArrivedGroundItemEntersInventory() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        GroundItem item = new GroundItem(
+                "drop-collected",
+                STONE,
+                1,
+                new BlockPosition(3, 64, 0)
+        );
+
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        support.world.setGroundItems(List.of(item));
+        support.navigation.setStatus(NavigationStatus.ARRIVED);
+        support.navigation.setFailWhenInactive(true);
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+
+        support.world.setGroundItems(List.of());
+        support.inventory.setSnapshot(AutomationFakes.inventory(STONE, 1));
+
+        AutomationSnapshot snapshot = engine.tick();
+        assertEquals(PickupStage.DEPOSIT_BUFFER, snapshot.stage());
+        assertTrue(snapshot.pauseReason().isEmpty());
+    }
+
+    @Test
     void runsPickupBufferAndIdleFlow() {
         AutomationTestSupport support = new AutomationTestSupport();
         PickupAutomationEngine engine = support.engine(List.of(), 1);

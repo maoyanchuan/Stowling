@@ -44,6 +44,7 @@ public final class PickupAutomationEngine {
     private PickupStage resumeStage = PickupStage.NAVIGATE_PICKUP;
     private Optional<AutomationPauseReason> pauseReason = Optional.empty();
     private Optional<BlockPosition> navigationTarget = Optional.empty();
+    private NavigationTargetType navigationTargetType = NavigationTargetType.STANDARD;
     private Optional<Instant> navigationStartedAt = Optional.empty();
     private Optional<Instant> containerObservationStartedAt = Optional.empty();
     private boolean started;
@@ -193,9 +194,16 @@ public final class PickupAutomationEngine {
                 nearestDistance = distance;
             }
         }
-        NavigationStatus status = moveTo(nearest.position());
+        NavigationStatus status = moveTo(
+                nearest.position(),
+                NavigationTargetType.GROUND_ITEM
+        );
         if (status == NavigationStatus.FAILED) {
             pause("PATH_FAILED", "navigation to a ground item failed");
+            return;
+        }
+        if (status == NavigationStatus.ARRIVED) {
+            clearNavigation();
         }
     }
 
@@ -632,14 +640,24 @@ public final class PickupAutomationEngine {
     }
 
     private NavigationStatus moveTo(BlockPosition target) {
+        return moveTo(target, NavigationTargetType.STANDARD);
+    }
+
+    private NavigationStatus moveTo(
+            BlockPosition target,
+            NavigationTargetType targetType
+    ) {
         Instant now = clock.now();
-        if (navigationTarget.isEmpty() || !navigationTarget.orElseThrow().equals(target)) {
+        if (navigationTarget.isEmpty()
+                || !navigationTarget.orElseThrow().equals(target)
+                || navigationTargetType != targetType) {
             clearNavigation();
             navigationTarget = Optional.of(target);
+            navigationTargetType = targetType;
             navigationStartedAt = Optional.of(now);
-            return navigation.start(target);
+            return navigation.start(target, targetType);
         }
-        NavigationStatus status = navigation.status(target);
+        NavigationStatus status = navigation.status(target, targetType);
         if (status == NavigationStatus.NAVIGATING) {
             Duration elapsed = Duration.between(navigationStartedAt.orElseThrow(), now);
             if (elapsed.compareTo(plan.navigationTimeout()) >= 0) {
@@ -654,6 +672,7 @@ public final class PickupAutomationEngine {
             navigation.cancel();
         }
         navigationTarget = Optional.empty();
+        navigationTargetType = NavigationTargetType.STANDARD;
         navigationStartedAt = Optional.empty();
     }
 

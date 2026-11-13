@@ -95,6 +95,8 @@ final class AutomationFakes {
         private NavigationStatus startStatus = NavigationStatus.NAVIGATING;
         private NavigationStatus status = NavigationStatus.ARRIVED;
         private int cancelCount;
+        private boolean active;
+        private boolean failWhenInactive;
         private final List<BlockPosition> startedTargets = new ArrayList<>();
 
         FakeNavigation(BlockPosition position) {
@@ -104,7 +106,9 @@ final class AutomationFakes {
         @Override
         public NavigationStatus start(BlockPosition target) {
             startedTargets.add(target);
+            active = true;
             if (position.equals(target)) {
+                active = false;
                 return NavigationStatus.ARRIVED;
             }
             return startStatus;
@@ -112,14 +116,22 @@ final class AutomationFakes {
 
         @Override
         public NavigationStatus status(BlockPosition target) {
+            if (failWhenInactive && !active) {
+                return NavigationStatus.FAILED;
+            }
             if (position.equals(target)) {
+                active = false;
                 return NavigationStatus.ARRIVED;
+            }
+            if (status == NavigationStatus.ARRIVED) {
+                active = false;
             }
             return status;
         }
 
         @Override
         public void cancel() {
+            active = false;
             cancelCount++;
         }
 
@@ -133,6 +145,10 @@ final class AutomationFakes {
 
         void setStatus(NavigationStatus status) {
             this.status = status;
+        }
+
+        void setFailWhenInactive(boolean failWhenInactive) {
+            this.failWhenInactive = failWhenInactive;
         }
 
         List<BlockPosition> startedTargets() {

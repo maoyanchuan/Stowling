@@ -488,21 +488,24 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     }
 
     private static ContainerView view(AbstractContainerMenu menu, ContainerRef container) {
-        List<Integer> containerSlots = slotClassification(menu).containerSlots();
-        int capacity = containerSlots.size();
+        MenuSlotClassification classification = slotClassification(menu);
         List<ContainerSlot> slots = new ArrayList<>();
-        for (int slot : containerSlots) {
-            capacity = Math.max(capacity, slot + 1);
-            ItemStack stack = menu.getSlot(slot).getItem();
+        for (MenuSlotClassification.ContainerSlotMapping mapping
+                : classification.logicalContainerSlots()) {
+            ItemStack stack = menu.getSlot(mapping.menuSlot()).getItem();
             if (!stack.isEmpty()) {
-                slots.add(new ContainerSlot(slot, itemId(stack), stack.getCount()));
+                slots.add(new ContainerSlot(
+                        mapping.logicalSlot(),
+                        itemId(stack),
+                        stack.getCount()
+                ));
             }
         }
         return new ContainerView(
                 container.id(),
                 container.dimension(),
                 revision(menu),
-                capacity,
+                classification.containerCapacity(),
                 slots
         );
     }

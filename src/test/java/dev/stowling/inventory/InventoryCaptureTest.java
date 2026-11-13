@@ -11,13 +11,18 @@ class InventoryCaptureTest {
     private static final Instant CAPTURED_AT = Instant.parse("2026-11-13T00:00:00Z");
 
     @Test
-    void classifiesMenuSlotsWithoutAssumingThirtySixPlayerSlots() {
+    void mapsNonContiguousContainerSlotsWithoutChangingRealMenuIndexes() {
         MenuSlotClassification classification = MenuSlotClassification.classify(
-                List.of(false, true, false, true, true)
+                List.of(true, false, true, true, false, true)
         );
 
-        assertEquals(List.of(0, 2), classification.containerSlots());
-        assertEquals(List.of(1, 3, 4), classification.playerSlots());
+        assertEquals(List.of(1, 4), classification.containerSlots());
+        assertEquals(List.of(0, 2, 3, 5), classification.playerSlots());
+        assertEquals(2, classification.containerCapacity());
+        assertEquals(List.of(
+                new MenuSlotClassification.ContainerSlotMapping(0, 1),
+                new MenuSlotClassification.ContainerSlotMapping(1, 4)
+        ), classification.logicalContainerSlots());
     }
 
     @Test

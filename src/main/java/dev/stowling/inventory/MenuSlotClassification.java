@@ -32,4 +32,22 @@ public record MenuSlotClassification(
         }
         return new MenuSlotClassification(containerSlots, playerSlots);
     }
+
+    public int containerCapacity() {
+        return containerSlots.size();
+    }
+
+    public List<ContainerSlotMapping> logicalContainerSlots() {
+        List<ContainerSlotMapping> mappings = new ArrayList<>();
+        for (int logicalSlot = 0; logicalSlot < containerSlots.size(); logicalSlot++) {
+            mappings.add(new ContainerSlotMapping(
+                    logicalSlot,
+                    containerSlots.get(logicalSlot)
+            ));
+        }
+        return List.copyOf(mappings);
+    }
+
+    public record ContainerSlotMapping(int logicalSlot, int menuSlot) {
+    }
 }

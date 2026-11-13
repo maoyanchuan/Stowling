@@ -1,0 +1,6 @@
+# Dependency-free command adapters loaded by HMC-Specifics when it is present.
+dev.stowling.headless.Stowling
+Stowling dev.stowling.headless.Status
+Stowling dev.stowling.headless.Pause
+Stowling dev.stowling.headless.Resume
+Stowling dev.stowling.headless.Reload

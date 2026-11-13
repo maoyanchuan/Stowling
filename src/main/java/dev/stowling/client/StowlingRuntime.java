@@ -1,6 +1,7 @@
 package dev.stowling.client;
 
 import baritone.api.BaritoneAPI;
+import baritone.api.IBaritone;
 import dev.stowling.Stowling;
 import dev.stowling.api.StowlingHttpServer;
 import dev.stowling.automation.PickupAutomationEngine;
@@ -45,17 +46,33 @@ public final class StowlingRuntime implements AutoCloseable {
     private final ConfigLoader configLoader;
     private final StowlingControlServiceImpl service;
     private final StowlingHttpServer server;
+    private final ClientShutdownSequence shutdownSequence;
 
     private StowlingRuntime(
             Path configPath,
             ConfigLoader configLoader,
             StowlingControlServiceImpl service,
-            StowlingHttpServer server
+            StowlingHttpServer server,
+            BaritoneClientCleanup baritoneCleanup
     ) {
         this.configPath = configPath;
         this.configLoader = configLoader;
         this.service = service;
         this.server = server;
+        this.shutdownSequence = new ClientShutdownSequence(List.of(
+                new ClientShutdownSequence.ShutdownStep(
+                        "Baritone",
+                        baritoneCleanup::close
+                ),
+                new ClientShutdownSequence.ShutdownStep(
+                        "HTTP server",
+                        server::stop
+                ),
+                new ClientShutdownSequence.ShutdownStep(
+                        "headless bridge",
+                        () -> HeadlessControlBridge.clear(service)
+                )
+        ));
     }
 
     public static StowlingRuntime start(Minecraft minecraft) throws IOException {
@@ -95,6 +112,7 @@ public final class StowlingRuntime implements AutoCloseable {
         );
         SqliteAutomationCheckpointStore checkpoints =
                 new SqliteAutomationCheckpointStore(tasks);
+        IBaritone primaryBaritone = BaritoneAPI.getProvider().getPrimaryBaritone();
         BaritoneAutomationNavigation navigation = new BaritoneAutomationNavigation(
                 new dev.stowling.navigation.BaritoneNavigationService(
                 BaritoneAPI.getProvider()
@@ -144,7 +162,8 @@ public final class StowlingRuntime implements AutoCloseable {
                 configPath,
                 configLoader,
                 service,
-                server
+                server,
+                new BaritoneClientCleanup(primaryBaritone)
         );
         server.start();
         HeadlessControlBridge.install(service);
@@ -159,8 +178,7 @@ public final class StowlingRuntime implements AutoCloseable {
 
     @Override
     public void close() {
-        server.stop();
-        HeadlessControlBridge.clear(service);
+        shutdownSequence.close();
     }
 
     private static StowlingConfig loadOrCreateConfig(

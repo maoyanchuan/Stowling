@@ -4,6 +4,7 @@ import baritone.api.BaritoneAPI;
 import dev.stowling.Stowling;
 import dev.stowling.api.StowlingHttpServer;
 import dev.stowling.automation.PackingDisposition;
+import dev.stowling.automation.PickupAutomationEngine;
 import dev.stowling.automation.SystemAutomationClock;
 import dev.stowling.client.interaction.BaritoneAutomationNavigation;
 import dev.stowling.client.interaction.MinecraftClientActionScheduler;
@@ -12,6 +13,7 @@ import dev.stowling.client.interaction.MinecraftWorldObserver;
 import dev.stowling.client.interaction.ScreenInventorySource;
 import dev.stowling.config.ConfigLoader;
 import dev.stowling.config.StowlingConfig;
+import dev.stowling.control.PickupRuntimeFactory;
 import dev.stowling.control.StowlingControlServiceImpl;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.PackingStation;
@@ -92,21 +94,25 @@ public final class StowlingRuntime implements AutoCloseable {
         ),
                 worldObserver
         );
+        PickupRuntimeFactory pickupFactory = plan -> {
+            SystemAutomationClock clock = new SystemAutomationClock();
+            return new PickupAutomationEngine(
+                    plan,
+                    worldObserver,
+                    worldObserver,
+                    navigation,
+                    containers,
+                    request -> PackingDisposition.UNAVAILABLE,
+                    clock,
+                    checkpoints
+            );
+        };
         StowlingControlServiceImpl service = new StowlingControlServiceImpl(
                 config,
                 tasks,
                 inventories,
                 inventorySource,
-                plan -> new dev.stowling.automation.PickupAutomationEngine(
-                plan,
-                worldObserver,
-                worldObserver,
-                navigation,
-                containers,
-                request -> PackingDisposition.UNAVAILABLE,
-                        new SystemAutomationClock(),
-                checkpoints
-        ),
+                pickupFactory,
                 scheduler::execute,
                 () -> configLoader.load(configPath),
                 loaded -> inventories.upsertContainers(allContainers(loaded))

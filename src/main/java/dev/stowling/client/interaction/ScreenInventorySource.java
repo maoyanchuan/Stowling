@@ -1,17 +1,12 @@
 package dev.stowling.client.interaction;
 
-import dev.stowling.automation.ContainerSlot;
-import dev.stowling.automation.ContainerView;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryFreshness;
-import dev.stowling.inventory.InventoryItem;
-import dev.stowling.inventory.InventoryItemKind;
 import dev.stowling.inventory.InventorySnapshot;
 import dev.stowling.inventory.InventorySource;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -36,45 +31,34 @@ public final class ScreenInventorySource implements InventorySource {
     }
 
     @Override
-    public CompletableFuture<InventorySnapshot> capture(ContainerRef container) {
+    public CompletableFuture<InventoryCapture> capture(ContainerRef container) {
         Objects.requireNonNull(container, "container");
         return scheduler.submit(() -> captureOnClientThread(container));
     }
 
-    private InventorySnapshot captureOnClientThread(ContainerRef container) {
-        Optional<ContainerView> view = containers.observe(container);
-        if (view.isEmpty()) {
-            return new InventorySnapshot(
+    private InventoryCapture captureOnClientThread(ContainerRef container) {
+        Optional<List<InventoryCapture.SlotCapture>> slots = containers.captureInventory(
+                container
+        );
+        Instant capturedAt = Instant.now();
+        if (slots.isEmpty()) {
+            InventorySnapshot snapshot = new InventorySnapshot(
                     SOURCE_ID,
                     container.id(),
                     container.dimension(),
-                    Instant.now(),
+                    capturedAt,
                     InventoryFreshness.UNKNOWN,
                     List.of()
             );
+            return new InventoryCapture(snapshot, List.of());
         }
-        List<InventoryItem> items = new ArrayList<>();
-        for (ContainerSlot slot : view.orElseThrow().slots()) {
-            items.add(new InventoryItem(
-                    slot.itemId(),
-                    slot.count(),
-                    kindOf(slot.itemId())
-            ));
-        }
-        return new InventorySnapshot(
+        return InventoryCapture.fromSlots(
                 SOURCE_ID,
                 container.id(),
                 container.dimension(),
-                Instant.now(),
+                capturedAt,
                 InventoryFreshness.FRESH,
-                items
+                slots.orElseThrow()
         );
-    }
-
-    private static InventoryItemKind kindOf(String itemId) {
-        String normalized = itemId.toLowerCase(Locale.ROOT);
-        return normalized.endsWith("shulker_box")
-                ? InventoryItemKind.BOXED
-                : InventoryItemKind.LOOSE;
     }
 }

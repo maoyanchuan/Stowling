@@ -11,10 +11,12 @@ import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.StorageRoute;
+import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryItem;
 import dev.stowling.inventory.InventorySnapshot;
 import dev.stowling.inventory.InventorySource;
 import dev.stowling.persistence.InventoryAggregate;
+import dev.stowling.persistence.NestedInventoryScope;
 import dev.stowling.persistence.PersistedTask;
 import dev.stowling.persistence.SqliteAutomationCheckpointStore;
 import dev.stowling.persistence.SqliteInventoryRepository;
@@ -168,9 +170,9 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         }
         for (String containerId : request.containerIds()) {
             ContainerRef container = findContainer(containerId);
-            inventorySource.capture(container).whenComplete((snapshot, error) -> {
+            inventorySource.capture(container).whenComplete((capture, error) -> {
                 if (error == null) {
-                    persistAuditSnapshot(container, snapshot);
+                    persistAuditCapture(container, capture);
                 } else {
                     failures.incrementAndGet();
                 }
@@ -358,8 +360,20 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         tasks.save(failed);
     }
 
-    private void persistAuditSnapshot(ContainerRef container, InventorySnapshot snapshot) {
-        inventories.replaceSnapshot(container, snapshot, Instant.now());
+    private void persistAuditCapture(ContainerRef container, InventoryCapture capture) {
+        List<NestedInventoryScope> nestedScopes = capture.nestedScopes().stream()
+                .map(scope -> new NestedInventoryScope(
+                        scope.scopeId(),
+                        scope.parentScopeId(),
+                        scope.items()
+                ))
+                .toList();
+        inventories.replaceSnapshot(
+                container,
+                capture.snapshot(),
+                Instant.now(),
+                nestedScopes
+        );
     }
 
     private void finishAudit(UUID taskId, int failures) {

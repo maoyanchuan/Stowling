@@ -6,5 +6,5 @@ import java.util.concurrent.CompletableFuture;
 public interface InventorySource {
     String sourceId();
 
-    CompletableFuture<InventorySnapshot> capture(ContainerRef container);
+    CompletableFuture<InventoryCapture> capture(ContainerRef container);
 }

@@ -9,6 +9,9 @@ import dev.stowling.automation.ContainerTransfer;
 import dev.stowling.automation.ContainerView;
 import dev.stowling.automation.ItemAmount;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.inventory.InventoryCapture;
+import dev.stowling.inventory.InventoryItemKind;
+import dev.stowling.inventory.MenuSlotClassification;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -24,12 +27,17 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -37,7 +45,6 @@ import net.minecraft.world.phys.Vec3;
  * Confirms each container action from a newer menu state before issuing another click.
  */
 public final class MinecraftContainerInteraction implements ContainerInteraction {
-    private static final int PLAYER_SLOTS = 36;
     private static final Duration OPEN_TIMEOUT = Duration.ofSeconds(5);
 
     private final Minecraft minecraft;
@@ -97,6 +104,27 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             return Optional.empty();
         }
         return Optional.of(view(menu, container));
+    }
+
+    Optional<List<InventoryCapture.SlotCapture>> captureInventory(
+            ContainerRef container
+    ) {
+        requireClientThread();
+        Objects.requireNonNull(container, "container");
+        prepare(container);
+        AbstractContainerMenu menu = currentContainerMenu();
+        if (menu == null) {
+            return Optional.empty();
+        }
+        if (pendingOpen != null) {
+            openedContainer = pendingOpen;
+            pendingOpen = null;
+            pendingOpenedAt = null;
+        }
+        if (!container.equals(openedContainer)) {
+            return Optional.empty();
+        }
+        return Optional.of(captureSlots(menu));
     }
 
     @Override
@@ -207,8 +235,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             prepare(transaction.transfer.destination());
             return pending(attempt, revision(menu), "opening destination container");
         }
-        int sourceSlots = containerSlots(menu);
-        for (int slotIndex = 0; slotIndex < sourceSlots; slotIndex++) {
+        for (int slotIndex : slotClassification(menu).containerSlots()) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
             if (stack.isEmpty()) {
                 continue;
@@ -265,10 +292,10 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                     "all requested slots were confirmed by the server"
             );
         }
-        int containerSlots = containerSlots(menu);
+        MenuSlotClassification slots = slotClassification(menu);
         ItemStack carried = menu.getCarried();
         if (carried.isEmpty()) {
-            int picked = pickNextPlayerStack(menu, containerSlots, transaction.remaining);
+            int picked = pickNextPlayerStack(menu, slots.playerSlots(), transaction.remaining);
             if (picked < 0) {
                 return rejected(attempt, menu, "player inventory lacks the requested quantity");
             }
@@ -286,7 +313,7 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         if (wanted <= 0) {
             return rejected(attempt, menu, "cursor contains an unexpected item");
         }
-        int destinationSlot = findDestinationSlot(menu, containerSlots, carried);
+        int destinationSlot = findDestinationSlot(menu, slots.containerSlots(), carried);
         if (destinationSlot < 0) {
             return rejected(attempt, menu, "destination container has no compatible slot");
         }
@@ -358,10 +385,10 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
 
     private static int pickNextPlayerStack(
             AbstractContainerMenu menu,
-            int containerSlots,
+            List<Integer> playerSlots,
             Map<String, Integer> remaining
     ) {
-        for (int slot = containerSlots; slot < menu.slots.size(); slot++) {
+        for (int slot : playerSlots) {
             ItemStack stack = menu.getSlot(slot).getItem();
             if (!stack.isEmpty() && remaining.getOrDefault(itemId(stack), 0) > 0) {
                 return slot;
@@ -372,11 +399,11 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
 
     private static int findDestinationSlot(
             AbstractContainerMenu menu,
-            int containerSlots,
+            List<Integer> containerSlots,
             ItemStack carried
     ) {
         String carriedId = itemId(carried);
-        for (int slot = 0; slot < containerSlots; slot++) {
+        for (int slot : containerSlots) {
             Slot candidate = menu.getSlot(slot);
             ItemStack existing = candidate.getItem();
             if (existing.isEmpty()) {
@@ -447,17 +474,25 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             return null;
         }
         AbstractContainerMenu menu = screen.getMenu();
-        return menu.slots.size() <= PLAYER_SLOTS ? null : menu;
+        return slotClassification(menu).containerSlots().isEmpty() ? null : menu;
     }
 
-    private static int containerSlots(AbstractContainerMenu menu) {
-        return Math.max(0, menu.slots.size() - PLAYER_SLOTS);
+    private static MenuSlotClassification slotClassification(
+            AbstractContainerMenu menu
+    ) {
+        List<Boolean> playerSlotFlags = new ArrayList<>();
+        for (Slot slot : menu.slots) {
+            playerSlotFlags.add(slot.container instanceof Inventory);
+        }
+        return MenuSlotClassification.classify(playerSlotFlags);
     }
 
     private static ContainerView view(AbstractContainerMenu menu, ContainerRef container) {
-        int capacity = containerSlots(menu);
+        List<Integer> containerSlots = slotClassification(menu).containerSlots();
+        int capacity = containerSlots.size();
         List<ContainerSlot> slots = new ArrayList<>();
-        for (int slot = 0; slot < capacity; slot++) {
+        for (int slot : containerSlots) {
+            capacity = Math.max(capacity, slot + 1);
             ItemStack stack = menu.getSlot(slot).getItem();
             if (!stack.isEmpty()) {
                 slots.add(new ContainerSlot(slot, itemId(stack), stack.getCount()));
@@ -470,6 +505,65 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 capacity,
                 slots
         );
+    }
+
+    private static List<InventoryCapture.SlotCapture> captureSlots(
+            AbstractContainerMenu menu
+    ) {
+        List<InventoryCapture.SlotCapture> captures = new ArrayList<>();
+        for (int slot : slotClassification(menu).containerSlots()) {
+            ItemStack stack = menu.getSlot(slot).getItem();
+            if (!stack.isEmpty()) {
+                captures.add(captureSlot(slot, stack));
+            }
+        }
+        return List.copyOf(captures);
+    }
+
+    private static InventoryCapture.SlotCapture captureSlot(int slot, ItemStack stack) {
+        String itemId = itemId(stack);
+        if (!isShulkerBox(stack)) {
+            return new InventoryCapture.SlotCapture(
+                    slot,
+                    itemId,
+                    stack.getCount(),
+                    InventoryItemKind.LOOSE,
+                    List.of()
+            );
+        }
+        try {
+            ItemContainerContents contents = stack.getOrDefault(
+                    DataComponents.CONTAINER,
+                    ItemContainerContents.EMPTY
+            );
+            List<InventoryCapture.ItemCount> nested = contents
+                    .nonEmptyItemCopyStream()
+                    .map(item -> new InventoryCapture.ItemCount(
+                            itemId(item),
+                            item.getCount()
+                    ))
+                    .toList();
+            return new InventoryCapture.SlotCapture(
+                    slot,
+                    itemId,
+                    stack.getCount(),
+                    InventoryItemKind.BOXED,
+                    nested
+            );
+        } catch (RuntimeException exception) {
+            return new InventoryCapture.SlotCapture(
+                    slot,
+                    itemId,
+                    stack.getCount(),
+                    InventoryItemKind.UNKNOWN,
+                    List.of()
+            );
+        }
+    }
+
+    private static boolean isShulkerBox(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem blockItem
+                && blockItem.getBlock() instanceof ShulkerBoxBlock;
     }
 
     private static long revision(AbstractContainerMenu menu) {

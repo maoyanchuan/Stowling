@@ -30,15 +30,15 @@ class InventoryCaptureTest {
         InventoryCapture capture = capture(List.of(
                 slot(0, "minecraft:stone", 12, InventoryItemKind.LOOSE, List.of()),
                 slot(
-                        7,
-                        "minecraft:shulker_box",
-                        1,
-                        InventoryItemKind.BOXED,
-                        List.of(
+                7,
+                "minecraft:shulker_box",
+                1,
+                InventoryItemKind.BOXED,
+                List.of(
                                 new InventoryCapture.ItemCount("minecraft:iron_ingot", 32),
                                 new InventoryCapture.ItemCount("minecraft:redstone", 5)
-                        )
-                )
+        )
+        )
         ));
 
         assertEquals(List.of(

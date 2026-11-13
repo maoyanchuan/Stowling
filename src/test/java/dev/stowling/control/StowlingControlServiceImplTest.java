@@ -61,11 +61,7 @@ class StowlingControlServiceImplTest {
         assertEquals(List.of(new NestedInventoryScope(
                 "cache/slot/2",
                 Optional.of("cache"),
-                List.of(new InventoryItem(
-                        "minecraft:diamond",
-                        6,
-                        InventoryItemKind.BOXED
-                ))
+                List.of(new InventoryItem("minecraft:diamond", 6, InventoryItemKind.BOXED))
         )), stored.nestedScopes());
     }
 

@@ -542,9 +542,9 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             List<InventoryCapture.ItemCount> nested = contents
                     .nonEmptyItemCopyStream()
                     .map(item -> new InventoryCapture.ItemCount(
-                            itemId(item),
-                            item.getCount()
-                    ))
+                    itemId(item),
+                    item.getCount()
+            ))
                     .toList();
             return new InventoryCapture.SlotCapture(
                     slot,

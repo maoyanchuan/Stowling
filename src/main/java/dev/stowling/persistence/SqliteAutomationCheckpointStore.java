@@ -111,9 +111,9 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         checkpoint.inventoryBaseline().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> inventoryBaseline.addProperty(
-                        entry.getKey(),
-                        entry.getValue()
-                ));
+                entry.getKey(),
+                entry.getValue()
+        ));
         root.add("inventoryBaseline", inventoryBaseline);
         checkpoint.selectedCacheId().ifPresent(value ->
                 root.addProperty("selectedCacheId", value)

@@ -31,10 +31,10 @@ public record InventoryCapture(
             if (slot.kind() == InventoryItemKind.BOXED) {
                 List<InventoryItem> boxedItems = slot.contents().stream()
                         .map(item -> new InventoryItem(
-                                item.itemId(),
-                                item.count(),
-                                InventoryItemKind.BOXED
-                        ))
+                        item.itemId(),
+                        item.count(),
+                        InventoryItemKind.BOXED
+                ))
                         .toList();
                 scopes.add(new Scope(
                         containerId + "/slot/" + slot.menuSlot(),

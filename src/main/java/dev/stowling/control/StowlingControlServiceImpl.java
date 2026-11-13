@@ -363,10 +363,10 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     private void persistAuditCapture(ContainerRef container, InventoryCapture capture) {
         List<NestedInventoryScope> nestedScopes = capture.nestedScopes().stream()
                 .map(scope -> new NestedInventoryScope(
-                        scope.scopeId(),
-                        scope.parentScopeId(),
-                        scope.items()
-                ))
+                scope.scopeId(),
+                scope.parentScopeId(),
+                scope.items()
+        ))
                 .toList();
         inventories.replaceSnapshot(
                 container,

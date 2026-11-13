@@ -35,8 +35,9 @@
         resumeButton: document.querySelector("#resume-button"),
         reloadButton: document.querySelector("#reload-button"),
         pickupForm: document.querySelector("#pickup-form"),
-        siteInput: document.querySelector("#site-input"),
-        knownSites: document.querySelector("#known-sites"),
+        siteSelect: document.querySelector("#site-select"),
+        pickupSubmit: document.querySelector("#pickup-submit"),
+        pickupSitesMessage: document.querySelector("#pickup-sites-message"),
         tasksList: document.querySelector("#tasks-list"),
         refreshTasksButton: document.querySelector("#refresh-tasks-button"),
         containersList: document.querySelector("#containers-list"),
@@ -52,7 +53,6 @@
 
     let authToken = "";
     let refreshInFlight = false;
-    let knownSiteIds = [];
 
     /**
      * @param {string} path
@@ -88,10 +88,15 @@
                 }
             }
             if (!response.ok) {
+                const serverCode = payload?.error?.code || "";
                 const serverMessage = payload?.error?.message;
                 throw new ApiRequestError(
-                    serverMessage || statusMessage(response.status),
-                    response.status
+                    friendlyApiMessage(
+                        serverCode,
+                        serverMessage || statusMessage(response.status)
+                    ),
+                    response.status,
+                    serverCode
                 );
             }
             return payload;
@@ -131,15 +136,31 @@
         return "操作失败，请稍后重试";
     }
 
+    /**
+     * @param {string} code
+     * @param {string} fallback
+     * @returns {string}
+     */
+    function friendlyApiMessage(code, fallback) {
+        const messages = {
+            pickup_site_not_found: "配置中找不到这个拾取点，请刷新或重载配置后重新选择",
+            task_not_found: "该任务已不存在，请刷新任务列表",
+            container_not_found: "配置中找不到所选容器，请刷新或重载配置后重新选择"
+        };
+        return messages[code] || fallback;
+    }
+
     class ApiRequestError extends Error {
         /**
          * @param {string} message
          * @param {number} status
+         * @param {string} code
          */
-        constructor(message, status) {
+        constructor(message, status, code = "") {
             super(message);
             this.name = "ApiRequestError";
             this.status = status;
+            this.code = code;
         }
     }
 
@@ -249,6 +270,7 @@
             const results = await Promise.allSettled([
                 refreshStatus(),
                 refreshTasks(),
+                refreshPickupSites(),
                 refreshContainers(),
                 refreshInventory()
             ]);
@@ -277,6 +299,59 @@
     async function refreshTasks() {
         const tasks = await requestJson("/v1/tasks");
         renderTasks(Array.isArray(tasks) ? tasks : []);
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function refreshPickupSites() {
+        elements.siteSelect.disabled = true;
+        elements.pickupSubmit.disabled = true;
+        elements.pickupSitesMessage.classList.remove("error");
+        elements.pickupSitesMessage.textContent = "正在读取配置中的拾取点…";
+        try {
+            const pickupSites = await requestJson("/v1/pickup-sites");
+            renderPickupSites(Array.isArray(pickupSites) ? pickupSites : []);
+        } catch (error) {
+            renderPickupSites([], "无法读取拾取点，请稍后重试");
+            throw error;
+        }
+    }
+
+    /**
+     * @param {Array<object>} pickupSites
+     * @param {string} errorMessage
+     * @returns {void}
+     */
+    function renderPickupSites(pickupSites, errorMessage = "") {
+        const selectedId = elements.siteSelect.value;
+        elements.siteSelect.replaceChildren();
+        if (pickupSites.length === 0) {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "没有可用拾取点";
+            elements.siteSelect.append(option);
+            elements.siteSelect.disabled = true;
+            elements.pickupSubmit.disabled = true;
+            elements.pickupSitesMessage.classList.toggle("error", Boolean(errorMessage));
+            elements.pickupSitesMessage.textContent = errorMessage
+                || "配置中没有 pickupSites，请先添加拾取点并重载配置";
+            return;
+        }
+        for (const site of pickupSites) {
+            const center = site.center || {};
+            const option = document.createElement("option");
+            option.value = String(site.id || "");
+            option.textContent = `${site.id} · ${center.x}, ${center.y}, ${center.z}`;
+            elements.siteSelect.append(option);
+        }
+        if (pickupSites.some((site) => site.id === selectedId)) {
+            elements.siteSelect.value = selectedId;
+        }
+        elements.siteSelect.disabled = false;
+        elements.pickupSubmit.disabled = false;
+        elements.pickupSitesMessage.classList.remove("error");
+        elements.pickupSitesMessage.textContent = "仅可选择当前配置中的拾取点 ID";
     }
 
     /**
@@ -544,20 +619,6 @@
         return state;
     }
 
-    /**
-     * @param {string} siteId
-     * @returns {void}
-     */
-    function rememberSite(siteId) {
-        if (knownSiteIds.includes(siteId)) {
-            return;
-        }
-        knownSiteIds = [...knownSiteIds, siteId];
-        const option = document.createElement("option");
-        option.value = siteId;
-        elements.knownSites.append(option);
-    }
-
     elements.authForm.addEventListener("submit", (event) => {
         event.preventDefault();
         void connectToken(elements.tokenInput.value);
@@ -599,14 +660,18 @@
             showToast("配置已重载");
         } catch (error) {
             handleError(error, "重载配置失败");
+            return;
         }
+        await refreshPickupSites().catch((error) => {
+            handleError(error, "更新拾取点失败");
+        });
     });
 
     elements.pickupForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const siteId = elements.siteInput.value.trim();
+        const siteId = elements.siteSelect.value;
         if (!siteId) {
-            showToast("请输入拾取点 ID", true);
+            showToast("请选择一个配置中的拾取点", true);
             return;
         }
         try {
@@ -615,7 +680,6 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ siteId })
             });
-            rememberSite(siteId);
             showToast("拾取任务已创建");
             await refreshTasks();
         } catch (error) {

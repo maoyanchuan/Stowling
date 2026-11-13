@@ -45,7 +45,8 @@ body::before {
 }
 
 button,
-input {
+input,
+select {
     font: inherit;
 }
 
@@ -62,7 +63,8 @@ button:hover:not(:disabled) {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
     outline: 3px solid rgba(38, 112, 75, 0.25);
     outline-offset: 2px;
 }
@@ -222,7 +224,8 @@ form label {
     font-weight: 650;
 }
 
-input {
+input,
+select {
     width: 100%;
     min-width: 0;
     border: 1px solid var(--line);
@@ -236,14 +239,32 @@ input::placeholder {
     color: #97a198;
 }
 
+select:disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+}
+
 .inline-control {
     display: flex;
     align-items: stretch;
     gap: 0.6rem;
 }
 
-.inline-control input {
+.inline-control input,
+.inline-control select {
     flex: 1 1 14rem;
+}
+
+.field-message {
+    min-height: 1.4rem;
+    margin: 0.5rem 0 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.field-message.error {
+    color: var(--danger);
 }
 
 .primary {

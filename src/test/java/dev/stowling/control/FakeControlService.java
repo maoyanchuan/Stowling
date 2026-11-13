@@ -3,7 +3,6 @@ package dev.stowling.control;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,8 +45,23 @@ public final class FakeControlService implements StowlingControlService {
     }
 
     @Override
+    public List<PickupSiteInfo> pickupSites() {
+        calls.incrementAndGet();
+        return List.of(new PickupSiteInfo(
+                "north",
+                "minecraft:overworld",
+                new ContainerPosition(1, -44, 4),
+                16,
+                60
+        ));
+    }
+
+    @Override
     public TaskInfo requestPickup(PickupRequest request) {
         calls.incrementAndGet();
+        if (!"north".equals(request.siteId())) {
+            throw new PickupSiteNotFoundException();
+        }
         UUID id = UUID.fromString("22222222-2222-2222-2222-222222222222");
         TaskInfo task = task(id, "PENDING");
         tasks.put(id, task);
@@ -59,7 +73,7 @@ public final class FakeControlService implements StowlingControlService {
         calls.incrementAndGet();
         TaskInfo existing = tasks.get(taskId);
         if (existing == null) {
-            throw new NoSuchElementException();
+            throw new TaskNotFoundException();
         }
         TaskInfo cancelled = task(taskId, "CANCELLED");
         tasks.put(taskId, cancelled);
@@ -69,6 +83,9 @@ public final class FakeControlService implements StowlingControlService {
     @Override
     public AuditResult requestAudit(AuditRequest request) {
         calls.incrementAndGet();
+        if (request.containerIds().stream().anyMatch(id -> !"overflow".equals(id))) {
+            throw new ContainerNotFoundException();
+        }
         return new AuditResult(
                 UUID.fromString("33333333-3333-3333-3333-333333333333"),
                 NOW

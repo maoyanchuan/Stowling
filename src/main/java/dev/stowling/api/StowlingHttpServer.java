@@ -4,8 +4,11 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.stowling.control.AuditRequest;
+import dev.stowling.control.ContainerNotFoundException;
 import dev.stowling.control.PickupRequest;
+import dev.stowling.control.PickupSiteNotFoundException;
 import dev.stowling.control.StowlingControlService;
+import dev.stowling.control.TaskNotFoundException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,7 +25,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -194,8 +196,17 @@ public final class StowlingHttpServer implements AutoCloseable {
             sendErrorQuietly(exchange, 413, "request_too_large", exception.getMessage());
         } catch (InvalidRequestException exception) {
             sendErrorQuietly(exchange, 400, "invalid_request", exception.getMessage());
-        } catch (NoSuchElementException exception) {
+        } catch (PickupSiteNotFoundException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    404,
+                    "pickup_site_not_found",
+                    "Pickup site not found"
+            );
+        } catch (TaskNotFoundException exception) {
             sendErrorQuietly(exchange, 404, "task_not_found", "Task not found");
+        } catch (ContainerNotFoundException exception) {
+            sendErrorQuietly(exchange, 404, "container_not_found", "Container not found");
         } catch (Exception exception) {
             sendErrorQuietly(
                     exchange,
@@ -287,6 +298,10 @@ public final class StowlingHttpServer implements AutoCloseable {
             case TASKS -> {
                 requestParser.requireEmpty(body);
                 sendJson(exchange, 200, List.copyOf(service.tasks()));
+            }
+            case PICKUP_SITES -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, List.copyOf(service.pickupSites()));
             }
             case PICKUP -> {
                 PickupRequest request = requestParser.parsePickup(body);
@@ -489,6 +504,7 @@ public final class StowlingHttpServer implements AutoCloseable {
     private enum Route {
         STATUS("GET", "/v1/status"),
         TASKS("GET", "/v1/tasks"),
+        PICKUP_SITES("GET", "/v1/pickup-sites"),
         PICKUP("POST", "/v1/tasks/pickup"),
         CANCEL("POST", null),
         AUDITS("POST", "/v1/audits"),

@@ -81,7 +81,9 @@ Use **Clear token** to remove it from the current browser session.
 
 The console shows runtime status, tasks, containers, and inventory snapshots. It can start
 pickup tasks, cancel tasks, pause or resume automation, request audits, and reload config.
-Status data refreshes every 10 seconds, and an expired token prompts for re-entry.
+The pickup selector automatically lists each configured `pickupSites` ID with its center
+coordinates, so coordinates are never entered in place of a site ID. Status data refreshes
+every 10 seconds, and an expired token prompts for re-entry.
 
 The page is available only through the loopback listener. Static assets load without a
 token, while every `/v1/*` API request still requires the correct Bearer token.

@@ -1,6 +1,7 @@
 package dev.stowling.control;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.domain.BlockPosition;
@@ -34,6 +35,43 @@ class StowlingControlServiceImplTest {
     Path tempDir;
 
     @Test
+    void exposesConfiguredPickupSitesAsReadOnlyControlDtos() {
+        ContainerRef cache = container("cache", 0);
+        ContainerRef overflow = container("overflow", 10);
+        StowlingConfig config = config(cache, overflow);
+        StowlingControlServiceImpl service = service(config, source(capture(cache)));
+
+        assertEquals(List.of(new PickupSiteInfo(
+                "farm",
+                DIMENSION,
+                new ContainerPosition(0, 64, 0),
+                16,
+                0
+        )), service.pickupSites());
+    }
+
+    @Test
+    void reportsSpecificMissingControlResources() {
+        ContainerRef cache = container("cache", 0);
+        ContainerRef overflow = container("overflow", 10);
+        StowlingConfig config = config(cache, overflow);
+        StowlingControlServiceImpl service = service(config, source(capture(cache)));
+
+        assertThrows(
+                PickupSiteNotFoundException.class,
+                () -> service.requestPickup(new PickupRequest("missing"))
+        );
+        assertThrows(
+                TaskNotFoundException.class,
+                () -> service.cancelTask(java.util.UUID.randomUUID())
+        );
+        assertThrows(
+                ContainerNotFoundException.class,
+                () -> service.requestAudit(new AuditRequest(List.of("missing")))
+        );
+    }
+
+    @Test
     void auditPersistsDetailedNestedCapture() {
         ContainerRef cache = container("cache", 0);
         ContainerRef overflow = container("overflow", 10);
@@ -63,6 +101,25 @@ class StowlingControlServiceImplTest {
                 Optional.of("cache"),
                 List.of(new InventoryItem("minecraft:diamond", 6, InventoryItemKind.BOXED))
         )), stored.nestedScopes());
+    }
+
+    private StowlingControlServiceImpl service(
+            StowlingConfig config,
+            InventorySource inventorySource
+    ) {
+        StowlingDatabase database = new StowlingDatabase(tempDir.resolve("control.db"));
+        return new StowlingControlServiceImpl(
+                config,
+                new SqliteTaskRepository(database),
+                new SqliteInventoryRepository(database),
+                inventorySource,
+                ignored -> {
+                    throw new AssertionError("pickup runtime is not used by this test");
+                },
+                Runnable::run,
+                () -> config,
+                Objects::requireNonNull
+        );
     }
 
     private static InventorySource source(InventoryCapture capture) {

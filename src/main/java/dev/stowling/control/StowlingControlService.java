@@ -7,6 +7,8 @@ public interface StowlingControlService extends TaskControl, AuditControl, Confi
 
     List<InventoryInfo> inventory();
 
+    List<PickupSiteInfo> pickupSites();
+
     List<ContainerInfo> containers();
 
     ControlStatus pause();

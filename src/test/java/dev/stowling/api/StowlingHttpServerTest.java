@@ -63,6 +63,29 @@ class StowlingHttpServerTest {
     }
 
     @Test
+    void requiresAuthenticationForEveryApiRoute() throws Exception {
+        String cancelPath = "/v1/tasks/" + FakeControlService.TASK_ID + "/cancel";
+        List<ApiCall> calls = List.of(
+                new ApiCall("GET", "/v1/status", null),
+                new ApiCall("GET", "/v1/tasks", null),
+                new ApiCall("GET", "/v1/pickup-sites", null),
+                new ApiCall("POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}"),
+                new ApiCall("POST", cancelPath, null),
+                new ApiCall("POST", "/v1/audits", "{\"containerIds\":[]}"),
+                new ApiCall("GET", "/v1/inventory", null),
+                new ApiCall("GET", "/v1/containers", null),
+                new ApiCall("POST", "/v1/pause", null),
+                new ApiCall("POST", "/v1/resume", null),
+                new ApiCall("POST", "/v1/config/reload", null)
+        );
+
+        for (ApiCall call : calls) {
+            assertEquals(401, send(call.method(), call.path(), call.body(), null).statusCode());
+        }
+        assertEquals(0, service.calls());
+    }
+
+    @Test
     void acceptsCorrectToken() throws Exception {
         HttpResponse<String> response = send("GET", "/v1/status", null, TOKEN);
 
@@ -85,6 +108,11 @@ class StowlingHttpServerTest {
         assertTrue(page.body().contains("src=\"/app.js\""));
         assertTrue(script.body().contains("Authorization"));
         assertTrue(script.body().contains("sessionStorage"));
+        assertTrue(script.body().contains("/v1/pickup-sites"));
+        assertTrue(script.body().contains("pickup_site_not_found"));
+        assertTrue(script.body().contains("配置中找不到这个拾取点"));
+        assertTrue(page.body().contains("<select id=\"site-select\""));
+        assertFalse(page.body().contains("id=\"site-input\""));
         assertFalse(script.body().contains("localStorage"));
         assertTrue(styles.body().contains("@media (max-width: 760px)"));
         assertEquals(
@@ -159,6 +187,7 @@ class StowlingHttpServerTest {
     void servesEveryDocumentedRoute() throws Exception {
         assertStatus(200, "GET", "/v1/status", null);
         assertStatus(200, "GET", "/v1/tasks", null);
+        assertStatus(200, "GET", "/v1/pickup-sites", null);
         assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
         assertStatus(
                 200,
@@ -172,6 +201,44 @@ class StowlingHttpServerTest {
         assertStatus(200, "POST", "/v1/pause", null);
         assertStatus(200, "POST", "/v1/resume", null);
         assertStatus(200, "POST", "/v1/config/reload", null);
+    }
+
+    @Test
+    void returnsConfiguredPickupSites() throws Exception {
+        HttpResponse<String> response = send("GET", "/v1/pickup-sites", null, TOKEN);
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"id\":\"north\""));
+        assertTrue(response.body().contains("\"dimension\":\"minecraft:overworld\""));
+        assertTrue(response.body().contains("\"center\":{\"x\":1,\"y\":-44,\"z\":4}"));
+        assertTrue(response.body().contains("\"radius\":16"));
+        assertTrue(response.body().contains("\"idleDelaySeconds\":60"));
+    }
+
+    @Test
+    void reportsMissingResourcesWithSpecificErrors() throws Exception {
+        HttpResponse<String> pickupSite = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"siteId\":\"missing\"}",
+                TOKEN
+        );
+        HttpResponse<String> task = send(
+                "POST",
+                "/v1/tasks/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cancel",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> container = send(
+                "POST",
+                "/v1/audits",
+                "{\"containerIds\":[\"missing\"]}",
+                TOKEN
+        );
+
+        assertApiError(pickupSite, "pickup_site_not_found", "Pickup site not found");
+        assertApiError(task, "task_not_found", "Task not found");
+        assertApiError(container, "container_not_found", "Container not found");
     }
 
     @Test
@@ -329,6 +396,16 @@ class StowlingHttpServerTest {
         assertEquals(status, send(method, path, body, TOKEN).statusCode());
     }
 
+    private static void assertApiError(
+            HttpResponse<String> response,
+            String code,
+            String message
+    ) {
+        assertEquals(404, response.statusCode());
+        assertTrue(response.body().contains("\"code\":\"" + code + "\""));
+        assertTrue(response.body().contains("\"message\":\"" + message + "\""));
+    }
+
     private HttpResponse<String> send(
             String method,
             String path,
@@ -355,5 +432,8 @@ class StowlingHttpServerTest {
                 .header("Content-Type", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString(body))
                 .build();
+    }
+
+    private record ApiCall(String method, String path, String body) {
     }
 }

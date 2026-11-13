@@ -32,7 +32,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -93,6 +92,23 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     @Override
+    public synchronized List<PickupSiteInfo> pickupSites() {
+        return config.pickupSites().stream()
+                .map(site -> new PickupSiteInfo(
+                        site.id(),
+                        site.dimension(),
+                        new ContainerPosition(
+                                site.center().x(),
+                                site.center().y(),
+                                site.center().z()
+                        ),
+                        site.radius(),
+                        site.idleDelay().toSeconds()
+                ))
+                .toList();
+    }
+
+    @Override
     public synchronized TaskInfo requestPickup(PickupRequest request) {
         Objects.requireNonNull(request, "request");
         if (activePickup != null) {
@@ -101,7 +117,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         PickupSite site = config.pickupSites().stream()
                 .filter(candidate -> candidate.id().equals(request.siteId()))
                 .findFirst()
-                .orElseThrow(() -> new NoSuchElementException("pickup site not found"));
+                .orElseThrow(PickupSiteNotFoundException::new);
         Instant now = Instant.now();
         UUID taskId = UUID.randomUUID();
         TaskSnapshot snapshot = new TaskSnapshot(
@@ -123,7 +139,8 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     @Override
     public synchronized TaskInfo cancelTask(UUID taskId) {
         Objects.requireNonNull(taskId, "taskId");
-        TaskSnapshot existing = tasks.findById(taskId).orElseThrow();
+        TaskSnapshot existing = tasks.findById(taskId)
+                .orElseThrow(TaskNotFoundException::new);
         if (activePickup != null && activePickup.taskId.equals(taskId)) {
             PickupAutomationEngine engine = activePickup.engine;
             clientExecutor.accept(engine::cancel);
@@ -148,7 +165,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         Set<String> known = containerIds(config);
         for (String containerId : request.containerIds()) {
             if (!known.contains(containerId)) {
-                throw new NoSuchElementException("container not found");
+                throw new ContainerNotFoundException();
             }
         }
         Instant now = Instant.now();
@@ -403,7 +420,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return allContainers(config).stream()
                 .filter(container -> container.id().equals(containerId))
                 .findFirst()
-                .orElseThrow(() -> new NoSuchElementException("container not found"));
+                .orElseThrow(ContainerNotFoundException::new);
     }
 
     private static Set<String> containerIds(StowlingConfig config) {

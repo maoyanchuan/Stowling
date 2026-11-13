@@ -99,13 +99,16 @@
                     </div>
                 </div>
                 <form id="pickup-form" class="pickup-form">
-                    <label for="site-input">拾取点 siteId</label>
+                    <label for="site-select">拾取点</label>
                     <div class="inline-control">
-                        <input id="site-input" list="known-sites" maxlength="128"
-                               placeholder="例如 north-cache" required>
-                        <datalist id="known-sites"></datalist>
-                        <button class="primary" type="submit">开始任务</button>
+                        <select id="site-select" required disabled>
+                            <option value="">正在加载拾取点…</option>
+                        </select>
+                        <button id="pickup-submit" class="primary" type="submit" disabled>
+                            开始任务
+                        </button>
                     </div>
+                    <p id="pickup-sites-message" class="field-message" role="status"></p>
                 </form>
             </section>
 

@@ -96,11 +96,15 @@ code {
 }
 
 .brand-mark {
-    display: block;
+    display: grid;
     width: 46px;
     height: 46px;
-    object-fit: contain;
+    place-items: center;
     border-radius: 14px 14px 14px 4px;
+    color: #ffffff;
+    font-size: 1.42rem;
+    font-weight: 800;
+    background: linear-gradient(145deg, #3f8c64, #1c5138);
     box-shadow: 0 10px 24px rgba(29, 81, 56, 0.26);
 }
 

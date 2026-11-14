@@ -1,7 +1,3 @@
-<p align="center">
-    <img src="src/main/resources/assets/stowling/icon.svg" alt="Stowling" width="96">
-</p>
-
 # Stowling
 
 [English](README.md) | 简体中文

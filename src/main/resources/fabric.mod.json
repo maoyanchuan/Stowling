@@ -4,7 +4,6 @@
     "version": "${version}",
     "name": "Stowling",
     "description": "Baritone-backed pickup, sorting, packing, and inventory automation.",
-    "icon": "assets/stowling/icon.png",
     "authors": [
         "Stowling contributors"
     ],

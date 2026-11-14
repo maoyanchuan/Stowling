@@ -4,239 +4,311 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "src" / "main" / "resources" / "stowling-web"
-HTML = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-SCRIPT = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
-STYLES = (WEB_ROOT / "styles.css").read_text(encoding="utf-8")
 
 
-def test_pickup_editor_exposes_all_resource_sections() -> None:
-    required_ids = {
-        "pickup-config-panel",
-        "pickup-config-form",
-        "pickup-regions-list",
-        "pickup-caches-list",
-        "pickup-workflows-list",
-        "pickup-config-save",
-        "pickup-config-discard",
-        "pickup-config-errors",
+def read_web(name: str) -> str:
+    return (WEB_ROOT / name).read_text(encoding="utf-8")
+
+
+PAGES = {
+    "index.html": read_web("index.html"),
+    "coordinates.html": read_web("coordinates.html"),
+    "tasks.html": read_web("tasks.html"),
+    "storage.html": read_web("storage.html"),
+}
+COMMON = read_web("common.js")
+COORDINATES = read_web("coordinates.js")
+TASKS = read_web("tasks.js")
+STORAGE = read_web("storage.js")
+DASHBOARD = read_web("dashboard.js")
+STYLES = read_web("styles.css")
+SCRIPTS = COMMON + COORDINATES + TASKS + STORAGE + DASHBOARD
+
+
+def test_four_pages_are_real_urls_with_shared_assets() -> None:
+    expected_titles = {
+        "index.html": "状态概览",
+        "coordinates.html": "命名坐标",
+        "tasks.html": "任务编排",
+        "storage.html": "仓库与库存",
     }
 
-    for element_id in required_ids:
-        assert f'id="{element_id}"' in HTML
+    for filename, html in PAGES.items():
+        assert f"<title>{expected_titles[filename]}" in html
+        assert 'id="app-nav"' in html
+        assert 'id="auth-shell"' in html
+        assert 'id="workspace"' in html
+        assert 'src="/common.js"' in html
+        assert 'href="/styles.css"' in html
+        assert 'href="#' not in html
+
+    for route in (
+        "/index.html",
+        "/coordinates.html",
+        "/tasks.html",
+        "/storage.html",
+    ):
+        assert f'href: "{route}"' in COMMON
 
 
-def test_editor_has_three_crud_entry_points_and_ordering_support() -> None:
+def test_each_page_loads_its_focused_script() -> None:
+    assert 'src="/dashboard.js"' in PAGES["index.html"]
+    assert 'src="/coordinates.js"' in PAGES["coordinates.html"]
+    assert 'src="/tasks.js"' in PAGES["tasks.html"]
+    assert 'src="/storage.js"' in PAGES["storage.html"]
+    assert "app.js" not in "".join(PAGES.values())
+
+
+def test_coordinate_page_supports_named_coordinate_crud_and_ordering() -> None:
+    html = PAGES["coordinates.html"]
     for element_id in (
-        "add-region-button",
-        "add-cache-button",
+        "coordinate-form",
+        "coordinate-list",
+        "add-coordinate-button",
+        "discard-coordinate-button",
+        "save-coordinate-button",
+        "coordinate-errors",
+    ):
+        assert f'id="{element_id}"' in html
+
+    for fragment in (
+        "function addPoint()",
+        "function removePoint(index)",
+        "function movePoint(index, offset)",
+        "function createPointCard(point, index)",
+        'for (const axis of ["x", "y", "z"])',
+        'document.createElement("select")',
+        "state.draft.coordinatePoints.splice(index, 1)",
+    ):
+        assert fragment in COORDINATES
+
+    assert "坐标 ID" in COORDINATES
+    assert "显示名称" in COORDINATES
+    assert "维度" in COORDINATES
+
+
+def test_coordinate_page_uses_atomic_revision_save() -> None:
+    assert 'Stowling.request("/v1/config/coordinate-points")' in COORDINATES
+    assert 'method: "PUT"' in COORDINATES
+    assert "revision: state.snapshot.revision" in COORDINATES
+    assert "coordinatePoints:" in COORDINATES
+    assert 'error.status === 409' in COORDINATES
+    assert 'error?.code === "active_task_conflict"' in COORDINATES
+    assert "配置已被外部修改" in COORDINATES
+    assert "活动或暂停任务存在" in COORDINATES
+
+
+def test_coordinate_delete_checks_pickup_and_automation_references() -> None:
+    assert 'Stowling.request("/v1/config/pickup")' in COORDINATES
+    assert 'Stowling.request("/v1/config/automation-workflows")' in COORDINATES
+    assert "standbyCoordinateId" in COORDINATES
+    assert "centerCoordinateId" in COORDINATES
+    assert "firstCornerCoordinateId" in COORDINATES
+    assert "secondCornerCoordinateId" in COORDINATES
+    assert "仍被" in COORDINATES
+    assert "请先在对应页面解除引用" in COORDINATES
+
+
+def test_task_page_is_a_visual_module_builder() -> None:
+    html = PAGES["tasks.html"]
+    for element_id in (
+        "workflow-form",
+        "workflow-list",
+        "workflow-editor",
+        "step-list",
         "add-workflow-button",
+        "add-step-button",
+        "save-workflow-button",
+        "launch-workflow",
+        "start-task-button",
+        "task-list",
     ):
-        assert f'id="{element_id}"' in HTML
+        assert f'id="{element_id}"' in html
 
-    assert "removePickupResource" in SCRIPT
-    assert "movePickupResource" in SCRIPT
-    assert "moveWorkflowBinding" in SCRIPT
-    assert '.draggable = true' in SCRIPT
-    assert 'addEventListener("drop"' in SCRIPT
+    for fragment in (
+        "function addWorkflow()",
+        "function addStep()",
+        "function moveWorkflow(index, offset)",
+        "function moveStep(workflow, index, offset)",
+        "function moduleSelect(step, index, workflow)",
+        "function parameterControl(step, definition, stepIndex)",
+        "workflow.steps.splice(index, 1)",
+    ):
+        assert fragment in TASKS
 
 
-def test_editor_reads_and_atomically_saves_pickup_configuration() -> None:
-    assert 'requestJson("/v1/config/pickup")' in SCRIPT
-    assert 'requestJson("/v1/config/pickup", {' in SCRIPT
-    assert "revision: pickupConfigSnapshot.revision" in SCRIPT
-    assert "pickupRegions: pickupConfigForSave.pickupRegions" in SCRIPT
-    assert "cacheContainers: pickupConfigForSave.cacheContainers" in SCRIPT
-    assert "pickupWorkflows: pickupConfigForSave.pickupWorkflows" in SCRIPT
-
-    save_block = re.search(
-        r'pickupConfigForm\.addEventListener\("submit"[\s\S]+?'
-        r'pickupConfigDiscard\.addEventListener',
-        SCRIPT,
+def test_task_builder_exposes_all_first_release_modules() -> None:
+    expected_types = (
+        "NAVIGATE",
+        "WAIT",
+        "RUN_PICKUP",
+        "TAKE_ITEMS",
+        "PUT_ITEMS",
+        "TRANSFER_ITEMS",
+        "CHECK_INVENTORY",
+        "ACQUIRE_MATERIALS",
+        "CRAFT_ITEM",
     )
-    assert save_block is not None
-    assert "refreshPickupConfig(true)" in save_block.group(0)
-    assert "refreshPickupWorkflows()" in save_block.group(0)
+    for module_type in expected_types:
+        assert module_type in TASKS
 
-
-def test_pickup_start_uses_workflow_and_optional_region() -> None:
-    assert 'id="workflow-select"' in HTML
-    assert 'id="pickup-region-select"' in HTML
-    assert 'const body = { workflowId };' in SCRIPT
-    assert "body.regionId = regionId;" in SCRIPT
-    assert 'requestJson("/v1/tasks/pickup"' in SCRIPT
-    assert "siteId" not in SCRIPT
-
-
-def test_client_side_validation_covers_required_chinese_errors() -> None:
-    expected_messages = (
-        "重复 ID",
-        "显示名称不能为空",
-        "跨维度",
-        "至少选择一个区域",
-        "至少选择一个缓存",
-        "第一角点不能大于第二角点",
-        "半径必须为 1-128",
-        "被流程",
-        "必须选择一个已保存的命名坐标",
-    )
-
-    for message in expected_messages:
-        assert message in SCRIPT
-
-    assert "active_task_conflict" in SCRIPT
-    assert "活动或暂停任务存在" in SCRIPT
-
-
-def test_user_content_uses_dom_apis_instead_of_html_interpolation() -> None:
-    assert "innerHTML" not in SCRIPT
-    assert ".textContent" in SCRIPT
-    assert ".replaceChildren" in SCRIPT
-    assert "sessionStorage.setItem(TOKEN_KEY, token)" in SCRIPT
-    assert "localStorage" not in SCRIPT
-
-
-def test_task_cards_show_workflow_progress_fields() -> None:
-    for field in ("workflowId", "currentRegionId", "round", "stage"):
-        assert f"task.{field}" in SCRIPT
-
-
-def test_layout_is_responsive_and_preserves_coordinate_scope() -> None:
-    assert ".pickup-config-grid" in STYLES
-    assert ".workflow-column" in STYLES
-    assert "@media (max-width: 760px)" in STYLES
-    assert "命名坐标库" in HTML
-    assert "基础坐标（仓库/溢出/装盒）" in HTML
-    assert '["CONTAINER", "仓库与溢出容器"]' in SCRIPT
-    assert "PICKUP_SITE_CENTER" not in SCRIPT
-
-
-def test_navigation_exposes_independent_named_coordinate_page() -> None:
-    required_ids = (
-        "workspace-nav",
-        "coordinate-library-nav",
-        "coordinate-library-panel",
-        "coordinate-library-title",
-        "coordinates-nav",
-    )
-    for element_id in required_ids:
-        assert f'id="{element_id}"' in HTML
-
-    assert 'href="#coordinate-library-panel"' in HTML
-    assert "命名坐标库" in HTML
-    assert "基础坐标（仓库/溢出/装盒）" in HTML
-
-
-def test_named_coordinates_support_crud_and_draft_ordering() -> None:
-    assert 'id="add-coordinate-point-button"' in HTML
-    assert "function addCoordinatePoint()" in SCRIPT
-    assert "function removeCoordinatePoint(index)" in SCRIPT
-    assert "function moveCoordinatePoint(index, offset)" in SCRIPT
-    assert "function createCoordinatePointEditor(point, index)" in SCRIPT
-    assert "card.draggable = true" in SCRIPT
-    assert "coordinateLibraryDirty = true" in SCRIPT
-    assert "coordinateLibraryDraft.coordinatePoints.push(point)" in SCRIPT
-    assert "coordinateLibraryDraft.coordinatePoints.splice(index, 1)" in SCRIPT
-    assert 'createTextField("显示名称", point.name' in SCRIPT
-    assert 'createDimensionField(point.dimension' in SCRIPT
-    assert 'for (const axis of ["x", "y", "z"])' in SCRIPT
-
-
-def test_coordinate_page_saves_atomic_revision_snapshot_and_reads_back() -> None:
-    save_block = re.search(
-        r'coordinateLibraryForm\.addEventListener\("submit"[\s\S]+?'
-        r'elements\.coordinateLibraryDiscard\.addEventListener',
-        SCRIPT,
-    )
-    assert save_block is not None
-    block = save_block.group(0)
-    assert 'requestJson("/v1/config/coordinate-points"' in block
-    assert 'method: "PUT"' in block
-    assert "revision: coordinateLibrarySnapshot.revision" in block
-    assert "coordinatePoints" in block
-    assert "refreshCoordinateLibrary(true)" in block
-    assert "error.status === 409" in block
-    assert "error.status === 400" in block
-
-
-def test_pickup_editors_reference_named_coordinates() -> None:
-    for field in (
-        "standbyCoordinateId",
-        "centerCoordinateId",
-        "firstCornerCoordinateId",
-        "secondCornerCoordinateId",
+    for field_name in (
         "coordinateId",
+        "workflowId",
+        "regionId",
+        "sourceContainerId",
+        "destinationContainerId",
+        "itemId",
+        "count",
+        "durationSeconds",
     ):
-        assert field in SCRIPT
-
-    assert "function createCoordinateSelectField(" in SCRIPT
-    assert 'select.dataset.coordinateId = String(selectedId || "")' in SCRIPT
-    assert "跨维度：坐标属于" in SCRIPT
-    region_editor = re.search(
-        r"function createRegionEditor\(region, index\) \{[\s\S]+?"
-        r"function changeRegionShape",
-        SCRIPT,
-    )
-    cache_editor = re.search(
-        r"function createCacheEditor\(cache, index\) \{[\s\S]+?"
-        r"function containerTypeOptions",
-        SCRIPT,
-    )
-    assert region_editor is not None
-    assert cache_editor is not None
-    assert 'createPositionEditor("待机点"' not in region_editor.group(0)
-    assert "region.standbyPosition" not in region_editor.group(0)
-    assert "cache.position" not in cache_editor.group(0)
+        assert field_name in TASKS
 
 
-def test_referenced_coordinate_delete_is_blocked_with_resource_list() -> None:
-    assert "function coordinatePointReferences(coordinateId)" in SCRIPT
-    assert '`拾取区域“${region.name || region.id}”（${fields.join("、")}）`' in SCRIPT
-    assert '`缓存容器“${cache.name || cache.id}”（坐标）`' in SCRIPT
-    assert "仍被 ${references.join" in SCRIPT
-    assert "请先到拾取配置中解除引用并保存" in SCRIPT
-    assert "setCoordinateLibraryErrors([message])" in SCRIPT
+def test_task_requests_match_backend_parameter_contract() -> None:
+    assert 'type === "WAIT"' in TASKS
+    assert "result.seconds" in TASKS
+    assert "result.containerId" in TASKS
+    assert "result.destination" in TASKS
+    assert 'String(parameters.durationSeconds ?? "")' in TASKS
+    assert 'String(parameters.sourceContainerId || "")' in TASKS
+    assert 'String(parameters.destinationContainerId || "")' in TASKS
+    assert "delete result[key]" in TASKS
 
 
-def test_pickup_save_does_not_resend_named_coordinate_collection() -> None:
-    save_block = re.search(
-        r'pickupConfigForm\.addEventListener\("submit"[\s\S]+?'
-        r'pickupConfigDiscard\.addEventListener',
-        SCRIPT,
-    )
-    assert save_block is not None
-    block = save_block.group(0)
-    assert 'requestJson("/v1/config/pickup"' in block
-    assert "pickupRegions: pickupConfigForSave.pickupRegions" in block
-    assert "cacheContainers: pickupConfigForSave.cacheContainers" in block
-    assert "pickupWorkflows: pickupConfigForSave.pickupWorkflows" in block
-    assert "coordinatePoints" not in block
+def test_task_page_uses_expected_automation_apis() -> None:
+    assert '"/v1/config/automation-workflows"' in TASKS
+    assert '"/v1/automation-modules"' in TASKS
+    assert '"/v1/tasks/automation"' in TASKS
+    assert '"/v1/tasks"' in TASKS
+    assert "`/v1/tasks/${encodeURIComponent(taskId)}/cancel`" in TASKS
+    assert '"/v1/pause"' in TASKS
+    assert '"/v1/resume"' in TASKS
+    assert "workflowId" in TASKS
+    assert "currentStepId" in TASKS
+    assert "moduleState" in TASKS
 
 
-def test_pickup_save_hydrates_strict_legacy_positions_from_coordinates() -> None:
-    hydrate_block = re.search(
-        r"function hydratePickupConfigForSave\(\) \{[\s\S]+?"
-        r"function requireSavedCoordinatePosition",
-        SCRIPT,
-    )
-    assert hydrate_block is not None
-    hydration = hydrate_block.group(0)
-    assert "const requestDraft = cloneJson(pickupConfigDraft);" in hydration
-    assert "region.standbyPosition = cloneJson(" in hydration
-    assert "region.shape.center = cloneJson(" in hydration
-    assert "region.shape.firstCorner = cloneJson(" in hydration
-    assert "region.shape.secondCorner = cloneJson(" in hydration
-    assert "cache.position = cloneJson(" in hydration
-    assert "requireSavedCoordinatePosition(" in hydration
-    assert "pickupConfigDraft.pickupRegions =" not in hydration
-    assert "命名坐标不存在或无效" in SCRIPT
+def test_task_save_is_atomic_and_validation_is_explicit() -> None:
+    assert "revision: state.snapshot.revision" in TASKS
+    assert "automationWorkflows:" in TASKS
+    assert 'method: "PUT"' in TASKS
+    assert "function validateDraft()" in TASKS
+    assert "至少需要一个步骤" in TASKS
+    assert "重复任务 ID" in TASKS
+    assert "不能为空" in TASKS
+    assert "配置版本冲突或任务正在运行" in TASKS
 
-    save_block = re.search(
-        r'pickupConfigForm\.addEventListener\("submit"[\s\S]+?'
-        r'pickupConfigDiscard\.addEventListener',
-        SCRIPT,
-    )
-    assert save_block is not None
-    block = save_block.group(0)
-    assert "pickupConfigForSave = hydratePickupConfigForSave();" in block
-    assert "setPickupConfigErrors([error.message]);" in block
-    assert "拾取配置引用不完整，暂未保存" in block
+
+def test_storage_page_groups_containers_inventory_and_warehouse_config() -> None:
+    html = PAGES["storage.html"]
+    for element_id in (
+        "container-list",
+        "inventory-list",
+        "audit-button",
+        "base-coordinate-form",
+        "pickup-form",
+        "region-list",
+        "cache-list",
+        "pickup-workflow-list",
+        "save-pickup-button",
+    ):
+        assert f'id="{element_id}"' in html
+
+    for path in (
+        "/v1/containers",
+        "/v1/inventory",
+        "/v1/audits",
+        "/v1/config/coordinates",
+        "/v1/config/coordinate-points",
+        "/v1/config/pickup",
+    ):
+        assert path in STORAGE
+
+
+def test_pickup_editor_preserves_multi_region_resource_workflow() -> None:
+    for fragment in (
+        "function addRegion()",
+        "function addCache()",
+        "function addPickupWorkflow()",
+        "function removePickupResource(kind, index)",
+        "function movePickupResource(kind, index, offset)",
+        "binding.priority",
+        "binding.idleDelay",
+        "classificationTiming",
+        "completionMode",
+        "cacheIds",
+        "hydratePickupRequest()",
+    ):
+        assert fragment in STORAGE
+
+    assert "至少选择一个区域" in STORAGE
+    assert "至少选择一个缓存" in STORAGE
+    assert "第一角点不能大于第二角点" in STORAGE
+    assert "半径必须为 1-128" in STORAGE
+    assert "跨维度" in STORAGE
+    assert "活动或暂停任务存在" in STORAGE
+
+
+def test_authentication_is_shared_bearer_middleware() -> None:
+    assert COMMON.count("fetch(") == 1
+    assert SCRIPTS.count("fetch(") == 1
+    assert 'headers.set("Authorization", `Bearer ${authToken}`)' in COMMON
+    assert 'fetch("/v1/status"' not in SCRIPTS
+    assert 'sessionStorage.setItem(TOKEN_KEY, token)' in COMMON
+    assert 'sessionStorage.getItem(TOKEN_KEY)' in COMMON
+    assert "localStorage" not in SCRIPTS
+    assert "token=" not in SCRIPTS.lower()
+
+
+def test_user_content_uses_safe_dom_apis() -> None:
+    assert "innerHTML" not in SCRIPTS
+    assert "eval(" not in SCRIPTS
+    assert "document.write" not in SCRIPTS
+    assert ".textContent" in SCRIPTS
+    assert ".replaceChildren" in SCRIPTS
+    assert "JSON.stringify" in SCRIPTS
+    assert "JSON.parse" in SCRIPTS
+
+
+def test_scripts_do_not_log_sensitive_values() -> None:
+    assert "console." not in SCRIPTS
+    assert "console.log" not in SCRIPTS
+    assert "accessToken" not in SCRIPTS
+    assert "chat" not in SCRIPTS.lower()
+
+
+def test_dashboard_is_status_overview_not_a_configuration_page() -> None:
+    html = PAGES["index.html"]
+    assert 'id="status-state"' in html
+    assert 'id="active-task-count"' in html
+    assert 'id="recent-tasks"' in html
+    assert 'id="coordinate-form"' not in html
+    assert 'id="workflow-form"' not in html
+    assert 'href="/tasks.html"' in html
+    assert 'href="/coordinates.html"' in html
+
+
+def test_layout_is_responsive_and_supports_dark_mode() -> None:
+    assert ".page-workspace" in STYLES
+    assert ".builder-grid" in STYLES
+    assert ".module-catalog" in STYLES
+    assert ".task-launch-grid" in STYLES
+    assert "@media (max-width: 760px)" in STYLES
+    assert "@media (prefers-color-scheme: dark)" in STYLES
+
+
+def test_all_web_sources_follow_line_length_rule() -> None:
+    files = [path for path in WEB_ROOT.iterdir() if path.is_file()]
+    violations = []
+    for path in files:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if len(line) > 100:
+                violations.append(f"{path.name}:{number}:{len(line)}")
+    assert violations == []
+
+
+def test_pages_do_not_retain_hash_anchor_navigation() -> None:
+    assert re.search(r'href=["\']#', "".join(PAGES.values())) is None
+    assert "data-workspace-target" not in COMMON
+    assert "hashchange" not in SCRIPTS

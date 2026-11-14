@@ -1,5 +1,7 @@
 package dev.stowling.config;
 
+import dev.stowling.automation.AutomationStep;
+import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.domain.AuditSchedule;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.CuboidPickupShape;
@@ -89,6 +91,14 @@ public final class ConfigValidator {
                 config.storageRoutes()
         );
         validateAudits(violations, containers, config.auditSchedules());
+        validateAutomationWorkflows(
+                violations,
+                resourceIds,
+                coordinates,
+                containers,
+                config.pickupWorkflows(),
+                config.automationWorkflows()
+        );
         return List.copyOf(violations);
     }
 
@@ -422,6 +432,272 @@ public final class ConfigValidator {
                     ));
                 }
             }
+        }
+    }
+
+    private static void validateAutomationWorkflows(
+            List<ConfigViolation> violations,
+            Map<String, String> resourceIds,
+            Map<String, NamedCoordinate> coordinates,
+            Map<String, ContainerRef> containers,
+            List<PickupWorkflow> pickupWorkflows,
+            List<AutomationWorkflow> workflows
+    ) {
+        Map<String, PickupWorkflow> pickupsById = new HashMap<>();
+        for (PickupWorkflow pickupWorkflow : pickupWorkflows) {
+            pickupsById.put(pickupWorkflow.id(), pickupWorkflow);
+        }
+        for (int workflowIndex = 0; workflowIndex < workflows.size(); workflowIndex++) {
+            AutomationWorkflow workflow = workflows.get(workflowIndex);
+            String path = "automationWorkflows[" + workflowIndex + "]";
+            registerResourceId(violations, resourceIds, workflow.id(), path + ".id");
+            requireName(violations, workflow.name(), path + ".name");
+            if (workflow.steps().isEmpty()) {
+                violations.add(new ConfigViolation(path + ".steps", "workflow is empty"));
+            }
+            Map<String, String> stepIds = new HashMap<>();
+            for (int stepIndex = 0; stepIndex < workflow.steps().size(); stepIndex++) {
+                AutomationStep step = workflow.steps().get(stepIndex);
+                String stepPath = path + ".steps[" + stepIndex + "]";
+                requireUnique(violations, stepIds, step.id(), stepPath + ".id");
+                requireSafeId(violations, step.id(), stepPath + ".id");
+                validateAutomationStep(
+                        violations,
+                        step,
+                        stepPath,
+                        coordinates,
+                        containers,
+                        pickupsById
+                );
+            }
+        }
+    }
+
+    private static void validateAutomationStep(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            Map<String, NamedCoordinate> coordinates,
+            Map<String, ContainerRef> containers,
+            Map<String, PickupWorkflow> pickupsById
+    ) {
+        switch (step.type()) {
+            case NAVIGATE -> {
+                requireParameters(violations, step, path, Set.of("coordinateId"), Set.of());
+                validateCoordinateParameter(
+                        violations,
+                        step,
+                        path,
+                        coordinates,
+                        "coordinateId"
+                );
+            }
+            case WAIT -> {
+                requireParameters(violations, step, path, Set.of("seconds"), Set.of());
+                validatePositiveNumber(violations, step, path, "seconds");
+            }
+            case RUN_PICKUP -> {
+                requireParameters(
+                        violations,
+                        step,
+                        path,
+                        Set.of("workflowId"),
+                        Set.of("regionId")
+                );
+                validatePickupParameters(violations, step, path, pickupsById);
+            }
+            case TAKE_ITEMS, PUT_ITEMS -> {
+                requireParameters(
+                        violations,
+                        step,
+                        path,
+                        Set.of("containerId", "itemId", "count"),
+                        Set.of()
+                );
+                validateContainerParameter(
+                        violations,
+                        step,
+                        path,
+                        containers,
+                        "containerId"
+                );
+                validatePositiveNumber(violations, step, path, "count");
+            }
+            case TRANSFER_ITEMS -> {
+                requireParameters(
+                        violations,
+                        step,
+                        path,
+                        Set.of("sourceContainerId", "destination", "itemId", "count"),
+                        Set.of()
+                );
+                validateContainerParameter(
+                        violations,
+                        step,
+                        path,
+                        containers,
+                        "sourceContainerId"
+                );
+                String destination = step.parameter("destination");
+                if (destination != null && !"PLAYER".equals(destination)) {
+                    validateContainerId(
+                            violations,
+                            path + ".parameters.destination",
+                            destination,
+                            containers
+                    );
+                }
+                validatePositiveNumber(violations, step, path, "count");
+            }
+            case CHECK_INVENTORY, ACQUIRE_MATERIALS, CRAFT_ITEM -> {
+                requireParameters(
+                        violations,
+                        step,
+                        path,
+                        Set.of("itemId", "count"),
+                        Set.of()
+                );
+                validatePositiveNumber(violations, step, path, "count");
+            }
+            default -> throw new IllegalStateException("unsupported automation step");
+        }
+    }
+
+    private static void requireParameters(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            Set<String> required,
+            Set<String> optional
+    ) {
+        for (String key : required) {
+            if (!step.parameters().containsKey(key)) {
+                violations.add(new ConfigViolation(
+                        path + ".parameters." + key,
+                        "required parameter is missing"
+                ));
+            }
+        }
+        for (String key : step.parameters().keySet()) {
+            if (!required.contains(key) && !optional.contains(key)) {
+                violations.add(new ConfigViolation(
+                        path + ".parameters." + key,
+                        "unknown parameter for " + step.type()
+                ));
+            }
+        }
+    }
+
+    private static void validateCoordinateParameter(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            Map<String, NamedCoordinate> coordinates,
+            String key
+    ) {
+        String id = step.parameter(key);
+        if (id == null) {
+            return;
+        }
+        String parameterPath = path + ".parameters." + key;
+        requireSafeId(violations, id, parameterPath);
+        if (!coordinates.containsKey(id)) {
+            violations.add(new ConfigViolation(
+                    parameterPath,
+                    "coordinate does not exist: " + id
+            ));
+        }
+    }
+
+    private static void validateContainerParameter(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            Map<String, ContainerRef> containers,
+            String key
+    ) {
+        String id = step.parameter(key);
+        if (id != null) {
+            validateContainerId(
+                    violations,
+                    path + ".parameters." + key,
+                    id,
+                    containers
+            );
+        }
+    }
+
+    private static void validateContainerId(
+            List<ConfigViolation> violations,
+            String path,
+            String id,
+            Map<String, ContainerRef> containers
+    ) {
+        requireSafeId(violations, id, path);
+        if (!containers.containsKey(id)) {
+            violations.add(new ConfigViolation(
+                    path,
+                    "container does not exist: " + id
+            ));
+        }
+    }
+
+    private static void validatePickupParameters(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            Map<String, PickupWorkflow> pickupsById
+    ) {
+        String workflowId = step.parameter("workflowId");
+        if (workflowId == null) {
+            return;
+        }
+        String workflowPath = path + ".parameters.workflowId";
+        requireSafeId(violations, workflowId, workflowPath);
+        PickupWorkflow pickupWorkflow = pickupsById.get(workflowId);
+        if (pickupWorkflow == null) {
+            violations.add(new ConfigViolation(
+                    workflowPath,
+                    "pickup workflow does not exist: " + workflowId
+            ));
+            return;
+        }
+        String regionId = step.parameter("regionId");
+        if (regionId == null) {
+            return;
+        }
+        String regionPath = path + ".parameters.regionId";
+        requireSafeId(violations, regionId, regionPath);
+        boolean exists = pickupWorkflow.regions().stream()
+                .anyMatch(binding -> binding.regionId().equals(regionId));
+        if (!exists) {
+            violations.add(new ConfigViolation(
+                    regionPath,
+                    "pickup workflow does not contain region: " + regionId
+            ));
+        }
+    }
+
+    private static void validatePositiveNumber(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            String key
+    ) {
+        String value = step.parameter(key);
+        if (value == null) {
+            return;
+        }
+        try {
+            long parsed = Long.parseLong(value);
+            if (parsed <= 0) {
+                throw new NumberFormatException("not positive");
+            }
+        } catch (NumberFormatException exception) {
+            violations.add(new ConfigViolation(
+                    path + ".parameters." + key,
+                    "must be a positive integer"
+            ));
         }
     }
 

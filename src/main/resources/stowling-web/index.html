@@ -4,16 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>Stowling 控制台</title>
+    <title>状态概览 · Stowling</title>
     <link rel="stylesheet" href="/styles.css">
+    <script src="/common.js" defer></script>
+    <script src="/dashboard.js" defer></script>
 </head>
-<body>
+<body data-page="dashboard">
     <header class="topbar">
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>Minecraft 26.2 · Fabric 客户端自动化</p>
+                <p>Minecraft 26.2 · 可编排客户端机器人</p>
             </div>
         </div>
         <div class="connection-state">
@@ -23,54 +25,30 @@
     </header>
 
     <main>
-        <section class="panel auth-panel" aria-labelledby="auth-title">
-            <div class="panel-heading">
+        <div id="auth-shell"></div>
+        <div id="workspace" class="workspace page-workspace" aria-hidden="true">
+            <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
+
+            <section class="hero panel">
                 <div>
-                    <p class="eyebrow">本地安全连接</p>
-                    <h2 id="auth-title">连接到 Stowling</h2>
+                    <p class="eyebrow">自动化工作台</p>
+                    <h2>把机器人动作组合成自己的任务</h2>
+                    <p class="muted hero-copy">
+                        命名坐标是共享的位置字典，任务由导航、等待、拾取、容器搬运、
+                        库存检查和制作等模块串联而成。
+                    </p>
                 </div>
-                <span class="loopback-tag">127.0.0.1</span>
-            </div>
-            <p class="muted">
-                输入游戏实例中 <code>config/stowling-api.token</code> 的内容。令牌仅保存在
-                当前浏览器标签页的会话存储中。
-            </p>
-            <form id="auth-form" class="token-form">
-                <label for="token-input">Bearer Token</label>
-                <div class="inline-control">
-                    <input id="token-input" type="password" autocomplete="off"
-                           spellcheck="false" placeholder="粘贴访问令牌" required>
-                    <button id="connect-button" class="primary" type="submit">验证并连接</button>
-                    <button id="clear-token-button" class="secondary" type="button">
-                        清除令牌
-                    </button>
+                <div class="hero-actions">
+                    <a class="button-link primary" href="/tasks.html">打开任务编排</a>
+                    <a class="button-link secondary" href="/coordinates.html">管理命名坐标</a>
                 </div>
-            </form>
-        </section>
+            </section>
 
-        <div id="workspace" class="workspace" aria-hidden="true">
-            <nav id="workspace-nav" class="workspace-nav" aria-label="页面导航">
-                <a class="workspace-nav-link active" href="#overview-panel"
-                   data-workspace-target="overview-panel">运行概览</a>
-                <a id="coordinate-library-nav" class="workspace-nav-link"
-                   href="#coordinate-library-panel"
-                   data-workspace-target="coordinate-library-panel">命名坐标</a>
-                <a id="pickup-config-nav" class="workspace-nav-link"
-                   href="#pickup-config-panel"
-                   data-workspace-target="pickup-config-panel">拾取区域、缓存与流程</a>
-                <a id="coordinates-nav" class="workspace-nav-link"
-                   href="#coordinates-panel"
-                   data-workspace-target="coordinates-panel">基础坐标（仓库/溢出/装盒）</a>
-                <a class="workspace-nav-link" href="#tasks-panel"
-                   data-workspace-target="tasks-panel">任务与库存</a>
-            </nav>
-
-            <section id="overview-panel" class="panel status-panel"
-                     aria-labelledby="status-title">
+            <section class="panel wide" aria-labelledby="status-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">实时概览</p>
-                        <h2 id="status-title">运行状态</h2>
+                        <p class="eyebrow">实时状态</p>
+                        <h2 id="status-title">运行概览</h2>
                     </div>
                     <button id="refresh-button" class="secondary compact" type="button">
                         刷新
@@ -86,244 +64,72 @@
                         <strong id="status-paused">--</strong>
                     </article>
                     <article class="metric">
-                        <span>观测时间</span>
+                        <span>最近观测</span>
                         <strong id="status-observed">--</strong>
+                    </article>
+                    <article class="metric">
+                        <span>活动任务</span>
+                        <strong id="active-task-count">--</strong>
                     </article>
                 </div>
             </section>
 
-            <section class="panel" aria-labelledby="quick-actions-title">
+            <section class="panel" aria-labelledby="control-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">常用操作</p>
-                        <h2 id="quick-actions-title">运行控制</h2>
+                        <p class="eyebrow">运行控制</p>
+                        <h2 id="control-title">全局操作</h2>
                     </div>
                 </div>
                 <div class="action-row">
-                    <button id="pause-button" class="secondary" type="button">暂停</button>
-                    <button id="resume-button" class="secondary" type="button">恢复</button>
-                    <button id="reload-button" class="secondary" type="button">
-                        重载配置
-                    </button>
+                    <button id="pause-button" class="secondary" type="button">暂停机器人</button>
+                    <button id="resume-button" class="secondary" type="button">恢复机器人</button>
+                    <button id="reload-button" class="secondary" type="button">重载配置</button>
                 </div>
+                <p id="control-message" class="field-message" role="status"></p>
             </section>
 
-            <section class="panel" aria-labelledby="pickup-title">
+            <section class="panel wide" aria-labelledby="resources-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">工作任务</p>
-                        <h2 id="pickup-title">启动拾取</h2>
+                        <p class="eyebrow">资源摘要</p>
+                        <h2 id="resources-title">机器人可用资源</h2>
                     </div>
                 </div>
-                <form id="pickup-form" class="pickup-form">
-                    <div class="pickup-launch-grid">
-                        <div>
-                            <label for="workflow-select">拾取流程</label>
-                            <select id="workflow-select" required disabled>
-                                <option value="">正在加载流程…</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="pickup-region-select">运行范围</label>
-                            <select id="pickup-region-select" disabled>
-                                <option value="">运行整个流程</option>
-                            </select>
-                        </div>
-                        <div class="pickup-launch-action">
-                            <button id="pickup-submit" class="primary" type="submit" disabled>
-                                开始任务
-                            </button>
-                        </div>
-                    </div>
-                    <p id="pickup-workflows-message" class="field-message" role="status"></p>
-                </form>
+                <div class="resource-summary">
+                    <a class="summary-card" href="/coordinates.html">
+                        <span>命名坐标</span>
+                        <strong id="coordinate-count">--</strong>
+                    </a>
+                    <a class="summary-card" href="/tasks.html">
+                        <span>自定义任务</span>
+                        <strong id="automation-count">--</strong>
+                    </a>
+                    <a class="summary-card" href="/storage.html">
+                        <span>可交互容器</span>
+                        <strong id="container-count">--</strong>
+                    </a>
+                    <a class="summary-card" href="/tasks.html">
+                        <span>拾取流程</span>
+                        <strong id="pickup-count">--</strong>
+                    </a>
+                </div>
+                <div id="dashboard-errors" class="config-errors" role="alert"></div>
             </section>
 
-            <section id="pickup-config-panel" class="panel wide"
-                     aria-labelledby="pickup-config-title">
-                <div class="panel-heading config-heading">
-                    <div>
-                        <p class="eyebrow">永久配置</p>
-                        <h2 id="pickup-config-title">拾取配置</h2>
-                    </div>
-                    <div class="action-row">
-                        <button id="pickup-config-discard" class="secondary compact"
-                                type="button">
-                            放弃修改/重新读取
-                        </button>
-                        <button id="pickup-config-save" class="primary compact"
-                                type="submit" form="pickup-config-form" disabled>
-                            保存全部
-                        </button>
-                    </div>
-                </div>
-                <p class="muted">
-                    在这里管理拾取区域、缓存和流程。所有改动先保留为草稿，点击“保存全部”后
-                    才会写入 <code>config/stowling.json</code> 并生成备份。区域的待机点、
-                    形状中心及缓存位置均引用“命名坐标”，不会在这里重复编辑坐标值。
-                </p>
-                <form id="pickup-config-form" novalidate>
-                    <div class="pickup-config-grid">
-                        <section class="config-column" aria-labelledby="regions-title">
-                            <div class="config-column-heading">
-                                <div>
-                                    <h3 id="regions-title">拾取区域</h3>
-                                    <p>球形或长方体范围及待机点</p>
-                                </div>
-                                <button id="add-region-button" class="secondary compact"
-                                        type="button">新增区域</button>
-                            </div>
-                            <div id="pickup-regions-list" class="editor-list"></div>
-                        </section>
-
-                        <section class="config-column" aria-labelledby="caches-title">
-                            <div class="config-column-heading">
-                                <div>
-                                    <h3 id="caches-title">缓存容器</h3>
-                                    <p>流程可共用多个命名缓存</p>
-                                </div>
-                                <button id="add-cache-button" class="secondary compact"
-                                        type="button">新增缓存</button>
-                            </div>
-                            <div id="pickup-caches-list" class="editor-list"></div>
-                        </section>
-
-                        <section class="config-column workflow-column"
-                                 aria-labelledby="workflows-title">
-                            <div class="config-column-heading">
-                                <div>
-                                    <h3 id="workflows-title">拾取流程</h3>
-                                    <p>组合区域、缓存和运行策略</p>
-                                </div>
-                                <button id="add-workflow-button" class="secondary compact"
-                                        type="button">新增流程</button>
-                            </div>
-                            <div id="pickup-workflows-list" class="editor-list"></div>
-                        </section>
-                    </div>
-                </form>
-                <div id="pickup-config-errors" class="config-errors" role="alert"></div>
-                <div class="coordinate-footer">
-                    <span id="pickup-config-status">尚未读取拾取配置</span>
-                    <code id="pickup-config-revision">revision: --</code>
-                </div>
-            </section>
-
-            <section id="coordinate-library-panel" class="panel wide"
-                     aria-labelledby="coordinate-library-title">
-                <div class="panel-heading coordinate-heading">
-                    <div>
-                        <p class="eyebrow">永久配置 · 独立草稿</p>
-                        <h2 id="coordinate-library-title">命名坐标库</h2>
-                    </div>
-                    <div class="action-row">
-                        <button id="add-coordinate-point-button"
-                                class="secondary compact" type="button">
-                            新增命名坐标
-                        </button>
-                        <button id="coordinate-library-discard"
-                                class="secondary compact" type="button">
-                            放弃修改/重新读取
-                        </button>
-                        <button id="coordinate-library-save" class="primary compact"
-                                type="submit" form="coordinate-library-form" disabled>
-                            保存全部
-                        </button>
-                    </div>
-                </div>
-                <p class="muted coordinate-library-help">
-                    命名坐标供拾取区域和缓存按 ID 引用。这里的修改单独保存，不会改动下方
-                    “基础坐标”中的仓库、溢出箱或装盒工位。
-                </p>
-                <form id="coordinate-library-form" novalidate>
-                    <div id="coordinate-points-list" class="editor-list"></div>
-                </form>
-                <div id="coordinate-library-errors" class="config-errors"
-                     role="alert"></div>
-                <div class="coordinate-footer">
-                    <span id="coordinate-library-status">尚未读取命名坐标</span>
-                    <code id="coordinate-library-revision">revision: --</code>
-                </div>
-            </section>
-
-            <section id="coordinates-panel" class="panel wide"
-                     aria-labelledby="coordinates-title">
-                <div class="panel-heading coordinate-heading">
-                    <div>
-                        <p class="eyebrow">永久配置 · 仓库自动化</p>
-                        <h2 id="coordinates-title">基础坐标（仓库/溢出/装盒）</h2>
-                    </div>
-                    <div class="action-row">
-                        <button id="coordinates-discard" class="secondary compact"
-                                type="button">
-                            放弃修改/重新读取
-                        </button>
-                        <button id="coordinates-save" class="primary compact"
-                                type="submit" form="coordinates-form" disabled>
-                            保存全部坐标
-                        </button>
-                    </div>
-                </div>
-                <p class="muted coordinate-help">
-                    此面板只管理仓库、溢出箱和装盒工位坐标。拾取区域与缓存请在上方
-                    “拾取配置”中管理。保存会永久写入配置文件并备份旧版本。
-                </p>
-                <form id="coordinates-form">
-                    <div id="coordinates-list" class="coordinate-groups"></div>
-                </form>
-                <div class="coordinate-footer">
-                    <span id="coordinates-status">尚未读取坐标</span>
-                    <code id="coordinates-revision">revision: --</code>
-                </div>
-            </section>
-
-            <section id="tasks-panel" class="panel wide" aria-labelledby="tasks-title">
+            <section class="panel wide" aria-labelledby="recent-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">队列</p>
-                        <h2 id="tasks-title">任务列表</h2>
+                        <p class="eyebrow">最近任务</p>
+                        <h2 id="recent-title">执行记录</h2>
                     </div>
-                    <button id="refresh-tasks-button" class="ghost compact" type="button">
-                        更新列表
-                    </button>
+                    <a class="text-link" href="/tasks.html">查看全部</a>
                 </div>
-                <div id="tasks-list" class="card-list" aria-live="polite"></div>
-            </section>
-
-            <section class="panel wide" aria-labelledby="containers-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">仓库索引</p>
-                        <h2 id="containers-title">容器与盘点</h2>
-                    </div>
-                    <button id="refresh-containers-button" class="ghost compact" type="button">
-                        更新容器
-                    </button>
-                </div>
-                <form id="audit-form">
-                    <div id="containers-list" class="container-grid"></div>
-                    <div class="action-row end">
-                        <button class="primary" type="submit">盘点所选容器</button>
-                    </div>
-                </form>
-            </section>
-
-            <section class="panel wide" aria-labelledby="inventory-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">库存快照</p>
-                        <h2 id="inventory-title">仓库物品</h2>
-                    </div>
-                    <button id="refresh-inventory-button" class="ghost compact" type="button">
-                        更新库存
-                    </button>
-                </div>
-                <div id="inventory-list" class="inventory-list"></div>
+                <div id="recent-tasks" class="card-list" aria-live="polite"></div>
             </section>
         </div>
     </main>
 
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-    <script src="/app.js" defer></script>
 </body>
 </html>

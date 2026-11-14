@@ -1,0 +1,13 @@
+package dev.stowling.automation;
+
+public enum AutomationStepType {
+    NAVIGATE,
+    WAIT,
+    RUN_PICKUP,
+    TAKE_ITEMS,
+    PUT_ITEMS,
+    TRANSFER_ITEMS,
+    CHECK_INVENTORY,
+    ACQUIRE_MATERIALS,
+    CRAFT_ITEM
+}

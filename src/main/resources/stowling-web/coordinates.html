@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>命名坐标 · Stowling</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/common.js" defer></script>
+    <script src="/coordinates.js" defer></script>
+</head>
+<body data-page="coordinates">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">S</span>
+            <div>
+                <h1>命名坐标</h1>
+                <p>供导航、容器和任务共享的位置字典</p>
+            </div>
+        </div>
+        <div class="connection-state">
+            <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
+            <span id="connection-label">未连接</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="auth-shell"></div>
+        <div id="workspace" class="workspace page-workspace" aria-hidden="true">
+            <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
+
+            <section class="panel wide" aria-labelledby="coordinate-title">
+                <div class="panel-heading coordinate-heading">
+                    <div>
+                        <p class="eyebrow">永久配置 · 独立草稿</p>
+                        <h2 id="coordinate-title">命名坐标库</h2>
+                        <p class="muted section-help">
+                            保存后的 ID 不可修改；显示名称、维度和 XYZ 可随时调整。
+                            所有机器人模块都通过 ID 引用这里的坐标。
+                        </p>
+                    </div>
+                    <div class="action-row">
+                        <button id="add-coordinate-button" class="primary compact"
+                                type="button">新增坐标</button>
+                        <button id="discard-coordinate-button" class="secondary compact"
+                                type="button">放弃修改</button>
+                        <button id="save-coordinate-button" class="primary compact"
+                                type="submit" form="coordinate-form" disabled>保存全部</button>
+                    </div>
+                </div>
+                <form id="coordinate-form" novalidate>
+                    <div id="coordinate-list" class="editor-list"></div>
+                </form>
+                <div id="coordinate-errors" class="config-errors" role="alert"></div>
+                <div class="coordinate-footer">
+                    <span id="coordinate-status">尚未读取命名坐标</span>
+                    <code id="coordinate-revision">revision: --</code>
+                </div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="usage-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">引用保护</p>
+                        <h2 id="usage-title">使用情况</h2>
+                    </div>
+                    <span class="loopback-tag">删除前自动检查</span>
+                </div>
+                <p class="muted">
+                    坐标被拾取区域、缓存、容器或任务步骤引用时，页面会拒绝删除并列出
+                    引用项。请先在对应页面解除引用并保存。
+                </p>
+                <div id="coordinate-usage" class="usage-list"></div>
+            </section>
+        </div>
+    </main>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

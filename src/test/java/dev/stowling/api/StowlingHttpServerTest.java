@@ -67,6 +67,9 @@ class StowlingHttpServerTest {
         String cancelPath = "/v1/tasks/" + FakeControlService.TASK_ID + "/cancel";
         String coordinatePointsPath = "/v1/config/coordinate-points";
         String coordinatePointsBody = coordinatePointsUpdate("revision-1");
+        String automationPath = "/v1/config/automation-workflows";
+        String automationBody = automationUpdate("automation-revision-1");
+        ApiCall automationUpdateCall = new ApiCall("PUT", automationPath, automationBody);
         List<ApiCall> calls = List.of(
                 new ApiCall("GET", "/v1/status", null),
                 new ApiCall("GET", "/v1/tasks", null),
@@ -78,7 +81,11 @@ class StowlingHttpServerTest {
                 new ApiCall("PUT", "/v1/config/coordinates", coordinateUpdate("revision-1")),
                 new ApiCall("GET", "/v1/config/pickup", null),
                 new ApiCall("PUT", "/v1/config/pickup", pickupUpdate("revision-1")),
+                new ApiCall("GET", automationPath, null),
+                automationUpdateCall,
+                new ApiCall("GET", "/v1/automation-modules", null),
                 new ApiCall("POST", "/v1/tasks/pickup", "{\"workflowId\":\"north\"}"),
+                new ApiCall("POST", "/v1/tasks/automation", "{\"workflowId\":\"daily\"}"),
                 new ApiCall("POST", cancelPath, null),
                 new ApiCall("POST", "/v1/audits", "{\"containerIds\":[]}"),
                 new ApiCall("GET", "/v1/inventory", null),
@@ -106,28 +113,28 @@ class StowlingHttpServerTest {
     @Test
     void servesPackagedWebConsoleWithoutAuthentication() throws Exception {
         HttpResponse<String> page = send("GET", "/", null, null);
-        HttpResponse<String> script = send("GET", "/app.js", null, null);
+        HttpResponse<String> alternatePage = send("GET", "/index.html", null, null);
+        HttpResponse<String> script = send("GET", "/common.js", null, null);
+        HttpResponse<String> tasksScript = send("GET", "/tasks.js", null, null);
         HttpResponse<String> styles = send("GET", "/styles.css", null, null);
 
         assertEquals(200, page.statusCode());
+        assertEquals(200, alternatePage.statusCode());
         assertEquals(200, script.statusCode());
+        assertEquals(200, tasksScript.statusCode());
         assertEquals(200, styles.statusCode());
         assertTrue(page.body().contains("Stowling 控制台"));
         assertTrue(page.body().contains("href=\"/styles.css\""));
-        assertTrue(page.body().contains("src=\"/app.js\""));
+        assertTrue(page.body().contains("src=\"/common.js\""));
+        assertTrue(page.body().contains("src=\"/dashboard.js\""));
+        assertFalse(page.body().contains("/app.js"));
         assertTrue(script.body().contains("Authorization"));
         assertTrue(script.body().contains("sessionStorage"));
-        assertTrue(script.body().contains("/v1/pickup-workflows"));
-        assertTrue(script.body().contains("/v1/config/pickup"));
-        assertTrue(script.body().contains("pickup_workflow_not_found"));
-        assertTrue(script.body().contains("/v1/config/coordinates"));
-        assertTrue(script.body().contains("配置中找不到这个拾取流程"));
-        assertTrue(page.body().contains("<select id=\"workflow-select\""));
-        assertTrue(page.body().contains("id=\"pickup-config-panel\""));
-        assertTrue(page.body().contains("id=\"coordinates-panel\""));
-        assertFalse(page.body().contains("id=\"site-input\""));
-        assertFalse(script.body().contains("innerHTML"));
-        assertFalse(script.body().contains("localStorage"));
+        assertTrue(tasksScript.body().contains("/v1/config/automation-workflows"));
+        assertTrue(tasksScript.body().contains("/v1/automation-modules"));
+        assertTrue(tasksScript.body().contains("/v1/tasks/automation"));
+        assertFalse(tasksScript.body().contains("innerHTML"));
+        assertFalse(tasksScript.body().contains("localStorage"));
         assertTrue(styles.body().contains("@media (max-width: 760px)"));
         assertEquals(
                 "text/html; charset=utf-8",
@@ -172,7 +179,7 @@ class StowlingHttpServerTest {
 
     @Test
     void staticResourcesRejectUnsupportedMethods() throws Exception {
-        HttpResponse<String> response = send("POST", "/app.js", null, null);
+        HttpResponse<String> response = send("POST", "/common.js", null, null);
 
         assertEquals(405, response.statusCode());
         assertEquals("GET, HEAD", response.headers().firstValue("Allow").orElseThrow());
@@ -224,6 +231,20 @@ class StowlingHttpServerTest {
         assertStatus(200, "POST", "/v1/pause", null);
         assertStatus(200, "POST", "/v1/resume", null);
         assertStatus(200, "POST", "/v1/config/reload", null);
+        assertStatus(200, "GET", "/v1/automation-modules", null);
+        assertStatus(200, "GET", "/v1/config/automation-workflows", null);
+        assertStatus(
+                200,
+                "PUT",
+                "/v1/config/automation-workflows",
+                automationUpdate("automation-revision-1")
+        );
+        assertStatus(
+                202,
+                "POST",
+                "/v1/tasks/automation",
+                "{\"workflowId\":\"daily\"}"
+        );
     }
 
     @Test
@@ -423,6 +444,130 @@ class StowlingHttpServerTest {
         assertTrue(activePickupConfig.body().contains("active_task_conflict"));
         assertEquals(409, activeCoordinatePoints.statusCode());
         assertTrue(activeCoordinatePoints.body().contains("active_task_conflict"));
+    }
+
+    @Test
+    void exposesNineAutomationModulesAndWorkflowConfiguration() throws Exception {
+        HttpResponse<String> modules = send(
+                "GET",
+                "/v1/automation-modules",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> workflows = send(
+                "GET",
+                "/v1/config/automation-workflows",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> saved = send(
+                "PUT",
+                "/v1/config/automation-workflows",
+                automationUpdate("automation-revision-1"),
+                TOKEN
+        );
+        HttpResponse<String> stale = send(
+                "PUT",
+                "/v1/config/automation-workflows",
+                automationUpdate("automation-revision-1"),
+                TOKEN
+        );
+
+        assertEquals(200, modules.statusCode());
+        assertEquals(9, occurrences(modules.body(), "\"type\":"));
+        assertTrue(modules.body().contains("\"name\":\"NAVIGATE\""));
+        assertTrue(modules.body().contains("\"parameters\":[]"));
+        assertEquals(200, workflows.statusCode());
+        assertTrue(workflows.body().contains("\"revision\":\"automation-revision-1\""));
+        assertTrue(workflows.body().contains("\"id\":\"daily\""));
+        assertEquals(200, saved.statusCode());
+        assertTrue(saved.body().contains("\"revision\":\"automation-revision-2\""));
+        assertEquals(409, stale.statusCode());
+        assertTrue(stale.body().contains("config_revision_conflict"));
+    }
+
+    @Test
+    void startsAutomationAndRejectsConfigurationWhileItIsActive() throws Exception {
+        HttpResponse<String> started = send(
+                "POST",
+                "/v1/tasks/automation",
+                "{\"workflowId\":\"daily\"}",
+                TOKEN
+        );
+        HttpResponse<String> conflict = send(
+                "PUT",
+                "/v1/config/automation-workflows",
+                automationUpdate("automation-revision-1"),
+                TOKEN
+        );
+
+        assertEquals(202, started.statusCode());
+        assertTrue(started.body().contains("\"kind\":\"AUTOMATION\""));
+        assertTrue(started.body().contains("\"workflowId\":\"daily\""));
+        assertTrue(started.body().contains("\"currentStepId\":\"wait\""));
+        assertTrue(started.body().contains("\"stepIndex\":0"));
+        assertTrue(started.body().contains("\"stepCount\":1"));
+        assertTrue(started.body().contains("\"moduleState\":\"{}\""));
+        assertTrue(started.body().contains("\"stage\":\"READY\""));
+        assertEquals(409, conflict.statusCode());
+        assertTrue(conflict.body().contains("active_task_conflict"));
+    }
+
+    @Test
+    void rejectsStrictAutomationJsonAndUnknownWorkflow() throws Exception {
+        String valid = automationUpdate("automation-revision-1");
+        String duplicate = valid.replace(
+                "\"name\":\"Daily automation\"",
+                "\"name\":\"Daily automation\",\"name\":\"Duplicate\""
+        );
+        String unknown = valid.replace(
+                "\"steps\":",
+                "\"extra\":true,\"steps\":"
+        );
+        String wrongType = "{\"revision\":\"automation-revision-1\","
+                + "\"automationWorkflows\":[{\"id\":\"daily\","
+                + "\"name\":\"Daily automation\",\"steps\":true}]}";
+        String invalidParameter = valid.replace(
+                "\"seconds\":\"1\"",
+                "\"seconds\":\"0\""
+        );
+        String unknownParameter = valid.replace(
+                "\"seconds\":\"1\"",
+                "\"seconds\":\"1\",\"query\":\"x\""
+        );
+        String longParameter = valid.replace(
+                "\"seconds\":\"1\"",
+                "\"seconds\":\"" + "1".repeat(257) + "\""
+        );
+
+        List<HttpResponse<String>> invalid = List.of(
+                send("PUT", "/v1/config/automation-workflows", duplicate, TOKEN),
+                send("PUT", "/v1/config/automation-workflows", unknown, TOKEN),
+                send("PUT", "/v1/config/automation-workflows", wrongType, TOKEN),
+                send("PUT", "/v1/config/automation-workflows", invalidParameter, TOKEN),
+                send("PUT", "/v1/config/automation-workflows", unknownParameter, TOKEN),
+                send("PUT", "/v1/config/automation-workflows", longParameter, TOKEN),
+                send("POST", "/v1/tasks/automation", "{\"workflowId\":[]}", TOKEN),
+                send(
+                "POST",
+                "/v1/tasks/automation",
+                "{\"workflowId\":\"missing\"}",
+                TOKEN
+        )
+        );
+
+        assertTrue(invalid.subList(0, 7).stream().allMatch(
+                response -> response.statusCode() == 400
+        ));
+        assertTrue(invalid.get(0).body().contains("Duplicate JSON field"));
+        assertTrue(invalid.get(1).body().contains("Unknown JSON field"));
+        assertTrue(invalid.get(2).body().contains("must be an array"));
+        assertTrue(invalid.get(3).body().contains("positive integer"));
+        assertTrue(invalid.get(4).body().contains("Unknown JSON field"));
+        assertTrue(invalid.get(5).body().contains("too long"));
+        assertTrue(invalid.get(6).body().contains("must be a string"));
+        assertEquals(404, invalid.get(7).statusCode());
+        assertTrue(invalid.get(7).body().contains("automation_workflow_not_found"));
     }
 
     @Test
@@ -870,6 +1015,23 @@ class StowlingHttpServerTest {
                 + "\"cachePolicy\":\"NEAREST_AVAILABLE\","
                 + "\"classificationTiming\":\"AFTER_ROUND\","
                 + "\"completionMode\":\"MANUAL\",\"completionIdleDelay\":300}]}";
+    }
+
+    private static String automationUpdate(String revision) {
+        return "{\"revision\":\"" + revision + "\","
+                + "\"automationWorkflows\":[{\"id\":\"daily\","
+                + "\"name\":\"Daily automation\",\"steps\":[{\"id\":\"wait\","
+                + "\"type\":\"WAIT\",\"parameters\":{\"seconds\":\"1\"}}]}]}";
+    }
+
+    private static int occurrences(String value, String needle) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = value.indexOf(needle, offset)) >= 0) {
+            count++;
+            offset += needle.length();
+        }
+        return count;
     }
 
     private record ApiCall(String method, String path, String body) {

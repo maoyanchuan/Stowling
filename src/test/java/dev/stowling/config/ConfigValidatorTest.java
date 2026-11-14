@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.AutomationStep;
+import dev.stowling.automation.AutomationStepType;
+import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.CachePolicy;
 import dev.stowling.domain.ClassificationTiming;
@@ -21,6 +24,7 @@ import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
@@ -262,6 +266,81 @@ class ConfigValidatorTest {
         );
 
         assertDoesNotThrow(() -> ConfigValidator.requireValid(valid));
+    }
+
+    @Test
+    void rejectsInvalidAutomationReferencesAndParameters() {
+        AutomationStep navigate = new AutomationStep(
+                "navigate",
+                AutomationStepType.NAVIGATE,
+                Map.of("coordinateId", "missing-coordinate")
+        );
+        AutomationStep take = new AutomationStep(
+                "take",
+                AutomationStepType.TAKE_ITEMS,
+                Map.of(
+                "containerId", "missing-container",
+                "itemId", "minecraft:stone",
+                "count", "0"
+        )
+        );
+        AutomationStep pickup = new AutomationStep(
+                "pickup",
+                AutomationStepType.RUN_PICKUP,
+                Map.of(
+                "workflowId", "missing-pickup",
+                "regionId", "missing-region",
+                "unexpected", "value"
+        )
+        );
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "invalid-automation",
+                "Invalid automation",
+                List.of(navigate, take, pickup)
+        );
+        StowlingConfig invalid = ConfigTestFixtures.configWithAutomation(
+                List.of(workflow)
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(invalid)
+        );
+
+        assertTrue(exception.getMessage().contains("coordinate does not exist"));
+        assertTrue(exception.getMessage().contains("container does not exist"));
+        assertTrue(exception.getMessage().contains("pickup workflow does not exist"));
+        assertTrue(exception.getMessage().contains("positive integer"));
+        assertTrue(exception.getMessage().contains("unknown parameter"));
+    }
+
+    @Test
+    void rejectsDuplicateAutomationStepIds() {
+        AutomationStep first = new AutomationStep(
+                "duplicate",
+                AutomationStepType.WAIT,
+                Map.of("seconds", "1")
+        );
+        AutomationStep second = new AutomationStep(
+                "duplicate",
+                AutomationStepType.CHECK_INVENTORY,
+                Map.of("itemId", "minecraft:stone", "count", "1")
+        );
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "duplicate-steps",
+                "Duplicate steps",
+                List.of(first, second)
+        );
+        StowlingConfig invalid = ConfigTestFixtures.configWithAutomation(
+                List.of(workflow)
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(invalid)
+        );
+
+        assertTrue(exception.getMessage().contains("duplicate id"));
     }
 
     private static PickupRegion region(String id, String dimension) {

@@ -1,5 +1,6 @@
 package dev.stowling.client.interaction;
 
+import dev.stowling.automation.AutomationOperationResult;
 import dev.stowling.automation.ContainerAttempt;
 import dev.stowling.automation.ContainerAttemptResult;
 import dev.stowling.automation.ContainerAttemptStatus;
@@ -8,6 +9,7 @@ import dev.stowling.automation.ContainerSlot;
 import dev.stowling.automation.ContainerTransfer;
 import dev.stowling.automation.ContainerView;
 import dev.stowling.automation.ItemAmount;
+import dev.stowling.automation.ItemTransferPort;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryItemKind;
@@ -21,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
@@ -44,12 +47,17 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Confirms each container action from a stable predicted menu state before another click.
  */
-public final class MinecraftContainerInteraction implements ContainerInteraction {
+public final class MinecraftContainerInteraction
+        implements ContainerInteraction, ItemTransferPort {
     private static final Duration OPEN_TIMEOUT = Duration.ofSeconds(5);
+    private static final String PLAYER = "PLAYER";
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private final Function<String, Optional<ContainerRef>> containerResolver;
+    private final OperationDriver operationDriver;
     private final Map<String, Transaction> transactions = new HashMap<>();
+    private final Map<String, ActiveOperation> operations = new HashMap<>();
 
     private ContainerRef openedContainer;
     private ContainerRef pendingOpen;
@@ -59,8 +67,49 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             Minecraft minecraft,
             ClientActionScheduler scheduler
     ) {
-        this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
+        this(
+                Objects.requireNonNull(minecraft, "minecraft"),
+                scheduler,
+                ignored -> Optional.empty()
+        );
+    }
+
+    public MinecraftContainerInteraction(
+            Minecraft minecraft,
+            ClientActionScheduler scheduler,
+            Function<String, Optional<ContainerRef>> containerResolver
+    ) {
+        this(
+                Objects.requireNonNull(minecraft, "minecraft"),
+                scheduler,
+                containerResolver,
+                null
+        );
+    }
+
+    MinecraftContainerInteraction(
+            ClientActionScheduler scheduler,
+            Function<String, Optional<ContainerRef>> containerResolver,
+            OperationDriver operationDriver
+    ) {
+        this(null, scheduler, containerResolver, operationDriver);
+    }
+
+    private MinecraftContainerInteraction(
+            Minecraft minecraft,
+            ClientActionScheduler scheduler,
+            Function<String, Optional<ContainerRef>> containerResolver,
+            OperationDriver operationDriver
+    ) {
+        this.minecraft = minecraft;
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.containerResolver = Objects.requireNonNull(
+                containerResolver,
+                "containerResolver"
+        );
+        this.operationDriver = operationDriver == null
+                ? new TransactionOperationDriver()
+                : operationDriver;
     }
 
     @Override
@@ -128,6 +177,178 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     }
 
     @Override
+    public AutomationOperationResult start(
+            String operationKey,
+            ItemTransferPort.Request request
+    ) {
+        requireClientThread();
+        String checkedKey = requireText(operationKey, "operationKey");
+        Objects.requireNonNull(request, "request");
+        if (operations.containsKey(checkedKey)) {
+            return AutomationOperationResult.running(
+                    "operation is already active; poll the same operation key"
+            );
+        }
+        Optional<MappedOperation> mapped = mapOperation(request);
+        if (mapped.isEmpty()) {
+            return AutomationOperationResult.failed(
+                    "container id is not available for the requested transfer"
+            );
+        }
+        AttemptToken token = new AttemptToken(checkedKey, 0);
+        ActiveOperation operation = new ActiveOperation(
+                token,
+                mapped.orElseThrow()
+        );
+        operations.put(checkedKey, operation);
+        try {
+            ContainerAttemptResult result = operationDriver.start(
+                    token,
+                    operation.mapping().specification()
+            );
+            return mapPendingStart(operation, result);
+        } catch (RuntimeException exception) {
+            operations.remove(checkedKey);
+            operationDriver.cancel(token);
+            throw exception;
+        }
+    }
+
+    @Override
+    public AutomationOperationResult poll(String operationKey) {
+        requireClientThread();
+        String checkedKey = requireText(operationKey, "operationKey");
+        ActiveOperation operation = operations.get(checkedKey);
+        if (operation == null) {
+            return AutomationOperationResult.failed(
+                    "operation is not active; manual recovery is required"
+            );
+        }
+        return pollOperation(operation);
+    }
+
+    @Override
+    public AutomationOperationResult reconcile(String operationKey) {
+        requireClientThread();
+        String checkedKey = requireText(operationKey, "operationKey");
+        ActiveOperation operation = operations.get(checkedKey);
+        if (operation == null) {
+            return AutomationOperationResult.paused(
+                    "operation state is unavailable; manual recovery is required"
+            );
+        }
+        return pollOperation(operation);
+    }
+
+    private AutomationOperationResult mapPendingStart(
+            ActiveOperation operation,
+            ContainerAttemptResult result
+    ) {
+        Objects.requireNonNull(result, "operation start result");
+        if (result.status() == ContainerAttemptStatus.ACKNOWLEDGED
+                || result.status() == ContainerAttemptStatus.REJECTED
+                || result.status() == ContainerAttemptStatus.UNAVAILABLE) {
+            return completeOperation(operation, result);
+        }
+        return AutomationOperationResult.running(result.detail());
+    }
+
+    private AutomationOperationResult pollOperation(ActiveOperation operation) {
+        ContainerAttemptResult result = operationDriver.poll(operation.token());
+        if (result.status() == ContainerAttemptStatus.PENDING) {
+            return AutomationOperationResult.running(result.detail());
+        }
+        return completeOperation(operation, result);
+    }
+
+    private AutomationOperationResult completeOperation(
+            ActiveOperation operation,
+            ContainerAttemptResult result
+    ) {
+        operations.remove(operation.token().attemptId());
+        return switch (result.status()) {
+            case ACKNOWLEDGED -> AutomationOperationResult.succeeded(
+                    operation.mapping().confirmedAction()
+            );
+            case REJECTED, UNAVAILABLE -> AutomationOperationResult.failed(
+                    result.detail() + "; manual recovery is required"
+            );
+            case PENDING -> AutomationOperationResult.running(result.detail());
+        };
+    }
+
+    private Optional<MappedOperation> mapOperation(ItemTransferPort.Request request) {
+        Optional<ContainerRef> source;
+        Optional<ContainerRef> destination;
+        switch (request.mode()) {
+            case PUT -> {
+                if (!PLAYER.equals(request.source())) {
+                    return Optional.empty();
+                }
+                source = Optional.empty();
+                destination = resolveContainer(request.destination());
+                if (destination.isEmpty()) {
+                    return Optional.empty();
+                }
+            }
+            case TAKE -> {
+                if (!PLAYER.equals(request.destination())) {
+                    return Optional.empty();
+                }
+                source = resolveContainer(request.source());
+                destination = Optional.empty();
+                if (source.isEmpty()) {
+                    return Optional.empty();
+                }
+            }
+            case TRANSFER -> {
+                source = resolveContainer(request.source());
+                destination = resolveContainer(request.destination());
+                if (source.isEmpty() || destination.isEmpty()) {
+                    return Optional.empty();
+                }
+                ContainerRef sourceRef = source.orElseThrow();
+                ContainerRef destinationRef = destination.orElseThrow();
+                if (sourceRef.equals(destinationRef)
+                        || !sourceRef.dimension().equals(destinationRef.dimension())) {
+                    return Optional.empty();
+                }
+            }
+            default -> throw new IllegalStateException("unexpected transfer mode");
+        }
+        TransferSpec specification = new TransferSpec(
+                source,
+                destination,
+                List.of(new ItemAmount(request.itemId(), request.count()))
+        );
+        String action = confirmedAction(request);
+        return Optional.of(new MappedOperation(
+                request,
+                specification,
+                action
+        ));
+    }
+
+    private Optional<ContainerRef> resolveContainer(String containerId) {
+        return containerResolver.apply(containerId);
+    }
+
+    private static String confirmedAction(ItemTransferPort.Request request) {
+        return switch (request.mode()) {
+            case TAKE -> "TAKE " + request.itemId()
+                    + " from " + request.source()
+                    + " to PLAYER confirmed by source quick move with empty cursor";
+            case PUT -> "PUT " + request.itemId()
+                    + " from PLAYER to " + request.destination()
+                    + " confirmed by server menu state";
+            case TRANSFER -> "TRANSFER " + request.itemId()
+                    + " from " + request.source()
+                    + " to " + request.destination()
+                    + " confirmed by server menu state";
+        };
+    }
+
+    @Override
     public ContainerAttempt begin(ContainerTransfer transfer, long baselineRevision) {
         requireClientThread();
         Objects.requireNonNull(transfer, "transfer");
@@ -135,11 +356,12 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             throw new IllegalArgumentException("baselineRevision must not be negative");
         }
         String attemptId = UUID.randomUUID().toString();
-        Transaction transaction = new Transaction(
-                transfer,
-                transfer.source().isPresent(),
-                baselineRevision
+        TransferSpec specification = new TransferSpec(
+                transfer.source(),
+                Optional.of(transfer.destination()),
+                transfer.items()
         );
+        Transaction transaction = new Transaction(specification, baselineRevision);
         transactions.put(attemptId, transaction);
         ContainerRef initialTarget = transfer.source().orElse(transfer.destination());
         prepare(initialTarget);
@@ -155,21 +377,38 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     public ContainerAttemptResult poll(ContainerAttempt attempt) {
         requireClientThread();
         Objects.requireNonNull(attempt, "attempt");
-        Transaction transaction = transactions.get(attempt.attemptId());
+        AttemptToken token = new AttemptToken(
+                attempt.attemptId(),
+                attempt.baselineRevision()
+        );
+        Transaction transaction = transactions.get(token.attemptId());
         if (transaction == null) {
-            return unavailable(attempt, "attempt is no longer active");
+            return unavailable(token, "attempt is no longer active");
         }
+        return pollTransaction(token, transaction);
+    }
+
+    private ContainerAttemptResult pollTransaction(
+            AttemptToken token,
+            Transaction transaction
+    ) {
+        requireClientThread();
         AbstractContainerMenu menu = currentContainerMenu();
         if (menu == null) {
             if (transaction.pendingClick != null) {
-                transactions.remove(attempt.attemptId());
-                return unavailable(attempt, "container closed before click confirmation");
+                removeTransaction(token);
+                return unavailable(
+                        token,
+                        "container closed before click confirmation"
+                );
             }
-            ContainerRef target = transaction.phase == Phase.EXTRACT
-                    ? transaction.transfer.source().orElseThrow()
-                    : transaction.transfer.destination();
-            prepare(target);
-            return pending(attempt, transaction.baselineRevision, "waiting for container");
+            Optional<ContainerRef> target = transaction.targetFor(transaction.phase);
+            if (target.isEmpty()) {
+                removeTransaction(token);
+                return unavailable(token, "container target is unavailable");
+            }
+            prepare(target.orElseThrow());
+            return pending(token, transaction.baselineRevision, "waiting for container");
         }
         if (pendingOpen != null) {
             openedContainer = pendingOpen;
@@ -188,9 +427,9 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                     observed
             );
             if (!evaluation.confirmed()) {
-                transactions.remove(attempt.attemptId());
                 return rejected(
-                        attempt,
+                        token,
+                        transaction,
                         menu,
                         "container click prediction was corrected or inconsistent"
                 );
@@ -199,11 +438,11 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             transaction.pendingClick = null;
         }
         return switch (transaction.phase) {
-            case OPEN_SOURCE -> openSource(attempt, transaction);
-            case EXTRACT -> extract(attempt, transaction, menu);
-            case OPEN_DESTINATION -> openDestination(attempt, transaction);
-            case PLACE -> place(attempt, transaction, menu);
-            case RETURN_CURSOR -> returnCursor(attempt, transaction, menu);
+            case OPEN_SOURCE -> openSource(token, transaction);
+            case EXTRACT -> extract(token, transaction, menu);
+            case OPEN_DESTINATION -> openDestination(token, transaction);
+            case PLACE -> place(token, transaction, menu);
+            case RETURN_CURSOR -> returnCursor(token, transaction, menu);
         };
     }
 
@@ -217,45 +456,63 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         }
         ContainerRef activeTarget = openedContainer;
         if (activeTarget != null
-                && (activeTarget.equals(transaction.transfer.destination())
-                || transaction.transfer.source().filter(activeTarget::equals).isPresent())) {
+                && transaction.references(activeTarget)) {
             closeCurrentContainer();
         }
     }
 
     private ContainerAttemptResult openSource(
-            ContainerAttempt attempt,
+            AttemptToken token,
             Transaction transaction
     ) {
-        ContainerRef source = transaction.transfer.source().orElseThrow();
+        ContainerRef source = transaction.source.orElseThrow();
         prepare(source);
         AbstractContainerMenu menu = currentContainerMenu();
         if (menu == null || !source.equals(openedContainer)) {
-            return pending(attempt, transaction.baselineRevision, "opening source container");
+            return pending(token, transaction.baselineRevision, "opening source container");
         }
         if (!transaction.sourceStability.observe(menuSnapshot(menu))) {
-            return pending(attempt, revision(menu), "waiting for source contents to stabilize");
+            return pending(
+                    token,
+                    revision(menu),
+                    "waiting for source contents to stabilize"
+            );
         }
         transaction.sourceView = view(menu, source);
         transaction.phase = Phase.EXTRACT;
-        return pending(attempt, revision(menu), "source container is ready");
+        return pending(token, revision(menu), "source container is ready");
     }
 
     private ContainerAttemptResult extract(
-            ContainerAttempt attempt,
+            AttemptToken token,
             Transaction transaction,
             AbstractContainerMenu menu
     ) {
-        ContainerRef source = transaction.transfer.source().orElseThrow();
+        ContainerRef source = transaction.source.orElseThrow();
         if (!source.equals(openedContainer)) {
             prepare(source);
-            return pending(attempt, revision(menu), "source container is no longer open");
+            return pending(token, revision(menu), "source container is no longer open");
         }
         if (transaction.remaining.isEmpty()) {
+            if (transaction.toPlayer()) {
+                if (!menu.getCarried().isEmpty()) {
+                    return rejected(
+                            token,
+                            transaction,
+                            menu,
+                            "source transfer completed with a non-empty cursor"
+                    );
+                }
+                return acknowledged(token, transaction, menu);
+            }
             closeCurrentContainer();
             transaction.phase = Phase.OPEN_DESTINATION;
-            prepare(transaction.transfer.destination());
-            return pending(attempt, revision(menu), "opening destination container");
+            prepare(transaction.destination.orElseThrow());
+            return pending(
+                    token,
+                    revision(menu),
+                    "opening destination container"
+            );
         }
         for (int slotIndex : slotClassification(menu).containerSlots()) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
@@ -272,7 +529,8 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                     wanted
             )) {
                 return rejected(
-                        attempt,
+                        token,
+                        transaction,
                         menu,
                         "partial source stack extraction is not safely supported"
                 );
@@ -295,42 +553,55 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                     predicted
             );
             transaction.pendingSlot = slotIndex;
-            return pending(attempt, revision(menu), "source transfer sent");
+            return pending(token, revision(menu), "source transfer sent");
         }
-        return rejected(attempt, menu, "requested items are absent from the source");
+        return rejected(
+                token,
+                transaction,
+                menu,
+                "requested items are absent from the source"
+        );
     }
 
     private ContainerAttemptResult openDestination(
-            ContainerAttempt attempt,
+            AttemptToken token,
             Transaction transaction
     ) {
-        ContainerRef destination = transaction.transfer.destination();
+        ContainerRef destination = transaction.destination.orElseThrow();
         prepare(destination);
         AbstractContainerMenu menu = currentContainerMenu();
         if (menu == null || !destination.equals(openedContainer)) {
-            return pending(attempt, revisionOrBaseline(menu, transaction), "opening destination");
+            return pending(
+                    token,
+                    revisionOrBaseline(menu, transaction),
+                    "opening destination"
+            );
         }
         if (!transaction.destinationStability.observe(menuSnapshot(menu))) {
             return pending(
-                    attempt,
+                    token,
                     revision(menu),
                     "waiting for destination contents to stabilize"
             );
         }
         transaction.destinationView = view(menu, destination);
         transaction.phase = Phase.PLACE;
-        return pending(attempt, revision(menu), "destination container is ready");
+        return pending(token, revision(menu), "destination container is ready");
     }
 
     private ContainerAttemptResult place(
-            ContainerAttempt attempt,
+            AttemptToken token,
             Transaction transaction,
             AbstractContainerMenu menu
     ) {
-        ContainerRef destination = transaction.transfer.destination();
+        ContainerRef destination = transaction.destination.orElseThrow();
         if (!destination.equals(openedContainer)) {
             prepare(destination);
-            return pending(attempt, revision(menu), "destination container is no longer open");
+            return pending(
+                    token,
+                    revision(menu),
+                    "destination container is no longer open"
+            );
         }
         MenuSlotClassification slots = slotClassification(menu);
         ItemStack carried = menu.getCarried();
@@ -339,11 +610,15 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 stackState(carried)
         );
         if (nextStep == ContainerCursorRecovery.NextStep.ACKNOWLEDGE) {
-            return acknowledged(attempt, transaction, menu);
+            return acknowledged(token, transaction, menu);
         }
         if (nextStep == ContainerCursorRecovery.NextStep.RETURN_CURSOR) {
             transaction.phase = Phase.RETURN_CURSOR;
-            return pending(attempt, revision(menu), "returning cursor stack to inventory");
+            return pending(
+                    token,
+                    revision(menu),
+                    "returning cursor stack to inventory"
+            );
         }
         if (carried.isEmpty()) {
             int quickMoveSlot = findQuickMovePlayerSlot(
@@ -372,11 +647,16 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                         predicted
                 );
                 transaction.pendingSlot = quickMoveSlot;
-                return pending(attempt, revision(menu), "player quick move sent");
+                return pending(token, revision(menu), "player quick move sent");
             }
             int picked = pickNextPlayerStack(menu, slots.playerSlots(), transaction.remaining);
             if (picked < 0) {
-                return rejected(attempt, menu, "player inventory lacks the requested quantity");
+                return rejected(
+                        token,
+                        transaction,
+                        menu,
+                        "player inventory lacks the requested quantity"
+                );
             }
             ItemStack pickedStack = menu.getSlot(picked).getItem();
             String pickedItemId = itemId(pickedStack);
@@ -399,16 +679,26 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
             );
             transaction.pendingSlot = picked;
             transaction.pickupOriginSlot = picked;
-            return pending(attempt, revision(menu), "player stack pickup sent");
+            return pending(token, revision(menu), "player stack pickup sent");
         }
         String carriedItem = itemId(carried);
         int wanted = transaction.remaining.getOrDefault(carriedItem, 0);
         if (wanted <= 0) {
-            return rejected(attempt, menu, "cursor contains an unexpected item");
+            return rejected(
+                    token,
+                    transaction,
+                    menu,
+                    "cursor contains an unexpected item"
+            );
         }
         int destinationSlot = findDestinationSlot(menu, slots.containerSlots(), carried);
         if (destinationSlot < 0) {
-            return rejected(attempt, menu, "destination container has no compatible slot");
+            return rejected(
+                    token,
+                    transaction,
+                    menu,
+                    "destination container has no compatible slot"
+            );
         }
         int button = carried.getCount() <= wanted ? 0 : 1;
         ContainerClickConfirmation.Snapshot before = clickSnapshot(
@@ -429,21 +719,26 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 predicted
         );
         transaction.pendingSlot = destinationSlot;
-        return pending(attempt, revision(menu), "destination slot click sent");
+        return pending(token, revision(menu), "destination slot click sent");
     }
 
     private ContainerAttemptResult returnCursor(
-            ContainerAttempt attempt,
+            AttemptToken token,
             Transaction transaction,
             AbstractContainerMenu menu
     ) {
-        ContainerRef destination = transaction.transfer.destination();
+        ContainerRef destination = transaction.destination.orElseThrow();
         if (!destination.equals(openedContainer)) {
-            return rejected(attempt, menu, "destination closed before cursor was returned");
+            return rejected(
+                    token,
+                    transaction,
+                    menu,
+                    "destination closed before cursor was returned"
+            );
         }
         ItemStack carried = menu.getCarried();
         if (carried.isEmpty()) {
-            return acknowledged(attempt, transaction, menu);
+            return acknowledged(token, transaction, menu);
         }
         String carriedItem = itemId(carried);
         int returnSlot = findReturnSlot(
@@ -453,7 +748,12 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 carried
         );
         if (returnSlot < 0) {
-            return rejected(attempt, menu, "player inventory has no slot for cursor stack");
+            return rejected(
+                    token,
+                    transaction,
+                    menu,
+                    "player inventory has no slot for cursor stack"
+            );
         }
         ContainerClickConfirmation.Snapshot before = clickSnapshot(
                 menu,
@@ -473,22 +773,29 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
                 predicted
         );
         transaction.pendingSlot = returnSlot;
-        return pending(attempt, revision(menu), "cursor return sent");
+        return pending(token, revision(menu), "cursor return sent");
     }
 
     private ContainerAttemptResult acknowledged(
-            ContainerAttempt attempt,
+            AttemptToken token,
             Transaction transaction,
             AbstractContainerMenu menu
     ) {
-        ContainerView destinationView = view(menu, transaction.transfer.destination());
-        transactions.remove(attempt.attemptId());
+        Optional<ContainerView> sourceAfter = transaction.toPlayer()
+                ? transaction.source.map(source -> view(menu, source))
+                : Optional.ofNullable(transaction.sourceView);
+        Optional<ContainerView> destinationAfter = transaction.destination
+                .map(destination -> view(menu, destination));
+        removeTransaction(token);
+        String detail = transaction.toPlayer()
+                ? "source quick move and empty cursor were confirmed by the server"
+                : "all requested slots and the cursor were confirmed by the server";
         return new ContainerAttemptResult(
                 ContainerAttemptStatus.ACKNOWLEDGED,
                 revision(menu),
-                Optional.ofNullable(transaction.sourceView),
-                Optional.of(destinationView),
-                "all requested slots and the cursor were confirmed by the server"
+                sourceAfter,
+                destinationAfter,
+                detail
         );
     }
 
@@ -842,13 +1149,13 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     }
 
     private static ContainerAttemptResult pending(
-            ContainerAttempt attempt,
+            AttemptToken token,
             long revision,
             String detail
     ) {
         return new ContainerAttemptResult(
                 ContainerAttemptStatus.PENDING,
-                Math.max(attempt.baselineRevision(), revision),
+                Math.max(token.baselineRevision(), revision),
                 Optional.empty(),
                 Optional.empty(),
                 detail
@@ -863,11 +1170,15 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     }
 
     private ContainerAttemptResult rejected(
-            ContainerAttempt attempt,
+            AttemptToken token,
+            Transaction transaction,
             AbstractContainerMenu menu,
             String detail
     ) {
-        transactions.remove(attempt.attemptId());
+        removeTransaction(token);
+        if (transaction.toPlayer()) {
+            closeCurrentContainer();
+        }
         return new ContainerAttemptResult(
                 ContainerAttemptStatus.REJECTED,
                 revision(menu),
@@ -878,16 +1189,21 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
     }
 
     private static ContainerAttemptResult unavailable(
-            ContainerAttempt attempt,
+            AttemptToken token,
             String detail
     ) {
         return new ContainerAttemptResult(
                 ContainerAttemptStatus.UNAVAILABLE,
-                attempt.baselineRevision(),
+                token.baselineRevision(),
                 Optional.empty(),
                 Optional.empty(),
                 detail
         );
+    }
+
+    private void removeTransaction(AttemptToken token) {
+        transactions.remove(token.attemptId());
+        operations.remove(token.attemptId());
     }
 
     private void requireClientThread() {
@@ -904,8 +1220,112 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         RETURN_CURSOR
     }
 
+    record AttemptToken(String attemptId, long baselineRevision) {
+        AttemptToken {
+            attemptId = requireText(attemptId, "attemptId");
+            if (baselineRevision < 0) {
+                throw new IllegalArgumentException(
+                        "baselineRevision must not be negative"
+                );
+            }
+        }
+    }
+
+    record TransferSpec(
+            Optional<ContainerRef> source,
+            Optional<ContainerRef> destination,
+            List<ItemAmount> items
+    ) {
+        TransferSpec {
+            source = Objects.requireNonNull(source, "source");
+            destination = Objects.requireNonNull(destination, "destination");
+            items = List.copyOf(Objects.requireNonNull(items, "items"));
+            if (source.isEmpty() && destination.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "source or destination must be present"
+                );
+            }
+        }
+    }
+
+    record MappedOperation(
+            ItemTransferPort.Request request,
+            TransferSpec specification,
+            String confirmedAction
+    ) {
+        MappedOperation {
+            request = Objects.requireNonNull(request, "request");
+            specification = Objects.requireNonNull(
+                    specification,
+                    "specification"
+            );
+            confirmedAction = requireText(confirmedAction, "confirmedAction");
+        }
+    }
+
+    private record ActiveOperation(
+            AttemptToken token,
+            MappedOperation mapping
+    ) {
+        private ActiveOperation {
+            token = Objects.requireNonNull(token, "token");
+            mapping = Objects.requireNonNull(mapping, "mapping");
+        }
+    }
+
+    interface OperationDriver {
+        ContainerAttemptResult start(AttemptToken token, TransferSpec transfer);
+
+        ContainerAttemptResult poll(AttemptToken token);
+
+        void cancel(AttemptToken token);
+    }
+
+    private final class TransactionOperationDriver implements OperationDriver {
+        @Override
+        public ContainerAttemptResult start(
+                AttemptToken token,
+                TransferSpec transfer
+        ) {
+            requireClientThread();
+            Transaction transaction = new Transaction(
+                    transfer,
+                    token.baselineRevision()
+            );
+            transactions.put(token.attemptId(), transaction);
+            ContainerRef initialTarget = transfer.source()
+                    .or(() -> transfer.destination())
+                    .orElseThrow();
+            prepare(initialTarget);
+            return pending(token, token.baselineRevision(), "operation started");
+        }
+
+        @Override
+        public ContainerAttemptResult poll(AttemptToken token) {
+            requireClientThread();
+            Transaction transaction = transactions.get(token.attemptId());
+            if (transaction == null) {
+                return unavailable(token, "operation attempt is no longer active");
+            }
+            return pollTransaction(token, transaction);
+        }
+
+        @Override
+        public void cancel(AttemptToken token) {
+            requireClientThread();
+            Transaction transaction = transactions.remove(token.attemptId());
+            if (transaction == null) {
+                return;
+            }
+            if (openedContainer != null && transaction.references(openedContainer)) {
+                closeCurrentContainer();
+            }
+        }
+    }
+
     private static final class Transaction {
-        private final ContainerTransfer transfer;
+        private final Optional<ContainerRef> source;
+        private final Optional<ContainerRef> destination;
         private final long baselineRevision;
         private final Map<String, Integer> remaining;
         private final ContainerMenuStability sourceStability = new ContainerMenuStability();
@@ -919,14 +1339,41 @@ public final class MinecraftContainerInteraction implements ContainerInteraction
         private int pickupOriginSlot = -1;
 
         private Transaction(
-                ContainerTransfer transfer,
-                boolean hasSource,
+                TransferSpec transfer,
                 long baselineRevision
         ) {
-            this.transfer = transfer;
+            this.source = transfer.source();
+            this.destination = transfer.destination();
             this.baselineRevision = baselineRevision;
             this.remaining = remaining(transfer.items());
-            this.phase = hasSource ? Phase.OPEN_SOURCE : Phase.OPEN_DESTINATION;
+            this.phase = source.isPresent()
+                    ? Phase.OPEN_SOURCE
+                    : Phase.OPEN_DESTINATION;
         }
+
+        private boolean toPlayer() {
+            return source.isPresent() && destination.isEmpty();
+        }
+
+        private boolean references(ContainerRef container) {
+            return source.filter(container::equals).isPresent()
+                    || destination.filter(container::equals).isPresent();
+        }
+
+        private Optional<ContainerRef> targetFor(Phase phase) {
+            return switch (phase) {
+                case OPEN_SOURCE, EXTRACT -> source;
+                case OPEN_DESTINATION, PLACE, RETURN_CURSOR -> destination;
+            };
+        }
+    }
+
+    private static String requireText(String value, String fieldName) {
+        Objects.requireNonNull(value, fieldName);
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return trimmed;
     }
 }

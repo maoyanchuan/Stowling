@@ -7,11 +7,15 @@ import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.ConfigValidationException;
 import dev.stowling.control.ActiveTaskConflictException;
 import dev.stowling.control.AuditRequest;
+import dev.stowling.control.AutomationTaskRequest;
+import dev.stowling.control.AutomationWorkflowNotFoundException;
+import dev.stowling.control.AutomationWorkflowUpdateRequest;
 import dev.stowling.control.ConfigCoordinatePointsUpdateRequest;
 import dev.stowling.control.ConfigCoordinatesUpdateRequest;
 import dev.stowling.control.ContainerNotFoundException;
 import dev.stowling.control.InvalidConfigCoordinatesException;
 import dev.stowling.control.InvalidCoordinatePointsException;
+import dev.stowling.control.InvalidAutomationConfigException;
 import dev.stowling.control.InvalidPickupConfigException;
 import dev.stowling.control.InvalidPickupRequestException;
 import dev.stowling.control.PickupConfigUpdateRequest;
@@ -207,6 +211,13 @@ public final class StowlingHttpServer implements AutoCloseable {
             sendErrorQuietly(exchange, 400, "invalid_config_coordinates", exception.getMessage());
         } catch (InvalidPickupConfigException | ConfigValidationException exception) {
             sendErrorQuietly(exchange, 400, "invalid_pickup_config", exception.getMessage());
+        } catch (InvalidAutomationConfigException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    400,
+                    "invalid_automation_config",
+                    exception.getMessage()
+            );
         } catch (InvalidPickupRequestException exception) {
             sendErrorQuietly(exchange, 400, "invalid_pickup_request", exception.getMessage());
         } catch (MethodNotAllowedException exception) {
@@ -239,6 +250,13 @@ public final class StowlingHttpServer implements AutoCloseable {
                     404,
                     "pickup_workflow_not_found",
                     "Pickup workflow not found"
+            );
+        } catch (AutomationWorkflowNotFoundException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    404,
+                    "automation_workflow_not_found",
+                    "Automation workflow not found"
             );
         } catch (TaskNotFoundException exception) {
             sendErrorQuietly(exchange, 404, "task_not_found", "Task not found");
@@ -293,21 +311,52 @@ public final class StowlingHttpServer implements AutoCloseable {
     }
 
     private static Map<String, StaticContent> loadStaticContent() {
-        return Map.of(
-                "/",
-                readStaticContent(
-                        "stowling-web/index.html",
-                        "text/html; charset=utf-8"
+        String html = "text/html; charset=utf-8";
+        String javascript = "text/javascript; charset=utf-8";
+        return Map.ofEntries(
+                Map.entry("/", readStaticContent("stowling-web/index.html", html)),
+                Map.entry(
+                        "/index.html",
+                        readStaticContent("stowling-web/index.html", html)
                 ),
-                "/app.js",
-                readStaticContent(
-                        "stowling-web/app.js",
-                        "text/javascript; charset=utf-8"
+                Map.entry(
+                        "/coordinates.html",
+                        readStaticContent("stowling-web/coordinates.html", html)
                 ),
-                "/styles.css",
-                readStaticContent(
-                        "stowling-web/styles.css",
-                        "text/css; charset=utf-8"
+                Map.entry(
+                        "/tasks.html",
+                        readStaticContent("stowling-web/tasks.html", html)
+                ),
+                Map.entry(
+                        "/storage.html",
+                        readStaticContent("stowling-web/storage.html", html)
+                ),
+                Map.entry(
+                        "/common.js",
+                        readStaticContent("stowling-web/common.js", javascript)
+                ),
+                Map.entry(
+                        "/dashboard.js",
+                        readStaticContent("stowling-web/dashboard.js", javascript)
+                ),
+                Map.entry(
+                        "/coordinates.js",
+                        readStaticContent("stowling-web/coordinates.js", javascript)
+                ),
+                Map.entry(
+                        "/tasks.js",
+                        readStaticContent("stowling-web/tasks.js", javascript)
+                ),
+                Map.entry(
+                        "/storage.js",
+                        readStaticContent("stowling-web/storage.js", javascript)
+                ),
+                Map.entry(
+                        "/styles.css",
+                        readStaticContent(
+                                "stowling-web/styles.css",
+                                "text/css; charset=utf-8"
+                        )
                 )
         );
     }
@@ -347,6 +396,14 @@ public final class StowlingHttpServer implements AutoCloseable {
             case PICKUP -> {
                 PickupRequest request = requestParser.parsePickup(body);
                 sendJson(exchange, 202, service.requestPickup(request));
+            }
+            case AUTOMATION_TASK -> {
+                AutomationTaskRequest request = requestParser.parseAutomationTask(body);
+                sendJson(exchange, 202, service.requestAutomation(request));
+            }
+            case AUTOMATION_MODULES -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, List.copyOf(service.automationModules()));
             }
             case CANCEL -> {
                 requestParser.requireEmpty(body);
@@ -402,6 +459,15 @@ public final class StowlingHttpServer implements AutoCloseable {
                 PickupConfigUpdateRequest request =
                         requestParser.parsePickupConfigUpdate(body);
                 sendJson(exchange, 200, service.updatePickupConfig(request));
+            }
+            case CONFIG_AUTOMATION_WORKFLOWS_GET -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, service.automationWorkflows());
+            }
+            case CONFIG_AUTOMATION_WORKFLOWS_PUT -> {
+                AutomationWorkflowUpdateRequest request =
+                        requestParser.parseAutomationWorkflowUpdate(body);
+                sendJson(exchange, 200, service.updateAutomationWorkflows(request));
             }
         }
     }
@@ -585,6 +651,8 @@ public final class StowlingHttpServer implements AutoCloseable {
         PICKUP_SITES("GET", "/v1/pickup-sites"),
         PICKUP_WORKFLOWS("GET", "/v1/pickup-workflows"),
         PICKUP("POST", "/v1/tasks/pickup"),
+        AUTOMATION_TASK("POST", "/v1/tasks/automation"),
+        AUTOMATION_MODULES("GET", "/v1/automation-modules"),
         CANCEL("POST", null),
         AUDITS("POST", "/v1/audits"),
         INVENTORY("GET", "/v1/inventory"),
@@ -597,7 +665,15 @@ public final class StowlingHttpServer implements AutoCloseable {
         CONFIG_COORDINATES_GET("GET", "/v1/config/coordinates"),
         CONFIG_COORDINATES_PUT("PUT", "/v1/config/coordinates"),
         CONFIG_PICKUP_GET("GET", "/v1/config/pickup"),
-        CONFIG_PICKUP_PUT("PUT", "/v1/config/pickup");
+        CONFIG_PICKUP_PUT("PUT", "/v1/config/pickup"),
+        CONFIG_AUTOMATION_WORKFLOWS_GET(
+                "GET",
+                "/v1/config/automation-workflows"
+        ),
+        CONFIG_AUTOMATION_WORKFLOWS_PUT(
+                "PUT",
+                "/v1/config/automation-workflows"
+        );
 
         private final String method;
         private final String path;

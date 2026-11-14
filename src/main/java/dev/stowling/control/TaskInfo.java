@@ -15,7 +15,12 @@ public record TaskInfo(
         String workflowId,
         String currentRegionId,
         Long round,
-        String stage
+        String stage,
+        String currentStepId,
+        Integer stepIndex,
+        Integer stepCount,
+        String moduleState,
+        String lastConfirmedAction
 ) {
     public TaskInfo {
         id = Objects.requireNonNull(id, "id");
@@ -29,6 +34,15 @@ public record TaskInfo(
         }
         if (round != null && round < 0) {
             throw new IllegalArgumentException("round must not be negative");
+        }
+        if (stepIndex != null && stepIndex < 0) {
+            throw new IllegalArgumentException("stepIndex must not be negative");
+        }
+        if (stepCount != null && stepCount < 0) {
+            throw new IllegalArgumentException("stepCount must not be negative");
+        }
+        if (stepIndex != null && stepCount != null && stepIndex > stepCount) {
+            throw new IllegalArgumentException("stepIndex must not exceed stepCount");
         }
     }
 
@@ -49,6 +63,44 @@ public record TaskInfo(
                 createdAt,
                 updatedAt,
                 failureReason,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public TaskInfo(
+            UUID id,
+            String kind,
+            String status,
+            String automationState,
+            Instant createdAt,
+            Instant updatedAt,
+            String failureReason,
+            String workflowId,
+            String currentRegionId,
+            Long round,
+            String stage
+    ) {
+        this(
+                id,
+                kind,
+                status,
+                automationState,
+                createdAt,
+                updatedAt,
+                failureReason,
+                workflowId,
+                currentRegionId,
+                round,
+                stage,
+                null,
                 null,
                 null,
                 null,

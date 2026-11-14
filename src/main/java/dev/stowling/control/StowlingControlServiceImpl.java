@@ -1,8 +1,14 @@
 package dev.stowling.control;
 
 import dev.stowling.automation.AutomationPauseReason;
+import dev.stowling.automation.AutomationExecutionStatus;
 import dev.stowling.automation.AutomationCheckpoint;
 import dev.stowling.automation.AutomationSnapshot;
+import dev.stowling.automation.AutomationStepType;
+import dev.stowling.automation.AutomationWorkflow;
+import dev.stowling.automation.GenericAutomationCheckpoint;
+import dev.stowling.automation.GenericAutomationEngine;
+import dev.stowling.automation.GenericAutomationSnapshot;
 import dev.stowling.automation.PickupAutomationEngine;
 import dev.stowling.automation.PickupAutomationPlan;
 import dev.stowling.automation.PickupStage;
@@ -31,6 +37,7 @@ import dev.stowling.persistence.InventoryAggregate;
 import dev.stowling.persistence.NestedInventoryScope;
 import dev.stowling.persistence.PersistedTask;
 import dev.stowling.persistence.SqliteAutomationCheckpointStore;
+import dev.stowling.persistence.SqliteGenericAutomationCheckpointStore;
 import dev.stowling.persistence.SqliteInventoryRepository;
 import dev.stowling.persistence.SqliteTaskRepository;
 import dev.stowling.persistence.StoredInventorySnapshot;
@@ -69,9 +76,11 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     private final Supplier<StowlingConfig> configReloader;
     private final Consumer<StowlingConfig> configActivated;
     private final ConfigFileStore configFileStore;
+    private final AutomationRuntimeFactory automationFactory;
 
     private StowlingConfig config;
     private ActivePickup activePickup;
+    private final Map<UUID, ActiveAutomation> activeAutomations = new LinkedHashMap<>();
     private boolean paused;
 
     public StowlingControlServiceImpl(
@@ -85,6 +94,32 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             Consumer<StowlingConfig> configActivated,
             ConfigFileStore configFileStore
     ) {
+        this(
+                config,
+                tasks,
+                inventories,
+                inventorySource,
+                pickupFactory,
+                clientExecutor,
+                configReloader,
+                configActivated,
+                configFileStore,
+                null
+        );
+    }
+
+    public StowlingControlServiceImpl(
+            StowlingConfig config,
+            SqliteTaskRepository tasks,
+            SqliteInventoryRepository inventories,
+            InventorySource inventorySource,
+            PickupRuntimeFactory pickupFactory,
+            Consumer<Runnable> clientExecutor,
+            Supplier<StowlingConfig> configReloader,
+            Consumer<StowlingConfig> configActivated,
+            ConfigFileStore configFileStore,
+            AutomationRuntimeFactory automationFactory
+    ) {
         this.config = Objects.requireNonNull(config, "config");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.inventories = Objects.requireNonNull(inventories, "inventories");
@@ -94,13 +129,25 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         this.configReloader = Objects.requireNonNull(configReloader, "configReloader");
         this.configActivated = Objects.requireNonNull(configActivated, "configActivated");
         this.configFileStore = Objects.requireNonNull(configFileStore, "configFileStore");
+        this.automationFactory = automationFactory;
     }
 
     @Override
     public synchronized ControlStatus status() {
-        String state = paused ? "PAUSED" : activePickup == null
-                ? "IDLE"
-                : activePickup.lastSnapshot.stage().name();
+        String state;
+        if (paused) {
+            state = "PAUSED";
+        } else if (activePickup != null) {
+            state = activePickup.lastSnapshot.stage().name();
+        } else if (!activeAutomations.isEmpty()) {
+            state = activeAutomations.values().iterator()
+                    .next()
+                    .lastSnapshot
+                    .status()
+                    .name();
+        } else {
+            state = "IDLE";
+        }
         return new ControlStatus(paused, state, Instant.now());
     }
 
@@ -144,8 +191,14 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     @Override
     public synchronized TaskInfo requestPickup(PickupRequest request) {
         Objects.requireNonNull(request, "request");
+        if (hasBlockingTask(TaskKind.AUTOMATION)) {
+            throw new ActiveTaskConflictException();
+        }
         if (activePickup != null) {
             replaceDisconnectedPickupOrThrow();
+        }
+        if (hasBlockingTask(TaskKind.PICKUP)) {
+            throw new ActiveTaskConflictException();
         }
         PickupWorkflow workflow = config.pickupWorkflows().stream()
                 .filter(candidate -> candidate.id().equals(request.workflowId()))
@@ -214,6 +267,10 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             PickupAutomationEngine engine = activePickup.engine;
             clientExecutor.accept(engine::cancel);
             activePickup = null;
+        }
+        ActiveAutomation automation = activeAutomations.remove(taskId);
+        if (automation != null) {
+            clientExecutor.accept(automation.engine::cancel);
         }
         TaskSnapshot cancelled = new TaskSnapshot(
                 existing.id(),
@@ -321,11 +378,102 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     @Override
+    public synchronized List<AutomationModuleInfo> automationModules() {
+        if (automationFactory == null) {
+            return List.of();
+        }
+        return automationFactory.modules().stream()
+                .map(AutomationModuleInfo::from)
+                .toList();
+    }
+
+    @Override
+    public synchronized TaskInfo requestAutomation(AutomationTaskRequest request) {
+        Objects.requireNonNull(request, "request");
+        if (hasBlockingMinecraftTask()) {
+            throw new ActiveTaskConflictException();
+        }
+        AutomationWorkflow workflow = config.automationWorkflows().stream()
+                .filter(candidate -> candidate.id().equals(request.workflowId()))
+                .findFirst()
+                .orElseThrow(AutomationWorkflowNotFoundException::new);
+        if (automationFactory == null) {
+            throw new IllegalStateException("Automation runtime is unavailable");
+        }
+        UUID taskId = UUID.randomUUID();
+        Instant now = Instant.now();
+        TaskSnapshot task = new TaskSnapshot(
+                taskId,
+                TaskKind.AUTOMATION,
+                TaskStatus.PENDING,
+                AutomationState.IDLE_WAITING,
+                now,
+                now,
+                Optional.empty()
+        );
+        tasks.save(task);
+        GenericAutomationEngine engine = automationFactory.create(taskId, workflow);
+        ActiveAutomation active = new ActiveAutomation(
+                taskId,
+                workflow,
+                engine,
+                engine.snapshot()
+        );
+        activeAutomations.put(taskId, active);
+        clientExecutor.accept(() -> startAutomation(active));
+        return toInfo(task, initialAutomationProgress(taskId, workflow));
+    }
+
+    @Override
+    public synchronized AutomationWorkflowsSnapshot automationWorkflows() {
+        return toAutomationWorkflowSnapshot(configFileStore.read());
+    }
+
+    @Override
+    public synchronized AutomationWorkflowsSnapshot updateAutomationWorkflows(
+            AutomationWorkflowUpdateRequest request
+    ) {
+        Objects.requireNonNull(request, "request");
+        if (hasBlockingMinecraftTask()) {
+            throw new ActiveTaskConflictException();
+        }
+        ConfigFileSnapshot current = configFileStore.read();
+        if (!current.revision().equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        StowlingConfig source = current.config();
+        StowlingConfig updated = new StowlingConfig(
+                4,
+                source.coordinatePoints(),
+                source.pickupRegions(),
+                source.cacheContainers(),
+                source.pickupWorkflows(),
+                request.automationWorkflows(),
+                source.storageRoutes(),
+                source.packingStations(),
+                source.auditSchedules(),
+                source.overflowContainer()
+        );
+        try {
+            ConfigValidator.requireValid(updated);
+        } catch (RuntimeException exception) {
+            throw new InvalidAutomationConfigException(exception.getMessage());
+        }
+        ConfigFileSnapshot saved = configFileStore.save(request.revision(), updated);
+        configActivated.accept(saved.config());
+        config = saved.config();
+        return toAutomationWorkflowSnapshot(saved);
+    }
+
+    @Override
     public synchronized ControlStatus pause() {
         paused = true;
         if (activePickup != null) {
             PickupAutomationEngine engine = activePickup.engine;
             clientExecutor.accept(engine::pauseForControl);
+        }
+        for (ActiveAutomation active : List.copyOf(activeAutomations.values())) {
+            clientExecutor.accept(() -> pauseAutomation(active));
         }
         return status();
     }
@@ -337,11 +485,17 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             PickupAutomationEngine engine = activePickup.engine;
             clientExecutor.accept(engine::resume);
         }
+        for (ActiveAutomation active : List.copyOf(activeAutomations.values())) {
+            clientExecutor.accept(() -> resumeAutomation(active));
+        }
         return status();
     }
 
     @Override
     public synchronized ConfigReloadResult reloadConfig() {
+        if (hasBlockingMinecraftTask()) {
+            throw new ActiveTaskConflictException();
+        }
         StowlingConfig loaded = configReloader.get();
         ConfigValidator.requireValid(loaded);
         configActivated.accept(loaded);
@@ -359,7 +513,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             ConfigCoordinatePointsUpdateRequest request
     ) {
         Objects.requireNonNull(request, "request");
-        if (hasBlockingPickupTask()) {
+        if (hasBlockingMinecraftTask()) {
             throw new ActiveTaskConflictException();
         }
         ConfigFileSnapshot current = configFileStore.read();
@@ -396,7 +550,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             ConfigCoordinatesUpdateRequest request
     ) {
         Objects.requireNonNull(request, "request");
-        if (activePickup != null) {
+        if (hasBlockingMinecraftTask()) {
             throw new ActiveTaskConflictException();
         }
         ConfigFileSnapshot current = configFileStore.read();
@@ -425,7 +579,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             PickupConfigUpdateRequest request
     ) {
         Objects.requireNonNull(request, "request");
-        if (hasBlockingPickupTask()) {
+        if (hasBlockingMinecraftTask()) {
             throw new ActiveTaskConflictException();
         }
         ConfigFileSnapshot current = configFileStore.read();
@@ -448,7 +602,17 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     public synchronized void tickOnClientThread() {
-        if (paused || activePickup == null) {
+        if (paused) {
+            return;
+        }
+        tickPickupOnClientThread();
+        for (ActiveAutomation active : List.copyOf(activeAutomations.values())) {
+            tickAutomationOnClientThread(active);
+        }
+    }
+
+    private void tickPickupOnClientThread() {
+        if (activePickup == null) {
             return;
         }
         ActivePickup active = activePickup;
@@ -467,9 +631,35 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         }
     }
 
+    private synchronized void tickAutomationOnClientThread(ActiveAutomation active) {
+        if (activeAutomations.get(active.taskId) != active) {
+            return;
+        }
+        GenericAutomationSnapshot snapshot;
+        try {
+            snapshot = active.engine.tick();
+        } catch (RuntimeException exception) {
+            failTask(
+                    active.taskId,
+                    "automation failed: " + exception.getClass().getSimpleName()
+            );
+            activeAutomations.remove(active.taskId);
+            return;
+        }
+        active.lastSnapshot = snapshot;
+        persistAutomationSnapshot(active, snapshot);
+        if (isTerminal(snapshot.status())) {
+            activeAutomations.remove(active.taskId);
+        }
+    }
+
     public synchronized void recoverPendingPickups() {
         List<TaskRecoveryPlan> recoveryPlans = tasks.findRecoveryPlans();
         for (TaskRecoveryPlan plan : recoveryPlans) {
+            if (plan.kind() == TaskKind.AUTOMATION) {
+                recoverAutomation(plan);
+                continue;
+            }
             if (plan.kind() != TaskKind.PICKUP) {
                 continue;
             }
@@ -513,6 +703,99 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         }
     }
 
+    private void recoverAutomation(TaskRecoveryPlan plan) {
+        if (automationFactory == null) {
+            failTask(plan.taskId(), "automation runtime is unavailable");
+            return;
+        }
+        Optional<GenericAutomationCheckpoint> checkpoint;
+        try {
+            checkpoint = new SqliteGenericAutomationCheckpointStore(tasks)
+                    .load(plan.taskId());
+        } catch (RuntimeException exception) {
+            failTask(plan.taskId(), "invalid automation recovery checkpoint");
+            return;
+        }
+        if (checkpoint.isEmpty()) {
+            failTask(plan.taskId(), "missing automation recovery checkpoint");
+            return;
+        }
+        String workflowId = checkpoint.orElseThrow().workflowId();
+        Optional<AutomationWorkflow> workflow = config.automationWorkflows().stream()
+                .filter(candidate -> candidate.id().equals(workflowId))
+                .findFirst();
+        if (workflow.isEmpty()) {
+            failTask(plan.taskId(), "recovery automation workflow is unavailable");
+            return;
+        }
+        try {
+            GenericAutomationEngine engine = automationFactory.create(
+                    plan.taskId(),
+                    workflow.orElseThrow()
+            );
+            ActiveAutomation active = new ActiveAutomation(
+                    plan.taskId(),
+                    workflow.orElseThrow(),
+                    engine,
+                    engine.snapshot()
+            );
+            activeAutomations.put(plan.taskId(), active);
+            clientExecutor.accept(() -> startRecoveredAutomation(active));
+        } catch (RuntimeException exception) {
+            activeAutomations.remove(plan.taskId());
+            failTask(plan.taskId(), "automation recovery initialization failed");
+        }
+    }
+
+    private synchronized void startAutomation(ActiveAutomation active) {
+        if (activeAutomations.get(active.taskId) != active) {
+            return;
+        }
+        try {
+            active.engine.start();
+            active.lastSnapshot = active.engine.snapshot();
+            persistAutomationSnapshot(active, active.lastSnapshot);
+        } catch (RuntimeException exception) {
+            activeAutomations.remove(active.taskId);
+            failTask(active.taskId, "automation initialization failed");
+        }
+    }
+
+    private synchronized void startRecoveredAutomation(ActiveAutomation active) {
+        if (activeAutomations.get(active.taskId) != active) {
+            return;
+        }
+        startAutomation(active);
+    }
+
+    private synchronized void pauseAutomation(ActiveAutomation active) {
+        if (activeAutomations.get(active.taskId) != active) {
+            return;
+        }
+        try {
+            active.engine.pause("control request");
+            active.lastSnapshot = active.engine.snapshot();
+            persistAutomationSnapshot(active, active.lastSnapshot);
+        } catch (RuntimeException exception) {
+            failTask(active.taskId, "automation pause failed");
+            activeAutomations.remove(active.taskId);
+        }
+    }
+
+    private synchronized void resumeAutomation(ActiveAutomation active) {
+        if (activeAutomations.get(active.taskId) != active) {
+            return;
+        }
+        try {
+            active.engine.resume();
+            active.lastSnapshot = active.engine.snapshot();
+            persistAutomationSnapshot(active, active.lastSnapshot);
+        } catch (RuntimeException exception) {
+            failTask(active.taskId, "automation resume failed");
+            activeAutomations.remove(active.taskId);
+        }
+    }
+
     private synchronized void startRecoveredPickup(ActivePickup active) {
         if (activePickup != active) {
             return;
@@ -545,12 +828,20 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         );
     }
 
-    private boolean hasBlockingPickupTask() {
-        if (activePickup != null) {
+    private boolean hasBlockingMinecraftTask() {
+        return hasBlockingTask(TaskKind.PICKUP)
+                || hasBlockingTask(TaskKind.AUTOMATION);
+    }
+
+    private boolean hasBlockingTask(TaskKind kind) {
+        if (kind == TaskKind.PICKUP && activePickup != null) {
+            return true;
+        }
+        if (kind == TaskKind.AUTOMATION && !activeAutomations.isEmpty()) {
             return true;
         }
         return tasks.findAll().stream().anyMatch(task ->
-                task.kind() == TaskKind.PICKUP && switch (task.status()) {
+                task.kind() == kind && switch (task.status()) {
                     case PENDING, RUNNING, WAITING, PAUSED -> true;
                     case SUCCEEDED, FAILED, CANCELLED -> false;
                 }
@@ -607,11 +898,12 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 source.coordinatePoints()
         );
         return new StowlingConfig(
-                3,
+                4,
                 source.coordinatePoints(),
                 synchronizedRegions(request.pickupRegions(), pointsById),
                 synchronizedCaches(request.cacheContainers(), pointsById),
                 request.pickupWorkflows(),
+                source.automationWorkflows(),
                 source.storageRoutes(),
                 source.packingStations(),
                 source.auditSchedules(),
@@ -625,11 +917,12 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             Map<String, NamedCoordinate> pointsById
     ) {
         return new StowlingConfig(
-                3,
+                4,
                 coordinates,
                 synchronizedRegions(source.pickupRegions(), pointsById),
                 synchronizedCaches(source.cacheContainers(), pointsById),
                 source.pickupWorkflows(),
+                source.automationWorkflows(),
                 source.storageRoutes(),
                 source.packingStations(),
                 source.auditSchedules(),
@@ -791,9 +1084,26 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                     cacheIds.add(cache.id());
                 }
             }
-            if (!regionIds.isEmpty() || !cacheIds.isEmpty()) {
+            Set<String> automationWorkflowIds = new LinkedHashSet<>();
+            for (AutomationWorkflow workflow : source.automationWorkflows()) {
+                boolean references = workflow.steps().stream().anyMatch(step ->
+                        step.type() == AutomationStepType.NAVIGATE
+                        && coordinate.id().equals(step.parameter("coordinateId"))
+                );
+                if (references) {
+                    automationWorkflowIds.add(workflow.id());
+                }
+            }
+            if (!regionIds.isEmpty()
+                    || !cacheIds.isEmpty()
+                    || !automationWorkflowIds.isEmpty()) {
                 throw new InvalidCoordinatePointsException(
-                        referencedCoordinateMessage(coordinate.id(), regionIds, cacheIds)
+                        referencedCoordinateMessage(
+                                coordinate.id(),
+                                regionIds,
+                                cacheIds,
+                                automationWorkflowIds
+                        )
                 );
             }
         }
@@ -814,7 +1124,8 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     private static String referencedCoordinateMessage(
             String coordinateId,
             Set<String> regionIds,
-            Set<String> cacheIds
+            Set<String> cacheIds,
+            Set<String> automationWorkflowIds
     ) {
         List<String> references = new ArrayList<>();
         if (!regionIds.isEmpty()) {
@@ -822,6 +1133,9 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         }
         if (!cacheIds.isEmpty()) {
             references.add("caches " + cacheIds);
+        }
+        if (!automationWorkflowIds.isEmpty()) {
+            references.add("automation workflows " + automationWorkflowIds);
         }
         return "Coordinate '" + coordinateId + "' cannot be deleted; referenced by "
                 + String.join(" and ", references);
@@ -882,6 +1196,31 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 ? Optional.empty()
                 : current.recoveryCheckpoint();
         tasks.save(new PersistedTask(updated, checkpoint, current.retryCount()));
+    }
+
+    private void persistAutomationSnapshot(
+            ActiveAutomation active,
+            GenericAutomationSnapshot snapshot
+    ) {
+        PersistedTask current = tasks.findRecordById(active.taskId).orElseThrow();
+        TaskSnapshot existing = current.snapshot();
+        Optional<String> failure = snapshot.status() == AutomationExecutionStatus.FAILED
+                ? snapshot.message()
+                : Optional.empty();
+        TaskSnapshot updated = new TaskSnapshot(
+                existing.id(),
+                existing.kind(),
+                SqliteGenericAutomationCheckpointStore.statusOf(snapshot.status()),
+                SqliteGenericAutomationCheckpointStore.automationStateOf(snapshot.status()),
+                existing.createdAt(),
+                Instant.now(),
+                failure
+        );
+        tasks.save(new PersistedTask(
+                updated,
+                current.recoveryCheckpoint(),
+                current.retryCount()
+        ));
     }
 
     private void failTask(UUID taskId, String reason) {
@@ -991,6 +1330,15 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return new ConfigCoordinatesSnapshot(
                 snapshot.revision(),
                 coordinateInfos(snapshot.config())
+        );
+    }
+
+    private static AutomationWorkflowsSnapshot toAutomationWorkflowSnapshot(
+            ConfigFileSnapshot snapshot
+    ) {
+        return new AutomationWorkflowsSnapshot(
+                snapshot.revision(),
+                snapshot.config().automationWorkflows()
         );
     }
 
@@ -1167,10 +1515,12 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             ));
         }
         StowlingConfig updated = new StowlingConfig(
-                2,
+                4,
+                source.coordinatePoints(),
                 source.pickupRegions(),
                 source.cacheContainers(),
                 source.pickupWorkflows(),
+                source.automationWorkflows(),
                 routes,
                 stations,
                 source.auditSchedules(),
@@ -1199,6 +1549,11 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return stage == PickupStage.COMPLETE || stage == PickupStage.FAILED;
     }
 
+    private static boolean isTerminal(AutomationExecutionStatus status) {
+        return status == AutomationExecutionStatus.SUCCEEDED
+                || status == AutomationExecutionStatus.FAILED;
+    }
+
     private static String formatPause(AutomationPauseReason reason) {
         return reason.code() + ": " + reason.detail();
     }
@@ -1208,10 +1563,27 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     private TaskInfo toInfo(TaskSnapshot task) {
+        return toInfo(task, automationProgress(task));
+    }
+
+    private TaskInfo toInfo(
+            TaskSnapshot task,
+            GenericAutomationSnapshot automationProgress
+    ) {
         AutomationSnapshot progress = activePickup != null
                 && activePickup.taskId.equals(task.id())
                 ? activePickup.lastSnapshot
                 : null;
+        String currentStepId = automationProgress == null
+                ? null
+                : currentStepId(automationProgress);
+        String workflowId = progress != null
+                ? progress.workflowId()
+                : automationProgress == null ? null : automationProgress.workflowId();
+        String currentRegionId = progress == null
+                ? null
+                : progress.currentRegionId().orElse(null);
+        Long round = progress == null ? null : progress.round();
         return new TaskInfo(
                 task.id(),
                 task.kind().name(),
@@ -1220,11 +1592,100 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 task.createdAt(),
                 task.updatedAt(),
                 task.failureReason().orElse(null),
-                progress == null ? null : progress.workflowId(),
-                progress == null ? null : progress.currentRegionId().orElse(null),
-                progress == null ? null : progress.round(),
-                progress == null ? null : progress.stage().name()
+                workflowId,
+                currentRegionId,
+                round,
+                progress != null
+                        ? progress.stage().name()
+                        : automationProgress == null
+                                ? null
+                                : task.status() == TaskStatus.CANCELLED
+                                        ? TaskStatus.CANCELLED.name()
+                                        : automationProgress.status().name(),
+                currentStepId,
+                automationProgress == null ? null : automationProgress.stepIndex(),
+                automationProgress == null ? null : automationProgress.stepCount(),
+                automationProgress == null
+                        ? null
+                        : formatModuleState(automationProgress.moduleState()),
+                automationProgress == null
+                        ? null
+                        : automationProgress.lastConfirmedAction().orElse(null)
         );
+    }
+
+    private static GenericAutomationSnapshot initialAutomationProgress(
+            UUID taskId,
+            AutomationWorkflow workflow
+    ) {
+        return new GenericAutomationSnapshot(
+                taskId,
+                workflow.id(),
+                AutomationExecutionStatus.READY,
+                0,
+                workflow.steps().size(),
+                Map.of(),
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    private GenericAutomationSnapshot automationProgress(TaskSnapshot task) {
+        ActiveAutomation active = activeAutomations.get(task.id());
+        if (active != null) {
+            return active.lastSnapshot;
+        }
+        if (task.kind() != TaskKind.AUTOMATION) {
+            return null;
+        }
+        try {
+            return new SqliteGenericAutomationCheckpointStore(tasks)
+                    .load(task.id())
+                    .map(checkpoint -> new GenericAutomationSnapshot(
+                            checkpoint.taskId(),
+                            checkpoint.workflowId(),
+                            checkpoint.status(),
+                            checkpoint.stepIndex(),
+                            Math.max(
+                                    automationStepCount(checkpoint.workflowId()),
+                                    checkpoint.stepIndex()
+                            ),
+                            checkpoint.moduleState(),
+                            checkpoint.lastConfirmedAction(),
+                            Optional.empty()
+                    ))
+                    .orElse(null);
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private int automationStepCount(String workflowId) {
+        return config.automationWorkflows().stream()
+                .filter(candidate -> candidate.id().equals(workflowId))
+                .findFirst()
+                .map(workflow -> workflow.steps().size())
+                .orElse(0);
+    }
+
+    private String currentStepId(GenericAutomationSnapshot progress) {
+        Optional<AutomationWorkflow> workflow = config.automationWorkflows().stream()
+                .filter(candidate -> candidate.id().equals(progress.workflowId()))
+                .findFirst();
+        if (workflow.isEmpty() || progress.stepIndex() >= workflow.orElseThrow().steps().size()) {
+            return null;
+        }
+        return workflow.orElseThrow().steps().get(progress.stepIndex()).id();
+    }
+
+    private static String formatModuleState(Map<String, String> state) {
+        if (state.isEmpty()) {
+            return "{}";
+        }
+        return state.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static final class ActivePickup {
@@ -1244,6 +1705,25 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             this.taskId = taskId;
             this.workflowId = workflowId;
             this.regionOverride = regionOverride;
+            this.engine = engine;
+            this.lastSnapshot = lastSnapshot;
+        }
+    }
+
+    private static final class ActiveAutomation {
+        private final UUID taskId;
+        private final AutomationWorkflow workflow;
+        private final GenericAutomationEngine engine;
+        private GenericAutomationSnapshot lastSnapshot;
+
+        private ActiveAutomation(
+                UUID taskId,
+                AutomationWorkflow workflow,
+                GenericAutomationEngine engine,
+                GenericAutomationSnapshot lastSnapshot
+        ) {
+            this.taskId = taskId;
+            this.workflow = workflow;
             this.engine = engine;
             this.lastSnapshot = lastSnapshot;
         }

@@ -9,6 +9,8 @@ import com.google.gson.Strictness;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import dev.stowling.control.AuditRequest;
+import dev.stowling.control.AutomationTaskRequest;
+import dev.stowling.control.AutomationWorkflowUpdateRequest;
 import dev.stowling.control.ConfigCoordinateUpdate;
 import dev.stowling.control.ConfigCoordinatesUpdateRequest;
 import dev.stowling.control.ConfigCoordinatePointInfo;
@@ -28,13 +30,18 @@ import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupShape;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.SpherePickupShape;
+import dev.stowling.automation.AutomationStep;
+import dev.stowling.automation.AutomationStepType;
+import dev.stowling.automation.AutomationWorkflow;
 import java.io.IOException;
 import java.io.StringReader;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -94,6 +101,53 @@ final class StrictRequestParser {
             requireEnd(reader);
             require(workflowId != null, "Missing JSON field: workflowId");
             return new PickupRequest(workflowId, java.util.Optional.ofNullable(regionId));
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    AutomationTaskRequest parseAutomationTask(String body) throws InvalidRequestException {
+        try (JsonReader reader = reader(body)) {
+            Set<String> fields = new HashSet<>();
+            String workflowId = null;
+            require(reader.peek() == JsonToken.BEGIN_OBJECT, "JSON body must be an object");
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String name = reader.nextName();
+                require(fields.add(name), "Duplicate JSON field: " + name);
+                if ("workflowId".equals(name)) {
+                    workflowId = readString(reader, "workflowId");
+                    require(workflowId.length() <= 64, "workflowId is too long");
+                    require(
+                            SAFE_ID.matcher(workflowId).matches(),
+                            "workflowId must match [a-z0-9][a-z0-9._-]{0,63}"
+                    );
+                } else {
+                    throw new IOException("Unknown JSON field: " + name);
+                }
+            }
+            reader.endObject();
+            requireEnd(reader);
+            require(workflowId != null, "Missing JSON field: workflowId");
+            return new AutomationTaskRequest(workflowId);
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    AutomationWorkflowUpdateRequest parseAutomationWorkflowUpdate(String body)
+            throws InvalidRequestException {
+        try {
+            JsonObject root = readStrictObject(body);
+            requireFields(
+                    root,
+                    Set.of("revision", "automationWorkflows"),
+                    Set.of("revision", "automationWorkflows")
+            );
+            return new AutomationWorkflowUpdateRequest(
+                    string(root, "revision", 128),
+                    automationWorkflows(array(root, "automationWorkflows"))
+            );
         } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
             throw malformed(exception);
         }
@@ -337,6 +391,121 @@ final class StrictRequestParser {
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static List<AutomationWorkflow> automationWorkflows(JsonArray values)
+            throws IOException {
+        require(values.size() <= 128, "automationWorkflows has too many entries");
+        List<AutomationWorkflow> result = new ArrayList<>();
+        for (int index = 0; index < values.size(); index++) {
+            JsonObject value = object(
+                    values.get(index),
+                    "automationWorkflows[" + index + "]"
+            );
+            requireFields(
+                    value,
+                    Set.of("id", "name", "steps"),
+                    Set.of("id", "name", "steps")
+            );
+            result.add(new AutomationWorkflow(
+                    string(value, "id", 64),
+                    string(value, "name", 256),
+                    automationSteps(array(value, "steps"))
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<AutomationStep> automationSteps(JsonArray values) throws IOException {
+        require(values.size() <= 128, "steps has too many entries");
+        List<AutomationStep> result = new ArrayList<>();
+        for (int index = 0; index < values.size(); index++) {
+            JsonObject value = object(values.get(index), "steps[" + index + "]");
+            requireFields(
+                    value,
+                    Set.of("id", "type", "parameters"),
+                    Set.of("id", "type", "parameters")
+            );
+            AutomationStepType type;
+            try {
+                type = AutomationStepType.valueOf(string(value, "type", 64));
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("Unknown automation step type", exception);
+            }
+            result.add(new AutomationStep(
+                    string(value, "id", 64),
+                    type,
+                    automationParameters(
+                    object(value.get("parameters"), "parameters"),
+                    type
+            )
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static Map<String, String> automationParameters(
+            JsonObject value,
+            AutomationStepType type
+    ) throws IOException {
+        Set<String> required = requiredAutomationParameters(type);
+        Set<String> optional = optionalAutomationParameters(type);
+        requireFields(value, union(required, optional), required);
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : value.entrySet()) {
+            JsonElement element = entry.getValue();
+            require(element.isJsonPrimitive() && element.getAsJsonPrimitive().isString(),
+                    "parameters." + entry.getKey() + " must be a string");
+            String parameter = element.getAsString();
+            require(!parameter.isBlank(), "parameters." + entry.getKey()
+                    + " must not be blank");
+            require(parameter.length() <= 256,
+                    "parameters." + entry.getKey() + " is too long");
+            if ("seconds".equals(entry.getKey()) || "count".equals(entry.getKey())) {
+                requirePositiveInteger(parameter, "parameters." + entry.getKey());
+            }
+            result.put(entry.getKey(), parameter);
+        }
+        return Map.copyOf(result);
+    }
+
+    private static Set<String> requiredAutomationParameters(AutomationStepType type) {
+        return switch (type) {
+            case NAVIGATE -> Set.of("coordinateId");
+            case WAIT -> Set.of("seconds");
+            case RUN_PICKUP -> Set.of("workflowId");
+            case TAKE_ITEMS, PUT_ITEMS -> Set.of("containerId", "itemId", "count");
+            case TRANSFER_ITEMS -> Set.of(
+                    "sourceContainerId",
+                    "destination",
+                    "itemId",
+                    "count"
+            );
+            case CHECK_INVENTORY, ACQUIRE_MATERIALS, CRAFT_ITEM ->
+                    Set.of("itemId", "count");
+        };
+    }
+
+    private static Set<String> optionalAutomationParameters(AutomationStepType type) {
+        return type == AutomationStepType.RUN_PICKUP
+                ? Set.of("regionId")
+                : Set.of();
+    }
+
+    private static Set<String> union(Set<String> first, Set<String> second) {
+        Set<String> result = new HashSet<>(first);
+        result.addAll(second);
+        return Set.copyOf(result);
+    }
+
+    private static void requirePositiveInteger(String value, String fieldName)
+            throws IOException {
+        require(value.matches("[1-9][0-9]*"), fieldName + " must be a positive integer");
+        try {
+            Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new IOException(fieldName + " is outside the long range", exception);
+        }
     }
 
     private static List<NamedCache> namedCaches(JsonArray values) throws IOException {

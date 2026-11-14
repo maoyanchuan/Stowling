@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>任务编排 · Stowling</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/common.js" defer></script>
+    <script src="/tasks.js" defer></script>
+</head>
+<body data-page="tasks">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">S</span>
+            <div>
+                <h1>任务编排</h1>
+                <p>用机器人模块组合任意自动化流程</p>
+            </div>
+        </div>
+        <div class="connection-state">
+            <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
+            <span id="connection-label">未连接</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="auth-shell"></div>
+        <div id="workspace" class="workspace page-workspace" aria-hidden="true">
+            <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
+
+            <section class="panel wide" aria-labelledby="launch-title">
+                <div class="panel-heading launch-heading">
+                    <div>
+                        <p class="eyebrow">启动与监控</p>
+                        <h2 id="launch-title">运行任务</h2>
+                    </div>
+                    <div class="action-row">
+                        <button id="pause-task-button" class="secondary compact"
+                                type="button">暂停</button>
+                        <button id="resume-task-button" class="secondary compact"
+                                type="button">恢复</button>
+                        <button id="refresh-task-button" class="secondary compact"
+                                type="button">刷新状态</button>
+                    </div>
+                </div>
+                <div class="task-launch-grid">
+                    <div>
+                        <label for="launch-workflow">自定义任务</label>
+                        <select id="launch-workflow" disabled>
+                            <option value="">正在读取任务…</option>
+                        </select>
+                    </div>
+                    <button id="start-task-button" class="primary" type="button" disabled>
+                        开始任务
+                    </button>
+                </div>
+                <p id="launch-message" class="field-message" role="status"></p>
+            </section>
+
+            <section class="panel wide" aria-labelledby="builder-title">
+                <div class="panel-heading config-heading">
+                    <div>
+                        <p class="eyebrow">永久配置 · 模块编排</p>
+                        <h2 id="builder-title">任务流程编辑器</h2>
+                        <p class="muted section-help">
+                            任务按从上到下的顺序执行。每个步骤可选择机器人模块并填写参数，
+                            保存后即可在“运行任务”中启动。
+                        </p>
+                    </div>
+                    <div class="action-row">
+                        <button id="add-workflow-button" class="secondary compact"
+                                type="button">新增任务</button>
+                        <button id="discard-workflow-button" class="secondary compact"
+                                type="button">放弃修改</button>
+                        <button id="save-workflow-button" class="primary compact"
+                                type="submit" form="workflow-form" disabled>保存全部</button>
+                    </div>
+                </div>
+                <form id="workflow-form" novalidate>
+                    <div class="builder-grid">
+                        <aside class="builder-library" aria-labelledby="library-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="library-title">任务列表</h3>
+                                    <p>草稿顺序即页面顺序</p>
+                                </div>
+                            </div>
+                            <div id="workflow-list" class="workflow-list"></div>
+                        </aside>
+                        <div class="builder-editor">
+                            <div id="workflow-empty" class="empty-state" hidden>
+                                选择左侧任务，或新增一个任务
+                            </div>
+                            <div id="workflow-editor" hidden>
+                                <div class="editor-fields workflow-meta">
+                                    <div class="editor-field">
+                                        <label for="workflow-id">任务 ID</label>
+                                        <input id="workflow-id" maxlength="64" required>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="workflow-name">显示名称</label>
+                                        <input id="workflow-name" maxlength="80" required>
+                                    </div>
+                                </div>
+                                <div class="step-heading">
+                                    <div>
+                                        <h3>执行步骤</h3>
+                                        <p>点击“添加步骤”调用一个机器人模块</p>
+                                    </div>
+                                    <button id="add-step-button" class="primary compact"
+                                            type="button">添加步骤</button>
+                                </div>
+                                <div id="step-list" class="step-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div id="workflow-errors" class="config-errors" role="alert"></div>
+                <div class="coordinate-footer">
+                    <span id="workflow-status">尚未读取任务配置</span>
+                    <code id="workflow-revision">revision: --</code>
+                </div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="modules-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">模块目录</p>
+                        <h2 id="modules-title">可用机器人能力</h2>
+                    </div>
+                    <span id="module-count" class="loopback-tag">-- 个模块</span>
+                </div>
+                <div id="module-catalog" class="module-catalog"></div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="monitor-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">实时队列</p>
+                        <h2 id="monitor-title">任务状态</h2>
+                    </div>
+                </div>
+                <div id="task-list" class="card-list" aria-live="polite"></div>
+            </section>
+        </div>
+    </main>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

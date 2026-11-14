@@ -16,6 +16,8 @@ Current functionality includes:
 - SQLite persistence for tasks, recovery checkpoints, containers, and inventory snapshots.
 - A named-coordinate library plus spherical or cuboid pickup regions, named cache
   containers, and reusable multi-region pickup workflows that reference those coordinates.
+- A browser-based modular task builder with nine reusable robot modules, persisted workflow
+  definitions, task progress, pause/resume/cancel controls, and restart checkpoints.
 - A loopback REST control API with bearer authentication for status, tasks, pickup, audit,
   inventory, container, pause, resume, and config-reload operations.
 - In-client HeadlessMC control commands plus Windows start, status, stop, retry, and log
@@ -118,6 +120,40 @@ The pickup request body uses `workflowId` and an optional `regionId`:
 Omit `regionId` to run the complete workflow. Status data refreshes every 10 seconds, and
 an expired token prompts for re-entry. Replace the installed jar and restart the client
 before expecting a newly built version to take effect.
+
+### Task builder
+
+Open `http://127.0.0.1:8765/tasks.html` to create reusable automation workflows from
+these modules:
+
+- Navigate to a named coordinate.
+- Wait for a configured duration.
+- Run a complete pickup workflow or one pickup region.
+- Take items from a container into the player inventory.
+- Put player items into a container.
+- Transfer items between two containers.
+- Check the live player inventory.
+- Acquire missing materials from the latest fresh container snapshot.
+- Run a crafting step.
+
+The crafting module is intentionally conservative in this release. Ordinary clients do
+not expose a stable server-confirmed crafting transaction, so the module pauses with a
+manual-recovery message instead of claiming success. Navigation, waits, pickup, inventory
+checks, and container transfers are connected to the live client runtime.
+
+The task builder saves workflows through these endpoints:
+
+```text
+GET /v1/automation-modules
+GET /v1/config/automation-workflows
+PUT /v1/config/automation-workflows
+POST /v1/tasks/automation
+```
+
+Starting a task returns its workflow, current step, step index, and total step count.
+Task state is checkpointed in SQLite. A recovered in-flight container operation is never
+replayed automatically; it pauses for manual verification when its in-memory attempt no
+longer exists.
 
 The page is available only through the loopback listener. Static assets load without a
 token, while every `/v1/*` API request still requires the correct Bearer token.

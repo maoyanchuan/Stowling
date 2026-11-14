@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.AutomationStep;
+import dev.stowling.automation.AutomationStepType;
+import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.CachePolicy;
 import dev.stowling.domain.ClassificationTiming;
@@ -25,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,7 +44,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.load(path);
 
-        assertEquals(3, config.schemaVersion());
+        assertEquals(4, config.schemaVersion());
         assertEquals(Duration.ofSeconds(60), config.defaultIdleDelay());
         assertEquals("overflow", config.overflowContainer().id());
     }
@@ -97,7 +101,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(json);
 
-        assertEquals(3, config.schemaVersion());
+        assertEquals(4, config.schemaVersion());
         assertEquals(2, config.pickupRegions().size());
         assertEquals(1, config.cacheContainers().size());
         assertEquals(2, config.pickupWorkflows().size());
@@ -121,7 +125,7 @@ class ConfigLoaderTest {
         Path output = tempDir.resolve("migrated.json");
         loader.write(output, config);
         String written = Files.readString(output);
-        assertTrue(written.contains("\"schemaVersion\": 3"));
+        assertTrue(written.contains("\"schemaVersion\": 4"));
         assertTrue(written.contains("\"coordinatePoints\""));
         assertFalse(written.contains("pickupSites"));
         assertFalse(written.contains("defaultIdleDelay"));
@@ -134,6 +138,7 @@ class ConfigLoaderTest {
         ).getAsJsonObject();
         root.addProperty("schemaVersion", 2);
         root.remove("coordinatePoints");
+        root.remove("automationWorkflows");
         JsonObject region = root.getAsJsonArray("pickupRegions").get(0).getAsJsonObject();
         region.remove("standbyCoordinateId");
         JsonObject shape = region.getAsJsonObject("shape");
@@ -143,7 +148,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(root.toString());
 
-        assertEquals(3, config.schemaVersion());
+        assertEquals(4, config.schemaVersion());
         assertEquals(2, config.coordinatePoints().size());
         PickupRegion migratedRegion = config.pickupRegions().getFirst();
         SpherePickupShape migratedShape = (SpherePickupShape) migratedRegion.shape();
@@ -151,6 +156,100 @@ class ConfigLoaderTest {
                 migratedRegion.standbyCoordinateId(),
                 migratedShape.centerCoordinateId()
         );
+    }
+
+    @Test
+    void migratesV3ByAddingAnEmptyAutomationWorkflowList() throws IOException {
+        JsonObject root = JsonParser.parseString(
+                Files.readString(Path.of("src/main/resources/stowling.example.json"))
+        ).getAsJsonObject();
+        root.addProperty("schemaVersion", 3);
+        root.remove("automationWorkflows");
+
+        StowlingConfig config = loader.parse(root.toString());
+
+        assertEquals(4, config.schemaVersion());
+        assertTrue(config.automationWorkflows().isEmpty());
+    }
+
+    @Test
+    void roundTripsStrictAutomationParameters() {
+        StowlingConfig base = ConfigTestFixtures.config(List.of());
+        String coordinateId = base.coordinatePoints().getFirst().id();
+        String containerId = base.cacheContainers().getFirst().id();
+        String pickupId = base.pickupWorkflows().getFirst().id();
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "general_task",
+                "General task",
+                List.of(
+                step("go", AutomationStepType.NAVIGATE, Map.of(
+                "coordinateId", coordinateId
+        )),
+                step("wait", AutomationStepType.WAIT, Map.of("seconds", "2")),
+                step("pickup", AutomationStepType.RUN_PICKUP, Map.of(
+                "workflowId", pickupId
+        )),
+                itemStep("take", AutomationStepType.TAKE_ITEMS, containerId),
+                itemStep("put", AutomationStepType.PUT_ITEMS, containerId),
+                step("move", AutomationStepType.TRANSFER_ITEMS, Map.of(
+                "sourceContainerId", containerId,
+                "destination", "PLAYER",
+                "itemId", "minecraft:stone",
+                "count", "3"
+        )),
+                itemCountStep("check", AutomationStepType.CHECK_INVENTORY),
+                itemCountStep("acquire", AutomationStepType.ACQUIRE_MATERIALS),
+                itemCountStep("craft", AutomationStepType.CRAFT_ITEM)
+        )
+        );
+        StowlingConfig config = ConfigTestFixtures.configWithAutomation(List.of(workflow));
+        Path output = tempDir.resolve("automation-round-trip.json");
+
+        loader.write(output, config);
+        StowlingConfig loaded = loader.load(output);
+
+        assertEquals(config, loaded);
+        assertEquals(9, loaded.automationWorkflows().getFirst().steps().size());
+    }
+
+    @Test
+    void rejectsUnknownAutomationModuleType() {
+        JsonObject root = JsonParser.parseString(
+                """
+                        {
+                            "schemaVersion": 4,
+                            "coordinatePoints": [],
+                            "pickupRegions": [],
+                            "cacheContainers": [],
+                            "pickupWorkflows": [],
+                            "automationWorkflows": [{
+                                "id": "invalid",
+                                "name": "Invalid",
+                                "steps": [{
+                                    "id": "teleport",
+                                    "type": "TELEPORT",
+                                    "parameters": {}
+                                }]
+                            }],
+                            "storageRoutes": [],
+                            "packingStations": [],
+                            "auditSchedules": [],
+                            "overflowContainer": {
+                                "id": "overflow",
+                                "dimension": "minecraft:overworld",
+                                "position": {"x": 0, "y": 64, "z": 0},
+                                "type": "CHEST"
+                            }
+                        }
+                """
+        ).getAsJsonObject();
+
+        ConfigLoadException exception = assertThrows(
+                ConfigLoadException.class,
+                () -> loader.parse(root.toString())
+        );
+
+        assertTrue(exception.getMessage().contains("parse configuration"));
     }
 
     @Test
@@ -244,6 +343,36 @@ class ConfigLoaderTest {
 
         assertTrue(exception.getMessage().contains("pickup region split-region"));
         assertTrue(exception.getMessage().contains("dimension"));
+    }
+
+    private static AutomationStep step(
+            String id,
+            AutomationStepType type,
+            Map<String, String> parameters
+    ) {
+        return new AutomationStep(id, type, parameters);
+    }
+
+    private static AutomationStep itemStep(
+            String id,
+            AutomationStepType type,
+            String containerId
+    ) {
+        return step(id, type, Map.of(
+                "containerId", containerId,
+                "itemId", "minecraft:stone",
+                "count", "3"
+        ));
+    }
+
+    private static AutomationStep itemCountStep(
+            String id,
+            AutomationStepType type
+    ) {
+        return step(id, type, Map.of(
+                "itemId", "minecraft:stone",
+                "count", "3"
+        ));
     }
 
     private static JsonObject coordinate(JsonObject root, String id) {

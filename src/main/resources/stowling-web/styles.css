@@ -1042,3 +1042,433 @@ section[id] {
         background: #243229;
     }
 }
+
+.auth-shell.connected {
+    display: none;
+}
+
+.page-workspace {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.page-workspace > .panel,
+.page-workspace > .wide {
+    grid-column: 1;
+}
+
+.hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    overflow: hidden;
+    color: #f5fff8;
+    background:
+        radial-gradient(circle at 88% 20%, rgba(255, 232, 167, 0.28), transparent 17rem),
+        linear-gradient(135deg, #194a32, #2f7a52 62%, #275e43);
+}
+
+.hero .eyebrow {
+    color: #bce8cb;
+}
+
+.hero h2 {
+    margin-bottom: 0.65rem;
+    font-size: clamp(1.55rem, 3vw, 2.25rem);
+    letter-spacing: -0.035em;
+}
+
+.hero-copy {
+    max-width: 680px;
+    margin-bottom: 0;
+    color: rgba(245, 255, 248, 0.78);
+}
+
+.hero-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.button-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 43px;
+    padding: 0.7rem 1rem;
+    border-radius: 10px;
+    font-size: 0.84rem;
+    font-weight: 720;
+    text-decoration: none;
+    transition: transform 140ms ease, background-color 140ms ease;
+}
+
+.button-link:hover {
+    transform: translateY(-1px);
+}
+
+.hero .button-link.primary {
+    color: #123421;
+    background: #f0c96a;
+}
+
+.hero .button-link.secondary {
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.resource-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+.summary-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 0.95rem;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    color: var(--text);
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.46);
+    transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.summary-card:hover {
+    border-color: rgba(38, 112, 75, 0.48);
+    transform: translateY(-2px);
+}
+
+.summary-card span {
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+.summary-card strong {
+    font-size: 1.55rem;
+}
+
+.text-link {
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.section-help {
+    max-width: 760px;
+    margin: 0.55rem 0 0;
+}
+
+.coordinate-heading {
+    align-items: flex-start;
+}
+
+.usage-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.usage-card {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.46);
+}
+
+.usage-card span {
+    color: var(--muted);
+    font-size: 0.77rem;
+    line-height: 1.55;
+}
+
+.coordinate-point-editor {
+    border-left: 4px solid rgba(38, 112, 75, 0.48);
+}
+
+.coordinate-row > .editor-field {
+    min-width: 0;
+}
+
+.task-launch-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 1fr) auto;
+    align-items: end;
+    gap: 0.65rem;
+}
+
+.task-launch-grid button {
+    min-height: 43px;
+}
+
+.builder-grid {
+    display: grid;
+    grid-template-columns: minmax(230px, 0.33fr) minmax(0, 1fr);
+    gap: 1rem;
+}
+
+.builder-library,
+.builder-editor {
+    min-width: 0;
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.32);
+}
+
+.workflow-list,
+.step-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.workflow-list-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.46);
+}
+
+.workflow-list-card.selected {
+    border-color: rgba(38, 112, 75, 0.65);
+    background: var(--accent-soft);
+}
+
+.workflow-list-body {
+    display: grid;
+    min-width: 0;
+    gap: 0.2rem;
+}
+
+.workflow-select-button {
+    overflow: hidden;
+    padding: 0;
+    color: var(--text);
+    font-size: 0.83rem;
+    font-weight: 720;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+}
+
+.workflow-select-button:hover:not(:disabled) {
+    color: var(--accent);
+    transform: none;
+}
+
+.workflow-list-meta {
+    overflow-wrap: anywhere;
+    color: var(--muted);
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 0.65rem;
+}
+
+.workflow-meta {
+    margin-bottom: 0.9rem;
+}
+
+.step-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin: 0.85rem 0 0.65rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--line);
+}
+
+.step-heading h3 {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.step-heading p {
+    margin: 0.2rem 0 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+.step-card {
+    padding: 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.48);
+}
+
+.step-card-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.7rem;
+}
+
+.step-number {
+    display: grid;
+    width: 31px;
+    height: 31px;
+    flex: 0 0 31px;
+    place-items: center;
+    border-radius: 9px;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    background: var(--accent);
+}
+
+.step-identity {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: 0.18rem;
+}
+
+.step-identity strong {
+    overflow-wrap: anywhere;
+    font-size: 0.84rem;
+}
+
+.step-identity code {
+    width: fit-content;
+    font-size: 0.65rem;
+}
+
+.step-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 0.55rem;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--line);
+}
+
+.step-fields .editor-field,
+.workflow-meta .editor-field {
+    min-width: 0;
+}
+
+.step-fields label,
+.workflow-meta label,
+.editor-card .editor-field label {
+    display: block;
+    margin-bottom: 0.28rem;
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 650;
+}
+
+.step-fields input,
+.step-fields select,
+.workflow-meta input,
+.editor-card input,
+.editor-card select {
+    padding: 0.58rem 0.62rem;
+}
+
+.compact-help {
+    margin: 0;
+    font-size: 0.76rem;
+}
+
+.module-catalog {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.65rem;
+}
+
+.module-card {
+    min-width: 0;
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.44);
+}
+
+.module-card code {
+    display: inline-block;
+    margin-bottom: 0.55rem;
+    font-size: 0.67rem;
+}
+
+.module-card strong {
+    display: block;
+    margin-bottom: 0.32rem;
+    font-size: 0.85rem;
+}
+
+.module-card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.55;
+}
+
+.binding-row {
+    grid-template-columns: minmax(120px, 1.2fr) repeat(2, minmax(90px, 0.7fr)) auto;
+}
+
+@media (max-width: 900px) {
+    .resource-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .builder-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 760px) {
+    .page-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .task-launch-grid,
+    .resource-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .step-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .workflow-list-card {
+        grid-template-columns: 1fr;
+    }
+
+    .hero-actions,
+    .hero-actions .button-link {
+        width: 100%;
+    }
+
+    .hero-actions .button-link {
+        justify-content: center;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .summary-card,
+    .usage-card,
+    .workflow-list-card,
+    .step-card,
+    .module-card,
+    .builder-library,
+    .builder-editor {
+        background: rgba(255, 255, 255, 0.035);
+    }
+}

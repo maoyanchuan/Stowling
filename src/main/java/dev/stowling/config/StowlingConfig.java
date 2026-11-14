@@ -1,5 +1,6 @@
 package dev.stowling.config;
 
+import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.domain.AuditSchedule;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.CachePolicy;
@@ -33,13 +34,14 @@ public record StowlingConfig(
         List<PickupRegion> pickupRegions,
         List<NamedCache> cacheContainers,
         List<PickupWorkflow> pickupWorkflows,
+        List<AutomationWorkflow> automationWorkflows,
         List<StorageRoute> storageRoutes,
         List<PackingStation> packingStations,
         List<AuditSchedule> auditSchedules,
         ContainerRef overflowContainer
 ) {
     public StowlingConfig {
-        if (schemaVersion != 3) {
+        if (schemaVersion != 4) {
             throw new IllegalArgumentException(
                     "unsupported config schemaVersion: " + schemaVersion
             );
@@ -48,6 +50,7 @@ public record StowlingConfig(
         pickupRegions = copy(pickupRegions, "pickupRegions");
         cacheContainers = copy(cacheContainers, "cacheContainers");
         pickupWorkflows = copy(pickupWorkflows, "pickupWorkflows");
+        automationWorkflows = copy(automationWorkflows, "automationWorkflows");
         storageRoutes = copy(storageRoutes, "storageRoutes");
         packingStations = copy(packingStations, "packingStations");
         auditSchedules = copy(auditSchedules, "auditSchedules");
@@ -104,11 +107,37 @@ public record StowlingConfig(
             ContainerRef overflowContainer
     ) {
         this(
-                3,
+                4,
                 resources.coordinates(),
                 resources.regions(),
                 resources.caches(),
                 resources.workflows(),
+                List.of(),
+                storageRoutes,
+                packingStations,
+                auditSchedules,
+                overflowContainer
+        );
+    }
+
+    public StowlingConfig(
+            int schemaVersion,
+            List<NamedCoordinate> coordinatePoints,
+            List<PickupRegion> pickupRegions,
+            List<NamedCache> cacheContainers,
+            List<PickupWorkflow> pickupWorkflows,
+            List<StorageRoute> storageRoutes,
+            List<PackingStation> packingStations,
+            List<AuditSchedule> auditSchedules,
+            ContainerRef overflowContainer
+    ) {
+        this(
+                4,
+                coordinatePoints,
+                pickupRegions,
+                cacheContainers,
+                pickupWorkflows,
+                List.of(),
                 storageRoutes,
                 packingStations,
                 auditSchedules,
@@ -207,7 +236,7 @@ public record StowlingConfig(
             Duration defaultIdleDelay,
             List<PickupSite> pickupSites
     ) {
-        if (schemaVersion < 1 || schemaVersion > 3) {
+        if (schemaVersion < 1 || schemaVersion > 4) {
             throw new IllegalArgumentException(
                     "unsupported legacy config schemaVersion: " + schemaVersion
             );
@@ -264,7 +293,7 @@ public record StowlingConfig(
             List<NamedCache> caches,
             List<PickupWorkflow> workflows
     ) {
-        if (schemaVersion < 2 || schemaVersion > 3) {
+        if (schemaVersion < 2 || schemaVersion > 4) {
             throw new IllegalArgumentException(
                     "unsupported config schemaVersion: " + schemaVersion
             );

@@ -1,5 +1,6 @@
 package dev.stowling.config;
 
+import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.domain.AuditMode;
 import dev.stowling.domain.AuditSchedule;
 import dev.stowling.domain.BlockPosition;
@@ -60,6 +61,22 @@ final class ConfigTestFixtures {
                 List.of(),
                 List.of(audit),
                 overflow
+        );
+    }
+
+    static StowlingConfig configWithAutomation(List<AutomationWorkflow> workflows) {
+        StowlingConfig base = config(List.of());
+        return new StowlingConfig(
+                4,
+                base.coordinatePoints(),
+                base.pickupRegions(),
+                base.cacheContainers(),
+                base.pickupWorkflows(),
+                workflows,
+                base.storageRoutes(),
+                base.packingStations(),
+                base.auditSchedules(),
+                base.overflowContainer()
         );
     }
 }

@@ -8,8 +8,20 @@ import dev.stowling.config.ConfigFileStore;
 import dev.stowling.config.ConfigLoader;
 import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.StowlingConfig;
+import dev.stowling.automation.AutomationExecutionStatus;
+import dev.stowling.automation.AutomationModule;
+import dev.stowling.automation.AutomationModuleContext;
+import dev.stowling.automation.AutomationModuleDescriptor;
+import dev.stowling.automation.AutomationModuleRegistry;
+import dev.stowling.automation.AutomationModuleResult;
 import dev.stowling.automation.AutomationPauseReason;
 import dev.stowling.automation.AutomationSnapshot;
+import dev.stowling.automation.AutomationStep;
+import dev.stowling.automation.AutomationStepType;
+import dev.stowling.automation.AutomationWorkflow;
+import dev.stowling.automation.GenericAutomationCheckpoint;
+import dev.stowling.automation.GenericAutomationEngine;
+import dev.stowling.automation.InMemoryGenericAutomationCheckpointStore;
 import dev.stowling.automation.PickupStage;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.CachePolicy;
@@ -36,6 +48,7 @@ import dev.stowling.inventory.InventorySource;
 import dev.stowling.persistence.NestedInventoryScope;
 import dev.stowling.persistence.PersistedTask;
 import dev.stowling.persistence.SqliteInventoryRepository;
+import dev.stowling.persistence.SqliteGenericAutomationCheckpointStore;
 import dev.stowling.persistence.SqliteTaskRepository;
 import dev.stowling.persistence.StoredInventorySnapshot;
 import dev.stowling.persistence.StowlingDatabase;
@@ -48,6 +61,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -55,6 +69,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -633,6 +648,408 @@ class StowlingControlServiceImplTest {
         assertEquals(1, factoryCalls.get());
     }
 
+    @Test
+    void startsPausesResumesAndCancelsAutomationTasks() {
+        ContainerRef cache = container("cache", 0);
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                automationWorkflow()
+        );
+        StowlingDatabase database = new StowlingDatabase(tempDir.resolve("automation.db"));
+        SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+        InMemoryGenericAutomationCheckpointStore checkpoints =
+                new InMemoryGenericAutomationCheckpointStore();
+        TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                checkpoints,
+                context -> AutomationModuleResult.running(Map.of("phase", "RUNNING"))
+        );
+        StowlingControlServiceImpl service = automationService(
+                config,
+                tasks,
+                database,
+                source(capture(cache)),
+                factory
+        );
+
+        TaskInfo started = service.requestAutomation(new AutomationTaskRequest("daily"));
+        service.pause();
+        TaskInfo paused = service.tasks().stream()
+                .filter(task -> task.id().equals(started.id()))
+                .findFirst()
+                .orElseThrow();
+        service.resume();
+        TaskInfo resumed = service.tasks().stream()
+                .filter(task -> task.id().equals(started.id()))
+                .findFirst()
+                .orElseThrow();
+        TaskInfo cancelled = service.cancelTask(started.id());
+
+        assertEquals("AUTOMATION", started.kind());
+        assertEquals("daily", started.workflowId());
+        assertEquals("wait", started.currentStepId());
+        assertEquals("PAUSED", paused.status());
+        assertEquals("RUNNING", resumed.status());
+        assertEquals("CANCELLED", cancelled.status());
+    }
+
+    @Test
+    void rejectsPickupAndAutomationStartsWhileEitherKindIsActive() {
+        ContainerRef cache = container("cache", 0);
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                automationWorkflow()
+        );
+        for (TaskKind kind : List.of(TaskKind.PICKUP, TaskKind.AUTOMATION)) {
+            String suffix = kind.name().toLowerCase(java.util.Locale.ROOT);
+            StowlingDatabase database = new StowlingDatabase(
+                    tempDir.resolve("activity-" + suffix + ".db")
+            );
+            SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+            Instant now = Instant.now();
+            tasks.save(new TaskSnapshot(
+                    UUID.randomUUID(),
+                    kind,
+                    TaskStatus.RUNNING,
+                    kind == TaskKind.PICKUP
+                    ? AutomationState.PICKING_UP
+                    : AutomationState.IDLE_WAITING,
+                    now,
+                    now,
+                    Optional.empty()
+            ));
+            TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                    new InMemoryGenericAutomationCheckpointStore(),
+                    context -> AutomationModuleResult.running(Map.of())
+            );
+            StowlingControlServiceImpl service = automationService(
+                    config,
+                    tasks,
+                    database,
+                    source(capture(cache)),
+                    factory,
+                    "activity-" + suffix + ".json"
+            );
+
+            assertThrows(
+                    ActiveTaskConflictException.class,
+                    () -> service.requestPickup(new PickupRequest("farm-workflow"))
+            );
+            assertThrows(
+                    ActiveTaskConflictException.class,
+                    () -> service.requestAutomation(new AutomationTaskRequest("daily"))
+            );
+        }
+    }
+
+    @Test
+    void blocksAllPermanentConfigurationWritesWhileEitherKindIsPaused() {
+        ContainerRef cache = container("cache", 0);
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                automationWorkflow()
+        );
+        for (TaskKind kind : List.of(TaskKind.PICKUP, TaskKind.AUTOMATION)) {
+            String suffix = kind.name().toLowerCase(java.util.Locale.ROOT);
+            StowlingDatabase database = new StowlingDatabase(
+                    tempDir.resolve("config-lock-" + suffix + ".db")
+            );
+            SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+            Instant now = Instant.now();
+            tasks.save(new TaskSnapshot(
+                    UUID.randomUUID(),
+                    kind,
+                    TaskStatus.PAUSED,
+                    kind == TaskKind.PICKUP
+                    ? AutomationState.PICKING_UP
+                    : AutomationState.IDLE_WAITING,
+                    now,
+                    now,
+                    Optional.empty()
+            ));
+            TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                    new InMemoryGenericAutomationCheckpointStore(),
+                    context -> AutomationModuleResult.running(Map.of())
+            );
+            StowlingControlServiceImpl service = automationService(
+                    config,
+                    tasks,
+                    database,
+                    source(capture(cache)),
+                    factory,
+                    "config-lock-" + suffix + ".json"
+            );
+
+            assertConfigurationWritesBlocked(service);
+        }
+    }
+
+    @Test
+    void cancelReleasesActiveSlotForTheNextAutomationTask() {
+        ContainerRef cache = container("cache", 0);
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                automationWorkflow()
+        );
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("automation-cancel-release.db")
+        );
+        TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                new InMemoryGenericAutomationCheckpointStore(),
+                context -> AutomationModuleResult.running(Map.of())
+        );
+        StowlingControlServiceImpl service = automationService(
+                config,
+                new SqliteTaskRepository(database),
+                database,
+                source(capture(cache)),
+                factory,
+                "automation-cancel-release.json"
+        );
+
+        TaskInfo first = service.requestAutomation(new AutomationTaskRequest("daily"));
+        TaskInfo cancelled = service.cancelTask(first.id());
+        TaskInfo second = service.requestAutomation(new AutomationTaskRequest("daily"));
+
+        assertEquals("CANCELLED", cancelled.status());
+        assertTrue(!first.id().equals(second.id()));
+    }
+
+    @Test
+    void completedAutomationDoesNotBlockTheNextTask() {
+        ContainerRef cache = container("cache", 0);
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                automationWorkflow()
+        );
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("automation-completion-release.db")
+        );
+        SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+        TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                new InMemoryGenericAutomationCheckpointStore(),
+                context -> AutomationModuleResult.succeeded(Map.of(), "done")
+        );
+        StowlingControlServiceImpl service = automationService(
+                config,
+                tasks,
+                database,
+                source(capture(cache)),
+                factory,
+                "automation-completion-release.json"
+        );
+
+        TaskInfo first = service.requestAutomation(new AutomationTaskRequest("daily"));
+        service.tickOnClientThread();
+        TaskInfo second = service.requestAutomation(new AutomationTaskRequest("daily"));
+
+        assertEquals(TaskStatus.SUCCEEDED, tasks.findById(first.id()).orElseThrow().status());
+        assertTrue(!first.id().equals(second.id()));
+    }
+
+    @Test
+    void recoveryUsesCheckpointStateInsteadOfBeginningAgain() {
+        ContainerRef cache = container("cache", 0);
+        AutomationWorkflow workflow = automationWorkflow();
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                workflow
+        );
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("automation-recovery.db")
+        );
+        SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+        UUID taskId = UUID.randomUUID();
+        Instant now = Instant.now();
+        tasks.save(new TaskSnapshot(
+                taskId,
+                TaskKind.AUTOMATION,
+                TaskStatus.RUNNING,
+                AutomationState.IDLE_WAITING,
+                now,
+                now,
+                Optional.empty()
+        ));
+        SqliteGenericAutomationCheckpointStore checkpoints =
+                new SqliteGenericAutomationCheckpointStore(tasks);
+        checkpoints.save(new GenericAutomationCheckpoint(
+                taskId,
+                workflow.id(),
+                0,
+                Map.of("phase", "POLLING", "operationKey", "stable-operation"),
+                Optional.empty(),
+                AutomationExecutionStatus.RUNNING
+        ));
+        AtomicReference<Boolean> recovered = new AtomicReference<>(false);
+        TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                checkpoints,
+                context -> {
+                    recovered.set(context.recovered());
+                    return AutomationModuleResult.succeeded(
+                            context.moduleState(),
+                            "reconciled"
+                    );
+                }
+        );
+        StowlingControlServiceImpl service = automationService(
+                config,
+                tasks,
+                database,
+                source(capture(cache)),
+                factory
+        );
+
+        service.recoverPendingPickups();
+        service.tickOnClientThread();
+
+        assertTrue(recovered.get());
+        assertEquals(
+                TaskStatus.SUCCEEDED,
+                tasks.findById(taskId).orElseThrow().status()
+        );
+    }
+
+    @Test
+    void configurationWritesPreserveAutomationWorkflows() {
+        ContainerRef cache = container("cache", 0);
+        AutomationWorkflow workflow = automationWorkflow();
+        StowlingConfig config = automationConfig(
+                config(cache, container("overflow", 10)),
+                workflow
+        );
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("preserve-automation.json");
+        loader.write(configPath, config);
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("preserve-automation.db")
+        );
+        StowlingControlServiceImpl service = new StowlingControlServiceImpl(
+                config,
+                new SqliteTaskRepository(database),
+                new SqliteInventoryRepository(database),
+                source(capture(cache)),
+                ignored -> {
+                    throw new AssertionError("pickup runtime is not used");
+                },
+                Runnable::run,
+                () -> config,
+                ignored -> {
+                },
+                new ConfigFileStore(configPath, loader)
+        );
+        ConfigCoordinatesSnapshot coordinates = service.configCoordinates();
+
+        service.updateConfigCoordinates(new ConfigCoordinatesUpdateRequest(
+                coordinates.revision(),
+                coordinates.coordinates().stream()
+                .map(StowlingControlServiceImplTest::unchangedUpdate)
+                .toList()
+        ));
+        PickupConfigSnapshot pickup = service.pickupConfig();
+        service.updatePickupConfig(new PickupConfigUpdateRequest(
+                pickup.revision(),
+                pickup.pickupRegions(),
+                pickup.cacheContainers(),
+                pickup.pickupWorkflows()
+        ));
+        ConfigCoordinatePointsSnapshot points = service.coordinatePoints();
+        service.updateCoordinatePoints(new ConfigCoordinatePointsUpdateRequest(
+                points.revision(),
+                points.coordinatePoints()
+        ));
+
+        assertEquals(
+                List.of(workflow),
+                loader.load(configPath).automationWorkflows()
+        );
+    }
+
+    private StowlingControlServiceImpl automationService(
+            StowlingConfig config,
+            SqliteTaskRepository tasks,
+            StowlingDatabase database,
+            InventorySource inventorySource,
+            AutomationRuntimeFactory automationFactory
+    ) {
+        return automationService(
+                config,
+                tasks,
+                database,
+                inventorySource,
+                automationFactory,
+                "automation.json"
+        );
+    }
+
+    private StowlingControlServiceImpl automationService(
+            StowlingConfig config,
+            SqliteTaskRepository tasks,
+            StowlingDatabase database,
+            InventorySource inventorySource,
+            AutomationRuntimeFactory automationFactory,
+            String configFileName
+    ) {
+        return new StowlingControlServiceImpl(
+                config,
+                tasks,
+                new SqliteInventoryRepository(database),
+                inventorySource,
+                ignored -> {
+                    throw new AssertionError("pickup runtime is not used");
+                },
+                Runnable::run,
+                () -> config,
+                ignored -> {
+                },
+                configStore(config, configFileName),
+                automationFactory
+        );
+    }
+
+    private void assertConfigurationWritesBlocked(StowlingControlServiceImpl service) {
+        ConfigCoordinatePointsSnapshot points = service.coordinatePoints();
+        ConfigCoordinatesSnapshot coordinates = service.configCoordinates();
+        PickupConfigSnapshot pickup = service.pickupConfig();
+        AutomationWorkflowsSnapshot workflows = service.automationWorkflows();
+
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updateCoordinatePoints(
+                        new ConfigCoordinatePointsUpdateRequest(
+                points.revision(),
+                points.coordinatePoints()
+        )
+        )
+        );
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updateConfigCoordinates(
+                        new ConfigCoordinatesUpdateRequest(
+                coordinates.revision(),
+                coordinates.coordinates().stream()
+                .map(StowlingControlServiceImplTest::unchangedUpdate)
+                .toList()
+        )
+        )
+        );
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updatePickupConfig(new PickupConfigUpdateRequest(
+                pickup.revision(),
+                pickup.pickupRegions(),
+                pickup.cacheContainers(),
+                pickup.pickupWorkflows()
+        ))
+        );
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updateAutomationWorkflows(new AutomationWorkflowUpdateRequest(
+                workflows.revision(),
+                workflows.automationWorkflows()
+        ))
+        );
+        assertThrows(ActiveTaskConflictException.class, service::reloadConfig);
+    }
+
     private StowlingControlServiceImpl service(
             StowlingConfig config,
             InventorySource inventorySource
@@ -737,6 +1154,36 @@ class StowlingControlServiceImplTest {
                 List.of(),
                 List.of(),
                 overflow
+        );
+    }
+
+    private static StowlingConfig automationConfig(
+            StowlingConfig source,
+            AutomationWorkflow workflow
+    ) {
+        return new StowlingConfig(
+                4,
+                source.coordinatePoints(),
+                source.pickupRegions(),
+                source.cacheContainers(),
+                source.pickupWorkflows(),
+                List.of(workflow),
+                source.storageRoutes(),
+                source.packingStations(),
+                source.auditSchedules(),
+                source.overflowContainer()
+        );
+    }
+
+    private static AutomationWorkflow automationWorkflow() {
+        return new AutomationWorkflow(
+                "daily",
+                "Daily automation",
+                List.of(new AutomationStep(
+                        "wait",
+                        AutomationStepType.WAIT,
+                        Map.of("seconds", "1")
+                ))
         );
     }
 
@@ -893,5 +1340,52 @@ class StowlingControlServiceImplTest {
                 coordinate.position().y(),
                 coordinate.position().z()
         );
+    }
+
+    private static final class TestAutomationRuntimeFactory
+            implements AutomationRuntimeFactory {
+        private final dev.stowling.automation.GenericAutomationCheckpointStore checkpoints;
+        private final Function<AutomationModuleContext, AutomationModuleResult> executor;
+
+        private TestAutomationRuntimeFactory(
+                dev.stowling.automation.GenericAutomationCheckpointStore checkpoints,
+                Function<AutomationModuleContext, AutomationModuleResult> executor
+        ) {
+            this.checkpoints = checkpoints;
+            this.executor = executor;
+        }
+
+        @Override
+        public GenericAutomationEngine create(
+                UUID taskId,
+                AutomationWorkflow workflow
+        ) {
+            AutomationModuleRegistry registry = new AutomationModuleRegistry();
+            registry.register(new AutomationModule() {
+                @Override
+                public AutomationModuleDescriptor descriptor() {
+                    return new AutomationModuleDescriptor(
+                            AutomationStepType.WAIT,
+                            "Wait"
+                    );
+                }
+
+                @Override
+                public AutomationModuleResult execute(AutomationModuleContext context) {
+                    return executor.apply(context);
+                }
+            });
+            return new GenericAutomationEngine(
+                    taskId,
+                    workflow,
+                    registry,
+                    checkpoints
+            );
+        }
+
+        @Override
+        public List<AutomationModuleDescriptor> modules() {
+            return List.of(new AutomationModuleDescriptor(AutomationStepType.WAIT, "Wait"));
+        }
     }
 }

@@ -1,5 +1,9 @@
 package dev.stowling.control;
 
+import dev.stowling.automation.AutomationModuleDescriptor;
+import dev.stowling.automation.AutomationStep;
+import dev.stowling.automation.AutomationStepType;
+import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.CachePolicy;
@@ -22,6 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class FakeControlService implements StowlingControlService {
     public static final UUID TASK_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    public static final UUID AUTOMATION_TASK_ID =
+            UUID.fromString("44444444-4444-4444-4444-444444444444");
     private static final Instant NOW = Instant.parse("2026-11-13T08:00:00Z");
 
     private final Map<UUID, TaskInfo> tasks = new ConcurrentHashMap<>();
@@ -29,6 +35,10 @@ public final class FakeControlService implements StowlingControlService {
     private final AtomicInteger calls = new AtomicInteger();
     private volatile boolean failStatus;
     private volatile boolean activePickup;
+    private volatile boolean activeAutomation;
+    private volatile String automationRevision = "automation-revision-1";
+    private volatile List<AutomationWorkflow> automationWorkflows =
+            List.of(automationWorkflow());
     private volatile String coordinateRevision = "revision-1";
     private volatile ContainerPosition coordinatePosition = new ContainerPosition(1, -44, 4);
     private volatile List<ConfigCoordinatePointInfo> coordinatePoints = List.of(
@@ -128,6 +138,7 @@ public final class FakeControlService implements StowlingControlService {
         TaskInfo cancelled = task(taskId, "CANCELLED");
         tasks.put(taskId, cancelled);
         activePickup = false;
+        activeAutomation = false;
         return cancelled;
     }
 
@@ -165,6 +176,69 @@ public final class FakeControlService implements StowlingControlService {
                 new ContainerPosition(1, 64, 2),
                 "CHEST"
         ));
+    }
+
+    @Override
+    public List<AutomationModuleInfo> automationModules() {
+        calls.incrementAndGet();
+        return java.util.Arrays.stream(AutomationStepType.values())
+                .map(type -> AutomationModuleInfo.from(
+                        new AutomationModuleDescriptor(type, type.name())
+                ))
+                .toList();
+    }
+
+    @Override
+    public TaskInfo requestAutomation(AutomationTaskRequest request) {
+        calls.incrementAndGet();
+        if (automationWorkflows.stream().noneMatch(
+                workflow -> workflow.id().equals(request.workflowId())
+        )) {
+            throw new AutomationWorkflowNotFoundException();
+        }
+        TaskInfo task = new TaskInfo(
+                AUTOMATION_TASK_ID,
+                "AUTOMATION",
+                "PENDING",
+                "IDLE_WAITING",
+                NOW,
+                NOW,
+                null,
+                request.workflowId(),
+                null,
+                null,
+                "READY",
+                "wait",
+                0,
+                1,
+                "{}",
+                null
+        );
+        tasks.put(AUTOMATION_TASK_ID, task);
+        activeAutomation = true;
+        return task;
+    }
+
+    @Override
+    public AutomationWorkflowsSnapshot automationWorkflows() {
+        calls.incrementAndGet();
+        return new AutomationWorkflowsSnapshot(automationRevision, automationWorkflows);
+    }
+
+    @Override
+    public AutomationWorkflowsSnapshot updateAutomationWorkflows(
+            AutomationWorkflowUpdateRequest request
+    ) {
+        calls.incrementAndGet();
+        if (activePickup || activeAutomation) {
+            throw new ActiveTaskConflictException();
+        }
+        if (!automationRevision.equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        automationWorkflows = request.automationWorkflows();
+        automationRevision = "automation-revision-2";
+        return new AutomationWorkflowsSnapshot(automationRevision, automationWorkflows);
     }
 
     @Override
@@ -326,6 +400,18 @@ public final class FakeControlService implements StowlingControlService {
                 NOW,
                 NOW,
                 null
+        );
+    }
+
+    private static AutomationWorkflow automationWorkflow() {
+        return new AutomationWorkflow(
+                "daily",
+                "Daily automation",
+                List.of(new AutomationStep(
+                        "wait",
+                        AutomationStepType.WAIT,
+                        Map.of("seconds", "1")
+                ))
         );
     }
 

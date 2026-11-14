@@ -57,6 +57,18 @@ public final class ConfigLoader {
             "auditSchedules",
             "overflowContainer"
     );
+    private static final Set<String> V4_ROOT_FIELDS = Set.of(
+            "schemaVersion",
+            "coordinatePoints",
+            "pickupRegions",
+            "cacheContainers",
+            "pickupWorkflows",
+            "automationWorkflows",
+            "storageRoutes",
+            "packingStations",
+            "auditSchedules",
+            "overflowContainer"
+    );
     private static final Pattern SAFE_ID = Pattern.compile(
             "[a-z0-9][a-z0-9._-]{0,63}"
     );
@@ -101,6 +113,10 @@ public final class ConfigLoader {
             }
             if (schemaVersion == 2) {
                 root = migrateV2(root);
+                schemaVersion = 3;
+            }
+            if (schemaVersion == 3) {
+                root = migrateV3(root);
             }
             resolveCoordinateReferences(root);
             StowlingConfig config = gson.fromJson(root, StowlingConfig.class);
@@ -211,7 +227,8 @@ public final class ConfigLoader {
             for (String field : root.keySet()) {
                 if (!V1_ROOT_FIELDS.contains(field)
                         && !V2_ROOT_FIELDS.contains(field)
-                        && !V3_ROOT_FIELDS.contains(field)) {
+                        && !V3_ROOT_FIELDS.contains(field)
+                        && !V4_ROOT_FIELDS.contains(field)) {
                     throw new ConfigLoadException(
                             "Unknown configuration field: " + field
                     );
@@ -234,6 +251,8 @@ public final class ConfigLoader {
             allowedFields = V2_ROOT_FIELDS;
         } else if (schemaVersion == 3) {
             allowedFields = V3_ROOT_FIELDS;
+        } else if (schemaVersion == 4) {
+            allowedFields = V4_ROOT_FIELDS;
         } else {
             throw new ConfigLoadException(
                     "Unsupported configuration schemaVersion: " + schemaVersion
@@ -398,6 +417,15 @@ public final class ConfigLoader {
             cache.addProperty("coordinateId", coordinateId);
         }
         migrated.add("coordinatePoints", coordinates);
+        return migrated;
+    }
+
+    private static JsonObject migrateV3(JsonObject source) {
+        JsonObject migrated = source.deepCopy();
+        migrated.addProperty("schemaVersion", 4);
+        if (!migrated.has("automationWorkflows")) {
+            migrated.add("automationWorkflows", new JsonArray());
+        }
         return migrated;
     }
 

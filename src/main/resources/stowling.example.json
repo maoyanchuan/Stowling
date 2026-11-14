@@ -1,5 +1,5 @@
 {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "coordinatePoints": [
         {
             "id": "north-farm-center",
@@ -80,6 +80,7 @@
             "completionIdleDelay": 300
         }
     ],
+    "automationWorkflows": [],
     "storageRoutes": [
         {
             "id": "cobblestone",

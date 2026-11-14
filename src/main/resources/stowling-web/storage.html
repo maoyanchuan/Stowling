@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>仓库与库存 · Stowling</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/common.js" defer></script>
+    <script src="/storage.js" defer></script>
+</head>
+<body data-page="storage">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">S</span>
+            <div>
+                <h1>仓库与库存</h1>
+                <p>容器、快速盘点与拾取资源配置</p>
+            </div>
+        </div>
+        <div class="connection-state">
+            <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
+            <span id="connection-label">未连接</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="auth-shell"></div>
+        <div id="workspace" class="workspace page-workspace" aria-hidden="true">
+            <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
+
+            <section class="panel wide" aria-labelledby="container-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">实时容器</p>
+                        <h2 id="container-title">盘点与库存</h2>
+                    </div>
+                    <div class="action-row">
+                        <button id="refresh-storage-button" class="secondary compact"
+                                type="button">刷新</button>
+                        <button id="audit-button" class="primary compact"
+                                type="button">盘点所选</button>
+                    </div>
+                </div>
+                <div id="container-list" class="container-grid"></div>
+                <p id="storage-message" class="field-message" role="status"></p>
+            </section>
+
+            <section class="panel wide" aria-labelledby="inventory-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">库存快照</p>
+                        <h2 id="inventory-title">仓库物品</h2>
+                    </div>
+                    <span class="loopback-tag">散装 · 盒装 · 过期 · 未知</span>
+                </div>
+                <div id="inventory-list" class="inventory-list"></div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="base-coordinate-title">
+                <div class="panel-heading config-heading">
+                    <div>
+                        <p class="eyebrow">永久配置</p>
+                        <h2 id="base-coordinate-title">仓库基础坐标</h2>
+                        <p class="muted section-help">
+                            此区域管理由现有后端生成的仓库、溢出箱和装盒工位坐标。
+                            可复用的位置请在独立“命名坐标”页面维护。
+                        </p>
+                    </div>
+                    <div class="action-row">
+                        <button id="discard-base-coordinate-button" class="secondary compact"
+                                type="button">放弃修改</button>
+                        <button id="save-base-coordinate-button" class="primary compact"
+                                type="submit" form="base-coordinate-form" disabled>
+                            保存坐标
+                        </button>
+                    </div>
+                </div>
+                <form id="base-coordinate-form">
+                    <div id="base-coordinate-list" class="coordinate-groups"></div>
+                </form>
+                <div class="coordinate-footer">
+                    <span id="base-coordinate-status">尚未读取仓库坐标</span>
+                    <code id="base-coordinate-revision">revision: --</code>
+                </div>
+            </section>
+
+            <section class="panel wide" aria-labelledby="pickup-config-title">
+                <div class="panel-heading config-heading">
+                    <div>
+                        <p class="eyebrow">永久配置 · 自动拾取</p>
+                        <h2 id="pickup-config-title">拾取区域、缓存与流程</h2>
+                        <p class="muted section-help">
+                            区域和缓存通过命名坐标定位。自定义任务中的“运行拾取”模块
+                            将调用这里保存的流程。
+                        </p>
+                    </div>
+                    <div class="action-row">
+                        <button id="discard-pickup-button" class="secondary compact"
+                                type="button">放弃修改</button>
+                        <button id="save-pickup-button" class="primary compact"
+                                type="submit" form="pickup-form" disabled>保存全部</button>
+                    </div>
+                </div>
+                <form id="pickup-form" novalidate>
+                    <div class="pickup-config-grid">
+                        <section class="config-column" aria-labelledby="region-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="region-title">拾取区域</h3>
+                                    <p>球形或长方体范围</p>
+                                </div>
+                                <button id="add-region-button" class="secondary compact"
+                                        type="button">新增区域</button>
+                            </div>
+                            <div id="region-list" class="editor-list"></div>
+                        </section>
+                        <section class="config-column" aria-labelledby="cache-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="cache-title">缓存容器</h3>
+                                    <p>流程可组合多个缓存</p>
+                                </div>
+                                <button id="add-cache-button" class="secondary compact"
+                                        type="button">新增缓存</button>
+                            </div>
+                            <div id="cache-list" class="editor-list"></div>
+                        </section>
+                        <section class="config-column workflow-column"
+                                 aria-labelledby="pickup-workflow-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="pickup-workflow-title">拾取流程</h3>
+                                    <p>区域优先级、缓存和结束策略</p>
+                                </div>
+                                <button id="add-pickup-workflow-button" class="secondary compact"
+                                        type="button">新增流程</button>
+                            </div>
+                            <div id="pickup-workflow-list" class="editor-list"></div>
+                        </section>
+                    </div>
+                </form>
+                <div id="pickup-errors" class="config-errors" role="alert"></div>
+                <div class="coordinate-footer">
+                    <span id="pickup-status">尚未读取拾取配置</span>
+                    <code id="pickup-revision">revision: --</code>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

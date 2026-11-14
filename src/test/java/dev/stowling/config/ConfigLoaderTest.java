@@ -49,7 +49,15 @@ class ConfigLoaderTest {
         StowlingConfig config = loader.load(path);
 
         assertEquals(5, config.schemaVersion());
-        assertEquals(Duration.ofSeconds(60), config.defaultIdleDelay());
+        assertEquals(Duration.ZERO, config.defaultIdleDelay());
+        assertTrue(config.coordinatePoints().isEmpty());
+        assertTrue(config.pickupRegions().isEmpty());
+        assertTrue(config.cacheContainers().isEmpty());
+        assertTrue(config.pickupWorkflows().isEmpty());
+        assertTrue(config.automationWorkflows().isEmpty());
+        assertTrue(config.storageRoutes().isEmpty());
+        assertTrue(config.packingStations().isEmpty());
+        assertTrue(config.auditSchedules().isEmpty());
         assertEquals("overflow", config.overflowContainer().id());
     }
 
@@ -158,7 +166,7 @@ class ConfigLoaderTest {
     @Test
     void migratesV2CoordinatesByDimensionAndPosition() throws IOException {
         JsonObject root = JsonParser.parseString(
-                Files.readString(Path.of("src/main/resources/stowling.example.json"))
+                Files.readString(Path.of("src/test/resources/legacy-pickup-example.json"))
         ).getAsJsonObject();
         root.addProperty("schemaVersion", 2);
         root.remove("coordinatePoints");
@@ -185,7 +193,7 @@ class ConfigLoaderTest {
     @Test
     void migratesV3ByAddingAnEmptyAutomationWorkflowList() throws IOException {
         JsonObject root = JsonParser.parseString(
-                Files.readString(Path.of("src/main/resources/stowling.example.json"))
+                Files.readString(Path.of("src/test/resources/legacy-pickup-example.json"))
         ).getAsJsonObject();
         root.addProperty("schemaVersion", 3);
         root.remove("automationWorkflows");
@@ -199,7 +207,7 @@ class ConfigLoaderTest {
     @Test
     void migratesV4ByAddingDefaultSettingsWithoutEnablingTasks() throws IOException {
         JsonObject root = JsonParser.parseString(
-                Files.readString(Path.of("src/main/resources/stowling.example.json"))
+                Files.readString(Path.of("src/test/resources/legacy-pickup-example.json"))
         ).getAsJsonObject();
         root.addProperty("schemaVersion", 4);
         root.getAsJsonArray("pickupWorkflows")

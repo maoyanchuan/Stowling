@@ -11,7 +11,6 @@ import pytest
 
 WEB_ROOT = Path(__file__).resolve().parents[1] / "src/main/resources/stowling-web"
 COORDINATES_JS = WEB_ROOT / "coordinates.js"
-COORDINATES_HTML = WEB_ROOT / "coordinates.html"
 
 DRIVER = r"""
 const fs = require("node:fs");
@@ -23,11 +22,26 @@ const ctx = {
     definitions: { tasks: input.tasks },
     failEndpoint: input.failEndpoint,
     confirm: input.confirm,
-    writeFailure: false,
+    writeFailure: null,
+    holdWrite: false,
+    failAfterWriteEndpoint: "",
+    successfulWrites: 0,
     confirmations: [],
+    requests: [],
     writes: [],
+    toasts: [],
+    regionRefreshes: [],
     handled: []
 };
+
+class ApiError extends Error {
+    /** @param {object} failure @returns {void} */
+    constructor(failure) {
+        super(failure.message);
+        this.status = failure.status;
+        this.code = failure.code;
+    }
+}
 
 class Element {
     /** @returns {void} */
@@ -82,6 +96,52 @@ function text(value) {
 /** @param {unknown} value @returns {unknown} */
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
+/** @param {unknown} source @param {Set<string>} ids @returns {boolean} */
+function usesCoordinate(source, ids) {
+    if (!source || typeof source !== "object") {
+        return false;
+    }
+    return Object.entries(source).some(([key, value]) => {
+        return ((key === "coordinateId" || key.endsWith("CoordinateId")) && ids.has(value))
+            || usesCoordinate(value, ids);
+    });
+}
+/** @param {object} body @param {Set<string>} regions @param {Set<string>} caches
+ * @returns {boolean} */
+function usesLegacyResources(body, regions, caches) {
+    return (body.regions || []).some((binding) => regions.has(binding.regionId))
+        || (body.cacheIds || []).some((id) => caches.has(id));
+}
+/** @param {object} payload @returns {void} */
+function applyCoordinateWrite(payload) {
+    const retainedIds = new Set(payload.coordinatePoints.map((point) => point.id));
+    const savedIds = new Set(ctx.snapshot.coordinatePoints.map((point) => point.id));
+    const removedIds = new Set((payload.removeLegacyReferencesFor || [])
+        .filter((id) => savedIds.has(id) && !retainedIds.has(id)));
+    const regions = new Set(ctx.resources.pickupRegions
+        .filter((region) => usesCoordinate(region, removedIds)).map((region) => region.id));
+    const caches = new Set(ctx.resources.cacheContainers
+        .filter((cache) => removedIds.has(cache.coordinateId)).map((cache) => cache.id));
+    const workflows = new Set([
+        ...ctx.resources.pickupWorkflows,
+        ...ctx.definitions.tasks.filter((task) => task.kind === "PICKUP")
+    ].filter((entry) => usesLegacyResources(entry.pickup || entry, regions, caches))
+        .map((entry) => entry.id));
+    ctx.resources.pickupRegions = ctx.resources.pickupRegions
+        .filter((region) => !regions.has(region.id));
+    ctx.resources.cacheContainers = ctx.resources.cacheContainers
+        .filter((cache) => !caches.has(cache.id));
+    ctx.resources.pickupWorkflows = ctx.resources.pickupWorkflows
+        .filter((workflow) => !workflows.has(workflow.id));
+    ctx.definitions.tasks = ctx.definitions.tasks
+        .filter((task) => task.kind !== "PICKUP" || !workflows.has(task.id));
+    ctx.successfulWrites += 1;
+    ctx.snapshot = {
+        revision: `saved-revision-${ctx.successfulWrites}`,
+        coordinatePoints: clone(payload.coordinatePoints)
+    };
+}
+
 const Stowling = {
     clone,
     /** @param {string} tag @param {string} classes @param {string} label
@@ -99,27 +159,37 @@ const Stowling = {
     },
     /** @param {string} revision @returns {string} */
     revisionLabel(revision) { return revision; },
-    /** @returns {void} */
-    showToast() {},
+    /** @param {string} message @param {boolean} error @returns {void} */
+    showToast(message, error = false) { ctx.toasts.push({ message, error }); },
     /** @param {unknown} error @param {string} label @returns {void} */
     handleError(error, label) { ctx.handled.push(label); },
     /** @param {() => Promise<void>} callback @returns {void} */
     onConnected(callback) { ctx.connected = callback; },
     /** @returns {void} */
     mountPage() {},
-    ApiError: Error,
+    ApiError,
     /** @param {string} url @param {object | null} options @returns {Promise<object>} */
     async request(url, options = null) {
+        ctx.requests.push({ url, method: options?.method || "GET" });
         if (options?.method === "PUT") {
+            if (url !== "/v1/config/coordinate-points") {
+                throw new Error(`unexpected write: ${url}`);
+            }
             const payload = JSON.parse(options.body);
             ctx.writes.push({ url, method: options.method, payload });
-            if (ctx.writeFailure) {
-                throw new Error("atomic save refused");
+            if (ctx.holdWrite) {
+                await new Promise((resolve) => { ctx.releaseWrite = resolve; });
             }
-            ctx.snapshot = {
-                revision: "saved-revision",
-                coordinatePoints: payload.coordinatePoints
-            };
+            if (ctx.writeFailure) {
+                throw new ApiError(ctx.writeFailure);
+            }
+            if (payload.revision !== ctx.snapshot.revision) {
+                throw new Error("stale coordinate revision");
+            }
+            applyCoordinateWrite(payload);
+            if (ctx.failAfterWriteEndpoint) {
+                ctx.failEndpoint = ctx.failAfterWriteEndpoint;
+            }
             return clone(ctx.snapshot);
         }
         if (ctx.failEndpoint === url) {
@@ -139,6 +209,12 @@ const Stowling = {
 };
 const window = {
     Stowling,
+    StowlingCoordinateRegions: {
+        /** @returns {Promise<void>} */
+        async refreshAfterCoordinates() {
+            ctx.regionRefreshes.push(clone(ctx.snapshot));
+        }
+    },
     /** @param {string} warning @returns {boolean} */
     confirm(warning) {
         ctx.confirmations.push(warning);
@@ -149,8 +225,10 @@ const document = {
     querySelector: node,
     /** @returns {Element} */
     createElement() { return new Element(); },
-    /** @returns {null} */
-    getElementById() { return null; },
+    /** @param {string} id @returns {Element | null} */
+    getElementById(id) { return nodes.get(`#${id}`) || null; },
+    /** @returns {Array<Element>} */
+    querySelectorAll() { return []; },
     /** @returns {void} */
     addEventListener() {}
 };
@@ -159,7 +237,7 @@ const original = fs.readFileSync(input.sourcePath, "utf8");
 const source = original.replace('    Stowling.mountPage("coordinates");', `
     window.ui = {
         state, renderSnapshot, renderUsage, removePoint, loadReferences, loadCoordinates,
-        saveCoordinates, discardChanges, cleanupCoordinateIds, deletionPlan
+        saveCoordinates, discardChanges
     };
     Stowling.mountPage("coordinates");
 `);
@@ -170,7 +248,12 @@ function inspect() {
     return clone({
         ids: window.ui.state.draft?.coordinatePoints.map((point) => point.id) || [],
         draft: window.ui.state.draft,
-        cleanupIds: [...window.ui.state.cleanupIds],
+        snapshot: window.ui.state.snapshot,
+        serverSnapshot: ctx.snapshot,
+        resources: ctx.resources,
+        tasks: ctx.definitions.tasks,
+        cleanupIds: [...(window.ui.state.cleanupIds || [])],
+        writing: Boolean(window.ui.state.writing),
         dirty: window.ui.state.dirty,
         ready: window.ui.state.referencesReady,
         errors: text(node("#coordinate-errors")),
@@ -178,8 +261,14 @@ function inspect() {
         referenceStatus: text(node("#coordinate-reference-status")),
         reloadHidden: node("#reload-coordinate-references-button").hidden,
         saveDisabled: node("#save-coordinate-button").disabled,
+        addDisabled: node("#add-coordinate-button").disabled,
+        discardDisabled: node("#discard-coordinate-button").disabled,
+        status: text(node("#coordinate-status")),
         confirmations: ctx.confirmations,
+        requests: ctx.requests,
         writes: ctx.writes,
+        toasts: ctx.toasts,
+        regionRefreshes: ctx.regionRefreshes,
         handled: ctx.handled
     });
 }
@@ -248,6 +337,7 @@ def run_ui(
     *,
     resources: dict[str, Any] | None = None,
     tasks: list[dict[str, Any]] | None = None,
+    snapshot: dict[str, Any] | None = None,
     confirm: bool = True,
     fail_endpoint: str = "",
 ) -> dict[str, Any]:
@@ -257,7 +347,7 @@ def run_ui(
     )
     input_data = {
         "sourcePath": str(COORDINATES_JS),
-        "snapshot": saved_snapshot(),
+        "snapshot": saved_snapshot() if snapshot is None else snapshot,
         "resources": pickup_resources() if resources is None else resources,
         "tasks": tasks or [],
         "confirm": confirm,
@@ -279,309 +369,274 @@ def run_ui(
     return json.loads(result.stdout)
 
 
-def test_confirmation_names_resources_once_and_only_changes_draft() -> None:
+def test_confirmed_deletion_is_persisted_once_and_does_not_return_after_refresh() -> None:
     resources = pickup_resources()
     resources["cacheContainers"].append(dict(resources["cacheContainers"][0]))
     old_task = {
-        "kind": "PICKUP",
-        "id": "old-pickup",
-        "name": "旧拾取",
+        "kind": "PICKUP", "id": "old-pickup", "name": "旧拾取",
         "pickup": resources["pickupWorkflows"][0],
     }
     result = run_ui(
-        "ui.removePoint(0); return inspect();", resources=resources, tasks=[old_task],
+        "await ui.removePoint(0); const deleted = inspect();"
+        "await ui.loadCoordinates(); return { deleted, refreshed: inspect() };",
+        resources=resources,
+        tasks=[old_task],
     )
-    assert result["ids"] == ["point-b"]
-    assert result["cleanupIds"] == ["point-a"]
-    assert result["dirty"] is True
-    assert result["writes"] == []
-    assert len(result["confirmations"]) == 1
-    warning = result["confirmations"][0]
-    assert "删除坐标“point-a”（point-a）" in warning
-    assert warning.count("关联区域“用户新建区域”（region-a）") == 1
-    assert warning.count("旧缓存“缓存一”（cache-a）") == 1
-    assert warning.count("旧 PICKUP 任务“旧拾取”（old-pickup）") == 1
-    assert "旧区域" not in warning
-    assert "完整移除" in warning
-    assert "不会立即保存" in warning
-    assert "取消不作任何更改" in warning
-
-
-def test_cancel_keeps_all_original_values_and_no_cleanup_authorization() -> None:
-    result = run_ui(
-        "const before = inspect(); ui.removePoint(0); return { before, after: inspect() };",
-        confirm=False,
-    )
-    before, after = result["before"], result["after"]
-    assert after["draft"] == before["draft"]
-    assert after["cleanupIds"] == []
-    assert after["dirty"] is False
-    assert after["writes"] == []
-
-
-def test_save_submits_original_revision_and_confirmed_cleanup_in_one_put() -> None:
-    result = run_ui("ui.removePoint(0); await ui.saveCoordinates(); return inspect();")
-    assert len(result["writes"]) == 1
-    write = result["writes"][0]
+    deleted, refreshed = result["deleted"], result["refreshed"]
+    assert deleted["ids"] == refreshed["ids"] == ["point-b"]
+    assert deleted["snapshot"] == deleted["serverSnapshot"]
+    assert deleted["dirty"] is False
+    assert deleted["cleanupIds"] == []
+    assert len(deleted["writes"]) == len(refreshed["writes"]) == 1
+    write = deleted["writes"][0]
     assert write["url"] == "/v1/config/coordinate-points"
     assert write["method"] == "PUT"
     assert write["payload"]["revision"] == "original-revision"
     assert write["payload"]["removeLegacyReferencesFor"] == ["point-a"]
-    assert [point["id"] for point in write["payload"]["coordinatePoints"]] == ["point-b"]
-    assert "_originalId" not in write["payload"]["coordinatePoints"][0]
-    assert result["cleanupIds"] == []
-    assert result["dirty"] is False
+    assert write["payload"]["coordinatePoints"] == saved_snapshot()["coordinatePoints"][1:]
+    warning = deleted["confirmations"][0]
+    assert warning.count("关联区域“用户新建区域”（region-a）") == 1
+    assert warning.count("旧缓存“缓存一”（cache-a）") == 1
+    assert warning.count("旧 PICKUP 任务“旧拾取”（old-pickup）") == 1
+    assert "仅修改草稿" not in warning
+    assert deleted["resources"] == empty_resources()
+    assert deleted["tasks"] == []
 
 
-def test_no_resource_cleanup_omits_optional_request_field() -> None:
+@pytest.mark.parametrize("association", ["none", "region", "cache"])
+def test_no_task_association_never_mentions_tasks_in_delete_confirmation(
+    association: str,
+) -> None:
+    resources = empty_resources()
+    if association == "region":
+        resources["pickupRegions"] = pickup_resources()["pickupRegions"]
+    elif association == "cache":
+        resources["cacheContainers"] = pickup_resources()["cacheContainers"]
     result = run_ui(
-        "ui.removePoint(0); await ui.saveCoordinates(); return inspect();",
-        resources=empty_resources(),
+        "ui.state.draft.coordinatePoints[0].name = '删除前未保存改名';"
+        "ui.state.dirty = true; await ui.removePoint(0); return inspect();",
+        resources=resources,
     )
-    assert result["confirmations"] == []
-    assert "removeLegacyReferencesFor" not in result["writes"][0]["payload"]
+    assert len(result["confirmations"]) == 1
+    warning = result["confirmations"][0]
+    assert "point-a" in warning
+    assert "任务" not in warning
+    assert "PICKUP" not in warning
+    assert "仅修改草稿" not in warning
+    assert result["ids"] == ["point-b"]
+    assert result["dirty"] is False
+    assert len(result["writes"]) == 1
+    payload = result["writes"][0]["payload"]
+    if association == "none":
+        assert "removeLegacyReferencesFor" not in payload
+        assert "关联区域" not in warning
+        assert "旧缓存" not in warning
+    else:
+        assert payload["removeLegacyReferencesFor"] == ["point-a"]
+        assert ("关联区域" in warning) is (association == "region")
+        assert ("旧缓存" in warning) is (association == "cache")
+
+
+def test_cancel_preserves_complete_draft_and_snapshot_without_any_request() -> None:
+    result = run_ui(
+        "ui.state.draft.coordinatePoints[1].position.x = 42; ui.state.dirty = true;"
+        "ctx.requests.length = 0; const before = inspect(); await ui.removePoint(0);"
+        "return { before, after: inspect() };",
+        confirm=False,
+    )
+    before, after = result["before"], result["after"]
+    assert after["draft"] == before["draft"]
+    assert after["snapshot"] == before["snapshot"] == after["serverSnapshot"]
+    assert after["dirty"] is True
+    assert after["cleanupIds"] == []
+    assert after["requests"] == []
+    assert len(after["confirmations"]) == 1
+
+
+def test_unsaved_coordinate_is_removed_only_from_draft_even_if_references_failed() -> None:
+    result = run_ui(
+        "ui.state.draft.coordinatePoints[1].name = '其他未保存改名';"
+        "ui.state.draft.coordinatePoints.push({"
+        "...ctx.snapshot.coordinatePoints[0], id: 'unsaved', name: '未保存', _originalId: ''"
+        "}); ui.state.dirty = true; ctx.requests.length = 0; const before = inspect();"
+        "await ui.removePoint(2); return { before, after: inspect() };",
+        fail_endpoint="/v1/config/task-resources",
+    )
+    before, after = result["before"], result["after"]
+    assert after["ids"] == ["point-a", "point-b"]
+    assert after["draft"]["coordinatePoints"] == before["draft"]["coordinatePoints"][:2]
+    assert after["snapshot"] == before["snapshot"] == after["serverSnapshot"]
+    assert after["dirty"] is True
+    assert after["confirmations"] == after["requests"] == []
 
 
 @pytest.mark.parametrize("endpoint", ["/v1/config/task-resources", "/v1/task-definitions"])
-def test_reference_read_failure_blocks_deletion_and_initialization_handles_it(
-    endpoint: str,
-) -> None:
+def test_failed_reference_read_blocks_saved_deletion_without_any_request(endpoint: str) -> None:
     result = run_ui(
-        "await ctx.connected(); ui.removePoint(0); return inspect();",
+        "ctx.requests.length = 0; const before = inspect(); await ui.removePoint(0);"
+        "return { before, after: inspect() };",
         fail_endpoint=endpoint,
     )
-    assert result["ready"] is False
-    assert result["ids"] == ["point-a", "point-b"]
-    assert result["confirmations"] == []
-    assert result["cleanupIds"] == []
-    assert result["reloadHidden"] is False
-    assert "不能删除" in result["errors"]
-    assert "重新读取" in result["referenceStatus"]
-    assert "读取命名坐标页面失败" in result["handled"]
-
-
-def test_incomplete_reference_response_does_not_become_empty_safe_references() -> None:
-    result = run_ui("ui.removePoint(0); return inspect();", resources={})
-    assert result["ready"] is False
-    assert result["ids"] == ["point-a", "point-b"]
-    assert result["confirmations"] == []
-
-
-def test_usage_deduplicates_coordinate_id_and_original_id() -> None:
-    result = run_ui("return inspect();")
-    assert result["usage"].count("旧缓存“缓存一”（cache-a）") == 1
-    assert result["usage"].count("旧 PICKUP 任务“旧拾取”（old-pickup）") == 2
-    assert result["usage"].count("关联区域“用户新建区域”（region-a）") == 2
+    before, after = result["before"], result["after"]
+    assert after["ready"] is False
+    assert after["draft"] == before["draft"]
+    assert after["snapshot"] == before["snapshot"]
+    assert after["confirmations"] == after["requests"] == []
+    assert "重新读取" in after["referenceStatus"]
+    assert after["reloadHidden"] is False
 
 
 @pytest.mark.parametrize("parameters", [
     {"coordinateId": "point-a"},
-    {"sourceCoordinateId": "point-a"},
-    {"fallbackCoordinateId": "point-a"},
     {"regionId": "region-a"},
     {"workflowId": "old-pickup"},
     {"cacheIds": '["cache-a"]'},
-    {"containerId": "cache-a"},
-    {"sourceContainerId": "cache-a"},
-    {"destination": "cache-a"},
 ])
-def test_custom_steps_protect_direct_and_region_workflow_cache_references(
+def test_real_custom_task_references_block_deletion_and_leave_everything_unchanged(
     parameters: dict[str, str],
 ) -> None:
     task = {
         "kind": "AUTOMATION", "id": "custom-task", "name": "真实组合任务",
         "steps": [{"id": "keep-step", "type": "RUN_PICKUP", "parameters": parameters}],
     }
-    result = run_ui("ui.removePoint(0); return inspect();", tasks=[task])
-    assert result["ids"] == ["point-a", "point-b"]
-    assert result["cleanupIds"] == []
-    assert result["confirmations"] == []
-    assert result["writes"] == []
-    assert "真实组合任务" in result["errors"]
-    assert "custom-task" in result["errors"]
-    assert "keep-step" in result["errors"]
-    assert "任务页" in result["errors"]
-
-
-@pytest.mark.parametrize("settings,expected", [
-    ({"trigger": {"kind": "ITEMS_PRESENT", "regionIds": ["region-a"]}}, "触发器"),
-    ({"interruption": {"kind": "INLINE", "steps": [{
-        "id": "inline-pickup", "type": "RUN_PICKUP", "parameters": {"regionId": "region-a"},
-    }]}}, "插入步骤 inline-pickup"),
-    ({"inline": {"steps": [{"parameters": {"workflowId": "old-pickup"}}]}}, "内嵌"),
-])
-def test_automation_trigger_and_inline_references_prevent_cleanup(
-    settings: dict[str, Any], expected: str,
-) -> None:
-    task = {"kind": "AUTOMATION", "id": "auto", "name": "区域自动化", "settings": settings}
-    result = run_ui("ui.removePoint(0); return inspect();", tasks=[task])
-    assert result["ids"] == ["point-a", "point-b"]
-    assert result["confirmations"] == []
-    assert "区域自动化" in result["errors"]
-    assert expected in result["errors"]
-
-
-def test_saved_automation_workflows_are_protected_and_never_listed_for_cleanup() -> None:
-    resources = pickup_resources()
-    resources["automationWorkflows"] = [{
-        "id": "new-auto", "name": "纯区域拾取",
-        "steps": [{
-            "id": "pure", "type": "RUN_PICKUP",
-            "parameters": {"regionId": "region-a"},
-        }],
-    }]
-    result = run_ui("ui.removePoint(0); return inspect();", resources=resources)
-    assert result["ids"] == ["point-a", "point-b"]
-    assert "纯区域拾取" in result["errors"]
-    assert result["confirmations"] == []
-
-
-@pytest.mark.parametrize("settings", [
-    {"interruption": {"kind": "INLINE", "steps": [{
-        "id": "legacy-interrupt", "type": "TAKE", "parameters": {"containerId": "cache-a"},
-    }]}},
-    {"trigger": {"regionIds": ["region-a"]}},
-])
-def test_legacy_settings_only_reference_blocks_instead_of_deleting_whole_workflow(
-    settings: dict[str, Any],
-) -> None:
-    resources = pickup_resources()
-    survivor = {
-        "id": "unrelated-old", "name": "仅设置引用的旧任务",
-        "regions": [{"regionId": "other-region"}], "cacheIds": ["other-cache"],
-        "settings": settings,
-    }
-    resources["pickupWorkflows"].append(survivor)
-    task = {
-        "kind": "PICKUP", "id": survivor["id"], "name": survivor["name"],
-        "pickup": survivor, "settings": settings,
-    }
     result = run_ui(
-        "const plan = ui.deletionPlan(new Set(['point-a'])); ui.removePoint(0);"
-        "return { workflowIds: [...plan.workflowIds], result: inspect() };",
-        resources=resources,
+        "ctx.requests.length = 0; const before = inspect(); await ui.removePoint(0);"
+        "return { before, after: inspect() };",
         tasks=[task],
     )
-    assert result["workflowIds"] == ["old-pickup"]
-    assert result["result"]["confirmations"] == []
-    assert result["result"]["ids"] == ["point-a", "point-b"]
-    assert result["result"]["errors"].count("仅设置引用的旧任务") == 1
+    before, after = result["before"], result["after"]
+    assert after["draft"] == before["draft"]
+    assert after["snapshot"] == before["snapshot"]
+    assert after["resources"] == before["resources"]
+    assert after["tasks"] == before["tasks"]
+    assert after["requests"] == after["confirmations"] == []
+    assert "custom-task" in after["errors"]
+    assert "keep-step" in after["errors"]
 
 
-def test_multiple_deletions_use_saved_union_without_reconfirming_shared_resources() -> None:
-    resources = pickup_resources()
-    resources["cacheContainers"].append({
-        "id": "cache-b", "name": "缓存二", "coordinateId": "point-b",
+@pytest.mark.parametrize("status", [409, 500])
+def test_failed_delete_preserves_draft_and_snapshot_and_displays_api_message(status: int) -> None:
+    result = run_ui(
+        "ui.state.draft.coordinatePoints[1].position.x = 42; ui.state.dirty = true;"
+        f"ctx.writeFailure = {{ status: {status}, code: 'invalid_coordinate_points',"
+        "message: 'cacheContainers[0].coordinateId: point-a 仍被容器引用' };"
+        "const before = inspect(); await ui.removePoint(0);"
+        "return { before, after: inspect() };",
+    )
+    before, after = result["before"], result["after"]
+    assert after["draft"] == before["draft"]
+    assert after["snapshot"] == before["snapshot"] == after["serverSnapshot"]
+    assert after["resources"] == before["resources"]
+    assert after["ids"] == ["point-a", "point-b"]
+    assert after["dirty"] is True
+    assert after["writing"] is False
+    assert len(after["writes"]) == 1
+    visible = after["errors"] + after["status"] + " ".join(
+        toast["message"] for toast in after["toasts"]
+    )
+    assert "cacheContainers[0].coordinateId: point-a 仍被容器引用" in visible
+    assert not any(not toast["error"] for toast in after["toasts"])
+
+
+def test_delete_saves_only_snapshot_and_preserves_other_draft_edits_additions_and_order() -> None:
+    snapshot = saved_snapshot()
+    snapshot["coordinatePoints"].append({
+        "id": "point-c", "name": "point-c", "dimension": "minecraft:overworld",
+        "position": {"x": 2, "y": 64, "z": 0},
     })
     result = run_ui(
-        "ui.removePoint(0); ui.removePoint(0); await ui.saveCoordinates(); return inspect();",
-        resources=resources,
+        "const [a, b, c] = ui.state.draft.coordinatePoints;"
+        "b.name = '未保存改名'; b.position.x = 99;"
+        "const added = { ...a, id: 'draft-only', name: '未保存新增', _originalId: '' };"
+        "ui.state.draft.coordinatePoints = [c, added, a, b]; ui.state.dirty = true;"
+        "const before = inspect(); await ui.removePoint(2); const deleted = inspect();"
+        "await ui.saveCoordinates(); return { before, deleted, saved: inspect() };",
+        resources=empty_resources(),
+        snapshot=snapshot,
     )
-    assert result["ids"] == []
-    assert len(result["confirmations"]) == 2
-    second = result["confirmations"][1]
-    assert "旧缓存“缓存二”（cache-b）" in second
-    assert "关联区域“用户新建区域”（region-a）" not in second
-    assert "旧 PICKUP 任务“旧拾取”（old-pickup）" not in second
-    assert result["writes"][0]["payload"]["removeLegacyReferencesFor"] == ["point-a", "point-b"]
+    before, deleted, saved = result["before"], result["deleted"], result["saved"]
+    first_payload = deleted["writes"][0]["payload"]
+    assert first_payload["coordinatePoints"] == snapshot["coordinatePoints"][1:]
+    assert first_payload["revision"] == snapshot["revision"]
+    assert "removeLegacyReferencesFor" not in first_payload
+    assert deleted["ids"] == ["point-c", "draft-only", "point-b"]
+    assert deleted["draft"]["coordinatePoints"] == [
+        point for point in before["draft"]["coordinatePoints"] if point["id"] != "point-a"
+    ]
+    assert deleted["dirty"] is True
+    assert deleted["snapshot"] == deleted["serverSnapshot"]
+    assert len(saved["writes"]) == 2
+    second_payload = saved["writes"][1]["payload"]
+    assert second_payload["revision"] == deleted["snapshot"]["revision"]
+    assert [point["id"] for point in second_payload["coordinatePoints"]] == deleted["ids"]
+    assert second_payload["coordinatePoints"][-1]["name"] == "未保存改名"
+    assert second_payload["coordinatePoints"][-1]["position"]["x"] == 99
+    assert all("_originalId" not in point for point in second_payload["coordinatePoints"])
+    assert "removeLegacyReferencesFor" not in second_payload
+    assert saved["dirty"] is False
 
 
-def test_second_coordinate_with_only_already_confirmed_resources_needs_no_new_cleanup_id() -> None:
+def test_two_independent_deletions_use_latest_revision_and_refreshed_resource_cleanup() -> None:
     result = run_ui(
-        "ui.removePoint(0); ui.removePoint(0); await ui.saveCoordinates(); return inspect();",
+        "await ui.removePoint(0); const first = inspect(); await ui.removePoint(0);"
+        "return { first, second: inspect() };",
     )
-    assert result["ids"] == []
-    assert len(result["confirmations"]) == 1
-    assert result["writes"][0]["payload"]["removeLegacyReferencesFor"] == ["point-a"]
+    first, second = result["first"], result["second"]
+    assert len(first["writes"]) == 1
+    assert len(second["writes"]) == 2
+    assert second["ids"] == []
+    assert first["writes"][0]["payload"]["removeLegacyReferencesFor"] == ["point-a"]
+    assert first["snapshot"]["revision"] == "saved-revision-1"
+    second_payload = second["writes"][1]["payload"]
+    assert second_payload["revision"] == first["snapshot"]["revision"]
+    assert second_payload["coordinatePoints"] == []
+    assert "removeLegacyReferencesFor" not in second_payload
+    assert len(second["confirmations"]) == 2
+    assert "任务" not in second["confirmations"][1]
+    assert "关联区域" not in second["confirmations"][1]
+    assert "旧缓存" not in second["confirmations"][1]
+    assert second["cleanupIds"] == []
+    assert second["resources"] == empty_resources()
 
 
-def test_cancelling_second_confirmation_preserves_first_confirmed_deletion() -> None:
-    resources = pickup_resources()
-    resources["cacheContainers"].append({
-        "id": "cache-b", "name": "缓存二", "coordinateId": "point-b",
-    })
+def test_writing_lock_keeps_coordinate_until_success_and_ignores_other_delete_or_save() -> None:
     result = run_ui(
-        "ui.removePoint(0); const before = inspect(); ctx.confirm = false;"
-        "ui.removePoint(0); return { before, after: inspect() };",
-        resources=resources,
+        "ui.state.draft.coordinatePoints[1].name = '其他未保存'; ui.state.dirty = true;"
+        "ctx.requests.length = 0; ctx.holdWrite = true; const pending = ui.removePoint(0);"
+        "const during = inspect(); await ui.removePoint(1); await ui.saveCoordinates();"
+        "const blocked = inspect(); ctx.holdWrite = false; ctx.releaseWrite(); await pending;"
+        "return { during, blocked, after: inspect() };",
+        resources=empty_resources(),
     )
-    assert result["after"]["draft"] == result["before"]["draft"]
-    assert result["after"]["cleanupIds"] == ["point-a"]
-    assert result["after"]["writes"] == []
+    during, blocked, after = result["during"], result["blocked"], result["after"]
+    assert during["writing"] is True
+    assert during["ids"] == ["point-a", "point-b"]
+    assert during["snapshot"]["revision"] == "original-revision"
+    assert during["addDisabled"] and during["discardDisabled"] and during["saveDisabled"]
+    assert blocked["draft"] == during["draft"]
+    assert len(blocked["writes"]) == len(blocked["requests"]) == 1
+    assert len(blocked["confirmations"]) == 1
+    assert after["ids"] == ["point-b"]
+    assert after["writing"] is False
+    assert len(after["writes"]) == 1
+    assert after["draft"]["coordinatePoints"][0]["name"] == "其他未保存"
+    assert after["dirty"] is True
 
 
-def test_cleanup_payload_filters_to_saved_coordinates_still_absent_from_draft() -> None:
+def test_successful_delete_with_failed_reference_refresh_is_not_a_delete_failure() -> None:
     result = run_ui(
-        "ui.removePoint(0); ui.state.cleanupIds.add('never-saved');"
-        "ui.state.draft.coordinatePoints.push({ ...ctx.snapshot.coordinatePoints[0] });"
-        "return { cleanup: ui.cleanupCoordinateIds() };",
-    )
-    assert result["cleanup"] == []
-
-
-def test_discard_and_reload_clear_cleanup_and_restore_saved_points() -> None:
-    result = run_ui(
-        "ui.removePoint(0); await ui.discardChanges(); return inspect();",
-    )
-    assert result["ids"] == ["point-a", "point-b"]
-    assert result["cleanupIds"] == []
-    assert result["dirty"] is False
-    assert result["writes"] == []
-
-
-def test_discard_clears_authorization_even_when_reread_fails() -> None:
-    result = run_ui(
-        "ui.removePoint(0); ctx.failEndpoint = '/v1/config/task-resources';"
-        "await ui.discardChanges(); return inspect();",
-    )
-    assert result["cleanupIds"] == []
-    assert result["ids"] == ["point-a", "point-b"]
-    assert result["ready"] is False
-    assert result["writes"] == []
-
-
-def test_failed_atomic_save_preserves_draft_revision_and_cleanup_for_retry() -> None:
-    result = run_ui(
-        "ui.removePoint(0); const before = inspect(); ctx.writeFailure = true;"
-        "await ui.saveCoordinates(); return { before, after: inspect() };",
-    )
-    assert result["after"]["draft"] == result["before"]["draft"]
-    assert result["after"]["cleanupIds"] == ["point-a"]
-    assert result["after"]["dirty"] is True
-    assert result["after"]["draft"]["revision"] == "original-revision"
-    assert "atomic save refused" in result["after"]["errors"]
-
-
-def test_reference_failure_after_confirmation_prevents_saving_deletion_draft() -> None:
-    result = run_ui(
-        "ui.removePoint(0); ctx.failEndpoint = '/v1/task-definitions';"
-        "try { await ui.loadReferences(); } catch {}"
-        "await ui.saveCoordinates(); return inspect();",
+        "ctx.failAfterWriteEndpoint = '/v1/config/task-resources';"
+        "await ui.removePoint(0); return inspect();",
     )
     assert result["ids"] == ["point-b"]
-    assert result["cleanupIds"] == ["point-a"]
-    assert result["writes"] == []
-    assert result["saveDisabled"] is True
-
-
-def test_references_finishing_before_coordinates_still_render_usage_after_snapshot() -> None:
-    result = run_ui(
-        "ui.state.snapshot = null; ui.state.draft = null; await ui.loadReferences();"
-        "ui.renderSnapshot(ctx.snapshot); return inspect();",
+    assert result["snapshot"] == result["serverSnapshot"]
+    assert result["ready"] is False
+    assert result["writing"] is False
+    assert result["reloadHidden"] is False
+    assert len(result["writes"]) == 1
+    visible = result["errors"] + result["status"] + result["referenceStatus"] + " ".join(
+        toast["message"] for toast in result["toasts"]
     )
-    assert result["ready"] is True
-    assert "关联区域“用户新建区域”（region-a）" in result["usage"]
-    assert result["usage"].count("旧缓存“缓存一”（cache-a）") == 1
-    assert "当前没有" not in result["usage"]
-
-
-def test_html_explains_explicit_cleanup_and_reread_discards_draft() -> None:
-    html = COORDINATES_HTML.read_text(encoding="utf-8")
-    source = COORDINATES_JS.read_text(encoding="utf-8")
-    assert 'id="coordinate-reference-status"' in html
-    assert 'id="reload-coordinate-references-button"' in html
-    assert "重新读取（放弃草稿）" in html
-    assert "关联区域、旧缓存与旧 PICKUP 任务" in html
-    assert "取消确认不作更改" in html
-    assert 'elements.reloadReferences.addEventListener("click"' in source
-    assert "state.cleanupIds.clear();" in source
+    assert "引用" in visible
+    assert "删除失败" not in visible
+    assert any("删除" in toast["message"] and not toast["error"] for toast in result["toasts"])

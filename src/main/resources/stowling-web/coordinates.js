@@ -26,6 +26,7 @@
         snapshot: null,
         draft: null,
         dirty: false,
+        writing: false,
         invalidFields: new Set(),
         references: new Map(),
         referenceSource: null,
@@ -265,7 +266,7 @@
     function removeButton(index) {
         const button = Stowling.element("button", "ghost compact danger-action", "删除");
         button.type = "button";
-        button.addEventListener("click", () => removePoint(index));
+        button.addEventListener("click", () => { void removePoint(index); });
         return button;
     }
 
@@ -286,6 +287,9 @@
         card.addEventListener("dragover", (event) => event.preventDefault());
         card.addEventListener("drop", (event) => {
             event.preventDefault();
+            if (state.writing) {
+                return;
+            }
             const source = Number(event.dataTransfer?.getData("text/plain"));
             if (!Number.isInteger(source) || source === index) {
                 return;
@@ -303,6 +307,9 @@
      * @returns {void}
      */
     function movePoint(index, offset) {
+        if (state.writing) {
+            return;
+        }
         const points = state.draft.coordinatePoints;
         const target = index + offset;
         if (target < 0 || target >= points.length) {
@@ -315,57 +322,102 @@
 
     /**
      * @param {number} index
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function removePoint(index) {
+    async function removePoint(index) {
         const point = state.draft?.coordinatePoints[index];
-        if (!point) {
+        if (!point || state.writing) {
+            return;
+        }
+        const savedId = String(point._originalId || "");
+        if (!savedId) {
+            state.draft.coordinatePoints.splice(index, 1);
+            markDirty(true);
             return;
         }
         if (!state.referencesReady) {
             showErrors(["引用读取未完成或失败，不能删除坐标。请重新读取后再操作。"]);
-            Stowling.showToast("引用未可靠读取，暂未删除", true);
             return;
         }
-        const deletedIds = deletedCoordinateIds();
-        const savedId = String(point._originalId || "");
-        const ids = new Set([...deletedIds, savedId, String(point.id || "")]);
-        ids.delete("");
-        const plan = deletionPlan(ids);
+        const plan = deletionPlan(new Set([savedId]));
         if (plan.blockers.length > 0) {
-            showErrors([
-                `无法删除“${point.name || point.id}”：${plan.blockers.join("；")}。`
-                    + "请到任务页解除对应任务的步骤、触发器或内嵌配置引用并保存，"
-                    + "再回到这里重新读取。不会删除任何自动化或自定义任务。"
-            ]);
-            Stowling.showToast("实际任务仍在引用，暂未删除", true);
+            showErrors([`无法删除“${point.name || savedId}”：${plan.blockers.join("；")}。`
+                + "请先解除列出的引用并保存。"]);
             return;
         }
-        const previous = deletionPlan(deletedIds);
-        const labels = newCleanupLabels(plan, previous);
+        const labels = newCleanupLabels(plan);
+        let warning = `删除坐标“${point.name || savedId}”（${savedId}）？`;
         if (labels.length > 0) {
-            const warning = `删除坐标“${point.name || point.id}”（${savedId || point.id}）？`
-                + "\n保存全部时将一并删除以下关联区域、旧缓存或旧 PICKUP 任务：\n"
-                + labels.map((label) => `• ${label}`).join("\n")
-                + "\n旧 PICKUP 任务将完整移除，不转换或改写步骤。"
-                + "\n确认仅修改草稿，不会立即保存；取消不作任何更改。"
-                + "\n之前已确认的关联清理不会重复列出，不会删除自动化或自定义任务。";
-            if (!window.confirm(warning)) {
-                return;
-            }
-            const saved = state.snapshot.coordinatePoints.some((item) => item.id === savedId);
-            if (saved) {
-                state.cleanupIds.add(savedId);
+            warning += "\n同时删除以下实际关联项：\n"
+                + labels.map((label) => `• ${label}`).join("\n");
+        }
+        warning += "\n确认后立即保存删除，刷新后不会恢复；取消不作任何更改。"
+            + "\n其他未保存的坐标修改不会一并保存。";
+        if (!window.confirm(warning)) {
+            return;
+        }
+        const payload = {
+            revision: state.snapshot.revision,
+            coordinatePoints: state.snapshot.coordinatePoints
+                .filter((item) => item.id !== savedId).map(toRequestPoint)
+        };
+        if (labels.length > 0) {
+            payload.removeLegacyReferencesFor = [savedId];
+        }
+        state.writing = true;
+        updateSaveState(false);
+        let failure = "";
+        try {
+            const saved = await Stowling.request("/v1/config/coordinate-points", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const remainingDraft = state.draft.coordinatePoints
+                .filter((item) => item !== point);
+            renderSnapshot(saved);
+            state.draft.coordinatePoints = remainingDraft;
+            state.dirty = JSON.stringify(remainingDraft.map(toRequestPoint))
+                !== JSON.stringify(state.snapshot.coordinatePoints.map(toRequestPoint));
+            renderEditor();
+            renderUsage();
+            showErrors([]);
+            await refreshSavedReferences();
+            Stowling.showToast("坐标已删除并保存");
+        } catch (error) {
+            failure = "删除未保存，坐标仍保留";
+            showErrors([error instanceof Error ? error.message : failure]);
+            Stowling.handleError(error, "删除坐标失败");
+        } finally {
+            state.writing = false;
+            updateSaveState(false);
+            if (failure) {
+                elements.status.textContent = failure;
             }
         }
-        state.draft.coordinatePoints.splice(index, 1);
-        markDirty(true);
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function refreshSavedReferences() {
+        const regionRefresh = window.StowlingCoordinateRegions?.refreshAfterCoordinates;
+        const results = await Promise.allSettled([
+            loadReferences(),
+            typeof regionRefresh === "function" ? regionRefresh() : Promise.resolve()
+        ]);
+        if (results.some((result) => result.status === "rejected")) {
+            Stowling.showToast("更改已保存，但关联信息读取失败；请重新读取后再删除", true);
+        }
     }
 
     /**
      * @returns {void}
      */
     function addPoint() {
+        if (state.writing) {
+            return;
+        }
         if (!state.draft) {
             Stowling.showToast("命名坐标尚未读取完成", true);
             return;
@@ -507,13 +559,21 @@
     function updateSaveState(showValidation = true) {
         const errors = [...validateDraft(), ...deletionGuardErrors()];
         const blocked = errors.length > 0;
-        elements.save.disabled = !state.dirty || blocked;
+        elements.save.disabled = state.writing || !state.dirty || blocked;
+        elements.add.disabled = state.writing;
+        elements.discard.disabled = state.writing;
+        elements.reloadReferences.disabled = state.writing || state.referencesLoading;
+        for (const control of elements.list.querySelectorAll("button, input, select")) {
+            control.disabled = state.writing;
+        }
         elements.status.classList.toggle("dirty", state.dirty);
         if (showValidation) {
             showErrors(state.dirty || blocked ? errors : []);
         }
         applyValidationStyles();
-        if (blocked) {
+        if (state.writing) {
+            elements.status.textContent = "正在保存，请稍候…";
+        } else if (blocked) {
             elements.status.textContent =
                 `发现 ${errors.length} 个命名坐标问题，保存已暂停`;
         } else if (state.dirty) {
@@ -938,7 +998,7 @@
     function renderUsage() {
         elements.usage.replaceChildren();
         elements.referenceStatus.textContent = state.referencesReady
-            ? "引用已读取；确认清理仅进入草稿，保存时由服务端再次保护实际任务。"
+            ? "引用已读取；删除已保存的坐标会立即提交，并再次校验实际引用。"
             : state.referencesLoading
                 ? "正在读取资源与任务引用，读取完成前不能删除坐标…"
                 : "引用读取失败或未完成，不能删除坐标。请重新读取（将放弃草稿）。";
@@ -992,6 +1052,9 @@
      * @returns {Promise<void>}
      */
     async function saveCoordinates() {
+        if (state.writing) {
+            return;
+        }
         const errors = [...validateDraft(), ...deletionGuardErrors()];
         if (errors.length > 0) {
             showErrors(errors);
@@ -1001,9 +1064,9 @@
         if (!state.snapshot || !state.dirty) {
             return;
         }
-        elements.save.disabled = true;
-        elements.discard.disabled = true;
-        elements.status.textContent = "正在保存命名坐标…";
+        state.writing = true;
+        updateSaveState(false);
+        let failure = "";
         try {
             const payload = {
                 revision: state.snapshot.revision,
@@ -1019,14 +1082,7 @@
                 body: JSON.stringify(payload)
             });
             renderSnapshot(saved);
-            const regionRefresh = window.StowlingCoordinateRegions
-                ?.refreshAfterCoordinates;
-            await Promise.allSettled([
-                loadReferences(),
-                typeof regionRefresh === "function"
-                    ? regionRefresh(saved)
-                    : Promise.resolve()
-            ]);
+            await refreshSavedReferences();
             Stowling.showToast("命名坐标已保存，旧配置已生成备份");
         } catch (error) {
             const conflict = error instanceof Stowling.ApiError && error.status === 409;
@@ -1038,13 +1094,16 @@
                     : `配置已被外部修改：${message}`;
             }
             showErrors([message]);
-            elements.status.textContent = conflict
+            failure = conflict
                 ? "配置版本冲突或任务正在运行，草稿已保留"
                 : "命名坐标保存失败，草稿仍在";
             Stowling.handleError(error, "保存命名坐标失败");
         } finally {
-            elements.discard.disabled = false;
+            state.writing = false;
             updateSaveState(false);
+            if (failure) {
+                elements.status.textContent = failure;
+            }
         }
     }
 
@@ -1069,6 +1128,9 @@
      * @returns {Promise<void>}
      */
     async function discardChanges() {
+        if (state.writing) {
+            return;
+        }
         elements.discard.disabled = true;
         state.cleanupIds.clear();
         if (state.snapshot) {

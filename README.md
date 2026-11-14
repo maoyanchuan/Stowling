@@ -110,12 +110,18 @@ radius, or a `CUBOID` region by selecting two saved corner points. Cuboid corner
 selected in either order: each axis is automatically sorted into an inclusive min/max
 range. The editor shows names, dimensions, and XYZ or bounds summaries. References must
 be in the same dimension. Saving a coordinate synchronizes its existing references.
-Deleting a point can explicitly remove its associated regions, legacy caches, and legacy
-pickup tasks after the page lists them for confirmation. The deletion is saved atomically
-with the coordinate draft and backed up; cancelling leaves the draft unchanged. References
-from custom tasks, including indirect resource references and interruption steps, still
-block deletion. A region referenced by a task or legacy workflow cannot be deleted on its
-own, and rejected operations display an explanatory error.
+Confirming deletion of a saved point immediately persists that deletion atomically and
+keeps a backup. Other unsaved point edits remain in the draft and are not submitted with it.
+The confirmation lists only actual associated regions, legacy caches, and legacy pickup tasks;
+custom tasks are never removed as a side effect. Direct or indirect custom-task references,
+including interruption steps, still block deletion. A region referenced by a task or legacy
+workflow cannot be deleted on its own. Save and deletion errors show the actual reason.
+
+New installations start with no sample named points, regions, caches, pickup flows, storage
+routes, or audit schedules. On startup, existing configurations retire the old `north-farm`,
+`north-cache`, and default pickup-flow chain and persist the cleanup with a backup. User
+resources are retained; if a custom task actually depends on that chain, it is left intact
+rather than silently deleting the user's task. Historical examples exist only in test fixtures.
 
 There is no standby-point or cache-container editor. Existing regions retain their legacy
 standby anchors in the same dimension. New regions

@@ -39,8 +39,9 @@ import dev.stowling.client.interaction.MinecraftContainerInteraction;
 import dev.stowling.client.interaction.MinecraftPackingStationPort;
 import dev.stowling.client.interaction.MinecraftWorldObserver;
 import dev.stowling.client.interaction.ScreenInventorySource;
-import dev.stowling.config.ConfigLoader;
 import dev.stowling.config.ConfigFileStore;
+import dev.stowling.config.ConfigLoader;
+import dev.stowling.config.LegacyPickupDefaults;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.control.PickupRuntimeFactory;
 import dev.stowling.control.AutomationRuntimeFactory;
@@ -329,7 +330,12 @@ public final class StowlingRuntime implements AutoCloseable {
             Path configPath
     ) {
         if (Files.isRegularFile(configPath)) {
-            return loader.load(configPath);
+            StowlingConfig original = loader.load(configPath);
+            StowlingConfig cleaned = LegacyPickupDefaults.remove(original);
+            if (!cleaned.equals(original)) {
+                loader.writeAtomicWithBackup(configPath, cleaned);
+            }
+            return cleaned;
         }
         try (InputStream input = StowlingRuntime.class.getResourceAsStream(
                 "/stowling.example.json"

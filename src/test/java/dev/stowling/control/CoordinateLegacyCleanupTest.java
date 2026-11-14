@@ -65,6 +65,37 @@ class CoordinateLegacyCleanupTest {
     Path tempDir;
 
     @Test
+    void confirmedCacheDeletionAlsoRemovesDanglingAuditSources() throws IOException {
+        StowlingConfig base = config(List.of());
+        AuditSchedule mixed = new AuditSchedule("mixed", AuditMode.MANUAL,
+                Duration.ZERO, List.of("cache", "keep-cache"));
+        AuditSchedule removed = new AuditSchedule("cache-only", AuditMode.MANUAL,
+                Duration.ZERO, List.of("cache"));
+        StowlingConfig original = new StowlingConfig(
+                base.schemaVersion(), base.coordinatePoints(), base.pickupRegions(),
+                base.cacheContainers(), base.pickupWorkflows(), base.automationWorkflows(),
+                base.storageRoutes(), base.packingStations(),
+                List.of(mixed, removed, base.auditSchedules().getFirst()), base.overflowContainer()
+        );
+        Fixture fixture = fixture("cache-audit-cleanup", original);
+        ConfigCoordinatePointsSnapshot before = fixture.service().coordinatePoints();
+
+        fixture.service().updateCoordinatePoints(
+                removal(before, List.of("cache-position"), List.of("cache-position"))
+        );
+
+        StowlingConfig saved = fixture.store().read().config();
+        assertEquals(List.of(
+                new AuditSchedule("mixed", AuditMode.MANUAL, Duration.ZERO, List.of("keep-cache")),
+                base.auditSchedules().getFirst()
+        ), saved.auditSchedules());
+        assertEquals(original.auditSchedules(), new ConfigLoader().load(backup(fixture.path()))
+                .auditSchedules());
+        assertFalse(fixture.service().coordinatePoints().coordinatePoints().stream()
+                .anyMatch(point -> point.id().equals("cache-position")));
+    }
+
+    @Test
     void confirmedCacheDeletionRemovesWholeAffectedPickupsButKeepsUnrelatedResources()
             throws IOException {
         StowlingConfig original = config(List.of(keepAutomation()));

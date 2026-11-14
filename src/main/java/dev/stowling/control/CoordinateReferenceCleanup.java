@@ -1,6 +1,7 @@
 package dev.stowling.control;
 
 import dev.stowling.config.StowlingConfig;
+import dev.stowling.domain.AuditSchedule;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
@@ -60,7 +61,15 @@ final class CoordinateReferenceCleanup {
                 source.automationWorkflows(),
                 source.storageRoutes(),
                 source.packingStations(),
-                source.auditSchedules(),
+                source.auditSchedules().stream()
+                        .filter(audit -> audit.containerIds().isEmpty()
+                                || audit.containerIds().stream()
+                                        .anyMatch(id -> !cacheIds.contains(id)))
+                        .map(audit -> new AuditSchedule(
+                                audit.id(), audit.mode(), audit.interval(),
+                                audit.containerIds().stream()
+                                        .filter(id -> !cacheIds.contains(id)).toList()
+                        )).toList(),
                 source.overflowContainer()
         );
     }

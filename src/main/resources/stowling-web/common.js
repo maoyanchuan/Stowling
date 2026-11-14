@@ -215,7 +215,6 @@
             ["config_revision_conflict", "配置已被外部修改，请重新读取后再保存"],
             ["task_revision_conflict", "任务已被外部修改，请重新读取后再保存"],
             ["active_task_conflict", "活动或暂停任务存在，请先取消任务或等待完成"],
-            ["invalid_coordinate_points", "命名坐标未通过校验，请检查页面中的错误"],
             ["coordinate_point_in_use", "命名坐标仍被其他配置引用，暂不能删除"],
             ["invalid_pickup_config", "拾取配置未通过校验，请检查页面中的错误"],
             ["invalid_pickup_request", "所选拾取流程或区域不可用"],

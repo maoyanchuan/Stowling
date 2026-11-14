@@ -216,6 +216,17 @@ def test_task_save_is_atomic_and_validation_is_explicit() -> None:
     assert "配置版本冲突或任务正在运行" in TASKS
 
 
+def test_pickup_region_options_use_api_id_and_filter_missing_values() -> None:
+    assert 'field("regionId", "运行范围（可选）", "pickup-region", false)' in TASKS
+    assert '"整个流程（全部区域）"' in TASKS
+    assert 'placeholder.textContent = definition.required ? "请选择" : "不指定";' in TASKS
+    assert "const id = region.id || region.regionId;" in TASKS
+    assert 'if (id === undefined || id === null || id === "") {' in TASKS
+    assert "名称：" in TASKS
+    assert "ID：${workflow.id}" in TASKS
+    assert "ID：${id}" in TASKS
+
+
 def test_storage_page_groups_containers_inventory_and_warehouse_config() -> None:
     html = PAGES["storage.html"]
     for element_id in (

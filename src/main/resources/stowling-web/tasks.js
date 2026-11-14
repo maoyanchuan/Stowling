@@ -20,7 +20,7 @@
         ],
         RUN_PICKUP: [
             field("workflowId", "拾取流程", "pickup", true),
-            field("regionId", "只运行区域", "pickup-region", false)
+            field("regionId", "运行范围（可选）", "pickup-region", false)
         ],
         TAKE_ITEMS: [
             field("sourceContainerId", "来源容器", "container", true),
@@ -618,7 +618,11 @@
         const select = document.createElement("select");
         const placeholder = document.createElement("option");
         placeholder.value = "";
-        placeholder.textContent = definition.required ? "请选择" : "不指定";
+        if (definition.kind === "pickup-region") {
+            placeholder.textContent = "整个流程（全部区域）";
+        } else {
+            placeholder.textContent = definition.required ? "请选择" : "不指定";
+        }
         select.append(placeholder);
         const entries = optionsFor(definition.kind, step);
         for (const entry of entries) {
@@ -660,17 +664,24 @@
         if (kind === "pickup") {
             return state.pickups.map((workflow) => ({
                 id: workflow.id,
-                label: `${workflow.name || workflow.id} · ${workflow.id}`
+                label: `名称：${workflow.name || workflow.id} · ID：${workflow.id}`
             }));
         }
         if (kind === "pickup-region") {
             const pickup = state.pickups.find((candidate) => {
                 return candidate.id === step.parameters?.workflowId;
             });
-            return (pickup?.regions || []).map((region) => ({
-                id: region.regionId,
-                label: `${region.name || region.regionId} · 优先级 ${region.priority ?? "-"}`
-            }));
+            return (pickup?.regions || []).flatMap((region) => {
+                const id = region.id || region.regionId;
+                if (id === undefined || id === null || id === "") {
+                    return [];
+                }
+                return [{
+                    id,
+                    label: `名称：${region.name || id} · ID：${id}` +
+                        ` · 优先级：${region.priority ?? "-"}`
+                }];
+            });
         }
         return state.containers.map((container) => ({
             id: container.id,

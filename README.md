@@ -14,8 +14,8 @@ Current functionality includes:
 - Inventory audits with loose, boxed, unknown, and nested shulker-box contents.
 - Configurable shulker-box packing workcells with item-count or occupancy thresholds.
 - SQLite persistence for tasks, recovery checkpoints, containers, and inventory snapshots.
-- Named spherical or cuboid pickup regions, named cache containers, and reusable multi-region
-  pickup workflows managed from the web console.
+- A named-coordinate library plus spherical or cuboid pickup regions, named cache
+  containers, and reusable multi-region pickup workflows that reference those coordinates.
 - A loopback REST control API with bearer authentication for status, tasks, pickup, audit,
   inventory, container, pause, resume, and config-reload operations.
 - In-client HeadlessMC control commands plus Windows start, status, stop, retry, and log
@@ -86,6 +86,18 @@ The console shows runtime status, tasks, containers, and inventory snapshots. It
 containers, and workflows that combine regions and caches. Changes remain drafts until
 **Save all** validates and atomically updates `config/stowling.json`; the previous file is
 kept as `config/stowling.json.bak`. Saving is blocked while a task is active or paused.
+
+The separate **Named coordinates** page supports adding, deleting, renaming, and reordering
+coordinate points with editable dimensions and X/Y/Z values. Coordinate IDs are immutable
+after creation while display names remain editable. Region standby points, shape centers
+and corners, and cache positions select saved coordinates instead of duplicating position
+fields. Saving synchronizes all references, rejects cross-dimension references, and refuses
+to delete a coordinate that is still referenced. The corresponding endpoints are:
+
+```text
+GET /v1/config/coordinate-points
+PUT /v1/config/coordinate-points
+```
 
 A pickup task can run an entire workflow or one selected region from that workflow. The
 corresponding REST endpoints are:

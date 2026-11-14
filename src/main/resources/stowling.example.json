@@ -1,29 +1,58 @@
 {
-    "schemaVersion": 1,
-    "defaultIdleDelay": 60,
-    "pickupSites": [
+    "schemaVersion": 2,
+    "pickupRegions": [
         {
             "id": "north-farm",
+            "name": "North Farm",
             "dimension": "minecraft:overworld",
-            "center": {
+            "standbyPosition": {
                 "x": 0,
                 "y": 64,
                 "z": 0
             },
-            "radius": 32,
-            "cacheContainers": [
+            "shape": {
+                "type": "SPHERE",
+                "center": {
+                    "x": 0,
+                    "y": 64,
+                    "z": 0
+                },
+                "radius": 32
+            }
+        }
+    ],
+    "cacheContainers": [
+        {
+            "id": "north-cache",
+            "name": "North Cache",
+            "dimension": "minecraft:overworld",
+            "position": {
+                "x": 8,
+                "y": 64,
+                "z": 0
+            },
+            "type": "CHEST"
+        }
+    ],
+    "pickupWorkflows": [
+        {
+            "id": "farm-patrol",
+            "name": "Farm Patrol",
+            "dimension": "minecraft:overworld",
+            "regions": [
                 {
-                    "id": "north-cache",
-                    "dimension": "minecraft:overworld",
-                    "position": {
-                        "x": 8,
-                        "y": 64,
-                        "z": 0
-                    },
-                    "type": "CHEST"
+                    "regionId": "north-farm",
+                    "priority": 100,
+                    "idleDelay": 60
                 }
             ],
-            "idleDelay": 60
+            "cacheIds": [
+                "north-cache"
+            ],
+            "cachePolicy": "NEAREST_AVAILABLE",
+            "classificationTiming": "AFTER_ROUND",
+            "completionMode": "ALL_IDLE",
+            "completionIdleDelay": 300
         }
     ],
     "storageRoutes": [

@@ -6,6 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.stowling.domain.PickupShape;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -15,11 +16,18 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public final class ConfigLoader {
-    private static final Set<String> ROOT_FIELDS = Set.of(
+    private static final Set<String> V1_ROOT_FIELDS = Set.of(
             "schemaVersion",
             "defaultIdleDelay",
             "pickupSites",
@@ -27,6 +35,19 @@ public final class ConfigLoader {
             "packingStations",
             "auditSchedules",
             "overflowContainer"
+    );
+    private static final Set<String> V2_ROOT_FIELDS = Set.of(
+            "schemaVersion",
+            "pickupRegions",
+            "cacheContainers",
+            "pickupWorkflows",
+            "storageRoutes",
+            "packingStations",
+            "auditSchedules",
+            "overflowContainer"
+    );
+    private static final Pattern SAFE_ID = Pattern.compile(
+            "[a-z0-9][a-z0-9._-]{0,63}"
     );
     private final Gson gson;
     private final AtomicFileReplacer atomicFileReplacer;
@@ -42,6 +63,7 @@ public final class ConfigLoader {
         );
         this.gson = new GsonBuilder()
                 .registerTypeAdapter(Duration.class, new DurationJsonAdapter())
+                .registerTypeAdapter(PickupShape.class, new PickupShapeJsonAdapter())
                 .setPrettyPrinting()
                 .create();
     }
@@ -59,8 +81,12 @@ public final class ConfigLoader {
             JsonElement element = JsonParser.parseString(json);
             requireObject(element);
             JsonObject root = element.getAsJsonObject();
-            rejectUnknownRootFields(root);
+            int schemaVersion = readSchemaVersion(root);
+            rejectUnknownRootFields(root, schemaVersion);
             normalizeCompatibilityFields(root);
+            if (schemaVersion == 1) {
+                root = migrateV1(root);
+            }
             StowlingConfig config = gson.fromJson(root, StowlingConfig.class);
             if (config == null) {
                 throw new ConfigLoadException("Configuration root must be a JSON object");
@@ -163,9 +189,38 @@ public final class ConfigLoader {
         }
     }
 
-    private static void rejectUnknownRootFields(JsonObject root) {
+    private static int readSchemaVersion(JsonObject root) {
+        JsonElement element = root.get("schemaVersion");
+        if (element == null || !element.isJsonPrimitive()) {
+            for (String field : root.keySet()) {
+                if (!V1_ROOT_FIELDS.contains(field) && !V2_ROOT_FIELDS.contains(field)) {
+                    throw new ConfigLoadException(
+                            "Unknown configuration field: " + field
+                    );
+                }
+            }
+            throw new ConfigLoadException("Configuration requires schemaVersion");
+        }
+        try {
+            return element.getAsInt();
+        } catch (RuntimeException exception) {
+            throw new ConfigLoadException("schemaVersion must be an integer", exception);
+        }
+    }
+
+    private static void rejectUnknownRootFields(JsonObject root, int schemaVersion) {
+        Set<String> allowedFields;
+        if (schemaVersion == 1) {
+            allowedFields = V1_ROOT_FIELDS;
+        } else if (schemaVersion == 2) {
+            allowedFields = V2_ROOT_FIELDS;
+        } else {
+            throw new ConfigLoadException(
+                    "Unsupported configuration schemaVersion: " + schemaVersion
+            );
+        }
         for (String field : root.keySet()) {
-            if (!ROOT_FIELDS.contains(field)) {
+            if (!allowedFields.contains(field)) {
                 throw new ConfigLoadException("Unknown configuration field: " + field);
             }
         }
@@ -193,6 +248,294 @@ public final class ConfigLoader {
                 site.add("cacheContainers", containers);
             }
         }
+    }
+
+    private static JsonObject migrateV1(JsonObject source) {
+        JsonObject migrated = new JsonObject();
+        migrated.addProperty("schemaVersion", 2);
+        JsonArray regions = new JsonArray();
+        JsonArray caches = new JsonArray();
+        JsonArray workflows = new JsonArray();
+        Set<String> usedIds = new LinkedHashSet<>();
+        Map<String, String> cacheIdByLocation = new LinkedHashMap<>();
+        Map<String, String> cacheTypeByLocation = new LinkedHashMap<>();
+        Map<String, String> cacheDescriptorByLegacyId = new LinkedHashMap<>();
+        Map<String, String> migratedCacheIds = new LinkedHashMap<>();
+        JsonArray sites = requireArray(source, "pickupSites");
+        JsonElement defaultDelay = source.has("defaultIdleDelay")
+                ? source.get("defaultIdleDelay").deepCopy()
+                : seconds(60);
+
+        for (int index = 0; index < sites.size(); index++) {
+            JsonObject site = requireObject(sites.get(index), "pickupSites[" + index + "]");
+            String oldSiteId = requireText(site, "id");
+            String regionId = stableId(oldSiteId, "region-" + (index + 1), usedIds);
+            String dimension = requireText(site, "dimension");
+            JsonObject center = requireObject(
+                    site.get("center"),
+                    "pickupSites[" + index + "].center"
+            );
+            JsonElement idleDelay = site.has("idleDelay")
+                    ? site.get("idleDelay").deepCopy()
+                    : defaultDelay.deepCopy();
+
+            JsonObject region = new JsonObject();
+            region.addProperty("id", regionId);
+            region.addProperty("name", oldSiteId);
+            region.addProperty("dimension", dimension);
+            region.add("standbyPosition", center.deepCopy());
+            JsonObject shape = new JsonObject();
+            shape.addProperty("type", "SPHERE");
+            shape.add("center", center.deepCopy());
+            shape.add("radius", requireField(site, "radius").deepCopy());
+            region.add("shape", shape);
+            regions.add(region);
+
+            List<String> siteCacheIds = migrateSiteCaches(
+                    requireArray(site, "cacheContainers"),
+                    caches,
+                    cacheIdByLocation,
+                    cacheTypeByLocation,
+                    cacheDescriptorByLegacyId,
+                    migratedCacheIds,
+                    usedIds
+            );
+            String workflowId = stableId(
+                    oldSiteId + "-workflow",
+                    "workflow-" + (index + 1),
+                    usedIds
+            );
+            workflows.add(createMigratedWorkflow(
+                    workflowId,
+                    oldSiteId,
+                    dimension,
+                    regionId,
+                    siteCacheIds,
+                    idleDelay
+            ));
+        }
+
+        migrated.add("pickupRegions", regions);
+        migrated.add("cacheContainers", caches);
+        migrated.add("pickupWorkflows", workflows);
+        copyRequired(source, migrated, "storageRoutes");
+        copyRequired(source, migrated, "packingStations");
+        migrated.add(
+                "auditSchedules",
+                migrateAuditSchedules(requireArray(source, "auditSchedules"), migratedCacheIds)
+        );
+        copyRequired(source, migrated, "overflowContainer");
+        return migrated;
+    }
+
+    private static List<String> migrateSiteCaches(
+            JsonArray sourceCaches,
+            JsonArray migratedCaches,
+            Map<String, String> cacheIdByLocation,
+            Map<String, String> cacheTypeByLocation,
+            Map<String, String> cacheDescriptorByLegacyId,
+            Map<String, String> migratedCacheIds,
+            Set<String> usedIds
+    ) {
+        List<String> siteCacheIds = new ArrayList<>();
+        for (int index = 0; index < sourceCaches.size(); index++) {
+            JsonObject cache = requireObject(
+                    sourceCaches.get(index),
+                    "cacheContainers[" + index + "]"
+            );
+            String oldId = requireText(cache, "id");
+            String locationKey = cacheLocationKey(cache);
+            String cacheType = requireText(cache, "type");
+            String previousType = cacheTypeByLocation.putIfAbsent(locationKey, cacheType);
+            if (previousType != null && !previousType.equals(cacheType)) {
+                throw new ConfigLoadException(
+                        "Legacy cache location has conflicting container types: "
+                                + locationKey
+                );
+            }
+            String descriptor = locationKey + '|' + cacheType;
+            String previousDescriptor = cacheDescriptorByLegacyId.putIfAbsent(
+                    oldId,
+                    descriptor
+            );
+            if (previousDescriptor != null && !previousDescriptor.equals(descriptor)) {
+                throw new ConfigLoadException(
+                        "Legacy cache id points to conflicting containers: " + oldId
+                );
+            }
+            String cacheId = cacheIdByLocation.get(locationKey);
+            if (cacheId == null) {
+                cacheId = stableId(oldId, "cache-" + (migratedCaches.size() + 1), usedIds);
+                cacheIdByLocation.put(locationKey, cacheId);
+                migratedCaches.add(createMigratedCache(cache, cacheId, oldId));
+            }
+            migratedCacheIds.putIfAbsent(oldId, cacheId);
+            if (!siteCacheIds.contains(cacheId)) {
+                siteCacheIds.add(cacheId);
+            }
+        }
+        return List.copyOf(siteCacheIds);
+    }
+
+    private static JsonObject createMigratedCache(
+            JsonObject source,
+            String id,
+            String name
+    ) {
+        JsonObject cache = new JsonObject();
+        cache.addProperty("id", id);
+        cache.addProperty("name", name);
+        cache.add("dimension", requireField(source, "dimension").deepCopy());
+        cache.add("position", requireField(source, "position").deepCopy());
+        cache.add("type", requireField(source, "type").deepCopy());
+        return cache;
+    }
+
+    private static JsonObject createMigratedWorkflow(
+            String id,
+            String name,
+            String dimension,
+            String regionId,
+            List<String> cacheIds,
+            JsonElement idleDelay
+    ) {
+        JsonObject workflow = new JsonObject();
+        workflow.addProperty("id", id);
+        workflow.addProperty("name", name);
+        workflow.addProperty("dimension", dimension);
+        JsonObject binding = new JsonObject();
+        binding.addProperty("regionId", regionId);
+        binding.addProperty("priority", 100);
+        binding.add("idleDelay", idleDelay.deepCopy());
+        JsonArray bindings = new JsonArray();
+        bindings.add(binding);
+        workflow.add("regions", bindings);
+        JsonArray cacheIdArray = new JsonArray();
+        cacheIds.forEach(cacheIdArray::add);
+        workflow.add("cacheIds", cacheIdArray);
+        workflow.addProperty("cachePolicy", "NEAREST_AVAILABLE");
+        workflow.addProperty("classificationTiming", "AFTER_ROUND");
+        workflow.addProperty("completionMode", "ALL_IDLE");
+        workflow.add("completionIdleDelay", idleDelay.deepCopy());
+        return workflow;
+    }
+
+    private static JsonArray migrateAuditSchedules(
+            JsonArray schedules,
+            Map<String, String> migratedCacheIds
+    ) {
+        JsonArray migrated = schedules.deepCopy();
+        for (JsonElement scheduleElement : migrated) {
+            if (!scheduleElement.isJsonObject()) {
+                continue;
+            }
+            JsonElement idsElement = scheduleElement.getAsJsonObject().get("containerIds");
+            if (idsElement == null || !idsElement.isJsonArray()) {
+                continue;
+            }
+            JsonArray ids = idsElement.getAsJsonArray();
+            for (int index = 0; index < ids.size(); index++) {
+                String replacement = migratedCacheIds.get(ids.get(index).getAsString());
+                if (replacement != null) {
+                    ids.set(index, new com.google.gson.JsonPrimitive(replacement));
+                }
+            }
+        }
+        return migrated;
+    }
+
+    private static String cacheLocationKey(JsonObject cache) {
+        JsonObject position = requireObject(
+                requireField(cache, "position"),
+                "cache position"
+        );
+        return requireText(cache, "dimension")
+                + '|'
+                + requireField(position, "x").getAsInt()
+                + '|'
+                + requireField(position, "y").getAsInt()
+                + '|'
+                + requireField(position, "z").getAsInt();
+    }
+
+    private static String stableId(
+            String preferred,
+            String fallback,
+            Set<String> usedIds
+    ) {
+        String base = normalizeId(preferred);
+        if (base.isEmpty()) {
+            base = normalizeId(fallback);
+        }
+        if (base.isEmpty()) {
+            base = "resource";
+        }
+        String candidate = truncateId(base);
+        int suffix = 2;
+        while (!usedIds.add(candidate)) {
+            String suffixText = "-" + suffix;
+            candidate = truncateId(base, 64 - suffixText.length()) + suffixText;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private static String normalizeId(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9._-]+", "-")
+                .replaceAll("^[^a-z0-9]+", "")
+                .replaceAll("-+$", "");
+        if (!SAFE_ID.matcher(normalized).matches()) {
+            return truncateId(normalized);
+        }
+        return normalized;
+    }
+
+    private static String truncateId(String value) {
+        return truncateId(value, 64);
+    }
+
+    private static String truncateId(String value, int maximumLength) {
+        return value.length() <= maximumLength ? value : value.substring(0, maximumLength);
+    }
+
+    private static JsonArray requireArray(JsonObject object, String name) {
+        JsonElement value = object.get(name);
+        if (value == null || !value.isJsonArray()) {
+            throw new ConfigLoadException(name + " must be an array");
+        }
+        return value.getAsJsonArray();
+    }
+
+    private static JsonObject requireObject(JsonElement value, String path) {
+        if (value == null || !value.isJsonObject()) {
+            throw new ConfigLoadException(path + " must be an object");
+        }
+        return value.getAsJsonObject();
+    }
+
+    private static JsonElement requireField(JsonObject object, String name) {
+        JsonElement value = object.get(name);
+        if (value == null || value.isJsonNull()) {
+            throw new ConfigLoadException("Missing configuration field: " + name);
+        }
+        return value;
+    }
+
+    private static String requireText(JsonObject object, String name) {
+        String value = requireField(object, name).getAsString().trim();
+        if (value.isEmpty()) {
+            throw new ConfigLoadException(name + " must not be blank");
+        }
+        return value;
+    }
+
+    private static JsonElement seconds(int value) {
+        return new com.google.gson.JsonPrimitive(value);
+    }
+
+    private static void copyRequired(JsonObject source, JsonObject target, String name) {
+        target.add(name, requireField(source, name).deepCopy());
     }
 
     private static void normalizeStorageRoutes(JsonObject root) {

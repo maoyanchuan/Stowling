@@ -49,7 +49,24 @@
         </section>
 
         <div id="workspace" class="workspace" aria-hidden="true">
-            <section class="panel status-panel" aria-labelledby="status-title">
+            <nav id="workspace-nav" class="workspace-nav" aria-label="页面导航">
+                <a class="workspace-nav-link active" href="#overview-panel"
+                   data-workspace-target="overview-panel">运行概览</a>
+                <a id="coordinate-library-nav" class="workspace-nav-link"
+                   href="#coordinate-library-panel"
+                   data-workspace-target="coordinate-library-panel">命名坐标</a>
+                <a id="pickup-config-nav" class="workspace-nav-link"
+                   href="#pickup-config-panel"
+                   data-workspace-target="pickup-config-panel">拾取区域、缓存与流程</a>
+                <a id="coordinates-nav" class="workspace-nav-link"
+                   href="#coordinates-panel"
+                   data-workspace-target="coordinates-panel">基础坐标（仓库/溢出/装盒）</a>
+                <a class="workspace-nav-link" href="#tasks-panel"
+                   data-workspace-target="tasks-panel">任务与库存</a>
+            </nav>
+
+            <section id="overview-panel" class="panel status-panel"
+                     aria-labelledby="status-title">
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">实时概览</p>
@@ -142,7 +159,8 @@
                 </div>
                 <p class="muted">
                     在这里管理拾取区域、缓存和流程。所有改动先保留为草稿，点击“保存全部”后
-                    才会写入 <code>config/stowling.json</code> 并生成备份。
+                    才会写入 <code>config/stowling.json</code> 并生成备份。区域的待机点、
+                    形状中心及缓存位置均引用“命名坐标”，不会在这里重复编辑坐标值。
                 </p>
                 <form id="pickup-config-form" novalidate>
                     <div class="pickup-config-grid">
@@ -191,12 +209,49 @@
                 </div>
             </section>
 
+            <section id="coordinate-library-panel" class="panel wide"
+                     aria-labelledby="coordinate-library-title">
+                <div class="panel-heading coordinate-heading">
+                    <div>
+                        <p class="eyebrow">永久配置 · 独立草稿</p>
+                        <h2 id="coordinate-library-title">命名坐标库</h2>
+                    </div>
+                    <div class="action-row">
+                        <button id="add-coordinate-point-button"
+                                class="secondary compact" type="button">
+                            新增命名坐标
+                        </button>
+                        <button id="coordinate-library-discard"
+                                class="secondary compact" type="button">
+                            放弃修改/重新读取
+                        </button>
+                        <button id="coordinate-library-save" class="primary compact"
+                                type="submit" form="coordinate-library-form" disabled>
+                            保存全部
+                        </button>
+                    </div>
+                </div>
+                <p class="muted coordinate-library-help">
+                    命名坐标供拾取区域和缓存按 ID 引用。这里的修改单独保存，不会改动下方
+                    “基础坐标”中的仓库、溢出箱或装盒工位。
+                </p>
+                <form id="coordinate-library-form" novalidate>
+                    <div id="coordinate-points-list" class="editor-list"></div>
+                </form>
+                <div id="coordinate-library-errors" class="config-errors"
+                     role="alert"></div>
+                <div class="coordinate-footer">
+                    <span id="coordinate-library-status">尚未读取命名坐标</span>
+                    <code id="coordinate-library-revision">revision: --</code>
+                </div>
+            </section>
+
             <section id="coordinates-panel" class="panel wide"
                      aria-labelledby="coordinates-title">
                 <div class="panel-heading coordinate-heading">
                     <div>
-                        <p class="eyebrow">永久配置</p>
-                        <h2 id="coordinates-title">坐标配置</h2>
+                        <p class="eyebrow">永久配置 · 仓库自动化</p>
+                        <h2 id="coordinates-title">基础坐标（仓库/溢出/装盒）</h2>
                     </div>
                     <div class="action-row">
                         <button id="coordinates-discard" class="secondary compact"
@@ -222,7 +277,7 @@
                 </div>
             </section>
 
-            <section class="panel wide" aria-labelledby="tasks-title">
+            <section id="tasks-panel" class="panel wide" aria-labelledby="tasks-title">
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">队列</p>

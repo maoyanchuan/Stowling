@@ -304,6 +304,46 @@ select:disabled {
     display: none;
 }
 
+.workspace-nav {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 5;
+    display: flex;
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px);
+}
+
+.workspace-nav-link {
+    padding: 0.52rem 0.74rem;
+    border-radius: 9px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.workspace-nav-link:hover,
+.workspace-nav-link.active {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+}
+
+.workspace-nav-link:focus-visible {
+    outline: 3px solid rgba(38, 112, 75, 0.25);
+    outline-offset: 2px;
+}
+
+section[id] {
+    scroll-margin-top: 4.75rem;
+}
+
 .status-panel {
     grid-column: 1;
 }
@@ -508,6 +548,17 @@ select:disabled {
     color: var(--muted);
     font-size: 0.73rem;
     font-weight: 700;
+}
+
+.coordinate-select-hint {
+    margin: 0.28rem 0 0;
+    color: var(--muted);
+    font-size: 0.68rem;
+    line-height: 1.4;
+}
+
+.coordinate-select-hint.error {
+    color: var(--danger);
 }
 
 .binding-section {
@@ -863,6 +914,10 @@ select:disabled {
 
     .workspace {
         grid-template-columns: 1fr;
+    }
+
+    .workspace-nav {
+        position: static;
     }
 
     .status-panel,

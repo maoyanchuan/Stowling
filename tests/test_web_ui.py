@@ -77,6 +77,7 @@ def test_client_side_validation_covers_required_chinese_errors() -> None:
         "第一角点不能大于第二角点",
         "半径必须为 1-128",
         "被流程",
+        "必须选择一个已保存的命名坐标",
     )
 
     for message in expected_messages:
@@ -103,6 +104,98 @@ def test_layout_is_responsive_and_preserves_coordinate_scope() -> None:
     assert ".pickup-config-grid" in STYLES
     assert ".workflow-column" in STYLES
     assert "@media (max-width: 760px)" in STYLES
-    assert "拾取区域与缓存请在上方" in HTML
+    assert "命名坐标库" in HTML
+    assert "基础坐标（仓库/溢出/装盒）" in HTML
     assert '["CONTAINER", "仓库与溢出容器"]' in SCRIPT
     assert "PICKUP_SITE_CENTER" not in SCRIPT
+
+
+def test_navigation_exposes_independent_named_coordinate_page() -> None:
+    required_ids = (
+        "workspace-nav",
+        "coordinate-library-nav",
+        "coordinate-library-panel",
+        "coordinate-library-title",
+        "coordinates-nav",
+    )
+    for element_id in required_ids:
+        assert f'id="{element_id}"' in HTML
+
+    assert 'href="#coordinate-library-panel"' in HTML
+    assert "命名坐标库" in HTML
+    assert "基础坐标（仓库/溢出/装盒）" in HTML
+
+
+def test_named_coordinates_support_crud_and_draft_ordering() -> None:
+    assert 'id="add-coordinate-point-button"' in HTML
+    assert "function addCoordinatePoint()" in SCRIPT
+    assert "function removeCoordinatePoint(index)" in SCRIPT
+    assert "function moveCoordinatePoint(index, offset)" in SCRIPT
+    assert "function createCoordinatePointEditor(point, index)" in SCRIPT
+    assert "card.draggable = true" in SCRIPT
+    assert "coordinateLibraryDirty = true" in SCRIPT
+    assert "coordinateLibraryDraft.coordinatePoints.push(point)" in SCRIPT
+    assert "coordinateLibraryDraft.coordinatePoints.splice(index, 1)" in SCRIPT
+    assert 'createTextField("显示名称", point.name' in SCRIPT
+    assert 'createDimensionField(point.dimension' in SCRIPT
+    assert 'for (const axis of ["x", "y", "z"])' in SCRIPT
+
+
+def test_coordinate_page_saves_atomic_revision_snapshot_and_reads_back() -> None:
+    save_block = re.search(
+        r'coordinateLibraryForm\.addEventListener\("submit"[\s\S]+?'
+        r'elements\.coordinateLibraryDiscard\.addEventListener',
+        SCRIPT,
+    )
+    assert save_block is not None
+    block = save_block.group(0)
+    assert 'requestJson("/v1/config/coordinate-points"' in block
+    assert 'method: "PUT"' in block
+    assert "revision: coordinateLibrarySnapshot.revision" in block
+    assert "coordinatePoints" in block
+    assert "refreshCoordinateLibrary(true)" in block
+    assert "error.status === 409" in block
+    assert "error.status === 400" in block
+
+
+def test_pickup_editors_reference_named_coordinates() -> None:
+    for field in (
+        "standbyCoordinateId",
+        "centerCoordinateId",
+        "firstCornerCoordinateId",
+        "secondCornerCoordinateId",
+        "coordinateId",
+    ):
+        assert field in SCRIPT
+
+    assert "function createCoordinateSelectField(" in SCRIPT
+    assert 'select.dataset.coordinateId = String(selectedId || "")' in SCRIPT
+    assert "跨维度：坐标属于" in SCRIPT
+    assert 'createPositionEditor("待机点"' not in SCRIPT
+    assert 'createPositionEditor("容器坐标"' not in SCRIPT
+    assert "region.standbyPosition" not in SCRIPT
+    assert "cache.position" not in SCRIPT
+
+
+def test_referenced_coordinate_delete_is_blocked_with_resource_list() -> None:
+    assert "function coordinatePointReferences(coordinateId)" in SCRIPT
+    assert '`拾取区域“${region.name || region.id}”（${fields.join("、")}）`' in SCRIPT
+    assert '`缓存容器“${cache.name || cache.id}”（坐标）`' in SCRIPT
+    assert "仍被 ${references.join" in SCRIPT
+    assert "请先到拾取配置中解除引用并保存" in SCRIPT
+    assert "setCoordinateLibraryErrors([message])" in SCRIPT
+
+
+def test_pickup_save_does_not_resend_named_coordinate_collection() -> None:
+    save_block = re.search(
+        r'pickupConfigForm\.addEventListener\("submit"[\s\S]+?'
+        r'pickupConfigDiscard\.addEventListener',
+        SCRIPT,
+    )
+    assert save_block is not None
+    block = save_block.group(0)
+    assert 'requestJson("/v1/config/pickup"' in block
+    assert "pickupRegions: pickupConfigDraft.pickupRegions" in block
+    assert "cacheContainers: pickupConfigDraft.cacheContainers" in block
+    assert "pickupWorkflows: pickupConfigDraft.pickupWorkflows" in block
+    assert "coordinatePoints" not in block

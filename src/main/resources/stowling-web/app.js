@@ -30,6 +30,7 @@
         connectionDot: document.querySelector("#connection-dot"),
         connectionLabel: document.querySelector("#connection-label"),
         workspace: document.querySelector("#workspace"),
+        workspaceNavLinks: [...document.querySelectorAll(".workspace-nav-link")],
         refreshButton: document.querySelector("#refresh-button"),
         pauseButton: document.querySelector("#pause-button"),
         resumeButton: document.querySelector("#resume-button"),
@@ -51,6 +52,19 @@
         pickupConfigErrors: document.querySelector("#pickup-config-errors"),
         pickupConfigStatus: document.querySelector("#pickup-config-status"),
         pickupConfigRevision: document.querySelector("#pickup-config-revision"),
+        coordinateLibraryForm: document.querySelector("#coordinate-library-form"),
+        coordinatePointsList: document.querySelector("#coordinate-points-list"),
+        addCoordinatePointButton:
+            document.querySelector("#add-coordinate-point-button"),
+        coordinateLibrarySave: document.querySelector("#coordinate-library-save"),
+        coordinateLibraryDiscard:
+            document.querySelector("#coordinate-library-discard"),
+        coordinateLibraryErrors:
+            document.querySelector("#coordinate-library-errors"),
+        coordinateLibraryStatus:
+            document.querySelector("#coordinate-library-status"),
+        coordinateLibraryRevision:
+            document.querySelector("#coordinate-library-revision"),
         coordinatesForm: document.querySelector("#coordinates-form"),
         coordinatesList: document.querySelector("#coordinates-list"),
         coordinatesSave: document.querySelector("#coordinates-save"),
@@ -74,6 +88,9 @@
     let refreshInFlight = false;
     let coordinateSnapshot = null;
     let coordinatesDirty = false;
+    let coordinateLibrarySnapshot = null;
+    let coordinateLibraryDraft = null;
+    let coordinateLibraryDirty = false;
     let pickupWorkflowOptions = [];
     let pickupConfigSnapshot = null;
     let pickupConfigDraft = null;
@@ -168,6 +185,10 @@
      * @returns {string}
      */
     function friendlyApiMessage(code, fallback) {
+        if (code === "coordinate_point_in_use"
+                || code === "invalid_coordinate_points") {
+            return fallback;
+        }
         const messages = {
             pickup_site_not_found: "配置中找不到这个拾取点，请刷新或重载配置后重新选择",
             pickup_workflow_not_found: "配置中找不到这个拾取流程，请重新读取配置",
@@ -304,6 +325,7 @@
                 refreshTasks(),
                 refreshPickupWorkflows(),
                 refreshPickupConfig(false),
+                refreshCoordinateLibrary(false),
                 refreshCoordinates(false),
                 refreshContainers(),
                 refreshInventory()
@@ -478,6 +500,373 @@
     }
 
     /**
+     * @param {boolean} discardChanges
+     * @returns {Promise<void>}
+     */
+    async function refreshCoordinateLibrary(discardChanges) {
+        if (coordinateLibraryDirty && !discardChanges) {
+            return;
+        }
+        elements.coordinateLibraryStatus.textContent = "正在读取命名坐标…";
+        try {
+            const snapshot = await requestJson("/v1/config/coordinate-points");
+            renderCoordinateLibrary(snapshot);
+        } catch (error) {
+            elements.coordinateLibraryStatus.textContent = "命名坐标读取失败";
+            throw error;
+        }
+    }
+
+    /**
+     * @param {object} snapshot
+     * @returns {void}
+     */
+    function renderCoordinateLibrary(snapshot) {
+        const coordinatePoints = Array.isArray(snapshot?.coordinatePoints)
+            ? snapshot.coordinatePoints
+            : [];
+        coordinateLibrarySnapshot = cloneJson({
+            revision: String(snapshot?.revision || ""),
+            coordinatePoints
+        });
+        coordinateLibraryDraft = cloneJson(coordinateLibrarySnapshot);
+        coordinateLibraryDirty = false;
+        renderCoordinateLibraryEditor();
+        elements.coordinateLibraryStatus.textContent = "命名坐标已与配置文件同步";
+        const revision = coordinateLibrarySnapshot.revision;
+        elements.coordinateLibraryRevision.textContent =
+            `revision: ${revision.slice(0, 12) || "--"}`;
+        elements.coordinateLibraryRevision.title = revision;
+        if (pickupConfigDraft) {
+            renderPickupConfigEditor();
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderCoordinateLibraryEditor() {
+        elements.coordinatePointsList.replaceChildren();
+        if (!coordinateLibraryDraft) {
+            return;
+        }
+        coordinateLibraryDraft.coordinatePoints.forEach((point, index) => {
+            elements.coordinatePointsList.append(createCoordinatePointEditor(point, index));
+        });
+        if (coordinateLibraryDraft.coordinatePoints.length === 0) {
+            elements.coordinatePointsList.append(emptyState("尚未创建命名坐标"));
+        }
+        updateCoordinateLibraryState();
+    }
+
+    /**
+     * @param {object} point
+     * @param {number} index
+     * @returns {HTMLElement}
+     */
+    function createCoordinatePointEditor(point, index) {
+        const card = document.createElement("article");
+        card.className = "editor-card coordinate-point-editor";
+        card.draggable = true;
+        card.dataset.index = String(index);
+        addCoordinatePointDragHandlers(card, index);
+
+        const header = document.createElement("div");
+        header.className = "editor-card-heading";
+        const title = document.createElement("strong");
+        title.textContent = point.name || point.id || "未命名坐标";
+        const actions = document.createElement("div");
+        actions.className = "editor-card-actions";
+        actions.append(createMoveButtons(
+            index,
+            coordinateLibraryDraft.coordinatePoints.length,
+            (offset) => moveCoordinatePoint(index, offset)
+        ));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ghost compact danger-action";
+        remove.textContent = "删除";
+        remove.addEventListener("click", () => removeCoordinatePoint(index));
+        actions.append(remove);
+        header.append(title, actions);
+        card.append(header);
+
+        const fields = document.createElement("div");
+        fields.className = "editor-fields";
+        fields.append(
+            createTextField("坐标 ID", point.id, () => {}, true),
+            createTextField("显示名称", point.name, (value) => {
+                point.name = value;
+                title.textContent = value || point.id || "未命名坐标";
+                markCoordinateLibraryDirty();
+            }),
+            createDimensionField(point.dimension, (value) => {
+                point.dimension = value;
+                markCoordinateLibraryDirty();
+            })
+        );
+        const position = document.createElement("fieldset");
+        position.className = "position-editor";
+        const legend = document.createElement("legend");
+        legend.textContent = "坐标";
+        position.append(legend);
+        for (const axis of ["x", "y", "z"]) {
+            position.append(createNumberField(
+                axis.toUpperCase(),
+                point.position?.[axis],
+                -2147483648,
+                (value) => {
+                    point.position ||= { x: 0, y: 64, z: 0 };
+                    point.position[axis] = value;
+                    markCoordinateLibraryDirty();
+                }
+            ));
+        }
+        card.append(fields, position);
+        return card;
+    }
+
+    /**
+     * @param {HTMLElement} card
+     * @param {number} index
+     * @returns {void}
+     */
+    function addCoordinatePointDragHandlers(card, index) {
+        card.addEventListener("dragstart", (event) => {
+            event.dataTransfer?.setData("text/plain", `coordinate-point:${index}`);
+        });
+        card.addEventListener("dragover", (event) => event.preventDefault());
+        card.addEventListener("drop", (event) => {
+            event.preventDefault();
+            const [kind, sourceIndex] = String(
+                event.dataTransfer?.getData("text/plain") || ""
+            ).split(":");
+            const source = Number(sourceIndex);
+            if (kind !== "coordinate-point"
+                    || !Number.isInteger(source)
+                    || source === index) {
+                return;
+            }
+            const points = coordinateLibraryDraft.coordinatePoints;
+            const [point] = points.splice(source, 1);
+            points.splice(index, 0, point);
+            markCoordinateLibraryDirty(true);
+        });
+    }
+
+    /**
+     * @returns {void}
+     */
+    function addCoordinatePoint() {
+        if (!coordinateLibraryDraft) {
+            showToast("命名坐标尚未读取完成", true);
+            return;
+        }
+        const id = nextCoordinatePointId();
+        const point = {
+            id,
+            name: "新命名坐标",
+            dimension: "minecraft:overworld",
+            position: { x: 0, y: 64, z: 0 }
+        };
+        coordinateLibraryDraft.coordinatePoints.push(point);
+        markCoordinateLibraryDirty(true);
+    }
+
+    /**
+     * @returns {string}
+     */
+    function nextCoordinatePointId() {
+        const used = new Set(
+            coordinateLibraryDraft.coordinatePoints.map((point) => point.id)
+        );
+        let number = 1;
+        while (used.has(`point-${number}`)) {
+            number += 1;
+        }
+        return `point-${number}`;
+    }
+
+    /**
+     * @param {number} index
+     * @returns {void}
+     */
+    function removeCoordinatePoint(index) {
+        const point = coordinateLibraryDraft.coordinatePoints[index];
+        const references = coordinatePointReferences(point.id);
+        if (references.length > 0) {
+            setCoordinateLibraryErrors([
+                `无法删除“${point.name || point.id}”：仍被 ${references.join("、")} 引用。`
+                    + "请先到拾取配置中解除引用并保存。"
+            ]);
+            showToast("该命名坐标仍被拾取配置引用，暂未删除", true);
+            return;
+        }
+        coordinateLibraryDraft.coordinatePoints.splice(index, 1);
+        markCoordinateLibraryDirty(true);
+    }
+
+    /**
+     * @param {string} coordinateId
+     * @returns {Array<string>}
+     */
+    function coordinatePointReferences(coordinateId) {
+        const references = [];
+        const seen = new Set();
+        const pickupSources = [pickupConfigSnapshot, pickupConfigDraft].filter(Boolean);
+        for (const source of pickupSources) {
+            for (const region of source.pickupRegions || []) {
+                const fields = [];
+                if (region.standbyCoordinateId === coordinateId) {
+                    fields.push("待机点");
+                }
+                if (region.shape?.centerCoordinateId === coordinateId) {
+                    fields.push("球心");
+                }
+                if (region.shape?.firstCornerCoordinateId === coordinateId) {
+                    fields.push("第一角点");
+                }
+                if (region.shape?.secondCornerCoordinateId === coordinateId) {
+                    fields.push("第二角点");
+                }
+                const key = `region:${region.id}`;
+                if (fields.length > 0 && !seen.has(key)) {
+                    seen.add(key);
+                    references.push(
+                        `拾取区域“${region.name || region.id}”（${fields.join("、")}）`
+                    );
+                }
+            }
+            for (const cache of source.cacheContainers || []) {
+                const key = `cache:${cache.id}`;
+                if (cache.coordinateId === coordinateId && !seen.has(key)) {
+                    seen.add(key);
+                    references.push(`缓存容器“${cache.name || cache.id}”（坐标）`);
+                }
+            }
+        }
+        return references;
+    }
+
+    /**
+     * @param {number} index
+     * @param {number} offset
+     * @returns {void}
+     */
+    function moveCoordinatePoint(index, offset) {
+        const points = coordinateLibraryDraft.coordinatePoints;
+        const destination = index + offset;
+        if (destination < 0 || destination >= points.length) {
+            return;
+        }
+        const [point] = points.splice(index, 1);
+        points.splice(destination, 0, point);
+        markCoordinateLibraryDirty(true);
+    }
+
+    /**
+     * @param {boolean} rerender
+     * @returns {void}
+     */
+    function markCoordinateLibraryDirty(rerender = false) {
+        coordinateLibraryDirty = true;
+        if (rerender) {
+            renderCoordinateLibraryEditor();
+            return;
+        }
+        updateCoordinateLibraryState();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateCoordinateLibraryState() {
+        const errors = validateCoordinateLibraryDraft();
+        setCoordinateLibraryErrors(errors);
+        elements.coordinateLibrarySave.disabled =
+            !coordinateLibraryDirty || errors.length > 0;
+        elements.coordinateLibraryStatus.classList.toggle(
+            "dirty",
+            coordinateLibraryDirty
+        );
+        if (errors.length > 0) {
+            elements.coordinateLibraryStatus.textContent = "草稿中有错误，修正后才能保存";
+        } else if (coordinateLibraryDirty) {
+            elements.coordinateLibraryStatus.textContent = "有未保存的命名坐标修改";
+        } else {
+            elements.coordinateLibraryStatus.textContent = "命名坐标已与配置文件同步";
+        }
+    }
+
+    /**
+     * @param {Array<string>} errors
+     * @returns {void}
+     */
+    function setCoordinateLibraryErrors(errors) {
+        elements.coordinateLibraryErrors.replaceChildren();
+        if (errors.length === 0) {
+            return;
+        }
+        const title = document.createElement("strong");
+        title.textContent = "请修正以下问题：";
+        const list = document.createElement("ul");
+        for (const error of errors) {
+            const item = document.createElement("li");
+            item.textContent = error;
+            list.append(item);
+        }
+        elements.coordinateLibraryErrors.append(title, list);
+    }
+
+    /**
+     * @returns {Array<string>}
+     */
+    function validateCoordinateLibraryDraft() {
+        if (!coordinateLibraryDraft) {
+            return ["尚未读取命名坐标"];
+        }
+        const errors = [];
+        const ids = new Set();
+        for (const point of coordinateLibraryDraft.coordinatePoints) {
+            const id = String(point.id || "");
+            if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
+                errors.push(`命名坐标 ID“${id || "空"}”格式无效`);
+            }
+            if (ids.has(id)) {
+                errors.push(`重复 ID“${id}”`);
+            } else {
+                ids.add(id);
+            }
+            if (!String(point.name || "").trim()) {
+                errors.push(`命名坐标“${id || "未命名"}”的显示名称不能为空`);
+            }
+            if (!String(point.dimension || "").trim()) {
+                errors.push(`命名坐标“${id || "未命名"}”的维度不能为空`);
+            }
+            if (!validPosition(point.position)) {
+                errors.push(`命名坐标“${id || "未命名"}”的 X/Y/Z 必须是 32 位整数`);
+            }
+        }
+        return [...new Set(errors)];
+    }
+
+    /**
+     * @returns {Array<object>}
+     */
+    function collectCoordinatePoints() {
+        return coordinateLibraryDraft.coordinatePoints.map((point) => ({
+            id: point.id,
+            name: point.name,
+            dimension: point.dimension,
+            position: {
+                x: point.position?.x,
+                y: point.position?.y,
+                z: point.position?.z
+            }
+        }));
+    }
+
+    /**
      * @returns {void}
      */
     function renderPickupConfigEditor() {
@@ -533,9 +922,10 @@
                 region.name = value;
                 markPickupConfigDirty();
             }),
-            createTextField("维度", region.dimension, (value) => {
+            createDimensionField(region.dimension, (value) => {
                 region.dimension = value;
                 markPickupConfigDirty();
+                updateCoordinateReferenceHints();
             })
         );
         const shapeType = region.shape?.type === "CUBOID" ? "CUBOID" : "SPHERE";
@@ -546,15 +936,25 @@
             (value) => changeRegionShape(region, value)
         ));
         card.append(fields);
-        card.append(createPositionEditor("待机点", region.standbyPosition, (value) => {
-            region.standbyPosition = value;
-            markPickupConfigDirty();
-        }));
-        if (shapeType === "SPHERE") {
-            card.append(createPositionEditor("球心", region.shape.center, (value) => {
-                region.shape.center = value;
+        card.append(createCoordinateSelectField(
+            "待机点",
+            region.standbyCoordinateId,
+            region.dimension,
+            (value) => {
+                region.standbyCoordinateId = value;
                 markPickupConfigDirty();
-            }));
+            }
+        ));
+        if (shapeType === "SPHERE") {
+            card.append(createCoordinateSelectField(
+                "球心",
+                region.shape?.centerCoordinateId,
+                region.dimension,
+                (value) => {
+                    region.shape.centerCoordinateId = value;
+                    markPickupConfigDirty();
+                }
+            ));
             const radius = createNumberField(
                 "半径（1-128）",
                 region.shape.radius,
@@ -565,16 +965,26 @@
                 }
             );
             card.append(radius);
-        } else {
-            card.append(createPositionEditor("第一角点", region.shape.firstCorner, (value) => {
-                region.shape.firstCorner = value;
-                markPickupConfigDirty();
-            }));
-            card.append(createPositionEditor("第二角点", region.shape.secondCorner, (value) => {
-                region.shape.secondCorner = value;
-                markPickupConfigDirty();
-            }));
+            return card;
         }
+        card.append(createCoordinateSelectField(
+            "第一角点",
+            region.shape?.firstCornerCoordinateId,
+            region.dimension,
+            (value) => {
+                region.shape.firstCornerCoordinateId = value;
+                markPickupConfigDirty();
+            }
+        ));
+        card.append(createCoordinateSelectField(
+            "第二角点",
+            region.shape?.secondCornerCoordinateId,
+            region.dimension,
+            (value) => {
+                region.shape.secondCornerCoordinateId = value;
+                markPickupConfigDirty();
+            }
+        ));
         return card;
     }
 
@@ -584,15 +994,22 @@
      * @returns {void}
      */
     function changeRegionShape(region, type) {
-        const origin = cloneJson(region.standbyPosition || { x: 0, y: 64, z: 0 });
+        const originCoordinateId = region.standbyCoordinateId
+            || region.shape?.centerCoordinateId
+            || region.shape?.firstCornerCoordinateId
+            || "";
         if (type === "CUBOID") {
             region.shape = {
                 type: "CUBOID",
-                firstCorner: cloneJson(origin),
-                secondCorner: cloneJson(origin)
+                firstCornerCoordinateId: originCoordinateId,
+                secondCornerCoordinateId: originCoordinateId
             };
         } else {
-            region.shape = { type: "SPHERE", center: cloneJson(origin), radius: 16 };
+            region.shape = {
+                type: "SPHERE",
+                centerCoordinateId: originCoordinateId,
+                radius: 16
+            };
         }
         markPickupConfigDirty(true);
     }
@@ -614,9 +1031,10 @@
                 cache.name = value;
                 markPickupConfigDirty();
             }),
-            createTextField("维度", cache.dimension, (value) => {
+            createDimensionField(cache.dimension, (value) => {
                 cache.dimension = value;
                 markPickupConfigDirty();
+                updateCoordinateReferenceHints();
             }),
             createSelectField(
                 "容器类型",
@@ -629,10 +1047,15 @@
             )
         );
         card.append(fields);
-        card.append(createPositionEditor("容器坐标", cache.position, (value) => {
-            cache.position = value;
-            markPickupConfigDirty();
-        }));
+        card.append(createCoordinateSelectField(
+            "容器坐标",
+            cache.coordinateId,
+            cache.dimension,
+            (value) => {
+                cache.coordinateId = value;
+                markPickupConfigDirty();
+            }
+        ));
         return card;
     }
 
@@ -1080,6 +1503,113 @@
     }
 
     /**
+     * @param {string} value
+     * @param {(value: string) => void} onInput
+     * @returns {HTMLElement}
+     */
+    function createDimensionField(value, onInput) {
+        const field = createTextField("维度", value, onInput);
+        field.querySelector("input").dataset.objectDimension = "true";
+        return field;
+    }
+
+    /**
+     * @param {string} labelText
+     * @param {string} selectedId
+     * @param {string} dimension
+     * @param {(value: string) => void} onChange
+     * @returns {HTMLElement}
+     */
+    function createCoordinateSelectField(labelText, selectedId, dimension, onChange) {
+        const field = document.createElement("div");
+        field.className = "editor-field coordinate-reference-field";
+        const label = document.createElement("label");
+        const select = document.createElement("select");
+        connectLabel(label, select, labelText);
+        select.required = true;
+        select.dataset.coordinateId = String(selectedId || "");
+        select.dataset.objectDimension = String(dimension || "");
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "请选择命名坐标";
+        select.append(blank);
+        const points = coordinateLibrarySnapshot?.coordinatePoints || [];
+        for (const point of points) {
+            const option = document.createElement("option");
+            option.value = point.id;
+            const mismatch = dimension && point.dimension !== dimension;
+            option.textContent = `${point.name || point.id} · ${point.dimension}`
+                + (mismatch ? "（跨维度）" : "");
+            select.append(option);
+        }
+        if (selectedId && !points.some((point) => point.id === selectedId)) {
+            const missing = document.createElement("option");
+            missing.value = selectedId;
+            missing.textContent = `${selectedId}（引用已失效）`;
+            select.append(missing);
+        }
+        select.value = selectedId || "";
+        const hint = document.createElement("p");
+        hint.className = "coordinate-select-hint";
+        updateCoordinateSelectHint(select, hint, dimension);
+        select.addEventListener("change", () => {
+            select.dataset.coordinateId = select.value;
+            const currentDimension = select.closest(".editor-card")
+                ?.querySelector('input[data-object-dimension="true"]')?.value
+                || select.dataset.objectDimension;
+            updateCoordinateSelectHint(select, hint, currentDimension);
+            onChange(select.value);
+        });
+        field.append(label, select, hint);
+        return field;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateCoordinateReferenceHints() {
+        for (const select of elements.pickupConfigForm.querySelectorAll(
+            "select[data-coordinate-id]"
+        )) {
+            const dimension = select.closest(".editor-card")
+                ?.querySelector('input[data-object-dimension="true"]')?.value;
+            select.dataset.objectDimension = dimension || "";
+            const hint = select.parentElement?.querySelector(".coordinate-select-hint");
+            if (hint) {
+                updateCoordinateSelectHint(select, hint, select.dataset.objectDimension);
+            }
+        }
+    }
+
+    /**
+     * @param {HTMLSelectElement} select
+     * @param {HTMLElement} hint
+     * @param {string} dimension
+     * @returns {void}
+     */
+    function updateCoordinateSelectHint(select, hint, dimension) {
+        const coordinateId = select.value;
+        const point = coordinateLibrarySnapshot?.coordinatePoints.find((candidate) => {
+            return candidate.id === coordinateId;
+        });
+        if (!coordinateId) {
+            hint.textContent = "必须选择一个已保存的命名坐标";
+            hint.classList.remove("error");
+            return;
+        }
+        if (!point) {
+            hint.textContent = "所选命名坐标已不存在，请重新选择";
+            hint.classList.add("error");
+            return;
+        }
+        const mismatch = dimension && point.dimension !== dimension;
+        hint.textContent = mismatch
+            ? `跨维度：坐标属于 ${point.dimension}，对象属于 ${dimension}`
+            : `坐标维度：${point.dimension}`;
+        hint.classList.toggle("error", Boolean(mismatch));
+    }
+
+    /**
      * @param {string} title
      * @param {object} position
      * @param {(value: object) => void} onInput
@@ -1305,26 +1835,49 @@
      */
     function validateRegionDrafts(errors) {
         for (const region of pickupConfigDraft.pickupRegions) {
-            if (!validPosition(region.standbyPosition)) {
-                errors.push(`区域“${region.name || region.id}”的待机点坐标无效`);
+            const label = region.name || region.id;
+            const standby = coordinatePointById(region.standbyCoordinateId);
+            if (!standby) {
+                errors.push(`区域“${label}”的待机点必须选择一个已保存的命名坐标`);
+            } else if (standby.dimension !== region.dimension) {
+                errors.push(`区域“${label}”的待机点与区域跨维度`);
             }
             if (region.shape?.type === "SPHERE") {
-                if (!validPosition(region.shape.center)) {
-                    errors.push(`区域“${region.name || region.id}”的球心坐标无效`);
+                const center = coordinatePointById(region.shape.centerCoordinateId);
+                if (!center) {
+                    errors.push(`区域“${label}”的球心必须选择一个已保存的命名坐标`);
+                } else if (center.dimension !== region.dimension) {
+                    errors.push(`区域“${label}”的球心与区域跨维度`);
                 }
                 if (!Number.isInteger(region.shape.radius)
                         || region.shape.radius < 1
                         || region.shape.radius > 128) {
-                    errors.push(`区域“${region.name || region.id}”半径必须为 1-128`);
+                    errors.push(`区域“${label}”半径必须为 1-128`);
                 }
                 continue;
             }
-            const first = region.shape?.firstCorner;
-            const second = region.shape?.secondCorner;
-            if (!validPosition(first) || !validPosition(second)) {
-                errors.push(`区域“${region.name || region.id}”的长方体角点无效`);
-            } else if (first.x > second.x || first.y > second.y || first.z > second.z) {
-                errors.push(`区域“${region.name || region.id}”第一角点不能大于第二角点`);
+            const first = coordinatePointById(
+                region.shape?.firstCornerCoordinateId
+            );
+            const second = coordinatePointById(
+                region.shape?.secondCornerCoordinateId
+            );
+            if (!first) {
+                errors.push(`区域“${label}”的第一角点必须选择一个已保存的命名坐标`);
+            } else if (first.dimension !== region.dimension) {
+                errors.push(`区域“${label}”的第一角点与区域跨维度`);
+            }
+            if (!second) {
+                errors.push(`区域“${label}”的第二角点必须选择一个已保存的命名坐标`);
+            } else if (second.dimension !== region.dimension) {
+                errors.push(`区域“${label}”的第二角点与区域跨维度`);
+            }
+            if (first && second
+                    && first.dimension === second.dimension
+                    && (first.position.x > second.position.x
+                        || first.position.y > second.position.y
+                        || first.position.z > second.position.z)) {
+                errors.push(`区域“${label}”第一角点不能大于第二角点`);
             }
         }
     }
@@ -1334,20 +1887,38 @@
      * @returns {void}
      */
     function validateCacheDrafts(errors) {
-        const locations = new Map();
+        const coordinates = new Map();
         for (const cache of pickupConfigDraft.cacheContainers) {
-            if (!validPosition(cache.position)) {
-                errors.push(`缓存“${cache.name || cache.id}”的坐标无效`);
+            const label = cache.name || cache.id;
+            const point = coordinatePointById(cache.coordinateId);
+            if (!point) {
+                errors.push(`缓存“${label}”必须选择一个已保存的命名坐标`);
                 continue;
             }
-            const key = `${cache.dimension}:${cache.position.x}:${cache.position.y}`
-                + `:${cache.position.z}`;
-            if (locations.has(key)) {
-                errors.push(`缓存“${cache.name || cache.id}”与“${locations.get(key)}”坐标重复`);
+            if (point.dimension !== cache.dimension) {
+                errors.push(`缓存“${label}”与命名坐标“${point.name || point.id}”跨维度`);
+            }
+            if (coordinates.has(point.id)) {
+                errors.push(
+                    `缓存“${label}”与“${coordinates.get(point.id)}”引用了同一命名坐标`
+                );
             } else {
-                locations.set(key, cache.name || cache.id);
+                coordinates.set(point.id, label);
             }
         }
+    }
+
+    /**
+     * @param {string} coordinateId
+     * @returns {object|null}
+     */
+    function coordinatePointById(coordinateId) {
+        if (!coordinateId) {
+            return null;
+        }
+        return coordinateLibrarySnapshot?.coordinatePoints.find((point) => {
+            return point.id === coordinateId;
+        }) || null;
     }
 
     /**
@@ -1437,8 +2008,8 @@
             id,
             name: "新拾取区域",
             dimension: "minecraft:overworld",
-            standbyPosition: { x: 0, y: 64, z: 0 },
-            shape: { type: "SPHERE", center: { x: 0, y: 64, z: 0 }, radius: 16 }
+            standbyCoordinateId: "",
+            shape: { type: "SPHERE", centerCoordinateId: "", radius: 16 }
         };
         pickupConfigDraft.pickupRegions.push(region);
         editablePickupIds.add(region);
@@ -1454,7 +2025,7 @@
             id,
             name: "新缓存",
             dimension: "minecraft:overworld",
-            position: { x: 0, y: 64, z: 0 },
+            coordinateId: "",
             type: "CHEST"
         };
         pickupConfigDraft.cacheContainers.push(cache);
@@ -1947,6 +2518,19 @@
         return state;
     }
 
+    /**
+     * @param {string} targetId
+     * @returns {void}
+     */
+    function activateWorkspaceNav(targetId) {
+        for (const link of elements.workspaceNavLinks) {
+            link.classList.toggle(
+                "active",
+                link.dataset.workspaceTarget === targetId
+            );
+        }
+    }
+
     elements.authForm.addEventListener("submit", (event) => {
         event.preventDefault();
         void connectToken(elements.tokenInput.value);
@@ -1993,6 +2577,7 @@
         const refreshes = await Promise.allSettled([
             refreshPickupWorkflows(),
             refreshPickupConfig(true),
+            refreshCoordinateLibrary(true),
             refreshContainers(),
             refreshCoordinates(false)
         ]);
@@ -2001,6 +2586,81 @@
             handleError(failed.reason, "更新配置视图失败");
         }
     });
+
+    elements.addCoordinatePointButton.addEventListener("click", addCoordinatePoint);
+
+    elements.coordinateLibraryForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const errors = validateCoordinateLibraryDraft();
+        if (errors.length > 0) {
+            setCoordinateLibraryErrors(errors);
+            showToast("命名坐标中仍有错误，暂未保存", true);
+            return;
+        }
+        if (!coordinateLibrarySnapshot || !coordinateLibraryDirty) {
+            return;
+        }
+        elements.coordinateLibrarySave.disabled = true;
+        elements.coordinateLibraryDiscard.disabled = true;
+        elements.coordinateLibraryStatus.textContent = "正在保存命名坐标…";
+        try {
+            const coordinatePoints = collectCoordinatePoints();
+            const saved = await requestJson("/v1/config/coordinate-points", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    revision: coordinateLibrarySnapshot.revision,
+                    coordinatePoints
+                })
+            });
+            renderCoordinateLibrary(saved);
+            try {
+                await refreshCoordinateLibrary(true);
+            } catch (readError) {
+                elements.coordinateLibraryStatus.textContent =
+                    "命名坐标已保存，但回读失败";
+                handleError(readError, "保存成功，但回读命名坐标失败");
+                return;
+            }
+            showToast("命名坐标已保存并回读，旧配置已生成备份");
+        } catch (error) {
+            let message = error instanceof Error ? error.message : "保存命名坐标失败";
+            if (error instanceof ApiRequestError && error.status === 409) {
+                message = "配置版本冲突或任务正在运行。草稿已保留，请刷新后重试。"
+                    + ` ${message}`;
+            } else if (error instanceof ApiRequestError && error.status === 400) {
+                message = `命名坐标请求未通过校验。 ${message}`;
+            }
+            setCoordinateLibraryErrors([message]);
+            elements.coordinateLibraryStatus.textContent = "命名坐标保存失败，草稿仍在";
+            elements.coordinateLibrarySave.disabled = false;
+            handleError(error, "保存命名坐标失败");
+        } finally {
+            elements.coordinateLibraryDiscard.disabled = false;
+        }
+    });
+
+    elements.coordinateLibraryDiscard.addEventListener("click", () => {
+        elements.coordinateLibraryDiscard.disabled = true;
+        refreshCoordinateLibrary(true)
+            .then(() => showToast("已放弃草稿并重新读取命名坐标"))
+            .catch((error) => handleError(error, "重新读取命名坐标失败"))
+            .finally(() => {
+                elements.coordinateLibraryDiscard.disabled = false;
+            });
+    });
+
+    for (const link of elements.workspaceNavLinks) {
+        link.addEventListener("click", () => {
+            activateWorkspaceNav(link.dataset.workspaceTarget || "");
+        });
+    }
+    window.addEventListener("hashchange", () => {
+        activateWorkspaceNav(window.location.hash.slice(1));
+    });
+    if (window.location.hash.length > 1) {
+        activateWorkspaceNav(window.location.hash.slice(1));
+    }
 
     elements.coordinatesForm.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -2107,7 +2767,6 @@
             await Promise.all([
                 refreshPickupConfig(true),
                 refreshPickupWorkflows(),
-                refreshCoordinates(true),
                 refreshContainers()
             ]);
             showToast("拾取配置已保存并回读，旧配置已生成备份");

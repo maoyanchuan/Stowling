@@ -72,6 +72,7 @@ public final class ConfigLoader {
             "overflowContainer"
     );
     private static final Set<String> V5_ROOT_FIELDS = V4_ROOT_FIELDS;
+    private static final int SCHEMA_VERSION_5 = 5;
     private static final Pattern SAFE_ID = Pattern.compile(
             "[a-z0-9][a-z0-9._-]{0,63}"
     );
@@ -124,8 +125,12 @@ public final class ConfigLoader {
             }
             if (schemaVersion == 4) {
                 root = migrateV4(root);
+                schemaVersion = SCHEMA_VERSION_5;
             }
             resolveCoordinateReferences(root);
+            if (schemaVersion == SCHEMA_VERSION_5) {
+                root = Schema6Migration.migrate(root);
+            }
             StowlingConfig config = gson.fromJson(root, StowlingConfig.class);
             if (config == null) {
                 throw new ConfigLoadException("Configuration root must be a JSON object");
@@ -288,7 +293,8 @@ public final class ConfigLoader {
             allowedFields = V3_ROOT_FIELDS;
         } else if (schemaVersion == 4) {
             allowedFields = V4_ROOT_FIELDS;
-        } else if (schemaVersion == StowlingConfig.CURRENT_SCHEMA_VERSION) {
+        } else if (schemaVersion == SCHEMA_VERSION_5
+                || schemaVersion == StowlingConfig.CURRENT_SCHEMA_VERSION) {
             allowedFields = V5_ROOT_FIELDS;
         } else {
             throw new ConfigLoadException(
@@ -468,10 +474,7 @@ public final class ConfigLoader {
 
     private static JsonObject migrateV4(JsonObject source) {
         JsonObject migrated = source.deepCopy();
-        migrated.addProperty(
-                "schemaVersion",
-                StowlingConfig.CURRENT_SCHEMA_VERSION
-        );
+        migrated.addProperty("schemaVersion", SCHEMA_VERSION_5);
         addDefaultSettings(migrated, "pickupWorkflows");
         addDefaultSettings(migrated, "automationWorkflows");
         return migrated;

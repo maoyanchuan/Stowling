@@ -42,7 +42,7 @@
             <button id="new-pickup-task-button" class="secondary" type="button">
                 拾取任务
                 <span class="compact-help">
-                    创建自由任务，只预置一个坐标或区域拾取步骤
+                    创建自由任务，只预置一个命名范围拾取步骤
                 </span>
             </button>
         </div>
@@ -181,8 +181,8 @@
                                 旧配置区域 ID（仅兼容“区域有物品时”）
                             </label>
                             <p class="muted compact-help">
-                                RUN_PICKUP 可使用命名坐标与球形半径，或兼容选择
-                                已有拾取区域；待机与移动请使用独立步骤。
+                                区域触发器的旧 ID 仅作兼容显示；拾取范围统一在
+                                坐标与范围页面维护，待机与移动请使用独立步骤。
                             </p>
                             <textarea id="trigger-regions" rows="3"></textarea>
                             <div id="trigger-region-hints" class="check-grid"></div>
@@ -226,7 +226,7 @@
                                 <h3 id="automation-task-title">自动化步骤</h3>
                                 <p>
                                     自由组合 NAVIGATE、WAIT、RUN_PICKUP、移动、
-                                    容器操作和装箱模块；步骤顺序就是执行顺序。
+                                    容器操作和装箱模块；拾取只引用坐标与范围页面中的命名范围。
                                 </p>
                             </div>
                             <button id="add-task-step-button" class="primary compact"

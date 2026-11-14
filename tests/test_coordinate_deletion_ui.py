@@ -30,7 +30,6 @@ const ctx = {
     requests: [],
     writes: [],
     toasts: [],
-    regionRefreshes: [],
     handled: []
 };
 
@@ -159,6 +158,8 @@ const Stowling = {
     },
     /** @param {string} revision @returns {string} */
     revisionLabel(revision) { return revision; },
+    /** @param {string} dimension @returns {string} */
+    dimensionLabel(dimension) { return dimension; },
     /** @param {string} message @param {boolean} error @returns {void} */
     showToast(message, error = false) { ctx.toasts.push({ message, error }); },
     /** @param {unknown} error @param {string} label @returns {void} */
@@ -209,12 +210,6 @@ const Stowling = {
 };
 const window = {
     Stowling,
-    StowlingCoordinateRegions: {
-        /** @returns {Promise<void>} */
-        async refreshAfterCoordinates() {
-            ctx.regionRefreshes.push(clone(ctx.snapshot));
-        }
-    },
     /** @param {string} warning @returns {boolean} */
     confirm(warning) {
         ctx.confirmations.push(warning);
@@ -268,7 +263,6 @@ function inspect() {
         requests: ctx.requests,
         writes: ctx.writes,
         toasts: ctx.toasts,
-        regionRefreshes: ctx.regionRefreshes,
         handled: ctx.handled
     });
 }
@@ -328,6 +322,7 @@ def saved_snapshot() -> dict[str, Any]:
             "name": point_id,
             "dimension": "minecraft:overworld",
             "position": {"x": index, "y": 64, "z": 0},
+            "type": "POINT",
         } for index, point_id in enumerate(["point-a", "point-b"])],
     }
 
@@ -542,7 +537,7 @@ def test_delete_saves_only_snapshot_and_preserves_other_draft_edits_additions_an
     snapshot = saved_snapshot()
     snapshot["coordinatePoints"].append({
         "id": "point-c", "name": "point-c", "dimension": "minecraft:overworld",
-        "position": {"x": 2, "y": 64, "z": 0},
+        "position": {"x": 2, "y": 64, "z": 0}, "type": "POINT",
     })
     result = run_ui(
         "const [a, b, c] = ui.state.draft.coordinatePoints;"
@@ -640,3 +635,52 @@ def test_successful_delete_with_failed_reference_refresh_is_not_a_delete_failure
     assert "引用" in visible
     assert "删除失败" not in visible
     assert any("删除" in toast["message"] and not toast["error"] for toast in result["toasts"])
+
+
+def test_immediate_delete_preserves_remaining_radius_and_area_fields() -> None:
+    snapshot = {
+        "revision": "range-revision",
+        "coordinatePoints": [
+            {
+                "id": "remove-me",
+                "name": "待删除",
+                "dimension": "minecraft:overworld",
+                "position": {"x": 0, "y": 64, "z": 0},
+                "type": "POINT",
+            },
+            {
+                "id": "sphere-center",
+                "name": "球心",
+                "dimension": "minecraft:overworld",
+                "position": {"x": 10, "y": 70, "z": -4},
+                "type": "SPHERE",
+                "radius": 12,
+            },
+            {
+                "id": "area-bounds",
+                "name": "反向区域",
+                "dimension": "minecraft:the_nether",
+                "position": {"x": 8, "y": 90, "z": 2},
+                "type": "AREA",
+                "secondCorner": {"x": -3, "y": 40, "z": -7},
+            },
+        ],
+    }
+    result = run_ui(
+        "await ui.removePoint(0); return inspect();",
+        resources=empty_resources(),
+        snapshot=snapshot,
+    )
+    remaining = snapshot["coordinatePoints"][1:]
+    assert result["writes"][0]["payload"]["coordinatePoints"] == remaining
+    draft_remaining = [
+        {key: value for key, value in point.items() if key != "_originalId"}
+        for point in result["draft"]["coordinatePoints"]
+    ]
+    assert draft_remaining == remaining
+    assert result["snapshot"]["coordinatePoints"] == remaining
+    assert result["draft"]["coordinatePoints"][0]["radius"] == 12
+    assert result["draft"]["coordinatePoints"][1]["secondCorner"] == {
+        "x": -3, "y": 40, "z": -7,
+    }
+    assert result["dirty"] is False

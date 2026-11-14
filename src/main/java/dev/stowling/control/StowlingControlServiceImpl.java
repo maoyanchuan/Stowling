@@ -1030,13 +1030,20 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                         point.id(),
                         point.name(),
                         point.dimension(),
-                        new BlockPosition(
-                                point.position().x(),
-                                point.position().y(),
-                                point.position().z()
-                        )
+                        blockPosition(point.position()),
+                        point.type(),
+                        point.radius(),
+                        point.secondCorner() == null ? null : blockPosition(point.secondCorner())
                 ))
                 .toList();
+    }
+
+    private static BlockPosition blockPosition(ContainerPosition position) {
+        return new BlockPosition(position.x(), position.y(), position.z());
+    }
+
+    private static ContainerPosition containerPosition(BlockPosition position) {
+        return new ContainerPosition(position.x(), position.y(), position.z());
     }
 
     private static Map<String, NamedCoordinate> indexCoordinates(
@@ -1323,16 +1330,14 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     ) {
         List<ConfigCoordinatePointInfo> points = new ArrayList<>();
         for (NamedCoordinate point : snapshot.config().coordinatePoints()) {
-            ContainerPosition position = new ContainerPosition(
-                    point.position().x(),
-                    point.position().y(),
-                    point.position().z()
-            );
             points.add(new ConfigCoordinatePointInfo(
                     point.id(),
                     point.name(),
                     point.dimension(),
-                    position
+                    containerPosition(point.position()),
+                    point.type(),
+                    point.radius(),
+                    point.secondCorner() == null ? null : containerPosition(point.secondCorner())
             ));
         }
         return new ConfigCoordinatePointsSnapshot(snapshot.revision(), points);

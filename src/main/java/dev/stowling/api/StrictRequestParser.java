@@ -24,6 +24,7 @@ import dev.stowling.domain.CachePolicy;
 import dev.stowling.domain.ClassificationTiming;
 import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.CoordinateType;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.PickupRegion;
@@ -958,18 +959,31 @@ final class StrictRequestParser {
             );
             requireFields(
                     value,
-                    Set.of("id", "name", "dimension", "position"),
+                    Set.of("id", "name", "dimension", "position", "type", "radius",
+                            "secondCorner"),
                     Set.of("id", "name", "dimension", "position")
             );
             String id = string(value, "id", 64);
             require(SAFE_ID.matcher(id).matches(),
                     "coordinate point id must match [a-z0-9][a-z0-9._-]{0,63}");
             require(ids.add(id), "Duplicate coordinate point id: " + id);
+            CoordinateType type = value.has("type")
+                    ? CoordinateType.valueOf(string(value, "type", 16))
+                    : CoordinateType.POINT;
+            Integer radius = value.has("radius") && !value.get("radius").isJsonNull()
+                    ? integer(value, "radius") : null;
+            ContainerPosition secondCorner = value.has("secondCorner")
+                    && !value.get("secondCorner").isJsonNull()
+                    ? containerPosition(object(value.get("secondCorner"), "secondCorner"))
+                    : null;
             result.add(new ConfigCoordinatePointInfo(
                     id,
                     string(value, "name", 256),
                     string(value, "dimension", 128),
-                    containerPosition(object(value.get("position"), "position"))
+                    containerPosition(object(value.get("position"), "position")),
+                    type,
+                    radius,
+                    secondCorner
             ));
         }
         return List.copyOf(result);

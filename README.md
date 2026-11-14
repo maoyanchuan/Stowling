@@ -19,11 +19,11 @@ Current functionality includes:
   Legacy capture reads only an explicitly identified, already-open container.
 - Configurable shulker-box packing workcells with item-count or occupancy thresholds.
 - SQLite persistence for tasks, recovery checkpoints, containers, and inventory snapshots.
-- A **Coordinates and regions** page for named coordinates and spherical or cuboid pickup
-  regions; existing cache containers and multi-region pickup workflows remain compatible.
+- A **Coordinates and ranges** library for points, spherical or cubic radius ranges,
+  and two-corner areas; task selectors display only their names.
 - A browser-based modular task builder with ten reusable robot modules, persisted workflow
   definitions, task progress, priority scheduling, cancellation, and restart-safe records.
-- Versioned pickup and automation task definitions with schema 5 scheduling, priority,
+- Versioned pickup and automation task definitions with schema 6 scheduling, priority,
   restart, trigger, and interruption settings.
 - A loopback REST control API with bearer authentication for status, tasks, pickup, audit,
   inventory, container, task scheduling, and config-reload operations.
@@ -92,20 +92,31 @@ select **Verify and connect**. The token is kept only in the current tab's
 Use **Clear token** to remove it from the current browser session.
 
 The console shows runtime status, tasks, containers, and inventory snapshots. The task
-page manages task definitions, while **Named coordinates** manages saved points only.
+page manages task definitions, while **Coordinates and ranges** manages saved points and geometry.
 Tasks and coordinate points have separate save operations; there is no shared **Save all**
 action. Configuration writes are validated and atomic, with the previous file retained as
 `config/stowling.json.bak`. Saving is blocked while a scheduled run is active or unsafe.
 
-### Named coordinates
+### Coordinates and ranges
 
 Open `http://127.0.0.1:8765/coordinates.html` to add, delete, rename, or reorder named points
 and edit their dimensions and X/Y/Z values. Coordinate IDs are immutable after creation.
-The page contains only the named-coordinate library and reference information; the pickup
-region editor has been removed. Save a point before selecting it with a radius in a task's
-**Run pickup** step. On an already open task page, **Refresh status and resources** reloads
-points saved in another tab without discarding unsaved task edits. Automatic status refresh
-neither reloads resources nor repeatedly redraws the parameter editor.
+Each entry has a type configured in this library:
+
+- **Point** (`POINT`): one XYZ position for navigation or container references.
+- **Radius**: select **Cube** (`CUBE`) or **Sphere** (`SPHERE`) and a radius from 1 to 128.
+  The XYZ position is the center. A cube extends by the radius on each axis; a sphere uses
+  distance from the center.
+- **Area** (`AREA`): enter two XYZ corners in the same dimension. Corner order does not matter;
+  bounds are normalized when resolving the range, while the first position remains its anchor.
+
+The existing `position` field is retained, with `type`, an optional numeric `radius`, and an
+optional `secondCorner` added to coordinate entries. Save the definition before selecting it
+in a task. **Run pickup** accepts radius ranges and areas and only stores `coordinateId`,
+not a separate radius or region. Its selector and summary show the resource name only.
+On an already open task page, **Refresh status and resources** reloads saved coordinates
+without discarding unsaved task edits. Automatic status refresh does not reload resources.
+There is no separate pickup-region panel.
 
 The editor shows names, dimensions, and XYZ values. Saving a coordinate synchronizes its
 existing references. Confirming deletion of a saved point immediately persists that deletion
@@ -121,7 +132,7 @@ routes, or audit schedules. On startup, existing configurations retire the old `
 resources are retained; if a custom task actually depends on that chain, it is left intact
 rather than silently deleting the user's task. Historical examples exist only in test fixtures.
 
-There is no region, standby-point, or cache-container editor. Existing region, task,
+There is no separate region, standby-point, or cache-container editor. Existing region, task,
 workflow, and cache configurations remain compatible and are not removed by this UI change.
 No replacement region-management page is introduced.
 
@@ -215,8 +226,8 @@ token, while every `/v1/*` API request still requires the correct Bearer token.
 
 ### Scheduled task definitions
 
-Configuration schema 5 stores scheduling settings with each pickup or automation workflow.
-Existing schema 1-4 files are migrated automatically. Migrated and newly saved task
+Configuration schema 6 adds coordinate geometry alongside existing task scheduling settings.
+Existing schema 1-5 files are migrated automatically. Migrated and newly saved task
 definitions start disabled; `autoStartOnRestart` defaults to `false`.
 
 Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four triggers:
@@ -227,14 +238,18 @@ Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four
 - `AFTER_COMPLETION`: waits for the positive `intervalSeconds` delay after a successful
   run, then queues the task.
 
-New **Run pickup** steps can select a saved named point (`coordinateId`) and a pickup
-`radius` (1–128 blocks, default `8`), or an existing saved `regionId`. The targets are
-mutually exclusive. A point defines a sphere centered at its current XYZ in its own
-dimension; it does not create a shared region or pickup workflow. Every run resolves the
-saved point again, so coordinate edits apply to the next run. Saved cuboid or sphere
-regions remain selectable as before. Unsaved point drafts are not available to tasks.
+New **Run pickup** steps select a named radius range or area using `coordinateId`.
+The step no longer edits radius, shape, coordinates, or regions. Configure those in
+**Coordinates and ranges**. Every run resolves the current saved geometry, so changes take
+effect on the next run; unsaved drafts do not appear in task options.
 
-Both targets support `idleSeconds` (default `2`) and `waitForItems` (default `false`).
+Upgrading schema 1-5 preserves old pure `coordinateId` + `radius` and `regionId` pickup bounds
+by moving them into typed coordinate resources and updating the step reference. Task IDs and
+position anchors are retained; conflicting radii get distinct named resources rather than
+silently changing another task's range. Legacy regions needed by old workflows are retained.
+Startup writes the upgraded configuration atomically with a backup.
+
+The step supports `idleSeconds` (default `2`) and `waitForItems` (default `false`).
 The round ends after the target has no items for the configured duration. Pickup only
 collects items; later movement, wait, storage, transfer, or packing must be explicit steps.
 
@@ -293,8 +308,8 @@ execution ID. Other tasks must be enabled again. Legacy checkpoints are discarde
 clicks are never replayed.
 
 The warehouse page is inventory-only: refresh reads existing snapshots and never starts a
-robot audit. **Named coordinates** manages points only; pickup centers and radii
-are selected in individual task steps, with existing regions available for compatibility.
+robot audit. **Coordinates and ranges** manages all point and geometry definitions.
+Task steps only reference their saved names, with legacy resources retained for compatibility.
 The task page does not edit shared caches, standby points, corners, or legacy warehouse
 base coordinates. Existing legacy resources remain compatible through their configuration
 and API entry points. Warehouse synchronization, area discovery, partitions, and

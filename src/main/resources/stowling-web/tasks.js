@@ -19,10 +19,13 @@
     const INTERRUPTIONS = Object.freeze(["NONE", "INLINE", "TASK_REFERENCE"]);
     const RUN_PICKUP_PARAMETERS = Object.freeze([
         "coordinateId",
-        "radius",
-        "regionId",
         "idleSeconds",
         "waitForItems"
+    ]);
+    const RANGE_COORDINATE_TYPES = Object.freeze(["SPHERE", "CUBE", "AREA"]);
+    const COORDINATE_TYPES = Object.freeze([
+        "POINT",
+        ...RANGE_COORDINATE_TYPES
     ]);
     const LEGACY_PICKUP_PARAMETERS = Object.freeze([
         "workflowId",
@@ -30,7 +33,9 @@
         "firstCornerCoordinateId",
         "secondCornerCoordinateId",
         "cacheIds",
-        "classificationTiming"
+        "classificationTiming",
+        "radius",
+        "regionId"
     ]);
     const LEGACY_CONTAINER_PARAMETERS = Object.freeze([
         "containerId",
@@ -38,7 +43,6 @@
         "destination"
     ]);
     const pickupConversionNotes = new WeakMap();
-    const pickupTargetModes = new WeakMap();
 
     const elements = {
         refreshTasks: document.querySelector("#refresh-tasks-button"),
@@ -675,7 +679,7 @@
                 id: "step-1",
                 type: "RUN_PICKUP",
                 parameters: {
-                    radius: "8",
+                    coordinateId: "",
                     idleSeconds: "2",
                     waitForItems: "false"
                 }
@@ -824,7 +828,7 @@
             elements.triggerRegionHints.append(Stowling.element(
                 "span",
                 "muted compact-help",
-                "旧任务没有可显示的自身区域。请在本任务选择已有区域，或使用命名坐标和半径。"
+                "旧任务没有可显示的自身区域；拾取范围请在坐标与范围页面维护。"
             ));
             return;
         }
@@ -948,8 +952,8 @@
                 parameters.append(Stowling.element(
                     "p",
                     "muted compact-help pickup-step-hint",
-                    "选择命名坐标与球形半径，或兼容选择已有拾取区域；"
-                        + "两种目标来源不会混用。"
+                    "只选择坐标与范围页面中已保存的命名范围；"
+                        + "半径、立方体和区域角点都在坐标与范围页面配置。"
                 ));
                 parameters.append(Stowling.element(
                     "p",
@@ -961,10 +965,6 @@
                 summary.setAttribute("aria-live", "polite");
                 renderPickupStepSummary(summary, step);
                 parameters.append(summary);
-                const source = pickupTargetSourceControl(step);
-                if (source) {
-                    parameters.append(field("拾取目标来源", source));
-                }
             }
         }
         if (legacyContainer) {
@@ -997,19 +997,8 @@
     function visibleParameterDefinitions(step) {
         const definitions = moduleFor(step.type)?.parameters || [];
         if (step.type === "RUN_PICKUP") {
-            const targetMode = pickupTargetMode(step);
             return definitions.filter((definition) => {
-                if (!RUN_PICKUP_PARAMETERS.includes(definition.key)) {
-                    return false;
-                }
-                if (definition.key === "coordinateId"
-                        || definition.key === "radius") {
-                    return targetMode === "coordinate";
-                }
-                if (definition.key === "regionId") {
-                    return targetMode === "region";
-                }
-                return true;
+                return RUN_PICKUP_PARAMETERS.includes(definition.key);
             });
         }
         return definitions.filter((definition) => {
@@ -1094,12 +1083,16 @@
     function parameterControl(steps, step, definition, index, scope) {
         const value = parameterValue(step, definition);
         if (definition.kind === "coordinate") {
+            const coordinate = coordinateFor(value);
             return referenceSelect(
-                coordinateOptions(),
+                coordinateOptions(step.type === "RUN_PICKUP"),
                 value,
                 definition,
                 (next) => setStepParameter(step, definition, next),
-                "请选择命名坐标"
+                step.type === "RUN_PICKUP"
+                    ? "请选择命名范围"
+                    : "请选择命名坐标",
+                coordinate ? coordinateLabel(coordinate) : ""
             );
         }
         if (definition.kind === "pickup") {
@@ -1158,9 +1151,6 @@
             } else if (definition.kind === "nonnegative-integer") {
                 input.min = "0";
             }
-            if (step.type === "RUN_PICKUP" && definition.key === "radius") {
-                input.max = "128";
-            }
         }
         input.id = `${scope}-step-parameter-${index}-${definition.key}`;
         input.value = value;
@@ -1182,84 +1172,11 @@
     }
 
     /**
-     * @param {object} step
-     * @returns {"coordinate" | "region"}
-     */
-    function pickupTargetMode(step) {
-        const selected = pickupTargetModes.get(step);
-        if (selected === "coordinate" || selected === "region") {
-            return selected;
-        }
-        const coordinateId = String(step.parameters.coordinateId || "").trim();
-        const regionId = String(step.parameters.regionId || "").trim();
-        return !coordinateId && regionId ? "region" : "coordinate";
-    }
-
-    /**
-     * @param {object} step
-     * @returns {{ coordinate: object | null, region: object | null }}
-     */
-    function pickupTargetDefinitions(step) {
-        const definitions = moduleFor(step.type)?.parameters || [];
-        return {
-            coordinate: definitions.find((definition) => {
-                return definition.key === "coordinateId";
-            }) || null,
-            region: definitions.find((definition) => {
-                return definition.key === "regionId";
-            }) || null
-        };
-    }
-
-    /**
-     * @param {object} step
-     * @returns {HTMLSelectElement | null}
-     */
-    function pickupTargetSourceControl(step) {
-        const definitions = pickupTargetDefinitions(step);
-        if (!definitions.coordinate && !definitions.region) {
-            return null;
-        }
-        const select = document.createElement("select");
-        select.setAttribute("aria-label", "拾取目标来源");
-        if (definitions.coordinate) {
-            select.append(new Option("命名坐标与半径", "coordinate"));
-        }
-        if (definitions.region) {
-            select.append(new Option("已有拾取区域（兼容）", "region"));
-        }
-        select.value = pickupTargetMode(step);
-        select.addEventListener("change", () => {
-            setPickupTargetMode(step, select.value);
-        });
-        return select;
-    }
-
-    /**
-     * @param {object} step
-     * @param {string} mode
-     * @returns {void}
-     */
-    function setPickupTargetMode(step, mode) {
-        const next = mode === "region" ? "region" : "coordinate";
-        pickupTargetModes.set(step, next);
-        if (next === "coordinate") {
-            delete step.parameters.regionId;
-        } else {
-            delete step.parameters.coordinateId;
-            delete step.parameters.radius;
-        }
-        markDirty(true);
-    }
-
-    /**
      * @param {object} region
      * @returns {string}
      */
     function pickupRegionLabel(region) {
-        const id = String(region.id || "");
-        const name = String(region.name || id || "未命名区域");
-        return `${name} · ${id}`;
+        return coordinateName(region, "未命名区域");
     }
 
     /**
@@ -1268,6 +1185,7 @@
      * @param {object} definition
      * @param {(value: string) => void} onChange
      * @param {string} [emptyLabel]
+     * @param {string} [fallbackLabel]
      * @returns {HTMLSelectElement}
      */
     function referenceSelect(
@@ -1275,7 +1193,8 @@
         value,
         definition,
         onChange,
-        emptyLabel = ""
+        emptyLabel = "",
+        fallbackLabel = ""
     ) {
         const select = document.createElement("select");
         select.required = definition.required;
@@ -1287,7 +1206,8 @@
             select.append(new Option("请选择", ""));
         }
         if (value && !hasValue) {
-            select.append(new Option(`保留原值 · ${value}`, value));
+            const retainedLabel = fallbackLabel || value;
+            select.append(new Option(`保留原值 · ${retainedLabel}`, value));
         }
         for (const [optionValue, optionLabel] of options) {
             select.append(new Option(optionLabel, optionValue));
@@ -1298,13 +1218,16 @@
     }
 
     /**
+     * @param {boolean} rangeOnly
      * @returns {Array<Array<string>>}
      */
-    function coordinateOptions() {
-        return (state.resources.coordinatePoints || []).map((point) => [
-            String(point.id),
-            coordinateLabel(point)
-        ]);
+    function coordinateOptions(rangeOnly = false) {
+        return (state.resources.coordinatePoints || [])
+            .filter((point) => !rangeOnly || isRangeCoordinate(point))
+            .map((point) => [
+                String(point.id),
+                coordinateLabel(point)
+            ]);
     }
 
     /**
@@ -1312,9 +1235,35 @@
      * @returns {string}
      */
     function coordinateLabel(point) {
-        const position = point.position || point;
-        return `${point.name || point.id} · X ${position.x} / Y ${position.y} / Z ${position.z}`
-            + ` · ${Stowling.dimensionLabel(point.dimension)} (${point.dimension})`;
+        return coordinateName(point);
+    }
+
+    /**
+     * @param {object} point
+     * @param {string} fallback
+     * @returns {string}
+     */
+    function coordinateName(point, fallback = "未命名坐标") {
+        return String(point?.name || "").trim()
+            || String(point?.id || "").trim()
+            || fallback;
+    }
+
+    /**
+     * @param {object} point
+     * @returns {"POINT" | "SPHERE" | "CUBE" | "AREA"}
+     */
+    function coordinateType(point) {
+        const type = String(point?.type || "POINT").toUpperCase();
+        return COORDINATE_TYPES.includes(type) ? type : "POINT";
+    }
+
+    /**
+     * @param {object} point
+     * @returns {boolean}
+     */
+    function isRangeCoordinate(point) {
+        return RANGE_COORDINATE_TYPES.includes(coordinateType(point));
     }
 
     /**
@@ -1347,17 +1296,19 @@
         const workflow = Boolean(step.parameters.workflowId);
         const source = workflow
             ? `旧拾取流程 · ${step.parameters.workflowId}`
-            : "旧 direct（alpha23）坐标与缓存步骤";
+            : step.parameters.firstCornerCoordinateId
+                ? "旧 direct（alpha23）坐标与缓存步骤"
+                : "旧任务内半径或区域配置";
         notice.append(Stowling.element(
             "p",
             "compact-help",
-            `${source}包含旧自动存放。原值会完整保留，直到你明确确认转换；`
-                + "转换后只保留可唯一匹配的拾取区域与等待参数。"
+            `${source}仍按旧模式保留，原值不会在任务页静默改写；`
+                + "请先在坐标与范围页面确认并保存范围，再明确确认转换并选择目标。"
         ));
         const button = Stowling.element(
             "button",
             "secondary compact",
-            "替换为纯区域拾取"
+            "检查旧几何并转换"
         );
         button.type = "button";
         button.addEventListener("click", () => convertLegacyPickupStep(step));
@@ -1381,9 +1332,14 @@
      * @returns {void}
      */
     function convertLegacyPickupStep(step) {
-        const candidate = legacyPickupRegionCandidate(step);
-        const warning = "转换会丢弃缓存、分类和待机参数，它们不会执行；"
-            + "移动与存入请在后续独立模块中配置。取消会保留全部原值。";
+        const candidate = legacyPickupCoordinateCandidate(step);
+        const target = candidate.coordinate
+            ? `已找到唯一命名范围“${coordinateLabel(candidate.coordinate)}”。`
+            : "未找到唯一可匹配的命名范围；转换后必须去坐标与范围页面配置范围，"
+                + "再回到任务中选择。";
+        const warning = `${target}转换会移除旧半径、区域、缓存、分类和待机参数，`
+            + "它们不会执行；移动与存入请在后续独立模块中配置。"
+            + "取消会保留全部原值。";
         if (!window.confirm(warning)) {
             return;
         }
@@ -1394,19 +1350,101 @@
                 ? "true"
                 : "false"
         };
-        if (candidate.region) {
-            parameters.regionId = String(candidate.region.id);
+        if (candidate.coordinate) {
+            parameters.coordinateId = String(candidate.coordinate.id);
         }
         const notes = [
             "缓存、分类和待机参数已移除，不会执行；请用移动和存入模块配置后续步骤。",
             ...candidate.notes
         ];
-        if (candidate.region) {
-            notes.unshift(`已匹配唯一保存区域“${pickupRegionLabel(candidate.region)}”。`);
+        if (candidate.coordinate) {
+            notes.unshift(`已匹配唯一命名范围“${coordinateLabel(candidate.coordinate)}”。`);
+        } else {
+            notes.unshift("未自动匹配旧几何；任务尚未执行，请选择已保存的命名范围。");
         }
         step.parameters = parameters;
         pickupConversionNotes.set(step, [...new Set(notes)]);
         markDirty(true);
+    }
+
+    /**
+     * @param {object} step
+     * @returns {{
+     *     coordinate: object | null,
+     *     idleSeconds: string,
+     *     notes: Array<string>
+     * }}
+     */
+    function legacyPickupCoordinateCandidate(step) {
+        const notes = [];
+        const referenced = coordinateFor(step.parameters.coordinateId);
+        if (referenced && isRangeCoordinate(referenced)) {
+            return {
+                coordinate: referenced,
+                idleSeconds: String(step.parameters.idleSeconds || ""),
+                notes
+            };
+        }
+        if (referenced) {
+            notes.push("旧 coordinateId 指向 POINT，不会自动当作拾取范围。");
+        }
+
+        const regionId = String(step.parameters.regionId || "");
+        const sameIdCoordinate = regionId ? coordinateFor(regionId) : null;
+        if (sameIdCoordinate && isRangeCoordinate(sameIdCoordinate)) {
+            return {
+                coordinate: sameIdCoordinate,
+                idleSeconds: String(step.parameters.idleSeconds || ""),
+                notes
+            };
+        }
+        const savedRegion = regionId ? resourceRegion(regionId) : null;
+        const savedRegionCoordinate = rangeCoordinateForRegion(savedRegion);
+        if (savedRegionCoordinate) {
+            return {
+                coordinate: savedRegionCoordinate,
+                idleSeconds: String(step.parameters.idleSeconds || ""),
+                notes
+            };
+        }
+
+        const regionCandidate = legacyPickupRegionCandidate(step);
+        const coordinate = rangeCoordinateForRegion(regionCandidate.region);
+        if (coordinate) {
+            return {
+                coordinate,
+                idleSeconds: regionCandidate.idleSeconds,
+                notes: [...notes, ...regionCandidate.notes]
+            };
+        }
+        notes.push(...regionCandidate.notes);
+        notes.push("未找到可唯一映射的命名范围，未把旧 POINT 冒充为拾取范围。");
+        return { coordinate: null, idleSeconds: "", notes };
+    }
+
+    /**
+     * @param {object | null} region
+     * @returns {object | null}
+     */
+    function rangeCoordinateForRegion(region) {
+        if (!region) {
+            return null;
+        }
+        const sameId = coordinateFor(region.id);
+        if (sameId && isRangeCoordinate(sameId)) {
+            return sameId;
+        }
+        const name = coordinateName(region, "");
+        if (!name) {
+            return null;
+        }
+        const matches = (state.resources.coordinatePoints || []).filter((point) => {
+            return isRangeCoordinate(point)
+                && coordinateName(point, "").localeCompare(name, "zh-CN", {
+                    sensitivity: "accent"
+                }) === 0;
+        });
+        return matches.length === 1 ? matches[0] : null;
     }
 
     /**
@@ -1430,7 +1468,7 @@
         const regionId = String(step.parameters.regionId || "");
         const notes = [];
         if (!workflow) {
-            notes.push("旧流程定义已缺失；请在本任务重新选择已有区域，或切换为命名坐标和半径。");
+            notes.push("旧流程定义已缺失；请到坐标与范围页面保存范围，再在任务中选择。");
             return { region: null, idleSeconds: "", notes };
         }
         const selectedBindings = regionId
@@ -1455,10 +1493,10 @@
         }
         if (regions.length > 1) {
             notes.push("旧流程包含多个可匹配区域，未自动选择；"
-                + "请在本任务重新选择已有区域，或切换为命名坐标和半径。");
+                + "请到坐标与范围页面确认范围，再在任务中选择。");
         } else {
             notes.push("旧流程没有唯一可匹配的已保存区域；"
-                + "请在本任务重新选择已有区域，或切换为命名坐标和半径。");
+                + "请到坐标与范围页面保存范围，再在任务中选择。");
         }
         return { region: null, idleSeconds: "", notes };
     }
@@ -1473,7 +1511,7 @@
         const notes = [];
         if (!first || !second || first.dimension !== second.dimension) {
             notes.push("旧 direct 角点不能组成同一维度的长方体；"
-                + "请在本任务重新选择已有区域，或切换为命名坐标和半径。");
+                + "请到坐标与范围页面保存区域，再在任务中选择。");
             return { region: null, idleSeconds: "", notes };
         }
         const bounds = coordinateBounds(first, second);
@@ -1491,10 +1529,10 @@
         }
         if (regions.length > 1) {
             notes.push("找到多个边界与维度都相同的已保存区域，未自动选择；"
-                + "请在本任务重新选择已有区域，或切换为命名坐标和半径。");
+                + "请到坐标与范围页面确认范围，再在任务中选择。");
         } else {
             notes.push("未找到边界与维度都相同的已保存拾取区域；"
-                + "请在本任务重新选择已有区域，或切换为命名坐标和半径。");
+                + "请到坐标与范围页面保存区域，再在任务中选择。");
         }
         return { region: null, idleSeconds: "", notes };
     }
@@ -1646,69 +1684,33 @@
     function renderPickupStepSummary(target, step) {
         target.replaceChildren();
         const coordinateId = String(step.parameters.coordinateId || "");
-        const regionId = String(step.parameters.regionId || "");
-        if (coordinateId && regionId) {
+        const coordinate = coordinateFor(coordinateId);
+        if (coordinate && isRangeCoordinate(coordinate)) {
             target.append(Stowling.element(
                 "p",
                 "compact-help",
-                "命名坐标和已保存区域只能选择一个；请切换目标来源。"
+                `拾取范围：${coordinateLabel(coordinate)}`
             ));
-            return;
-        }
-        if (pickupTargetMode(step) === "coordinate") {
-            const coordinate = coordinateFor(coordinateId);
+        } else if (!coordinateId) {
             target.append(Stowling.element(
                 "p",
                 "compact-help",
-                "目标来源：命名坐标"
+                "尚未选择已保存的命名范围"
             ));
-            if (coordinate) {
-                target.append(Stowling.element(
-                    "p",
-                    "compact-help",
-                    `拾取中心坐标：${coordinateLabel(coordinate)}`
-                ));
-            } else {
-                target.append(Stowling.element(
-                    "p",
-                    "compact-help",
-                    coordinateId
-                        ? "未找到引用的命名坐标，请重新选择"
-                        : "尚未选择命名坐标"
-                ));
-            }
-            const radius = String(step.parameters.radius || "8");
+        } else if (!coordinate) {
             target.append(Stowling.element(
                 "p",
                 "compact-help",
-                `球形拾取半径：${radius} 格`
+                "引用的命名范围不存在；请重新选择"
             ));
-            if (!coordinate) {
-                target.append(pickupCoordinateHelp());
-            }
         } else {
-            const region = savedPickupRegions().find((candidate) => {
-                return String(candidate.id || "") === String(
-                    step.parameters.regionId || ""
-                );
-            });
-            const text = region
-                ? pickupRegionLabel(region)
-                : "未选择有效的已保存区域";
             target.append(Stowling.element(
                 "p",
                 "compact-help",
-                `目标来源：已保存区域`
+                "当前引用是 POINT；拾取步骤只能选择 SPHERE、CUBE 或 AREA"
             ));
-            target.append(Stowling.element(
-                "p",
-                "compact-help",
-                `拾取区域：${text}`
-            ));
-            if (!region) {
-                target.append(pickupRegionHelp());
-            }
         }
+        target.append(pickupCoordinateHelp());
         target.append(Stowling.element(
             "p",
             "compact-help",
@@ -1723,22 +1725,18 @@
      * @returns {HTMLElement}
      */
     function pickupCoordinateHelp() {
-        const help = Stowling.element("p", "compact-help", "缺少命名坐标？先到 ");
-        const link = Stowling.element("a", "", "命名坐标页面");
-        link.href = "/coordinates.html";
-        help.append(link, document.createTextNode(" 保存坐标，再回来选择。"));
-        return help;
-    }
-
-    /**
-     * @returns {HTMLElement}
-     */
-    function pickupRegionHelp() {
-        return Stowling.element(
+        const help = Stowling.element(
             "p",
             "compact-help",
-            "没有已有区域，请使用命名坐标和半径。"
+            "名称与范围参数统一在 "
         );
+        const link = Stowling.element("a", "", "坐标与范围");
+        link.href = "/coordinates.html";
+        help.append(
+            link,
+            document.createTextNode(" 配置；修改半径或角点后请重新选择目标。")
+        );
+        return help;
     }
 
     /**
@@ -1793,15 +1791,6 @@
         }
         if (value) {
             step.parameters[definition.key] = value;
-        }
-        if (step.type === "RUN_PICKUP" && definition.key === "coordinateId") {
-            delete step.parameters.regionId;
-            pickupTargetModes.set(step, "coordinate");
-        }
-        if (step.type === "RUN_PICKUP" && definition.key === "regionId") {
-            delete step.parameters.coordinateId;
-            delete step.parameters.radius;
-            pickupTargetModes.set(step, "region");
         }
         markDirty();
         if (step.type === "RUN_PICKUP") {
@@ -2046,8 +2035,6 @@
             }
             for (const parameter of visibleParameterDefinitions(step)) {
                 const value = parameterValue(step, parameter).trim();
-                const pickupRadius = step.type === "RUN_PICKUP"
-                    && parameter.key === "radius";
                 if (parameter.required && !value) {
                     addError(
                         errors,
@@ -2059,14 +2046,8 @@
                     addError(errors, `${label}的“${parameter.label}”必须是非负整数`);
                 }
                 if (value && parameter.kind === "positive-integer"
-                        && !pickupRadius
                         && (!Number.isInteger(Number(value)) || Number(value) < 1)) {
                     addError(errors, `${label}的“${parameter.label}”必须是正整数`);
-                }
-                if (value && pickupRadius
-                        && (!Number.isInteger(Number(value))
-                            || Number(value) < 1 || Number(value) > 128)) {
-                    addError(errors, `${label}的“${parameter.label}”必须在 1 到 128 之间`);
                 }
                 if (value && parameter.kind === "integer"
                         && !Number.isInteger(Number(value))) {
@@ -2098,25 +2079,16 @@
                 const coordinateId = String(
                     step.parameters.coordinateId || ""
                 ).trim();
-                const regionId = String(step.parameters.regionId || "").trim();
-                const region = resourceRegion(regionId);
-                if (coordinateId && regionId) {
+                const coordinate = coordinateFor(coordinateId);
+                if (!coordinateId) {
+                    addError(errors, `${label}必须选择一个已保存的命名范围`);
+                } else if (!coordinate) {
+                    addError(errors, `${label}引用的命名范围不存在`);
+                } else if (!isRangeCoordinate(coordinate)) {
                     addError(
                         errors,
-                        `${label}不能同时选择命名坐标和已保存区域`
+                        `${label}只能选择 SPHERE、CUBE 或 AREA 类型的命名范围`
                     );
-                } else if (!coordinateId && !regionId) {
-                    addError(errors, `${label}必须选择命名坐标或已保存区域`);
-                }
-                if (regionId && (!region
-                        || (region.kind && region.kind !== "pickup-region"))) {
-                    addError(
-                        errors,
-                        `${label}引用的拾取区域不存在或类型无效`
-                    );
-                }
-                if (regionId && Object.hasOwn(step.parameters, "radius")) {
-                    addError(errors, `${label}使用已保存区域时不能设置半径`);
                 }
             }
         });
@@ -2761,7 +2733,13 @@
     }, 5000);
 
     Resources.onChanged(async () => {
-        state.resources = Resources.getSnapshot();
+        const next = Resources.getSnapshot();
+        const changed = next.revision !== state.resources.revision
+            || next.pickupRevision !== state.resources.pickupRevision;
+        state.resources = next;
+        if (!changed) {
+            return;
+        }
         if (state.draft) {
             renderSteps();
             renderInterruption();

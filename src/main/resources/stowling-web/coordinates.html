@@ -16,8 +16,8 @@
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
-                <h1>命名坐标</h1>
-                <p>供导航、容器和任务共享的位置字典</p>
+                <h1>坐标与范围</h1>
+                <p>供导航、容器和任务共享的命名坐标与范围字典</p>
             </div>
         </div>
         <div class="connection-state">
@@ -35,15 +35,16 @@
                 <div class="panel-heading coordinate-heading">
                     <div>
                         <p class="eyebrow">永久配置 · 独立草稿</p>
-                        <h2 id="coordinate-title">命名坐标库</h2>
+                        <h2 id="coordinate-title">坐标与范围库</h2>
                         <p class="muted section-help">
-                            保存后的 ID 不可修改；显示名称、维度和 XYZ 可随时调整。
-                            所有机器人模块都通过 ID 引用这里的坐标。
+                            坐标点用于位置引用；半径类型以 XYZ 为中心配置立方体或球；
+                            区域类型配置同维度下的两个角点。保存后的 ID 不可修改，
+                            显示名称和范围可随时调整。第二角点允许反向输入。
                         </p>
                     </div>
                     <div class="action-row">
                         <button id="add-coordinate-button" class="primary compact"
-                                type="button">新增坐标</button>
+                                type="button">新增坐标或范围</button>
                         <button id="discard-coordinate-button" class="secondary compact"
                                 type="button">放弃修改</button>
                         <button id="save-coordinate-button" class="primary compact"

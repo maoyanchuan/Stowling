@@ -6,11 +6,13 @@ import dev.stowling.domain.CachePolicy;
 import dev.stowling.domain.ClassificationTiming;
 import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.CoordinateType;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
+import dev.stowling.domain.PickupShape;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.SpherePickupShape;
 import java.time.Duration;
@@ -39,7 +41,6 @@ public record CustomPickupRules(
     private static final String REGION_ID = "custom-pickup-region";
     private static final String COORDINATE_REGION_ID = "custom-pickup-coordinate";
     private static final String PURE_WORKFLOW_ID = "pickup-region";
-    private static final int DEFAULT_RADIUS = 8;
     private static final Set<String> LEGACY_PARAMETER_KEYS = Set.of(
             "standbyCoordinateId", "firstCornerCoordinateId", "secondCornerCoordinateId",
             "cacheIds", "classificationTiming"
@@ -76,9 +77,9 @@ public record CustomPickupRules(
         } else if (pureCoordinate) {
             selectedCoordinateId = requireId(selectedCoordinateId, "selectedCoordinateId");
             selectedRegionId = null;
-            if (radius < 1 || radius > 128) {
+            if (radius < 0 || radius > 128) {
                 throw new IllegalArgumentException(
-                        "radius must be an integer between 1 and 128"
+                        "radius must be 0 or an integer between 1 and 128"
                 );
             }
             if (hasText(standbyCoordinateId)
@@ -281,17 +282,28 @@ public record CustomPickupRules(
                     selectedCoordinateId,
                     "coordinateId"
             );
+            PickupShape shape;
+            if (radius > 0) {
+                if (coordinate.type() != CoordinateType.POINT) {
+                    throw new IllegalArgumentException(
+                            "radius is only valid for legacy POINT coordinate pickups"
+                    );
+                }
+                shape = new SpherePickupShape(
+                        coordinate.id(),
+                        coordinate.position(),
+                        radius
+                );
+            } else {
+                shape = coordinate.pickupShape();
+            }
             PickupRegion region = new PickupRegion(
                     COORDINATE_REGION_ID,
                     "命名坐标拾取",
                     coordinate.dimension(),
                     coordinate.id(),
                     coordinate.position(),
-                    new SpherePickupShape(
-                            coordinate.id(),
-                            coordinate.position(),
-                            radius
-                    )
+                    shape
             );
             return purePlan(taskId, region);
         }
@@ -403,7 +415,7 @@ public record CustomPickupRules(
     private static int parseRadius(Map<String, String> parameters) {
         String value = parameters.get("radius");
         if (value == null) {
-            return DEFAULT_RADIUS;
+            return 0;
         }
         if (value.isBlank()) {
             throw new IllegalArgumentException(

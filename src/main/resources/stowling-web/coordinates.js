@@ -7,6 +7,8 @@
         "minecraft:the_nether",
         "minecraft:the_end"
     ]);
+    const POINT_TYPES = Object.freeze(["POINT", "SPHERE", "CUBE", "AREA"]);
+    const RADIUS_TYPES = Object.freeze(["SPHERE", "CUBE"]);
 
     const elements = {
         form: document.querySelector("#coordinate-form"),
@@ -36,17 +38,74 @@
     };
 
     /**
+     * @param {unknown} value
+     * @returns {"POINT" | "SPHERE" | "CUBE" | "AREA"}
+     */
+    function normalizePointType(value) {
+        const type = String(value || "POINT").toUpperCase();
+        return POINT_TYPES.includes(type) ? type : "POINT";
+    }
+
+    /**
+     * @param {object | null | undefined} value
+     * @param {object | null | undefined} fallback
+     * @returns {{x: unknown, y: unknown, z: unknown}}
+     */
+    function normalizePosition(value, fallback = null) {
+        return {
+            x: value?.x ?? fallback?.x ?? 0,
+            y: value?.y ?? fallback?.y ?? 64,
+            z: value?.z ?? fallback?.z ?? 0
+        };
+    }
+
+    /**
+     * @param {object} point
+     * @returns {object}
+     */
+    function normalizePoint(point) {
+        const normalized = Stowling.clone(point || {});
+        normalized.type = normalizePointType(normalized.type);
+        normalized.position = normalizePosition(normalized.position);
+        if (normalized.type === "AREA") {
+            normalized.secondCorner = normalizePosition(
+                normalized.secondCorner,
+                normalized.position
+            );
+            delete normalized.radius;
+        } else if (RADIUS_TYPES.includes(normalized.type)) {
+            const radius = parseInteger(normalized.radius);
+            if (radius !== null) {
+                normalized.radius = radius;
+            }
+            delete normalized.secondCorner;
+        } else {
+            delete normalized.radius;
+            delete normalized.secondCorner;
+        }
+        return normalized;
+    }
+
+    /**
+     * @param {object} snapshot
+     * @returns {object}
+     */
+    function normalizeSnapshot(snapshot) {
+        const points = Array.isArray(snapshot?.coordinatePoints)
+            ? snapshot.coordinatePoints
+            : [];
+        return Stowling.clone({
+            revision: String(snapshot?.revision || ""),
+            coordinatePoints: points.map(normalizePoint)
+        });
+    }
+
+    /**
      * @param {object} snapshot
      * @returns {void}
      */
     function renderSnapshot(snapshot) {
-        const points = Array.isArray(snapshot?.coordinatePoints)
-            ? snapshot.coordinatePoints
-            : [];
-        state.snapshot = Stowling.clone({
-            revision: String(snapshot?.revision || ""),
-            coordinatePoints: points
-        });
+        state.snapshot = normalizeSnapshot(snapshot);
         state.draft = Stowling.clone(state.snapshot);
         for (const point of state.draft.coordinatePoints) {
             point._originalId = String(point.id || "");
@@ -114,11 +173,11 @@
             `coordinate-id-${index}`,
             "坐标 ID",
             String(point.id || ""),
-            (value) => {
-                point.id = value;
-                markDirty();
-            }
+            () => {}
         );
+        idInput.readOnly = true;
+        idInput.title = "坐标 ID 创建后不可修改";
+        idInput.setAttribute("aria-readonly", "true");
         idInput.pattern = "[a-z0-9][a-z0-9._-]{0,63}";
         const idField = field("坐标 ID", idInput);
         const nameInput = textInput(
@@ -135,18 +194,22 @@
         fields.append(
             idField,
             field("显示名称", nameInput),
-            field("维度", dimensionSelect(point, index))
+            field("维度", dimensionSelect(point, index)),
+            field("范围类型", pointTypeSelect(point))
         );
+        if (RADIUS_TYPES.includes(normalizePointType(point.type))) {
+            fields.append(field("半径形状", radiusShapeSelect(point)));
+        }
 
         const position = Stowling.element("fieldset", "position-editor");
-        position.append(Stowling.element("legend", "", "方块坐标"));
+        position.append(Stowling.element("legend", "", positionLegend(point.type)));
         for (const axis of ["x", "y", "z"]) {
             const input = numberInput(
                 `coordinate-${axis}-${index}`,
                 axis.toUpperCase(),
                 point.position?.[axis],
                 (value) => {
-                    point.position ||= { x: 0, y: 64, z: 0 };
+                    point.position = normalizePosition(point.position);
                     point.position[axis] = value;
                     markDirty();
                 }
@@ -156,7 +219,202 @@
         }
 
         card.append(heading, fields, position);
+        if (RADIUS_TYPES.includes(normalizePointType(point.type))) {
+            card.append(radiusEditor(point, index));
+        }
+        if (normalizePointType(point.type) === "AREA") {
+            card.append(secondCornerEditor(point, index));
+        }
         return card;
+    }
+
+    /**
+     * @param {object} point
+     * @returns {HTMLSelectElement}
+     */
+    function pointTypeSelect(point) {
+        const select = document.createElement("select");
+        select.id = `coordinate-type-${state.draft.coordinatePoints.indexOf(point)}`;
+        select.setAttribute("aria-label", "范围类型");
+        const options = [
+            ["POINT", "坐标点"],
+            ["RADIUS", "半径（立方体/球）"],
+            ["AREA", "区域"]
+        ];
+        for (const [value, label] of options) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            select.append(option);
+        }
+        select.value = typeCategory(point.type);
+        select.addEventListener("change", () => {
+            changePointType(point, select.value);
+        });
+        return select;
+    }
+
+    /**
+     * @param {object} point
+     * @returns {HTMLSelectElement}
+     */
+    function radiusShapeSelect(point) {
+        const select = document.createElement("select");
+        const index = state.draft.coordinatePoints.indexOf(point);
+        select.id = `coordinate-radius-shape-${index}`;
+        select.setAttribute("aria-label", "半径形状");
+        const options = [
+            ["CUBE", "立方体"],
+            ["SPHERE", "球"]
+        ];
+        for (const [value, label] of options) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            select.append(option);
+        }
+        select.value = normalizePointType(point.type);
+        select.addEventListener("change", () => {
+            changeRadiusShape(point, select.value);
+        });
+        return select;
+    }
+
+    /**
+     * @param {object} point
+     * @param {number} index
+     * @returns {HTMLElement}
+     */
+    function radiusEditor(point, index) {
+        const editor = Stowling.element("fieldset", "position-editor");
+        editor.append(Stowling.element("legend", "", radiusRangeLegend(point.type)));
+        const input = numberInput(
+            `coordinate-radius-${index}`,
+            "半径",
+            point.radius,
+            (value) => {
+                point.radius = value;
+                markDirty();
+            }
+        );
+        input.min = "1";
+        input.max = "128";
+        input.dataset.validation = "radius";
+        editor.append(field("半径（1-128）", input));
+        return editor;
+    }
+
+    /**
+     * @param {unknown} type
+     * @returns {string}
+     */
+    function radiusRangeLegend(type) {
+        return normalizePointType(type) === "CUBE"
+            ? "立方体范围（XYZ 中心 ± 半径）"
+            : "球范围（距离 ≤ 半径）";
+    }
+
+    /**
+     * @param {object} point
+     * @param {number} index
+     * @returns {HTMLElement}
+     */
+    function secondCornerEditor(point, index) {
+        const editor = Stowling.element("fieldset", "position-editor");
+        editor.append(Stowling.element("legend", "", "区域第二角点"));
+        for (const axis of ["x", "y", "z"]) {
+            const input = numberInput(
+                `coordinate-second-${axis}-${index}`,
+                `第二角点 ${axis.toUpperCase()}`,
+                point.secondCorner?.[axis],
+                (value) => {
+                    point.secondCorner = normalizePosition(
+                        point.secondCorner,
+                        point.position
+                    );
+                    point.secondCorner[axis] = value;
+                    markDirty();
+                }
+            );
+            input.dataset.validation = "second-corner";
+            editor.append(field(axis.toUpperCase(), input));
+        }
+        return editor;
+    }
+
+    /**
+     * @param {unknown} type
+     * @returns {"POINT" | "RADIUS" | "AREA"}
+     */
+    function typeCategory(type) {
+        const normalized = normalizePointType(type);
+        return RADIUS_TYPES.includes(normalized) ? "RADIUS" : normalized;
+    }
+
+    /**
+     * @param {unknown} type
+     * @returns {string}
+     */
+    function positionLegend(type) {
+        const normalized = normalizePointType(type);
+        if (normalized === "AREA") {
+            return "区域第一角点";
+        }
+        return RADIUS_TYPES.includes(normalized) ? "范围中心" : "坐标点";
+    }
+
+    /**
+     * @param {object} point
+     * @param {unknown} requestedType
+     * @returns {void}
+     */
+    function changePointType(point, requestedType) {
+        const category = String(requestedType || "").toUpperCase();
+        if (category === "RADIUS") {
+            const current = normalizePointType(point.type);
+            applyPointType(point, RADIUS_TYPES.includes(current) ? current : "CUBE");
+        } else {
+            applyPointType(point, category);
+        }
+        markDirty(true);
+    }
+
+    /**
+     * @param {object} point
+     * @param {unknown} requestedShape
+     * @returns {void}
+     */
+    function changeRadiusShape(point, requestedShape) {
+        const shape = String(requestedShape || "").toUpperCase();
+        applyPointType(point, RADIUS_TYPES.includes(shape) ? shape : "CUBE");
+        markDirty(true);
+    }
+
+    /**
+     * @param {object} point
+     * @param {unknown} requestedType
+     * @returns {void}
+     */
+    function applyPointType(point, requestedType) {
+        const type = normalizePointType(requestedType);
+        point.type = type;
+        if (type === "POINT") {
+            delete point.radius;
+            delete point.secondCorner;
+            return;
+        }
+        if (type === "AREA") {
+            delete point.radius;
+            point.secondCorner = normalizePosition(
+                point.secondCorner,
+                point.position
+            );
+            return;
+        }
+        delete point.secondCorner;
+        if (parseInteger(point.radius) === null) {
+            point.radius = 8;
+        }
     }
 
     /**
@@ -401,12 +659,8 @@
      * @returns {Promise<void>}
      */
     async function refreshSavedReferences() {
-        const regionRefresh = window.StowlingCoordinateRegions?.refreshAfterCoordinates;
-        const results = await Promise.allSettled([
-            loadReferences(),
-            typeof regionRefresh === "function" ? regionRefresh() : Promise.resolve()
-        ]);
-        if (results.some((result) => result.status === "rejected")) {
+        const results = await Promise.allSettled([loadReferences()]);
+        if (results[0]?.status === "rejected") {
             Stowling.showToast("更改已保存，但关联信息读取失败；请重新读取后再删除", true);
         }
     }
@@ -428,6 +682,7 @@
             name: "新命名坐标",
             dimension: DIMENSIONS[0],
             position: { x: 0, y: 64, z: 0 },
+            type: "POINT",
             _originalId: ""
         });
         markDirty(true);
@@ -535,6 +790,30 @@
                             + "必须是 32 位整数；请填写有效方块坐标",
                         `coordinate-${axis}-${index}`
                     );
+                }
+            }
+            const type = normalizePointType(point.type);
+            if (RADIUS_TYPES.includes(type)) {
+                const radius = parseInteger(point.radius);
+                if (radius === null || radius < 1 || radius > 128) {
+                    addError(
+                        errors,
+                        `${ordinal}“${name}”的半径必须是 1-128 的整数；`
+                            + "立方体和球均使用该半径",
+                        `coordinate-radius-${index}`
+                    );
+                }
+            }
+            if (type === "AREA") {
+                for (const axis of ["x", "y", "z"]) {
+                    if (parseInteger(point.secondCorner?.[axis]) === null) {
+                        addError(
+                            errors,
+                            `${ordinal}“${name}”的第二角点 ${axis.toUpperCase()} `
+                                + "必须是 32 位整数；允许任意方向输入",
+                            `coordinate-second-${axis}-${index}`
+                        );
+                    }
                 }
             }
         });
@@ -1112,16 +1391,34 @@
      * @returns {object}
      */
     function toRequestPoint(point) {
-        return {
+        const type = normalizePointType(point.type);
+        const requestPoint = {
             id: String(point.id || "").trim(),
             name: String(point.name || "").trim(),
             dimension: String(point.dimension || "").trim(),
-            position: {
-                x: Number(point.position?.x),
-                y: Number(point.position?.y),
-                z: Number(point.position?.z)
-            }
+            position: normalizePosition(point.position),
+            type
         };
+        requestPoint.position = {
+            x: Number(requestPoint.position.x),
+            y: Number(requestPoint.position.y),
+            z: Number(requestPoint.position.z)
+        };
+        if (RADIUS_TYPES.includes(type)) {
+            requestPoint.radius = Number(point.radius);
+        }
+        if (type === "AREA") {
+            const secondCorner = normalizePosition(
+                point.secondCorner,
+                point.position
+            );
+            requestPoint.secondCorner = {
+                x: Number(secondCorner.x),
+                y: Number(secondCorner.y),
+                z: Number(secondCorner.z)
+            };
+        }
+        return requestPoint;
     }
 
     /**
@@ -1157,12 +1454,6 @@
         event.preventDefault();
         void saveCoordinates();
     });
-    document.addEventListener("stowling:coordinate-regions-changed", () => {
-        void loadReferences().catch((error) => {
-            Stowling.handleError(error, "重新读取引用失败，删除已暂停");
-        });
-    });
-
     Stowling.onConnected(async () => {
         const results = await Promise.allSettled([loadCoordinates(), loadReferences()]);
         const failure = results.find((result) => result.status === "rejected");

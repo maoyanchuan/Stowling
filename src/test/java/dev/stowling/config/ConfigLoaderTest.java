@@ -48,7 +48,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.load(path);
 
-        assertEquals(5, config.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion());
         assertEquals(Duration.ZERO, config.defaultIdleDelay());
         assertTrue(config.coordinatePoints().isEmpty());
         assertTrue(config.pickupRegions().isEmpty());
@@ -133,7 +133,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(json);
 
-        assertEquals(5, config.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion());
         assertEquals(2, config.pickupRegions().size());
         assertEquals(1, config.cacheContainers().size());
         assertEquals(2, config.pickupWorkflows().size());
@@ -157,7 +157,8 @@ class ConfigLoaderTest {
         Path output = tempDir.resolve("migrated.json");
         loader.write(output, config);
         String written = Files.readString(output);
-        assertTrue(written.contains("\"schemaVersion\": 5"));
+        assertTrue(written.contains("\"schemaVersion\": "
+                + StowlingConfig.CURRENT_SCHEMA_VERSION));
         assertTrue(written.contains("\"coordinatePoints\""));
         assertFalse(written.contains("pickupSites"));
         assertFalse(written.contains("defaultIdleDelay"));
@@ -180,7 +181,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(root.toString());
 
-        assertEquals(5, config.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion());
         assertEquals(2, config.coordinatePoints().size());
         PickupRegion migratedRegion = config.pickupRegions().getFirst();
         SpherePickupShape migratedShape = (SpherePickupShape) migratedRegion.shape();
@@ -200,7 +201,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(root.toString());
 
-        assertEquals(5, config.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion());
         assertTrue(config.automationWorkflows().isEmpty());
     }
 
@@ -229,7 +230,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(root.toString());
 
-        assertEquals(5, config.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion());
         assertEquals("farm-patrol", config.pickupWorkflows().getFirst().id());
         assertEquals("wait-task", config.automationWorkflows().getFirst().id());
         assertEquals(

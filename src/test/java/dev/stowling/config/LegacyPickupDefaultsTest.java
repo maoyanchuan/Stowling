@@ -56,7 +56,7 @@ class LegacyPickupDefaultsTest {
 
         StowlingConfig cleaned = LegacyPickupDefaults.remove(source);
 
-        assertEquals(5, cleaned.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, cleaned.schemaVersion());
         assertTrue(cleaned.coordinatePoints().isEmpty());
         assertTrue(cleaned.pickupRegions().isEmpty());
         assertTrue(cleaned.cacheContainers().isEmpty());

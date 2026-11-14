@@ -17,6 +17,7 @@ import dev.stowling.domain.ClassificationTiming;
 import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.CoordinateType;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
@@ -86,7 +87,10 @@ class CoordinatePickupRulesTest {
                         "point-1",
                         "First center",
                         DIMENSION,
-                        new BlockPosition(1, -43, 4)
+                        new BlockPosition(1, -43, 4),
+                        CoordinateType.SPHERE,
+                        5,
+                        null
                 ),
                 parameters
         );
@@ -95,7 +99,10 @@ class CoordinatePickupRulesTest {
                         "point-1",
                         "Updated center",
                         "minecraft:the_nether",
-                        new BlockPosition(21, 70, -9)
+                        new BlockPosition(21, 70, -9),
+                        CoordinateType.SPHERE,
+                        11,
+                        null
                 ),
                 parameters
         );
@@ -107,23 +114,29 @@ class CoordinatePickupRulesTest {
         assertEquals(DIMENSION, plannedRegion(rules, firstConfig).dimension());
         assertEquals(new BlockPosition(21, 70, -9), second.center());
         assertEquals("minecraft:the_nether", plannedRegion(rules, updatedConfig).dimension());
-        assertEquals(8, first.radius());
-        assertEquals(8, second.radius());
+        assertEquals(5, first.radius());
+        assertEquals(11, second.radius());
     }
 
     @Test
     void validatorAcceptsCoordinatePickupAndRejectsInvalidReferencesAndMixing() {
+        NamedCoordinate range = new NamedCoordinate(
+                "point-1",
+                "Pickup range",
+                DIMENSION,
+                new BlockPosition(1, -43, 4),
+                CoordinateType.SPHERE,
+                8,
+                null
+        );
         NamedCoordinate point = new NamedCoordinate(
                 "point-1",
                 "Pickup center",
                 DIMENSION,
                 new BlockPosition(1, -43, 4)
         );
-        Map<String, String> validParameters = Map.of(
-                "coordinateId", "point-1",
-                "radius", "8"
-        );
-        StowlingConfig valid = config(point, validParameters);
+        Map<String, String> validParameters = Map.of("coordinateId", "point-1");
+        StowlingConfig valid = config(range, validParameters);
 
         assertEquals(List.of(), ConfigValidator.validate(valid));
         assertValidationViolation(
@@ -157,6 +170,11 @@ class CoordinatePickupRulesTest {
                 config(point, validParameters),
                 Map.of("radius", "8"),
                 "radius requires coordinateId"
+        );
+        assertValidationViolation(
+                config(point, validParameters),
+                Map.of("coordinateId", "point-1"),
+                "has no pickup range"
         );
     }
 
@@ -337,12 +355,12 @@ class CoordinatePickupRulesTest {
                 .filter(parameter -> parameter.key().equals("radius"))
                 .findFirst()
                 .orElseThrow();
-        assertEquals("拾取中心坐标", coordinate.label());
+        assertEquals("拾取坐标", coordinate.label());
         assertEquals("coordinate", coordinate.kind());
         assertEquals("拾取半径（格）", radius.label());
         assertEquals("positive-integer", radius.kind());
         assertTrue(module.descriptor().description().contains("命名坐标"));
-        assertTrue(module.descriptor().description().contains("已保存的拾取区域"));
+        assertTrue(module.descriptor().description().contains("范围"));
     }
 
     private static SpherePickupShape plannedShape(

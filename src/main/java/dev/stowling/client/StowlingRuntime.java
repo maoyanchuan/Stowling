@@ -2,6 +2,7 @@ package dev.stowling.client;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
+import com.google.gson.JsonParser;
 import dev.stowling.Stowling;
 import dev.stowling.api.StowlingHttpServer;
 import dev.stowling.automation.AutomationCheckpointStore;
@@ -41,6 +42,7 @@ import dev.stowling.client.interaction.MinecraftWorldObserver;
 import dev.stowling.client.interaction.ScreenInventorySource;
 import dev.stowling.config.ConfigFileStore;
 import dev.stowling.config.ConfigLoader;
+import dev.stowling.config.ConfigLoadException;
 import dev.stowling.config.LegacyPickupDefaults;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.control.PickupRuntimeFactory;
@@ -330,9 +332,18 @@ public final class StowlingRuntime implements AutoCloseable {
             Path configPath
     ) {
         if (Files.isRegularFile(configPath)) {
-            StowlingConfig original = loader.load(configPath);
+            String json;
+            try {
+                json = Files.readString(configPath, StandardCharsets.UTF_8);
+            } catch (IOException exception) {
+                throw new ConfigLoadException("Unable to read config: " + configPath, exception);
+            }
+            StowlingConfig original = loader.parse(json);
             StowlingConfig cleaned = LegacyPickupDefaults.remove(original);
-            if (!cleaned.equals(original)) {
+            int storedVersion = JsonParser.parseString(json).getAsJsonObject()
+                    .get("schemaVersion").getAsInt();
+            if (storedVersion < StowlingConfig.CURRENT_SCHEMA_VERSION
+                    || !cleaned.equals(original)) {
                 loader.writeAtomicWithBackup(configPath, cleaned);
             }
             return cleaned;

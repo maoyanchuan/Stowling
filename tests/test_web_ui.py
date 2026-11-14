@@ -52,7 +52,7 @@ SCRIPTS = COMMON + COORDINATES + TASKS + RESOURCES + STORAGE + DASHBOARD
 def test_four_pages_are_real_urls_with_shared_assets() -> None:
     expected_titles = {
         "index.html": "状态概览",
-        "coordinates.html": "命名坐标",
+        "coordinates.html": "坐标与范围",
         "tasks.html": "任务编排",
         "storage.html": "库存查询",
     }
@@ -153,7 +153,7 @@ def test_tasks_page_unifies_pickup_and_automation_with_filters() -> None:
     ):
         assert f'id="{element_id}"' in html
 
-    assert '<option value="PICKUP">自动拾取</option>' in html
+    assert '<option value="PICKUP">旧拾取任务（兼容）</option>' in html
     assert '<option value="AUTOMATION">自定义任务</option>' in html
     assert "function renderTaskList()" in TASKS
     assert "elements.filterName.value.trim().toLowerCase()" in TASKS
@@ -213,8 +213,9 @@ def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
         in TASKS
     assert "旧配置兼容：留空时沿用旧任务区域" in TASKS
     assert "旧配置兼容：自定义任务需要明确填写区域 ID" in TASKS
-    assert "请在本任务选择已有区域，或使用命名坐标和半径。" in TASKS
-    assert "拾取区域请在命名坐标页面维护" not in TASKS
+    assert "旧任务没有可显示的自身区域；拾取范围请在坐标与范围页面维护。" \
+        in TASKS
+    assert "命名坐标和半径" not in TASKS
     assert "taskId: draft.settings.interruption.kind === \"TASK_REFERENCE\"" \
         in TASKS
 
@@ -257,7 +258,7 @@ def test_new_task_entry_prefers_direct_rules_and_keeps_legacy_editing() -> None:
     assert 'id="new-task-dialog"' in html
     assert 'id="new-custom-task-button"' in html
     assert 'id="new-pickup-task-button"' in html
-    assert "只预置一个坐标或区域拾取步骤" in html
+    assert "只预置一个命名范围拾取步骤" in html
     assert "选择坐标、角点和缓存" not in html
     selector = html.split('<select id="task-kind">', 1)[1].split("</select>", 1)[0]
     assert 'value="AUTOMATION"' in selector
@@ -336,6 +337,8 @@ def test_task_page_uses_read_only_resource_facade() -> None:
     assert "Resources.onChanged(" in TASKS
     assert 'Stowling.request("/v1/config/task-resources"' not in TASKS
     assert 'Stowling.request("/v1/config/coordinates"' not in TASKS
+    assert "Stowling.clone(coordinateSnapshot.coordinatePoints)" in RESOURCES
+    assert ".map((point)" not in RESOURCES
 
 
 def test_task_page_removes_shared_editors_and_keeps_runtime_queue() -> None:

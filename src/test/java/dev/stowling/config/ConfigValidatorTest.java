@@ -374,7 +374,7 @@ class ConfigValidatorTest {
         StowlingConfig loaded = loader.load(output);
 
         assertEquals(config, loaded);
-        assertEquals(5, loaded.schemaVersion());
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, loaded.schemaVersion());
         assertTrue(loaded.pickupWorkflows().isEmpty());
         assertTrue(loaded.pickupRegions().isEmpty());
         Map<String, String> parameters = loaded.automationWorkflows()

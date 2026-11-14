@@ -145,7 +145,63 @@ public final class ConfigValidator {
             String path = "coordinatePoints[" + index + "]";
             registerResourceId(violations, resourceIds, coordinate.id(), path + ".id");
             requireName(violations, coordinate.name(), path + ".name");
+            validateCoordinateShape(violations, coordinate, path);
             coordinates.put(coordinate.id(), coordinate);
+        }
+    }
+
+    private static void validateCoordinateShape(
+            List<ConfigViolation> violations,
+            NamedCoordinate coordinate,
+            String path
+    ) {
+        switch (coordinate.type()) {
+            case POINT -> {
+                rejectCoordinateField(violations, coordinate.radius(), path + ".radius");
+                rejectCoordinateField(
+                        violations,
+                        coordinate.secondCorner(),
+                        path + ".secondCorner"
+                );
+            }
+            case SPHERE, CUBE -> {
+                if (coordinate.radius() == null
+                        || coordinate.radius() < 1
+                        || coordinate.radius() > 128) {
+                    violations.add(new ConfigViolation(
+                            path + ".radius",
+                            "radius must be between 1 and 128 for " + coordinate.type()
+                    ));
+                }
+                rejectCoordinateField(
+                        violations,
+                        coordinate.secondCorner(),
+                        path + ".secondCorner"
+                );
+            }
+            case AREA -> {
+                rejectCoordinateField(violations, coordinate.radius(), path + ".radius");
+                if (coordinate.secondCorner() == null) {
+                    violations.add(new ConfigViolation(
+                            path + ".secondCorner",
+                            "secondCorner is required for AREA"
+                    ));
+                }
+            }
+            default -> throw new IllegalStateException("unsupported coordinate type");
+        }
+    }
+
+    private static void rejectCoordinateField(
+            List<ConfigViolation> violations,
+            Object value,
+            String path
+    ) {
+        if (value != null) {
+            violations.add(new ConfigViolation(
+                    path,
+                    "field is not valid for this coordinate type"
+            ));
         }
     }
 

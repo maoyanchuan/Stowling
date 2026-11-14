@@ -40,10 +40,10 @@ public record StowlingConfig(
         List<AuditSchedule> auditSchedules,
         ContainerRef overflowContainer
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
 
     public StowlingConfig {
-        if (schemaVersion == 4) {
+        if (schemaVersion >= 4 && schemaVersion < CURRENT_SCHEMA_VERSION) {
             schemaVersion = CURRENT_SCHEMA_VERSION;
         }
         if (schemaVersion != CURRENT_SCHEMA_VERSION) {

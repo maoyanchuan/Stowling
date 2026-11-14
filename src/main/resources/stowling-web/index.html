@@ -99,17 +99,96 @@
                     </div>
                 </div>
                 <form id="pickup-form" class="pickup-form">
-                    <label for="site-select">拾取点</label>
-                    <div class="inline-control">
-                        <select id="site-select" required disabled>
-                            <option value="">正在加载拾取点…</option>
-                        </select>
-                        <button id="pickup-submit" class="primary" type="submit" disabled>
-                            开始任务
+                    <div class="pickup-launch-grid">
+                        <div>
+                            <label for="workflow-select">拾取流程</label>
+                            <select id="workflow-select" required disabled>
+                                <option value="">正在加载流程…</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="pickup-region-select">运行范围</label>
+                            <select id="pickup-region-select" disabled>
+                                <option value="">运行整个流程</option>
+                            </select>
+                        </div>
+                        <div class="pickup-launch-action">
+                            <button id="pickup-submit" class="primary" type="submit" disabled>
+                                开始任务
+                            </button>
+                        </div>
+                    </div>
+                    <p id="pickup-workflows-message" class="field-message" role="status"></p>
+                </form>
+            </section>
+
+            <section id="pickup-config-panel" class="panel wide"
+                     aria-labelledby="pickup-config-title">
+                <div class="panel-heading config-heading">
+                    <div>
+                        <p class="eyebrow">永久配置</p>
+                        <h2 id="pickup-config-title">拾取配置</h2>
+                    </div>
+                    <div class="action-row">
+                        <button id="pickup-config-discard" class="secondary compact"
+                                type="button">
+                            放弃修改/重新读取
+                        </button>
+                        <button id="pickup-config-save" class="primary compact"
+                                type="submit" form="pickup-config-form" disabled>
+                            保存全部
                         </button>
                     </div>
-                    <p id="pickup-sites-message" class="field-message" role="status"></p>
+                </div>
+                <p class="muted">
+                    在这里管理拾取区域、缓存和流程。所有改动先保留为草稿，点击“保存全部”后
+                    才会写入 <code>config/stowling.json</code> 并生成备份。
+                </p>
+                <form id="pickup-config-form" novalidate>
+                    <div class="pickup-config-grid">
+                        <section class="config-column" aria-labelledby="regions-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="regions-title">拾取区域</h3>
+                                    <p>球形或长方体范围及待机点</p>
+                                </div>
+                                <button id="add-region-button" class="secondary compact"
+                                        type="button">新增区域</button>
+                            </div>
+                            <div id="pickup-regions-list" class="editor-list"></div>
+                        </section>
+
+                        <section class="config-column" aria-labelledby="caches-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="caches-title">缓存容器</h3>
+                                    <p>流程可共用多个命名缓存</p>
+                                </div>
+                                <button id="add-cache-button" class="secondary compact"
+                                        type="button">新增缓存</button>
+                            </div>
+                            <div id="pickup-caches-list" class="editor-list"></div>
+                        </section>
+
+                        <section class="config-column workflow-column"
+                                 aria-labelledby="workflows-title">
+                            <div class="config-column-heading">
+                                <div>
+                                    <h3 id="workflows-title">拾取流程</h3>
+                                    <p>组合区域、缓存和运行策略</p>
+                                </div>
+                                <button id="add-workflow-button" class="secondary compact"
+                                        type="button">新增流程</button>
+                            </div>
+                            <div id="pickup-workflows-list" class="editor-list"></div>
+                        </section>
+                    </div>
                 </form>
+                <div id="pickup-config-errors" class="config-errors" role="alert"></div>
+                <div class="coordinate-footer">
+                    <span id="pickup-config-status">尚未读取拾取配置</span>
+                    <code id="pickup-config-revision">revision: --</code>
+                </div>
             </section>
 
             <section id="coordinates-panel" class="panel wide"
@@ -131,8 +210,8 @@
                     </div>
                 </div>
                 <p class="muted coordinate-help">
-                    这里只能修改 X、Y、Z。保存会永久写入
-                    <code>config/stowling.json</code>，并备份旧版本。
+                    此面板只管理仓库、溢出箱和装盒工位坐标。拾取区域与缓存请在上方
+                    “拾取配置”中管理。保存会永久写入配置文件并备份旧版本。
                 </p>
                 <form id="coordinates-form">
                     <div id="coordinates-list" class="coordinate-groups"></div>

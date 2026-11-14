@@ -356,6 +356,240 @@ select:disabled {
     max-width: 570px;
 }
 
+.pickup-launch-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+    align-items: end;
+    gap: 0.6rem;
+}
+
+.pickup-launch-action {
+    display: flex;
+}
+
+.pickup-launch-action button {
+    min-height: 43px;
+}
+
+.config-heading {
+    align-items: center;
+}
+
+.pickup-config-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.config-column {
+    min-width: 0;
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.34);
+}
+
+.workflow-column {
+    grid-column: 1 / -1;
+}
+
+.config-column-heading,
+.editor-card-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.7rem;
+}
+
+.config-column-heading {
+    margin-bottom: 0.7rem;
+}
+
+.config-column-heading h3,
+.binding-section h4 {
+    margin: 0;
+}
+
+.config-column-heading h3 {
+    font-size: 0.95rem;
+}
+
+.config-column-heading p {
+    margin: 0.2rem 0 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+.editor-list {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.editor-card {
+    min-width: 0;
+    padding: 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.editor-card[draggable="true"],
+.binding-row[draggable="true"] {
+    cursor: grab;
+}
+
+.editor-card-heading {
+    align-items: center;
+    margin-bottom: 0.7rem;
+}
+
+.editor-card-heading > strong {
+    overflow-wrap: anywhere;
+    font-size: 0.86rem;
+}
+
+.editor-card-actions,
+.move-buttons {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.move-buttons button {
+    min-width: 2rem;
+    padding-inline: 0.45rem;
+}
+
+.danger-action {
+    color: var(--danger);
+}
+
+.editor-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 0.55rem;
+}
+
+.editor-field {
+    min-width: 0;
+}
+
+.editor-field label {
+    display: block;
+    margin-bottom: 0.28rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
+.editor-field input,
+.editor-field select {
+    padding: 0.58rem 0.62rem;
+}
+
+.editor-field input:disabled {
+    color: var(--muted);
+    background: rgba(95, 110, 99, 0.08);
+}
+
+.position-editor {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+    min-width: 0;
+    margin: 0.65rem 0 0;
+    padding: 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+}
+
+.position-editor legend {
+    padding: 0 0.3rem;
+    color: var(--muted);
+    font-size: 0.73rem;
+    font-weight: 700;
+}
+
+.binding-section {
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--line);
+}
+
+.binding-section h4 {
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.binding-row {
+    display: grid;
+    grid-template-columns: minmax(130px, 1.2fr) repeat(2, minmax(100px, 0.7fr)) auto auto;
+    align-items: end;
+    gap: 0.45rem;
+    margin-top: 0.45rem;
+    padding: 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+}
+
+.binding-row > strong {
+    align-self: center;
+    overflow-wrap: anywhere;
+    font-size: 0.78rem;
+}
+
+.binding-add-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+}
+
+.check-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.45rem;
+}
+
+.check-option {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    cursor: pointer;
+}
+
+.check-option input {
+    width: auto;
+    margin: 0;
+}
+
+.check-option span {
+    overflow-wrap: anywhere;
+}
+
+.config-errors:not(:empty) {
+    margin-top: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba(161, 61, 55, 0.28);
+    border-radius: 10px;
+    color: var(--danger);
+    font-size: 0.8rem;
+    background: rgba(161, 61, 55, 0.07);
+}
+
+.config-errors ul {
+    margin: 0.45rem 0 0;
+    padding-left: 1.2rem;
+}
+
+.config-errors li + li {
+    margin-top: 0.25rem;
+}
+
 .coordinate-help {
     margin-bottom: 0.8rem;
 }
@@ -660,12 +894,47 @@ select:disabled {
         flex-direction: column;
     }
 
+    .config-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .pickup-launch-grid,
+    .pickup-config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .workflow-column {
+        grid-column: 1;
+    }
+
+    .pickup-launch-action button {
+        width: 100%;
+    }
+
+    .binding-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .binding-row > strong {
+        grid-column: 1 / -1;
+    }
+
     .coordinate-row {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .coordinate-identity {
         grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 480px) {
+    .editor-fields,
+    .position-editor,
+    .binding-row,
+    .binding-add-row {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -702,6 +971,8 @@ select:disabled {
     .task-card,
     .coordinate-group,
     .coordinate-row,
+    .config-column,
+    .editor-card,
     .container-option,
     .inventory-card {
         background: rgba(255, 255, 255, 0.035);

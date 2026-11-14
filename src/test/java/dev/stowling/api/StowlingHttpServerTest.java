@@ -113,13 +113,16 @@ class StowlingHttpServerTest {
         assertTrue(page.body().contains("src=\"/app.js\""));
         assertTrue(script.body().contains("Authorization"));
         assertTrue(script.body().contains("sessionStorage"));
-        assertTrue(script.body().contains("/v1/pickup-sites"));
-        assertTrue(script.body().contains("pickup_site_not_found"));
+        assertTrue(script.body().contains("/v1/pickup-workflows"));
+        assertTrue(script.body().contains("/v1/config/pickup"));
+        assertTrue(script.body().contains("pickup_workflow_not_found"));
         assertTrue(script.body().contains("/v1/config/coordinates"));
-        assertTrue(script.body().contains("配置中找不到这个拾取点"));
-        assertTrue(page.body().contains("<select id=\"site-select\""));
+        assertTrue(script.body().contains("配置中找不到这个拾取流程"));
+        assertTrue(page.body().contains("<select id=\"workflow-select\""));
+        assertTrue(page.body().contains("id=\"pickup-config-panel\""));
         assertTrue(page.body().contains("id=\"coordinates-panel\""));
         assertFalse(page.body().contains("id=\"site-input\""));
+        assertFalse(script.body().contains("innerHTML"));
         assertFalse(script.body().contains("localStorage"));
         assertTrue(styles.body().contains("@media (max-width: 760px)"));
         assertEquals(

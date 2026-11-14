@@ -17,7 +17,9 @@
         errors: document.querySelector("#coordinate-errors"),
         status: document.querySelector("#coordinate-status"),
         revision: document.querySelector("#coordinate-revision"),
-        usage: document.querySelector("#coordinate-usage")
+        usage: document.querySelector("#coordinate-usage"),
+        referenceStatus: document.querySelector("#coordinate-reference-status"),
+        reloadReferences: document.querySelector("#reload-coordinate-references-button")
     };
 
     const state = {
@@ -25,7 +27,11 @@
         draft: null,
         dirty: false,
         invalidFields: new Set(),
-        references: new Map()
+        references: new Map(),
+        referenceSource: null,
+        referencesReady: false,
+        referencesLoading: false,
+        cleanupIds: new Set()
     };
 
     /**
@@ -45,6 +51,7 @@
             point._originalId = String(point.id || "");
         }
         state.dirty = false;
+        state.cleanupIds.clear();
         elements.revision.textContent = Stowling.revisionLabel(state.snapshot.revision);
         elements.revision.title = state.snapshot.revision;
         elements.status.textContent = "命名坐标已与配置文件同步";
@@ -311,17 +318,45 @@
      * @returns {void}
      */
     function removePoint(index) {
-        const point = state.draft.coordinatePoints[index];
-        const references = [
-            ...referencesFor(point.id),
-            ...referencesFor(point._originalId)
-        ];
-        if (references.length > 0) {
-            const message = `无法删除“${point.name || point.id}”：仍被 ${references.join("、")}`
-                + " 引用。请先在对应页面解除引用并保存。";
-            showErrors([message]);
-            Stowling.showToast("命名坐标仍被引用，暂未删除", true);
+        const point = state.draft?.coordinatePoints[index];
+        if (!point) {
             return;
+        }
+        if (!state.referencesReady) {
+            showErrors(["引用读取未完成或失败，不能删除坐标。请重新读取后再操作。"]);
+            Stowling.showToast("引用未可靠读取，暂未删除", true);
+            return;
+        }
+        const deletedIds = deletedCoordinateIds();
+        const savedId = String(point._originalId || "");
+        const ids = new Set([...deletedIds, savedId, String(point.id || "")]);
+        ids.delete("");
+        const plan = deletionPlan(ids);
+        if (plan.blockers.length > 0) {
+            showErrors([
+                `无法删除“${point.name || point.id}”：${plan.blockers.join("；")}。`
+                    + "请到任务页解除对应任务的步骤、触发器或内嵌配置引用并保存，"
+                    + "再回到这里重新读取。不会删除任何自动化或自定义任务。"
+            ]);
+            Stowling.showToast("实际任务仍在引用，暂未删除", true);
+            return;
+        }
+        const previous = deletionPlan(deletedIds);
+        const labels = newCleanupLabels(plan, previous);
+        if (labels.length > 0) {
+            const warning = `删除坐标“${point.name || point.id}”（${savedId || point.id}）？`
+                + "\n保存全部时将一并删除以下关联区域、旧缓存或旧 PICKUP 任务：\n"
+                + labels.map((label) => `• ${label}`).join("\n")
+                + "\n旧 PICKUP 任务将完整移除，不转换或改写步骤。"
+                + "\n确认仅修改草稿，不会立即保存；取消不作任何更改。"
+                + "\n之前已确认的关联清理不会重复列出，不会删除自动化或自定义任务。";
+            if (!window.confirm(warning)) {
+                return;
+            }
+            const saved = state.snapshot.coordinatePoints.some((item) => item.id === savedId);
+            if (saved) {
+                state.cleanupIds.add(savedId);
+            }
         }
         state.draft.coordinatePoints.splice(index, 1);
         markDirty(true);
@@ -470,7 +505,7 @@
      * @returns {void}
      */
     function updateSaveState(showValidation = true) {
-        const errors = validateDraft();
+        const errors = [...validateDraft(), ...deletionGuardErrors()];
         const blocked = errors.length > 0;
         elements.save.disabled = !state.dirty || blocked;
         elements.status.classList.toggle("dirty", state.dirty);
@@ -565,88 +600,328 @@
      * @returns {Promise<void>}
      */
     async function loadReferences() {
-        const results = await Promise.allSettled([
-            Stowling.request("/v1/config/task-resources"),
-            Stowling.request("/v1/task-definitions")
-        ]);
-        state.references = new Map();
-        if (results[0].status === "fulfilled") {
-            addPickupReferences(results[0].value);
-        }
-        if (results[1].status === "fulfilled") {
-            addTaskReferences(results[1].value);
-        }
+        state.referencesReady = false;
+        state.referencesLoading = true;
         renderUsage();
+        updateSaveState();
+        try {
+            const results = await Promise.allSettled([
+                Stowling.request("/v1/config/task-resources"),
+                Stowling.request("/v1/task-definitions")
+            ]);
+            const failure = results.find((result) => result.status === "rejected");
+            if (failure) {
+                throw failure.reason;
+            }
+            const resources = results[0].value;
+            const definitions = results[1].value;
+            if (!Array.isArray(resources?.pickupRegions)
+                    || !Array.isArray(resources?.cacheContainers)
+                    || !Array.isArray(resources?.pickupWorkflows)
+                    || !Array.isArray(definitions?.tasks)) {
+                throw new Error("引用响应不完整，请重新读取");
+            }
+            state.referenceSource = Stowling.clone({ resources, definitions });
+            state.referencesReady = true;
+        } catch (error) {
+            state.referencesReady = false;
+            throw error;
+        } finally {
+            state.referencesLoading = false;
+            renderUsage();
+            updateSaveState();
+        }
     }
 
     /**
-     * @param {object} source
-     * @returns {void}
+     * @returns {Set<string>}
      */
-    function addPickupReferences(source) {
-        for (const region of source?.pickupRegions || []) {
-            addReference(
-                region.standbyCoordinateId,
-                `拾取区域“${region.name || region.id}”兼容锚点`
-            );
-            addReference(
-                region.shape?.centerCoordinateId,
-                `拾取区域“${region.name || region.id}”球心`
-            );
-            addReference(
-                region.shape?.firstCornerCoordinateId,
-                `拾取区域“${region.name || region.id}”第一角点`
-            );
-            addReference(
-                region.shape?.secondCornerCoordinateId,
-                `拾取区域“${region.name || region.id}”第二角点`
-            );
-        }
-        for (const cache of source?.cacheContainers || []) {
-            addReference(cache.coordinateId, `缓存容器“${cache.name || cache.id}”`);
-        }
+    function deletedCoordinateIds() {
+        const retained = new Set(
+            (state.draft?.coordinatePoints || []).map((point) => String(point.id || ""))
+        );
+        return new Set((state.snapshot?.coordinatePoints || [])
+            .map((point) => String(point.id || ""))
+            .filter((id) => id && !retained.has(id)));
     }
 
     /**
-     * @param {object} source
+     * @param {unknown} value
+     * @returns {Array<string>}
+     */
+    function referenceIds(value) {
+        if (Array.isArray(value)) {
+            return value.flatMap(referenceIds);
+        }
+        if (typeof value !== "string") {
+            return [];
+        }
+        const text = value.trim();
+        if (text.startsWith("[")) {
+            try {
+                return referenceIds(JSON.parse(text));
+            } catch {
+                return text.split(/[,;\s]+/).filter(Boolean);
+            }
+        }
+        return text.split(/[,;\s]+/).filter(Boolean);
+    }
+
+    /**
+     * @param {unknown} source
+     * @returns {{coordinates: Set<string>, regions: Set<string>, caches: Set<string>,
+     *     workflows: Set<string>}}
+     */
+    function collectReferences(source) {
+        const result = {
+            coordinates: new Set(),
+            regions: new Set(),
+            caches: new Set(),
+            workflows: new Set()
+        };
+        visitReferences(source, result);
+        return result;
+    }
+
+    /**
+     * @param {unknown} source
+     * @param {{coordinates: Set<string>, regions: Set<string>, caches: Set<string>,
+     *     workflows: Set<string>}} result
      * @returns {void}
      */
-    function addTaskReferences(source) {
-        for (const task of source?.tasks || []) {
-            const steps = [
-                ...(task.steps || []),
-                ...(task.settings?.interruption?.steps || [])
-            ];
-            for (const step of steps) {
-                for (const [key, value] of Object.entries(step.parameters || {})) {
-                    const coordinateKey = key === "coordinateId"
-                        || key.endsWith("CoordinateId");
-                    if (coordinateKey && typeof value === "string") {
-                        addReference(
-                            value,
-                            `任务“${task.name || task.id}”步骤 ${step.id}`
-                        );
-                    }
+    function visitReferences(source, result) {
+        if (!source || typeof source !== "object") {
+            return;
+        }
+        if (Array.isArray(source)) {
+            source.forEach((entry) => visitReferences(entry, result));
+            return;
+        }
+        for (const [key, value] of Object.entries(source)) {
+            let target = null;
+            if (key === "coordinateId" || key === "coordinateIds"
+                    || key.endsWith("CoordinateId") || key.endsWith("CoordinateIds")) {
+                target = result.coordinates;
+            } else if (key === "regionId" || key === "regionIds") {
+                target = result.regions;
+            } else if (["cacheId", "cacheIds", "containerId", "sourceContainerId",
+                "destinationContainerId", "destination", "fallbackContainerId",
+                "outputContainerId", "boxContainerId"].includes(key)) {
+                target = result.caches;
+            } else if (["workflowId", "pickupWorkflowId"].includes(key)) {
+                target = result.workflows;
+            }
+            if (target) {
+                referenceIds(value).forEach((id) => target.add(id));
+            }
+            if (typeof value === "string" && /^[\[{]/.test(value.trim())) {
+                try {
+                    visitReferences(JSON.parse(value), result);
+                } catch {
+                    // Unparsed reference values remain subject to server-side protection.
                 }
+            } else {
+                visitReferences(value, result);
             }
         }
     }
 
     /**
-     * @param {unknown} coordinateId
-     * @param {string} label
-     * @returns {void}
+     * @param {Set<string>} values
+     * @param {Set<string>} selected
+     * @returns {boolean}
      */
-    function addReference(coordinateId, label) {
-        const id = String(coordinateId || "");
-        if (!id) {
-            return;
+    function intersects(values, selected) {
+        return [...values].some((id) => selected.has(id));
+    }
+
+    /**
+     * @returns {Array<object>}
+     */
+    function legacyPickupWorkflows() {
+        const { resources, definitions } = state.referenceSource;
+        const workflows = new Map();
+        const entries = [
+            ...resources.pickupWorkflows,
+            ...definitions.tasks.filter((task) => task.kind === "PICKUP")
+        ];
+        for (const entry of entries) {
+            const id = String(entry.id || entry.pickup?.id || "");
+            const workflow = workflows.get(id) || {
+                id,
+                name: entry.name || entry.pickup?.name || id,
+                sources: []
+            };
+            workflow.sources.push(entry);
+            workflows.set(id, workflow);
         }
-        const values = state.references.get(id) || [];
-        if (!values.includes(label)) {
-            values.push(label);
-            state.references.set(id, values);
+        return [...workflows.values()];
+    }
+
+    /**
+     * @param {Set<string>} coordinateIds
+     * @returns {object}
+     */
+    function deletionPlan(coordinateIds) {
+        const plan = {
+            coordinateIds,
+            regions: [],
+            caches: [],
+            workflows: [],
+            regionIds: new Set(),
+            cacheIds: new Set(),
+            workflowIds: new Set(),
+            blockers: []
+        };
+        if (!state.referenceSource) {
+            return plan;
         }
+        const { resources, definitions } = state.referenceSource;
+        plan.regions = resources.pickupRegions.filter((region) => {
+            return intersects(collectReferences(region).coordinates, coordinateIds);
+        });
+        plan.caches = resources.cacheContainers.filter((cache) => {
+            return intersects(collectReferences(cache).coordinates, coordinateIds);
+        });
+        plan.regionIds = new Set(plan.regions.map((region) => String(region.id)));
+        plan.cacheIds = new Set(plan.caches.map((cache) => String(cache.id)));
+        const legacy = legacyPickupWorkflows();
+        plan.workflows = legacy.filter((workflow) => workflow.sources.some((source) => {
+            const body = source.pickup || source;
+            const regionIds = new Set((body.regions || [])
+                .map((binding) => String(binding.regionId || "")));
+            const cacheIds = new Set(referenceIds(body.cacheIds));
+            return intersects(regionIds, plan.regionIds)
+                || intersects(cacheIds, plan.cacheIds);
+        }));
+        plan.workflowIds = new Set(plan.workflows.map((workflow) => workflow.id));
+        const tasks = [
+            ...definitions.tasks,
+            ...(resources.automationWorkflows || [])
+        ];
+        const labels = new Set();
+        for (const task of tasks) {
+            if (task.kind === "PICKUP") {
+                continue;
+            }
+            taskReferenceLabels(task, plan).forEach((label) => labels.add(label));
+        }
+        for (const workflow of legacy) {
+            if (plan.workflowIds.has(workflow.id)) {
+                continue;
+            }
+            for (const source of workflow.sources) {
+                taskReferenceLabels({
+                    ...source,
+                    kind: "PICKUP",
+                    id: workflow.id,
+                    name: workflow.name
+                }, plan).forEach((label) => labels.add(label));
+            }
+        }
+        plan.blockers = [...labels];
+        return plan;
+    }
+
+    /**
+     * @param {unknown} source
+     * @param {object} plan
+     * @returns {boolean}
+     */
+    function referencesDeletion(source, plan) {
+        const refs = collectReferences(source);
+        return intersects(refs.coordinates, plan.coordinateIds)
+            || intersects(refs.regions, plan.regionIds)
+            || intersects(refs.caches, plan.cacheIds)
+            || intersects(refs.workflows, plan.workflowIds);
+    }
+
+    /**
+     * @param {object} task
+     * @param {object} plan
+     * @returns {Array<string>}
+     */
+    function taskReferenceLabels(task, plan) {
+        if (!referencesDeletion(task, plan)) {
+            return [];
+        }
+        const kind = task.kind === "PICKUP" ? "旧 PICKUP 任务" : "任务";
+        const label = `${kind}“${task.name || task.id}”（${task.id}）`;
+        const labels = new Set();
+        for (const step of task.steps || []) {
+            if (referencesDeletion(step, plan)) {
+                labels.add(`${label}步骤 ${step.id || "未命名"} · ${step.type || "模块"}`);
+            }
+        }
+        for (const step of task.settings?.interruption?.steps || []) {
+            if (referencesDeletion(step, plan)) {
+                labels.add(`${label}插入步骤 ${step.id || "未命名"} · ${step.type || "模块"}`);
+            }
+        }
+        if (referencesDeletion(task.settings?.trigger, plan)
+                || referencesDeletion(task.trigger, plan)) {
+            labels.add(`${label}触发器`);
+        }
+        if (labels.size === 0) {
+            labels.add(`${label}内嵌或其他配置`);
+        }
+        return [...labels];
+    }
+
+    /**
+     * @param {object} plan
+     * @param {object | null} previous
+     * @returns {Array<string>}
+     */
+    function newCleanupLabels(plan, previous = null) {
+        const labels = new Set();
+        for (const region of plan.regions) {
+            if (!previous?.regionIds.has(String(region.id))) {
+                labels.add(`关联区域“${region.name || region.id}”（${region.id}）`);
+            }
+        }
+        for (const cache of plan.caches) {
+            if (!previous?.cacheIds.has(String(cache.id))) {
+                labels.add(`旧缓存“${cache.name || cache.id}”（${cache.id}）`);
+            }
+        }
+        for (const workflow of plan.workflows) {
+            if (!previous?.workflowIds.has(workflow.id)) {
+                labels.add(`旧 PICKUP 任务“${workflow.name}”（${workflow.id}）`);
+            }
+        }
+        return [...labels];
+    }
+
+    /**
+     * @returns {Array<string>}
+     */
+    function deletionGuardErrors() {
+        const ids = deletedCoordinateIds();
+        if (ids.size === 0) {
+            return [];
+        }
+        if (!state.referencesReady) {
+            return ["引用未可靠读取，删除草稿暂不能保存。请重新读取（将放弃草稿）。"];
+        }
+        const plan = deletionPlan(ids);
+        if (plan.blockers.length > 0) {
+            return ["实际任务仍在引用，请先到任务页解除引用并保存："
+                + plan.blockers.join("；")];
+        }
+        const confirmed = deletionPlan(new Set(cleanupCoordinateIds()));
+        if (newCleanupLabels(plan, confirmed).length > 0) {
+            return ["关联资源清理尚未全部确认，请放弃草稿并重新读取后再次删除。"];
+        }
+        return [];
+    }
+
+    /**
+     * @returns {Array<string>}
+     */
+    function cleanupCoordinateIds() {
+        const deleted = deletedCoordinateIds();
+        return [...state.cleanupIds].filter((id) => deleted.has(id));
     }
 
     /**
@@ -662,15 +937,34 @@
      */
     function renderUsage() {
         elements.usage.replaceChildren();
+        elements.referenceStatus.textContent = state.referencesReady
+            ? "引用已读取；确认清理仅进入草稿，保存时由服务端再次保护实际任务。"
+            : state.referencesLoading
+                ? "正在读取资源与任务引用，读取完成前不能删除坐标…"
+                : "引用读取失败或未完成，不能删除坐标。请重新读取（将放弃草稿）。";
+        elements.reloadReferences.hidden = state.referencesReady;
+        elements.reloadReferences.disabled = state.referencesLoading;
+        if (!state.referencesReady) {
+            elements.usage.append(Stowling.emptyState("引用尚未可靠读取，删除已暂停"));
+            return;
+        }
+        state.references = new Map();
+        for (const point of state.snapshot?.coordinatePoints || []) {
+            const plan = deletionPlan(new Set([String(point.id)]));
+            state.references.set(String(point.id), [
+                ...newCleanupLabels(plan),
+                ...plan.blockers
+            ]);
+        }
         if (!state.draft || state.references.size === 0) {
             elements.usage.append(Stowling.emptyState("当前没有已保存的引用"));
             return;
         }
         for (const point of state.draft.coordinatePoints) {
-            const references = [
+            const references = [...new Set([
                 ...referencesFor(point.id),
                 ...referencesFor(point._originalId)
-            ];
+            ])];
             if (references.length === 0) {
                 continue;
             }
@@ -698,7 +992,7 @@
      * @returns {Promise<void>}
      */
     async function saveCoordinates() {
-        const errors = validateDraft();
+        const errors = [...validateDraft(), ...deletionGuardErrors()];
         if (errors.length > 0) {
             showErrors(errors);
             Stowling.showToast("命名坐标仍有错误，暂未保存", true);
@@ -711,13 +1005,18 @@
         elements.discard.disabled = true;
         elements.status.textContent = "正在保存命名坐标…";
         try {
+            const payload = {
+                revision: state.snapshot.revision,
+                coordinatePoints: state.draft.coordinatePoints.map(toRequestPoint)
+            };
+            const cleanupIds = cleanupCoordinateIds();
+            if (cleanupIds.length > 0) {
+                payload.removeLegacyReferencesFor = cleanupIds;
+            }
             const saved = await Stowling.request("/v1/config/coordinate-points", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    revision: state.snapshot.revision,
-                    coordinatePoints: state.draft.coordinatePoints.map(toRequestPoint)
-                })
+                body: JSON.stringify(payload)
             });
             renderSnapshot(saved);
             const regionRefresh = window.StowlingCoordinateRegions
@@ -771,6 +1070,10 @@
      */
     async function discardChanges() {
         elements.discard.disabled = true;
+        state.cleanupIds.clear();
+        if (state.snapshot) {
+            renderSnapshot(state.snapshot);
+        }
         try {
             await Promise.all([loadCoordinates(), loadReferences()]);
             Stowling.showToast("已放弃草稿并重新读取命名坐标");
@@ -785,12 +1088,17 @@
     elements.discard.addEventListener("click", () => {
         void discardChanges();
     });
+    elements.reloadReferences.addEventListener("click", () => {
+        void discardChanges();
+    });
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
         void saveCoordinates();
     });
     document.addEventListener("stowling:coordinate-regions-changed", () => {
-        void loadReferences();
+        void loadReferences().catch((error) => {
+            Stowling.handleError(error, "重新读取引用失败，删除已暂停");
+        });
     });
 
     Stowling.onConnected(async () => {

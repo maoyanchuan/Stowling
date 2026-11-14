@@ -109,11 +109,16 @@ On the same page, define a named `SPHERE` region by selecting a saved center poi
 radius, or a `CUBOID` region by selecting two saved corner points. Cuboid corners may be
 selected in either order: each axis is automatically sorted into an inclusive min/max
 range. The editor shows names, dimensions, and XYZ or bounds summaries. References must
-be in the same dimension. Saving a coordinate synchronizes its existing references;
-referenced coordinates cannot be deleted. A region referenced by a task or legacy workflow
-cannot be deleted either, and rejected operations display an explanatory error.
+be in the same dimension. Saving a coordinate synchronizes its existing references.
+Deleting a point can explicitly remove its associated regions, legacy caches, and legacy
+pickup tasks after the page lists them for confirmation. The deletion is saved atomically
+with the coordinate draft and backed up; cancelling leaves the draft unchanged. References
+from custom tasks, including indirect resource references and interruption steps, still
+block deletion. A region referenced by a task or legacy workflow cannot be deleted on its
+own, and rejected operations display an explanatory error.
 
-There is no standby-point or cache-container editor. Existing regions retain their legacy standby anchors in the same dimension. New regions
+There is no standby-point or cache-container editor. Existing regions retain their legacy
+standby anchors in the same dimension. New regions
 derive an internal compatibility anchor from the center or first corner; pure pickup does
 not use these fields. Existing task, workflow, and cache configurations are retained, but their
 legacy resource settings are not edited by the new page.
@@ -124,6 +129,11 @@ Named-coordinate endpoints are:
 GET /v1/config/coordinate-points
 PUT /v1/config/coordinate-points
 ```
+
+The coordinate update accepts an optional `removeLegacyReferencesFor` array containing
+saved coordinate IDs explicitly confirmed for deletion in the same request. Omitting it
+retains the original strict reference protection. Stale revisions or remaining task
+references reject the entire update without removing any resources.
 
 ### Legacy pickup compatibility API
 

@@ -361,12 +361,16 @@ final class StrictRequestParser {
             JsonObject root = readStrictObject(body);
             requireFields(
                     root,
-                    Set.of("revision", "coordinatePoints"),
+                    Set.of("revision", "coordinatePoints", "removeLegacyReferencesFor"),
                     Set.of("revision", "coordinatePoints")
             );
             return new ConfigCoordinatePointsUpdateRequest(
                     string(root, "revision", 128),
-                    coordinatePointInfos(array(root, "coordinatePoints"))
+                    coordinatePointInfos(array(root, "coordinatePoints")),
+                    root.has("removeLegacyReferencesFor")
+                            ? strings(array(root, "removeLegacyReferencesFor"),
+                            "removeLegacyReferencesFor", 64)
+                            : List.of()
             );
         } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
             throw malformed(exception);

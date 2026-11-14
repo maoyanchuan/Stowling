@@ -433,11 +433,14 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             }
             List<NamedCoordinate> points = namedCoordinates(request.coordinatePoints());
             Map<String, NamedCoordinate> pointsById = indexCoordinates(points);
-            rejectReferencedCoordinateDeletions(current.config(), pointsById);
+            StowlingConfig source = CoordinateReferenceCleanup.apply(
+                    current.config(), pointsById, request.removeLegacyReferencesFor()
+            );
+            rejectReferencedCoordinateDeletions(source, pointsById);
             StowlingConfig updated;
             try {
                 updated = withSynchronizedCoordinateResources(
-                        current.config(),
+                        source,
                         points,
                         pointsById
                 );
@@ -448,6 +451,15 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             ConfigFileSnapshot saved = configFileStore.save(request.revision(), updated);
             configActivated.accept(saved.config());
             config = saved.config();
+            Set<String> remainingPickups = new HashSet<>();
+            for (PickupWorkflow workflow : config.pickupWorkflows()) {
+                remainingPickups.add(workflow.id());
+            }
+            for (PickupWorkflow workflow : current.config().pickupWorkflows()) {
+                if (!remainingPickups.contains(workflow.id())) {
+                    scheduler.disable(new TaskKey(TaskKey.PICKUP, workflow.id()));
+                }
+            }
             return toCoordinatePointsSnapshot(saved);
         }
     }

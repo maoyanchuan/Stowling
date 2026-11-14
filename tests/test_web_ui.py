@@ -214,6 +214,18 @@ def test_task_page_uses_expected_automation_apis() -> None:
     assert "moduleState" in TASKS
 
 
+def test_task_page_displays_navigation_failure_reason() -> None:
+    assert "const failureReason = conciseFailureReason(task.failureReason);" in TASKS
+    assert 'metaText("原因", failureReason)' in TASKS
+    assert "reason.title = String(task.failureReason);" in TASKS
+    assert "function conciseFailureReason(value)" in TASKS
+    assert 'return "目标不可达";' in TASKS
+    assert 'return "客户端已断开";' in TASKS
+    assert 'return "操作超时";' in TASKS
+    assert 'if (["FAILED", "CANCELLED"].includes(status))' in TASKS
+    assert 'badge.classList.add("danger")' in TASKS
+
+
 def test_task_save_is_atomic_and_validation_is_explicit() -> None:
     assert "revision: state.snapshot.revision" in TASKS
     assert "automationWorkflows:" in TASKS

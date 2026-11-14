@@ -7,5 +7,5 @@ public interface NavigationService {
 
     void cancel();
 
-    boolean isNavigating();
+    boolean isNavigatingOrCalculating();
 }

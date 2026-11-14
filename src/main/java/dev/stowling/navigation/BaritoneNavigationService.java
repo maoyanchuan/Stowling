@@ -2,6 +2,7 @@ package dev.stowling.navigation;
 
 import baritone.api.IBaritone;
 import baritone.api.IBaritoneProvider;
+import baritone.api.behavior.IPathingBehavior;
 import baritone.api.pathing.goals.GoalBlock;
 import dev.stowling.domain.BlockPosition;
 import java.util.Objects;
@@ -26,8 +27,11 @@ public final class BaritoneNavigationService implements NavigationService {
     }
 
     @Override
-    public boolean isNavigating() {
-        return primaryBaritone().getPathingBehavior().isPathing();
+    public boolean isNavigatingOrCalculating() {
+        IPathingBehavior pathing = primaryBaritone().getPathingBehavior();
+        return pathing.isPathing()
+                || pathing.hasPath()
+                || pathing.getInProgress().isPresent();
     }
 
     private IBaritone primaryBaritone() {

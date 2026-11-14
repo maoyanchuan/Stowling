@@ -12,10 +12,13 @@ import java.util.Objects;
 public final class BaritoneAutomationNavigation implements NavigationPort {
     private static final double STANDARD_ARRIVAL_DISTANCE_SQUARED = 6.25D;
     private static final double GROUND_ITEM_ARRIVAL_DISTANCE_SQUARED = 0.0D;
+    private static final int PATH_STARTUP_GRACE_TICKS = 20;
 
     private final NavigationService navigationService;
     private final WorldObserver worldObserver;
     private boolean active;
+    private boolean pathObserved;
+    private int missingPathTicks;
 
     public BaritoneAutomationNavigation(
             NavigationService navigationService,
@@ -38,6 +41,8 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(targetType, "targetType");
         active = true;
+        pathObserved = false;
+        missingPathTicks = 0;
         navigationService.navigateTo(target);
         return NavigationStatus.NAVIGATING;
     }
@@ -70,6 +75,17 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (!active) {
             return NavigationStatus.FAILED;
         }
+        if (navigationService.isNavigatingOrCalculating()) {
+            pathObserved = true;
+            missingPathTicks = 0;
+            return NavigationStatus.NAVIGATING;
+        }
+        missingPathTicks++;
+        if (pathObserved || missingPathTicks >= PATH_STARTUP_GRACE_TICKS) {
+            active = false;
+            navigationService.cancel();
+            return NavigationStatus.FAILED;
+        }
         return NavigationStatus.NAVIGATING;
     }
 
@@ -86,5 +102,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             active = false;
             navigationService.cancel();
         }
+        pathObserved = false;
+        missingPathTicks = 0;
     }
 }

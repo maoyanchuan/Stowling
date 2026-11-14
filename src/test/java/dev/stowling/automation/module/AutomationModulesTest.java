@@ -86,6 +86,37 @@ class AutomationModulesTest {
     }
 
     @Test
+    void reportsUnreachableNavigationAsFailure() {
+        BlockPosition target = new BlockPosition(12, 64, -4);
+        CoordinateResolver coordinates = coordinateId -> Optional.of(target);
+        FakeNavigation navigation = new FakeNavigation();
+        navigation.status = NavigationStatus.FAILED;
+        NavigateAutomationModule module = new NavigateAutomationModule(
+                coordinates,
+                navigation,
+                new MutableClock(START)
+        );
+        AutomationStep step = step(
+                "travel",
+                AutomationStepType.NAVIGATE,
+                Map.of("coordinateId", "unreachable")
+        );
+
+        AutomationModuleResult failed = execute(
+                module,
+                step,
+                Map.of(),
+                false
+        );
+
+        assertEquals(AutomationModuleStatus.FAILED, failed.status());
+        assertEquals(
+                Optional.of("目标不可达或寻路失败: unreachable"),
+                failed.message()
+        );
+    }
+
+    @Test
     void waitUsesAutomationClockAndSupportsWebDurationAlias() {
         MutableClock clock = new MutableClock(START);
         WaitAutomationModule module = new WaitAutomationModule(clock);

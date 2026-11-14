@@ -74,7 +74,7 @@ public final class NavigateAutomationModule implements AutomationModule {
                     "NAVIGATE:" + coordinateId
             );
             case FAILED -> AutomationModuleResult.failed(
-                    "导航失败: " + coordinateId
+                    "目标不可达或寻路失败: " + coordinateId
             );
             case NAVIGATING -> AutomationModuleResult.running(state);
         };

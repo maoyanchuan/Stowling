@@ -1,6 +1,7 @@
 package dev.stowling.client.interaction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.GroundItem;
 import dev.stowling.automation.NavigationStatus;
@@ -45,18 +46,65 @@ class BaritoneAutomationNavigationTest {
         );
     }
 
+    @Test
+    void reportsFailureWhenBaritoneStopsWithoutArrival() {
+        FakeNavigationService navigationService = new FakeNavigationService();
+        MutableWorldObserver world = new MutableWorldObserver(new BlockPosition(10, 64, 0));
+        BaritoneAutomationNavigation navigation = new BaritoneAutomationNavigation(
+                navigationService,
+                world
+        );
+        BlockPosition target = new BlockPosition(0, 64, 0);
+
+        navigation.start(target);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+
+        navigationService.setNavigatingOrCalculating(false);
+
+        assertEquals(NavigationStatus.FAILED, navigation.status(target));
+        assertTrue(navigationService.cancelled);
+    }
+
+    @Test
+    void allowsBaritoneTimeToStartPathCalculation() {
+        FakeNavigationService navigationService = new FakeNavigationService();
+        MutableWorldObserver world = new MutableWorldObserver(new BlockPosition(10, 64, 0));
+        BaritoneAutomationNavigation navigation = new BaritoneAutomationNavigation(
+                navigationService,
+                world
+        );
+        BlockPosition target = new BlockPosition(0, 64, 0);
+
+        navigation.start(target);
+        navigationService.setNavigatingOrCalculating(false);
+        for (int tick = 0; tick < 19; tick++) {
+            assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        }
+        assertEquals(NavigationStatus.FAILED, navigation.status(target));
+    }
+
     private static final class FakeNavigationService implements NavigationService {
+        private boolean navigatingOrCalculating = true;
+        private boolean cancelled;
+
         @Override
         public void navigateTo(BlockPosition target) {
+            navigatingOrCalculating = true;
+            cancelled = false;
         }
 
         @Override
         public void cancel() {
+            cancelled = true;
         }
 
         @Override
-        public boolean isNavigating() {
-            return true;
+        public boolean isNavigatingOrCalculating() {
+            return navigatingOrCalculating;
+        }
+
+        private void setNavigatingOrCalculating(boolean value) {
+            navigatingOrCalculating = value;
         }
     }
 

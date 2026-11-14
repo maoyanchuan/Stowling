@@ -4,6 +4,7 @@
 build/
 out/
 run/
+logs/
 depend/
 *.iml
 *.log

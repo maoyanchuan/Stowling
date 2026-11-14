@@ -14,6 +14,8 @@ Current functionality includes:
 - Inventory audits with loose, boxed, unknown, and nested shulker-box contents.
 - Configurable shulker-box packing workcells with item-count or occupancy thresholds.
 - SQLite persistence for tasks, recovery checkpoints, containers, and inventory snapshots.
+- Named spherical or cuboid pickup regions, named cache containers, and reusable multi-region
+  pickup workflows managed from the web console.
 - A loopback REST control API with bearer authentication for status, tasks, pickup, audit,
   inventory, container, pause, resume, and config-reload operations.
 - In-client HeadlessMC control commands plus Windows start, status, stop, retry, and log
@@ -79,17 +81,31 @@ select **Verify and connect**. The token is kept only in the current tab's
 `sessionStorage`; it is never added to the URL, cookies, project configuration, or logs.
 Use **Clear token** to remove it from the current browser session.
 
-The console shows runtime status, tasks, containers, and inventory snapshots. It can start
-pickup tasks, cancel tasks, pause or resume automation, request audits, and reload config.
-The pickup selector automatically lists each configured `pickupSites` ID with its center
-coordinates, so coordinates are never entered in place of a site ID. Status data refreshes
-every 10 seconds, and an expired token prompts for re-entry.
+The console shows runtime status, tasks, containers, and inventory snapshots. Its
+**Pickup configuration** editor manages named spherical or cuboid regions, named cache
+containers, and workflows that combine regions and caches. Changes remain drafts until
+**Save all** validates and atomically updates `config/stowling.json`; the previous file is
+kept as `config/stowling.json.bak`. Saving is blocked while a task is active or paused.
 
-The **Coordinate configuration** panel permanently edits every supported coordinate in
-`config/stowling.json`. Only X, Y, and Z are editable. **Save all coordinates** validates
-the complete configuration, writes through an atomic replacement, and keeps the previous
-file as `config/stowling.json.bak`. Saving is blocked while a pickup task is active. If the
-file was edited externally, use **Discard changes / reload** before trying again.
+A pickup task can run an entire workflow or one selected region from that workflow. The
+corresponding REST endpoints are:
+
+```text
+GET /v1/config/pickup
+PUT /v1/config/pickup
+GET /v1/pickup-workflows
+POST /v1/tasks/pickup
+```
+
+The pickup request body uses `workflowId` and an optional `regionId`:
+
+```json
+{"workflowId":"farm_patrol","regionId":"north_farm"}
+```
+
+Omit `regionId` to run the complete workflow. Status data refreshes every 10 seconds, and
+an expired token prompts for re-entry. Replace the installed jar and restart the client
+before expecting a newly built version to take effect.
 
 The page is available only through the loopback listener. Static assets load without a
 token, while every `/v1/*` API request still requires the correct Bearer token.

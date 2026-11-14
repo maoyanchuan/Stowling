@@ -87,6 +87,22 @@ def test_coordinate_page_supports_named_coordinate_crud_and_ordering() -> None:
     assert "维度" in COORDINATES
 
 
+def test_coordinate_cards_use_a_dedicated_drag_handle() -> None:
+    assert "card.draggable = true" not in COORDINATES
+    assert 'const dragHandle = Stowling.element("button", "drag-handle", "⋮⋮")' \
+        in COORDINATES
+    assert "dragHandle.draggable = true" in COORDINATES
+    assert 'dragHandle.title = "拖动排序"' in COORDINATES
+    assert 'dragHandle.setAttribute("aria-label", "拖动排序")' in COORDINATES
+    assert 'dragHandle.addEventListener("dragstart"' in COORDINATES
+    assert "installDragEvents(card, dragHandle, index)" in COORDINATES
+    assert 'card.addEventListener("dragover"' in COORDINATES
+    assert 'card.addEventListener("drop"' in COORDINATES
+    assert ".drag-handle {" in STYLES
+    assert "cursor: grab;" in STYLES
+    assert "cursor: grabbing;" in STYLES
+
+
 def test_coordinate_page_uses_atomic_revision_save() -> None:
     assert 'Stowling.request("/v1/config/coordinate-points")' in COORDINATES
     assert 'method: "PUT"' in COORDINATES

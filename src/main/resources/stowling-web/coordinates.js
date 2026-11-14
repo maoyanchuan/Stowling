@@ -76,23 +76,29 @@
      */
     function createPointCard(point, index) {
         const card = Stowling.element("article", "editor-card coordinate-point-editor");
-        card.draggable = true;
         card.dataset.index = String(index);
-        installDragEvents(card, index);
 
         const heading = Stowling.element("div", "editor-card-heading");
+        const dragHandle = Stowling.element("button", "drag-handle", "⋮⋮");
+        dragHandle.type = "button";
+        dragHandle.draggable = true;
+        dragHandle.title = "拖动排序";
+        dragHandle.setAttribute("aria-label", "拖动排序");
+        installDragEvents(card, dragHandle, index);
         const title = Stowling.element(
             "strong",
             "",
             String(point.name || point.id || "未命名坐标")
         );
+        const titleRow = Stowling.element("div", "editor-card-title");
+        titleRow.append(dragHandle, title);
         const actions = Stowling.element("div", "editor-card-actions");
         actions.append(
             moveButton("↑", index, -1),
             moveButton("↓", index, 1),
             removeButton(index)
         );
-        heading.append(title, actions);
+        heading.append(titleRow, actions);
 
         const fields = Stowling.element("div", "editor-fields");
         const idInput = textInput(
@@ -258,12 +264,17 @@
 
     /**
      * @param {HTMLElement} card
+     * @param {HTMLButtonElement} dragHandle
      * @param {number} index
      * @returns {void}
      */
-    function installDragEvents(card, index) {
-        card.addEventListener("dragstart", (event) => {
+    function installDragEvents(card, dragHandle, index) {
+        dragHandle.addEventListener("dragstart", (event) => {
+            dragHandle.classList.add("dragging");
             event.dataTransfer?.setData("text/plain", String(index));
+        });
+        dragHandle.addEventListener("dragend", () => {
+            dragHandle.classList.remove("dragging");
         });
         card.addEventListener("dragover", (event) => event.preventDefault());
         card.addEventListener("drop", (event) => {

@@ -1804,3 +1804,8 @@ textarea {
         background: rgba(255, 255, 255, 0.06);
     }
 }
+
+body[data-page="tasks"] .panel {
+    background: var(--panel-solid);
+    backdrop-filter: none;
+}

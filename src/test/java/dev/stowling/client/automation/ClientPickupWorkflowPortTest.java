@@ -6,9 +6,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.stowling.automation.AutomationOperationResult;
 import dev.stowling.automation.AutomationOperationStatus;
 import dev.stowling.schedule.StopOutcome;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class ClientPickupWorkflowPortTest {
+    @Test
+    void stopHelperRequestsBeforePollingAndPropagatesUnsafe() {
+        AtomicBoolean stopRequested = new AtomicBoolean();
+        AtomicBoolean stopPolled = new AtomicBoolean();
+
+        StopOutcome outcome = ClientPickupWorkflowPort.requestStopAndPoll(
+                () -> stopRequested.set(true),
+                () -> {
+                    assertTrue(stopRequested.get());
+                    stopPolled.set(true);
+                    return StopOutcome.UNSAFE;
+                }
+        );
+
+        assertEquals(StopOutcome.UNSAFE, outcome);
+        assertTrue(stopPolled.get());
+    }
+
     @Test
     void completionSucceedsOnlyAfterCleanStop() {
         AutomationOperationResult result =

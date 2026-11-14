@@ -139,7 +139,7 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         }
         StopOutcome outcome = StopOutcome.CLEAN;
         for (Map.Entry<String, PickupAttempt> entry : matches) {
-            StopOutcome current = entry.getValue().engine.requestStopAndPoll();
+            StopOutcome current = entry.getValue().requestStopAndPoll();
             outcome = combine(outcome, current);
             if (current == StopOutcome.CLEAN || current == StopOutcome.UNSAFE) {
                 attempts.remove(entry.getKey());
@@ -195,7 +195,7 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         if (attempt == null) {
             return AutomationOperationResult.paused(MANUAL_RECOVERY);
         }
-        StopOutcome outcome = attempt.engine.requestStopAndPoll();
+        StopOutcome outcome = attempt.requestStopAndPoll();
         UUID taskId = taskId(operationKey);
         if (outcome == StopOutcome.CLEAN) {
             attempts.remove(operationKey);
@@ -312,8 +312,18 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
 
     private record PickupAttempt(PickupAutomationEngine engine) {
         private StopOutcome requestStopAndPoll() {
-            engine.requestStop();
-            return engine.pollStop();
+            return ClientPickupWorkflowPort.requestStopAndPoll(
+                    engine::requestStop,
+                    engine::pollStop
+            );
         }
+    }
+
+    static StopOutcome requestStopAndPoll(
+            Runnable requestStop,
+            Supplier<StopOutcome> pollStop
+    ) {
+        Objects.requireNonNull(requestStop, "requestStop").run();
+        return Objects.requireNonNull(pollStop, "pollStop").get();
     }
 }

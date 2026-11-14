@@ -826,8 +826,9 @@ public final class PickupAutomationEngine {
             targetKeys = Set.copyOf(captured);
             regionTargetKeys.put(regionId, targetKeys);
         }
+        Set<String> capturedTargetKeys = targetKeys;
         List<GroundItem> items = candidates.stream()
-                .filter(item -> targetKeys.contains(item.observationKey()))
+                .filter(item -> capturedTargetKeys.contains(item.observationKey()))
                 .toList();
         for (GroundItem item : items) {
             observedInputs.add(item.observationKey() + ":" + item.itemId() + ":" + item.count());

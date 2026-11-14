@@ -118,7 +118,8 @@ public final class LegacyPickupDefaults {
                 case RUN_PICKUP -> removedWorkflowIds.contains(step.parameter("workflowId"))
                         || REGION_ID.equals(step.parameter("regionId"))
                         || referencesCoordinate(step, "standbyCoordinateId",
-                                "firstCornerCoordinateId", "secondCornerCoordinateId")
+                                "firstCornerCoordinateId", "secondCornerCoordinateId",
+                                "coordinateId")
                         || referencesCacheList(step.parameter("cacheIds"));
                 case TAKE_ITEMS, PUT_ITEMS -> referencesCoordinate(step, "coordinateId")
                         || CACHE_ID.equals(step.parameter("containerId"));

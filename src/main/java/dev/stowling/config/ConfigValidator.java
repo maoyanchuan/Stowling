@@ -946,7 +946,8 @@ public final class ConfigValidator {
                         path,
                         Set.of(),
                         Set.of(
-                                "workflowId", "regionId", "waitForItems",
+                                "workflowId", "regionId", "coordinateId", "radius",
+                                "waitForItems",
                                 "standbyCoordinateId", "firstCornerCoordinateId",
                                 "secondCornerCoordinateId", "cacheIds", "idleSeconds",
                                 "classificationTiming"

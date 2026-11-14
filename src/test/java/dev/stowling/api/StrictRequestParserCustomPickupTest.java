@@ -19,6 +19,35 @@ class StrictRequestParserCustomPickupTest {
     }
 
     @Test
+    void acceptsNamedCoordinatePickupInSingleTaskSave() throws Exception {
+        var definition = parser.parseTaskDefinition(definition(
+                "{\"coordinateId\":\"point-1\",\"radius\":\"8\","
+                        + "\"idleSeconds\":\"2\",\"waitForItems\":\"true\"}"
+        ));
+
+        var step = definition.steps().getFirst();
+        assertEquals("point-1", step.parameter("coordinateId"));
+        assertEquals("8", step.parameter("radius"));
+        assertEquals("true", step.parameter("waitForItems"));
+    }
+
+    @Test
+    void rejectsInvalidAndMixedCoordinatePickupParameters() {
+        for (String parameters : new String[] {
+            "{\"coordinateId\":\"point-1\",\"radius\":\"0\"}",
+            "{\"coordinateId\":\"point-1\",\"radius\":\"129\"}",
+            "{\"coordinateId\":\"point-1\",\"radius\":\"1.5\"}",
+            "{\"coordinateId\":\"point-1\",\"regionId\":\"north\"}",
+            "{\"coordinateId\":\"point-1\",\"workflowId\":\"farm\"}",
+            "{\"radius\":\"8\"}",
+            "{\"coordinateId\":\"point-1\",\"unexpected\":\"value\"}"
+        }) {
+            assertThrows(InvalidRequestException.class, () ->
+                    parser.parseTaskDefinition(definition(parameters)));
+        }
+    }
+
+    @Test
     void legacyPickupParametersStillAcceptItemWaiting() throws Exception {
         var definition = parser.parseTaskDefinition(definition(
                 "{\"workflowId\":\"farm\",\"regionId\":\"north\","

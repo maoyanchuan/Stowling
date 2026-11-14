@@ -92,30 +92,28 @@ select **Verify and connect**. The token is kept only in the current tab's
 Use **Clear token** to remove it from the current browser session.
 
 The console shows runtime status, tasks, containers, and inventory snapshots. The task
-page manages task definitions, while **Coordinates and regions** manages named points and
-pickup regions. Tasks, coordinate points, and regions have separate save operations; there
-is no shared **Save all** action for tasks and resources. Configuration writes are validated
-and atomic, with the previous file retained as `config/stowling.json.bak`. Saving is blocked
-while a scheduled run is active or the scheduler is unsafe.
+page manages task definitions, while **Named coordinates** manages saved points only.
+Tasks and coordinate points have separate save operations; there is no shared **Save all**
+action. Configuration writes are validated and atomic, with the previous file retained as
+`config/stowling.json.bak`. Saving is blocked while a scheduled run is active or unsafe.
 
-### Coordinates and regions
+### Named coordinates
 
 Open `http://127.0.0.1:8765/coordinates.html` to add, delete, rename, or reorder named points
 and edit their dimensions and X/Y/Z values. Coordinate IDs are immutable after creation.
-Coordinate drafts are saved independently; save a point before selecting it for a region.
-A successful coordinate save refreshes the region editor's saved points and references.
+The page contains only the named-coordinate library and reference information; the pickup
+region editor has been removed. Save a point before selecting it with a radius in a task's
+**Run pickup** step. On an already open task page, **Refresh status and resources** reloads
+points saved in another tab without discarding unsaved task edits. Automatic status refresh
+neither reloads resources nor repeatedly redraws the parameter editor.
 
-On the same page, define a named `SPHERE` region by selecting a saved center point and a
-radius, or a `CUBOID` region by selecting two saved corner points. Cuboid corners may be
-selected in either order: each axis is automatically sorted into an inclusive min/max
-range. The editor shows names, dimensions, and XYZ or bounds summaries. References must
-be in the same dimension. Saving a coordinate synchronizes its existing references.
-Confirming deletion of a saved point immediately persists that deletion atomically and
-keeps a backup. Other unsaved point edits remain in the draft and are not submitted with it.
-The confirmation lists only actual associated regions, legacy caches, and legacy pickup tasks;
-custom tasks are never removed as a side effect. Direct or indirect custom-task references,
-including interruption steps, still block deletion. A region referenced by a task or legacy
-workflow cannot be deleted on its own. Save and deletion errors show the actual reason.
+The editor shows names, dimensions, and XYZ values. Saving a coordinate synchronizes its
+existing references. Confirming deletion of a saved point immediately persists that deletion
+atomically and keeps a backup. Other unsaved point edits remain in the draft and are not
+submitted with it. The confirmation lists only actual associated regions, legacy caches, and
+legacy pickup tasks; custom tasks are never removed as a side effect. Direct or indirect
+custom-task references, including interruption steps, still block deletion. Save and deletion
+errors show the actual reason.
 
 New installations start with no sample named points, regions, caches, pickup flows, storage
 routes, or audit schedules. On startup, existing configurations retire the old `north-farm`,
@@ -123,11 +121,9 @@ routes, or audit schedules. On startup, existing configurations retire the old `
 resources are retained; if a custom task actually depends on that chain, it is left intact
 rather than silently deleting the user's task. Historical examples exist only in test fixtures.
 
-There is no standby-point or cache-container editor. Existing regions retain their legacy
-standby anchors in the same dimension. New regions
-derive an internal compatibility anchor from the center or first corner; pure pickup does
-not use these fields. Existing task, workflow, and cache configurations are retained, but their
-legacy resource settings are not edited by the new page.
+There is no region, standby-point, or cache-container editor. Existing region, task,
+workflow, and cache configurations remain compatible and are not removed by this UI change.
+No replacement region-management page is introduced.
 
 Named-coordinate endpoints are:
 
@@ -169,7 +165,8 @@ Open `http://127.0.0.1:8765/tasks.html` to compose reusable tasks from ten robot
 
 - `NAVIGATE`: move to a saved named point using `coordinateId`.
 - `WAIT`: wait for the configured `seconds`.
-- `RUN_PICKUP`: collect within a saved `regionId`, with `idleSeconds` and `waitForItems`.
+- `RUN_PICKUP`: select a saved `coordinateId` with `radius`, or a saved `regionId`;
+  configure `idleSeconds` and `waitForItems` for either target.
 - `TAKE_ITEMS`: take `itemId`/`count` from `coordinateId`, with an optional `containerType`.
 - `PUT_ITEMS`: put `itemId`/`count` into `coordinateId`, with an optional `containerType`.
 - `TRANSFER_ITEMS`: move `itemId`/`count` between `sourceCoordinateId` and
@@ -230,11 +227,16 @@ Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four
 - `AFTER_COMPLETION`: waits for the positive `intervalSeconds` delay after a successful
   run, then queues the task.
 
-New **Run pickup** steps select a saved `regionId` from **Coordinates and regions**, with
-`idleSeconds` (default `2`) and `waitForItems` (default `false`). `idleSeconds` ends the
-round after that region has no items for the configured duration. Region geometry is
-edited on the coordinates page, not inside a task. Pickup only collects items; any later
-movement, wait, storage, transfer, or packing must be an explicit module step.
+New **Run pickup** steps can select a saved named point (`coordinateId`) and a pickup
+`radius` (1–128 blocks, default `8`), or an existing saved `regionId`. The targets are
+mutually exclusive. A point defines a sphere centered at its current XYZ in its own
+dimension; it does not create a shared region or pickup workflow. Every run resolves the
+saved point again, so coordinate edits apply to the next run. Saved cuboid or sphere
+regions remain selectable as before. Unsaved point drafts are not available to tasks.
+
+Both targets support `idleSeconds` (default `2`) and `waitForItems` (default `false`).
+The round ends after the target has no items for the configured duration. Pickup only
+collects items; later movement, wait, storage, transfer, or packing must be explicit steps.
 
 The optional **Wait for items before pickup** condition observes client-visible drops in
 the selected sphere or cuboid once per second before starting. It never patrols or loads
@@ -263,8 +265,7 @@ The control service exposes the task-definition lifecycle through
 Every definition has its own revision, so updating one task does not replace unrelated
 pickup or automation definitions. Saving or creating a definition does not enable it.
 
-The **Coordinates and regions** page saves regions independently through the existing
-task-resource endpoints:
+Existing task-resource endpoints remain available for compatibility:
 
 ```text
 GET /v1/config/task-resources
@@ -272,10 +273,9 @@ PUT /v1/config/task-resources
 ```
 
 The `GET` snapshot includes `revision`, `pickupRegions`, `cacheContainers`, and
-`pickupWorkflows`. Before saving regions, the page reads the latest snapshot and sends a
-`PUT` body containing its `revision`, the edited `pickupRegions`, and unchanged legacy
-`cacheContainers`. It does not edit caches, discard old resources, or replace workflows
-or task definitions. Revision conflicts are reported rather than silently overwritten.
+`pickupWorkflows`. Tasks still read these resources to resolve existing region selections.
+The coordinate page no longer edits them. Legacy API updates retain revision checks and
+must not silently overwrite other resources or task definitions.
 
 Scheduling advances only from `tickOnClientThread`. Legacy pickup and automation requests
 enter the same priority queue as scheduled runs and cannot bypass a higher-priority queued
@@ -293,7 +293,8 @@ execution ID. Other tasks must be enabled again. Legacy checkpoints are discarde
 clicks are never replayed.
 
 The warehouse page is inventory-only: refresh reads existing snapshots and never starts a
-robot audit. Named points and pickup regions are managed on **Coordinates and regions**.
+robot audit. **Named coordinates** manages points only; pickup centers and radii
+are selected in individual task steps, with existing regions available for compatibility.
 The task page does not edit shared caches, standby points, corners, or legacy warehouse
 base coordinates. Existing legacy resources remain compatible through their configuration
 and API entry points. Warehouse synchronization, area discovery, partitions, and

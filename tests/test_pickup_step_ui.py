@@ -19,13 +19,14 @@ def test_new_pickup_task_is_one_pure_automation_step() -> None:
     assert 'state.draft = defaultDefinition("AUTOMATION");' in creation
     assert 'defaultDefinition("PICKUP")' not in creation
     assert creation.count('type: "RUN_PICKUP"') == 1
-    assert 'regionId: ""' in creation
+    assert 'radius: "8"' in creation
     assert 'idleSeconds: "2"' in creation
     assert 'waitForItems: "false"' in creation
+    assert 'regionId: ""' not in creation
     assert "NAVIGATE" not in creation
     assert "WAIT" not in creation
     assert "新拾取任务" in creation
-    assert "只预置一个纯区域拾取步骤" in TASKS_HTML
+    assert "只预置一个坐标或区域拾取步骤" in TASKS_HTML
 
 
 def test_task_page_removes_shared_resource_and_base_coordinate_editors() -> None:
@@ -57,11 +58,17 @@ def test_task_page_removes_shared_resource_and_base_coordinate_editors() -> None
     assert "saveBaseCoordinates" not in TASKS
 
 
-def test_run_pickup_only_exposes_region_idle_and_wait_fields() -> None:
+def test_run_pickup_exposes_coordinate_radius_region_idle_and_wait_fields() -> None:
     visible = task_function("visibleParameterDefinitions")
     assert "RUN_PICKUP_PARAMETERS" in visible
     assert "RUN_PICKUP_PARAMETERS.includes(definition.key)" in visible
-    for key in ("regionId", "idleSeconds", "waitForItems"):
+    for key in (
+        "coordinateId",
+        "radius",
+        "regionId",
+        "idleSeconds",
+        "waitForItems",
+    ):
         assert f'"{key}"' in TASKS
     assert "standbyCoordinateId" not in visible
     assert "firstCornerCoordinateId" not in visible
@@ -69,6 +76,7 @@ def test_run_pickup_only_exposes_region_idle_and_wait_fields() -> None:
     assert "classificationTiming" not in visible
 
     controls = task_function("parameterControl")
+    assert "coordinateOptions()" in controls
     assert 'definition.kind === "pickup-region"' in controls
     assert "savedPickupRegions().map((region)" in controls
     assert "pickupRegionLabel(region)" in controls
@@ -76,21 +84,29 @@ def test_run_pickup_only_exposes_region_idle_and_wait_fields() -> None:
     assert 'region.kind === "pickup-region"' in regions
 
 
-def test_pickup_ui_uses_saved_regions_and_points_to_coordinates_page() -> None:
+def test_pickup_ui_supports_coordinates_and_compatible_regions() -> None:
     card = task_function("createStepCard")
-    assert "只选择命名坐标页面已保存的拾取区域" in card
-    assert "独立的 NAVIGATE 与 WAIT 步骤" in card
+    assert "选择命名坐标与球形半径，或兼容选择已有拾取区域" in card
+    assert "待机与移动请使用独立步骤" in card
     assert "选择待机点、两个角点和缓存" not in card
-    assert "RUN_PICKUP 不包含缓存、分类、待机或自动存放" in card
+    assert "不创建区域、缓存或后续流程" in card
 
     summary = task_function("renderPickupStepSummary")
+    assert "step.parameters.coordinateId" in summary
+    assert "coordinateLabel(coordinate)" in summary
+    assert "球形拾取半径" in summary
     assert "step.parameters.regionId" in summary
     assert "pickupRegionLabel(region)" in summary
-    assert 'link.href = "/coordinates.html";' in summary
-    assert "保存拾取区域" in summary
+    assert "pickupCoordinateHelp()" in summary
     assert "firstCornerCoordinateId" not in summary
     assert "secondCornerCoordinateId" not in summary
     assert "cacheIds" not in summary
+    coordinate_help = task_function("pickupCoordinateHelp")
+    assert 'link.href = "/coordinates.html";' in coordinate_help
+    assert "保存坐标" in coordinate_help
+    region_help = task_function("pickupRegionHelp")
+    assert "没有已有区域，请使用命名坐标和半径。" in region_help
+    assert "/coordinates.html" not in region_help
     assert "选择两个角点" not in TASKS_HTML
     assert "选择坐标、角点和缓存" not in TASKS_HTML
 
@@ -137,7 +153,8 @@ def test_conversion_matches_only_one_saved_region() -> None:
     assert "regions.length === 1" in workflow
     assert "regions.length > 1" in workflow
     assert "未自动选择" in workflow
-    assert "命名坐标页面" in workflow
+    assert "请在本任务重新选择已有区域，或切换为命名坐标和半径。" in workflow
+    assert "命名坐标页面" not in workflow
     assert "bindings[0]" not in workflow
 
     direct = task_function("directPickupRegionCandidate")
@@ -148,7 +165,8 @@ def test_conversion_matches_only_one_saved_region() -> None:
     assert "regions.length === 1" in direct
     assert "regions.length > 1" in direct
     assert "未找到边界与维度都相同的已保存拾取区域" in direct
-    assert "命名坐标页面保存该区域" in direct
+    assert "请在本任务重新选择已有区域，或切换为命名坐标和半径。" in direct
+    assert "命名坐标页面" not in direct
     assert "pickupRegions[0]" not in TASKS
 
 
@@ -181,7 +199,7 @@ def test_parameter_controls_are_descriptor_driven_not_fixed_per_module() -> None
     assert "containerTypeLabel(" not in TASKS
     assert "FIELD_DEFINITIONS" not in TASKS
     assert "FALLBACK_MODULES" not in TASKS
-    assert "coordinateId:" not in TASKS
+    assert '"coordinateId"' in TASKS
     assert "sourceCoordinateId:" not in TASKS
     assert "completionTrigger:" not in TASKS
 

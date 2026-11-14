@@ -213,6 +213,8 @@ def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
         in TASKS
     assert "旧配置兼容：留空时沿用旧任务区域" in TASKS
     assert "旧配置兼容：自定义任务需要明确填写区域 ID" in TASKS
+    assert "请在本任务选择已有区域，或使用命名坐标和半径。" in TASKS
+    assert "拾取区域请在命名坐标页面维护" not in TASKS
     assert "taskId: draft.settings.interruption.kind === \"TASK_REFERENCE\"" \
         in TASKS
 
@@ -255,7 +257,7 @@ def test_new_task_entry_prefers_direct_rules_and_keeps_legacy_editing() -> None:
     assert 'id="new-task-dialog"' in html
     assert 'id="new-custom-task-button"' in html
     assert 'id="new-pickup-task-button"' in html
-    assert "只预置一个纯区域拾取步骤" in html
+    assert "只预置一个坐标或区域拾取步骤" in html
     assert "选择坐标、角点和缓存" not in html
     selector = html.split('<select id="task-kind">', 1)[1].split("</select>", 1)[0]
     assert 'value="AUTOMATION"' in selector
@@ -404,6 +406,17 @@ def test_coordinates_remain_independent_and_use_current_references() -> None:
     html = PAGES["coordinates.html"]
     assert 'id="coordinate-form"' in html
     assert 'id="coordinate-list"' in html
+    assert "coordinate-regions.js" not in html
+    for element_id in (
+        "coordinate-region-form",
+        "coordinate-region-list",
+        "add-coordinate-region-button",
+        "save-coordinate-region-button",
+        "coordinate-region-errors",
+        "coordinate-region-status",
+        "coordinate-region-revision",
+    ):
+        assert f'id="{element_id}"' not in html
     assert "function addPoint()" in COORDINATES
     assert "function removePoint(index)" in COORDINATES
     assert "function movePoint(index, offset)" in COORDINATES

@@ -806,7 +806,8 @@ final class StrictRequestParser {
     private static Set<String> optionalAutomationParameters(AutomationStepType type) {
         return switch (type) {
             case RUN_PICKUP -> Set.of(
-                    "workflowId", "regionId", "waitForItems", "standbyCoordinateId",
+                    "workflowId", "regionId", "coordinateId", "radius", "waitForItems",
+                    "standbyCoordinateId",
                     "firstCornerCoordinateId", "secondCornerCoordinateId", "cacheIds",
                     "idleSeconds", "classificationTiming"
             );

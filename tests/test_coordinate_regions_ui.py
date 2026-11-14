@@ -21,17 +21,19 @@ def async_js_function(source: str, name: str) -> str:
     return source[start:end] if end != -1 else source[start:]
 
 
-def test_region_management_is_mounted_on_coordinate_page() -> None:
-    assert 'src="/coordinate-regions.js"' in HTML
-    assert 'id="coordinate-region-list"' in HTML
-    assert 'id="coordinate-region-form"' in HTML
-    assert 'id="add-coordinate-region-button"' in HTML
-    assert 'id="save-coordinate-region-button"' in HTML
-    assert 'id="discard-coordinate-region-button"' in HTML
-    assert 'id="coordinate-region-errors"' in HTML
-    assert 'id="coordinate-region-status"' in HTML
-    assert "球心或两个角点" in HTML
-    assert "旧缓存配置会原样保留" in HTML
+def test_coordinate_page_only_mounts_named_coordinates() -> None:
+    assert 'src="/coordinates.js"' in HTML
+    assert 'id="coordinate-form"' in HTML
+    assert 'id="coordinate-list"' in HTML
+    assert 'src="/coordinate-regions.js"' not in HTML
+    assert 'id="region-title"' not in HTML
+    assert 'id="coordinate-region-form"' not in HTML
+    assert 'id="coordinate-region-list"' not in HTML
+    assert 'id="add-coordinate-region-button"' not in HTML
+    assert 'id="save-coordinate-region-button"' not in HTML
+    assert 'id="discard-coordinate-region-button"' not in HTML
+    assert "拾取区域" not in HTML
+    assert "旧缓存配置会原样保留" not in HTML
 
 
 def test_coordinate_save_refreshes_regions_and_usage() -> None:
@@ -106,7 +108,7 @@ def test_region_deletion_checks_legacy_and_task_references() -> None:
     assert "step.parameters?.regionId" in REGIONS
     assert "workflow.regions" in REGIONS
     assert "旧拾取流程" in REGIONS
-    assert "保存区域" in HTML
+    assert "保存区域" not in HTML
 
 
 def test_task_resource_facade_is_dom_free_and_omits_base_coordinates() -> None:

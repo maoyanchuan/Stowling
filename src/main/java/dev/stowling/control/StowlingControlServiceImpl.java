@@ -13,11 +13,15 @@ import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
+import dev.stowling.domain.PickupShape;
 import dev.stowling.domain.PickupWorkflow;
+import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryItem;
@@ -40,6 +44,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -345,6 +350,43 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     @Override
+    public synchronized ConfigCoordinatePointsSnapshot coordinatePoints() {
+        return toCoordinatePointsSnapshot(configFileStore.read());
+    }
+
+    @Override
+    public synchronized ConfigCoordinatePointsSnapshot updateCoordinatePoints(
+            ConfigCoordinatePointsUpdateRequest request
+    ) {
+        Objects.requireNonNull(request, "request");
+        if (hasBlockingPickupTask()) {
+            throw new ActiveTaskConflictException();
+        }
+        ConfigFileSnapshot current = configFileStore.read();
+        if (!current.revision().equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        List<NamedCoordinate> points = namedCoordinates(request.coordinatePoints());
+        Map<String, NamedCoordinate> pointsById = indexCoordinates(points);
+        rejectReferencedCoordinateDeletions(current.config(), pointsById);
+        StowlingConfig updated;
+        try {
+            updated = withSynchronizedCoordinateResources(
+                    current.config(),
+                    points,
+                    pointsById
+            );
+            ConfigValidator.requireValid(updated);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidCoordinatePointsException(exception.getMessage());
+        }
+        ConfigFileSnapshot saved = configFileStore.save(request.revision(), updated);
+        configActivated.accept(saved.config());
+        config = saved.config();
+        return toCoordinatePointsSnapshot(saved);
+    }
+
+    @Override
     public synchronized ConfigCoordinatesSnapshot configCoordinates() {
         return toCoordinateSnapshot(configFileStore.read());
     }
@@ -390,19 +432,15 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         if (!current.revision().equals(request.revision())) {
             throw new ConfigRevisionConflictException();
         }
-        validatePickupReferences(request);
         StowlingConfig source = current.config();
-        StowlingConfig updated = new StowlingConfig(
-                2,
-                request.pickupRegions(),
-                request.cacheContainers(),
-                request.pickupWorkflows(),
-                source.storageRoutes(),
-                source.packingStations(),
-                source.auditSchedules(),
-                source.overflowContainer()
-        );
-        ConfigValidator.requireValid(updated);
+        StowlingConfig updated;
+        try {
+            validatePickupReferences(request);
+            updated = withSynchronizedPickupResources(source, request);
+            ConfigValidator.requireValid(updated);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidPickupConfigException(exception.getMessage());
+        }
         ConfigFileSnapshot saved = configFileStore.save(request.revision(), updated);
         configActivated.accept(saved.config());
         config = saved.config();
@@ -559,6 +597,234 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 }
             }
         }
+    }
+
+    private static StowlingConfig withSynchronizedPickupResources(
+            StowlingConfig source,
+            PickupConfigUpdateRequest request
+    ) {
+        Map<String, NamedCoordinate> pointsById = indexCoordinates(
+                source.coordinatePoints()
+        );
+        return new StowlingConfig(
+                3,
+                source.coordinatePoints(),
+                synchronizedRegions(request.pickupRegions(), pointsById),
+                synchronizedCaches(request.cacheContainers(), pointsById),
+                request.pickupWorkflows(),
+                source.storageRoutes(),
+                source.packingStations(),
+                source.auditSchedules(),
+                source.overflowContainer()
+        );
+    }
+
+    private static StowlingConfig withSynchronizedCoordinateResources(
+            StowlingConfig source,
+            List<NamedCoordinate> coordinates,
+            Map<String, NamedCoordinate> pointsById
+    ) {
+        return new StowlingConfig(
+                3,
+                coordinates,
+                synchronizedRegions(source.pickupRegions(), pointsById),
+                synchronizedCaches(source.cacheContainers(), pointsById),
+                source.pickupWorkflows(),
+                source.storageRoutes(),
+                source.packingStations(),
+                source.auditSchedules(),
+                source.overflowContainer()
+        );
+    }
+
+    private static List<PickupRegion> synchronizedRegions(
+            List<PickupRegion> regions,
+            Map<String, NamedCoordinate> pointsById
+    ) {
+        List<PickupRegion> result = new ArrayList<>();
+        for (PickupRegion region : regions) {
+            String owner = "pickup region '" + region.id() + "'";
+            NamedCoordinate standby = requiredCoordinate(
+                    pointsById,
+                    region.standbyCoordinateId(),
+                    owner + " standby"
+            );
+            result.add(new PickupRegion(
+                    region.id(),
+                    region.name(),
+                    standby.dimension(),
+                    standby.id(),
+                    standby.position(),
+                    synchronizedShape(region.shape(), pointsById, owner)
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static PickupShape synchronizedShape(
+            PickupShape shape,
+            Map<String, NamedCoordinate> pointsById,
+            String owner
+    ) {
+        if (shape instanceof SpherePickupShape sphere) {
+            NamedCoordinate center = requiredCoordinate(
+                    pointsById,
+                    sphere.centerCoordinateId(),
+                    owner + " center"
+            );
+            return new SpherePickupShape(
+                    center.id(),
+                    center.position(),
+                    sphere.radius()
+            );
+        }
+        CuboidPickupShape cuboid = (CuboidPickupShape) shape;
+        NamedCoordinate first = requiredCoordinate(
+                pointsById,
+                cuboid.firstCornerCoordinateId(),
+                owner + " first corner"
+        );
+        NamedCoordinate second = requiredCoordinate(
+                pointsById,
+                cuboid.secondCornerCoordinateId(),
+                owner + " second corner"
+        );
+        return new CuboidPickupShape(
+                first.id(),
+                second.id(),
+                first.position(),
+                second.position()
+        );
+    }
+
+    private static List<NamedCache> synchronizedCaches(
+            List<NamedCache> caches,
+            Map<String, NamedCoordinate> pointsById
+    ) {
+        List<NamedCache> result = new ArrayList<>();
+        for (NamedCache cache : caches) {
+            NamedCoordinate coordinate = requiredCoordinate(
+                    pointsById,
+                    cache.coordinateId(),
+                    "cache '" + cache.id() + "'"
+            );
+            result.add(new NamedCache(
+                    cache.id(),
+                    cache.name(),
+                    coordinate.id(),
+                    coordinate.dimension(),
+                    coordinate.position(),
+                    cache.type()
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static NamedCoordinate requiredCoordinate(
+            Map<String, NamedCoordinate> pointsById,
+            String coordinateId,
+            String owner
+    ) {
+        if (coordinateId == null || coordinateId.isBlank()) {
+            throw new InvalidCoordinatePointsException(
+                    owner + " requires a coordinate reference"
+            );
+        }
+        NamedCoordinate coordinate = pointsById.get(coordinateId);
+        if (coordinate == null) {
+            throw new InvalidCoordinatePointsException(
+                    owner + " references unknown coordinate: " + coordinateId
+            );
+        }
+        return coordinate;
+    }
+
+    private static List<NamedCoordinate> namedCoordinates(
+            List<ConfigCoordinatePointInfo> points
+    ) {
+        return points.stream()
+                .map(point -> new NamedCoordinate(
+                        point.id(),
+                        point.name(),
+                        point.dimension(),
+                        new BlockPosition(
+                                point.position().x(),
+                                point.position().y(),
+                                point.position().z()
+                        )
+                ))
+                .toList();
+    }
+
+    private static Map<String, NamedCoordinate> indexCoordinates(
+            List<NamedCoordinate> points
+    ) {
+        Map<String, NamedCoordinate> result = new LinkedHashMap<>();
+        for (NamedCoordinate point : points) {
+            NamedCoordinate previous = result.putIfAbsent(point.id(), point);
+            if (previous != null) {
+                throw new InvalidCoordinatePointsException(
+                        "Duplicate coordinate point id: " + point.id()
+                );
+            }
+        }
+        return Map.copyOf(result);
+    }
+
+    private static void rejectReferencedCoordinateDeletions(
+            StowlingConfig source,
+            Map<String, NamedCoordinate> remaining
+    ) {
+        for (NamedCoordinate coordinate : source.coordinatePoints()) {
+            if (remaining.containsKey(coordinate.id())) {
+                continue;
+            }
+            Set<String> regionIds = new LinkedHashSet<>();
+            for (PickupRegion region : source.pickupRegions()) {
+                if (referencesCoordinate(region, coordinate.id())) {
+                    regionIds.add(region.id());
+                }
+            }
+            Set<String> cacheIds = new LinkedHashSet<>();
+            for (NamedCache cache : source.cacheContainers()) {
+                if (coordinate.id().equals(cache.coordinateId())) {
+                    cacheIds.add(cache.id());
+                }
+            }
+            if (!regionIds.isEmpty() || !cacheIds.isEmpty()) {
+                throw new InvalidCoordinatePointsException(
+                        referencedCoordinateMessage(coordinate.id(), regionIds, cacheIds)
+                );
+            }
+        }
+    }
+
+    private static boolean referencesCoordinate(PickupRegion region, String coordinateId) {
+        if (coordinateId.equals(region.standbyCoordinateId())) {
+            return true;
+        }
+        if (region.shape() instanceof SpherePickupShape sphere) {
+            return coordinateId.equals(sphere.centerCoordinateId());
+        }
+        CuboidPickupShape cuboid = (CuboidPickupShape) region.shape();
+        return coordinateId.equals(cuboid.firstCornerCoordinateId())
+                || coordinateId.equals(cuboid.secondCornerCoordinateId());
+    }
+
+    private static String referencedCoordinateMessage(
+            String coordinateId,
+            Set<String> regionIds,
+            Set<String> cacheIds
+    ) {
+        List<String> references = new ArrayList<>();
+        if (!regionIds.isEmpty()) {
+            references.add("pickup regions " + regionIds);
+        }
+        if (!cacheIds.isEmpty()) {
+            references.add("caches " + cacheIds);
+        }
+        return "Coordinate '" + coordinateId + "' cannot be deleted; referenced by "
+                + String.join(" and ", references);
     }
 
     private static Map<String, PickupRegion> regionsById(StowlingConfig config) {
@@ -726,6 +992,26 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 snapshot.revision(),
                 coordinateInfos(snapshot.config())
         );
+    }
+
+    private static ConfigCoordinatePointsSnapshot toCoordinatePointsSnapshot(
+            ConfigFileSnapshot snapshot
+    ) {
+        List<ConfigCoordinatePointInfo> points = new ArrayList<>();
+        for (NamedCoordinate point : snapshot.config().coordinatePoints()) {
+            ContainerPosition position = new ContainerPosition(
+                    point.position().x(),
+                    point.position().y(),
+                    point.position().z()
+            );
+            points.add(new ConfigCoordinatePointInfo(
+                    point.id(),
+                    point.name(),
+                    point.dimension(),
+                    position
+            ));
+        }
+        return new ConfigCoordinatePointsSnapshot(snapshot.revision(), points);
     }
 
     private static PickupConfigSnapshot toPickupConfigSnapshot(

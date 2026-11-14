@@ -28,10 +28,22 @@ final class ApiJson {
                 JsonObject json = new JsonObject();
                 json.addProperty("type", value.type().name());
                 if (value instanceof SpherePickupShape sphere) {
+                    json.addProperty(
+                            "centerCoordinateId",
+                            sphere.centerCoordinateId()
+                    );
                     json.add("center", context.serialize(sphere.center()));
                     json.addProperty("radius", sphere.radius());
                 } else {
                     CuboidPickupShape cuboid = (CuboidPickupShape) value;
+                    json.addProperty(
+                            "firstCornerCoordinateId",
+                            cuboid.firstCornerCoordinateId()
+                    );
+                    json.addProperty(
+                            "secondCornerCoordinateId",
+                            cuboid.secondCornerCoordinateId()
+                    );
                     json.add("firstCorner", context.serialize(cuboid.firstCorner()));
                     json.add("secondCorner", context.serialize(cuboid.secondCorner()));
                 }

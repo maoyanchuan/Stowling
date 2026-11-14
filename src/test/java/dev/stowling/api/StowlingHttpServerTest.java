@@ -65,11 +65,15 @@ class StowlingHttpServerTest {
     @Test
     void requiresAuthenticationForEveryApiRoute() throws Exception {
         String cancelPath = "/v1/tasks/" + FakeControlService.TASK_ID + "/cancel";
+        String coordinatePointsPath = "/v1/config/coordinate-points";
+        String coordinatePointsBody = coordinatePointsUpdate("revision-1");
         List<ApiCall> calls = List.of(
                 new ApiCall("GET", "/v1/status", null),
                 new ApiCall("GET", "/v1/tasks", null),
                 new ApiCall("GET", "/v1/pickup-sites", null),
                 new ApiCall("GET", "/v1/pickup-workflows", null),
+                new ApiCall("GET", coordinatePointsPath, null),
+                new ApiCall("PUT", coordinatePointsPath, coordinatePointsBody),
                 new ApiCall("GET", "/v1/config/coordinates", null),
                 new ApiCall("PUT", "/v1/config/coordinates", coordinateUpdate("revision-1")),
                 new ApiCall("GET", "/v1/config/pickup", null),
@@ -198,8 +202,15 @@ class StowlingHttpServerTest {
         assertStatus(200, "GET", "/v1/status", null);
         assertStatus(200, "GET", "/v1/tasks", null);
         assertStatus(200, "GET", "/v1/pickup-sites", null);
+        assertStatus(200, "GET", "/v1/config/coordinate-points", null);
         assertStatus(200, "GET", "/v1/config/coordinates", null);
         assertStatus(200, "PUT", "/v1/config/coordinates", coordinateUpdate("revision-1"));
+        assertStatus(
+                200,
+                "PUT",
+                "/v1/config/coordinate-points",
+                coordinatePointsUpdate("revision-2")
+        );
         assertStatus(202, "POST", "/v1/tasks/pickup", "{\"workflowId\":\"north\"}");
         assertStatus(
                 200,
@@ -237,6 +248,75 @@ class StowlingHttpServerTest {
         assertEquals(200, saved.statusCode());
         assertTrue(saved.body().contains("\"revision\":\"revision-2\""));
         assertTrue(saved.body().contains("\"position\":{\"x\":2,\"y\":-43,\"z\":5}"));
+    }
+
+    @Test
+    void readsAndSavesNamedCoordinatePoints() throws Exception {
+        HttpResponse<String> read = send(
+                "GET",
+                "/v1/config/coordinate-points",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> saved = send(
+                "PUT",
+                "/v1/config/coordinate-points",
+                coordinatePointsUpdate("revision-1"),
+                TOKEN
+        );
+
+        assertEquals(200, read.statusCode());
+        assertTrue(read.body().contains("\"revision\":\"revision-1\""));
+        assertTrue(read.body().contains("\"id\":\"north-position\""));
+        assertTrue(read.body().contains("\"name\":\"North position\""));
+        assertEquals(200, saved.statusCode());
+        assertTrue(saved.body().contains("\"revision\":\"revision-2\""));
+        assertTrue(saved.body().contains("\"position\":{\"x\":2,\"y\":-44,\"z\":4}"));
+    }
+
+    @Test
+    void rejectsStrictCoordinatePointJsonViolations() throws Exception {
+        String valid = coordinatePointsUpdate("revision-1");
+        String duplicate = valid.replace(
+                "\"id\":\"north-cache-position\"",
+                "\"id\":\"north-position\""
+        );
+        String invalidId = valid.replace(
+                "\"id\":\"north-position\"",
+                "\"id\":\"North Position\""
+        );
+        String longId = valid.replace(
+                "\"id\":\"north-position\"",
+                "\"id\":\"" + "a".repeat(65) + "\""
+        );
+        String emptyName = valid.replace(
+                "\"name\":\"North position\"",
+                "\"name\":\" \""
+        );
+        String unknown = valid.replace(
+                "\"position\":{\"x\":2,\"y\":-44,\"z\":4}",
+                "\"position\":{\"x\":2,\"y\":-44,\"z\":4},\"query\":\"x\""
+        );
+        String malformed = "{\"revision\":\"revision-1\",\"coordinatePoints\":[";
+
+        List<HttpResponse<String>> responses = List.of(
+                send("PUT", "/v1/config/coordinate-points", duplicate, TOKEN),
+                send("PUT", "/v1/config/coordinate-points", invalidId, TOKEN),
+                send("PUT", "/v1/config/coordinate-points", emptyName, TOKEN),
+                send("PUT", "/v1/config/coordinate-points", unknown, TOKEN),
+                send("PUT", "/v1/config/coordinate-points", malformed, TOKEN),
+                send("PUT", "/v1/config/coordinate-points", longId, TOKEN)
+        );
+
+        assertTrue(responses.stream().allMatch(
+                response -> response.statusCode() == 400
+        ));
+        assertTrue(responses.get(0).body().contains("Duplicate coordinate point id"));
+        assertTrue(responses.get(1).body().contains("must match"));
+        assertTrue(responses.get(2).body().contains("name must not be blank"));
+        assertTrue(responses.get(3).body().contains("Unknown JSON field"));
+        assertTrue(responses.get(4).body().contains("invalid_request"));
+        assertTrue(responses.get(5).body().contains("id is too long"));
     }
 
     @Test
@@ -301,6 +381,12 @@ class StowlingHttpServerTest {
 
     @Test
     void reportsCoordinateRevisionAndActiveTaskConflicts() throws Exception {
+        HttpResponse<String> pointRevision = send(
+                "PUT",
+                "/v1/config/coordinate-points",
+                coordinatePointsUpdate("stale"),
+                TOKEN
+        );
         HttpResponse<String> revision = send(
                 "PUT",
                 "/v1/config/coordinates",
@@ -320,13 +406,23 @@ class StowlingHttpServerTest {
                 pickupUpdate("revision-1"),
                 TOKEN
         );
+        HttpResponse<String> activeCoordinatePoints = send(
+                "PUT",
+                "/v1/config/coordinate-points",
+                coordinatePointsUpdate("revision-1"),
+                TOKEN
+        );
 
+        assertEquals(409, pointRevision.statusCode());
+        assertTrue(pointRevision.body().contains("\"code\":\"config_revision_conflict\""));
         assertEquals(409, revision.statusCode());
         assertTrue(revision.body().contains("\"code\":\"config_revision_conflict\""));
         assertEquals(409, active.statusCode());
         assertTrue(active.body().contains("\"code\":\"active_task_conflict\""));
         assertEquals(409, activePickupConfig.statusCode());
         assertTrue(activePickupConfig.body().contains("active_task_conflict"));
+        assertEquals(409, activeCoordinatePoints.statusCode());
+        assertTrue(activeCoordinatePoints.body().contains("active_task_conflict"));
     }
 
     @Test
@@ -376,6 +472,10 @@ class StowlingHttpServerTest {
         assertTrue(config.body().contains("\"cacheContainers\""));
         assertTrue(config.body().contains("\"pickupWorkflows\""));
         assertTrue(config.body().contains("\"type\":\"SPHERE\""));
+        assertTrue(config.body().contains("\"standbyCoordinateId\":\"north-position\""));
+        assertTrue(config.body().contains("\"centerCoordinateId\":\"north-position\""));
+        assertTrue(config.body().contains("\"coordinateId\":\"north-cache-position\""));
+        assertFalse(config.body().contains("\"coordinatePoints\""));
     }
 
     @Test
@@ -569,6 +669,12 @@ class StowlingHttpServerTest {
                 null,
                 TOKEN
         );
+        HttpResponse<String> coordinatePoints = send(
+                "POST",
+                "/v1/config/coordinate-points",
+                null,
+                TOKEN
+        );
 
         assertEquals(405, response.statusCode());
         assertEquals("GET", response.headers().firstValue("Allow").orElseThrow());
@@ -577,6 +683,11 @@ class StowlingHttpServerTest {
         assertEquals(
                 "GET, PUT",
                 coordinates.headers().firstValue("Allow").orElseThrow()
+        );
+        assertEquals(405, coordinatePoints.statusCode());
+        assertEquals(
+                "GET, PUT",
+                coordinatePoints.headers().firstValue("Allow").orElseThrow()
         );
     }
 
@@ -727,15 +838,29 @@ class StowlingHttpServerTest {
                 + "\"x\":2,\"y\":-43,\"z\":5}]}";
     }
 
+    private static String coordinatePointsUpdate(String revision) {
+        return "{\"revision\":\"" + revision + "\",\"coordinatePoints\":["
+                + "{\"id\":\"north-position\",\"name\":\"North position\","
+                + "\"dimension\":\"minecraft:overworld\","
+                + "\"position\":{\"x\":2,\"y\":-44,\"z\":4}},"
+                + "{\"id\":\"north-cache-position\","
+                + "\"name\":\"North cache position\","
+                + "\"dimension\":\"minecraft:overworld\","
+                + "\"position\":{\"x\":2,\"y\":-44,\"z\":4}}]}";
+    }
+
     private static String pickupUpdate(String revision) {
         return "{\"revision\":\"" + revision + "\","
                 + "\"pickupRegions\":[{\"id\":\"north\",\"name\":\"North\","
                 + "\"dimension\":\"minecraft:overworld\","
+                + "\"standbyCoordinateId\":\"north-position\","
                 + "\"standbyPosition\":{\"x\":1,\"y\":-44,\"z\":4},"
                 + "\"shape\":{\"type\":\"SPHERE\","
+                + "\"centerCoordinateId\":\"north-position\","
                 + "\"center\":{\"x\":1,\"y\":-44,\"z\":4},\"radius\":16}}],"
                 + "\"cacheContainers\":[{\"id\":\"north-cache\","
                 + "\"name\":\"North cache\",\"dimension\":\"minecraft:overworld\","
+                + "\"coordinateId\":\"north-cache-position\","
                 + "\"position\":{\"x\":2,\"y\":-44,\"z\":4},\"type\":\"CHEST\"}],"
                 + "\"pickupWorkflows\":[{\"id\":\"north\",\"name\":\"North\","
                 + "\"dimension\":\"minecraft:overworld\","

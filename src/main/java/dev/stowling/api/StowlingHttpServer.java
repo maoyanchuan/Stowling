@@ -7,9 +7,11 @@ import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.ConfigValidationException;
 import dev.stowling.control.ActiveTaskConflictException;
 import dev.stowling.control.AuditRequest;
+import dev.stowling.control.ConfigCoordinatePointsUpdateRequest;
 import dev.stowling.control.ConfigCoordinatesUpdateRequest;
 import dev.stowling.control.ContainerNotFoundException;
 import dev.stowling.control.InvalidConfigCoordinatesException;
+import dev.stowling.control.InvalidCoordinatePointsException;
 import dev.stowling.control.InvalidPickupConfigException;
 import dev.stowling.control.InvalidPickupRequestException;
 import dev.stowling.control.PickupConfigUpdateRequest;
@@ -199,6 +201,8 @@ public final class StowlingHttpServer implements AutoCloseable {
             sendErrorQuietly(exchange, 413, "request_too_large", exception.getMessage());
         } catch (InvalidRequestException exception) {
             sendErrorQuietly(exchange, 400, "invalid_request", exception.getMessage());
+        } catch (InvalidCoordinatePointsException exception) {
+            sendErrorQuietly(exchange, 400, "invalid_coordinate_points", exception.getMessage());
         } catch (InvalidConfigCoordinatesException exception) {
             sendErrorQuietly(exchange, 400, "invalid_config_coordinates", exception.getMessage());
         } catch (InvalidPickupConfigException | ConfigValidationException exception) {
@@ -371,6 +375,15 @@ public final class StowlingHttpServer implements AutoCloseable {
             case CONFIG_RELOAD -> {
                 requestParser.requireEmpty(body);
                 sendJson(exchange, 200, service.reloadConfig());
+            }
+            case CONFIG_COORDINATE_POINTS_GET -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, service.coordinatePoints());
+            }
+            case CONFIG_COORDINATE_POINTS_PUT -> {
+                ConfigCoordinatePointsUpdateRequest request =
+                        requestParser.parseCoordinatePointsUpdate(body);
+                sendJson(exchange, 200, service.updateCoordinatePoints(request));
             }
             case CONFIG_COORDINATES_GET -> {
                 requestParser.requireEmpty(body);
@@ -579,6 +592,8 @@ public final class StowlingHttpServer implements AutoCloseable {
         PAUSE("POST", "/v1/pause"),
         RESUME("POST", "/v1/resume"),
         CONFIG_RELOAD("POST", "/v1/config/reload"),
+        CONFIG_COORDINATE_POINTS_GET("GET", "/v1/config/coordinate-points"),
+        CONFIG_COORDINATE_POINTS_PUT("PUT", "/v1/config/coordinate-points"),
         CONFIG_COORDINATES_GET("GET", "/v1/config/coordinates"),
         CONFIG_COORDINATES_PUT("PUT", "/v1/config/coordinates"),
         CONFIG_PICKUP_GET("GET", "/v1/config/pickup"),

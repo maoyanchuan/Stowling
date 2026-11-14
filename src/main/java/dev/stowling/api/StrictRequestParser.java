@@ -11,6 +11,9 @@ import com.google.gson.stream.JsonToken;
 import dev.stowling.control.AuditRequest;
 import dev.stowling.control.ConfigCoordinateUpdate;
 import dev.stowling.control.ConfigCoordinatesUpdateRequest;
+import dev.stowling.control.ConfigCoordinatePointInfo;
+import dev.stowling.control.ConfigCoordinatePointsUpdateRequest;
+import dev.stowling.control.ContainerPosition;
 import dev.stowling.control.PickupConfigUpdateRequest;
 import dev.stowling.control.PickupRequest;
 import dev.stowling.domain.BlockPosition;
@@ -33,8 +36,42 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 final class StrictRequestParser {
+    private static final Pattern SAFE_ID = Pattern.compile(
+            "[a-z0-9][a-z0-9._-]{0,63}"
+    );
+    private static final Set<String> PICKUP_REGION_FIELDS = Set.of(
+            "id",
+            "name",
+            "dimension",
+            "standbyCoordinateId",
+            "standbyPosition",
+            "shape"
+    );
+    private static final Set<String> NAMED_CACHE_FIELDS = Set.of(
+            "id",
+            "name",
+            "coordinateId",
+            "dimension",
+            "position",
+            "type"
+    );
+    private static final Set<String> SPHERE_SHAPE_FIELDS = Set.of(
+            "type",
+            "centerCoordinateId",
+            "center",
+            "radius"
+    );
+    private static final Set<String> CUBOID_SHAPE_FIELDS = Set.of(
+            "type",
+            "firstCornerCoordinateId",
+            "secondCornerCoordinateId",
+            "firstCorner",
+            "secondCorner"
+    );
+
     PickupRequest parsePickup(String body) throws InvalidRequestException {
         try (JsonReader reader = reader(body)) {
             Set<String> fields = new HashSet<>();
@@ -107,6 +144,24 @@ final class StrictRequestParser {
             reader.endObject();
             requireEnd(reader);
             return new AuditRequest(containerIds);
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    ConfigCoordinatePointsUpdateRequest parseCoordinatePointsUpdate(String body)
+            throws InvalidRequestException {
+        try {
+            JsonObject root = readStrictObject(body);
+            requireFields(
+                    root,
+                    Set.of("revision", "coordinatePoints"),
+                    Set.of("revision", "coordinatePoints")
+            );
+            return new ConfigCoordinatePointsUpdateRequest(
+                    string(root, "revision", 128),
+                    coordinatePointInfos(array(root, "coordinatePoints"))
+            );
         } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
             throw malformed(exception);
         }
@@ -271,15 +326,12 @@ final class StrictRequestParser {
         List<PickupRegion> result = new ArrayList<>();
         for (int index = 0; index < values.size(); index++) {
             JsonObject value = object(values.get(index), "pickupRegions[" + index + "]");
-            requireFields(
-                    value,
-                    Set.of("id", "name", "dimension", "standbyPosition", "shape"),
-                    Set.of("id", "name", "dimension", "standbyPosition", "shape")
-            );
+            requireFields(value, PICKUP_REGION_FIELDS, PICKUP_REGION_FIELDS);
             result.add(new PickupRegion(
                     string(value, "id", 64),
                     string(value, "name", 256),
                     string(value, "dimension", 128),
+                    string(value, "standbyCoordinateId", 64),
                     position(object(value.get("standbyPosition"), "standbyPosition")),
                     shape(object(value.get("shape"), "shape"))
             ));
@@ -291,14 +343,11 @@ final class StrictRequestParser {
         List<NamedCache> result = new ArrayList<>();
         for (int index = 0; index < values.size(); index++) {
             JsonObject value = object(values.get(index), "cacheContainers[" + index + "]");
-            requireFields(
-                    value,
-                    Set.of("id", "name", "dimension", "position", "type"),
-                    Set.of("id", "name", "dimension", "position", "type")
-            );
+            requireFields(value, NAMED_CACHE_FIELDS, NAMED_CACHE_FIELDS);
             result.add(new NamedCache(
                     string(value, "id", 64),
                     string(value, "name", 256),
+                    string(value, "coordinateId", 64),
                     string(value, "dimension", 128),
                     position(object(value.get("position"), "position")),
                     ContainerType.valueOf(string(value, "type", 64))
@@ -378,28 +427,51 @@ final class StrictRequestParser {
     private static PickupShape shape(JsonObject value) throws IOException {
         String type = string(value, "type", 32);
         if ("SPHERE".equals(type)) {
-            requireFields(
-                    value,
-                    Set.of("type", "center", "radius"),
-                    Set.of("type", "center", "radius")
-            );
+            requireFields(value, SPHERE_SHAPE_FIELDS, SPHERE_SHAPE_FIELDS);
             return new SpherePickupShape(
+                    string(value, "centerCoordinateId", 64),
                     position(object(value.get("center"), "center")),
                     integer(value, "radius")
             );
         }
         if ("CUBOID".equals(type)) {
-            requireFields(
-                    value,
-                    Set.of("type", "firstCorner", "secondCorner"),
-                    Set.of("type", "firstCorner", "secondCorner")
-            );
+            requireFields(value, CUBOID_SHAPE_FIELDS, CUBOID_SHAPE_FIELDS);
             return new CuboidPickupShape(
+                    string(value, "firstCornerCoordinateId", 64),
+                    string(value, "secondCornerCoordinateId", 64),
                     position(object(value.get("firstCorner"), "firstCorner")),
                     position(object(value.get("secondCorner"), "secondCorner"))
             );
         }
         throw new IOException("Unknown pickup shape type: " + type);
+    }
+
+    private static List<ConfigCoordinatePointInfo> coordinatePointInfos(JsonArray values)
+            throws IOException {
+        List<ConfigCoordinatePointInfo> result = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (int index = 0; index < values.size(); index++) {
+            JsonObject value = object(
+                    values.get(index),
+                    "coordinatePoints[" + index + "]"
+            );
+            requireFields(
+                    value,
+                    Set.of("id", "name", "dimension", "position"),
+                    Set.of("id", "name", "dimension", "position")
+            );
+            String id = string(value, "id", 64);
+            require(SAFE_ID.matcher(id).matches(),
+                    "coordinate point id must match [a-z0-9][a-z0-9._-]{0,63}");
+            require(ids.add(id), "Duplicate coordinate point id: " + id);
+            result.add(new ConfigCoordinatePointInfo(
+                    id,
+                    string(value, "name", 256),
+                    string(value, "dimension", 128),
+                    containerPosition(object(value.get("position"), "position"))
+            ));
+        }
+        return List.copyOf(result);
     }
 
     private static BlockPosition position(JsonObject value) throws IOException {
@@ -413,6 +485,11 @@ final class StrictRequestParser {
                 integer(value, "y"),
                 integer(value, "z")
         );
+    }
+
+    private static ContainerPosition containerPosition(JsonObject value) throws IOException {
+        BlockPosition position = position(value);
+        return new ContainerPosition(position.x(), position.y(), position.z());
     }
 
     private static List<String> strings(

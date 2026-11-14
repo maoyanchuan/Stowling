@@ -12,13 +12,21 @@ import dev.stowling.automation.AutomationPauseReason;
 import dev.stowling.automation.AutomationSnapshot;
 import dev.stowling.automation.PickupStage;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.CachePolicy;
+import dev.stowling.domain.ClassificationTiming;
+import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.CuboidPickupShape;
+import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PackingTrigger;
-import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.PickupRegion;
+import dev.stowling.domain.PickupRegionBinding;
+import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.PickupWorkflow;
+import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryFreshness;
@@ -38,6 +46,7 @@ import dev.stowling.task.TaskStatus;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -194,6 +203,164 @@ class StowlingControlServiceImplTest {
     }
 
     @Test
+    void savesCoordinatePointsAndPropagatesEveryReference() {
+        StowlingConfig config = referencedConfig();
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("coordinate-points.json");
+        loader.write(configPath, config);
+        AtomicReference<StowlingConfig> activated = new AtomicReference<>();
+        StowlingControlServiceImpl service = service(
+                config,
+                source(capture(container("cache", 20))),
+                new ConfigFileStore(configPath, loader),
+                activated::set
+        );
+        ConfigCoordinatePointsSnapshot before = service.coordinatePoints();
+        List<ConfigCoordinatePointInfo> movedPoints = List.of(
+                movedPoint(before, "standby", 5, 65, 1),
+                movedPoint(before, "first-corner", 2, 64, 0),
+                movedPoint(before, "second-corner", 11, 70, 10),
+                movedPoint(before, "cache-position", 21, 64, 1)
+        );
+        ConfigCoordinatePointsUpdateRequest updateRequest =
+                new ConfigCoordinatePointsUpdateRequest(
+                before.revision(),
+                movedPoints
+        );
+
+        ConfigCoordinatePointsSnapshot saved = service.updateCoordinatePoints(
+                updateRequest
+        );
+
+        StowlingConfig disk = loader.load(configPath);
+        PickupRegion region = disk.pickupRegions().getFirst();
+        CuboidPickupShape shape = (CuboidPickupShape) region.shape();
+        assertEquals(new BlockPosition(5, 65, 1), region.standbyPosition());
+        assertEquals(new BlockPosition(2, 64, 0), shape.firstCorner());
+        assertEquals(new BlockPosition(11, 70, 10), shape.secondCorner());
+        assertEquals(new BlockPosition(21, 64, 1), disk.cacheContainers()
+                .getFirst()
+                .position());
+        assertEquals(disk, activated.get());
+        assertEquals(saved, service.coordinatePoints());
+        assertTrue(java.nio.file.Files.isRegularFile(
+                tempDir.resolve("coordinate-points.json.bak")
+        ));
+
+        List<ConfigCoordinatePointInfo> renamed = renamedStandby(saved);
+        ConfigCoordinatePointsUpdateRequest renameRequest =
+                new ConfigCoordinatePointsUpdateRequest(saved.revision(), renamed);
+        ConfigCoordinatePointsSnapshot renameSaved =
+                service.updateCoordinatePoints(renameRequest);
+
+        assertEquals(
+                "Renamed standby",
+                loader.load(configPath).coordinatePoints().getFirst().name()
+        );
+        ConfigCoordinatePointsUpdateRequest staleRequest =
+                new ConfigCoordinatePointsUpdateRequest(
+                before.revision(),
+                before.coordinatePoints()
+        );
+        assertThrows(
+                ConfigRevisionConflictException.class,
+                () -> service.updateCoordinatePoints(staleRequest)
+        );
+        assertTrue(renameSaved.revision().matches("[0-9a-f]{64}"));
+    }
+
+    @Test
+    void savesSphereCenterAndSharedStandbyCoordinate() {
+        ContainerRef cache = container("cache", 8);
+        StowlingConfig config = config(cache, container("overflow", 40));
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("sphere-coordinate-points.json");
+        loader.write(configPath, config);
+        StowlingControlServiceImpl service = service(
+                config,
+                source(capture(cache)),
+                new ConfigFileStore(configPath, loader),
+                ignored -> {
+                }
+        );
+        ConfigCoordinatePointsSnapshot before = service.coordinatePoints();
+        List<ConfigCoordinatePointInfo> moved = new ArrayList<>();
+        for (ConfigCoordinatePointInfo point : before.coordinatePoints()) {
+            if (point.id().equals("farm-standby")) {
+                moved.add(movedPoint(before, point.id(), 6, 64, 0));
+            } else {
+                moved.add(point);
+            }
+        }
+        ConfigCoordinatePointsUpdateRequest request =
+                new ConfigCoordinatePointsUpdateRequest(before.revision(), moved);
+
+        service.updateCoordinatePoints(request);
+
+        PickupRegion region = loader.load(configPath).pickupRegions().getFirst();
+        SpherePickupShape shape = (SpherePickupShape) region.shape();
+        assertEquals(new BlockPosition(6, 64, 0), region.standbyPosition());
+        assertEquals(new BlockPosition(6, 64, 0), shape.center());
+    }
+
+    @Test
+    void rejectsDeletingReferencedCoordinateAndCrossDimensionChange() {
+        StowlingConfig config = referencedConfig();
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("coordinate-references.json");
+        loader.write(configPath, config);
+        StowlingControlServiceImpl service = service(
+                config,
+                source(capture(container("cache", 20))),
+                new ConfigFileStore(configPath, loader),
+                ignored -> {
+                }
+        );
+        ConfigCoordinatePointsSnapshot before = service.coordinatePoints();
+        List<ConfigCoordinatePointInfo> withoutStandby = before.coordinatePoints()
+                .stream()
+                .filter(point -> !point.id().equals("standby"))
+                .toList();
+        List<ConfigCoordinatePointInfo> withoutCache = before.coordinatePoints()
+                .stream()
+                .filter(point -> !point.id().equals("cache-position"))
+                .toList();
+        ConfigCoordinatePointsUpdateRequest deletionRequest =
+                new ConfigCoordinatePointsUpdateRequest(
+                before.revision(),
+                withoutStandby
+        );
+        ConfigCoordinatePointsUpdateRequest cacheDeletionRequest =
+                new ConfigCoordinatePointsUpdateRequest(
+                before.revision(),
+                withoutCache
+        );
+
+        InvalidCoordinatePointsException deletion = assertThrows(
+                InvalidCoordinatePointsException.class,
+                () -> service.updateCoordinatePoints(deletionRequest)
+        );
+        InvalidCoordinatePointsException cacheDeletion = assertThrows(
+                InvalidCoordinatePointsException.class,
+                () -> service.updateCoordinatePoints(cacheDeletionRequest)
+        );
+        List<ConfigCoordinatePointInfo> crossDimension = crossDimension(before);
+        ConfigCoordinatePointsUpdateRequest dimensionRequest =
+                new ConfigCoordinatePointsUpdateRequest(
+                before.revision(),
+                crossDimension
+        );
+        InvalidCoordinatePointsException dimension = assertThrows(
+                InvalidCoordinatePointsException.class,
+                () -> service.updateCoordinatePoints(dimensionRequest)
+        );
+
+        assertTrue(deletion.getMessage().contains("pickup regions [farm]"));
+        assertTrue(cacheDeletion.getMessage().contains("caches [cache]"));
+        assertTrue(dimension.getMessage().contains("dimension"));
+    }
+
+    @Test
     void rejectsExternallyModifiedConfigRevision() {
         ContainerRef cache = container("cache", 0);
         ContainerRef overflow = container("overflow", 10);
@@ -248,6 +415,8 @@ class StowlingControlServiceImplTest {
                 new ConfigFileStore(configPath, loader),
                 activated::set
         );
+        List<NamedCoordinate> coordinatePoints = loader.load(configPath)
+                .coordinatePoints();
         PickupConfigSnapshot before = service.pickupConfig();
         PickupRegion originalRegion = before.pickupRegions().getFirst();
         PickupWorkflow originalWorkflow = before.pickupWorkflows().getFirst();
@@ -255,6 +424,7 @@ class StowlingControlServiceImplTest {
                 originalRegion.id(),
                 "Renamed farm",
                 originalRegion.dimension(),
+                originalRegion.standbyCoordinateId(),
                 originalRegion.standbyPosition(),
                 originalRegion.shape()
         );
@@ -284,6 +454,7 @@ class StowlingControlServiceImplTest {
         assertEquals("Renamed workflow", disk.pickupWorkflows().getFirst().name());
         assertEquals(config.overflowContainer(), disk.overflowContainer());
         assertEquals(config.storageRoutes(), disk.storageRoutes());
+        assertEquals(coordinatePoints, disk.coordinatePoints());
         assertEquals(disk, activated.get());
         assertEquals(saved, service.pickupConfig());
         assertTrue(java.nio.file.Files.isRegularFile(
@@ -346,6 +517,12 @@ class StowlingControlServiceImplTest {
                 store
         );
         PickupConfigSnapshot before = service.pickupConfig();
+        ConfigCoordinatePointsSnapshot points = service.coordinatePoints();
+        ConfigCoordinatePointsUpdateRequest pointRequest =
+                new ConfigCoordinatePointsUpdateRequest(
+                points.revision(),
+                points.coordinatePoints()
+        );
 
         assertThrows(
                 ActiveTaskConflictException.class,
@@ -355,6 +532,10 @@ class StowlingControlServiceImplTest {
                 before.cacheContainers(),
                 before.pickupWorkflows()
         ))
+        );
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updateCoordinatePoints(pointRequest)
         );
     }
 
@@ -556,6 +737,134 @@ class StowlingControlServiceImplTest {
                 List.of(),
                 List.of(),
                 overflow
+        );
+    }
+
+    private static StowlingConfig referencedConfig() {
+        NamedCoordinate standby = new NamedCoordinate(
+                "standby",
+                "Standby",
+                DIMENSION,
+                new BlockPosition(0, 64, 0)
+        );
+        NamedCoordinate first = new NamedCoordinate(
+                "first-corner",
+                "First corner",
+                DIMENSION,
+                new BlockPosition(1, 64, 0)
+        );
+        NamedCoordinate second = new NamedCoordinate(
+                "second-corner",
+                "Second corner",
+                DIMENSION,
+                new BlockPosition(10, 70, 10)
+        );
+        NamedCoordinate cachePoint = new NamedCoordinate(
+                "cache-position",
+                "Cache position",
+                DIMENSION,
+                new BlockPosition(20, 64, 0)
+        );
+        CuboidPickupShape shape = new CuboidPickupShape(
+                first.id(),
+                second.id(),
+                first.position(),
+                second.position()
+        );
+        PickupRegion region = new PickupRegion(
+                "farm",
+                "Farm",
+                DIMENSION,
+                standby.id(),
+                standby.position(),
+                shape
+        );
+        NamedCache cache = new NamedCache(
+                "cache",
+                "Cache",
+                cachePoint.id(),
+                cachePoint.dimension(),
+                cachePoint.position(),
+                ContainerType.CHEST
+        );
+        PickupWorkflow workflow = new PickupWorkflow(
+                "farm-workflow",
+                "Farm workflow",
+                DIMENSION,
+                List.of(new PickupRegionBinding("farm", 100, Duration.ZERO)),
+                List.of(cache.id()),
+                CachePolicy.NEAREST_AVAILABLE,
+                ClassificationTiming.AFTER_ROUND,
+                CompletionMode.MANUAL,
+                Duration.ZERO
+        );
+        return new StowlingConfig(
+                3,
+                List.of(standby, first, second, cachePoint),
+                List.of(region),
+                List.of(cache),
+                List.of(workflow),
+                List.of(),
+                List.of(),
+                List.of(),
+                container("overflow", 40)
+        );
+    }
+
+    private static List<ConfigCoordinatePointInfo> renamedStandby(
+            ConfigCoordinatePointsSnapshot snapshot
+    ) {
+        List<ConfigCoordinatePointInfo> result = new ArrayList<>();
+        for (ConfigCoordinatePointInfo point : snapshot.coordinatePoints()) {
+            if (point.id().equals("standby")) {
+                result.add(new ConfigCoordinatePointInfo(
+                        point.id(),
+                        "Renamed standby",
+                        point.dimension(),
+                        point.position()
+                ));
+            } else {
+                result.add(point);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<ConfigCoordinatePointInfo> crossDimension(
+            ConfigCoordinatePointsSnapshot snapshot
+    ) {
+        List<ConfigCoordinatePointInfo> result = new ArrayList<>();
+        for (ConfigCoordinatePointInfo point : snapshot.coordinatePoints()) {
+            if (point.id().equals("standby")) {
+                result.add(new ConfigCoordinatePointInfo(
+                        point.id(),
+                        point.name(),
+                        "minecraft:the_nether",
+                        point.position()
+                ));
+            } else {
+                result.add(point);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static ConfigCoordinatePointInfo movedPoint(
+            ConfigCoordinatePointsSnapshot snapshot,
+            String id,
+            int x,
+            int y,
+            int z
+    ) {
+        ConfigCoordinatePointInfo point = snapshot.coordinatePoints().stream()
+                .filter(candidate -> candidate.id().equals(id))
+                .findFirst()
+                .orElseThrow();
+        return new ConfigCoordinatePointInfo(
+                point.id(),
+                point.name(),
+                point.dimension(),
+                new ContainerPosition(x, y, z)
         );
     }
 

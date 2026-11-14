@@ -31,6 +31,10 @@ public final class FakeControlService implements StowlingControlService {
     private volatile boolean activePickup;
     private volatile String coordinateRevision = "revision-1";
     private volatile ContainerPosition coordinatePosition = new ContainerPosition(1, -44, 4);
+    private volatile List<ConfigCoordinatePointInfo> coordinatePoints = List.of(
+            coordinatePoint("north-position", "North position", 1, -44, 4),
+            coordinatePoint("north-cache-position", "North cache position", 2, -44, 4)
+    );
 
     public FakeControlService() {
         tasks.put(TASK_ID, task(TASK_ID, "RUNNING"));
@@ -184,6 +188,28 @@ public final class FakeControlService implements StowlingControlService {
     }
 
     @Override
+    public ConfigCoordinatePointsSnapshot coordinatePoints() {
+        calls.incrementAndGet();
+        return new ConfigCoordinatePointsSnapshot(coordinateRevision, coordinatePoints);
+    }
+
+    @Override
+    public ConfigCoordinatePointsSnapshot updateCoordinatePoints(
+            ConfigCoordinatePointsUpdateRequest request
+    ) {
+        calls.incrementAndGet();
+        if (activePickup) {
+            throw new ActiveTaskConflictException();
+        }
+        if (!coordinateRevision.equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        coordinatePoints = request.coordinatePoints();
+        coordinateRevision = "revision-2";
+        return coordinatePoints();
+    }
+
+    @Override
     public ConfigCoordinatesSnapshot configCoordinates() {
         calls.incrementAndGet();
         return coordinateSnapshot();
@@ -246,12 +272,14 @@ public final class FakeControlService implements StowlingControlService {
                 "north",
                 "North",
                 "minecraft:overworld",
+                "north-position",
                 new BlockPosition(1, -44, 4),
-                new SpherePickupShape(new BlockPosition(1, -44, 4), 16)
+                new SpherePickupShape("north-position", new BlockPosition(1, -44, 4), 16)
         );
         NamedCache cache = new NamedCache(
                 "north-cache",
                 "North cache",
+                "north-cache-position",
                 "minecraft:overworld",
                 new BlockPosition(2, -44, 4),
                 ContainerType.CHEST
@@ -298,6 +326,21 @@ public final class FakeControlService implements StowlingControlService {
                 NOW,
                 NOW,
                 null
+        );
+    }
+
+    private static ConfigCoordinatePointInfo coordinatePoint(
+            String id,
+            String name,
+            int x,
+            int y,
+            int z
+    ) {
+        return new ConfigCoordinatePointInfo(
+                id,
+                name,
+                "minecraft:overworld",
+                new ContainerPosition(x, y, z)
         );
     }
 }

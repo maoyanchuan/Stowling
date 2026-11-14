@@ -76,7 +76,17 @@ public final class TickPackingPort implements PackingPort {
         } else if (!state.request.equals(request)) {
             return PackingDisposition.UNAVAILABLE;
         }
-        PackingDisposition disposition = state.tick();
+        PackingDisposition disposition = state.completed ? PackingDisposition.ACCEPTED
+                : state.tick();
+        if (request.taskPlan().isPresent() && disposition == PackingDisposition.ACCEPTED) {
+            state.completed = true;
+            StopOutcome outcome = requestStop(request.taskId());
+            return switch (outcome) {
+                case CLEAN -> PackingDisposition.ACCEPTED;
+                case PENDING -> PackingDisposition.PENDING;
+                case UNSAFE -> PackingDisposition.UNAVAILABLE;
+            };
+        }
         if (disposition != PackingDisposition.PENDING) {
             tasks.remove(request.taskId());
             rememberStopOutcome(
@@ -189,6 +199,14 @@ public final class TickPackingPort implements PackingPort {
     }
 
     private Optional<TaskState> createState(PackingRequest request) {
+        if (request.taskPlan().isPresent()) {
+            TaskPackingPlan plan = request.taskPlan().orElseThrow();
+            return Optional.of(new TaskState(
+                    request,
+                    plan.route(),
+                    plan.stations()
+            ));
+        }
         StowlingConfig config = configSupplier.get();
         Optional<StorageRoute> route = config.storageRoutes().stream()
                 .filter(candidate -> candidate.id().equals(request.routeId()))
@@ -217,6 +235,7 @@ public final class TickPackingPort implements PackingPort {
         private final List<PackingStation> stations;
         private final List<ItemState> items;
         private int itemIndex;
+        private boolean completed;
 
         private TaskState(
                 PackingRequest request,
@@ -227,7 +246,7 @@ public final class TickPackingPort implements PackingPort {
             this.route = route;
             this.stations = List.copyOf(stations);
             this.items = request.items().stream()
-                    .map(amount -> new ItemState(amount, stations))
+                    .map(amount -> new ItemState(amount, stations, request))
                     .toList();
         }
 
@@ -296,7 +315,7 @@ public final class TickPackingPort implements PackingPort {
                         ? Optional.of(item.packedBoxSource)
                         : Optional.of(request.buffer());
                 ContainerRef destination = role == TransferRole.OVERFLOW
-                        ? overflowContainer()
+                        ? item.overflowContainer()
                         : route.bulkContainer();
                 TransferFlow flow = beginTransfer(
                         source,
@@ -451,7 +470,7 @@ public final class TickPackingPort implements PackingPort {
                     item.itemId,
                     quantity,
                     route,
-                    overflowContainer()
+                    item.overflowContainer()
             );
         }
 
@@ -517,9 +536,6 @@ public final class TickPackingPort implements PackingPort {
                     .compareTo(WAIT_TIMEOUT) >= 0;
         }
 
-        private ContainerRef overflowContainer() {
-            return configSupplier.get().overflowContainer();
-        }
     }
 
     private TransferFlow beginTransfer(
@@ -594,6 +610,7 @@ public final class TickPackingPort implements PackingPort {
         private final String itemId;
         private final int remaining;
         private final List<PackingStation> stationCandidates;
+        private final Optional<ContainerRef> taskOverflowContainer;
         private Phase phase = Phase.PREPARE;
         private Instant phaseStarted = clock.now();
         private int remainingLoose;
@@ -607,11 +624,14 @@ public final class TickPackingPort implements PackingPort {
 
         private ItemState(
                 ItemAmount amount,
-                List<PackingStation> stationCandidates
+                List<PackingStation> stationCandidates,
+                PackingRequest request
         ) {
             itemId = amount.itemId();
             remaining = amount.count();
             this.stationCandidates = List.copyOf(stationCandidates);
+            this.taskOverflowContainer = request.taskPlan()
+                    .map(TaskPackingPlan::overflowContainer);
         }
 
         private PackingWorkcell workcell() {
@@ -649,6 +669,12 @@ public final class TickPackingPort implements PackingPort {
                 case OVERFLOW -> remainingPack;
             };
         }
+
+        private ContainerRef overflowContainer() {
+            return taskOverflowContainer.orElseGet(
+                    () -> configSupplier.get().overflowContainer()
+            );
+        }
     }
 
     private enum Phase {
@@ -684,7 +710,9 @@ public final class TickPackingPort implements PackingPort {
                 if (item.transfer != null) {
                     transfers.add(item.transfer.attempt);
                 }
-                workcells.add(item.workcell());
+                workcells.add(new PackingWorkcell(
+                        item.station(), PackingReleaseMode.AUTO_ON_CLOSE
+                ));
             }
         }
 

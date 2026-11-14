@@ -2,6 +2,7 @@ package dev.stowling.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,6 +15,8 @@ import dev.stowling.domain.ContainerType;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.NamedCoordinate;
+import dev.stowling.domain.PickupRegion;
+import dev.stowling.domain.SpherePickupShape;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -48,6 +51,8 @@ class CustomPickupRulesTest {
         assertEquals(Duration.ZERO, plan.workflow().completionIdleDelay());
         assertEquals(Duration.ofSeconds(2), plan.orderedRegions().getFirst().idleDelay());
         assertEquals(List.of("cache"), plan.workflow().cacheIds());
+        assertFalse(plan.collectOnly());
+        assertNull(rules.selectedRegionId());
         assertTrue(config.pickupRegions().isEmpty());
         assertTrue(config.pickupWorkflows().isEmpty());
         assertTrue(PickupWorkflowPort.Request.custom(rules, true).customRules().isPresent());
@@ -95,6 +100,44 @@ class CustomPickupRulesTest {
         assertEquals(ClassificationTiming.AFTER_REGION, rules.classificationTiming());
     }
 
+    @Test
+    void pureRegionParametersResolveSavedRegionWithoutPickupInfrastructure() {
+        Map<String, String> parameters = Map.of(
+                "regionId", "north",
+                "idleSeconds", "7",
+                "waitForItems", "true"
+        );
+        CustomPickupRules rules = CustomPickupRules.fromParameters(parameters).orElseThrow();
+        StowlingConfig config = pureConfig();
+
+        PickupAutomationPlan plan = rules.plan(UUID.randomUUID(), config);
+
+        assertEquals("north", rules.selectedRegionId());
+        assertTrue(rules.cacheIds().isEmpty());
+        assertTrue(plan.collectOnly());
+        assertTrue(plan.workflow().cacheIds().isEmpty());
+        assertTrue(plan.storageRoutes().isEmpty());
+        assertNull(plan.overflowContainer());
+        assertEquals(CompletionMode.ALL_IDLE, plan.workflow().completionMode());
+        assertEquals(Duration.ZERO, plan.workflow().completionIdleDelay());
+        assertEquals(config.pickupRegions().getFirst(), plan.regionsById().get("north"));
+        assertEquals(Duration.ofSeconds(7), plan.orderedRegions().getFirst().idleDelay());
+    }
+
+    @Test
+    void pureRegionRulesRejectUnknownRegionsAndLegacyMixing() {
+        CustomPickupRules unknown = CustomPickupRules.fromParameters(
+                Map.of("regionId", "missing")
+        ).orElseThrow();
+        assertThrows(IllegalArgumentException.class, () ->
+                unknown.plan(UUID.randomUUID(), pureConfig()));
+        assertThrows(IllegalArgumentException.class, () ->
+                CustomPickupRules.fromParameters(Map.of(
+                        "regionId", "north",
+                        "standbyCoordinateId", "standby"
+                )));
+    }
+
     private static CustomPickupRules rules() {
         return CustomPickupRules.fromParameters(parameters()).orElseThrow();
     }
@@ -131,6 +174,35 @@ class CustomPickupRulesTest {
         return new StowlingConfig(
                 5, List.of(standby, first, second, cachePoint), List.of(), List.of(cache),
                 List.of(), List.of(), List.of(), List.of(), List.of(), overflow
+        );
+    }
+
+    private static StowlingConfig pureConfig() {
+        BlockPosition center = new BlockPosition(0, 64, 0);
+        PickupRegion region = new PickupRegion(
+                "north",
+                "North",
+                DIMENSION,
+                center,
+                new SpherePickupShape(center, 12)
+        );
+        ContainerRef overflow = new ContainerRef(
+                "overflow",
+                DIMENSION,
+                new BlockPosition(20, 64, 0),
+                ContainerType.CHEST
+        );
+        return new StowlingConfig(
+                5,
+                List.of(),
+                List.of(region),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                overflow
         );
     }
 }

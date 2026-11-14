@@ -75,6 +75,33 @@ class MinecraftContainerInteractionItemTransferTest {
     }
 
     @Test
+    void prefersExplicitTaskContainersWithoutCallingLegacyResolver() {
+        RecordingDriver driver = new RecordingDriver();
+        MinecraftContainerInteraction interaction = new MinecraftContainerInteraction(
+                new ImmediateScheduler(),
+                ignored -> {
+                    throw new AssertionError("legacy resolver must not be used");
+                },
+                driver
+        );
+        ItemTransferPort.Request request = new ItemTransferPort.Request(
+                ItemTransferPort.Mode.TRANSFER,
+                "legacy-source",
+                "legacy-destination",
+                STONE,
+                4,
+                Optional.of(bulk),
+                Optional.of(storage)
+        );
+
+        interaction.start("explicit-transfer-key", request);
+
+        assertEquals(1, driver.startCount);
+        assertEquals(Optional.of(bulk), driver.transfer.source());
+        assertEquals(Optional.of(storage), driver.transfer.destination());
+    }
+
+    @Test
     void mapsTakeFromTheRealSourceWithoutInventingAPlayerContainer() {
         RecordingDriver driver = new RecordingDriver();
         MinecraftContainerInteraction interaction = interaction(driver);

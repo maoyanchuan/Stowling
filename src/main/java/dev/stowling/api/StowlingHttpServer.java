@@ -366,6 +366,10 @@ public final class StowlingHttpServer implements AutoCloseable {
                         readStaticContent("stowling-web/coordinates.js", javascript)
                 ),
                 Map.entry(
+                        "/coordinate-regions.js",
+                        readStaticContent("stowling-web/coordinate-regions.js", javascript)
+                ),
+                Map.entry(
                         "/tasks.js",
                         readStaticContent("stowling-web/tasks.js", javascript)
                 ),

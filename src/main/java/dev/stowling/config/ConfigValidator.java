@@ -4,6 +4,7 @@ import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.automation.CustomPickupRules;
 import dev.stowling.domain.AuditSchedule;
+import dev.stowling.automation.module.TaskContainerParameters;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
@@ -954,47 +955,83 @@ public final class ConfigValidator {
                 validatePickupParameters(violations, step, path, pickupsById, config);
             }
             case TAKE_ITEMS, PUT_ITEMS -> {
-                requireParameters(
-                        violations,
-                        step,
-                        path,
-                        Set.of("containerId", "itemId", "count"),
-                        Set.of()
-                );
-                validateContainerParameter(
-                        violations,
-                        step,
-                        path,
-                        containers,
-                        "containerId"
-                );
+                requireParameters(violations, step, path, Set.of("itemId", "count"),
+                        Set.of("containerId", "coordinateId", "containerType"));
+                boolean explicit = step.parameters().containsKey("coordinateId");
+                boolean legacy = step.parameters().containsKey("containerId");
+                if (explicit == legacy || (!explicit
+                        && step.parameters().containsKey("containerType"))) {
+                    violations.add(new ConfigViolation(path + ".parameters",
+                            "select coordinateId or legacy containerId, not both"));
+                }
+                if (explicit) {
+                    validateTaskContainers(violations, step, path, config,
+                            List.of("coordinateId"), List.of("containerType"));
+                } else {
+                    validateContainerParameter(violations, step, path, containers, "containerId");
+                }
                 validatePositiveNumber(violations, step, path, "count");
             }
             case TRANSFER_ITEMS -> {
-                requireParameters(
-                        violations,
-                        step,
-                        path,
-                        Set.of("sourceContainerId", "destination", "itemId", "count"),
-                        Set.of()
-                );
-                validateContainerParameter(
-                        violations,
-                        step,
-                        path,
-                        containers,
-                        "sourceContainerId"
-                );
-                String destination = step.parameter("destination");
-                if (destination != null && !"PLAYER".equals(destination)) {
-                    validateContainerId(
-                            violations,
-                            path + ".parameters.destination",
-                            destination,
-                            containers
-                    );
+                requireParameters(violations, step, path, Set.of("itemId", "count"), Set.of(
+                        "sourceContainerId", "destination", "sourceCoordinateId",
+                        "destinationCoordinateId", "sourceContainerType", "destinationContainerType"
+                ));
+                boolean explicit = step.parameters().containsKey("sourceCoordinateId")
+                        || step.parameters().containsKey("destinationCoordinateId");
+                boolean legacy = step.parameters().containsKey("sourceContainerId")
+                        || step.parameters().containsKey("destination");
+                if (explicit == legacy || (!explicit
+                        && (step.parameters().containsKey("sourceContainerType")
+                                || step.parameters().containsKey("destinationContainerType")))) {
+                    violations.add(new ConfigViolation(path + ".parameters",
+                            "do not mix coordinate and legacy container parameters"));
+                }
+                if (explicit) {
+                    validateTaskContainers(violations, step, path, config,
+                            List.of("sourceCoordinateId", "destinationCoordinateId"),
+                            List.of("sourceContainerType", "destinationContainerType"));
+                } else {
+                    requireParameters(violations, step, path,
+                            Set.of("sourceContainerId", "destination", "itemId", "count"),
+                            Set.of());
+                    validateContainerParameter(violations, step, path, containers,
+                            "sourceContainerId");
+                    String destination = step.parameter("destination");
+                    if (destination != null && !"PLAYER".equals(destination)) {
+                        validateContainerId(violations, path + ".parameters.destination",
+                                destination, containers);
+                    }
                 }
                 validatePositiveNumber(violations, step, path, "count");
+            }
+            case PACK_ITEMS -> {
+                requireParameters(violations, step, path, Set.of(
+                        "sourceCoordinateId", "boxCoordinateId", "outputCoordinateId",
+                        "fallbackCoordinateId", "itemId", "count", "completionTrigger",
+                        "completionThreshold"
+                ), Set.of("sourceContainerType", "outputContainerType", "fallbackContainerType"));
+                validateTaskContainers(violations, step, path, config,
+                        List.of("sourceCoordinateId", "boxCoordinateId", "outputCoordinateId",
+                                "fallbackCoordinateId"),
+                        List.of("sourceContainerType", "", "outputContainerType",
+                                "fallbackContainerType"));
+                validatePositiveNumber(violations, step, path, "count");
+                validatePositiveNumber(violations, step, path, "completionThreshold");
+                String trigger = step.parameter("completionTrigger");
+                if (!"ON_ITEM_COUNT".equals(trigger) && !"ON_OCCUPANCY".equals(trigger)) {
+                    violations.add(new ConfigViolation(path + ".parameters.completionTrigger",
+                            "must be ON_ITEM_COUNT or ON_OCCUPANCY"));
+                }
+                try {
+                    long threshold = Long.parseLong(step.parameter("completionThreshold"));
+                    if (threshold > ("ON_OCCUPANCY".equals(trigger) ? 100 : 1728)) {
+                        violations.add(new ConfigViolation(path + ".parameters.completionThreshold",
+                                "exceeds the packing limit"));
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Missing/invalid thresholds are reported by the checks above.
+                }
             }
             case CHECK_INVENTORY, ACQUIRE_MATERIALS, CRAFT_ITEM -> {
                 requireParameters(
@@ -1007,6 +1044,41 @@ public final class ConfigValidator {
                 validatePositiveNumber(violations, step, path, "count");
             }
             default -> throw new IllegalStateException("unsupported automation step");
+        }
+    }
+
+    private static void validateTaskContainers(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            StowlingConfig config,
+            List<String> coordinateKeys,
+            List<String> typeKeys
+    ) {
+        List<ContainerRef> resolved = new ArrayList<>();
+        for (int index = 0; index < coordinateKeys.size(); index++) {
+            String key = coordinateKeys.get(index);
+            String coordinateId = step.parameter(key);
+            if (coordinateId == null) {
+                violations.add(new ConfigViolation(path + ".parameters." + key,
+                        "required coordinate is missing"));
+                continue;
+            }
+            requireSafeId(violations, coordinateId, path + ".parameters." + key);
+            try {
+                resolved.add(TaskContainerParameters.container(() -> config, coordinateId,
+                        TaskContainerParameters.containerType(step, typeKeys.get(index))));
+            } catch (IllegalArgumentException exception) {
+                violations.add(new ConfigViolation(path + ".parameters." + key,
+                        exception.getMessage()));
+            }
+        }
+        if (resolved.size() == coordinateKeys.size()) {
+            try {
+                TaskContainerParameters.requireSameDimension(resolved, "task");
+            } catch (IllegalArgumentException exception) {
+                violations.add(new ConfigViolation(path + ".parameters", exception.getMessage()));
+            }
         }
     }
 

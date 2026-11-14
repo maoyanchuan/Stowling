@@ -379,12 +379,7 @@ public record StowlingConfig(
                 region.dimension(),
                 cuboid.secondCorner()
         );
-        return new CuboidPickupShape(
-                first.id(),
-                second.id(),
-                first.position(),
-                second.position()
-        );
+        return CuboidPickupShape.fromCoordinates(first, second);
     }
 
     private static NamedCache upgradeCache(

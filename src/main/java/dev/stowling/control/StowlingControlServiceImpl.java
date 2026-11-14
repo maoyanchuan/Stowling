@@ -3,6 +3,7 @@ package dev.stowling.control;
 import dev.stowling.automation.AutomationPauseReason;
 import dev.stowling.automation.AutomationExecutionStatus;
 import dev.stowling.automation.AutomationSnapshot;
+import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationStepType;
 import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.automation.GenericAutomationEngine;
@@ -964,12 +965,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 cuboid.secondCornerCoordinateId(),
                 owner + " second corner"
         );
-        return new CuboidPickupShape(
-                first.id(),
-                second.id(),
-                first.position(),
-                second.position()
-        );
+        return CuboidPickupShape.fromCoordinates(first, second);
     }
 
     private static List<NamedCache> synchronizedCaches(
@@ -1068,11 +1064,17 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             }
             Set<String> automationWorkflowIds = new LinkedHashSet<>();
             for (AutomationWorkflow workflow : source.automationWorkflows()) {
-                boolean references = workflow.steps().stream().anyMatch(step ->
-                        step.type() == AutomationStepType.NAVIGATE
-                        && coordinate.id().equals(step.parameter("coordinateId"))
-                );
+                boolean references = workflow.steps().stream()
+                        .anyMatch(step -> referencesCoordinate(step, coordinate.id()))
+                        || workflow.settings().interruption().steps().stream()
+                        .anyMatch(step -> referencesCoordinate(step, coordinate.id()));
                 if (references) {
+                    automationWorkflowIds.add(workflow.id());
+                }
+            }
+            for (PickupWorkflow workflow : source.pickupWorkflows()) {
+                if (workflow.settings().interruption().steps().stream()
+                        .anyMatch(step -> referencesCoordinate(step, coordinate.id()))) {
                     automationWorkflowIds.add(workflow.id());
                 }
             }
@@ -1089,6 +1091,14 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 );
             }
         }
+    }
+
+    private static boolean referencesCoordinate(AutomationStep step, String coordinateId) {
+        return List.of(
+                "coordinateId", "standbyCoordinateId", "firstCornerCoordinateId",
+                "secondCornerCoordinateId", "sourceCoordinateId", "destinationCoordinateId",
+                "boxCoordinateId", "outputCoordinateId", "fallbackCoordinateId"
+        ).stream().anyMatch(key -> coordinateId.equals(step.parameter(key)));
     }
 
     private static boolean referencesCoordinate(PickupRegion region, String coordinateId) {

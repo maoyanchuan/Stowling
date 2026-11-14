@@ -585,7 +585,10 @@
      */
     function addPickupReferences(source) {
         for (const region of source?.pickupRegions || []) {
-            addReference(region.standbyCoordinateId, `拾取区域“${region.name || region.id}”待机点`);
+            addReference(
+                region.standbyCoordinateId,
+                `拾取区域“${region.name || region.id}”兼容锚点`
+            );
             addReference(
                 region.shape?.centerCoordinateId,
                 `拾取区域“${region.name || region.id}”球心`
@@ -616,7 +619,9 @@
             ];
             for (const step of steps) {
                 for (const [key, value] of Object.entries(step.parameters || {})) {
-                    if (key.endsWith("CoordinateId") && typeof value === "string") {
+                    const coordinateKey = key === "coordinateId"
+                        || key.endsWith("CoordinateId");
+                    if (coordinateKey && typeof value === "string") {
                         addReference(
                             value,
                             `任务“${task.name || task.id}”步骤 ${step.id}`
@@ -715,7 +720,14 @@
                 })
             });
             renderSnapshot(saved);
-            await Promise.allSettled([loadCoordinates(), loadReferences()]);
+            const regionRefresh = window.StowlingCoordinateRegions
+                ?.refreshAfterCoordinates;
+            await Promise.allSettled([
+                loadReferences(),
+                typeof regionRefresh === "function"
+                    ? regionRefresh(saved)
+                    : Promise.resolve()
+            ]);
             Stowling.showToast("命名坐标已保存，旧配置已生成备份");
         } catch (error) {
             const conflict = error instanceof Stowling.ApiError && error.status === 409;
@@ -776,6 +788,9 @@
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
         void saveCoordinates();
+    });
+    document.addEventListener("stowling:coordinate-regions-changed", () => {
+        void loadReferences();
     });
 
     Stowling.onConnected(async () => {

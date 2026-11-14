@@ -290,7 +290,8 @@ public final class MinecraftContainerInteraction
                     return Optional.empty();
                 }
                 source = Optional.empty();
-                destination = resolveContainer(request.destination());
+                destination = request.destinationContainer()
+                        .or(() -> resolveContainer(request.destination()));
                 if (destination.isEmpty()) {
                     return Optional.empty();
                 }
@@ -299,15 +300,18 @@ public final class MinecraftContainerInteraction
                 if (!PLAYER.equals(request.destination())) {
                     return Optional.empty();
                 }
-                source = resolveContainer(request.source());
+                source = request.sourceContainer()
+                        .or(() -> resolveContainer(request.source()));
                 destination = Optional.empty();
                 if (source.isEmpty()) {
                     return Optional.empty();
                 }
             }
             case TRANSFER -> {
-                source = resolveContainer(request.source());
-                destination = resolveContainer(request.destination());
+                source = request.sourceContainer()
+                        .or(() -> resolveContainer(request.source()));
+                destination = request.destinationContainer()
+                        .or(() -> resolveContainer(request.destination()));
                 if (source.isEmpty() || destination.isEmpty()) {
                     return Optional.empty();
                 }
@@ -397,6 +401,9 @@ public final class MinecraftContainerInteraction
             Transaction transaction
     ) {
         requireClientThread();
+        if (transaction.completionResult != null) {
+            return finishConfirmedTransfer(token, transaction);
+        }
         AbstractContainerMenu menu = currentContainerMenu();
         if (menu == null) {
             if (transaction.pendingClick != null) {
@@ -1062,17 +1069,33 @@ public final class MinecraftContainerInteraction
                 : Optional.ofNullable(transaction.sourceView);
         Optional<ContainerView> destinationAfter = transaction.destination
                 .map(destination -> view(menu, destination));
-        removeTransaction(token);
         String detail = transaction.toPlayer()
                 ? "source quick move and empty cursor were confirmed by the server"
                 : "all requested slots and the cursor were confirmed by the server";
-        return new ContainerAttemptResult(
+        transaction.completionResult = new ContainerAttemptResult(
                 ContainerAttemptStatus.ACKNOWLEDGED,
                 revision(menu),
                 sourceAfter,
                 destinationAfter,
                 detail
         );
+        transaction.cursorConfirmedEmpty = menu.getCarried().isEmpty();
+        beginSafeStop(token);
+        return finishConfirmedTransfer(token, transaction);
+    }
+
+    private ContainerAttemptResult finishConfirmedTransfer(
+            AttemptToken token,
+            Transaction transaction
+    ) {
+        ContainerAttemptResult confirmed = transaction.completionResult;
+        StopOutcome outcome = pollSafeStop(token);
+        return switch (outcome) {
+            case CLEAN -> confirmed;
+            case PENDING -> pending(token, confirmed.observedRevision(),
+                    "transfer confirmed; waiting for safe container exit");
+            case UNSAFE -> unavailable(token, "confirmed transfer could not safely exit");
+        };
     }
 
     private static void applyConfirmedClick(Transaction transaction, int moved) {
@@ -1685,6 +1708,7 @@ public final class MinecraftContainerInteraction
         private Phase phase;
         private ContainerView sourceView;
         private ContainerView destinationView;
+        private ContainerAttemptResult completionResult;
         private ContainerClickConfirmation.Pending pendingClick;
         private int pendingSlot = -1;
         private int pickupOriginSlot = -1;

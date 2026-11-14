@@ -1517,15 +1517,14 @@ select[aria-invalid="true"],
 
 .step-fields > .pickup-step-hint,
 .step-fields > .pickup-step-summary,
-.step-fields > .pickup-step-legacy,
-.step-fields > .step-containers-field {
+.step-fields > .step-legacy-notice {
     grid-column: 1 / -1;
     min-width: 0;
 }
 
 .pickup-step-hint,
 .pickup-step-summary,
-.pickup-step-legacy {
+.step-legacy-notice {
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
@@ -1538,29 +1537,37 @@ select[aria-invalid="true"],
     border-radius: 8px;
 }
 
-.pickup-step-legacy {
+.step-legacy-notice {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem 0.8rem;
+    padding: 0.6rem;
+    border-left: 3px solid #c99738;
+    border-radius: 8px;
+    background: rgba(201, 151, 56, 0.08);
 }
 
-.pickup-step-legacy p {
+.step-legacy-notice p {
     flex: 1 1 250px;
 }
 
-.step-container-options {
+.legacy-task-notice {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-    gap: 0.4rem;
+    gap: 0.35rem;
+    margin-top: 0.9rem;
+    padding: 0.75rem;
+    border: 1px solid rgba(201, 151, 56, 0.45);
+    border-radius: 12px;
+    background: rgba(201, 151, 56, 0.08);
 }
 
-.step-fields .step-container-options .check-option {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    overflow-wrap: anywhere;
+.legacy-task-notice[hidden] {
+    display: none;
+}
+
+.legacy-task-notice strong {
+    font-size: 0.84rem;
 }
 
 .step-fields input[type="checkbox"] {
@@ -1814,12 +1821,6 @@ textarea {
     border-top: 1px solid var(--line);
 }
 
-.resource-editor-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.9rem;
-}
-
 .inventory-summary {
     display: grid;
     grid-template-columns: auto auto auto auto;
@@ -1855,7 +1856,6 @@ textarea {
 
 @media (max-width: 760px) {
     .filter-row,
-    .resource-editor-grid,
     .task-definition-card,
     .inventory-summary {
         grid-template-columns: 1fr;

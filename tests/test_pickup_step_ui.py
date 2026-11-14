@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "src" / "main" / "resources" / "stowling-web"
@@ -16,177 +14,191 @@ def task_function(name: str) -> str:
     return TASKS[start:end] if end != -1 else TASKS[start:]
 
 
-def test_legacy_items_present_trigger_is_compatible_and_dynamic() -> None:
-    assert '"ITEMS_PRESENT"' in TASKS
-    assert "TRIGGER_KINDS.includes(trigger.kind)" in TASKS
-    assert 'value="ITEMS_PRESENT"' not in TASKS_HTML
-    options = task_function("renderTriggerKindOptions")
-    assert 'if (kind === "ITEMS_PRESENT" && !legacyOption)' in options
-    assert '"旧配置 · 区域有物品时"' in options
-    assert "legacyOption.remove();" in options
-    assert "renderTriggerKindOptions(trigger.kind);" in TASKS
-    assert "trigger.regionIds = [];" in TASKS
-    assert 'id="trigger-regions-field"' in TASKS_HTML
-
-
-def test_new_task_choices_both_create_automation_not_legacy_pickup() -> None:
+def test_new_pickup_task_is_one_pure_automation_step() -> None:
     creation = task_function("createNewDefinition")
     assert 'state.draft = defaultDefinition("AUTOMATION");' in creation
     assert 'defaultDefinition("PICKUP")' not in creation
-    assert 'if (pickup)' in creation
-    assert 'type: "RUN_PICKUP"' in creation
-    assert 'parameters: { idleSeconds: "2" }' in creation
-    assert "workflowId" not in creation
-    assert "regionId" not in creation
-    assert "elements.newTaskDialog.showModal();" in task_function("startNewDefinition")
-    assert "createNewDefinition(false)" in TASKS
-    assert "createNewDefinition(true)" in TASKS
-    assert 'id="new-custom-task-button"' in TASKS_HTML
-    assert 'id="new-pickup-task-button"' in TASKS_HTML
-    selector = TASKS_HTML.split('<select id="task-kind">', 1)[1].split("</select>", 1)[0]
-    assert 'value="AUTOMATION"' in selector
-    assert 'value="PICKUP"' not in selector
-    assert 'value="PICKUP"' in TASKS_HTML.split('<select id="task-filter-kind">', 1)[1]
-    options = task_function("renderTaskKindOptions")
-    assert 'if (kind === "PICKUP" && !legacyOption)' in options
-    assert "旧拾取任务（兼容编辑）" in options
-    assert "legacyOption.remove();" in options
+    assert creation.count('type: "RUN_PICKUP"') == 1
+    assert 'regionId: ""' in creation
+    assert 'idleSeconds: "2"' in creation
+    assert 'waitForItems: "false"' in creation
+    assert "NAVIGATE" not in creation
+    assert "WAIT" not in creation
+    assert "新拾取任务" in creation
+    assert "只预置一个纯区域拾取步骤" in TASKS_HTML
 
 
-def test_pickup_legacy_controls_are_hidden_without_rewriting_saved_parameters() -> None:
+def test_task_page_removes_shared_resource_and_base_coordinate_editors() -> None:
+    removed_ids = (
+        "pickup-task-editor",
+        "pickup-dimension",
+        "pickup-binding-list",
+        "pickup-cache-options",
+        "pickup-completion-mode",
+        "pickup-region-list",
+        "cache-list",
+        "add-pickup-region-button",
+        "add-cache-button",
+        "save-pickup-resources-button",
+        "pickup-resource-errors",
+        "base-coordinate-list",
+        "save-base-coordinates-button",
+        "discard-base-coordinates-button",
+        "base-coordinate-errors",
+    )
+    for element_id in removed_ids:
+        assert f'id="{element_id}"' not in TASKS_HTML
+    assert "仓库基础坐标" not in TASKS_HTML
+    assert "共享资源接口" not in TASKS_HTML
+    assert 'id="runtime-task-list"' in TASKS_HTML
+    assert 'id="refresh-runtime-button"' in TASKS_HTML
+    assert 'Stowling.request("/v1/config/task-resources"' not in TASKS
+    assert "savePickupResources" not in TASKS
+    assert "saveBaseCoordinates" not in TASKS
+
+
+def test_run_pickup_only_exposes_region_idle_and_wait_fields() -> None:
+    visible = task_function("visibleParameterDefinitions")
+    assert "RUN_PICKUP_PARAMETERS" in visible
+    assert "RUN_PICKUP_PARAMETERS.includes(definition.key)" in visible
+    for key in ("regionId", "idleSeconds", "waitForItems"):
+        assert f'"{key}"' in TASKS
+    assert "standbyCoordinateId" not in visible
+    assert "firstCornerCoordinateId" not in visible
+    assert "cacheIds" not in visible
+    assert "classificationTiming" not in visible
+
+    controls = task_function("parameterControl")
+    assert 'definition.kind === "pickup-region"' in controls
+    assert "savedPickupRegions().map((region)" in controls
+    assert "pickupRegionLabel(region)" in controls
+    regions = task_function("savedPickupRegions")
+    assert 'region.kind === "pickup-region"' in regions
+
+
+def test_pickup_ui_uses_saved_regions_and_points_to_coordinates_page() -> None:
     card = task_function("createStepCard")
-    assert 'const definitions = moduleFor(step.type)?.parameters || [];' in card
-    assert 'const legacyPickup = isLegacyPickupStep(step);' in card
-    assert '(legacyPickup\n' in card
-    assert '["workflowId", "regionId"].includes(definition.key)' in card
-    assert "parameters.append(legacyPickupNotice(step));" in card
-    assert "definitions.forEach((definition)" in card
-    assert "definition.required || directRequired" in card
-    assert "delete step.parameters" not in card
-    assert "step.parameters =" not in card
+    assert "只选择命名坐标页面已保存的拾取区域" in card
+    assert "独立的 NAVIGATE 与 WAIT 步骤" in card
+    assert "选择待机点、两个角点和缓存" not in card
+    assert "RUN_PICKUP 不包含缓存、分类、待机或自动存放" in card
+
+    summary = task_function("renderPickupStepSummary")
+    assert "step.parameters.regionId" in summary
+    assert "pickupRegionLabel(region)" in summary
+    assert 'link.href = "/coordinates.html";' in summary
+    assert "保存拾取区域" in summary
+    assert "firstCornerCoordinateId" not in summary
+    assert "secondCornerCoordinateId" not in summary
+    assert "cacheIds" not in summary
+    assert "选择两个角点" not in TASKS_HTML
+    assert "选择坐标、角点和缓存" not in TASKS_HTML
+
+
+def test_legacy_pickup_notice_is_compact_and_preserves_values_until_confirm() -> None:
     legacy = task_function("isLegacyPickupStep")
-    assert "Boolean(step.parameters.workflowId) && !hasDirectRules" in legacy
-    assert "Object.hasOwn(step.parameters, definition.key)" in legacy
-    assert '["coordinate", "containers", "nonnegative-integer", "choice"]' in legacy
-    assert '"boolean"' not in legacy
+    assert "LEGACY_PICKUP_PARAMETERS.some" in legacy
+    assert '"workflowId"' in TASKS
+    assert '"firstCornerCoordinateId"' in TASKS
+    assert '"cacheIds"' in TASKS
+
     notice = task_function("legacyPickupNotice")
-    assert "改为自定义规则" in notice
-    assert 'button.addEventListener("click", () => convertLegacyPickupStep(step));' in notice
-    assert "转换前保留原值" in notice
+    assert '"step-legacy-notice"' in notice
+    assert "旧自动存放" in notice
+    assert "原值会完整保留" in notice
+    assert '"替换为纯区域拾取"' in notice
+    assert "convertLegacyPickupStep(step)" in notice
+    assert "delete " not in notice
+    assert "step.parameters =" not in notice
+
+    card = task_function("createStepCard")
+    assert "const legacyPickup = isLegacyPickupStep(step);" in card
+    assert "const definitions = legacyPickup ? [] :" in card
+    assert "parameters.append(legacyPickupNotice(step));" in card
+
+
+def test_legacy_pickup_conversion_requires_confirmation_and_drops_execution() -> None:
+    conversion = task_function("convertLegacyPickupStep")
+    warning = conversion.index("window.confirm(warning)")
+    replacement = conversion.index("step.parameters = parameters;")
+    assert warning < replacement
+    assert "缓存、分类和待机参数，它们不会执行" in conversion
+    assert "取消会保留全部原值" in conversion
+    assert "移动与存入请在后续独立模块中配置" in conversion
+    assert "缓存、分类和待机参数已移除，不会执行" in conversion
+    assert "parameters.regionId = String(candidate.region.id);" in conversion
+    assert "pickupConversionNotes.set(step" in conversion
+
+
+def test_conversion_matches_only_one_saved_region() -> None:
+    workflow = task_function("workflowPickupRegionCandidate")
+    assert "bindings.filter((binding)" in workflow
+    assert "uniqueRegions(selectedBindings.map((binding)" in workflow
+    assert "regions.length === 1" in workflow
+    assert "regions.length > 1" in workflow
+    assert "未自动选择" in workflow
+    assert "命名坐标页面" in workflow
+    assert "bindings[0]" not in workflow
+
+    direct = task_function("directPickupRegionCandidate")
+    assert "savedPickupRegions().filter((region)" in direct
+    assert "pickupRegionBounds(region)" in direct
+    assert "savedBounds.dimension === first.dimension" in direct
+    assert "sameBounds(savedBounds, bounds)" in direct
+    assert "regions.length === 1" in direct
+    assert "regions.length > 1" in direct
+    assert "未找到边界与维度都相同的已保存拾取区域" in direct
+    assert "命名坐标页面保存该区域" in direct
+    assert "pickupRegions[0]" not in TASKS
+
+
+def test_legacy_container_fields_are_hidden_without_rewriting() -> None:
+    visible = task_function("visibleParameterDefinitions")
+    assert "!isLegacyContainerParameter(definition)" in visible
+    detection = task_function("isLegacyContainerParameter")
+    assert 'definition.kind === "container"' in detection
+    assert "LEGACY_CONTAINER_PARAMETERS.includes(definition.key)" in detection
+
+    legacy = task_function("isLegacyContainerStep")
+    assert "definitions.some(isLegacyContainerParameter)" in legacy
+    assert "Object.hasOwn(step.parameters, key)" in legacy
+    notice = task_function("legacyContainerNotice")
+    assert "仅保留原值" in notice
+    assert "不会自动改写" in notice
+    assert "step.parameters =" not in notice
     assert "delete " not in notice
 
-
-def test_conversion_is_explicit_and_never_picks_an_arbitrary_region() -> None:
-    conversion = task_function("convertLegacyPickupStep")
-    assert "const parameters = { ...step.parameters };" in conversion
-    assert "delete parameters.workflowId;" in conversion
-    assert "delete parameters.regionId;" in conversion
-    assert "bindings.find((candidate) => String(candidate.regionId) === regionId)" in conversion
-    assert "bindings.length === 1 ? bindings[0] : null" in conversion
-    assert "!regionId && bindings.length > 1" in conversion
-    assert "未自动选择其中一个" in conversion
-    assert "const region = binding ? resourceRegion(binding.regionId) : null;" in conversion
-    assert "pickupRegions[0]" not in TASKS
-    assert "pickupRegionOptions" not in TASKS
-    assert "setPickupWorkflow" not in TASKS
-    assert "workflow?.regions || []" in conversion
+    payload = task_function("stepPayload")
+    assert "Stowling.clone(step.parameters || {})" in payload
 
 
-def test_conversion_only_copies_safe_coordinate_references_and_workflow_settings() -> None:
-    conversion = task_function("convertLegacyPickupStep")
-    assert 'if (region.shape?.type === "CUBOID")' in conversion
-    assert "coordinateFor(region.standbyCoordinateId)" in conversion
-    assert "coordinateFor(region.shape[key])" in conversion
-    assert "point.dimension === workflow.dimension" in conversion
-    assert "point.dimension === region.dimension" in conversion
-    assert "parameters[key] = String(point.id);" in conversion
-    assert '(workflow.cacheIds || []).map(String).join(",")' in conversion
-    assert "option.value === workflow.classificationTiming" in conversion
-    assert "binding?.idleDelay" in conversion
-    assert "Number.isInteger(Number(idle)) && Number(idle) >= 0" in conversion
-    assert "pickupConversionNotes.set(step" in conversion
-    assert "step.parameters = parameters;" in conversion
-    assert "没有可用的命名坐标引用" in conversion
-    assert "原范围不是引用命名角点的长方体" in conversion
-
-
-def test_coordinate_labels_include_name_xyz_dimension_and_preserve_invalid_ids() -> None:
-    options = task_function("coordinateOptions")
-    assert "coordinateLabel(point)" in options
-    label = task_function("coordinateLabel")
-    assert "point.name || point.id" in label
-    for axis in ("x", "y", "z"):
-        assert f"position.{axis}" in label
-    assert "point.dimension" in label
-    reference = task_function("referenceSelect")
-    assert "`保留原值 · ${value}`" in reference
-    assert "select.value = value;" in reference
-    assert "setStepParameter" not in reference
-    assert '"请选择命名坐标"' in task_function("parameterControl")
-
-
-def test_cache_multi_select_preserves_missing_ids_until_user_removes_them() -> None:
-    containers = task_function("containersControl")
-    assert 'value.split(",")' in containers
-    assert "for (const id of selected)" in containers
-    assert "!caches.some((cache) => String(cache.id) === id)" in containers
-    assert "`保留原值 · 缺失缓存 · ${id}`" in containers
-    assert "checkbox.checked = selected.has(id);" in containers
-    assert 'checkbox.addEventListener("change"' in containers
-    assert "selected.add(id);" in containers
-    assert "selected.delete(id);" in containers
-    assert 'setStepParameter(step, definition, [...selected].join(","));' in containers
-    assert "selected.clear()" not in containers
-
-
-@pytest.mark.parametrize("kind", ["choice", "containers", "nonnegative-integer", "boolean"])
-def test_controls_are_descriptor_driven(kind: str) -> None:
-    assert f'definition.kind === "{kind}"' in TASKS
-    normalization = task_function("normalizeModule")
-    assert "Array.isArray(parameter?.options)" in normalization
-    assert 'value: String(option?.value ?? "")' in normalization
-    assert 'label: String(option?.label ?? option?.value ?? "")' in normalization
-    assert "parameter?.defaultValue ?? parameter?.default" in normalization
+def test_parameter_controls_are_descriptor_driven_not_fixed_per_module() -> None:
     controls = task_function("parameterControl")
-    assert "definition.options.map((option) => [option.value, option.label])" in controls
+    assert 'definition.kind === "choice" || definition.kind === "options"' in controls
+    assert "definition.options.map((option)" in controls
+    assert 'definition.kind === "boolean"' in controls
     assert 'input.min = "0";' in controls
-    assert 'checkbox.checked = value === "true";' in controls
-    assert "standbyCoordinateId" not in controls
-    assert "firstCornerCoordinateId" not in controls
-    assert "cacheIds" not in controls
-    defaults = task_function("parameterValue")
-    assert 'return definition.defaultValue || "false";' in defaults
-    assert 'return "2";' in defaults
+    assert "containerTypeLabel(" not in TASKS
+    assert "FIELD_DEFINITIONS" not in TASKS
+    assert "FALLBACK_MODULES" not in TASKS
+    assert "coordinateId:" not in TASKS
+    assert "sourceCoordinateId:" not in TASKS
+    assert "completionTrigger:" not in TASKS
+
     validation = task_function("validateSteps")
-    assert '["coordinate", "containers"].includes(parameter.kind)' in validation
-    assert "parameter.required || directRequired" in validation
+    assert "visibleParameterDefinitions(step)" in validation
+    assert '["choice", "options"].includes(parameter.kind)' in validation
     assert 'parameter.kind === "nonnegative-integer"' in validation
-    assert "!Number.isInteger(Number(value)) || Number(value) < 0" in validation
+    assert 'parameter.kind === "boolean"' in validation
 
 
-def test_pickup_summary_and_hints_span_full_row_and_explain_direct_rules() -> None:
-    card = task_function("createStepCard")
-    assert "角点构成长方体范围，顺序任意" in card
-    assert "分类沿用现有存放路由" in card
-    assert "无物品时等待、不巡逻、不主动加载区域" in card
-    assert "可被高优先级任务打断，不创建周期任务" in card
-    summary = task_function("renderPickupStepSummary")
-    assert "coordinateLabel(standby)" in summary
-    for axis in ("x", "y", "z"):
-        assert f"Math.min(a.{axis}, b.{axis})" in summary
-        assert f"Math.max(a.{axis}, b.{axis})" in summary
-    assert 'link.href = "/coordinates.html";' in summary
-    assert "待机点和两个角点必须在同一维度" in summary
-    for selector in ("pickup-step-hint", "pickup-step-summary", "pickup-step-legacy"):
-        assert f".step-fields > .{selector}" in STYLES
-    layout = STYLES.split(".step-fields > .pickup-step-hint", 1)[1].split("}", 1)[0]
+def test_legacy_notice_layout_is_compact_and_full_row() -> None:
+    for selector in (
+        ".step-fields > .pickup-step-hint",
+        ".step-fields > .pickup-step-summary",
+        ".step-fields > .step-legacy-notice",
+    ):
+        assert selector in STYLES
+    layout = STYLES.split(".step-fields > .step-legacy-notice", 1)[1].split("}", 1)[0]
     assert "grid-column: 1 / -1;" in layout
-    assert "min(100%, 250px)" in STYLES
-
-
-def test_non_pickup_modules_keep_their_shared_region_selector() -> None:
-    controls = task_function("parameterControl")
-    assert controls.count('definition.kind === "pickup-region"') == 1
-    assert '(state.resources.pickupRegions || []).map((region)' in controls
-    assert 'entry.kind === "PICKUP"' in controls
-    assert "setStepParameter(step, definition, next)" in controls
+    assert ".legacy-task-notice" in STYLES

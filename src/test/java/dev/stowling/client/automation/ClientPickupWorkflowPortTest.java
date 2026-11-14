@@ -47,6 +47,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -417,6 +418,51 @@ class ClientPickupWorkflowPortTest {
     }
 
     @Test
+    void pureRegionWaitStartsWithCollectOnlyPlanAndSafelyCompletes() {
+        MutableClock clock = new MutableClock(START);
+        RecordingProbe probe = new RecordingProbe();
+        RecordingFactory factory = factory(true, NavigationStatus.ARRIVED);
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                ClientPickupWorkflowPortTest::customConfig,
+                factory, new TestScheduler(), probe, clock
+        );
+        CustomPickupRules rules = CustomPickupRules.fromParameters(Map.of(
+                "regionId", "pure-region",
+                "idleSeconds", "3",
+                "waitForItems", "true"
+        )).orElseThrow();
+
+        AutomationOperationResult waiting = port.start(
+                OPERATION_KEY,
+                Request.custom(rules, true)
+        );
+
+        assertEquals(AutomationOperationStatus.RUNNING, waiting.status());
+        assertEquals(
+                List.of(List.of("pure-region")),
+                probe.regionObservations().stream()
+                        .map(regions -> regions.stream().map(PickupRegion::id).toList())
+                        .toList()
+        );
+        assertEquals(0, factory.created());
+
+        probe.setObservation(RegionItemProbe.Observation.PRESENT);
+        clock.advance(Duration.ofSeconds(1));
+        assertEquals(AutomationOperationStatus.RUNNING, port.poll(OPERATION_KEY).status());
+        assertTrue(factory.lastPlan().collectOnly());
+        assertTrue(factory.lastPlan().workflow().cacheIds().isEmpty());
+        assertEquals(0, factory.navigation().starts());
+        assertEquals(0, factory.containers().observations());
+        assertEquals(0, factory.containers().begins());
+
+        clock.advance(Duration.ofSeconds(3));
+        assertEquals(
+                AutomationOperationStatus.SUCCEEDED,
+                port.poll(OPERATION_KEY).status()
+        );
+    }
+
+    @Test
     void nextCustomPickupStepStartsAfreshAfterPreviousStepStops() {
         RecordingFactory factory = factory(true, NavigationStatus.ARRIVED);
         ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
@@ -614,7 +660,13 @@ class ClientPickupWorkflowPortTest {
                         ),
                         new NamedCoordinate("cache-point", "Cache", DIMENSION, cachePosition)
                 ),
-                List.of(),
+                List.of(new PickupRegion(
+                        "pure-region",
+                        "Pure Region",
+                        DIMENSION,
+                        STANDBY,
+                        new SpherePickupShape(STANDBY, 8)
+                )),
                 List.of(new NamedCache(
                         "custom-cache", "Cache", "cache-point", DIMENSION,
                         cachePosition, ContainerType.CHEST

@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 class TickPackingPortTest {
@@ -111,6 +112,69 @@ class TickPackingPortTest {
         assertEquals(StopOutcome.CLEAN, fixture.port.pollStop(TASK));
     }
 
+    @Test
+    void explicitCompletionWaitsForSafeExitWithoutRepeatingTransfers() {
+        Fixture fixture = new Fixture(10, 8, false, true);
+        fixture.navigation.stopOutcome = StopOutcome.PENDING;
+        for (int tick = 0; tick < 20; tick++) {
+            assertEquals(PackingDisposition.PENDING,
+                    fixture.port.submit(fixture.explicitRequest()));
+        }
+        int transferCount = fixture.containers.transfers.size();
+        assertTrue(transferCount > 0);
+        assertEquals(StopOutcome.PENDING, fixture.port.pollStop(TASK));
+        assertEquals(PackingDisposition.PENDING,
+                fixture.port.submit(fixture.explicitRequest()));
+        assertEquals(transferCount, fixture.containers.transfers.size());
+
+        fixture.navigation.stopOutcome = StopOutcome.CLEAN;
+        assertEquals(PackingDisposition.ACCEPTED,
+                fixture.port.submit(fixture.explicitRequest()));
+        assertEquals(transferCount, fixture.containers.transfers.size());
+        assertEquals(StopOutcome.CLEAN, fixture.port.pollStop(TASK));
+    }
+
+    @Test
+    void explicitCompletionDoesNotSucceedWhenSafeExitIsUnconfirmed() {
+        Fixture fixture = new Fixture(10, 8, false, true);
+        fixture.navigation.stopOutcome = StopOutcome.UNSAFE;
+        PackingDisposition disposition = PackingDisposition.PENDING;
+        for (int tick = 0; tick < 20 && disposition == PackingDisposition.PENDING; tick++) {
+            disposition = fixture.port.submit(fixture.explicitRequest());
+        }
+
+        assertEquals(PackingDisposition.UNAVAILABLE, disposition);
+        assertEquals(StopOutcome.UNSAFE, fixture.port.pollStop(TASK));
+    }
+
+    @Test
+    void explicitTaskPlanBypassesSharedRoutesAndStations() {
+        Fixture fixture = new Fixture(1, 1, true, true);
+
+        assertEquals(
+                PackingDisposition.PENDING,
+                fixture.port.submit(fixture.explicitRequest())
+        );
+    }
+
+    @Test
+    void explicitTaskPlanUsesItsOwnOverflowContainer() {
+        Fixture fixture = new Fixture(1, 1, true, true);
+        fixture.containers.put(fixture.overflow, DIAMOND, 0);
+        fixture.station.fail.add("station-a");
+        fixture.station.fail.add("station-b");
+
+        for (int tick = 0; tick < 20; tick++) {
+            fixture.port.submit(fixture.explicitRequest());
+            if (tick % 2 == 0) {
+                fixture.clock.advance(Duration.ofSeconds(31));
+            }
+        }
+
+        assertTrue(fixture.containers.transfers.stream().anyMatch(transfer ->
+                transfer.destination().equals(fixture.overflow)));
+    }
+
     private static final class Fixture {
         private final MutableClock clock = new MutableClock(START);
         private final FakeContainerInteraction containers = new FakeContainerInteraction();
@@ -122,9 +186,19 @@ class TickPackingPortTest {
         private final ContainerRef product = container("product", 20, ContainerType.CHEST);
         private final List<PackingStation> stations;
         private final StorageRoute route;
+        private final TaskPackingPlan taskPlan;
         private final TickPackingPort port;
 
         private Fixture(int routeThreshold, int bulkCount, boolean twoStations) {
+            this(routeThreshold, bulkCount, twoStations, false);
+        }
+
+        private Fixture(
+                int routeThreshold,
+                int bulkCount,
+                boolean twoStations,
+                boolean explicitPlan
+        ) {
             containers.put(bulk, DIAMOND, bulkCount);
             containers.put(product, SHULKER, 0);
             stations = twoStations
@@ -157,8 +231,16 @@ class TickPackingPortTest {
                     List.of(),
                     overflow
             );
+            taskPlan = new TaskPackingPlan(route, stations, overflow);
+            Supplier<StowlingConfig> configSupplier = explicitPlan
+                    ? () -> {
+                        throw new AssertionError(
+                                "explicit task plan must not read shared config"
+                        );
+                    }
+                    : () -> config;
             port = new TickPackingPort(
-                    () -> config,
+                    configSupplier,
                     new FakeWorld(),
                     navigation,
                     containers,
@@ -174,6 +256,17 @@ class TickPackingPortTest {
                     route.id(),
                     stations.stream().map(PackingStation::id).toList(),
                     List.of(new ItemAmount(DIAMOND, 2))
+            );
+        }
+
+        private dev.stowling.automation.PackingRequest explicitRequest() {
+            return new dev.stowling.automation.PackingRequest(
+                    TASK,
+                    buffer,
+                    route.id(),
+                    stations.stream().map(PackingStation::id).toList(),
+                    List.of(new ItemAmount(DIAMOND, 2)),
+                    Optional.of(taskPlan)
             );
         }
 

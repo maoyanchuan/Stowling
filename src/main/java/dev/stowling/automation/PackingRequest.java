@@ -3,6 +3,7 @@ package dev.stowling.automation;
 import dev.stowling.domain.ContainerRef;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public record PackingRequest(
@@ -10,7 +11,8 @@ public record PackingRequest(
         ContainerRef buffer,
         String routeId,
         List<String> stationIds,
-        List<ItemAmount> items
+        List<ItemAmount> items,
+        Optional<TaskPackingPlan> taskPlan
 ) {
     public PackingRequest {
         Objects.requireNonNull(taskId, "taskId");
@@ -27,6 +29,24 @@ public record PackingRequest(
         if (items.isEmpty()) {
             throw new IllegalArgumentException("items must not be empty");
         }
+        taskPlan = Objects.requireNonNull(taskPlan, "taskPlan");
+    }
+
+    public PackingRequest(
+            UUID taskId,
+            ContainerRef buffer,
+            String routeId,
+            List<String> stationIds,
+            List<ItemAmount> items
+    ) {
+        this(
+                taskId,
+                buffer,
+                routeId,
+                stationIds,
+                items,
+                Optional.empty()
+        );
     }
 
     private static String requireText(String value, String fieldName) {

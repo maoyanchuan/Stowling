@@ -19,25 +19,54 @@ public final class RunPickupAutomationModule implements AutomationModule {
             new AutomationModuleDescriptor(
                     AutomationStepType.RUN_PICKUP,
                     "运行拾取",
-                    "独立设置待机坐标、拾取角点和缓存，一轮执行目标范围；"
-                            + "可等待范围内有客户端可见物品。旧配置仍支持拾取流程。",
+                    "选择坐标页保存的拾取区域并执行纯区域拾取；"
+                            + "可等待范围内出现客户端可见物品。移动和存放由其他步骤负责。",
                     List.of(
                             new Parameter(
-                                    "standbyCoordinateId", "待机坐标", "coordinate", false
+                                    "regionId",
+                                    "拾取区域",
+                                    "pickup-region",
+                                    false
                             ),
                             new Parameter(
-                                    "firstCornerCoordinateId", "拾取角点一", "coordinate", false
+                                    "idleSeconds",
+                                    "空闲等待秒数",
+                                    "nonnegative-integer",
+                                    false
                             ),
                             new Parameter(
-                                    "secondCornerCoordinateId", "拾取角点二", "coordinate", false
+                                    "waitForItems",
+                                    "等待区域有物品再拾取",
+                                    "boolean",
+                                    false
                             ),
-                            new Parameter("cacheIds", "缓存容器", "containers", false),
                             new Parameter(
-                                    "idleSeconds", "空闲等待秒数", "nonnegative-integer", false
+                                    "standbyCoordinateId",
+                                    "待机坐标（旧配置）",
+                                    "coordinate",
+                                    false
+                            ),
+                            new Parameter(
+                                    "firstCornerCoordinateId",
+                                    "拾取角点一（旧配置）",
+                                    "coordinate",
+                                    false
+                            ),
+                            new Parameter(
+                                    "secondCornerCoordinateId",
+                                    "拾取角点二（旧配置）",
+                                    "coordinate",
+                                    false
+                            ),
+                            new Parameter(
+                                    "cacheIds",
+                                    "缓存容器（旧配置）",
+                                    "containers",
+                                    false
                             ),
                             new Parameter(
                                     "classificationTiming",
-                                    "分类时机",
+                                    "分类时机（旧配置）",
                                     "choice",
                                     false,
                                     List.of(),
@@ -46,19 +75,7 @@ public final class RunPickupAutomationModule implements AutomationModule {
                                             new Choice("AFTER_ROUND", "一轮结束后")
                                     )
                             ),
-                            new Parameter("workflowId", "拾取流程（旧配置）", "pickup", false),
-                            new Parameter(
-                                    "regionId",
-                                    "拾取范围（旧配置，可选）",
-                                    "pickup-region",
-                                    false
-                            ),
-                            new Parameter(
-                                    "waitForItems",
-                                    "等待区域有物品再拾取",
-                                    "boolean",
-                                    false
-                            )
+                            new Parameter("workflowId", "拾取流程（旧配置）", "pickup", false)
                     )
             );
 

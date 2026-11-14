@@ -29,7 +29,8 @@ public record PickupAutomationPlan(
         int inventoryReserveSlots,
         int maxContainerRetries,
         Duration containerAckTimeout,
-        Duration navigationTimeout
+        Duration navigationTimeout,
+        boolean collectOnly
 ) {
     public PickupAutomationPlan {
         Objects.requireNonNull(taskId, "taskId");
@@ -38,10 +39,18 @@ public record PickupAutomationPlan(
         regionsById = Map.copyOf(Objects.requireNonNull(regionsById, "regionsById"));
         cachesById = Map.copyOf(Objects.requireNonNull(cachesById, "cachesById"));
         storageRoutes = List.copyOf(Objects.requireNonNull(storageRoutes, "storageRoutes"));
-        Objects.requireNonNull(overflowContainer, "overflowContainer");
+        if (!collectOnly) {
+            Objects.requireNonNull(overflowContainer, "overflowContainer");
+        }
         Objects.requireNonNull(containerAckTimeout, "containerAckTimeout");
         Objects.requireNonNull(navigationTimeout, "navigationTimeout");
-        validateReferences(workflow, regionOverride, regionsById, cachesById);
+        validateReferences(
+                workflow,
+                regionOverride,
+                regionsById,
+                cachesById,
+                collectOnly
+        );
         if (inventoryReserveSlots < 0 || inventoryReserveSlots >= 36) {
             throw new IllegalArgumentException("inventoryReserveSlots must be between 0 and 35");
         }
@@ -54,6 +63,35 @@ public record PickupAutomationPlan(
         if (navigationTimeout.isNegative() || navigationTimeout.isZero()) {
             throw new IllegalArgumentException("navigationTimeout must be positive");
         }
+    }
+
+    public PickupAutomationPlan(
+            UUID taskId,
+            PickupWorkflow workflow,
+            Optional<String> regionOverride,
+            Map<String, PickupRegion> regionsById,
+            Map<String, ContainerRef> cachesById,
+            List<StorageRoute> storageRoutes,
+            ContainerRef overflowContainer,
+            int inventoryReserveSlots,
+            int maxContainerRetries,
+            Duration containerAckTimeout,
+            Duration navigationTimeout
+    ) {
+        this(
+                taskId,
+                workflow,
+                regionOverride,
+                regionsById,
+                cachesById,
+                storageRoutes,
+                overflowContainer,
+                inventoryReserveSlots,
+                maxContainerRetries,
+                containerAckTimeout,
+                navigationTimeout,
+                false
+        );
     }
 
     public PickupAutomationPlan(
@@ -100,12 +138,13 @@ public record PickupAutomationPlan(
             PickupWorkflow workflow,
             Optional<String> regionOverride,
             Map<String, PickupRegion> regionsById,
-            Map<String, ContainerRef> cachesById
+            Map<String, ContainerRef> cachesById,
+            boolean collectOnly
     ) {
         if (workflow.regions().isEmpty()) {
             throw new IllegalArgumentException("workflow must contain a region");
         }
-        if (workflow.cacheIds().isEmpty()) {
+        if (!collectOnly && workflow.cacheIds().isEmpty()) {
             throw new IllegalArgumentException("workflow must contain a cache");
         }
         for (PickupRegionBinding binding : workflow.regions()) {

@@ -98,6 +98,10 @@ public final class PickupAutomationEngine {
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
         regionOrder = plan.orderedRegions();
         workflowCaches = plan.caches();
+        if (plan.collectOnly()) {
+            stage = PickupStage.COLLECT;
+            resumeStage = PickupStage.COLLECT;
+        }
     }
 
     public synchronized void start() {
@@ -123,6 +127,9 @@ public final class PickupAutomationEngine {
     private Map<String, Integer> initialInventoryBaseline(
             PlayerInventorySnapshot inventory
     ) {
+        if (plan.collectOnly()) {
+            return inventory.itemCounts();
+        }
         Map<String, Integer> baseline = new HashMap<>();
         for (Map.Entry<String, Integer> entry : inventory.itemCounts().entrySet()) {
             Optional<StorageRoute> route = routeMatcher.match(
@@ -251,6 +258,10 @@ public final class PickupAutomationEngine {
     }
 
     private void tickNavigatePickup() {
+        if (plan.collectOnly()) {
+            enter(PickupStage.COLLECT);
+            return;
+        }
         PickupRegion region = currentRegion();
         NavigationStatus status = moveTo(region.standbyPosition());
         if (status == NavigationStatus.FAILED) {
@@ -274,13 +285,17 @@ public final class PickupAutomationEngine {
         }
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
         if (inventory.freeSlots() <= plan.inventoryReserveSlots()) {
-            clearNavigation();
-            beginDeposit();
+            if (plan.collectOnly()) {
+                enter(PickupStage.COMPLETE);
+            } else {
+                clearNavigation();
+                beginDeposit();
+            }
             return;
         }
         if (items.isEmpty()) {
             clearNavigation();
-            if (!inventoryDelta(inventory).isEmpty()) {
+            if (!plan.collectOnly() && !inventoryDelta(inventory).isEmpty()) {
                 beginDeposit();
             } else {
                 startRegionIdleTimer();
@@ -378,7 +393,7 @@ public final class PickupAutomationEngine {
             return;
         }
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
-        if (!inventoryDelta(inventory).isEmpty()) {
+        if (!plan.collectOnly() && !inventoryDelta(inventory).isEmpty()) {
             beginDeposit();
             return;
         }
@@ -391,6 +406,10 @@ public final class PickupAutomationEngine {
     }
 
     private void finishRegion() {
+        if (plan.collectOnly()) {
+            enter(PickupStage.COMPLETE);
+            return;
+        }
         if (plan.workflow().classificationTiming() == ClassificationTiming.AFTER_REGION) {
             beginClassification(false);
             return;
@@ -399,6 +418,10 @@ public final class PickupAutomationEngine {
     }
 
     private void advanceRegion() {
+        if (plan.collectOnly()) {
+            finishRound();
+            return;
+        }
         currentRegionIndex++;
         if (currentRegionIndex < regionOrder.size()) {
             enter(PickupStage.NAVIGATE_PICKUP);
@@ -413,6 +436,10 @@ public final class PickupAutomationEngine {
     }
 
     private void beginClassification(boolean afterRound) {
+        if (plan.collectOnly()) {
+            finishRound();
+            return;
+        }
         classificationAfterRound = afterRound;
         classificationCacheIndex = 0;
         classificationFailures = 0;
@@ -487,6 +514,10 @@ public final class PickupAutomationEngine {
     }
 
     private void finishRound() {
+        if (plan.collectOnly()) {
+            enter(PickupStage.COMPLETE);
+            return;
+        }
         currentRegionIndex = 0;
         if (plan.workflow().completionMode() == CompletionMode.ALL_IDLE) {
             if (workflowIdleSince.isEmpty()) {
@@ -742,6 +773,10 @@ public final class PickupAutomationEngine {
     }
 
     private void beginDeposit() {
+        if (plan.collectOnly()) {
+            enter(PickupStage.COMPLETE);
+            return;
+        }
         classificationFailures = 0;
         selectedCacheIndex = nearestAvailableCacheIndex();
         abortContainerFlow();
@@ -818,7 +853,7 @@ public final class PickupAutomationEngine {
         );
         String regionId = currentRegion().id();
         Set<String> targetKeys = regionTargetKeys.get(regionId);
-        if (targetKeys == null) {
+        if (targetKeys == null || plan.collectOnly() && targetKeys.isEmpty()) {
             Set<String> captured = new HashSet<>();
             for (GroundItem item : candidates) {
                 captured.add(item.observationKey());
@@ -955,6 +990,18 @@ public final class PickupAutomationEngine {
         if (!checkPlayerState()) {
             return;
         }
+        if (plan.collectOnly()) {
+            PlayerInventorySnapshot inventory = inventoryAdapter.observe();
+            if (inventory.freeSlots() <= plan.inventoryReserveSlots()) {
+                enter(PickupStage.COMPLETE);
+                return;
+            }
+            if (stage != PickupStage.WAIT_FOR_IDLE) {
+                stage = PickupStage.COLLECT;
+            }
+            resumeStage = stage;
+            return;
+        }
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
         if (!inventoryDelta(inventory).isEmpty()) {
             if (failedCacheIds.contains(selectedCache().id())) {
@@ -998,15 +1045,20 @@ public final class PickupAutomationEngine {
         }
         round = Math.max(1, checkpoint.round());
         currentRegionIndex = indexOfRegion(checkpoint.currentRegionId());
-        selectedCacheIndex = indexOfCache(checkpoint.selectedCacheId());
-        if (checkpoint.selectedCacheId().isEmpty()
-                && worldObserver.observeWorld().playerPosition().isPresent()) {
-            selectedCacheIndex = nearestAvailableCacheIndex();
+        if (plan.collectOnly()) {
+            selectedCacheIndex = 0;
+            classificationCacheIndex = 0;
+        } else {
+            selectedCacheIndex = indexOfCache(checkpoint.selectedCacheId());
+            if (checkpoint.selectedCacheId().isEmpty()
+                    && worldObserver.observeWorld().playerPosition().isPresent()) {
+                selectedCacheIndex = nearestAvailableCacheIndex();
+            }
+            classificationCacheIndex = Math.min(
+                    checkpoint.classificationCacheIndex(),
+                    workflowCaches.size() - 1
+            );
         }
-        classificationCacheIndex = Math.min(
-                checkpoint.classificationCacheIndex(),
-                workflowCaches.size() - 1
-        );
         boolean legacy = checkpoint.currentRegionId().isEmpty()
                 && checkpoint.round() == 0;
         classificationAfterRound = checkpoint.classificationAfterRound()
@@ -1236,7 +1288,9 @@ public final class PickupAutomationEngine {
                 regionIdleSince,
                 observedInputs,
                 inventoryBaseline,
-                Optional.of(selectedCache().id()),
+                plan.collectOnly()
+                        ? Optional.empty()
+                        : Optional.of(selectedCache().id()),
                 classificationCacheIndex,
                 classificationAfterRound
         ));

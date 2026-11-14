@@ -53,7 +53,7 @@ def test_four_pages_are_real_urls_with_shared_assets() -> None:
     expected_titles = {
         "index.html": "状态概览",
         "coordinates.html": "命名坐标",
-        "tasks.html": "任务与资源",
+        "tasks.html": "任务编排",
         "storage.html": "库存查询",
     }
 
@@ -211,8 +211,8 @@ def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
     assert '["NONE", "INLINE", "TASK_REFERENCE"]' in TASKS
     assert "entry.kind === \"AUTOMATION\" && entry.id !== state.draft.id" \
         in TASKS
-    assert "旧配置兼容：留空时使用自身全部区域" in TASKS
-    assert "旧配置兼容：填写区域 ID 表示明确选择自定义区域" in TASKS
+    assert "旧配置兼容：留空时沿用旧任务区域" in TASKS
+    assert "旧配置兼容：自定义任务需要明确填写区域 ID" in TASKS
     assert "taskId: draft.settings.interruption.kind === \"TASK_REFERENCE\"" \
         in TASKS
 
@@ -246,7 +246,7 @@ def test_task_modules_and_parameters_come_from_descriptors() -> None:
     assert "function renderModuleCatalog()" in TASKS
     assert "Array.isArray(parameter?.options)" in TASKS
     assert 'definition.kind === "choice"' in TASKS
-    assert 'definition.kind === "containers"' in TASKS
+    assert 'definition.kind === "options"' in TASKS
     assert 'definition.kind === "nonnegative-integer"' in TASKS
 
 
@@ -255,12 +255,14 @@ def test_new_task_entry_prefers_direct_rules_and_keeps_legacy_editing() -> None:
     assert 'id="new-task-dialog"' in html
     assert 'id="new-custom-task-button"' in html
     assert 'id="new-pickup-task-button"' in html
-    assert "预置拾取步骤，直接选择坐标、角点和缓存" in html
+    assert "只预置一个纯区域拾取步骤" in html
+    assert "选择坐标、角点和缓存" not in html
     selector = html.split('<select id="task-kind">', 1)[1].split("</select>", 1)[0]
     assert 'value="AUTOMATION"' in selector
     assert 'value="PICKUP"' not in selector
     assert 'state.draft = defaultDefinition("AUTOMATION");' in TASKS
     assert 'type: "RUN_PICKUP"' in TASKS
+    assert 'waitForItems: "false"' in TASKS
     assert "function renderTaskKindOptions(kind)" in TASKS
     assert "旧拾取任务（兼容编辑）" in TASKS
 
@@ -274,11 +276,11 @@ def test_pickup_and_automation_task_shapes_match_contract() -> None:
     assert "cacheIds: [...draft.pickup.cacheIds]" in TASKS
     assert "completionIdleDelay: Number(draft.pickup.completionIdleDelay)" \
         in TASKS
-    assert "settings" in TASKS
-    assert "function validatePickupTask(errors)" in TASKS
-    assert "拾取任务至少选择一个区域" in TASKS
-    assert "拾取任务至少选择一个缓存" in TASKS
+    assert "function validatePickupTask(errors)" not in TASKS
+    assert "拾取任务至少选择一个区域" not in TASKS
+    assert "拾取任务至少选择一个缓存" not in TASKS
     assert "自定义任务至少需要一个步骤" in TASKS
+    assert "const legacyPickup = isLegacyPickupStep(step);" in TASKS
 
 
 def test_schedule_information_and_runtime_actions_are_visible() -> None:
@@ -321,48 +323,45 @@ def test_task_polling_refreshes_schedules_without_replacing_draft() -> None:
     assert "async function saveTask()" in TASKS
 
 
-def test_task_resources_use_new_resource_api_without_batch_tasks() -> None:
+def test_task_page_uses_read_only_resource_facade() -> None:
     assert 'Stowling.request("/v1/config/task-resources")' in RESOURCES
-    assert 'method: "PUT"' in RESOURCES
-    assert "revision: state.pickupSnapshot.revision" in RESOURCES
-    assert "pickupRegions," in RESOURCES
-    assert "cacheContainers" in RESOURCES
-    assert "pickupWorkflows" not in RESOURCES
-    assert "/v1/config/pickup" not in RESOURCES
-    assert "/v1/config/automation-workflows" not in RESOURCES
+    assert 'method: "PUT"' not in RESOURCES
+    assert "document.querySelector" not in RESOURCES
+    assert "window.StowlingResources = Object.freeze({" in RESOURCES
 
+    assert "Resources.load()" in TASKS
+    assert "Resources.getSnapshot()" in TASKS
+    assert "Resources.onChanged(" in TASKS
+    assert 'Stowling.request("/v1/config/task-resources"' not in TASKS
+    assert 'Stowling.request("/v1/config/coordinates"' not in TASKS
+
+
+def test_task_page_removes_shared_editors_and_keeps_runtime_queue() -> None:
     html = PAGES["tasks.html"]
-    for element_id in (
+    removed_ids = (
+        "pickup-task-editor",
+        "pickup-dimension",
+        "pickup-binding-list",
+        "pickup-cache-options",
+        "pickup-completion-mode",
         "pickup-region-list",
         "cache-list",
         "add-pickup-region-button",
         "add-cache-button",
         "save-pickup-resources-button",
         "pickup-resource-errors",
-    ):
-        assert f'id="{element_id}"' in html
-    assert "function validatePickupResources()" in RESOURCES
-    assert "function savePickupResources()" in RESOURCES
-    assert "function pickupRequest()" in RESOURCES
-    assert "function renderPickupResources()" in RESOURCES
-
-
-def test_warehouse_base_coordinates_live_on_tasks_page() -> None:
-    html = PAGES["tasks.html"]
-    for element_id in (
         "base-coordinate-list",
         "save-base-coordinates-button",
         "discard-base-coordinates-button",
         "base-coordinate-errors",
-    ):
-        assert f'id="{element_id}"' in html
-
-    assert 'Stowling.request("/v1/config/coordinates")' in RESOURCES
-    assert "revision: state.baseSnapshot.revision" in RESOURCES
-    assert "coordinates: state.baseDraft.map((coordinate)" in RESOURCES
-    assert "仓库基础坐标" in html
+    )
+    for element_id in removed_ids:
+        assert f'id="{element_id}"' not in html
+    assert "仓库基础坐标" not in html
+    assert "共享资源接口" not in html
     assert "仓库同步" not in html
-    assert "function saveBaseCoordinates()" in RESOURCES
+    assert 'id="runtime-task-list"' in html
+    assert 'id="refresh-runtime-button"' in html
 
 
 def test_storage_is_inventory_only_and_never_starts_an_audit() -> None:
@@ -496,7 +495,6 @@ def test_layout_is_responsive_and_supports_dark_mode() -> None:
     assert ".builder-grid" in STYLES
     assert ".module-catalog" in STYLES
     assert ".task-definition-list" in STYLES
-    assert ".resource-editor-grid" in STYLES
     assert "@media (max-width: 760px)" in STYLES
     assert "@media (prefers-color-scheme: dark)" in STYLES
 

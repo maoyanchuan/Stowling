@@ -18,12 +18,14 @@ import dev.stowling.automation.PackingPort;
 import dev.stowling.automation.PickupAutomationEngine;
 import dev.stowling.automation.PickupAutomationPlan;
 import dev.stowling.automation.PickupWorkflowPort;
+import dev.stowling.automation.PackingOperationPort;
 import dev.stowling.automation.PlayerInventoryAdapter;
 import dev.stowling.automation.SystemAutomationClock;
 import dev.stowling.automation.TickPackingPort;
 import dev.stowling.automation.WorldObserver;
 import dev.stowling.automation.module.DefaultAutomationModuleRegistryFactory;
 import dev.stowling.client.automation.ClientPickupWorkflowPort;
+import dev.stowling.client.automation.ClientTaskPackingPort;
 import dev.stowling.client.automation.ClientThreadInventoryQueryPort;
 import dev.stowling.client.automation.ClientThreadItemTransferPort;
 import dev.stowling.client.automation.ClientThreadNavigationPort;
@@ -217,7 +219,9 @@ public final class StowlingRuntime implements AutoCloseable {
                 transfers,
                 inventory,
                 materials,
-                crafting
+                crafting,
+                new ClientTaskPackingPort(packingPort, scheduler),
+                () -> configLoader.load(configPath)
         );
         SqliteGenericAutomationCheckpointStore genericCheckpoints =
                 new SqliteGenericAutomationCheckpointStore(tasks);
@@ -302,7 +306,9 @@ public final class StowlingRuntime implements AutoCloseable {
             ItemTransferPort transfers,
             InventoryQueryPort inventory,
             MaterialAcquisitionPort materials,
-            CraftingPort crafting
+            CraftingPort crafting,
+            PackingOperationPort packing,
+            java.util.function.Supplier<StowlingConfig> configSupplier
     ) {
         return new DefaultAutomationModuleRegistryFactory(
                 coordinates,
@@ -312,7 +318,9 @@ public final class StowlingRuntime implements AutoCloseable {
                 transfers,
                 inventory,
                 materials,
-                crafting
+                crafting,
+                packing,
+                configSupplier
         );
     }
 

@@ -12,16 +12,16 @@ designed to run in a normal client or a HeadlessMC client.
 
 Current functionality includes:
 
-- Baritone-backed pickup navigation, ground-item collection, storage routing, and overflow
-  handling.
+- Baritone-backed navigation and ground-item collection, with explicit container and packing
+  modules; legacy storage routing and overflow handling remain compatible.
 - Server-confirmed transfers for chest, barrel, hopper, and shulker-box menus.
 - Existing inventory snapshots with loose, boxed, unknown, and nested shulker-box contents.
   Legacy capture reads only an explicitly identified, already-open container.
 - Configurable shulker-box packing workcells with item-count or occupancy thresholds.
 - SQLite persistence for tasks, recovery checkpoints, containers, and inventory snapshots.
-- A named-coordinate library plus spherical or cuboid pickup regions, named cache
-  containers, and reusable multi-region pickup workflows that reference those coordinates.
-- A browser-based modular task builder with nine reusable robot modules, persisted workflow
+- A **Coordinates and regions** page for named coordinates and spherical or cuboid pickup
+  regions; existing cache containers and multi-region pickup workflows remain compatible.
+- A browser-based modular task builder with ten reusable robot modules, persisted workflow
   definitions, task progress, priority scheduling, cancellation, and restart-safe records.
 - Versioned pickup and automation task definitions with schema 5 scheduling, priority,
   restart, trigger, and interruption settings.
@@ -73,8 +73,9 @@ Durations are serialized as whole seconds. Validation rejects duplicate IDs, inv
 container or dimension references, invalid packing thresholds, and equal-priority
 item-route conflicts.
 
-The overflow container is mandatory. Unmatched items must be routed there rather than
-discarded.
+The overflow container remains mandatory for legacy storage routing. Unmatched items in
+that routing flow go there rather than being discarded. Pure `RUN_PICKUP` steps do not
+implicitly route or store collected items.
 
 ## Web console
 
@@ -90,27 +91,44 @@ select **Verify and connect**. The token is kept only in the current tab's
 `sessionStorage`; it is never added to the URL, cookies, project configuration, or logs.
 Use **Clear token** to remove it from the current browser session.
 
-The console shows runtime status, tasks, containers, and inventory snapshots. Its
-**Pickup configuration** editor manages named spherical or cuboid regions, named cache
-containers, and workflows that combine regions and caches. Changes remain drafts until
-**Save all** validates and atomically updates `config/stowling.json`; the previous file is
-kept as `config/stowling.json.bak`. Saving is blocked while a scheduled run is active or
-the scheduler is unsafe.
+The console shows runtime status, tasks, containers, and inventory snapshots. The task
+page manages task definitions, while **Coordinates and regions** manages named points and
+pickup regions. Tasks, coordinate points, and regions have separate save operations; there
+is no shared **Save all** action for tasks and resources. Configuration writes are validated
+and atomic, with the previous file retained as `config/stowling.json.bak`. Saving is blocked
+while a scheduled run is active or the scheduler is unsafe.
 
-The separate **Named coordinates** page supports adding, deleting, renaming, and reordering
-coordinate points with editable dimensions and X/Y/Z values. Coordinate IDs are immutable
-after creation while display names remain editable. Region standby points, shape centers
-and corners, and cache positions select saved coordinates instead of duplicating position
-fields. Saving synchronizes all references, rejects cross-dimension references, and refuses
-to delete a coordinate that is still referenced. The corresponding endpoints are:
+### Coordinates and regions
+
+Open `http://127.0.0.1:8765/coordinates.html` to add, delete, rename, or reorder named points
+and edit their dimensions and X/Y/Z values. Coordinate IDs are immutable after creation.
+Coordinate drafts are saved independently; save a point before selecting it for a region.
+A successful coordinate save refreshes the region editor's saved points and references.
+
+On the same page, define a named `SPHERE` region by selecting a saved center point and a
+radius, or a `CUBOID` region by selecting two saved corner points. Cuboid corners may be
+selected in either order: each axis is automatically sorted into an inclusive min/max
+range. The editor shows names, dimensions, and XYZ or bounds summaries. References must
+be in the same dimension. Saving a coordinate synchronizes its existing references;
+referenced coordinates cannot be deleted. A region referenced by a task or legacy workflow
+cannot be deleted either, and rejected operations display an explanatory error.
+
+There is no standby-point or cache-container editor. Existing regions retain their legacy standby anchors in the same dimension. New regions
+derive an internal compatibility anchor from the center or first corner; pure pickup does
+not use these fields. Existing task, workflow, and cache configurations are retained, but their
+legacy resource settings are not edited by the new page.
+
+Named-coordinate endpoints are:
 
 ```text
 GET /v1/config/coordinate-points
 PUT /v1/config/coordinate-points
 ```
 
-A pickup task can run an entire workflow or one selected region from that workflow. The
-corresponding REST endpoints are:
+### Legacy pickup compatibility API
+
+Existing pickup tasks can still run an entire legacy workflow or one region within it.
+These endpoints are compatibility entry points, not the new modular pickup editor:
 
 ```text
 GET /v1/config/pickup
@@ -119,7 +137,7 @@ GET /v1/pickup-workflows
 POST /v1/tasks/pickup
 ```
 
-The pickup request body uses `workflowId` and an optional `regionId`:
+The legacy pickup request body uses `workflowId` and an optional `regionId`:
 
 ```json
 {"workflowId":"farm_patrol","regionId":"north_farm"}
@@ -131,23 +149,35 @@ before expecting a newly built version to take effect.
 
 ### Task builder
 
-Open `http://127.0.0.1:8765/tasks.html` to create reusable automation workflows from
-these modules:
+Open `http://127.0.0.1:8765/tasks.html` to compose reusable tasks from ten robot modules:
 
-- Navigate to a named coordinate.
-- Wait for a configured duration.
-- Run a complete pickup workflow or one pickup region.
-- Take items from a container into the player inventory.
-- Put player items into a container.
-- Transfer items between two containers.
+- `NAVIGATE`: move to a saved named point using `coordinateId`.
+- `WAIT`: wait for the configured `seconds`.
+- `RUN_PICKUP`: collect within a saved `regionId`, with `idleSeconds` and `waitForItems`.
+- `TAKE_ITEMS`: take `itemId`/`count` from `coordinateId`, with an optional `containerType`.
+- `PUT_ITEMS`: put `itemId`/`count` into `coordinateId`, with an optional `containerType`.
+- `TRANSFER_ITEMS`: move `itemId`/`count` between `sourceCoordinateId` and
+  `destinationCoordinateId`, with an optional container type for each endpoint.
 - Check the live player inventory.
 - Acquire missing materials from the latest fresh container snapshot.
 - Run a crafting step.
+- `PACK_ITEMS`: pack items into shulker boxes using explicit workcell coordinates.
+
+`PACK_ITEMS` is a real runtime module, not an implicit pickup side effect. Configure
+`sourceCoordinateId`, `boxCoordinateId`, `outputCoordinateId`, and `fallbackCoordinateId`,
+plus `itemId`, `count`, `completionTrigger`, and `completionThreshold`. It uses these named
+points for the source, placed packing box, output, and fallback locations, with item-count or
+occupancy completion thresholds.
+
+Pure pickup does not implicitly move to a standby point, store items in caches, classify
+items, or pack boxes. Compose movement, waiting, container operations, and packing as
+separate steps. The task page selects saved regions and coordinates; it has no shared
+cache, standby-point, or corner editor.
 
 The crafting module is intentionally conservative in this release. Ordinary clients do
 not expose a stable server-confirmed crafting transaction, so the scheduled run stops with
 a manual-handling message instead of claiming success. Navigation, waits, pickup, inventory
-checks, and container transfers are connected to the live client runtime.
+checks, container transfers, and packing are connected to the live client runtime.
 
 The task builder saves workflows through these endpoints:
 
@@ -184,22 +214,24 @@ Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four
 - `AFTER_COMPLETION`: waits for the positive `intervalSeconds` delay after a successful
   run, then queues the task.
 
-New **Run pickup** steps define their own rules, without selecting a pickup workflow:
-choose a named standby coordinate, two named corner coordinates, and one or more cache
-containers. The two corners define an inclusive cuboid in any order; all selected resources
-must be in the same dimension. `idleSeconds` (default `2`) ends the round after the region
-has no items for that duration. Classification uses existing storage routes and overflow
-handling; its timing is independently configurable in the step.
+New **Run pickup** steps select a saved `regionId` from **Coordinates and regions**, with
+`idleSeconds` (default `2`) and `waitForItems` (default `false`). `idleSeconds` ends the
+round after that region has no items for the configured duration. Region geometry is
+edited on the coordinates page, not inside a task. Pickup only collects items; any later
+movement, wait, storage, transfer, or packing must be an explicit module step.
 
-The optional **Wait for items before pickup** condition (`waitForItems`, default `false`)
-observes drops inside that cuboid once per second before starting. It never navigates or
-loads chunks while waiting; unobservable regions show a waiting-for-visibility status.
-Waiting belongs to the running task and can be safely interrupted. Each pickup body is
-finite, and repeated execution is controlled by the parent task trigger.
+The optional **Wait for items before pickup** condition observes client-visible drops in
+the selected sphere or cuboid once per second before starting. It never patrols or loads
+chunks while waiting; unobservable regions show a waiting-for-visibility status. Waiting
+belongs to the running task and can be safely interrupted. Each pickup round is finite,
+and repeated execution is controlled by the parent task trigger.
 
-Legacy `workflowId`/`regionId` steps remain readable and runnable, but the new editor no
-longer offers workflow selection. An explicit conversion action opens the independent
-rule editor without silently changing existing task definitions.
+Legacy task steps, pickup workflows, and cache settings remain readable and compatible.
+The new editor does not offer legacy workflow or cache editing. Only an explicit,
+confirmed conversion changes an old pickup step to pure `RUN_PICKUP` mode; opening or
+saving an existing task does not silently convert it. A converted step does not retain
+implicit standby movement, cache storage, classification, or packing behavior; add the
+required actions as separate modules.
 
 Legacy `ITEMS_PRESENT` task triggers remain supported and are shown explicitly as legacy
 settings when editing existing configurations; new tasks use the pickup step condition.
@@ -215,17 +247,19 @@ The control service exposes the task-definition lifecycle through
 Every definition has its own revision, so updating one task does not replace unrelated
 pickup or automation definitions. Saving or creating a definition does not enable it.
 
-Task-editing clients can manage reusable pickup regions and cache containers without
-replacing workflows through these endpoints:
+The **Coordinates and regions** page saves regions independently through the existing
+task-resource endpoints:
 
 ```text
 GET /v1/config/task-resources
 PUT /v1/config/task-resources
 ```
 
-The `PUT` body contains `revision`, `pickupRegions`, and `cacheContainers`; it does not
-contain or modify `pickupWorkflows`. Existing pickup and automation definitions are
-preserved.
+The `GET` snapshot includes `revision`, `pickupRegions`, `cacheContainers`, and
+`pickupWorkflows`. Before saving regions, the page reads the latest snapshot and sends a
+`PUT` body containing its `revision`, the edited `pickupRegions`, and unchanged legacy
+`cacheContainers`. It does not edit caches, discard old resources, or replace workflows
+or task definitions. Revision conflicts are reported rather than silently overwritten.
 
 Scheduling advances only from `tickOnClientThread`. Legacy pickup and automation requests
 enter the same priority queue as scheduled runs and cannot bypass a higher-priority queued
@@ -243,10 +277,12 @@ execution ID. Other tasks must be enabled again. Legacy checkpoints are discarde
 clicks are never replayed.
 
 The warehouse page is inventory-only: refresh reads existing snapshots and never starts a
-robot audit. Pickup regions, cache containers and warehouse base coordinates are edited on
-the task page; the named-coordinate page remains separate. Warehouse synchronization, area
-discovery, partitions and material-collection refresh are not implemented in this release;
-only module extension ports are reserved.
+robot audit. Named points and pickup regions are managed on **Coordinates and regions**.
+The task page does not edit shared caches, standby points, corners, or legacy warehouse
+base coordinates. Existing legacy resources remain compatible through their configuration
+and API entry points. Warehouse synchronization, area discovery, partitions, and
+material-collection refresh are not implemented in this release; only module extension
+ports are reserved.
 
 ## HeadlessMC operation
 

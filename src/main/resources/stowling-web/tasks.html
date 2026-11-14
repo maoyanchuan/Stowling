@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>任务与资源 · Stowling</title>
+    <title>任务编排 · Stowling</title>
     <link rel="icon" type="image/svg+xml" href="/icon.svg">
     <link rel="icon" type="image/png" href="/icon.png">
     <link rel="stylesheet" href="/styles.css">
@@ -17,8 +17,8 @@
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
-                <h1>任务与资源</h1>
-                <p>统一管理拾取、自动化任务及共享运行资源</p>
+                <h1>任务编排</h1>
+                <p>用自由步骤组合拾取、移动、等待、容器操作与运行队列</p>
             </div>
         </div>
         <div class="connection-state">
@@ -41,7 +41,9 @@
             </button>
             <button id="new-pickup-task-button" class="secondary" type="button">
                 拾取任务
-                <span class="compact-help">预置拾取步骤，直接选择坐标、角点和缓存</span>
+                <span class="compact-help">
+                    创建自由任务，只预置一个纯区域拾取步骤
+                </span>
             </button>
         </div>
         <div class="action-row">
@@ -58,7 +60,7 @@
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">任务库</p>
-                        <h2 id="library-title">自定义任务与拾取规则</h2>
+                        <h2 id="library-title">自由任务组合</h2>
                         <p class="muted section-help">
                             每个任务独立读取、保存和删除。筛选只影响列表，不改变配置。
                         </p>
@@ -179,7 +181,8 @@
                                 旧配置区域 ID（仅兼容“区域有物品时”）
                             </label>
                             <p class="muted compact-help">
-                                新任务请在 RUN_PICKUP 步骤中设置拾取范围与等待选项。
+                                RUN_PICKUP 只选择命名坐标页面保存的拾取区域；
+                                待机与移动请使用独立步骤。
                             </p>
                             <textarea id="trigger-regions" rows="3"></textarea>
                             <div id="trigger-region-hints" class="check-grid"></div>
@@ -213,67 +216,18 @@
                         </div>
                     </section>
 
-                    <section id="pickup-task-editor" class="editor-subsection" hidden
-                             aria-labelledby="pickup-task-title">
-                        <div class="step-heading">
-                            <div>
-                                <h3 id="pickup-task-title">旧拾取任务参数（兼容编辑）</h3>
-                                <p>区域和缓存引用任务页共享资源</p>
-                            </div>
-                        </div>
-                        <div class="editor-fields">
-                            <div class="editor-field">
-                                <label for="pickup-dimension">维度</label>
-                                <select id="pickup-dimension"></select>
-                            </div>
-                            <div class="editor-field">
-                                <label for="pickup-classification">分类时机</label>
-                                <select id="pickup-classification">
-                                    <option value="AFTER_REGION">每个区域结束后</option>
-                                    <option value="AFTER_ROUND">整轮结束后</option>
-                                </select>
-                            </div>
-                            <div class="editor-field">
-                                <label for="pickup-cache-policy">缓存选择策略</label>
-                                <select id="pickup-cache-policy"></select>
-                            </div>
-                            <div class="editor-field">
-                                <label for="pickup-completion-mode">结束方式</label>
-                                <select id="pickup-completion-mode">
-                                    <option value="MANUAL">手动停止</option>
-                                    <option value="ALL_IDLE">全部区域空闲后</option>
-                                </select>
-                            </div>
-                            <div class="editor-field">
-                                <label for="pickup-completion-idle">流程空闲秒数</label>
-                                <input id="pickup-completion-idle" type="number"
-                                       min="0" step="1">
-                            </div>
-                        </div>
-                        <div class="step-heading">
-                            <div>
-                                <h3>区域顺序</h3>
-                                <p>优先级越小越先运行，空闲秒数按区域设置</p>
-                            </div>
-                            <button id="add-pickup-binding-button"
-                                    class="secondary compact" type="button">添加区域</button>
-                        </div>
-                        <div id="pickup-binding-list" class="editor-list"></div>
-                        <div class="step-heading">
-                            <div>
-                                <h3>可用缓存</h3>
-                                <p>只显示任务页共享资源中的缓存容器</p>
-                            </div>
-                        </div>
-                        <div id="pickup-cache-options" class="check-grid"></div>
-                    </section>
+                    <div id="legacy-pickup-task-notice"
+                         class="legacy-task-notice" hidden></div>
 
                     <section id="automation-task-editor" class="editor-subsection" hidden
                              aria-labelledby="automation-task-title">
                         <div class="step-heading">
                             <div>
                                 <h3 id="automation-task-title">自动化步骤</h3>
-                                <p>添加拾取步骤即可直接选择命名坐标、两个范围角点和缓存。</p>
+                                <p>
+                                    自由组合 NAVIGATE、WAIT、RUN_PICKUP、移动、
+                                    容器操作和装箱模块；步骤顺序就是执行顺序。
+                                </p>
                             </div>
                             <button id="add-task-step-button" class="primary compact"
                                     type="button">添加步骤</button>
@@ -308,75 +262,6 @@
                     <span id="module-count" class="loopback-tag">-- 个模块</span>
                 </div>
                 <div id="module-catalog" class="module-catalog"></div>
-            </section>
-
-            <section class="panel wide" aria-labelledby="resources-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">共享资源接口</p>
-                        <h2 id="resources-title">拾取资源与仓库基础坐标</h2>
-                        <p class="muted section-help">
-                            命名坐标仍在独立页面维护。这里保存拾取区域、缓存和仓库基础坐标。
-                        </p>
-                    </div>
-                </div>
-                <div class="resource-editor-grid">
-                    <section class="config-column" aria-labelledby="region-title">
-                        <div class="config-column-heading">
-                            <div>
-                                <h3 id="region-title">拾取区域</h3>
-                                <p>通过命名坐标定义范围与待机点</p>
-                            </div>
-                            <button id="add-pickup-region-button"
-                                    class="secondary compact" type="button">新增区域</button>
-                        </div>
-                        <div id="pickup-region-list" class="editor-list"></div>
-                    </section>
-                    <section class="config-column" aria-labelledby="cache-title">
-                        <div class="config-column-heading">
-                            <div>
-                                <h3 id="cache-title">缓存容器</h3>
-                                <p>供自定义拾取步骤和旧任务选择</p>
-                            </div>
-                            <button id="add-cache-button"
-                                    class="secondary compact" type="button">新增缓存</button>
-                        </div>
-                        <div id="cache-list" class="editor-list"></div>
-                    </section>
-                </div>
-                <div id="pickup-resource-errors" class="config-errors"
-                     role="alert"></div>
-                <div class="action-row">
-                    <button id="discard-pickup-resources-button"
-                            class="secondary compact" type="button">放弃拾取资源修改</button>
-                    <button id="save-pickup-resources-button" class="primary compact"
-                            type="button" disabled>保存拾取资源</button>
-                </div>
-                <div class="coordinate-footer">
-                    <span id="pickup-resource-status">尚未读取拾取资源</span>
-                    <code id="pickup-resource-revision">配置版本：--</code>
-                </div>
-            </section>
-
-            <section class="panel wide" aria-labelledby="base-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">仓库锚点 · 旧配置接口</p>
-                        <h2 id="base-title">仓库基础坐标</h2>
-                    </div>
-                    <div class="action-row">
-                        <button id="discard-base-coordinates-button"
-                                class="secondary compact" type="button">放弃修改</button>
-                        <button id="save-base-coordinates-button" class="primary compact"
-                                type="button" disabled>保存坐标</button>
-                    </div>
-                </div>
-                <div id="base-coordinate-list" class="coordinate-groups"></div>
-                <div id="base-coordinate-errors" class="config-errors" role="alert"></div>
-                <div class="coordinate-footer">
-                    <span id="base-coordinate-status">尚未读取仓库基础坐标</span>
-                    <code id="base-coordinate-revision">配置版本：--</code>
-                </div>
             </section>
 
             <section class="panel wide" aria-labelledby="runtime-title">

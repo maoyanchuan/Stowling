@@ -30,48 +30,120 @@ public record CustomPickupRules(
         String secondCornerCoordinateId,
         List<String> cacheIds,
         Duration idleDelay,
-        ClassificationTiming classificationTiming
+        ClassificationTiming classificationTiming,
+        String selectedRegionId
 ) {
     private static final String REGION_ID = "custom-pickup-region";
-    private static final Set<String> PARAMETER_KEYS = Set.of(
+    private static final String PURE_WORKFLOW_ID = "pickup-region";
+    private static final Set<String> LEGACY_PARAMETER_KEYS = Set.of(
             "standbyCoordinateId", "firstCornerCoordinateId", "secondCornerCoordinateId",
-            "cacheIds", "idleSeconds", "classificationTiming"
+            "cacheIds", "classificationTiming"
     );
     private static final Pattern SAFE_ID = Pattern.compile("[a-z0-9][a-z0-9._-]{0,63}");
 
     public CustomPickupRules {
-        standbyCoordinateId = requireId(standbyCoordinateId, "standbyCoordinateId");
-        firstCornerCoordinateId = requireId(firstCornerCoordinateId, "firstCornerCoordinateId");
-        secondCornerCoordinateId = requireId(secondCornerCoordinateId, "secondCornerCoordinateId");
-        cacheIds = List.copyOf(Objects.requireNonNull(cacheIds, "cacheIds")).stream()
-                .map(id -> requireId(id, "cacheIds"))
-                .toList();
-        if (cacheIds.isEmpty() || cacheIds.stream().distinct().count() != cacheIds.size()) {
-            throw new IllegalArgumentException("cacheIds must select distinct cache containers");
+        boolean pureRegion = selectedRegionId != null && !selectedRegionId.isBlank();
+        if (pureRegion) {
+            selectedRegionId = requireId(selectedRegionId, "selectedRegionId");
+            if (hasText(standbyCoordinateId)
+                    || hasText(firstCornerCoordinateId)
+                    || hasText(secondCornerCoordinateId)
+                    || cacheIds != null && !cacheIds.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "pure region pickup cannot mix legacy pickup rules"
+                );
+            }
+            standbyCoordinateId = "";
+            firstCornerCoordinateId = "";
+            secondCornerCoordinateId = "";
+            cacheIds = List.of();
+        } else {
+            selectedRegionId = null;
+            standbyCoordinateId = requireId(standbyCoordinateId, "standbyCoordinateId");
+            firstCornerCoordinateId = requireId(
+                    firstCornerCoordinateId,
+                    "firstCornerCoordinateId"
+            );
+            secondCornerCoordinateId = requireId(
+                    secondCornerCoordinateId,
+                    "secondCornerCoordinateId"
+            );
+            cacheIds = List.copyOf(Objects.requireNonNull(cacheIds, "cacheIds")).stream()
+                    .map(id -> requireId(id, "cacheIds"))
+                    .toList();
+            if (cacheIds.isEmpty()
+                    || cacheIds.stream().distinct().count() != cacheIds.size()) {
+                throw new IllegalArgumentException(
+                        "cacheIds must select distinct cache containers"
+                );
+            }
         }
         idleDelay = Objects.requireNonNull(idleDelay, "idleDelay");
         if (idleDelay.isNegative() || idleDelay.getNano() != 0) {
             throw new IllegalArgumentException("idleSeconds must be a nonnegative integer");
         }
-        classificationTiming = Objects.requireNonNull(classificationTiming, "classificationTiming");
+        classificationTiming = pureRegion && classificationTiming == null
+                ? ClassificationTiming.AFTER_ROUND
+                : Objects.requireNonNull(classificationTiming, "classificationTiming");
+    }
+
+    public CustomPickupRules(
+            String standbyCoordinateId,
+            String firstCornerCoordinateId,
+            String secondCornerCoordinateId,
+            List<String> cacheIds,
+            Duration idleDelay,
+            ClassificationTiming classificationTiming
+    ) {
+        this(
+                standbyCoordinateId,
+                firstCornerCoordinateId,
+                secondCornerCoordinateId,
+                cacheIds,
+                idleDelay,
+                classificationTiming,
+                null
+        );
     }
 
     public static Optional<CustomPickupRules> fromParameters(Map<String, String> parameters) {
         Objects.requireNonNull(parameters, "parameters");
-        if (PARAMETER_KEYS.stream().noneMatch(parameters::containsKey)) {
+        String workflowId = optional(parameters, "workflowId", "");
+        String regionId = optional(parameters, "regionId", "");
+        boolean hasLegacyRules = LEGACY_PARAMETER_KEYS.stream()
+                .anyMatch(parameters::containsKey);
+        boolean hasIdleSeconds = parameters.containsKey("idleSeconds");
+        if (!workflowId.isEmpty()) {
+            if (hasLegacyRules || hasIdleSeconds) {
+                throw new IllegalArgumentException(
+                        "legacy workflows cannot mix direct or region pickup rules"
+                );
+            }
             return Optional.empty();
         }
-        if (!optional(parameters, "workflowId", "").isEmpty()
-                || !optional(parameters, "regionId", "").isEmpty()) {
-            throw new IllegalArgumentException(
-                    "custom pickup rules cannot reference a legacy workflowId or regionId"
-            );
+        if (!regionId.isEmpty()) {
+            if (hasLegacyRules) {
+                throw new IllegalArgumentException(
+                        "pure region pickup cannot mix legacy pickup rules"
+                );
+            }
+            return Optional.of(new CustomPickupRules(
+                    "",
+                    "",
+                    "",
+                    List.of(),
+                    parseIdleSeconds(parameters),
+                    null,
+                    requireId(regionId, "regionId")
+            ));
         }
-        long idleSeconds;
-        try {
-            idleSeconds = Long.parseLong(optional(parameters, "idleSeconds", "2"));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("idleSeconds must be a nonnegative integer");
+        if (!hasLegacyRules && !hasIdleSeconds) {
+            return Optional.empty();
+        }
+        if (!hasLegacyRules) {
+            throw new IllegalArgumentException(
+                    "missing required direct pickup parameters"
+            );
         }
         ClassificationTiming timing;
         try {
@@ -86,7 +158,7 @@ public record CustomPickupRules(
                 required(parameters, "firstCornerCoordinateId"),
                 required(parameters, "secondCornerCoordinateId"),
                 Arrays.asList(required(parameters, "cacheIds").split(",", -1)),
-                Duration.ofSeconds(idleSeconds),
+                parseIdleSeconds(parameters),
                 timing
         ));
     }
@@ -94,6 +166,9 @@ public record CustomPickupRules(
     public PickupAutomationPlan plan(UUID taskId, StowlingConfig config) {
         Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(config, "config");
+        if (selectedRegionId != null) {
+            return purePlan(taskId, config);
+        }
         NamedCoordinate standby = coordinate(config, standbyCoordinateId, "standbyCoordinateId");
         NamedCoordinate first = coordinate(config, firstCornerCoordinateId, "firstCornerCoordinateId");
         NamedCoordinate second = coordinate(
@@ -135,6 +210,40 @@ public record CustomPickupRules(
         );
     }
 
+    private PickupAutomationPlan purePlan(UUID taskId, StowlingConfig config) {
+        PickupRegion region = config.pickupRegions().stream()
+                .filter(candidate -> candidate.id().equals(selectedRegionId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "unknown regionId: " + selectedRegionId
+                ));
+        PickupWorkflow body = new PickupWorkflow(
+                PURE_WORKFLOW_ID,
+                "区域拾取",
+                region.dimension(),
+                List.of(new PickupRegionBinding(region.id(), 100, idleDelay)),
+                List.of(),
+                CachePolicy.NEAREST_AVAILABLE,
+                ClassificationTiming.AFTER_ROUND,
+                CompletionMode.ALL_IDLE,
+                Duration.ZERO
+        );
+        return new PickupAutomationPlan(
+                taskId,
+                body,
+                Optional.empty(),
+                Map.of(region.id(), region),
+                Map.of(),
+                List.of(),
+                null,
+                2,
+                3,
+                Duration.ofSeconds(8),
+                Duration.ofMinutes(5),
+                true
+        );
+    }
+
     private static NamedCoordinate coordinate(StowlingConfig config, String id, String key) {
         return config.coordinatePoints().stream()
                 .filter(candidate -> candidate.id().equals(id))
@@ -159,6 +268,20 @@ public record CustomPickupRules(
     private static String optional(Map<String, String> parameters, String key, String fallback) {
         String value = parameters.get(key);
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static Duration parseIdleSeconds(Map<String, String> parameters) {
+        long idleSeconds;
+        try {
+            idleSeconds = Long.parseLong(optional(parameters, "idleSeconds", "2"));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("idleSeconds must be a nonnegative integer");
+        }
+        return Duration.ofSeconds(idleSeconds);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static String requireId(String value, String key) {

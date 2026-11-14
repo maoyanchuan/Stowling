@@ -560,7 +560,7 @@ class AutomationModulesTest {
     }
 
     @Test
-    void runPickupDescriptorDocumentsIndependentRulesAndLegacyParameters() {
+    void runPickupDescriptorPrioritizesPureRegionAndKeepsLegacyParameters() {
         AutomationModuleDescriptor descriptor =
                 new RunPickupAutomationModule(new PickupRecordingPort()).descriptor();
         AutomationModuleDescriptor.Parameter region = descriptor.parameters()
@@ -575,11 +575,13 @@ class AutomationModulesTest {
                 .orElseThrow();
 
         assertEquals("RUN_PICKUP", descriptor.moduleId());
-        assertTrue(region.label().contains("旧配置"));
+        assertEquals("拾取区域", region.label());
+        assertEquals("pickup-region", region.kind());
         assertFalse(region.required());
         assertEquals("boolean", waitForItems.kind());
         assertFalse(waitForItems.required());
-        assertTrue(descriptor.description().contains("拾取角点和缓存"));
+        assertTrue(descriptor.description().contains("纯区域拾取"));
+        assertTrue(descriptor.description().contains("其他步骤"));
         assertTrue(descriptor.description().contains("客户端可见物品"));
         for (AutomationModuleDescriptor.Parameter parameter : descriptor.parameters()) {
             assertFalse(parameter.required());
@@ -601,6 +603,31 @@ class AutomationModulesTest {
                 timing.options().stream().map(AutomationModuleDescriptor.Choice::value).toList()
         );
         assertTrue(descriptor.validate(customPickupParameters(Map.of())).isEmpty());
+    }
+
+    @Test
+    void runPickupWithoutWorkflowPassesPureRegionsRequest() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+        Map<String, String> parameters = Map.of(
+                "regionId", "north",
+                "idleSeconds", "8",
+                "waitForItems", "true"
+        );
+
+        execute(module, step(
+                "pure-region-pickup",
+                AutomationStepType.RUN_PICKUP,
+                parameters
+        ), Map.of(), false);
+
+        assertEquals(
+                PickupWorkflowPort.Request.custom(
+                        CustomPickupRules.fromParameters(parameters).orElseThrow(),
+                        true
+                ),
+                pickup.requests.getFirst()
+        );
     }
 
     @Test

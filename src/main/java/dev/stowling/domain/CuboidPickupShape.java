@@ -27,6 +27,28 @@ public record CuboidPickupShape(
         this(null, null, firstCorner, secondCorner);
     }
 
+    public static CuboidPickupShape fromCoordinates(
+            NamedCoordinate first,
+            NamedCoordinate second
+    ) {
+        BlockPosition a = first.position();
+        BlockPosition b = second.position();
+        return new CuboidPickupShape(
+                first.id(),
+                second.id(),
+                new BlockPosition(
+                        Math.min(a.x(), b.x()),
+                        Math.min(a.y(), b.y()),
+                        Math.min(a.z(), b.z())
+                ),
+                new BlockPosition(
+                        Math.max(a.x(), b.x()),
+                        Math.max(a.y(), b.y()),
+                        Math.max(a.z(), b.z())
+                )
+        );
+    }
+
     @Override
     public PickupShapeType type() {
         return PickupShapeType.CUBOID;

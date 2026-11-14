@@ -96,8 +96,8 @@
     ]);
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
-        { page: "coordinates", href: "/coordinates.html", label: "命名坐标" },
-        { page: "tasks", href: "/tasks.html", label: "任务与资源" },
+        { page: "coordinates", href: "/coordinates.html", label: "坐标与区域" },
+        { page: "tasks", href: "/tasks.html", label: "任务" },
         { page: "storage", href: "/storage.html", label: "库存查询" }
     ]);
     const connectedHandlers = new Set();

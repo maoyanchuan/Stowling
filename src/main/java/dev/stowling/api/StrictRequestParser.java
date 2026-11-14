@@ -8,6 +8,7 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.Strictness;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
+import dev.stowling.automation.module.TaskContainerParameters;
 import dev.stowling.control.AuditRequest;
 import dev.stowling.control.AutomationTaskRequest;
 import dev.stowling.control.AutomationWorkflowUpdateRequest;
@@ -722,7 +723,7 @@ final class StrictRequestParser {
                     + " must not be blank");
             require(parameter.length() <= 256,
                     "parameters." + entry.getKey() + " is too long");
-            if ("seconds".equals(entry.getKey()) || "count".equals(entry.getKey())) {
+            if (Set.of("seconds", "count", "completionThreshold").contains(entry.getKey())) {
                 requirePositiveInteger(parameter, "parameters." + entry.getKey());
             }
             result.put(entry.getKey(), parameter);
@@ -736,7 +737,50 @@ final class StrictRequestParser {
                             || "false".equals(waitForItems),
                     "parameters.waitForItems must be true or false");
         }
+        validateContainerParameterMode(type, result);
         return Map.copyOf(result);
+    }
+
+    private static void validateContainerParameterMode(
+            AutomationStepType type,
+            Map<String, String> parameters
+    ) throws IOException {
+        if (type == AutomationStepType.TAKE_ITEMS || type == AutomationStepType.PUT_ITEMS) {
+            boolean explicit = parameters.containsKey("coordinateId");
+            boolean legacy = parameters.containsKey("containerId");
+            require(explicit != legacy, "Select coordinateId or legacy containerId, not both");
+            require(explicit || !parameters.containsKey("containerType"),
+                    "containerType requires coordinateId");
+        } else if (type == AutomationStepType.TRANSFER_ITEMS) {
+            boolean explicit = parameters.containsKey("sourceCoordinateId")
+                    || parameters.containsKey("destinationCoordinateId");
+            boolean legacy = parameters.containsKey("sourceContainerId")
+                    || parameters.containsKey("destination");
+            require(explicit != legacy, "Do not mix coordinate and legacy container parameters");
+            require(parameters.containsKey(explicit ? "sourceCoordinateId" : "sourceContainerId"),
+                    "Missing source container");
+            require(parameters.containsKey(explicit ? "destinationCoordinateId" : "destination"),
+                    "Missing destination container");
+            require(explicit || (!parameters.containsKey("sourceContainerType")
+                            && !parameters.containsKey("destinationContainerType")),
+                    "Container types require coordinate references");
+        }
+        for (String key : List.of("containerType", "sourceContainerType",
+                "destinationContainerType", "outputContainerType", "fallbackContainerType")) {
+            String value = parameters.get(key);
+            if (value != null) {
+                parameters.put(key,
+                        TaskContainerParameters.parseContainerType(key, value).name());
+            }
+        }
+        if (type == AutomationStepType.PACK_ITEMS) {
+            String trigger = parameters.get("completionTrigger");
+            require("ON_ITEM_COUNT".equals(trigger) || "ON_OCCUPANCY".equals(trigger),
+                    "completionTrigger must be ON_ITEM_COUNT or ON_OCCUPANCY");
+            long threshold = Long.parseLong(parameters.get("completionThreshold"));
+            require(threshold <= ("ON_OCCUPANCY".equals(trigger) ? 100 : 1728),
+                    "completionThreshold exceeds the packing limit");
+        }
     }
 
     private static Set<String> requiredAutomationParameters(AutomationStepType type) {
@@ -744,12 +788,11 @@ final class StrictRequestParser {
             case NAVIGATE -> Set.of("coordinateId");
             case WAIT -> Set.of("seconds");
             case RUN_PICKUP -> Set.of();
-            case TAKE_ITEMS, PUT_ITEMS -> Set.of("containerId", "itemId", "count");
-            case TRANSFER_ITEMS -> Set.of(
-                    "sourceContainerId",
-                    "destination",
-                    "itemId",
-                    "count"
+            case TAKE_ITEMS, PUT_ITEMS, TRANSFER_ITEMS -> Set.of("itemId", "count");
+            case PACK_ITEMS -> Set.of(
+                    "sourceCoordinateId", "boxCoordinateId", "outputCoordinateId",
+                    "fallbackCoordinateId", "itemId", "count",
+                    "completionTrigger", "completionThreshold"
             );
             case CHECK_INVENTORY, ACQUIRE_MATERIALS, CRAFT_ITEM ->
                     Set.of("itemId", "count");
@@ -757,13 +800,22 @@ final class StrictRequestParser {
     }
 
     private static Set<String> optionalAutomationParameters(AutomationStepType type) {
-        return type == AutomationStepType.RUN_PICKUP
-                ? Set.of(
-                        "workflowId", "regionId", "waitForItems", "standbyCoordinateId",
-                        "firstCornerCoordinateId", "secondCornerCoordinateId", "cacheIds",
-                        "idleSeconds", "classificationTiming"
-                )
-                : Set.of();
+        return switch (type) {
+            case RUN_PICKUP -> Set.of(
+                    "workflowId", "regionId", "waitForItems", "standbyCoordinateId",
+                    "firstCornerCoordinateId", "secondCornerCoordinateId", "cacheIds",
+                    "idleSeconds", "classificationTiming"
+            );
+            case TAKE_ITEMS, PUT_ITEMS -> Set.of("coordinateId", "containerType", "containerId");
+            case TRANSFER_ITEMS -> Set.of(
+                    "sourceCoordinateId", "sourceContainerType", "destinationCoordinateId",
+                    "destinationContainerType", "sourceContainerId", "destination"
+            );
+            case PACK_ITEMS -> Set.of(
+                    "sourceContainerType", "outputContainerType", "fallbackContainerType"
+            );
+            default -> Set.of();
+        };
     }
 
     private static Set<String> union(Set<String> first, Set<String> second) {

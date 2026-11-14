@@ -7,6 +7,7 @@ public enum AutomationStepType {
     TAKE_ITEMS,
     PUT_ITEMS,
     TRANSFER_ITEMS,
+    PACK_ITEMS,
     CHECK_INVENTORY,
     ACQUIRE_MATERIALS,
     CRAFT_ITEM

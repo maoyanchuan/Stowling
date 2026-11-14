@@ -1,13 +1,32 @@
+import json
 from pathlib import Path
 import re
+import struct
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "src" / "main" / "resources" / "stowling-web"
+RESOURCE_ROOT = ROOT / "src" / "main" / "resources"
+ICON_SVG = RESOURCE_ROOT / "assets" / "stowling" / "icon.svg"
+ICON_PNG = RESOURCE_ROOT / "assets" / "stowling" / "icon.png"
+ICON_SCRIPT = ROOT / "scripts" / "generate-brand-icon.ps1"
+FABRIC_MOD = RESOURCE_ROOT / "fabric.mod.json"
 
 
 def read_web(name: str) -> str:
     return (WEB_ROOT / name).read_text(encoding="utf-8")
+
+
+def read_resource(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def png_dimensions(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data.startswith(b"\x89PNG\r\n\x1a\n")
+    assert data[12:16] == b"IHDR"
+    assert data[25] == 6
+    return struct.unpack(">II", data[16:24])
 
 
 PAGES = {
@@ -38,6 +57,9 @@ def test_four_pages_are_real_urls_with_shared_assets() -> None:
         assert 'id="app-nav"' in html
         assert 'id="auth-shell"' in html
         assert 'id="workspace"' in html
+        assert '<span class="brand-mark" aria-hidden="true">S</span>' in html
+        assert 'rel="icon" type="image/svg+xml" href="/icon.svg"' in html
+        assert 'rel="icon" type="image/png" href="/icon.png"' in html
         assert 'src="/common.js"' in html
         assert 'href="/styles.css"' in html
         assert 'href="#' not in html
@@ -49,6 +71,48 @@ def test_four_pages_are_real_urls_with_shared_assets() -> None:
         "/storage.html",
     ):
         assert f'href: "{route}"' in COMMON
+
+
+def test_project_icon_matches_brand_mark_and_is_reproducible() -> None:
+    for declaration in (
+        "width: 46px;",
+        "height: 46px;",
+        "border-radius: 14px 14px 14px 4px;",
+        "color: #ffffff;",
+        "font-size: 1.42rem;",
+        "font-weight: 800;",
+        "background: linear-gradient(145deg, #3f8c64, #1c5138);",
+    ):
+        assert declaration in STYLES
+
+    svg = read_resource(ICON_SVG)
+    for fragment in (
+        'viewBox="0 0 46 46"',
+        'x1="0.1495" y1="0" x2="0.8505" y2="1"',
+        'stop-color="#3f8c64"',
+        'stop-color="#1c5138"',
+        'font-size="22.72"',
+        'font-weight="800"',
+        "Inter, 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif",
+        ">S</text>",
+    ):
+        assert fragment in svg
+    assert "<filter" not in svg
+    assert "<rect" not in svg
+    assert "stroke=" not in svg
+
+    assert png_dimensions(ICON_PNG) == (512, 512)
+    fabric_manifest = json.loads(read_resource(FABRIC_MOD))
+    assert fabric_manifest["icon"] == "assets/stowling/icon.png"
+
+    script = read_resource(ICON_SCRIPT)
+    assert "src/main/resources/stowling-web/styles.css" in script
+    assert "linear-gradient(145deg, #3f8c64, #1c5138);" in script
+    assert "Assert-PngMetadata" in script
+
+    for readme in ("README.md", "README_zh-CN.md"):
+        header = read_resource(ROOT / readme).splitlines()[:4]
+        assert any("assets/stowling/icon.svg" in line for line in header)
 
 
 def test_each_page_loads_its_focused_script() -> None:

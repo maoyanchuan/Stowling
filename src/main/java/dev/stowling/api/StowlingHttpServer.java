@@ -352,6 +352,14 @@ public final class StowlingHttpServer implements AutoCloseable {
                         readStaticContent("stowling-web/storage.js", javascript)
                 ),
                 Map.entry(
+                        "/icon.svg",
+                        readStaticContent("assets/stowling/icon.svg", "image/svg+xml")
+                ),
+                Map.entry(
+                        "/icon.png",
+                        readStaticContent("assets/stowling/icon.png", "image/png")
+                ),
+                Map.entry(
                         "/styles.css",
                         readStaticContent(
                                 "stowling-web/styles.css",

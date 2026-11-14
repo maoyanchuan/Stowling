@@ -116,14 +116,20 @@ class StowlingHttpServerTest {
         HttpResponse<String> alternatePage = send("GET", "/index.html", null, null);
         HttpResponse<String> script = send("GET", "/common.js", null, null);
         HttpResponse<String> tasksScript = send("GET", "/tasks.js", null, null);
+        HttpResponse<String> icon = send("GET", "/icon.svg", null, null);
+        HttpResponse<String> rasterIcon = send("GET", "/icon.png", null, null);
         HttpResponse<String> styles = send("GET", "/styles.css", null, null);
 
         assertEquals(200, page.statusCode());
         assertEquals(200, alternatePage.statusCode());
         assertEquals(200, script.statusCode());
         assertEquals(200, tasksScript.statusCode());
+        assertEquals(200, icon.statusCode());
+        assertEquals(200, rasterIcon.statusCode());
         assertEquals(200, styles.statusCode());
         assertTrue(page.body().contains("Stowling 控制台"));
+        assertTrue(page.body().contains("href=\"/icon.svg\""));
+        assertTrue(page.body().contains("href=\"/icon.png\""));
         assertTrue(page.body().contains("href=\"/styles.css\""));
         assertTrue(page.body().contains("src=\"/common.js\""));
         assertTrue(page.body().contains("src=\"/dashboard.js\""));
@@ -143,6 +149,14 @@ class StowlingHttpServerTest {
         assertEquals(
                 "text/javascript; charset=utf-8",
                 script.headers().firstValue("Content-Type").orElseThrow()
+        );
+        assertEquals(
+                "image/svg+xml",
+                icon.headers().firstValue("Content-Type").orElseThrow()
+        );
+        assertEquals(
+                "image/png",
+                rasterIcon.headers().firstValue("Content-Type").orElseThrow()
         );
         assertEquals(
                 "text/css; charset=utf-8",

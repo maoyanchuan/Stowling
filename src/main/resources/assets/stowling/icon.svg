@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"
+     viewBox="0 0 46 46" role="img" aria-label="Stowling">
+    <defs>
+        <linearGradient id="brand-mark-gradient"
+                        x1="0.1495" y1="0" x2="0.8505" y2="1">
+            <stop offset="0" stop-color="#3f8c64"/>
+            <stop offset="1" stop-color="#1c5138"/>
+        </linearGradient>
+    </defs>
+    <path
+        d="M14 0H32A14 14 0 0 1 46 14V32A14 14 0 0 1 32 46H4A4 4 0 0 1 0 42V14A14 14 0 0 1 14 0Z"
+        fill="url(#brand-mark-gradient)"/>
+    <text x="23" y="21.5" fill="#ffffff"
+          font-family="Inter, 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif"
+          font-size="22.72" font-weight="800" text-anchor="middle"
+          dominant-baseline="central">S</text>
+</svg>

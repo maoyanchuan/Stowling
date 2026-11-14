@@ -8,4 +8,8 @@ public interface ConfigControl {
     ConfigCoordinatesSnapshot updateConfigCoordinates(
             ConfigCoordinatesUpdateRequest request
     );
+
+    PickupConfigSnapshot pickupConfig();
+
+    PickupConfigSnapshot updatePickupConfig(PickupConfigUpdateRequest request);
 }

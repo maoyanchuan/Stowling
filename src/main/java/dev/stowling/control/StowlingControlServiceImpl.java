@@ -1,6 +1,7 @@
 package dev.stowling.control;
 
 import dev.stowling.automation.AutomationPauseReason;
+import dev.stowling.automation.AutomationCheckpoint;
 import dev.stowling.automation.AutomationSnapshot;
 import dev.stowling.automation.PickupAutomationEngine;
 import dev.stowling.automation.PickupAutomationPlan;
@@ -12,8 +13,12 @@ import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.PackingStation;
+import dev.stowling.domain.PickupRegion;
+import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupSite;
+import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryItem;
@@ -97,7 +102,7 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
 
     @Override
     public synchronized List<TaskInfo> tasks() {
-        return tasks.findAll().stream().map(StowlingControlServiceImpl::toInfo).toList();
+        return tasks.findAll().stream().map(this::toInfo).toList();
     }
 
     @Override
@@ -118,15 +123,31 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     }
 
     @Override
+    public synchronized List<PickupWorkflowInfo> pickupWorkflows() {
+        Map<String, PickupRegion> regions = regionsById(config);
+        return config.pickupWorkflows().stream()
+                .map(workflow -> new PickupWorkflowInfo(
+                        workflow.id(),
+                        workflow.name(),
+                        workflow.dimension(),
+                        workflow.regions().stream()
+                                .map(binding -> workflowRegionInfo(binding, regions))
+                                .toList()
+                ))
+                .toList();
+    }
+
+    @Override
     public synchronized TaskInfo requestPickup(PickupRequest request) {
         Objects.requireNonNull(request, "request");
         if (activePickup != null) {
             replaceDisconnectedPickupOrThrow();
         }
-        PickupSite site = config.pickupSites().stream()
-                .filter(candidate -> candidate.id().equals(request.siteId()))
+        PickupWorkflow workflow = config.pickupWorkflows().stream()
+                .filter(candidate -> candidate.id().equals(request.workflowId()))
                 .findFirst()
-                .orElseThrow(PickupSiteNotFoundException::new);
+                .orElseThrow(PickupWorkflowNotFoundException::new);
+        validateRegionOverride(workflow, request.regionId());
         Instant now = Instant.now();
         UUID taskId = UUID.randomUUID();
         TaskSnapshot snapshot = new TaskSnapshot(
@@ -139,8 +160,16 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 Optional.empty()
         );
         tasks.save(snapshot);
-        PickupAutomationEngine engine = pickupFactory.create(plan(taskId, site));
-        activePickup = new ActivePickup(taskId, site.id(), engine, engine.snapshot());
+        PickupAutomationEngine engine = pickupFactory.create(
+                plan(taskId, workflow, request.regionId())
+        );
+        activePickup = new ActivePickup(
+                taskId,
+                workflow.id(),
+                request.regionId(),
+                engine,
+                engine.snapshot()
+        );
         clientExecutor.accept(engine::start);
         return toInfo(snapshot);
     }
@@ -345,6 +374,42 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return toCoordinateSnapshot(saved);
     }
 
+    @Override
+    public synchronized PickupConfigSnapshot pickupConfig() {
+        return toPickupConfigSnapshot(configFileStore.read());
+    }
+
+    @Override
+    public synchronized PickupConfigSnapshot updatePickupConfig(
+            PickupConfigUpdateRequest request
+    ) {
+        Objects.requireNonNull(request, "request");
+        if (hasBlockingPickupTask()) {
+            throw new ActiveTaskConflictException();
+        }
+        ConfigFileSnapshot current = configFileStore.read();
+        if (!current.revision().equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        validatePickupReferences(request);
+        StowlingConfig source = current.config();
+        StowlingConfig updated = new StowlingConfig(
+                2,
+                request.pickupRegions(),
+                request.cacheContainers(),
+                request.pickupWorkflows(),
+                source.storageRoutes(),
+                source.packingStations(),
+                source.auditSchedules(),
+                source.overflowContainer()
+        );
+        ConfigValidator.requireValid(updated);
+        ConfigFileSnapshot saved = configFileStore.save(request.revision(), updated);
+        configActivated.accept(saved.config());
+        config = saved.config();
+        return toPickupConfigSnapshot(saved);
+    }
+
     public synchronized void tickOnClientThread() {
         if (paused || activePickup == null) {
             return;
@@ -375,27 +440,30 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 failTask(plan.taskId(), "missing high-level recovery checkpoint");
                 continue;
             }
-            Optional<PickupSite> site;
+            Optional<RecoveredWorkflow> recovered;
             try {
-                site = siteFromCheckpoint(
-                        plan.taskId(),
-                        plan.checkpoint().orElseThrow()
-                );
+                recovered = workflowFromCheckpoint(plan.taskId());
             } catch (RuntimeException exception) {
                 failTask(plan.taskId(), "invalid high-level recovery checkpoint");
                 continue;
             }
-            if (site.isEmpty()) {
-                failTask(plan.taskId(), "recovery pickup site is unavailable");
+            if (recovered.isEmpty()) {
+                failTask(plan.taskId(), "recovery pickup workflow is unavailable");
                 continue;
             }
             try {
+                RecoveredWorkflow selection = recovered.orElseThrow();
                 PickupAutomationEngine engine = pickupFactory.create(
-                        plan(plan.taskId(), site.get())
+                        plan(
+                                plan.taskId(),
+                                selection.workflow(),
+                                selection.regionOverride()
+                        )
                 );
                 ActivePickup active = new ActivePickup(
                         plan.taskId(),
-                        site.get().id(),
+                        selection.workflow().id(),
+                        selection.regionOverride(),
                         engine,
                         engine.snapshot()
                 );
@@ -420,16 +488,109 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         }
     }
 
-    private PickupAutomationPlan plan(UUID taskId, PickupSite site) {
+    private PickupAutomationPlan plan(
+            UUID taskId,
+            PickupWorkflow workflow,
+            Optional<String> regionOverride
+    ) {
         return new PickupAutomationPlan(
                 taskId,
-                site,
+                workflow,
+                regionOverride,
+                regionsById(config),
+                cachesById(config),
                 config.storageRoutes(),
                 config.overflowContainer(),
                 INVENTORY_RESERVE_SLOTS,
                 MAX_CONTAINER_RETRIES,
                 CONTAINER_ACK_TIMEOUT,
                 NAVIGATION_TIMEOUT
+        );
+    }
+
+    private boolean hasBlockingPickupTask() {
+        if (activePickup != null) {
+            return true;
+        }
+        return tasks.findAll().stream().anyMatch(task ->
+                task.kind() == TaskKind.PICKUP && switch (task.status()) {
+                    case PENDING, RUNNING, WAITING, PAUSED -> true;
+                    case SUCCEEDED, FAILED, CANCELLED -> false;
+                }
+        );
+    }
+
+    private static void validateRegionOverride(
+            PickupWorkflow workflow,
+            Optional<String> regionId
+    ) {
+        if (regionId.isPresent() && workflow.regions().stream().noneMatch(
+                binding -> binding.regionId().equals(regionId.orElseThrow())
+        )) {
+            throw new InvalidPickupRequestException(
+                    "Region does not belong to pickup workflow: "
+                            + regionId.orElseThrow()
+            );
+        }
+    }
+
+    private static void validatePickupReferences(PickupConfigUpdateRequest request) {
+        Set<String> regionIds = request.pickupRegions().stream()
+                .map(PickupRegion::id)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> cacheIds = request.cacheContainers().stream()
+                .map(NamedCache::id)
+                .collect(java.util.stream.Collectors.toSet());
+        for (PickupWorkflow workflow : request.pickupWorkflows()) {
+            for (PickupRegionBinding binding : workflow.regions()) {
+                if (!regionIds.contains(binding.regionId())) {
+                    throw new InvalidPickupConfigException(
+                            "Pickup region '" + binding.regionId()
+                                    + "' is referenced by workflow '"
+                                    + workflow.id() + "'"
+                    );
+                }
+            }
+            for (String cacheId : workflow.cacheIds()) {
+                if (!cacheIds.contains(cacheId)) {
+                    throw new InvalidPickupConfigException(
+                            "Cache '" + cacheId + "' is referenced by workflow '"
+                                    + workflow.id() + "'"
+                    );
+                }
+            }
+        }
+    }
+
+    private static Map<String, PickupRegion> regionsById(StowlingConfig config) {
+        Map<String, PickupRegion> result = new LinkedHashMap<>();
+        for (PickupRegion region : config.pickupRegions()) {
+            result.put(region.id(), region);
+        }
+        return Map.copyOf(result);
+    }
+
+    private static Map<String, ContainerRef> cachesById(StowlingConfig config) {
+        Map<String, ContainerRef> result = new LinkedHashMap<>();
+        for (NamedCache cache : config.cacheContainers()) {
+            result.put(cache.id(), cache.toContainerRef());
+        }
+        return Map.copyOf(result);
+    }
+
+    private static PickupWorkflowRegionInfo workflowRegionInfo(
+            PickupRegionBinding binding,
+            Map<String, PickupRegion> regions
+    ) {
+        PickupRegion region = regions.get(binding.regionId());
+        if (region == null) {
+            throw new IllegalStateException("Pickup workflow references an unknown region");
+        }
+        return new PickupWorkflowRegionInfo(
+                region.id(),
+                region.name(),
+                binding.priority(),
+                binding.idleDelay().toSeconds()
         );
     }
 
@@ -503,16 +664,32 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         tasks.save(finished);
     }
 
-    private Optional<PickupSite> siteFromCheckpoint(UUID taskId, String checkpoint) {
-        Optional<String> planReference =
-                SqliteAutomationCheckpointStore.readPlanReference(taskId, checkpoint);
-        if (planReference.isEmpty()) {
+    private Optional<RecoveredWorkflow> workflowFromCheckpoint(UUID taskId) {
+        Optional<AutomationCheckpoint> checkpoint =
+                new SqliteAutomationCheckpointStore(tasks).load(taskId);
+        if (checkpoint.isEmpty() || checkpoint.orElseThrow().workflowId().isEmpty()) {
             return Optional.empty();
         }
-        String siteId = planReference.orElseThrow();
-        return config.pickupSites().stream()
-                .filter(site -> site.id().equals(siteId))
+        AutomationCheckpoint value = checkpoint.orElseThrow();
+        String workflowId = value.workflowId().orElseThrow();
+        Optional<PickupWorkflow> exact = config.pickupWorkflows().stream()
+                .filter(workflow -> workflow.id().equals(workflowId))
                 .findFirst();
+        if (exact.isPresent()) {
+            return Optional.of(new RecoveredWorkflow(
+                    exact.orElseThrow(),
+                    value.regionOverride()
+            ));
+        }
+        return config.pickupWorkflows().stream()
+                .filter(workflow -> workflow.regions().stream().anyMatch(
+                        binding -> binding.regionId().equals(workflowId)
+                ))
+                .findFirst()
+                .map(workflow -> new RecoveredWorkflow(
+                        workflow,
+                        Optional.of(workflowId)
+                ));
     }
 
     private ContainerRef findContainer(String containerId) {
@@ -533,8 +710,8 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
     private static List<ContainerRef> allContainers(StowlingConfig config) {
         List<ContainerRef> result = new ArrayList<>();
         result.add(config.overflowContainer());
-        for (PickupSite site : config.pickupSites()) {
-            result.addAll(site.cacheContainers());
+        for (NamedCache cache : config.cacheContainers()) {
+            result.add(cache.toContainerRef());
         }
         for (StorageRoute route : config.storageRoutes()) {
             result.add(route.bulkContainer());
@@ -552,25 +729,31 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         );
     }
 
+    private static PickupConfigSnapshot toPickupConfigSnapshot(
+            ConfigFileSnapshot snapshot
+    ) {
+        StowlingConfig value = snapshot.config();
+        return new PickupConfigSnapshot(
+                snapshot.revision(),
+                value.pickupRegions(),
+                value.cacheContainers(),
+                value.pickupWorkflows()
+        );
+    }
+
     private static List<ConfigCoordinateInfo> coordinateInfos(StowlingConfig config) {
         LinkedHashMap<String, ConfigCoordinateInfo> result = new LinkedHashMap<>();
-        for (PickupSite site : config.pickupSites()) {
-            String key = "pickup-site/" + site.id() + "/center";
-            result.put(key, coordinateInfo(
-                    key,
-                    "PICKUP_SITE_CENTER",
-                    site.id(),
-                    "Pickup site " + site.id(),
-                    site.dimension(),
-                    site.center()
-            ));
-            for (ContainerRef container : site.cacheContainers()) {
-                registerContainer(result, container, "Cache container " + container.id());
-            }
-        }
+        Set<String> pickupCacheIds = config.cacheContainers().stream()
+                .map(NamedCache::id)
+                .collect(java.util.stream.Collectors.toSet());
         for (StorageRoute route : config.storageRoutes()) {
             ContainerRef container = route.bulkContainer();
-            registerContainer(result, container, "Storage container " + container.id());
+            registerContainer(
+                    result,
+                    container,
+                    "Storage container " + container.id(),
+                    pickupCacheIds
+            );
         }
         for (PackingStation station : config.packingStations()) {
             String key = "packing-station/" + station.id() + "/shulker-box";
@@ -583,18 +766,32 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                     station.shulkerBoxPosition()
             ));
             ContainerRef container = station.productContainer();
-            registerContainer(result, container, "Product container " + container.id());
+            registerContainer(
+                    result,
+                    container,
+                    "Product container " + container.id(),
+                    pickupCacheIds
+            );
         }
         ContainerRef overflow = config.overflowContainer();
-        registerContainer(result, overflow, "Overflow container " + overflow.id());
+        registerContainer(
+                result,
+                overflow,
+                "Overflow container " + overflow.id(),
+                pickupCacheIds
+        );
         return List.copyOf(result.values());
     }
 
     private static void registerContainer(
             Map<String, ConfigCoordinateInfo> coordinates,
             ContainerRef container,
-            String label
+            String label,
+            Set<String> excludedIds
     ) {
+        if (excludedIds.contains(container.id())) {
+            return;
+        }
         String key = "container/" + container.id();
         coordinates.putIfAbsent(key, coordinateInfo(
                 key,
@@ -659,21 +856,6 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             StowlingConfig source,
             Map<String, BlockPosition> updates
     ) {
-        List<PickupSite> pickupSites = new ArrayList<>();
-        for (PickupSite site : source.pickupSites()) {
-            List<ContainerRef> caches = new ArrayList<>();
-            for (ContainerRef container : site.cacheContainers()) {
-                caches.add(withCoordinates(container, updates));
-            }
-            pickupSites.add(new PickupSite(
-                    site.id(),
-                    site.dimension(),
-                    updates.get("pickup-site/" + site.id() + "/center"),
-                    site.radius(),
-                    caches,
-                    site.idleDelay()
-            ));
-        }
         List<StorageRoute> routes = new ArrayList<>();
         for (StorageRoute route : source.storageRoutes()) {
             routes.add(new StorageRoute(
@@ -700,9 +882,10 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
             ));
         }
         StowlingConfig updated = new StowlingConfig(
-                source.schemaVersion(),
-                source.defaultIdleDelay(),
-                pickupSites,
+                2,
+                source.pickupRegions(),
+                source.cacheContainers(),
+                source.pickupWorkflows(),
                 routes,
                 stations,
                 source.auditSchedules(),
@@ -719,7 +902,10 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return new ContainerRef(
                 container.id(),
                 container.dimension(),
-                updates.get("container/" + container.id()),
+                updates.getOrDefault(
+                        "container/" + container.id(),
+                        container.position()
+                ),
                 container.type()
         );
     }
@@ -736,7 +922,11 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
         return new InventoryItemInfo(item.itemId(), item.count(), item.kind().name());
     }
 
-    private static TaskInfo toInfo(TaskSnapshot task) {
+    private TaskInfo toInfo(TaskSnapshot task) {
+        AutomationSnapshot progress = activePickup != null
+                && activePickup.taskId.equals(task.id())
+                ? activePickup.lastSnapshot
+                : null;
         return new TaskInfo(
                 task.id(),
                 task.kind().name(),
@@ -744,26 +934,39 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 task.automationState().name(),
                 task.createdAt(),
                 task.updatedAt(),
-                task.failureReason().orElse(null)
+                task.failureReason().orElse(null),
+                progress == null ? null : progress.workflowId(),
+                progress == null ? null : progress.currentRegionId().orElse(null),
+                progress == null ? null : progress.round(),
+                progress == null ? null : progress.stage().name()
         );
     }
 
     private static final class ActivePickup {
         private final UUID taskId;
-        private final String siteId;
+        private final String workflowId;
+        private final Optional<String> regionOverride;
         private final PickupAutomationEngine engine;
         private AutomationSnapshot lastSnapshot;
 
         private ActivePickup(
                 UUID taskId,
-                String siteId,
+                String workflowId,
+                Optional<String> regionOverride,
                 PickupAutomationEngine engine,
                 AutomationSnapshot lastSnapshot
         ) {
             this.taskId = taskId;
-            this.siteId = siteId;
+            this.workflowId = workflowId;
+            this.regionOverride = regionOverride;
             this.engine = engine;
             this.lastSnapshot = lastSnapshot;
         }
+    }
+
+    private record RecoveredWorkflow(
+            PickupWorkflow workflow,
+            Optional<String> regionOverride
+    ) {
     }
 }

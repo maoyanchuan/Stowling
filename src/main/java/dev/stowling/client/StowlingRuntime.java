@@ -19,8 +19,8 @@ import dev.stowling.config.StowlingConfig;
 import dev.stowling.control.PickupRuntimeFactory;
 import dev.stowling.control.StowlingControlServiceImpl;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.PackingStation;
-import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.headless.HeadlessControlBridge;
 import dev.stowling.persistence.SqliteAutomationCheckpointStore;
@@ -207,8 +207,8 @@ public final class StowlingRuntime implements AutoCloseable {
     private static List<ContainerRef> allContainers(StowlingConfig config) {
         List<ContainerRef> result = new ArrayList<>();
         result.add(config.overflowContainer());
-        for (PickupSite site : config.pickupSites()) {
-            result.addAll(site.cacheContainers());
+        for (NamedCache cache : config.cacheContainers()) {
+            result.add(cache.toContainerRef());
         }
         for (StorageRoute route : config.storageRoutes()) {
             result.add(route.bulkContainer());

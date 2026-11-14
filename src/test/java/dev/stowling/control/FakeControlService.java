@@ -1,6 +1,17 @@
 package dev.stowling.control;
 
 import dev.stowling.config.ConfigRevisionConflictException;
+import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.CachePolicy;
+import dev.stowling.domain.ClassificationTiming;
+import dev.stowling.domain.CompletionMode;
+import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.PickupRegion;
+import dev.stowling.domain.PickupRegionBinding;
+import dev.stowling.domain.PickupWorkflow;
+import dev.stowling.domain.SpherePickupShape;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -61,16 +72,43 @@ public final class FakeControlService implements StowlingControlService {
     }
 
     @Override
+    public List<PickupWorkflowInfo> pickupWorkflows() {
+        calls.incrementAndGet();
+        return List.of(new PickupWorkflowInfo(
+                "north",
+                "North",
+                "minecraft:overworld",
+                List.of(new PickupWorkflowRegionInfo("north", "North", 100, 60))
+        ));
+    }
+
+    @Override
     public TaskInfo requestPickup(PickupRequest request) {
         calls.incrementAndGet();
-        if (!"north".equals(request.siteId())) {
-            throw new PickupSiteNotFoundException();
+        if (!"north".equals(request.workflowId())) {
+            throw new PickupWorkflowNotFoundException();
+        }
+        if (request.regionId().isPresent()
+                && !"north".equals(request.regionId().orElseThrow())) {
+            throw new InvalidPickupRequestException("Region does not belong to workflow");
         }
         if (activePickup) {
             throw new ActiveTaskConflictException();
         }
         UUID id = UUID.fromString("22222222-2222-2222-2222-222222222222");
-        TaskInfo task = task(id, "PENDING");
+        TaskInfo task = new TaskInfo(
+                id,
+                "PICKUP",
+                "PENDING",
+                "PICKING_UP",
+                NOW,
+                NOW,
+                null,
+                request.workflowId(),
+                request.regionId().orElse(null),
+                0L,
+                "NAVIGATE_PICKUP"
+        );
         tasks.put(id, task);
         activePickup = true;
         return task;
@@ -169,7 +207,7 @@ public final class FakeControlService implements StowlingControlService {
             throw new InvalidConfigCoordinatesException("Duplicate coordinate key");
         }
         ConfigCoordinateUpdate update = request.coordinates().getFirst();
-        if (!"pickup-site/north/center".equals(update.key())) {
+        if (!"container/overflow".equals(update.key())) {
             throw new InvalidConfigCoordinatesException("Unknown coordinate key");
         }
         coordinatePosition = new ContainerPosition(update.x(), update.y(), update.z());
@@ -177,14 +215,74 @@ public final class FakeControlService implements StowlingControlService {
         return coordinateSnapshot();
     }
 
+    @Override
+    public PickupConfigSnapshot pickupConfig() {
+        calls.incrementAndGet();
+        return pickupSnapshot();
+    }
+
+    @Override
+    public PickupConfigSnapshot updatePickupConfig(
+            PickupConfigUpdateRequest request
+    ) {
+        calls.incrementAndGet();
+        if (activePickup) {
+            throw new ActiveTaskConflictException();
+        }
+        if (!coordinateRevision.equals(request.revision())) {
+            throw new ConfigRevisionConflictException();
+        }
+        coordinateRevision = "revision-2";
+        return new PickupConfigSnapshot(
+                coordinateRevision,
+                request.pickupRegions(),
+                request.cacheContainers(),
+                request.pickupWorkflows()
+        );
+    }
+
+    private PickupConfigSnapshot pickupSnapshot() {
+        PickupRegion region = new PickupRegion(
+                "north",
+                "North",
+                "minecraft:overworld",
+                new BlockPosition(1, -44, 4),
+                new SpherePickupShape(new BlockPosition(1, -44, 4), 16)
+        );
+        NamedCache cache = new NamedCache(
+                "north-cache",
+                "North cache",
+                "minecraft:overworld",
+                new BlockPosition(2, -44, 4),
+                ContainerType.CHEST
+        );
+        PickupWorkflow workflow = new PickupWorkflow(
+                "north",
+                "North",
+                "minecraft:overworld",
+                List.of(new PickupRegionBinding("north", 100, Duration.ofSeconds(60))),
+                List.of("north-cache"),
+                CachePolicy.NEAREST_AVAILABLE,
+                ClassificationTiming.AFTER_ROUND,
+                CompletionMode.MANUAL,
+                Duration.ofSeconds(300)
+        );
+        return new PickupConfigSnapshot(
+                coordinateRevision,
+                List.of(region),
+                List.of(cache),
+                List.of(workflow)
+        );
+    }
+
     private ConfigCoordinatesSnapshot coordinateSnapshot() {
         return new ConfigCoordinatesSnapshot(
                 coordinateRevision,
                 List.of(new ConfigCoordinateInfo(
-                        "pickup-site/north/center",
-                        "PICKUP_SITE_CENTER",
-                        "north",
-                        "Pickup site north",
+                        "container/overflow",
+                        "CONTAINER",
+                        "overflow",
+                        "Overflow container",
                         "minecraft:overworld",
                         coordinatePosition
                 ))

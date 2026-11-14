@@ -17,6 +17,8 @@ import dev.stowling.domain.ContainerType;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PackingTrigger;
 import dev.stowling.domain.PickupSite;
+import dev.stowling.domain.PickupRegion;
+import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryFreshness;
@@ -94,7 +96,7 @@ class StowlingControlServiceImplTest {
         StowlingControlServiceImpl service = service(config, source(capture(cache)));
 
         assertThrows(
-                PickupSiteNotFoundException.class,
+                PickupWorkflowNotFoundException.class,
                 () -> service.requestPickup(new PickupRequest("missing"))
         );
         assertThrows(
@@ -162,8 +164,6 @@ class StowlingControlServiceImplTest {
                 .map(ConfigCoordinateInfo::key)
                 .collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of(
-                "pickup-site/farm/center",
-                "container/shared",
                 "packing-station/packer/shulker-box",
                 "container/product",
                 "container/overflow"
@@ -177,16 +177,16 @@ class StowlingControlServiceImplTest {
         );
 
         StowlingConfig disk = loader.load(configPath);
-        assertEquals(new BlockPosition(108, 65, -10), disk.pickupSites()
+        assertEquals(new BlockPosition(8, 64, 0), disk.pickupSites()
                 .getFirst().cacheContainer().position());
         assertEquals(
                 disk.pickupSites().getFirst().cacheContainer(),
                 disk.storageRoutes().getFirst().bulkContainer()
         );
         assertEquals(disk, activated.get());
-        assertEquals(101, service.pickupSites().getFirst().center().x());
+        assertEquals(1, service.pickupSites().getFirst().center().x());
         assertTrue(service.containers().stream().anyMatch(container ->
-                container.id().equals("shared") && container.position().x() == 108));
+                container.id().equals("shared") && container.position().x() == 8));
         assertTrue(saved.revision().matches("[0-9a-f]{64}"));
         assertTrue(java.nio.file.Files.isRegularFile(
                 tempDir.resolve("coordinates.json.bak")
@@ -210,13 +210,14 @@ class StowlingControlServiceImplTest {
         );
         ConfigCoordinatesSnapshot snapshot = service.configCoordinates();
         loader.write(configPath, new StowlingConfig(
-                config.schemaVersion(),
-                Duration.ofSeconds(5),
-                config.pickupSites(),
+                2,
+                config.pickupRegions(),
+                config.cacheContainers(),
+                config.pickupWorkflows(),
                 config.storageRoutes(),
                 config.packingStations(),
                 config.auditSchedules(),
-                config.overflowContainer()
+                container("overflow", 11)
         ));
         List<ConfigCoordinateUpdate> unchanged = snapshot.coordinates().stream()
                 .map(StowlingControlServiceImplTest::unchangedUpdate)
@@ -229,6 +230,131 @@ class StowlingControlServiceImplTest {
         assertThrows(
                 ConfigRevisionConflictException.class,
                 () -> service.updateConfigCoordinates(request)
+        );
+    }
+
+    @Test
+    void savesPickupResourcesWithoutLosingWarehouseConfiguration() {
+        ContainerRef cache = container("cache", 0);
+        ContainerRef overflow = container("overflow", 10);
+        StowlingConfig config = config(cache, overflow);
+        ConfigLoader loader = new ConfigLoader();
+        Path configPath = tempDir.resolve("pickup-config.json");
+        loader.write(configPath, config);
+        AtomicReference<StowlingConfig> activated = new AtomicReference<>();
+        StowlingControlServiceImpl service = service(
+                config,
+                source(capture(cache)),
+                new ConfigFileStore(configPath, loader),
+                activated::set
+        );
+        PickupConfigSnapshot before = service.pickupConfig();
+        PickupRegion originalRegion = before.pickupRegions().getFirst();
+        PickupWorkflow originalWorkflow = before.pickupWorkflows().getFirst();
+        PickupRegion renamedRegion = new PickupRegion(
+                originalRegion.id(),
+                "Renamed farm",
+                originalRegion.dimension(),
+                originalRegion.standbyPosition(),
+                originalRegion.shape()
+        );
+        PickupWorkflow renamedWorkflow = new PickupWorkflow(
+                originalWorkflow.id(),
+                "Renamed workflow",
+                originalWorkflow.dimension(),
+                originalWorkflow.regions(),
+                originalWorkflow.cacheIds(),
+                originalWorkflow.cachePolicy(),
+                originalWorkflow.classificationTiming(),
+                originalWorkflow.completionMode(),
+                originalWorkflow.completionIdleDelay()
+        );
+
+        PickupConfigSnapshot saved = service.updatePickupConfig(
+                new PickupConfigUpdateRequest(
+                        before.revision(),
+                        List.of(renamedRegion),
+                        before.cacheContainers(),
+                        List.of(renamedWorkflow)
+                )
+        );
+
+        StowlingConfig disk = loader.load(configPath);
+        assertEquals("Renamed farm", disk.pickupRegions().getFirst().name());
+        assertEquals("Renamed workflow", disk.pickupWorkflows().getFirst().name());
+        assertEquals(config.overflowContainer(), disk.overflowContainer());
+        assertEquals(config.storageRoutes(), disk.storageRoutes());
+        assertEquals(disk, activated.get());
+        assertEquals(saved, service.pickupConfig());
+        assertTrue(java.nio.file.Files.isRegularFile(
+                tempDir.resolve("pickup-config.json.bak")
+        ));
+    }
+
+    @Test
+    void rejectsPickupResourceDeletionWhenWorkflowStillReferencesIt() {
+        ContainerRef cache = container("cache", 0);
+        ContainerRef overflow = container("overflow", 10);
+        StowlingConfig config = config(cache, overflow);
+        StowlingControlServiceImpl service = service(config, source(capture(cache)));
+        PickupConfigSnapshot before = service.pickupConfig();
+
+        InvalidPickupConfigException exception = assertThrows(
+                InvalidPickupConfigException.class,
+                () -> service.updatePickupConfig(new PickupConfigUpdateRequest(
+                        before.revision(),
+                        List.of(),
+                        before.cacheContainers(),
+                        before.pickupWorkflows()
+                ))
+        );
+
+        assertTrue(exception.getMessage().contains("farm-workflow"));
+        assertTrue(exception.getMessage().contains("farm"));
+    }
+
+    @Test
+    void rejectsPickupConfigurationWhilePausedTaskExists() {
+        ContainerRef cache = container("cache", 0);
+        ContainerRef overflow = container("overflow", 10);
+        StowlingConfig config = config(cache, overflow);
+        StowlingDatabase database = new StowlingDatabase(tempDir.resolve("paused.db"));
+        SqliteTaskRepository tasks = new SqliteTaskRepository(database);
+        Instant now = Instant.now();
+        tasks.save(new TaskSnapshot(
+                UUID.randomUUID(),
+                TaskKind.PICKUP,
+                TaskStatus.PAUSED,
+                AutomationState.FAILED,
+                now,
+                now,
+                Optional.empty()
+        ));
+        ConfigFileStore store = configStore(config, "paused.json");
+        StowlingControlServiceImpl service = new StowlingControlServiceImpl(
+                config,
+                tasks,
+                new SqliteInventoryRepository(database),
+                source(capture(cache)),
+                ignored -> {
+                    throw new AssertionError("pickup runtime is not used");
+                },
+                Runnable::run,
+                () -> config,
+                ignored -> {
+                },
+                store
+        );
+        PickupConfigSnapshot before = service.pickupConfig();
+
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updatePickupConfig(new PickupConfigUpdateRequest(
+                        before.revision(),
+                        before.pickupRegions(),
+                        before.cacheContainers(),
+                        before.pickupWorkflows()
+                ))
         );
     }
 
@@ -321,7 +447,7 @@ class StowlingControlServiceImplTest {
         assertEquals(0, factoryCalls.get());
         assertThrows(
                 AssertionError.class,
-                () -> service.requestPickup(new PickupRequest("farm"))
+                () -> service.requestPickup(new PickupRequest("farm-workflow"))
         );
         assertEquals(1, factoryCalls.get());
     }

@@ -4,13 +4,18 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.stowling.config.ConfigRevisionConflictException;
+import dev.stowling.config.ConfigValidationException;
 import dev.stowling.control.ActiveTaskConflictException;
 import dev.stowling.control.AuditRequest;
 import dev.stowling.control.ConfigCoordinatesUpdateRequest;
 import dev.stowling.control.ContainerNotFoundException;
 import dev.stowling.control.InvalidConfigCoordinatesException;
+import dev.stowling.control.InvalidPickupConfigException;
+import dev.stowling.control.InvalidPickupRequestException;
+import dev.stowling.control.PickupConfigUpdateRequest;
 import dev.stowling.control.PickupRequest;
 import dev.stowling.control.PickupSiteNotFoundException;
+import dev.stowling.control.PickupWorkflowNotFoundException;
 import dev.stowling.control.StowlingControlService;
 import dev.stowling.control.TaskNotFoundException;
 import java.io.ByteArrayOutputStream;
@@ -196,6 +201,10 @@ public final class StowlingHttpServer implements AutoCloseable {
             sendErrorQuietly(exchange, 400, "invalid_request", exception.getMessage());
         } catch (InvalidConfigCoordinatesException exception) {
             sendErrorQuietly(exchange, 400, "invalid_config_coordinates", exception.getMessage());
+        } catch (InvalidPickupConfigException | ConfigValidationException exception) {
+            sendErrorQuietly(exchange, 400, "invalid_pickup_config", exception.getMessage());
+        } catch (InvalidPickupRequestException exception) {
+            sendErrorQuietly(exchange, 400, "invalid_pickup_request", exception.getMessage());
         } catch (MethodNotAllowedException exception) {
             exchange.getResponseHeaders().set("Allow", exception.allowedMethods());
             sendErrorQuietly(exchange, 405, "method_not_allowed", "Method not allowed");
@@ -219,6 +228,13 @@ public final class StowlingHttpServer implements AutoCloseable {
                     404,
                     "pickup_site_not_found",
                     "Pickup site not found"
+            );
+        } catch (PickupWorkflowNotFoundException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    404,
+                    "pickup_workflow_not_found",
+                    "Pickup workflow not found"
             );
         } catch (TaskNotFoundException exception) {
             sendErrorQuietly(exchange, 404, "task_not_found", "Task not found");
@@ -320,6 +336,10 @@ public final class StowlingHttpServer implements AutoCloseable {
                 requestParser.requireEmpty(body);
                 sendJson(exchange, 200, List.copyOf(service.pickupSites()));
             }
+            case PICKUP_WORKFLOWS -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, List.copyOf(service.pickupWorkflows()));
+            }
             case PICKUP -> {
                 PickupRequest request = requestParser.parsePickup(body);
                 sendJson(exchange, 202, service.requestPickup(request));
@@ -360,6 +380,15 @@ public final class StowlingHttpServer implements AutoCloseable {
                 ConfigCoordinatesUpdateRequest request =
                         requestParser.parseCoordinateUpdate(body);
                 sendJson(exchange, 200, service.updateConfigCoordinates(request));
+            }
+            case CONFIG_PICKUP_GET -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, service.pickupConfig());
+            }
+            case CONFIG_PICKUP_PUT -> {
+                PickupConfigUpdateRequest request =
+                        requestParser.parsePickupConfigUpdate(body);
+                sendJson(exchange, 200, service.updatePickupConfig(request));
             }
         }
     }
@@ -541,6 +570,7 @@ public final class StowlingHttpServer implements AutoCloseable {
         STATUS("GET", "/v1/status"),
         TASKS("GET", "/v1/tasks"),
         PICKUP_SITES("GET", "/v1/pickup-sites"),
+        PICKUP_WORKFLOWS("GET", "/v1/pickup-workflows"),
         PICKUP("POST", "/v1/tasks/pickup"),
         CANCEL("POST", null),
         AUDITS("POST", "/v1/audits"),
@@ -550,7 +580,9 @@ public final class StowlingHttpServer implements AutoCloseable {
         RESUME("POST", "/v1/resume"),
         CONFIG_RELOAD("POST", "/v1/config/reload"),
         CONFIG_COORDINATES_GET("GET", "/v1/config/coordinates"),
-        CONFIG_COORDINATES_PUT("PUT", "/v1/config/coordinates");
+        CONFIG_COORDINATES_PUT("PUT", "/v1/config/coordinates"),
+        CONFIG_PICKUP_GET("GET", "/v1/config/pickup"),
+        CONFIG_PICKUP_PUT("PUT", "/v1/config/pickup");
 
         private final String method;
         private final String path;

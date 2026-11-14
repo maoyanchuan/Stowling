@@ -69,9 +69,12 @@ class StowlingHttpServerTest {
                 new ApiCall("GET", "/v1/status", null),
                 new ApiCall("GET", "/v1/tasks", null),
                 new ApiCall("GET", "/v1/pickup-sites", null),
+                new ApiCall("GET", "/v1/pickup-workflows", null),
                 new ApiCall("GET", "/v1/config/coordinates", null),
                 new ApiCall("PUT", "/v1/config/coordinates", coordinateUpdate("revision-1")),
-                new ApiCall("POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}"),
+                new ApiCall("GET", "/v1/config/pickup", null),
+                new ApiCall("PUT", "/v1/config/pickup", pickupUpdate("revision-1")),
+                new ApiCall("POST", "/v1/tasks/pickup", "{\"workflowId\":\"north\"}"),
                 new ApiCall("POST", cancelPath, null),
                 new ApiCall("POST", "/v1/audits", "{\"containerIds\":[]}"),
                 new ApiCall("GET", "/v1/inventory", null),
@@ -194,7 +197,7 @@ class StowlingHttpServerTest {
         assertStatus(200, "GET", "/v1/pickup-sites", null);
         assertStatus(200, "GET", "/v1/config/coordinates", null);
         assertStatus(200, "PUT", "/v1/config/coordinates", coordinateUpdate("revision-1"));
-        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
+        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"workflowId\":\"north\"}");
         assertStatus(
                 200,
                 "POST",
@@ -226,7 +229,7 @@ class StowlingHttpServerTest {
 
         assertEquals(200, read.statusCode());
         assertTrue(read.body().contains("\"revision\":\"revision-1\""));
-        assertTrue(read.body().contains("\"key\":\"pickup-site/north/center\""));
+        assertTrue(read.body().contains("\"key\":\"container/overflow\""));
         assertTrue(read.body().contains("\"position\":{\"x\":1,\"y\":-44,\"z\":4}"));
         assertEquals(200, saved.statusCode());
         assertTrue(saved.body().contains("\"revision\":\"revision-2\""));
@@ -236,12 +239,12 @@ class StowlingHttpServerTest {
     @Test
     void rejectsStrictCoordinateJsonViolations() throws Exception {
         String unknownBody = coordinateUpdate("revision-1").replace(
-                "pickup-site/north/center",
+                "container/overflow",
                 "unknown"
         );
         String duplicateBody = "{\"revision\":\"revision-1\",\"coordinates\":["
-                + "{\"key\":\"pickup-site/north/center\",\"x\":2,\"y\":-43,\"z\":5},"
-                + "{\"key\":\"pickup-site/north/center\",\"x\":2,\"y\":-43,\"z\":5}]}";
+                + "{\"key\":\"container/overflow\",\"x\":2,\"y\":-43,\"z\":5},"
+                + "{\"key\":\"container/overflow\",\"x\":2,\"y\":-43,\"z\":5}]}";
         HttpResponse<String> extra = send(
                 "PUT",
                 "/v1/config/coordinates",
@@ -301,11 +304,17 @@ class StowlingHttpServerTest {
                 coordinateUpdate("stale"),
                 TOKEN
         );
-        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
+        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"workflowId\":\"north\"}");
         HttpResponse<String> active = send(
                 "PUT",
                 "/v1/config/coordinates",
                 coordinateUpdate("revision-1"),
+                TOKEN
+        );
+        HttpResponse<String> activePickupConfig = send(
+                "PUT",
+                "/v1/config/pickup",
+                pickupUpdate("revision-1"),
                 TOKEN
         );
 
@@ -313,16 +322,18 @@ class StowlingHttpServerTest {
         assertTrue(revision.body().contains("\"code\":\"config_revision_conflict\""));
         assertEquals(409, active.statusCode());
         assertTrue(active.body().contains("\"code\":\"active_task_conflict\""));
+        assertEquals(409, activePickupConfig.statusCode());
+        assertTrue(activePickupConfig.body().contains("active_task_conflict"));
     }
 
     @Test
     void reportsRunningPickupConflictAsHttp409() throws Exception {
-        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"siteId\":\"north\"}");
+        assertStatus(202, "POST", "/v1/tasks/pickup", "{\"workflowId\":\"north\"}");
 
         HttpResponse<String> response = send(
                 "POST",
                 "/v1/tasks/pickup",
-                "{\"siteId\":\"north\"}",
+                "{\"workflowId\":\"north\"}",
                 TOKEN
         );
 
@@ -344,11 +355,141 @@ class StowlingHttpServerTest {
     }
 
     @Test
+    void exposesPickupWorkflowsAndPickupConfiguration() throws Exception {
+        HttpResponse<String> workflows = send(
+                "GET",
+                "/v1/pickup-workflows",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> config = send("GET", "/v1/config/pickup", null, TOKEN);
+
+        assertEquals(200, workflows.statusCode());
+        assertTrue(workflows.body().contains("\"id\":\"north\""));
+        assertTrue(workflows.body().contains("\"priority\":100"));
+        assertTrue(workflows.body().contains("\"idleDelay\":60"));
+        assertEquals(200, config.statusCode());
+        assertTrue(config.body().contains("\"pickupRegions\""));
+        assertTrue(config.body().contains("\"cacheContainers\""));
+        assertTrue(config.body().contains("\"pickupWorkflows\""));
+        assertTrue(config.body().contains("\"type\":\"SPHERE\""));
+    }
+
+    @Test
+    void acceptsWorkflowAndSingleRegionPickupRequests() throws Exception {
+        HttpResponse<String> workflow = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"workflowId\":\"north\"}",
+                TOKEN
+        );
+        send(
+                "POST",
+                "/v1/tasks/22222222-2222-2222-2222-222222222222/cancel",
+                null,
+                TOKEN
+        );
+        HttpResponse<String> region = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"workflowId\":\"north\",\"regionId\":\"north\"}",
+                TOKEN
+        );
+
+        assertEquals(202, workflow.statusCode());
+        assertEquals(202, region.statusCode());
+        assertTrue(region.body().contains("\"workflowId\":\"north\""));
+        assertTrue(region.body().contains("\"currentRegionId\":\"north\""));
+        assertTrue(region.body().contains("\"round\":0"));
+        assertTrue(region.body().contains("\"stage\":\"NAVIGATE_PICKUP\""));
+    }
+
+    @Test
+    void rejectsUnknownWorkflowAndForeignOrUnsafeRegion() throws Exception {
+        HttpResponse<String> workflow = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"workflowId\":\"missing\"}",
+                TOKEN
+        );
+        HttpResponse<String> foreignRegion = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"workflowId\":\"north\",\"regionId\":\"south\"}",
+                TOKEN
+        );
+        HttpResponse<String> unsafe = send(
+                "POST",
+                "/v1/tasks/pickup",
+                "{\"workflowId\":\"north OR 1=1\"}",
+                TOKEN
+        );
+
+        assertEquals(404, workflow.statusCode());
+        assertEquals(400, foreignRegion.statusCode());
+        assertEquals(400, unsafe.statusCode());
+        assertTrue(foreignRegion.body().contains("invalid_pickup_request"));
+        assertTrue(unsafe.body().contains("must match"));
+    }
+
+    @Test
+    void atomicallyUpdatesPickupConfigurationAndRejectsStaleRevision()
+            throws Exception {
+        HttpResponse<String> saved = send(
+                "PUT",
+                "/v1/config/pickup",
+                pickupUpdate("revision-1"),
+                TOKEN
+        );
+        HttpResponse<String> stale = send(
+                "PUT",
+                "/v1/config/pickup",
+                pickupUpdate("revision-1"),
+                TOKEN
+        );
+
+        assertEquals(200, saved.statusCode());
+        assertTrue(saved.body().contains("\"revision\":\"revision-2\""));
+        assertEquals(409, stale.statusCode());
+        assertTrue(stale.body().contains("config_revision_conflict"));
+    }
+
+    @Test
+    void rejectsDuplicateAndUnknownPickupConfigurationFields() throws Exception {
+        String duplicate = pickupUpdate("revision-1").replace(
+                "\"name\":\"North\"",
+                "\"name\":\"North\",\"name\":\"Duplicate\""
+        );
+        String unknown = pickupUpdate("revision-1").replace(
+                "\"radius\":16",
+                "\"radius\":16,\"query\":\"x\""
+        );
+
+        HttpResponse<String> duplicateResponse = send(
+                "PUT",
+                "/v1/config/pickup",
+                duplicate,
+                TOKEN
+        );
+        HttpResponse<String> unknownResponse = send(
+                "PUT",
+                "/v1/config/pickup",
+                unknown,
+                TOKEN
+        );
+
+        assertEquals(400, duplicateResponse.statusCode());
+        assertEquals(400, unknownResponse.statusCode());
+        assertTrue(duplicateResponse.body().contains("Duplicate JSON field"));
+        assertTrue(unknownResponse.body().contains("Unknown JSON field"));
+    }
+
+    @Test
     void reportsMissingResourcesWithSpecificErrors() throws Exception {
         HttpResponse<String> pickupSite = send(
                 "POST",
                 "/v1/tasks/pickup",
-                "{\"siteId\":\"missing\"}",
+                "{\"workflowId\":\"missing\"}",
                 TOKEN
         );
         HttpResponse<String> task = send(
@@ -364,7 +505,11 @@ class StowlingHttpServerTest {
                 TOKEN
         );
 
-        assertApiError(pickupSite, "pickup_site_not_found", "Pickup site not found");
+        assertApiError(
+                pickupSite,
+                "pickup_workflow_not_found",
+                "Pickup workflow not found"
+        );
         assertApiError(task, "task_not_found", "Task not found");
         assertApiError(container, "container_not_found", "Container not found");
     }
@@ -374,13 +519,13 @@ class StowlingHttpServerTest {
         HttpResponse<String> malformed = send(
                 "POST",
                 "/v1/tasks/pickup",
-                "{\"siteId\":",
+                "{\"workflowId\":",
                 TOKEN
         );
         HttpResponse<String> duplicate = send(
                 "POST",
                 "/v1/tasks/pickup",
-                "{\"siteId\":\"a\",\"siteId\":\"b\"}",
+                "{\"workflowId\":\"a\",\"workflowId\":\"b\"}",
                 TOKEN
         );
         HttpResponse<String> wrongType = send(
@@ -398,7 +543,7 @@ class StowlingHttpServerTest {
 
     @Test
     void rejectsOversizedBodies() throws Exception {
-        String body = "{\"siteId\":\"" + "a".repeat(5000) + "\"}";
+        String body = "{\"workflowId\":\"" + "a".repeat(5000) + "\"}";
 
         HttpResponse<String> response = send(
                 "POST",
@@ -575,8 +720,28 @@ class StowlingHttpServerTest {
 
     private static String coordinateUpdate(String revision) {
         return "{\"revision\":\"" + revision + "\",\"coordinates\":[{"
-                + "\"key\":\"pickup-site/north/center\","
+                + "\"key\":\"container/overflow\","
                 + "\"x\":2,\"y\":-43,\"z\":5}]}";
+    }
+
+    private static String pickupUpdate(String revision) {
+        return "{\"revision\":\"" + revision + "\","
+                + "\"pickupRegions\":[{\"id\":\"north\",\"name\":\"North\","
+                + "\"dimension\":\"minecraft:overworld\","
+                + "\"standbyPosition\":{\"x\":1,\"y\":-44,\"z\":4},"
+                + "\"shape\":{\"type\":\"SPHERE\","
+                + "\"center\":{\"x\":1,\"y\":-44,\"z\":4},\"radius\":16}}],"
+                + "\"cacheContainers\":[{\"id\":\"north-cache\","
+                + "\"name\":\"North cache\",\"dimension\":\"minecraft:overworld\","
+                + "\"position\":{\"x\":2,\"y\":-44,\"z\":4},\"type\":\"CHEST\"}],"
+                + "\"pickupWorkflows\":[{\"id\":\"north\",\"name\":\"North\","
+                + "\"dimension\":\"minecraft:overworld\","
+                + "\"regions\":[{\"regionId\":\"north\","
+                + "\"priority\":100,\"idleDelay\":60}],"
+                + "\"cacheIds\":[\"north-cache\"],"
+                + "\"cachePolicy\":\"NEAREST_AVAILABLE\","
+                + "\"classificationTiming\":\"AFTER_ROUND\","
+                + "\"completionMode\":\"MANUAL\",\"completionIdleDelay\":300}]}";
     }
 
     private record ApiCall(String method, String path, String body) {

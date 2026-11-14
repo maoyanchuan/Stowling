@@ -9,6 +9,8 @@ public interface StowlingControlService extends TaskControl, AuditControl, Confi
 
     List<PickupSiteInfo> pickupSites();
 
+    List<PickupWorkflowInfo> pickupWorkflows();
+
     List<ContainerInfo> containers();
 
     ControlStatus pause();

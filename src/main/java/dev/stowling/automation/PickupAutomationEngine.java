@@ -1,13 +1,18 @@
 package dev.stowling.automation;
 
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.ClassificationTiming;
+import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.PickupRegion;
+import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.StorageRoute;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -15,11 +20,10 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Coordinates a recoverable pickup-to-storage workflow.
+ * Coordinates a recoverable multi-region pickup workflow.
  *
- * <p>The engine persists stages and high-level intents only. Every transfer is
- * restarted with a fresh attempt after recovery, and no unmatched item is ever
- * dropped.
+ * <p>Only confirmed high-level progress is persisted. An in-flight container
+ * click is discarded during recovery and rebuilt from the authoritative screen.
  */
 public final class PickupAutomationEngine {
     private final PickupAutomationPlan plan;
@@ -32,16 +36,22 @@ public final class PickupAutomationEngine {
     private final AutomationCheckpointStore checkpoints;
     private final DeliveryPlanner deliveryPlanner = new DeliveryPlanner();
     private final StorageRouteMatcher routeMatcher = new StorageRouteMatcher();
+    private final List<PickupRegionBinding> regionOrder;
+    private final List<ContainerRef> workflowCaches;
 
     private final Set<String> observedInputs = new HashSet<>();
-    private final Set<Integer> failedDepositCaches = new HashSet<>();
+    private final Set<String> failedCacheIds = new HashSet<>();
+    private final Map<String, Instant> regionIdleSince = new LinkedHashMap<>();
     private Map<String, Integer> inventoryBaseline = Map.of();
-    private Optional<Instant> idleSince = Optional.empty();
+    private Optional<Instant> workflowIdleSince = Optional.empty();
     private List<DeliveryIntent> deliveries = List.of();
     private int deliveryIndex;
+    private int currentRegionIndex;
     private int selectedCacheIndex;
     private int classificationCacheIndex;
     private int classificationFailures;
+    private long round = 1;
+    private boolean classificationAfterRound;
     private ContainerFlow containerFlow;
     private PickupStage stage = PickupStage.NAVIGATE_PICKUP;
     private PickupStage resumeStage = PickupStage.NAVIGATE_PICKUP;
@@ -51,7 +61,6 @@ public final class PickupAutomationEngine {
     private Optional<Instant> navigationStartedAt = Optional.empty();
     private Optional<Instant> containerObservationStartedAt = Optional.empty();
     private boolean started;
-    private boolean recovered;
 
     public PickupAutomationEngine(
             PickupAutomationPlan plan,
@@ -71,6 +80,8 @@ public final class PickupAutomationEngine {
         this.packing = Objects.requireNonNull(packing, "packing");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.checkpoints = Objects.requireNonNull(checkpoints, "checkpoints");
+        regionOrder = plan.orderedRegions();
+        workflowCaches = plan.caches();
     }
 
     public synchronized void start() {
@@ -81,7 +92,6 @@ public final class PickupAutomationEngine {
         Optional<AutomationCheckpoint> stored = checkpoints.load(plan.taskId());
         if (stored.isPresent()) {
             restore(stored.orElseThrow());
-            recovered = true;
             reconcileAfterRecovery();
         } else {
             try {
@@ -113,9 +123,7 @@ public final class PickupAutomationEngine {
 
     public synchronized AutomationSnapshot tick() {
         start();
-        if (stage == PickupStage.COMPLETE
-                || stage == PickupStage.FAILED
-                || stage == PickupStage.PAUSED) {
+        if (isTerminalOrPaused()) {
             return snapshot();
         }
         if (!checkPlayerState()) {
@@ -144,7 +152,7 @@ public final class PickupAutomationEngine {
         }
         stage = resumeStage;
         pauseReason = Optional.empty();
-        failedDepositCaches.clear();
+        failedCacheIds.clear();
         classificationFailures = 0;
         reconcileAfterRecovery();
         saveCheckpoint();
@@ -175,14 +183,24 @@ public final class PickupAutomationEngine {
                 stage == PickupStage.PAUSED ? Optional.of(resumeStage) : Optional.empty(),
                 activeDelivery(),
                 observedInputs.size(),
-                Math.max(0, deliveries.size() - deliveryIndex)
+                Math.max(0, deliveries.size() - deliveryIndex),
+                plan.workflow().id(),
+                Optional.of(currentRegion().id()),
+                round
         );
     }
 
+    private boolean isTerminalOrPaused() {
+        return stage == PickupStage.COMPLETE
+                || stage == PickupStage.FAILED
+                || stage == PickupStage.PAUSED;
+    }
+
     private void tickNavigatePickup() {
-        NavigationStatus status = moveTo(plan.pickupSite().center());
+        PickupRegion region = currentRegion();
+        NavigationStatus status = moveTo(region.standbyPosition());
         if (status == NavigationStatus.FAILED) {
-            pause("PATH_FAILED", "navigation to pickup site failed");
+            pause("PATH_FAILED", "navigation to pickup region " + region.id() + " failed");
             return;
         }
         if (status == NavigationStatus.ARRIVED) {
@@ -204,21 +222,12 @@ public final class PickupAutomationEngine {
             if (!inventoryDelta(inventory).isEmpty()) {
                 beginDeposit();
             } else {
-                startIdleTimerIfNeeded();
+                startRegionIdleTimer();
                 enter(PickupStage.WAIT_FOR_IDLE);
             }
             return;
         }
-        BlockPosition origin = currentPosition();
-        GroundItem nearest = items.getFirst();
-        int nearestDistance = distanceSquared(origin, nearest.position());
-        for (GroundItem item : items) {
-            int distance = distanceSquared(origin, item.position());
-            if (distance < nearestDistance) {
-                nearest = item;
-                nearestDistance = distance;
-            }
-        }
+        GroundItem nearest = nearestItem(items, currentPosition());
         NavigationStatus status = moveTo(
                 nearest.position(),
                 NavigationTargetType.GROUND_ITEM
@@ -232,13 +241,26 @@ public final class PickupAutomationEngine {
         }
     }
 
+    private GroundItem nearestItem(List<GroundItem> items, BlockPosition origin) {
+        GroundItem nearest = items.getFirst();
+        long nearestDistance = distanceSquared(origin, nearest.position());
+        for (GroundItem item : items) {
+            long distance = distanceSquared(origin, item.position());
+            if (distance < nearestDistance) {
+                nearest = item;
+                nearestDistance = distance;
+            }
+        }
+        return nearest;
+    }
+
     private void tickDepositBuffer() {
         ContainerRef buffer = selectedCache();
         NavigationStatus travel = moveTo(buffer.position());
         if (travel == NavigationStatus.FAILED) {
             depositCacheFailed(
                     "PATH_FAILED",
-                    "navigation to pickup buffer " + buffer.id() + " failed"
+                    "navigation to pickup cache " + buffer.id() + " failed"
             );
             return;
         }
@@ -250,12 +272,12 @@ public final class PickupAutomationEngine {
         List<ItemAmount> collected = inventoryDelta(inventory);
         if (collected.isEmpty()) {
             inventoryBaseline = inventory.itemCounts();
-            startIdleTimerIfNeeded();
+            startRegionIdleTimer();
             enter(PickupStage.WAIT_FOR_IDLE);
             return;
         }
         ContainerTransfer transfer = new ContainerTransfer(
-                plan.taskId() + ":deposit-buffer",
+                plan.taskId() + ":deposit-cache:" + buffer.id(),
                 Optional.empty(),
                 buffer,
                 collected
@@ -268,12 +290,11 @@ public final class PickupAutomationEngine {
         switch (result.status()) {
             case ACKNOWLEDGED -> {
                 inventoryBaseline = inventoryAdapter.observe().itemCounts();
-                failedDepositCaches.clear();
-                startIdleTimerIfNeeded();
+                startRegionIdleTimer();
                 enter(PickupStage.WAIT_FOR_IDLE);
             }
             case PENDING -> {
-                // Wait for the server's destination revision before changing inventory baseline.
+                // Wait for the authoritative destination revision.
             }
             case FAILED -> depositCacheFailed(
                     result.failureCode(),
@@ -293,21 +314,51 @@ public final class PickupAutomationEngine {
             beginDeposit();
             return;
         }
-        startIdleTimerIfNeeded();
-        Duration idle = Duration.between(idleSince.orElseThrow(), clock.now());
-        if (idle.compareTo(plan.pickupSite().idleDelay()) >= 0) {
-            classificationCacheIndex = 0;
-            classificationFailures = 0;
-            enter(PickupStage.CLASSIFY_BUFFER);
+        startRegionIdleTimer();
+        Instant idleStart = regionIdleSince.get(currentRegion().id());
+        Duration idle = Duration.between(idleStart, clock.now());
+        if (idle.compareTo(currentBinding().idleDelay()) >= 0) {
+            finishRegion();
         }
     }
 
-    private void tickClassifyBuffer() {
-        if (classificationCacheIndex >= plan.pickupSite().cacheContainers().size()) {
-            enter(PickupStage.COMPLETE);
+    private void finishRegion() {
+        if (plan.workflow().classificationTiming() == ClassificationTiming.AFTER_REGION) {
+            beginClassification(false);
             return;
         }
-        ContainerRef buffer = plan.pickupSite().cacheContainers().get(classificationCacheIndex);
+        advanceRegion();
+    }
+
+    private void advanceRegion() {
+        currentRegionIndex++;
+        if (currentRegionIndex < regionOrder.size()) {
+            enter(PickupStage.NAVIGATE_PICKUP);
+            return;
+        }
+        if (plan.workflow().classificationTiming() == ClassificationTiming.AFTER_ROUND) {
+            currentRegionIndex = regionOrder.size() - 1;
+            beginClassification(true);
+            return;
+        }
+        finishRound();
+    }
+
+    private void beginClassification(boolean afterRound) {
+        classificationAfterRound = afterRound;
+        classificationCacheIndex = 0;
+        classificationFailures = 0;
+        deliveries = List.of();
+        deliveryIndex = 0;
+        enter(PickupStage.CLASSIFY_BUFFER);
+    }
+
+    private void tickClassifyBuffer() {
+        if (classificationCacheIndex >= workflowCaches.size()) {
+            finishClassification();
+            return;
+        }
+        ContainerRef buffer = workflowCaches.get(classificationCacheIndex);
         NavigationStatus travel = moveTo(buffer.position());
         if (travel == NavigationStatus.FAILED) {
             retryClassificationOrPause(
@@ -337,8 +388,8 @@ public final class PickupAutomationEngine {
             classificationCacheIndex++;
             deliveries = List.of();
             deliveryIndex = 0;
-            if (classificationCacheIndex >= plan.pickupSite().cacheContainers().size()) {
-                enter(PickupStage.COMPLETE);
+            if (classificationCacheIndex >= workflowCaches.size()) {
+                finishClassification();
             }
             return;
         }
@@ -359,6 +410,31 @@ public final class PickupAutomationEngine {
         enterCurrentDeliveryStage();
     }
 
+    private void finishClassification() {
+        if (classificationAfterRound) {
+            finishRound();
+        } else {
+            advanceRegion();
+        }
+    }
+
+    private void finishRound() {
+        currentRegionIndex = 0;
+        if (plan.workflow().completionMode() == CompletionMode.ALL_IDLE) {
+            if (workflowIdleSince.isEmpty()) {
+                workflowIdleSince = Optional.of(clock.now());
+            }
+            Duration idle = Duration.between(workflowIdleSince.orElseThrow(), clock.now());
+            if (idle.compareTo(plan.workflow().completionIdleDelay()) >= 0) {
+                enter(PickupStage.COMPLETE);
+                return;
+            }
+        }
+        round++;
+        failedCacheIds.clear();
+        enter(PickupStage.NAVIGATE_PICKUP);
+    }
+
     private void tickDeliverLoose() {
         DeliveryIntent intent = activeDelivery().orElseThrow();
         NavigationStatus travel = moveTo(intent.buffer().position());
@@ -373,14 +449,18 @@ public final class PickupAutomationEngine {
         String failureCode = isOverflow(intent)
                 ? "OVERFLOW_UNAVAILABLE"
                 : "DELIVERY_CONTAINER_UNAVAILABLE";
-        TransferResult result = transfer(intent.asTransfer(), failureCode, TransferMode.DELIVERY);
+        TransferResult result = transfer(
+                intent.asTransfer(),
+                failureCode,
+                TransferMode.DELIVERY
+        );
         switch (result.status()) {
             case ACKNOWLEDGED -> {
                 deliveryIndex++;
                 enterCurrentDeliveryStage();
             }
             case PENDING -> {
-                // The current delivery remains active until the server confirms it.
+                // Keep one in-flight click until its server acknowledgement arrives.
             }
             case FAILED -> pause(
                     result.failureCode(),
@@ -414,7 +494,7 @@ public final class PickupAutomationEngine {
                 enterCurrentDeliveryStage();
             }
             case PENDING -> {
-                // The packing port advances only after confirmed server-side changes.
+                // Packing advances only after confirmed server-side changes.
             }
             case UNAVAILABLE -> pause(
                     "PACKING_UNAVAILABLE",
@@ -443,28 +523,32 @@ public final class PickupAutomationEngine {
         }
         ContainerAttempt attempt = containerFlow.attempt;
         ContainerAttemptResult result = containers.poll(attempt);
-        switch (result.status()) {
-            case PENDING -> {
-                return handlePendingAttempt(unavailableCode);
-            }
-            case ACKNOWLEDGED -> {
-                if (!isPlausibleAcknowledgement(attempt, result)) {
-                    return retryOrFail("CONTAINER_ACK_INVALID", true);
-                }
-                containerFlow = null;
-                return TransferResult.acknowledged();
-            }
-            case REJECTED -> {
-                return retryOrFail("CONTAINER_REJECTED", mode == TransferMode.DELIVERY);
-            }
-            case UNAVAILABLE -> {
-                return retryOrFail(unavailableCode, mode == TransferMode.DELIVERY);
-            }
-            default -> throw new IllegalStateException("unknown attempt result");
-        }
+        return switch (result.status()) {
+            case PENDING -> handlePendingAttempt();
+            case ACKNOWLEDGED -> acknowledgeAttempt(attempt, result);
+            case REJECTED -> retryOrFail(
+                    "CONTAINER_REJECTED",
+                    mode == TransferMode.DELIVERY
+            );
+            case UNAVAILABLE -> retryOrFail(
+                    unavailableCode,
+                    mode == TransferMode.DELIVERY
+            );
+        };
     }
 
-    private TransferResult handlePendingAttempt(String unavailableCode) {
+    private TransferResult acknowledgeAttempt(
+            ContainerAttempt attempt,
+            ContainerAttemptResult result
+    ) {
+        if (!isPlausibleAcknowledgement(attempt, result)) {
+            return retryOrFail("CONTAINER_ACK_INVALID", true);
+        }
+        containerFlow = null;
+        return TransferResult.acknowledged();
+    }
+
+    private TransferResult handlePendingAttempt() {
         Instant startedAt = containerFlow.attempt.startedAt();
         if (Duration.between(startedAt, clock.now()).compareTo(
                 plan.containerAckTimeout()
@@ -537,62 +621,63 @@ public final class PickupAutomationEngine {
     }
 
     private void beginDeposit() {
-        failedDepositCaches.clear();
         classificationFailures = 0;
-        selectedCacheIndex = nearestCacheIndex();
+        selectedCacheIndex = nearestAvailableCacheIndex();
         abortContainerFlow();
         containerObservationStartedAt = Optional.empty();
         enter(PickupStage.DEPOSIT_BUFFER);
     }
 
     private void depositCacheFailed(String failureCode, String detail) {
-        failedDepositCaches.add(selectedCacheIndex);
+        failedCacheIds.add(selectedCache().id());
         abortContainerFlow();
         clearNavigation();
         containerObservationStartedAt = Optional.empty();
-        List<ContainerRef> caches = plan.pickupSite().cacheContainers();
-        for (int offset = 1; offset <= caches.size(); offset++) {
-            int candidate = (selectedCacheIndex + offset) % caches.size();
-            if (!failedDepositCaches.contains(candidate)) {
-                selectedCacheIndex = candidate;
-                return;
-            }
+        Optional<Integer> next = nearestAvailableCacheIndexOptional();
+        if (next.isPresent()) {
+            selectedCacheIndex = next.orElseThrow();
+            return;
         }
-        pause(failureCode, detail + "; all configured caches failed");
+        pause(failureCode, detail + "; all configured caches failed this round");
     }
 
-    private boolean retryClassificationOrPause(String failureCode, String detail) {
+    private void retryClassificationOrPause(String failureCode, String detail) {
         if (classificationFailures >= plan.maxContainerRetries()) {
             pause(failureCode, detail + "; classification retry budget exhausted");
-            return false;
+            return;
         }
         classificationFailures++;
         abortContainerFlow();
         clearNavigation();
         containerObservationStartedAt = Optional.empty();
-        return true;
     }
 
-    private int nearestCacheIndex() {
-        BlockPosition position = currentPosition();
-        int nearestIndex = 0;
-        int nearestDistance = distanceSquared(
-                position,
-                plan.pickupSite().cacheContainers().getFirst().position()
+    private int nearestAvailableCacheIndex() {
+        return nearestAvailableCacheIndexOptional().orElseThrow(() ->
+                new IllegalStateException("workflow has no available cache")
         );
-        for (int index = 1; index < plan.pickupSite().cacheContainers().size(); index++) {
-            BlockPosition candidate = plan.pickupSite().cacheContainers().get(index).position();
-            int distance = distanceSquared(position, candidate);
+    }
+
+    private Optional<Integer> nearestAvailableCacheIndexOptional() {
+        BlockPosition position = currentPosition();
+        Integer nearestIndex = null;
+        long nearestDistance = Long.MAX_VALUE;
+        for (int index = 0; index < workflowCaches.size(); index++) {
+            ContainerRef cache = workflowCaches.get(index);
+            if (failedCacheIds.contains(cache.id())) {
+                continue;
+            }
+            long distance = distanceSquared(position, cache.position());
             if (distance < nearestDistance) {
                 nearestDistance = distance;
                 nearestIndex = index;
             }
         }
-        return nearestIndex;
+        return Optional.ofNullable(nearestIndex);
     }
 
     private ContainerRef selectedCache() {
-        return plan.pickupSite().cacheContainers().get(selectedCacheIndex);
+        return workflowCaches.get(selectedCacheIndex);
     }
 
     private Optional<DeliveryIntent> activeDelivery() {
@@ -607,28 +692,23 @@ public final class PickupAutomationEngine {
     }
 
     private List<GroundItem> observeInputs() {
-        List<GroundItem> items = List.copyOf(worldObserver.observeGroundItems(
-                plan.pickupSite()
-        ));
-        boolean discovered = false;
+        List<GroundItem> items = List.copyOf(
+                worldObserver.observeGroundItems(currentRegion())
+        );
         for (GroundItem item : items) {
-            String token = item.observationKey() + ":" + item.itemId() + ":" + item.count();
-            if (observedInputs.add(token)) {
-                discovered = true;
-            }
+            observedInputs.add(item.observationKey() + ":" + item.itemId() + ":" + item.count());
         }
-        if (discovered) {
-            idleSince = Optional.of(clock.now());
-        } else if (items.isEmpty()) {
-            startIdleTimerIfNeeded();
+        if (!items.isEmpty()) {
+            regionIdleSince.remove(currentRegion().id());
+            workflowIdleSince = Optional.empty();
+        } else {
+            startRegionIdleTimer();
         }
         return items;
     }
 
-    private void startIdleTimerIfNeeded() {
-        if (idleSince.isEmpty()) {
-            idleSince = Optional.of(clock.now());
-        }
+    private void startRegionIdleTimer() {
+        regionIdleSince.putIfAbsent(currentRegion().id(), clock.now());
     }
 
     private List<ItemAmount> inventoryDelta(PlayerInventorySnapshot inventory) {
@@ -653,8 +733,8 @@ public final class PickupAutomationEngine {
             pause("DEAD", "player is not alive");
             return false;
         }
-        if (!plan.pickupSite().dimension().equals(world.dimension())) {
-            pause("DIMENSION_MISMATCH", "pickup task requires its configured dimension");
+        if (!plan.workflow().dimension().equals(world.dimension())) {
+            pause("DIMENSION_MISMATCH", "pickup workflow requires its configured dimension");
             return false;
         }
         if (world.playerPosition().isEmpty()) {
@@ -705,11 +785,19 @@ public final class PickupAutomationEngine {
         return worldObserver.observeWorld().playerPosition().orElseThrow();
     }
 
-    private int distanceSquared(BlockPosition first, BlockPosition second) {
-        int deltaX = first.x() - second.x();
-        int deltaY = first.y() - second.y();
-        int deltaZ = first.z() - second.z();
+    private long distanceSquared(BlockPosition first, BlockPosition second) {
+        long deltaX = (long) first.x() - second.x();
+        long deltaY = (long) first.y() - second.y();
+        long deltaZ = (long) first.z() - second.z();
         return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+    }
+
+    private PickupRegionBinding currentBinding() {
+        return regionOrder.get(currentRegionIndex);
+    }
+
+    private PickupRegion currentRegion() {
+        return plan.regionsById().get(currentBinding().regionId());
     }
 
     private void reconcileAfterRecovery() {
@@ -725,6 +813,17 @@ public final class PickupAutomationEngine {
         }
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
         if (!inventoryDelta(inventory).isEmpty()) {
+            if (failedCacheIds.contains(selectedCache().id())) {
+                Optional<Integer> available = nearestAvailableCacheIndexOptional();
+                if (available.isEmpty()) {
+                    pause(
+                            "BUFFER_UNAVAILABLE",
+                            "all configured caches failed this round"
+                    );
+                    return;
+                }
+                selectedCacheIndex = available.orElseThrow();
+            }
             stage = PickupStage.DEPOSIT_BUFFER;
             return;
         }
@@ -742,29 +841,69 @@ public final class PickupAutomationEngine {
     }
 
     private void restore(AutomationCheckpoint checkpoint) {
+        validateCheckpointPlan(checkpoint);
         stage = checkpoint.stage();
         resumeStage = checkpoint.stage();
         observedInputs.addAll(checkpoint.observedInputKeys());
-        idleSince = checkpoint.idleSince();
         inventoryBaseline = checkpoint.inventoryBaseline();
+        failedCacheIds.addAll(checkpoint.failedCacheIds());
+        workflowIdleSince = checkpoint.workflowIdleSince();
+        regionIdleSince.putAll(checkpoint.regionIdleSince());
+        if (regionIdleSince.isEmpty() && checkpoint.idleSince().isPresent()) {
+            regionIdleSince.put(currentRegion().id(), checkpoint.idleSince().orElseThrow());
+        }
+        round = Math.max(1, checkpoint.round());
+        currentRegionIndex = indexOfRegion(checkpoint.currentRegionId());
         selectedCacheIndex = indexOfCache(checkpoint.selectedCacheId());
         if (checkpoint.selectedCacheId().isEmpty()
                 && worldObserver.observeWorld().playerPosition().isPresent()) {
-            selectedCacheIndex = nearestCacheIndex();
+            selectedCacheIndex = nearestAvailableCacheIndex();
         }
         classificationCacheIndex = Math.min(
                 checkpoint.classificationCacheIndex(),
-                plan.pickupSite().cacheContainers().size() - 1
+                workflowCaches.size() - 1
         );
+        boolean legacy = checkpoint.currentRegionId().isEmpty()
+                && checkpoint.round() == 0;
+        classificationAfterRound = checkpoint.classificationAfterRound()
+                || legacy && plan.workflow().classificationTiming()
+                == ClassificationTiming.AFTER_ROUND;
+    }
+
+    private void validateCheckpointPlan(AutomationCheckpoint checkpoint) {
+        boolean legacy = checkpoint.currentRegionId().isEmpty()
+                && checkpoint.round() == 0;
+        if (legacy) {
+            return;
+        }
+        if (checkpoint.workflowId().isPresent()
+                && !checkpoint.workflowId().orElseThrow().equals(plan.workflow().id())) {
+            throw new IllegalArgumentException("checkpoint workflow does not match plan");
+        }
+        if (checkpoint.regionOverride().isPresent()
+                && !checkpoint.regionOverride().equals(plan.regionOverride())) {
+            throw new IllegalArgumentException("checkpoint region override does not match plan");
+        }
+    }
+
+    private int indexOfRegion(Optional<String> regionId) {
+        if (regionId.isEmpty()) {
+            return 0;
+        }
+        for (int index = 0; index < regionOrder.size(); index++) {
+            if (regionOrder.get(index).regionId().equals(regionId.orElseThrow())) {
+                return index;
+            }
+        }
+        return 0;
     }
 
     private int indexOfCache(Optional<String> cacheId) {
         if (cacheId.isEmpty()) {
             return 0;
         }
-        List<ContainerRef> caches = plan.pickupSite().cacheContainers();
-        for (int index = 0; index < caches.size(); index++) {
-            if (caches.get(index).id().equals(cacheId.orElseThrow())) {
+        for (int index = 0; index < workflowCaches.size(); index++) {
+            if (workflowCaches.get(index).id().equals(cacheId.orElseThrow())) {
                 return index;
             }
         }
@@ -820,12 +959,18 @@ public final class PickupAutomationEngine {
         checkpoints.save(new AutomationCheckpoint(
                 plan.taskId(),
                 checkpointStage,
-                Optional.of(plan.pickupSite().id()),
+                Optional.of(plan.workflow().id()),
+                plan.regionOverride(),
+                Optional.of(currentRegion().id()),
+                round,
+                failedCacheIds,
+                workflowIdleSince,
+                regionIdleSince,
                 observedInputs,
-                idleSince,
                 inventoryBaseline,
                 Optional.of(selectedCache().id()),
-                classificationCacheIndex
+                classificationCacheIndex,
+                classificationAfterRound
         ));
     }
 

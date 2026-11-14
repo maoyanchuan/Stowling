@@ -25,7 +25,7 @@ import java.util.UUID;
  * Persists only the resumable pickup stage, never slot-level attempts or clicks.
  */
 public final class SqliteAutomationCheckpointStore implements AutomationCheckpointStore {
-    private static final int CHECKPOINT_VERSION = 1;
+    private static final int CHECKPOINT_VERSION = 2;
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private final SqliteTaskRepository tasks;
 
@@ -44,7 +44,7 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
     public static Optional<String> readPlanReference(UUID taskId, String value) {
         Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(value, "value");
-        return parseCheckpoint(taskId, value).planReference();
+        return parseCheckpoint(taskId, value).workflowId();
     }
 
     @Override
@@ -104,9 +104,30 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         root.addProperty("version", CHECKPOINT_VERSION);
         root.addProperty("taskId", checkpoint.taskId().toString());
         root.addProperty("stage", checkpoint.stage().name());
-        checkpoint.planReference().ifPresent(value ->
-                root.addProperty("planReference", value)
+        checkpoint.workflowId().ifPresent(value ->
+                root.addProperty("workflowId", value)
         );
+        checkpoint.regionOverride().ifPresent(value ->
+                root.addProperty("regionOverride", value)
+        );
+        checkpoint.currentRegionId().ifPresent(value ->
+                root.addProperty("currentRegionId", value)
+        );
+        root.addProperty("round", checkpoint.round());
+        JsonArray failedCaches = new JsonArray();
+        checkpoint.failedCacheIds().stream().sorted().forEach(failedCaches::add);
+        root.add("failedCacheIds", failedCaches);
+        checkpoint.workflowIdleSince().ifPresent(value ->
+                root.addProperty("workflowIdleSince", value.toString())
+        );
+        JsonObject regionIdleSince = new JsonObject();
+        checkpoint.regionIdleSince().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> regionIdleSince.addProperty(
+                        entry.getKey(),
+                        entry.getValue().toString()
+                ));
+        root.add("regionIdleSince", regionIdleSince);
         JsonArray observedInputs = new JsonArray();
         checkpoint.observedInputKeys().stream().sorted().forEach(observedInputs::add);
         root.add("observedInputKeys", observedInputs);
@@ -128,6 +149,10 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
                 "classificationCacheIndex",
                 checkpoint.classificationCacheIndex()
         );
+        root.addProperty(
+                "classificationAfterRound",
+                checkpoint.classificationAfterRound()
+        );
         return GSON.toJson(root);
     }
 
@@ -145,7 +170,7 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         }
         JsonObject root = parsed.getAsJsonObject();
         int version = root.get("version").getAsInt();
-        if (version != CHECKPOINT_VERSION) {
+        if (version != 1 && version != CHECKPOINT_VERSION) {
             throw new IllegalArgumentException("unsupported checkpoint version: " + version);
         }
         UUID storedTaskId = UUID.fromString(root.get("taskId").getAsString());
@@ -153,20 +178,40 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
             throw new IllegalArgumentException("checkpoint task id does not match task record");
         }
         PickupStage stage = PickupStage.valueOf(root.get("stage").getAsString());
-        Optional<String> planReference = optionalString(root, "planReference");
+        Optional<String> workflowId = version == 1
+                ? optionalString(root, "planReference")
+                : optionalString(root, "workflowId");
         Optional<Instant> idleSince = optionalString(root, "idleSince")
                 .map(Instant::parse);
         Optional<String> selectedCacheId = optionalString(root, "selectedCacheId");
-        int classificationCacheIndex = root.get("classificationCacheIndex").getAsInt();
+        int classificationCacheIndex = optionalInt(root, "classificationCacheIndex", 0);
+        if (version == 1) {
+            return new AutomationCheckpoint(
+                    taskId,
+                    stage,
+                    workflowId,
+                    readStringSet(root.get("observedInputKeys")),
+                    idleSince,
+                    readInventoryBaseline(root.get("inventoryBaseline")),
+                    selectedCacheId,
+                    classificationCacheIndex
+            );
+        }
         return new AutomationCheckpoint(
                 taskId,
                 stage,
-                planReference,
+                workflowId,
+                optionalString(root, "regionOverride"),
+                optionalString(root, "currentRegionId"),
+                optionalLong(root, "round", 1),
+                readOptionalStringSet(root.get("failedCacheIds")),
+                optionalString(root, "workflowIdleSince").map(Instant::parse),
+                readInstantMap(root.get("regionIdleSince")),
                 readStringSet(root.get("observedInputKeys")),
-                idleSince,
                 readInventoryBaseline(root.get("inventoryBaseline")),
                 selectedCacheId,
-                classificationCacheIndex
+                classificationCacheIndex,
+                optionalBoolean(root, "classificationAfterRound", false)
         );
     }
 
@@ -210,6 +255,25 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         return Optional.of(value.getAsString());
     }
 
+    private static int optionalInt(JsonObject root, String fieldName, int defaultValue) {
+        JsonElement value = root.get(fieldName);
+        return value == null || value.isJsonNull() ? defaultValue : value.getAsInt();
+    }
+
+    private static long optionalLong(JsonObject root, String fieldName, long defaultValue) {
+        JsonElement value = root.get(fieldName);
+        return value == null || value.isJsonNull() ? defaultValue : value.getAsLong();
+    }
+
+    private static boolean optionalBoolean(
+            JsonObject root,
+            String fieldName,
+            boolean defaultValue
+    ) {
+        JsonElement value = root.get(fieldName);
+        return value == null || value.isJsonNull() ? defaultValue : value.getAsBoolean();
+    }
+
     private static Set<String> readStringSet(JsonElement element) {
         if (element == null || !element.isJsonArray()) {
             throw new IllegalArgumentException("observedInputKeys must be an array");
@@ -220,6 +284,24 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
             result.add(value.getAsString());
         }
         return Set.copyOf(result);
+    }
+
+    private static Set<String> readOptionalStringSet(JsonElement element) {
+        return element == null || element.isJsonNull() ? Set.of() : readStringSet(element);
+    }
+
+    private static Map<String, Instant> readInstantMap(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return Map.of();
+        }
+        if (!element.isJsonObject()) {
+            throw new IllegalArgumentException("regionIdleSince must be an object");
+        }
+        Map<String, Instant> result = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+            result.put(entry.getKey(), Instant.parse(entry.getValue().getAsString()));
+        }
+        return Map.copyOf(result);
     }
 
     private static Map<String, Integer> readInventoryBaseline(JsonElement element) {

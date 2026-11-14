@@ -2,6 +2,7 @@ package dev.stowling.automation;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupSite;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,6 +40,7 @@ final class AutomationFakes {
     static final class FakeWorldObserver implements WorldObserver {
         private WorldObservation world;
         private List<GroundItem> groundItems = List.of();
+        private final Map<String, List<GroundItem>> regionItems = new HashMap<>();
         private final Map<String, Set<String>> tags = new HashMap<>();
 
         FakeWorldObserver(WorldObservation world) {
@@ -56,6 +58,11 @@ final class AutomationFakes {
         }
 
         @Override
+        public List<GroundItem> observeGroundItems(PickupRegion region) {
+            return regionItems.getOrDefault(region.id(), groundItems);
+        }
+
+        @Override
         public Set<String> tagsFor(String itemId) {
             return tags.getOrDefault(itemId, Set.of());
         }
@@ -66,6 +73,10 @@ final class AutomationFakes {
 
         void setGroundItems(List<GroundItem> groundItems) {
             this.groundItems = List.copyOf(groundItems);
+        }
+
+        void setGroundItems(String regionId, List<GroundItem> items) {
+            regionItems.put(regionId, List.copyOf(items));
         }
 
         void setTags(String itemId, Set<String> itemTags) {

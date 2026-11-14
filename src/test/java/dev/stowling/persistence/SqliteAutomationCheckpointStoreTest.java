@@ -30,11 +30,17 @@ class SqliteAutomationCheckpointStoreTest {
                 taskId,
                 PickupStage.DELIVER_LOOSE,
                 Optional.of("quarry"),
+                Optional.of("north"),
+                Optional.of("north"),
+                4,
+                Set.of("cache-east"),
+                Optional.of(Instant.parse("2026-11-13T12:04:00Z")),
+                Map.of("north", Instant.parse("2026-11-13T12:05:00Z")),
                 Set.of("drop-1:minecraft:stone:1", "drop-2:minecraft:diamond:2"),
-                Optional.of(Instant.parse("2026-11-13T12:05:00Z")),
                 Map.of("minecraft:stone", 4),
                 Optional.of("cache-west"),
-                2
+                2,
+                true
         );
 
         store.save(checkpoint);
@@ -43,12 +49,39 @@ class SqliteAutomationCheckpointStoreTest {
                 .orElseThrow()
                 .recoveryCheckpoint()
                 .orElseThrow();
-        assertTrue(persisted.startsWith("{\"version\":1,"), persisted);
+        assertTrue(persisted.startsWith("{\"version\":2,"), persisted);
         assertEquals(
                 Optional.of("quarry"),
                 SqliteAutomationCheckpointStore.readPlanReference(taskId, persisted)
         );
         assertEquals(Optional.of(checkpoint), store.load(taskId));
+    }
+
+    @Test
+    void loadsVersionOneJsonCheckpoint() {
+        SqliteTaskRepository tasks = repository("version-one.db");
+        UUID taskId = saveTask(tasks);
+        PersistedTask current = tasks.findRecordById(taskId).orElseThrow();
+        String checkpoint = "{"
+                + "\"version\":1,"
+                + "\"taskId\":\"" + taskId + "\","
+                + "\"stage\":\"WAIT_FOR_IDLE\","
+                + "\"planReference\":\"quarry\","
+                + "\"observedInputKeys\":[],"
+                + "\"idleSince\":\"2026-11-13T12:05:00Z\","
+                + "\"inventoryBaseline\":{},"
+                + "\"selectedCacheId\":\"cache-west\","
+                + "\"classificationCacheIndex\":0"
+                + "}";
+        tasks.save(new PersistedTask(current.snapshot(), Optional.of(checkpoint), 0));
+
+        AutomationCheckpoint loaded = new SqliteAutomationCheckpointStore(tasks)
+                .load(taskId)
+                .orElseThrow();
+
+        assertEquals(Optional.of("quarry"), loaded.workflowId());
+        assertEquals(PickupStage.WAIT_FOR_IDLE, loaded.stage());
+        assertEquals(Optional.of(Instant.parse("2026-11-13T12:05:00Z")), loaded.idleSince());
     }
 
     @Test

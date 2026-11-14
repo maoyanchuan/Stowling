@@ -7,7 +7,9 @@ import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.automation.WorldObservation;
 import dev.stowling.automation.WorldObserver;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupSite;
+import dev.stowling.domain.SpherePickupShape;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -58,21 +60,36 @@ public final class MinecraftWorldObserver implements WorldObserver, PlayerInvent
 
     @Override
     public List<GroundItem> observeGroundItems(PickupSite site) {
+        return observeGroundItems(new PickupRegion(
+                site.id(),
+                site.id(),
+                site.dimension(),
+                site.center(),
+                new SpherePickupShape(site.center(), site.radius())
+        ));
+    }
+
+    @Override
+    public List<GroundItem> observeGroundItems(PickupRegion region) {
         requireClientThread();
-        Objects.requireNonNull(site, "site");
-        LocalPlayer player = minecraft.player;
+        Objects.requireNonNull(region, "region");
         ClientLevel level = minecraft.level;
-        if (player == null || level == null) {
+        if (minecraft.player == null || level == null
+                || !level.dimension().identifier().toString().equals(region.dimension())) {
             return List.of();
         }
         List<GroundItem> result = new ArrayList<>();
-        double radiusSquared = (double) site.radius() * site.radius();
         for (Entity entity : level.entitiesForRendering()) {
             if (!(entity instanceof ItemEntity itemEntity) || entity.isRemoved()) {
                 continue;
             }
             ItemStack stack = itemEntity.getItem();
-            if (stack.isEmpty() || entity.distanceToSqr(player) > radiusSquared) {
+            if (stack.isEmpty() || !isInsidePickupRegion(
+                    region,
+                    entity.getX(),
+                    entity.getY(),
+                    entity.getZ()
+            )) {
                 continue;
             }
             result.add(new GroundItem(
@@ -123,6 +140,15 @@ public final class MinecraftWorldObserver implements WorldObserver, PlayerInvent
     private String itemId(ItemStack stack) {
         Identifier identifier = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return identifier.toString();
+    }
+
+    static boolean isInsidePickupRegion(
+            PickupRegion region,
+            double x,
+            double y,
+            double z
+    ) {
+        return region.contains(x, y, z);
     }
 
     private BlockPosition positionOf(Entity entity) {

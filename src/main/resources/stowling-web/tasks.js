@@ -294,7 +294,7 @@
      * @returns {Promise<void>}
      */
     async function loadModules() {
-        const payload = await Stowling.request("/v1/automation/modules");
+        const payload = await Stowling.request("/v1/automation-modules");
         const modules = Array.isArray(payload) ? payload : payload?.modules;
         state.modules = (Array.isArray(modules) ? modules : [])
             .map(normalizeModule)

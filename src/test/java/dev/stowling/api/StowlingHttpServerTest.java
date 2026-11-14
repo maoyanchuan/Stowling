@@ -128,6 +128,7 @@ class StowlingHttpServerTest {
         HttpResponse<String> alternatePage = send("GET", "/index.html", null, null);
         HttpResponse<String> script = send("GET", "/common.js", null, null);
         HttpResponse<String> tasksScript = send("GET", "/tasks.js", null, null);
+        HttpResponse<String> resourcesScript = send("GET", "/task-resources.js", null, null);
         HttpResponse<String> icon = send("GET", "/icon.svg", null, null);
         HttpResponse<String> rasterIcon = send("GET", "/icon.png", null, null);
         HttpResponse<String> styles = send("GET", "/styles.css", null, null);
@@ -136,6 +137,7 @@ class StowlingHttpServerTest {
         assertEquals(200, alternatePage.statusCode());
         assertEquals(200, script.statusCode());
         assertEquals(200, tasksScript.statusCode());
+        assertEquals(200, resourcesScript.statusCode());
         assertEquals(200, icon.statusCode());
         assertEquals(200, rasterIcon.statusCode());
         assertEquals(200, styles.statusCode());
@@ -148,9 +150,9 @@ class StowlingHttpServerTest {
         assertFalse(page.body().contains("/app.js"));
         assertTrue(script.body().contains("Authorization"));
         assertTrue(script.body().contains("sessionStorage"));
-        assertTrue(tasksScript.body().contains("/v1/config/automation-workflows"));
+        assertTrue(tasksScript.body().contains("/v1/task-definitions"));
         assertTrue(tasksScript.body().contains("/v1/automation-modules"));
-        assertTrue(tasksScript.body().contains("/v1/tasks/automation"));
+        assertTrue(resourcesScript.body().contains("/v1/config/task-resources"));
         assertFalse(tasksScript.body().contains("innerHTML"));
         assertFalse(tasksScript.body().contains("localStorage"));
         assertTrue(styles.body().contains("@media (max-width: 760px)"));

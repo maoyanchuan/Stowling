@@ -88,6 +88,7 @@
                 ? snapshot.pickupRegions
                 : [],
             cacheContainers: Array.isArray(snapshot?.cacheContainers)
+                ? snapshot.cacheContainers
                 : []
         });
         state.pickupDraft = Stowling.clone(state.pickupSnapshot);

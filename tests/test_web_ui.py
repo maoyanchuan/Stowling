@@ -214,7 +214,13 @@ def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
 
 
 def test_task_modules_and_parameters_come_from_descriptors() -> None:
-    assert '"/v1/automation/modules"' in TASKS
+    route = re.search(
+        r'AUTOMATION_MODULES\("GET", "([^"]+)"\)',
+        read_resource(HTTP_SERVER),
+    )
+    assert route is not None
+    assert f'Stowling.request("{route.group(1)}")' in TASKS
+    assert '"/v1/automation/modules"' not in TASKS
     assert "FIELD_DEFINITIONS" not in TASKS
     assert "FALLBACK_MODULES" not in TASKS
     assert "const modules = Array.isArray(payload) ? payload : payload?.modules;" \

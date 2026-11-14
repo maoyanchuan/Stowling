@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img">
+    <defs>
+        <linearGradient id="surface" x1="18" y1="10" x2="110" y2="120"
+                        gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#3c8d63"/>
+            <stop offset="0.52" stop-color="#286c4b"/>
+            <stop offset="1" stop-color="#1b5236"/>
+        </linearGradient>
+        <radialGradient id="glow" cx="0" cy="0" r="1"
+                        gradientTransform="translate(38 28) rotate(45) scale(86)">
+            <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+            <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+        </radialGradient>
+        <filter id="letter-shadow" x="-20%" y="-20%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="2" stdDeviation="1.4"
+                          flood-color="#0b2b1b" flood-opacity="0.34"/>
+        </filter>
+    </defs>
+    <rect x="4" y="4" width="120" height="120" rx="29" fill="url(#surface)"/>
+    <rect x="4" y="4" width="120" height="120" rx="29" fill="url(#glow)"/>
+    <rect x="5.5" y="5.5" width="117" height="117" rx="27.5"
+          fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+    <g transform="translate(64 64) scale(0.64 0.9) translate(-60 -67)"
+       filter="url(#letter-shadow)">
+        <path d="M84 43C80 32 69 28 57 29C44 30 36 38 37 48C38 57 46 62 59 66
+                 C73 70 85 75 86 86C87 98 75 105 61 105C48 105 40 100 35 91"
+              fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="butt"
+              stroke-linejoin="round"/>
+    </g>
+</svg>

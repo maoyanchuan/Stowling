@@ -4,6 +4,11 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "src" / "main" / "resources" / "stowling-web"
+MOD_ICON = ROOT / "src" / "main" / "resources" / "assets" / "stowling" / "icon.png"
+VECTOR_ICON = (
+    ROOT / "src" / "main" / "resources" / "assets" / "stowling" / "icon.svg"
+)
+WEB_ICON = WEB_ROOT / "favicon.png"
 
 
 def read_web(name: str) -> str:
@@ -38,6 +43,9 @@ def test_four_pages_are_real_urls_with_shared_assets() -> None:
         assert 'id="app-nav"' in html
         assert 'id="auth-shell"' in html
         assert 'id="workspace"' in html
+        assert 'rel="icon" type="image/svg+xml" href="/icon.svg"' in html
+        assert 'rel="icon" type="image/png" href="/favicon.png"' in html
+        assert '<img class="brand-mark" src="/icon.svg" alt="">' in html
         assert 'src="/common.js"' in html
         assert 'href="/styles.css"' in html
         assert 'href="#' not in html
@@ -49,6 +57,17 @@ def test_four_pages_are_real_urls_with_shared_assets() -> None:
         "/storage.html",
     ):
         assert f'href: "{route}"' in COMMON
+
+
+def test_project_icon_is_packaged_for_mod_and_web() -> None:
+    assert MOD_ICON.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert WEB_ICON.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert VECTOR_ICON.read_text(encoding="utf-8").lstrip().startswith("<svg")
+    assert MOD_ICON.stat().st_size > 0
+    assert WEB_ICON.stat().st_size > 0
+    assert '"icon": "assets/stowling/icon.png"' in (
+        ROOT / "src" / "main" / "resources" / "fabric.mod.json"
+    ).read_text(encoding="utf-8")
 
 
 def test_each_page_loads_its_focused_script() -> None:
@@ -450,7 +469,10 @@ def test_layout_is_responsive_and_supports_dark_mode() -> None:
 
 
 def test_all_web_sources_follow_line_length_rule() -> None:
-    files = [path for path in WEB_ROOT.iterdir() if path.is_file()]
+    files = [
+        path for path in WEB_ROOT.iterdir()
+        if path.is_file() and path.suffix in {".html", ".js", ".css"}
+    ]
     violations = []
     for path in files:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):

@@ -17,7 +17,6 @@ import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
-import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.StorageRoute;
 import dev.stowling.inventory.InventoryCapture;
@@ -455,10 +454,10 @@ public final class StowlingControlServiceImpl implements StowlingControlService 
                 RecoveredWorkflow selection = recovered.orElseThrow();
                 PickupAutomationEngine engine = pickupFactory.create(
                         plan(
-                                plan.taskId(),
-                                selection.workflow(),
-                                selection.regionOverride()
-                        )
+                        plan.taskId(),
+                        selection.workflow(),
+                        selection.regionOverride()
+                )
                 );
                 ActivePickup active = new ActivePickup(
                         plan.taskId(),

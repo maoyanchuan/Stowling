@@ -124,9 +124,9 @@ public final class SqliteAutomationCheckpointStore implements AutomationCheckpoi
         checkpoint.regionIdleSince().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> regionIdleSince.addProperty(
-                        entry.getKey(),
-                        entry.getValue().toString()
-                ));
+                entry.getKey(),
+                entry.getValue().toString()
+        ));
         root.add("regionIdleSince", regionIdleSince);
         JsonArray observedInputs = new JsonArray();
         checkpoint.observedInputKeys().stream().sorted().forEach(observedInputs::add);

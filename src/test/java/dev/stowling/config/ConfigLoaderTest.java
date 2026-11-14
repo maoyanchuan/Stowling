@@ -221,7 +221,7 @@ class ConfigLoaderTest {
                 new CuboidPickupShape(
                         new BlockPosition(0, 60, 0),
                         new BlockPosition(10, 70, 10)
-                )
+        )
         );
         NamedCache cache = new NamedCache(
                 "warehouse-cache",
@@ -235,10 +235,10 @@ class ConfigLoaderTest {
                 "Warehouse patrol",
                 "minecraft:overworld",
                 List.of(new PickupRegionBinding(
-                        region.id(),
-                        50,
-                        Duration.ofSeconds(15)
-                )),
+                region.id(),
+                50,
+                Duration.ofSeconds(15)
+        )),
                 List.of(cache.id()),
                 CachePolicy.NEAREST_AVAILABLE,
                 ClassificationTiming.AFTER_REGION,

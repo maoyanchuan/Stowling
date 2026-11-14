@@ -272,11 +272,11 @@ class StowlingControlServiceImplTest {
 
         PickupConfigSnapshot saved = service.updatePickupConfig(
                 new PickupConfigUpdateRequest(
-                        before.revision(),
-                        List.of(renamedRegion),
-                        before.cacheContainers(),
-                        List.of(renamedWorkflow)
-                )
+                before.revision(),
+                List.of(renamedRegion),
+                before.cacheContainers(),
+                List.of(renamedWorkflow)
+        )
         );
 
         StowlingConfig disk = loader.load(configPath);
@@ -302,11 +302,11 @@ class StowlingControlServiceImplTest {
         InvalidPickupConfigException exception = assertThrows(
                 InvalidPickupConfigException.class,
                 () -> service.updatePickupConfig(new PickupConfigUpdateRequest(
-                        before.revision(),
-                        List.of(),
-                        before.cacheContainers(),
-                        before.pickupWorkflows()
-                ))
+                before.revision(),
+                List.of(),
+                before.cacheContainers(),
+                before.pickupWorkflows()
+        ))
         );
 
         assertTrue(exception.getMessage().contains("farm-workflow"));
@@ -350,11 +350,11 @@ class StowlingControlServiceImplTest {
         assertThrows(
                 ActiveTaskConflictException.class,
                 () -> service.updatePickupConfig(new PickupConfigUpdateRequest(
-                        before.revision(),
-                        before.pickupRegions(),
-                        before.cacheContainers(),
-                        before.pickupWorkflows()
-                ))
+                before.revision(),
+                before.pickupRegions(),
+                before.cacheContainers(),
+                before.pickupWorkflows()
+        ))
         );
     }
 

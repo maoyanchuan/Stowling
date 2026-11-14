@@ -44,7 +44,7 @@ class MinecraftWorldObserverRegionTest {
                 new CuboidPickupShape(
                         new BlockPosition(1, 2, 3),
                         new BlockPosition(4, 5, 6)
-                )
+        )
         );
 
         assertTrue(MinecraftWorldObserver.isInsidePickupRegion(

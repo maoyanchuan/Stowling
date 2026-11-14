@@ -33,10 +33,10 @@ class PickupWorkflowEngineTest {
         PickupRegion secondEqual = region("second-equal");
         PickupWorkflow workflow = workflow(
                 List.of(
-                        binding(low, 10),
-                        binding(firstEqual, 100),
-                        binding(secondEqual, 100)
-                ),
+                binding(low, 10),
+                binding(firstEqual, 100),
+                binding(secondEqual, 100)
+        ),
                 ClassificationTiming.AFTER_ROUND,
                 CompletionMode.MANUAL,
                 Duration.ZERO
@@ -52,8 +52,8 @@ class PickupWorkflowEngineTest {
         assertEquals(
                 List.of("first-equal", "second-equal", "low"),
                 plan.orderedRegions().stream()
-                        .map(PickupRegionBinding::regionId)
-                        .toList()
+                .map(PickupRegionBinding::regionId)
+                .toList()
         );
     }
 

@@ -69,17 +69,17 @@ final class StrictRequestParser {
             requireFields(
                     root,
                     Set.of(
-                            "revision",
-                            "pickupRegions",
-                            "cacheContainers",
-                            "pickupWorkflows"
-                    ),
+                    "revision",
+                    "pickupRegions",
+                    "cacheContainers",
+                    "pickupWorkflows"
+            ),
                     Set.of(
-                            "revision",
-                            "pickupRegions",
-                            "cacheContainers",
-                            "pickupWorkflows"
-                    )
+                    "revision",
+                    "pickupRegions",
+                    "cacheContainers",
+                    "pickupWorkflows"
+            )
             );
             return new PickupConfigUpdateRequest(
                     string(root, "revision", 128),
@@ -315,27 +315,27 @@ final class StrictRequestParser {
             requireFields(
                     value,
                     Set.of(
-                            "id",
-                            "name",
-                            "dimension",
-                            "regions",
-                            "cacheIds",
-                            "cachePolicy",
-                            "classificationTiming",
-                            "completionMode",
-                            "completionIdleDelay"
-                    ),
+                    "id",
+                    "name",
+                    "dimension",
+                    "regions",
+                    "cacheIds",
+                    "cachePolicy",
+                    "classificationTiming",
+                    "completionMode",
+                    "completionIdleDelay"
+            ),
                     Set.of(
-                            "id",
-                            "name",
-                            "dimension",
-                            "regions",
-                            "cacheIds",
-                            "cachePolicy",
-                            "classificationTiming",
-                            "completionMode",
-                            "completionIdleDelay"
-                    )
+                    "id",
+                    "name",
+                    "dimension",
+                    "regions",
+                    "cacheIds",
+                    "cachePolicy",
+                    "classificationTiming",
+                    "completionMode",
+                    "completionIdleDelay"
+            )
             );
             result.add(new PickupWorkflow(
                     string(value, "id", 64),
@@ -345,10 +345,10 @@ final class StrictRequestParser {
                     strings(array(value, "cacheIds"), "cacheIds", 64),
                     CachePolicy.valueOf(string(value, "cachePolicy", 64)),
                     ClassificationTiming.valueOf(string(
-                            value,
-                            "classificationTiming",
-                            64
-                    )),
+                    value,
+                    "classificationTiming",
+                    64
+            )),
                     CompletionMode.valueOf(string(value, "completionMode", 64)),
                     Duration.ofSeconds(nonNegativeLong(value, "completionIdleDelay"))
             ));

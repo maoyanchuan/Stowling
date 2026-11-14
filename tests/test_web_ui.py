@@ -215,13 +215,13 @@ def test_task_page_uses_expected_automation_apis() -> None:
 
 
 def test_task_page_displays_navigation_failure_reason() -> None:
-    assert "const failureReason = conciseFailureReason(task.failureReason);" in TASKS
+    assert "Stowling.conciseFailureReason(task.failureReason)" in TASKS
     assert 'metaText("原因", failureReason)' in TASKS
     assert "reason.title = String(task.failureReason);" in TASKS
-    assert "function conciseFailureReason(value)" in TASKS
-    assert 'return "目标不可达";' in TASKS
-    assert 'return "客户端已断开";' in TASKS
-    assert 'return "操作超时";' in TASKS
+    assert "function conciseFailureReason(value)" in COMMON
+    assert 'return "目标不可达";' in COMMON
+    assert 'return "客户端已断开";' in COMMON
+    assert 'return "操作超时";' in COMMON
     assert 'if (["FAILED", "CANCELLED"].includes(status))' in TASKS
     assert 'badge.classList.add("danger")' in TASKS
 
@@ -401,12 +401,43 @@ def test_scripts_do_not_log_sensitive_values() -> None:
 def test_dashboard_is_status_overview_not_a_configuration_page() -> None:
     html = PAGES["index.html"]
     assert 'id="status-state"' in html
-    assert 'id="active-task-count"' in html
+    assert 'id="running-task-list"' in html
+    assert 'id="queued-task-list"' in html
+    assert 'id="interrupted-task-list"' in html
+    assert 'id="control-task-select"' in html
+    assert 'id="cancel-task-button"' in html
     assert 'id="recent-tasks"' in html
     assert 'id="coordinate-form"' not in html
     assert 'id="workflow-form"' not in html
     assert 'href="/tasks.html"' in html
     assert 'href="/coordinates.html"' in html
+
+
+def test_dashboard_groups_tasks_by_runtime_state() -> None:
+    assert 'const RUNNING_TASK_STATES = new Set(["RUNNING"]);' in DASHBOARD
+    assert 'const QUEUED_TASK_STATES = new Set(["PENDING", "WAITING"]);' in DASHBOARD
+    assert (
+        'const INTERRUPTED_TASK_STATES = new Set(["PAUSED", "FAILED", "CANCELLED"]);'
+        in DASHBOARD
+    )
+    assert "function renderTaskOverview(tasks)" in DASHBOARD
+    assert "renderTaskGroup(" in DASHBOARD
+    assert "Stowling.conciseFailureReason(task.failureReason)" in DASHBOARD
+
+
+def test_dashboard_syncs_robot_state_every_five_seconds() -> None:
+    assert "每 5 秒自动同步机器人状态" in PAGES["index.html"]
+    assert "}, 5000);" in DASHBOARD
+    assert "}, 10000);" not in DASHBOARD
+
+
+def test_dashboard_remote_control_lists_active_tasks() -> None:
+    assert "function renderControlTaskOptions(tasks)" in DASHBOARD
+    assert "Stowling.ACTIVE_TASK_STATES.has(task.status)" in DASHBOARD
+    assert 'elements.controlTaskSelect.append(new Option("请选择任务", ""));' \
+        in DASHBOARD
+    assert 'elements.cancelTask.addEventListener("click"' in DASHBOARD
+    assert "/v1/tasks/${encodeURIComponent(taskId)}/cancel" in DASHBOARD
 
 
 def test_layout_is_responsive_and_supports_dark_mode() -> None:

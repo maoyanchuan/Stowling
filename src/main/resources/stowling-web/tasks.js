@@ -1346,7 +1346,7 @@
                 ),
                 metaText("更新", Stowling.formatDate(task.updatedAt))
             );
-            const failureReason = conciseFailureReason(task.failureReason);
+            const failureReason = Stowling.conciseFailureReason(task.failureReason);
             if (failureReason) {
                 const reason = metaText("原因", failureReason);
                 reason.title = String(task.failureReason);
@@ -1371,42 +1371,6 @@
      */
     function metaText(key, value) {
         return Stowling.element("span", "", `${key}：${value}`);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function conciseFailureReason(value) {
-        const reason = String(value || "").trim();
-        if (!reason) {
-            return "";
-        }
-        const normalized = reason.toLowerCase();
-        if (
-            reason.includes("目标不可达")
-            || reason.includes("寻路失败")
-            || normalized.includes("path_failed")
-        ) {
-            return "目标不可达";
-        }
-        if (normalized.includes("cancel")) {
-            return "任务已取消";
-        }
-        if (normalized.includes("disconnect")) {
-            return "客户端已断开";
-        }
-        if (normalized.includes("not alive") || normalized.includes("dead")) {
-            return "角色已死亡";
-        }
-        if (normalized.includes("dimension")) {
-            return "维度不匹配";
-        }
-        if (normalized.includes("timeout")) {
-            return "操作超时";
-        }
-        const clause = reason.split(/[：:；;，,。]/u)[0].trim();
-        return clause.length <= 24 ? clause : `${clause.slice(0, 23)}…`;
     }
 
     /**

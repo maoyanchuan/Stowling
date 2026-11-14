@@ -381,6 +381,116 @@ section[id] {
     white-space: nowrap;
 }
 
+.metric small {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--muted);
+    font-size: 0.68rem;
+}
+
+.task-state-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin-top: 0.8rem;
+}
+
+.task-state-column {
+    min-width: 0;
+    padding: 0.82rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.34);
+}
+
+.task-state-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.task-state-heading h3 {
+    margin: 0;
+    font-size: 0.86rem;
+}
+
+.task-state-count {
+    min-width: 1.6rem;
+    padding: 0.12rem 0.42rem;
+    border-radius: 999px;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.compact-task-list {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.65rem;
+}
+
+.compact-task-card {
+    min-width: 0;
+    padding: 0.58rem 0.62rem;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.46);
+}
+
+.compact-task-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    min-width: 0;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.compact-task-title > :first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.compact-task-meta {
+    display: grid;
+    gap: 0.16rem;
+    margin-top: 0.35rem;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.68rem;
+    text-overflow: ellipsis;
+}
+
+.compact-task-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.compact-task-more {
+    color: var(--accent-strong);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.control-target-label {
+    display: block;
+    margin-bottom: 0.38rem;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.control-task-select {
+    width: 100%;
+    margin-bottom: 0.75rem;
+}
+
 .action-row {
     display: flex;
     flex-wrap: wrap;
@@ -987,6 +1097,10 @@ select[aria-invalid="true"],
         grid-template-columns: 1fr;
     }
 
+    .task-state-grid {
+        grid-template-columns: 1fr;
+    }
+
     .coordinate-heading {
         align-items: stretch;
         flex-direction: column;
@@ -1066,6 +1180,8 @@ select[aria-invalid="true"],
     input,
     select,
     .metric,
+    .task-state-column,
+    .compact-task-card,
     .task-card,
     .coordinate-group,
     .coordinate-row,

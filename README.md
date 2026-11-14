@@ -117,7 +117,7 @@ The pickup request body uses `workflowId` and an optional `regionId`:
 {"workflowId":"farm_patrol","regionId":"north_farm"}
 ```
 
-Omit `regionId` to run the complete workflow. Status data refreshes every 10 seconds, and
+Omit `regionId` to run the complete workflow. Status data refreshes every 5 seconds, and
 an expired token prompts for re-entry. Replace the installed jar and restart the client
 before expecting a newly built version to take effect.
 

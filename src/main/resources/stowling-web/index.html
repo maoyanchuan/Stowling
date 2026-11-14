@@ -51,7 +51,7 @@
                         <h2 id="status-title">运行概览</h2>
                     </div>
                     <button id="refresh-button" class="secondary compact" type="button">
-                        刷新
+                        立即同步
                     </button>
                 </div>
                 <div class="status-grid">
@@ -64,12 +64,32 @@
                         <strong id="status-paused">--</strong>
                     </article>
                     <article class="metric">
-                        <span>最近观测</span>
+                        <span>最近同步</span>
                         <strong id="status-observed">--</strong>
+                        <small>每 5 秒自动同步机器人状态</small>
                     </article>
-                    <article class="metric">
-                        <span>活动任务</span>
-                        <strong id="active-task-count">--</strong>
+                </div>
+                <div class="task-state-grid" aria-live="polite">
+                    <article class="task-state-column">
+                        <div class="task-state-heading">
+                            <h3>正在运行</h3>
+                            <span id="running-task-count" class="task-state-count">0</span>
+                        </div>
+                        <div id="running-task-list" class="compact-task-list"></div>
+                    </article>
+                    <article class="task-state-column">
+                        <div class="task-state-heading">
+                            <h3>排队中</h3>
+                            <span id="queued-task-count" class="task-state-count">0</span>
+                        </div>
+                        <div id="queued-task-list" class="compact-task-list"></div>
+                    </article>
+                    <article class="task-state-column">
+                        <div class="task-state-heading">
+                            <h3>已中断</h3>
+                            <span id="interrupted-task-count" class="task-state-count">0</span>
+                        </div>
+                        <div id="interrupted-task-list" class="compact-task-list"></div>
                     </article>
                 </div>
             </section>
@@ -77,13 +97,20 @@
             <section class="panel" aria-labelledby="control-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">运行控制</p>
-                        <h2 id="control-title">全局操作</h2>
+                        <p class="eyebrow">机器人控制</p>
+                        <h2 id="control-title">远程控制</h2>
                     </div>
                 </div>
+                <label class="control-target-label" for="control-task-select">任务列表</label>
+                <select id="control-task-select" class="control-task-select" disabled>
+                    <option value="">暂无活动任务</option>
+                </select>
                 <div class="action-row">
                     <button id="pause-button" class="secondary" type="button">暂停机器人</button>
                     <button id="resume-button" class="secondary" type="button">恢复机器人</button>
+                    <button id="cancel-task-button" class="secondary" type="button" disabled>
+                        取消所选任务
+                    </button>
                     <button id="reload-button" class="secondary" type="button">重载配置</button>
                 </div>
                 <p id="control-message" class="field-message" role="status"></p>

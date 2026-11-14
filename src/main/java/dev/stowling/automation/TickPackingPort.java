@@ -14,6 +14,7 @@ import dev.stowling.packing.PackingStationPool;
 import dev.stowling.packing.PackingStationTickPort;
 import dev.stowling.packing.PackingWorkcell;
 import dev.stowling.packing.PackingWorkcellOrchestrator;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -41,6 +42,8 @@ public final class TickPackingPort implements PackingPort {
     private final PackingWorkcellOrchestrator orchestrator =
             new PackingWorkcellOrchestrator(new PackingStationPool());
     private final Map<UUID, TaskState> tasks = new HashMap<>();
+    private final Map<UUID, StopState> stops = new HashMap<>();
+    private final Map<UUID, StopOutcome> stopOutcomes = new HashMap<>();
 
     public TickPackingPort(
             Supplier<StowlingConfig> configSupplier,
@@ -69,14 +72,120 @@ public final class TickPackingPort implements PackingPort {
             }
             state = created.orElseThrow();
             tasks.put(request.taskId(), state);
+            stopOutcomes.remove(request.taskId());
         } else if (!state.request.equals(request)) {
             return PackingDisposition.UNAVAILABLE;
         }
         PackingDisposition disposition = state.tick();
         if (disposition != PackingDisposition.PENDING) {
             tasks.remove(request.taskId());
+            rememberStopOutcome(
+                    request.taskId(),
+                    disposition == PackingDisposition.ACCEPTED
+                            ? StopOutcome.CLEAN
+                            : StopOutcome.UNSAFE
+            );
         }
         return disposition;
+    }
+
+    @Override
+    public synchronized StopOutcome requestStop(UUID taskId) {
+        Objects.requireNonNull(taskId, "taskId");
+        StopState stop = stops.get(taskId);
+        if (stop != null) {
+            return pollStop(taskId);
+        }
+        StopOutcome previous = stopOutcomes.get(taskId);
+        if (previous != null) {
+            return previous;
+        }
+        TaskState task = tasks.get(taskId);
+        if (task == null) {
+            return StopOutcome.UNSAFE;
+        }
+        stop = new StopState(task);
+        stops.put(taskId, stop);
+        stop.navigationOutcome = navigation.requestStop();
+        stop.navigationActive = stop.navigationOutcome == StopOutcome.PENDING;
+        for (ContainerAttempt attempt : stop.transfers) {
+            stop.containerOutcomes.put(
+                    attempt.attemptId(),
+                    containers.requestStop(attempt)
+            );
+        }
+        stop.refreshContainerOutcome();
+        return pollStop(taskId);
+    }
+
+    @Override
+    public synchronized StopOutcome pollStop(UUID taskId) {
+        Objects.requireNonNull(taskId, "taskId");
+        StopState stop = stops.get(taskId);
+        if (stop == null) {
+            return stopOutcomes.getOrDefault(taskId, StopOutcome.UNSAFE);
+        }
+        if (stop.navigationActive) {
+            stop.navigationOutcome = navigation.pollStop();
+            stop.navigationActive = stop.navigationOutcome == StopOutcome.PENDING;
+        }
+        if (stop.containersActive) {
+            for (ContainerAttempt attempt : stop.transfers) {
+                if (stop.containerOutcomes.get(attempt.attemptId())
+                        == StopOutcome.PENDING) {
+                    stop.containerOutcomes.put(
+                            attempt.attemptId(),
+                            containers.pollStop(attempt)
+                    );
+                }
+            }
+            stop.refreshContainerOutcome();
+        }
+        if (stop.navigationOutcome == StopOutcome.UNSAFE
+                || stop.containerOutcome == StopOutcome.UNSAFE) {
+            removeTask(taskId, StopOutcome.UNSAFE);
+            return StopOutcome.UNSAFE;
+        }
+        if (stop.navigationActive || stop.containersActive) {
+            return StopOutcome.PENDING;
+        }
+        if (!stop.closeAttempted) {
+            stop.closeAttempted = true;
+            for (PackingWorkcell workcell : stop.workcells) {
+                try {
+                    stationPort.close(workcell);
+                } catch (PackingStationException exception) {
+                    removeTask(taskId, StopOutcome.UNSAFE);
+                    return StopOutcome.UNSAFE;
+                }
+            }
+        }
+        removeTask(taskId, StopOutcome.CLEAN);
+        return StopOutcome.CLEAN;
+    }
+
+    private void removeTask(UUID taskId, StopOutcome outcome) {
+        tasks.remove(taskId);
+        stops.remove(taskId);
+        rememberStopOutcome(taskId, outcome);
+    }
+
+    private void rememberStopOutcome(UUID taskId, StopOutcome outcome) {
+        stopOutcomes.put(taskId, outcome);
+        if (stopOutcomes.size() > 128) {
+            UUID oldest = stopOutcomes.keySet().iterator().next();
+            stopOutcomes.remove(oldest);
+        }
+    }
+
+    private static StopOutcome combine(StopOutcome first, StopOutcome second) {
+        if (first == StopOutcome.UNSAFE || second == StopOutcome.UNSAFE) {
+            return StopOutcome.UNSAFE;
+        }
+        if (first == StopOutcome.PENDING || second == StopOutcome.PENDING) {
+            return StopOutcome.PENDING;
+        }
+        return StopOutcome.CLEAN;
     }
 
     private Optional<TaskState> createState(PackingRequest request) {
@@ -205,7 +314,6 @@ public final class TickPackingPort implements PackingPort {
             if (result.status() == ContainerAttemptStatus.PENDING) {
                 return waitOrUnavailable(item);
             }
-            containers.cancel(item.transfer.attempt);
             if (result.status() != ContainerAttemptStatus.ACKNOWLEDGED
                     || !confirmedQuantity(item.transfer, result)) {
                 item.transfer = null;
@@ -559,6 +667,35 @@ public final class TickPackingPort implements PackingPort {
         LOOSE,
         PACKED_BOX,
         OVERFLOW
+    }
+
+    private final class StopState {
+        private final List<ContainerAttempt> transfers = new ArrayList<>();
+        private final List<PackingWorkcell> workcells = new ArrayList<>();
+        private final Map<String, StopOutcome> containerOutcomes = new HashMap<>();
+        private StopOutcome navigationOutcome = StopOutcome.CLEAN;
+        private StopOutcome containerOutcome = StopOutcome.CLEAN;
+        private boolean navigationActive;
+        private boolean containersActive;
+        private boolean closeAttempted;
+
+        private StopState(TaskState task) {
+            for (ItemState item : task.items) {
+                if (item.transfer != null) {
+                    transfers.add(item.transfer.attempt);
+                }
+                workcells.add(item.workcell());
+            }
+        }
+
+        private void refreshContainerOutcome() {
+            StopOutcome outcome = StopOutcome.CLEAN;
+            for (StopOutcome value : containerOutcomes.values()) {
+                outcome = combine(outcome, value);
+            }
+            containerOutcome = outcome;
+            containersActive = outcome == StopOutcome.PENDING;
+        }
     }
 
     private record TransferFlow(

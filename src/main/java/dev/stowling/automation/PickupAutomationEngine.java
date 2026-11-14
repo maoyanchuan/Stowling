@@ -7,6 +7,7 @@ import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.StorageRoute;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -42,6 +43,10 @@ public final class PickupAutomationEngine {
     private final Set<String> observedInputs = new HashSet<>();
     private final Set<String> failedCacheIds = new HashSet<>();
     private final Map<String, Instant> regionIdleSince = new LinkedHashMap<>();
+    // A region round is bounded to the entity IDs visible at first collection.
+    // Later drops remain for a later round and cannot extend this collection.
+    private final Map<String, Set<String>> regionTargetKeys = new HashMap<>();
+    private final Map<String, Instant> collectionDeadlines = new HashMap<>();
     private Map<String, Integer> inventoryBaseline = Map.of();
     private Optional<Instant> workflowIdleSince = Optional.empty();
     private List<DeliveryIntent> deliveries = List.of();
@@ -61,6 +66,17 @@ public final class PickupAutomationEngine {
     private Optional<Instant> navigationStartedAt = Optional.empty();
     private Optional<Instant> containerObservationStartedAt = Optional.empty();
     private boolean started;
+    private boolean stopRequested;
+    private StopOutcome stopOutcome = StopOutcome.CLEAN;
+    private boolean navigationStopActive;
+    private StopOutcome navigationStopOutcome = StopOutcome.CLEAN;
+    private boolean containerStopActive;
+    private StopOutcome containerStopOutcome = StopOutcome.CLEAN;
+    private ContainerAttempt stoppingContainerAttempt;
+    private boolean packingStopActive;
+    private StopOutcome packingStopOutcome = StopOutcome.CLEAN;
+    private PackingFlow packingFlow;
+    private boolean containerStopUnconfirmed;
 
     public PickupAutomationEngine(
             PickupAutomationPlan plan,
@@ -123,7 +139,12 @@ public final class PickupAutomationEngine {
 
     public synchronized AutomationSnapshot tick() {
         start();
-        if (isTerminalOrPaused()) {
+        if (stopRequested || isTerminalOrPaused()) {
+            return snapshot();
+        }
+        if (containerStopActive) {
+            pollContainerStop();
+            saveCheckpoint();
             return snapshot();
         }
         if (!checkPlayerState()) {
@@ -163,16 +184,49 @@ public final class PickupAutomationEngine {
     }
 
     public synchronized void cancel() {
-        if (stage == PickupStage.COMPLETE || stage == PickupStage.FAILED) {
+        requestStop();
+    }
+
+    public synchronized void requestStop() {
+        if (containerStopUnconfirmed) {
+            stopRequested = true;
+            stopOutcome = StopOutcome.UNSAFE;
+            finishStop();
             return;
         }
-        clearNavigation();
-        abortContainerFlow();
-        pauseReason = Optional.of(new AutomationPauseReason(
-                "CANCELLED",
-                "pickup task was cancelled"
-        ));
-        stage = PickupStage.FAILED;
+        if ((stage == PickupStage.COMPLETE || stage == PickupStage.FAILED)
+                && !navigationStopActive
+                && !containerStopActive
+                && !packingStopActive) {
+            stopOutcome = StopOutcome.CLEAN;
+            return;
+        }
+        if (stopRequested) {
+            return;
+        }
+        stopRequested = true;
+        stopOutcome = StopOutcome.PENDING;
+        requestNavigationStop();
+        requestContainerStop();
+        requestPackingStop();
+        pollNavigationStop();
+        pollContainerStop();
+        pollPackingStop();
+        updateStopOutcome();
+    }
+
+    public synchronized StopOutcome pollStop() {
+        if (!stopRequested) {
+            return StopOutcome.CLEAN;
+        }
+        if (stopOutcome != StopOutcome.PENDING) {
+            return stopOutcome;
+        }
+        pollNavigationStop();
+        pollContainerStop();
+        pollPackingStop();
+        updateStopOutcome();
+        return stopOutcome;
     }
 
     public synchronized AutomationSnapshot snapshot() {
@@ -211,6 +265,13 @@ public final class PickupAutomationEngine {
 
     private void tickCollect() {
         List<GroundItem> items = observeInputs();
+        if (!items.isEmpty() && collectionTimedOut()) {
+            fail(
+                    "COLLECTION_TIMEOUT",
+                    "region collection exceeded its bounded round deadline"
+            );
+            return;
+        }
         PlayerInventorySnapshot inventory = inventoryAdapter.observe();
         if (inventory.freeSlots() <= plan.inventoryReserveSlots()) {
             clearNavigation();
@@ -306,6 +367,13 @@ public final class PickupAutomationEngine {
     private void tickWaitForIdle() {
         List<GroundItem> items = observeInputs();
         if (!items.isEmpty()) {
+            if (collectionTimedOut()) {
+                fail(
+                        "COLLECTION_TIMEOUT",
+                        "region collection exceeded its bounded round deadline"
+                );
+                return;
+            }
             enter(PickupStage.COLLECT);
             return;
         }
@@ -430,6 +498,8 @@ public final class PickupAutomationEngine {
                 return;
             }
         }
+        regionTargetKeys.clear();
+        collectionDeadlines.clear();
         round++;
         failedCacheIds.clear();
         enter(PickupStage.NAVIGATE_PICKUP);
@@ -487,19 +557,29 @@ public final class PickupAutomationEngine {
                 intent.packingStationIds(),
                 intent.items()
         );
-        PackingDisposition disposition = packing.submit(request);
+        PackingDisposition disposition;
+        if (packingFlow == null || !packingFlow.request().equals(request)) {
+            packingFlow = new PackingFlow(request);
+            disposition = packing.submit(request);
+        } else {
+            disposition = packing.poll(request);
+        }
         switch (disposition) {
             case ACCEPTED -> {
+                packingFlow = null;
                 deliveryIndex++;
                 enterCurrentDeliveryStage();
             }
             case PENDING -> {
                 // Packing advances only after confirmed server-side changes.
             }
-            case UNAVAILABLE -> pause(
-                    "PACKING_UNAVAILABLE",
-                    "packing station rejected the delivery"
-            );
+            case UNAVAILABLE -> {
+                packingFlow = null;
+                pause(
+                        "PACKING_UNAVAILABLE",
+                        "packing station rejected the delivery"
+                );
+            }
         }
     }
 
@@ -508,6 +588,12 @@ public final class PickupAutomationEngine {
             String unavailableCode,
             TransferMode mode
     ) {
+        if (containerFlow != null && containerFlow.stopRequested) {
+            return pollContainerRetryStop();
+        }
+        if (containerStopActive) {
+            return TransferResult.pending();
+        }
         containers.prepare(transfer.destination());
         Optional<ContainerView> before = containers.observe(transfer.destination());
         if (before.isEmpty()) {
@@ -518,6 +604,9 @@ public final class PickupAutomationEngine {
         }
         containerObservationStartedAt = Optional.empty();
         ensureContainerFlow(transfer, before.orElseThrow());
+        if (containerStopActive) {
+            return TransferResult.pending();
+        }
         if (containerFlow.attempt == null) {
             beginContainerAttempt();
         }
@@ -555,9 +644,7 @@ public final class PickupAutomationEngine {
         ) < 0) {
             return TransferResult.pending();
         }
-        containers.cancel(containerFlow.attempt);
-        containerFlow.attempt = null;
-        return retryOrFail("CONTAINER_ACK_TIMEOUT", true);
+        return beginContainerStop("CONTAINER_ACK_TIMEOUT", true);
     }
 
     private TransferResult retryOrFail(
@@ -565,12 +652,46 @@ public final class PickupAutomationEngine {
             boolean retryCurrentDestination
     ) {
         if (containerFlow.attempt != null) {
-            containers.cancel(containerFlow.attempt);
-            containerFlow.attempt = null;
+            return beginContainerStop(failureCode, retryCurrentDestination);
         }
         if (!retryCurrentDestination
                 || containerFlow.attemptsStarted > plan.maxContainerRetries()) {
             return TransferResult.failed(failureCode);
+        }
+        beginContainerAttempt();
+        return TransferResult.pending();
+    }
+
+    private TransferResult beginContainerStop(
+            String failureCode,
+            boolean retryAfterStop
+    ) {
+        ContainerFlow flow = containerFlow;
+        flow.stopRequested = true;
+        flow.stopFailureCode = failureCode;
+        flow.retryAfterStop = retryAfterStop;
+        flow.stopOutcome = containers.requestStop(flow.attempt);
+        return pollContainerRetryStop();
+    }
+
+    private TransferResult pollContainerRetryStop() {
+        ContainerFlow flow = containerFlow;
+        if (flow.stopOutcome == StopOutcome.PENDING) {
+            flow.stopOutcome = containers.pollStop(flow.attempt);
+        }
+        if (flow.stopOutcome == StopOutcome.PENDING) {
+            return TransferResult.pending();
+        }
+        if (flow.stopOutcome == StopOutcome.UNSAFE) {
+            containerFlow = null;
+            return TransferResult.failed(flow.stopFailureCode);
+        }
+        flow.attempt = null;
+        flow.stopRequested = false;
+        flow.stopOutcome = StopOutcome.CLEAN;
+        if (!flow.retryAfterStop
+                || flow.attemptsStarted > plan.maxContainerRetries()) {
+            return TransferResult.failed(flow.stopFailureCode);
         }
         beginContainerAttempt();
         return TransferResult.pending();
@@ -692,9 +813,22 @@ public final class PickupAutomationEngine {
     }
 
     private List<GroundItem> observeInputs() {
-        List<GroundItem> items = List.copyOf(
+        List<GroundItem> candidates = List.copyOf(
                 worldObserver.observeGroundItems(currentRegion())
         );
+        String regionId = currentRegion().id();
+        Set<String> targetKeys = regionTargetKeys.get(regionId);
+        if (targetKeys == null) {
+            Set<String> captured = new HashSet<>();
+            for (GroundItem item : candidates) {
+                captured.add(item.observationKey());
+            }
+            targetKeys = Set.copyOf(captured);
+            regionTargetKeys.put(regionId, targetKeys);
+        }
+        List<GroundItem> items = candidates.stream()
+                .filter(item -> targetKeys.contains(item.observationKey()))
+                .toList();
         for (GroundItem item : items) {
             observedInputs.add(item.observationKey() + ":" + item.itemId() + ":" + item.count());
         }
@@ -705,6 +839,15 @@ public final class PickupAutomationEngine {
             startRegionIdleTimer();
         }
         return items;
+    }
+
+    private boolean collectionTimedOut() {
+        String regionId = currentRegion().id();
+        Instant deadline = collectionDeadlines.computeIfAbsent(
+                regionId,
+                ignored -> clock.now().plus(plan.navigationTimeout())
+        );
+        return !clock.now().isBefore(deadline);
     }
 
     private void startRegionIdleTimer() {
@@ -912,7 +1055,8 @@ public final class PickupAutomationEngine {
 
     private void enter(PickupStage next) {
         if (next == PickupStage.COMPLETE) {
-            clearNavigation();
+            requestNavigationStop();
+            pollNavigationStop();
             abortContainerFlow();
         }
         stage = next;
@@ -927,18 +1071,141 @@ public final class PickupAutomationEngine {
             return;
         }
         resumeStage = stage;
-        clearNavigation();
+        requestNavigationStop();
+        pollNavigationStop();
         abortContainerFlow();
         pauseReason = Optional.of(new AutomationPauseReason(code, detail));
         stage = PickupStage.PAUSED;
         saveCheckpoint();
     }
 
+    private void fail(String code, String detail) {
+        if (stage == PickupStage.FAILED) {
+            return;
+        }
+        resumeStage = stage;
+        requestNavigationStop();
+        pollNavigationStop();
+        abortContainerFlow();
+        pauseReason = Optional.of(new AutomationPauseReason(code, detail));
+        stage = PickupStage.FAILED;
+    }
+
     private void abortContainerFlow() {
         if (containerFlow != null && containerFlow.attempt != null) {
-            containers.cancel(containerFlow.attempt);
+            containerStopActive = true;
+            stoppingContainerAttempt = containerFlow.attempt;
+            containerStopOutcome = containers.requestStop(containerFlow.attempt);
+            if (containerStopOutcome == StopOutcome.UNSAFE) {
+                containerStopUnconfirmed = true;
+            }
         }
         containerFlow = null;
+    }
+
+    private void requestNavigationStop() {
+        if (navigationTarget.isEmpty()) {
+            return;
+        }
+        navigationStopActive = true;
+        navigationStopOutcome = navigation.requestStop();
+    }
+
+    private void requestContainerStop() {
+        if (containerFlow == null || containerFlow.attempt == null) {
+            return;
+        }
+        containerStopActive = true;
+        stoppingContainerAttempt = containerFlow.attempt;
+        if (containerFlow.stopRequested) {
+            containerStopOutcome = containerFlow.stopOutcome;
+            return;
+        }
+        containerFlow.stopRequested = true;
+        containerFlow.stopOutcome = containers.requestStop(containerFlow.attempt);
+        containerStopOutcome = containerFlow.stopOutcome;
+    }
+
+    private void requestPackingStop() {
+        if (packingFlow == null) {
+            return;
+        }
+        packingStopActive = true;
+        packingStopOutcome = packing.requestStop(plan.taskId());
+    }
+
+    private void pollNavigationStop() {
+        if (!navigationStopActive) {
+            return;
+        }
+        if (navigationStopOutcome == StopOutcome.PENDING) {
+            navigationStopOutcome = navigation.pollStop();
+        }
+        if (navigationStopOutcome == StopOutcome.CLEAN) {
+            navigationStopActive = false;
+            navigationTarget = Optional.empty();
+            navigationTargetType = NavigationTargetType.STANDARD;
+            navigationStartedAt = Optional.empty();
+        }
+    }
+
+    private void pollContainerStop() {
+        if (!containerStopActive || stoppingContainerAttempt == null) {
+            return;
+        }
+        if (containerStopOutcome == StopOutcome.PENDING) {
+            containerStopOutcome = containers.pollStop(stoppingContainerAttempt);
+        }
+        if (containerStopOutcome == StopOutcome.CLEAN) {
+            containerStopActive = false;
+            stoppingContainerAttempt = null;
+            containerFlow = null;
+            containerObservationStartedAt = Optional.empty();
+        } else if (containerStopOutcome == StopOutcome.UNSAFE) {
+            containerStopUnconfirmed = true;
+            containerStopActive = false;
+            stoppingContainerAttempt = null;
+            containerFlow = null;
+            containerObservationStartedAt = Optional.empty();
+        }
+    }
+
+    private void pollPackingStop() {
+        if (!packingStopActive) {
+            return;
+        }
+        if (packingStopOutcome == StopOutcome.PENDING) {
+            packingStopOutcome = packing.pollStop(plan.taskId());
+        }
+        if (packingStopOutcome == StopOutcome.CLEAN) {
+            packingStopActive = false;
+            packingFlow = null;
+        }
+    }
+
+    private void updateStopOutcome() {
+        if (containerStopUnconfirmed
+                || navigationStopActive && navigationStopOutcome == StopOutcome.UNSAFE
+                || containerStopActive && containerStopOutcome == StopOutcome.UNSAFE
+                || packingStopActive && packingStopOutcome == StopOutcome.UNSAFE) {
+            stopOutcome = StopOutcome.UNSAFE;
+            finishStop();
+            return;
+        }
+        if (!navigationStopActive && !containerStopActive && !packingStopActive) {
+            stopOutcome = StopOutcome.CLEAN;
+            finishStop();
+        }
+    }
+
+    private void finishStop() {
+        pauseReason = Optional.of(new AutomationPauseReason(
+                stopOutcome == StopOutcome.CLEAN ? "CANCELLED" : "STOP_UNSAFE",
+                stopOutcome == StopOutcome.CLEAN
+                        ? "pickup task was stopped safely"
+                        : "pickup task stop could not be confirmed"
+        ));
+        stage = PickupStage.FAILED;
     }
 
     private boolean containerObservationTimedOut() {
@@ -988,6 +1255,12 @@ public final class PickupAutomationEngine {
         }
     }
 
+    private record PackingFlow(PackingRequest request) {
+        private PackingFlow {
+            Objects.requireNonNull(request, "request");
+        }
+    }
+
     private enum TransferStatus {
         ACKNOWLEDGED,
         PENDING,
@@ -1004,6 +1277,10 @@ public final class PickupAutomationEngine {
         private final long baselineRevision;
         private int attemptsStarted;
         private ContainerAttempt attempt;
+        private boolean stopRequested;
+        private StopOutcome stopOutcome = StopOutcome.CLEAN;
+        private String stopFailureCode = "";
+        private boolean retryAfterStop;
 
         private ContainerFlow(ContainerTransfer transfer, long baselineRevision) {
             this.transfer = transfer;

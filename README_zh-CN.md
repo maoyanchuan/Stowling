@@ -20,9 +20,10 @@ Stowling 是一个面向 Minecraft 26.2 的 Fabric 客户端模组，用于实�
 - 支持独立的命名坐标库，以及引用这些坐标的球形/长方体拾取区域、缓存容器和
   多区域工作流。
 - 提供网页版模块化任务编排器，包含九个可复用机器人模块、持久化工作流、任务进度、
-  暂停/恢复/取消控制以及重启检查点。
+  优先级调度、取消控制以及可安全重启的任务记录。
+- 使用 schema 5 保存带优先级、重启、触发器和中断设置的版本化拾取与自动化任务定义。
 - 提供带 Bearer 身份验证的回环 REST 控制 API，支持状态、任务、拾取、盘点、库存、
-  容器、暂停、恢复和配置重载操作。
+  容器、任务调度和配置重载操作。
 - 提供客户端内 HeadlessMC 控制命令，以及 Windows 启动、状态、停止、重试和日志轮换
   脚本。
 
@@ -82,7 +83,7 @@ http://127.0.0.1:8765/
 “验证并连接”。令牌只保存在当前标签页的 `sessionStorage` 中，不会写入 URL、Cookie、
 项目配置或日志。页面的“清除令牌”按钮可立即移除当前会话中的令牌。
 
-控制台可以查看运行状态、任务、容器和库存快照，并执行拾取、取消任务、暂停、恢复、
+控制台可以查看运行状态、任务、容器和库存快照，并执行拾取、取消任务、任务调度、
 盘点及配置重载。页面每 5 秒自动刷新一次；令牌失效时会提示重新输入。
 
 ### 任务编排
@@ -100,20 +101,25 @@ http://127.0.0.1:8765/
 - 执行制作步骤。
 
 当前版本的制作模块采用保守策略：普通客户端没有稳定、可等待服务端确认的制作事务，
-因此该模块会暂停并提示人工恢复，不会伪造成功。导航、等待、拾取、背包检查和容器
+因此该模块会安全终止并提示人工处理，不会伪造成功。导航、等待、拾取、背包检查和容器
 转移已经接入真实客户端运行时。
 
 任务编排页面使用以下接口：
 
 ```text
 GET /v1/automation-modules
-GET /v1/config/automation-workflows
-PUT /v1/config/automation-workflows
-POST /v1/tasks/automation
+GET /v1/task-definitions
+POST /v1/task-definitions
+GET /v1/task-definitions/{kind}/{id}
+PUT /v1/task-definitions/{kind}/{id}
+DELETE /v1/task-definitions/{kind}/{id}
+POST /v1/task-definitions/{kind}/{id}/enable
+POST /v1/task-definitions/{kind}/{id}/disable
+POST /v1/task-definitions/{kind}/{id}/run
 ```
 
 启动任务后会返回工作流 ID、当前步骤、步骤序号和总步骤数。任务检查点保存在 SQLite。
-如果客户端重启后找不到正在进行的容器操作，任务会暂停并要求人工核对，不会重放旧点击。
+客户端重启后，旧的在途记录会标记为失败并丢弃检查点，不会重放旧点击。
 
 ### 命名坐标库
 
@@ -132,32 +138,17 @@ GET /v1/config/coordinate-points
 PUT /v1/config/coordinate-points
 ```
 
-### 拾取配置
+### 任务与可复用资源
 
-打开“拾取配置”页面后，可以直接编辑并永久保存以下资源：
+任务页统一管理拾取和自定义任务，可以按名称或类型查找，每项任务独立保存、删除和运行。
+保存不会启用任务；任务参数包含优先级、触发条件、重启开关及中断流程。
 
-- **区域**：新增、删除、改名和排序拾取区域。球形区域选择命名坐标作为球心并设置
-  半径；长方体区域选择两个包含边界的角点，并单独选择机器人待机点。
-- **缓存**：新增、删除或改名缓存容器，设置维度，并通过命名坐标选择容器位置。
-  一个流程可以选择多个缓存，运行时会按流程策略选择可用缓存。
-- **流程**：组合一个或多个区域和缓存，设置区域优先级、空闲时间、分类时机和结束方式。
+任务页的资源管理区维护拾取区域、缓存容器和原仓库基础坐标。球形区域引用命名球心，
+长方体区域引用两个角点；区域另设待机点。缓存容器通过命名坐标选择位置。
+资源保存使用独立接口，不覆盖任务列表；仍被任务引用的区域、缓存或坐标不能删除。
+单项拾取任务组合区域与缓存，保留原有区域顺序、分类时机和缓存策略；每轮有限执行。
 
-页面内的修改先保留为草稿。确认无误后点击“保存全部”，配置会原子写入
-`config/stowling.json`，旧配置自动备份为 `config/stowling.json.bak`。如果存在活动或
-暂停的任务，页面会拒绝保存；请先取消或结束任务。删除仍被流程引用的区域或缓存也会
-被拒绝，并显示引用它的流程。
-
-启动任务时先选择流程，然后选择“运行整个流程”或流程内的一个区域。运行整个流程会按
-优先级巡逻全部区域；选择单个区域时仍会使用所属流程的缓存、分类和结束策略。
-
-对应接口为：
-
-```text
-GET /v1/config/pickup
-PUT /v1/config/pickup
-GET /v1/pickup-workflows
-POST /v1/tasks/pickup
-```
+旧拾取启动接口继续兼容整个流程或单个区域，统一进入调度器，不绕过优先级。
 
 启动整个流程时提交：
 
@@ -178,6 +169,53 @@ POST /v1/tasks/pickup
 
 控制页面本身只能从回环地址访问，静态资源不需要令牌即可加载，但所有 `/v1/*` API
 仍必须在每次请求中携带正确的 Bearer Token。
+
+### 定时任务定义
+
+配置 schema 5 会在每个拾取或自动化工作流旁保存调度设置。现有 schema 1-4 配置会自动
+迁移。迁移得到以及后续新保存的任务定义默认处于未启用状态，`autoStartOnRestart`
+默认为 `false`。
+
+每个任务定义包含一个优先级（`LOW`、`MEDIUM`、`HIGH`）和以下五种触发器之一：
+
+- `MANUAL`：仅在显式运行请求后启动。
+- `FIXED_INTERVAL`：每隔一个正数 `intervalSeconds` 触发。
+- `DAILY`：按配置时区中的一个或多个 `HH:mm` 时间触发。
+- `AFTER_COMPLETION`：成功完成后等待正数 `intervalSeconds` 倒计时，再重新排队。
+- `ITEMS_PRESENT`：观察配置的拾取区域，发现物品后排队。拾取任务的 `regionIds`
+  可以为空，此时观察任务自身的 regions；自定义自动化任务必须选择一个或多个区域。
+
+中断方式可以是 `NONE`、`INLINE` 步骤列表或 `TASK_REFERENCE`。任务引用只能指向
+自动化任务；保存前会验证目标是否存在，并拒绝循环引用。
+
+控制服务通过 `taskDefinitions`、`taskDefinition`、`createTaskDefinition`、
+`updateTaskDefinition`、`deleteTaskDefinition`、`taskScheduling`、
+`enableTaskDefinition`、`disableTaskDefinition` 和 `runTaskDefinition` 管理任务定义。
+每个定义使用独立 revision；更新一个任务不会覆盖其他拾取或自动化任务。创建或保存
+定义本身不会启用任务。
+
+任务编辑界面可以通过以下接口独立维护可复用的拾取区域和缓存容器，而不会替换工作流：
+
+```text
+GET /v1/config/task-resources
+PUT /v1/config/task-resources
+```
+
+`PUT` 请求体只包含 `revision`、`pickupRegions` 和 `cacheContainers`，不包含也不修改
+`pickupWorkflows`。现有拾取与自动化任务定义都会保留。
+
+调度只在 `tickOnClientThread` 中推进。原 `requestPickup` 和 `requestAutomation`
+请求会进入同一优先级队列，不能绕过排队中的更高优先级任务。高优先级任务抢占时，
+调度器先调用 `requestStop()`，再等待 `pollStop()` 返回 `CLEAN`；返回 `PENDING`
+时当前任务继续持有控制权，返回 `UNSAFE` 时停止继续派发。定时任务支持取消运行。
+全局暂停/恢复已移除；如需阻止后续调度，请禁用任务定义，需要重新开始时再次运行任务。
+被抢占的任务使用新的执行身份从第一步重跑，不恢复流程断点，也无需重新满足原触发条件。
+中断流程在确认安全退出后执行，执行期间不再抢占。无法确认安全退出时显示“异常待处理”。
+
+从配置存储读取或刷新任务定义是只读操作，不会自动启用任务、改变运行历史或修改文件。
+`recoverPendingPickups` 会把上一个进程遗留的可恢复记录标记为失败并丢弃其检查点，
+不会重新执行。跨实例任务仓库同步、后台任务导入和任务运行镜像明确延期，不属于
+schema 5 的实现范围。
 
 ## HeadlessMC 操作
 

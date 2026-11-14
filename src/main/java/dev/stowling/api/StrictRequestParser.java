@@ -33,6 +33,15 @@ import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationStepType;
 import dev.stowling.automation.AutomationWorkflow;
+import dev.stowling.schedule.InterruptionKind;
+import dev.stowling.schedule.TaskDefinition;
+import dev.stowling.schedule.TaskInterruption;
+import dev.stowling.schedule.TaskKey;
+import dev.stowling.schedule.TaskPriority;
+import dev.stowling.schedule.TaskSettings;
+import dev.stowling.schedule.TaskTrigger;
+import dev.stowling.schedule.TriggerKind;
+import dev.stowling.schedule.VersionedTaskDefinition;
 import java.io.IOException;
 import java.io.StringReader;
 import java.math.BigDecimal;
@@ -78,6 +87,119 @@ final class StrictRequestParser {
             "firstCorner",
             "secondCorner"
     );
+    private static final Set<String> TASK_DEFINITION_FIELDS = Set.of(
+            "kind",
+            "id",
+            "name",
+            "settings",
+            "pickup",
+            "steps"
+    );
+    private static final Set<String> TASK_SETTINGS_FIELDS = Set.of(
+            "priority",
+            "trigger",
+            "autoStartOnRestart",
+            "interruption"
+    );
+    private static final Set<String> TASK_TRIGGER_FIELDS = Set.of(
+            "kind",
+            "intervalSeconds",
+            "times",
+            "zoneId",
+            "regionIds"
+    );
+    private static final Set<String> TASK_INTERRUPTION_FIELDS = Set.of(
+            "kind",
+            "steps",
+            "taskId"
+    );
+    private static final Set<String> PICKUP_WORKFLOW_FIELDS = Set.of(
+            "id",
+            "name",
+            "dimension",
+            "regions",
+            "cacheIds",
+            "cachePolicy",
+            "classificationTiming",
+            "completionMode",
+            "completionIdleDelay",
+            "settings"
+    );
+    private static final Set<String> PICKUP_WORKFLOW_REQUIRED_FIELDS = Set.of(
+            "id",
+            "name",
+            "dimension",
+            "regions",
+            "cacheIds",
+            "cachePolicy",
+            "classificationTiming",
+            "completionMode",
+            "completionIdleDelay"
+    );
+    private static final Set<String> AUTOMATION_WORKFLOW_FIELDS = Set.of(
+            "id",
+            "name",
+            "steps",
+            "settings"
+    );
+    private static final Set<String> AUTOMATION_WORKFLOW_REQUIRED_FIELDS = Set.of(
+            "id",
+            "name",
+            "steps"
+    );
+
+    TaskDefinition parseTaskDefinition(String body) throws InvalidRequestException {
+        try {
+            return taskDefinition(readStrictObject(body));
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    VersionedTaskDefinition parseVersionedTaskDefinition(String body)
+            throws InvalidRequestException {
+        try {
+            JsonObject root = readStrictObject(body);
+            requireFields(
+                    root,
+                    Set.of("revision", "definition"),
+                    Set.of("revision", "definition")
+            );
+            return new VersionedTaskDefinition(
+                    string(root, "revision", 128),
+                    taskDefinition(object(root.get("definition"), "definition"))
+            );
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    String parseTaskDefinitionRevision(String body) throws InvalidRequestException {
+        try {
+            JsonObject root = readStrictObject(body);
+            requireFields(root, Set.of("revision"), Set.of("revision"));
+            return string(root, "revision", 128);
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    TaskKey parseTaskKey(String kind, String id) throws InvalidRequestException {
+        if (kind == null
+                || (!TaskKey.PICKUP.equals(kind) && !TaskKey.AUTOMATION.equals(kind))) {
+            throw new InvalidRequestException("Task kind must be PICKUP or AUTOMATION");
+        }
+        if (id == null || !SAFE_ID.matcher(id).matches()) {
+            throw new InvalidRequestException(
+                    "Task id must match [a-z0-9][a-z0-9._-]{0,63}"
+            );
+        }
+        try {
+            return new TaskKey(kind, id);
+        } catch (IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
 
     PickupRequest parsePickup(String body) throws InvalidRequestException {
         try (JsonReader reader = reader(body)) {
@@ -156,31 +278,59 @@ final class StrictRequestParser {
     PickupConfigUpdateRequest parsePickupConfigUpdate(String body)
             throws InvalidRequestException {
         try {
+            return pickupConfigUpdate(readStrictObject(body));
+        } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
+            throw malformed(exception);
+        }
+    }
+
+    PickupConfigUpdateRequest parseTaskResourcesUpdate(String body)
+            throws InvalidRequestException {
+        try {
             JsonObject root = readStrictObject(body);
             requireFields(
                     root,
                     Set.of(
-                    "revision",
-                    "pickupRegions",
-                    "cacheContainers",
-                    "pickupWorkflows"
-            ),
+                            "revision",
+                            "pickupRegions",
+                            "cacheContainers"
+                    ),
                     Set.of(
-                    "revision",
-                    "pickupRegions",
-                    "cacheContainers",
-                    "pickupWorkflows"
-            )
+                            "revision",
+                            "pickupRegions",
+                            "cacheContainers"
+                    )
             );
-            return new PickupConfigUpdateRequest(
-                    string(root, "revision", 128),
-                    pickupRegions(array(root, "pickupRegions")),
-                    namedCaches(array(root, "cacheContainers")),
-                    pickupWorkflows(array(root, "pickupWorkflows"))
-            );
+            root.add("pickupWorkflows", new JsonArray());
+            return pickupConfigUpdate(root);
         } catch (IOException | IllegalStateException | IllegalArgumentException exception) {
             throw malformed(exception);
         }
+    }
+
+    private static PickupConfigUpdateRequest pickupConfigUpdate(JsonObject root)
+            throws IOException {
+        requireFields(
+                root,
+                Set.of(
+                        "revision",
+                        "pickupRegions",
+                        "cacheContainers",
+                        "pickupWorkflows"
+                ),
+                Set.of(
+                        "revision",
+                        "pickupRegions",
+                        "cacheContainers",
+                        "pickupWorkflows"
+                )
+        );
+        return new PickupConfigUpdateRequest(
+                string(root, "revision", 128),
+                pickupRegions(array(root, "pickupRegions")),
+                namedCaches(array(root, "cacheContainers")),
+                pickupWorkflows(array(root, "pickupWorkflows"))
+        );
     }
 
     AuditRequest parseAudit(String body) throws InvalidRequestException {
@@ -376,6 +526,108 @@ final class StrictRequestParser {
         return result;
     }
 
+    private static TaskDefinition taskDefinition(JsonObject value) throws IOException {
+        requireFields(value, TASK_DEFINITION_FIELDS, TASK_DEFINITION_FIELDS);
+        String kind = taskKind(value);
+        TaskSettings settings = taskSettings(
+                object(value.get("settings"), "settings")
+        );
+        JsonElement pickupElement = value.get("pickup");
+        PickupWorkflow pickup = pickupElement.isJsonNull()
+                ? null
+                : pickupWorkflow(
+                        object(pickupElement, "pickup"),
+                        "pickup",
+                        settings
+                );
+        return new TaskDefinition(
+                kind,
+                string(value, "id", 64),
+                string(value, "name", 256),
+                settings,
+                pickup,
+                automationSteps(array(value, "steps"))
+        );
+    }
+
+    private static String taskKind(JsonObject value) throws IOException {
+        String kind = string(value, "kind", 32);
+        require(
+                TaskKey.PICKUP.equals(kind) || TaskKey.AUTOMATION.equals(kind),
+                "kind must be PICKUP or AUTOMATION"
+        );
+        return kind;
+    }
+
+    private static TaskSettings taskSettings(JsonObject value) throws IOException {
+        requireFields(value, TASK_SETTINGS_FIELDS, TASK_SETTINGS_FIELDS);
+        return new TaskSettings(
+                enumValue(TaskPriority.class, value, "priority"),
+                taskTrigger(object(value.get("trigger"), "trigger")),
+                booleanValue(value, "autoStartOnRestart"),
+                taskInterruption(object(value.get("interruption"), "interruption"))
+        );
+    }
+
+    private static TaskTrigger taskTrigger(JsonObject value) throws IOException {
+        requireFields(value, TASK_TRIGGER_FIELDS, TASK_TRIGGER_FIELDS);
+        return new TaskTrigger(
+                enumValue(TriggerKind.class, value, "kind"),
+                nonNegativeLong(value, "intervalSeconds"),
+                strings(array(value, "times"), "times", 16),
+                string(value, "zoneId", 128),
+                strings(array(value, "regionIds"), "regionIds", 64)
+        );
+    }
+
+    private static TaskInterruption taskInterruption(JsonObject value) throws IOException {
+        requireFields(value, TASK_INTERRUPTION_FIELDS, TASK_INTERRUPTION_FIELDS);
+        return new TaskInterruption(
+                enumValue(InterruptionKind.class, value, "kind"),
+                automationSteps(array(value, "steps")),
+                nullableString(value, "taskId", 64)
+        );
+    }
+
+    private static <E extends Enum<E>> E enumValue(
+            Class<E> enumType,
+            JsonObject value,
+            String fieldName
+    ) throws IOException {
+        String text = string(value, fieldName, 64);
+        try {
+            return Enum.valueOf(enumType, text);
+        } catch (IllegalArgumentException exception) {
+            throw new IOException(
+                    fieldName + " has an unsupported value: " + text,
+                    exception
+            );
+        }
+    }
+
+    private static boolean booleanValue(JsonObject value, String fieldName)
+            throws IOException {
+        JsonElement element = value.get(fieldName);
+        require(element != null && element.isJsonPrimitive(),
+                fieldName + " must be a boolean");
+        JsonPrimitive primitive = element.getAsJsonPrimitive();
+        require(primitive.isBoolean(), fieldName + " must be a boolean");
+        return primitive.getAsBoolean();
+    }
+
+    private static String nullableString(
+            JsonObject value,
+            String fieldName,
+            int maximumLength
+    ) throws IOException {
+        JsonElement element = value.get(fieldName);
+        require(element != null, "Missing JSON field: " + fieldName);
+        if (element.isJsonNull()) {
+            return null;
+        }
+        return string(value, fieldName, maximumLength);
+    }
+
     private static List<PickupRegion> pickupRegions(JsonArray values) throws IOException {
         List<PickupRegion> result = new ArrayList<>();
         for (int index = 0; index < values.size(); index++) {
@@ -398,22 +650,30 @@ final class StrictRequestParser {
         require(values.size() <= 128, "automationWorkflows has too many entries");
         List<AutomationWorkflow> result = new ArrayList<>();
         for (int index = 0; index < values.size(); index++) {
-            JsonObject value = object(
-                    values.get(index),
-                    "automationWorkflows[" + index + "]"
-            );
-            requireFields(
-                    value,
-                    Set.of("id", "name", "steps"),
-                    Set.of("id", "name", "steps")
-            );
-            result.add(new AutomationWorkflow(
-                    string(value, "id", 64),
-                    string(value, "name", 256),
-                    automationSteps(array(value, "steps"))
-            ));
+            String fieldName = "automationWorkflows[" + index + "]";
+            result.add(automationWorkflow(object(values.get(index), fieldName), fieldName));
         }
         return List.copyOf(result);
+    }
+
+    private static AutomationWorkflow automationWorkflow(
+            JsonObject value,
+            String fieldName
+    ) throws IOException {
+        requireFields(
+                value,
+                AUTOMATION_WORKFLOW_FIELDS,
+                AUTOMATION_WORKFLOW_REQUIRED_FIELDS
+        );
+        TaskSettings settings = value.has("settings")
+                ? taskSettings(object(value.get("settings"), fieldName + ".settings"))
+                : TaskSettings.defaults();
+        return new AutomationWorkflow(
+                string(value, "id", 64),
+                string(value, "name", 256),
+                automationSteps(array(value, "steps")),
+                settings
+        );
     }
 
     private static List<AutomationStep> automationSteps(JsonArray values) throws IOException {
@@ -529,49 +789,50 @@ final class StrictRequestParser {
             throws IOException {
         List<PickupWorkflow> result = new ArrayList<>();
         for (int index = 0; index < values.size(); index++) {
-            JsonObject value = object(values.get(index), "pickupWorkflows[" + index + "]");
-            requireFields(
-                    value,
-                    Set.of(
-                    "id",
-                    "name",
-                    "dimension",
-                    "regions",
-                    "cacheIds",
-                    "cachePolicy",
-                    "classificationTiming",
-                    "completionMode",
-                    "completionIdleDelay"
-            ),
-                    Set.of(
-                    "id",
-                    "name",
-                    "dimension",
-                    "regions",
-                    "cacheIds",
-                    "cachePolicy",
-                    "classificationTiming",
-                    "completionMode",
-                    "completionIdleDelay"
-            )
-            );
-            result.add(new PickupWorkflow(
-                    string(value, "id", 64),
-                    string(value, "name", 256),
-                    string(value, "dimension", 128),
-                    regionBindings(array(value, "regions")),
-                    strings(array(value, "cacheIds"), "cacheIds", 64),
-                    CachePolicy.valueOf(string(value, "cachePolicy", 64)),
-                    ClassificationTiming.valueOf(string(
-                    value,
-                    "classificationTiming",
-                    64
-            )),
-                    CompletionMode.valueOf(string(value, "completionMode", 64)),
-                    Duration.ofSeconds(nonNegativeLong(value, "completionIdleDelay"))
+            String fieldName = "pickupWorkflows[" + index + "]";
+            result.add(pickupWorkflow(
+                    object(values.get(index), fieldName),
+                    fieldName,
+                    null
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static PickupWorkflow pickupWorkflow(
+            JsonObject value,
+            String fieldName,
+            TaskSettings defaultSettings
+    ) throws IOException {
+        requireFields(
+                value,
+                PICKUP_WORKFLOW_FIELDS,
+                PICKUP_WORKFLOW_REQUIRED_FIELDS
+        );
+        TaskSettings settings = value.has("settings")
+                ? taskSettings(object(value.get("settings"), fieldName + ".settings"))
+                : defaultSettings == null ? TaskSettings.defaults() : defaultSettings;
+        if (defaultSettings != null && !defaultSettings.equals(settings)) {
+            throw new IOException(
+                    fieldName + ".settings must match the task definition settings"
+            );
+        }
+        return new PickupWorkflow(
+                string(value, "id", 64),
+                string(value, "name", 256),
+                string(value, "dimension", 128),
+                regionBindings(array(value, "regions")),
+                strings(array(value, "cacheIds"), "cacheIds", 64),
+                CachePolicy.valueOf(string(value, "cachePolicy", 64)),
+                ClassificationTiming.valueOf(string(
+                        value,
+                        "classificationTiming",
+                        64
+                )),
+                CompletionMode.valueOf(string(value, "completionMode", 64)),
+                Duration.ofSeconds(nonNegativeLong(value, "completionIdleDelay")),
+                settings
+        );
     }
 
     private static List<PickupRegionBinding> regionBindings(JsonArray values)

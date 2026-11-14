@@ -7,6 +7,7 @@ import dev.stowling.automation.WorldObservation;
 import dev.stowling.automation.WorldObserver;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
+import dev.stowling.schedule.StopOutcome;
 import java.util.Objects;
 
 public final class BaritoneAutomationNavigation implements NavigationPort {
@@ -19,6 +20,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private boolean active;
     private boolean pathObserved;
     private int missingPathTicks;
+    private boolean stopRequested;
 
     public BaritoneAutomationNavigation(
             NavigationService navigationService,
@@ -98,11 +100,30 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public void cancel() {
-        if (active) {
+        if (active || navigationService.isNavigatingOrCalculating()) {
             active = false;
             navigationService.cancel();
         }
         pathObserved = false;
         missingPathTicks = 0;
+    }
+
+    @Override
+    public StopOutcome requestStop() {
+        stopRequested = true;
+        cancel();
+        return pollStop();
+    }
+
+    @Override
+    public StopOutcome pollStop() {
+        if (!stopRequested) {
+            return StopOutcome.CLEAN;
+        }
+        if (navigationService.isNavigatingOrCalculating()) {
+            return StopOutcome.PENDING;
+        }
+        stopRequested = false;
+        return StopOutcome.CLEAN;
     }
 }

@@ -7,11 +7,14 @@ import dev.stowling.inventory.InventoryFreshness;
 import dev.stowling.inventory.InventoryItem;
 import dev.stowling.persistence.SqliteInventoryRepository;
 import dev.stowling.persistence.StoredInventorySnapshot;
+import dev.stowling.schedule.StopOutcome;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 public final class SqliteMaterialAcquisitionPort implements MaterialAcquisitionPort {
     private static final String MANUAL_RECOVERY =
@@ -24,6 +27,7 @@ public final class SqliteMaterialAcquisitionPort implements MaterialAcquisitionP
     private final SqliteInventoryRepository inventories;
     private final ItemTransferPort transfers;
     private final Map<String, String> transferKeys = new LinkedHashMap<>();
+    private final Map<UUID, StopOutcome> stopOutcomes = new LinkedHashMap<>();
 
     public SqliteMaterialAcquisitionPort(
             SqliteInventoryRepository inventories,
@@ -61,6 +65,10 @@ public final class SqliteMaterialAcquisitionPort implements MaterialAcquisitionP
                 transfers.start(transferKey, transfer),
                 "material transfer result"
         );
+        UUID operationTaskId = taskId(operationKey);
+        if (operationTaskId != null) {
+            stopOutcomes.remove(operationTaskId);
+        }
         retain(operationKey, transferKey, result);
         return result;
     }
@@ -95,6 +103,34 @@ public final class SqliteMaterialAcquisitionPort implements MaterialAcquisitionP
         return result;
     }
 
+    @Override
+    public synchronized StopOutcome requestStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        List<String> keys = matchingKeys(attemptId);
+        if (keys.isEmpty()) {
+            return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
+        }
+        StopOutcome outcome = transfers.requestStop(attemptId);
+        if (outcome == StopOutcome.CLEAN || outcome == StopOutcome.UNSAFE) {
+            keys.forEach(transferKeys::remove);
+        }
+        return retainStopOutcome(attemptId, outcome);
+    }
+
+    @Override
+    public synchronized StopOutcome pollStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        List<String> keys = matchingKeys(attemptId);
+        if (keys.isEmpty()) {
+            return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
+        }
+        StopOutcome outcome = transfers.pollStop(attemptId);
+        if (outcome == StopOutcome.CLEAN || outcome == StopOutcome.UNSAFE) {
+            keys.forEach(transferKeys::remove);
+        }
+        return retainStopOutcome(attemptId, outcome);
+    }
+
     private StoredInventorySnapshot selectContainer(Request request) {
         return inventories.findAllSnapshots().stream()
                 .filter(snapshot ->
@@ -125,8 +161,42 @@ public final class SqliteMaterialAcquisitionPort implements MaterialAcquisitionP
             AutomationOperationResult result
     ) {
         switch (result.status()) {
-            case RUNNING, PAUSED -> transferKeys.put(operationKey, transferKey);
-            case SUCCEEDED, FAILED -> transferKeys.remove(operationKey);
+            case RUNNING, PAUSED, FAILED ->
+                    transferKeys.put(operationKey, transferKey);
+            case SUCCEEDED -> transferKeys.remove(operationKey);
         }
+    }
+
+    private List<String> matchingKeys(UUID taskId) {
+        List<String> result = new ArrayList<>();
+        for (String key : transferKeys.keySet()) {
+            if (taskId.equals(taskId(key))) {
+                result.add(key);
+            }
+        }
+        return result;
+    }
+
+    private static UUID taskId(String operationKey) {
+        int separator = operationKey.indexOf(':');
+        String candidate = separator < 0
+                ? operationKey
+                : operationKey.substring(0, separator);
+        try {
+            return UUID.fromString(candidate);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private StopOutcome retainStopOutcome(UUID taskId, StopOutcome outcome) {
+        if (outcome != StopOutcome.PENDING) {
+            stopOutcomes.put(taskId, outcome);
+            if (stopOutcomes.size() > 128) {
+                UUID oldest = stopOutcomes.keySet().iterator().next();
+                stopOutcomes.remove(oldest);
+            }
+        }
+        return outcome;
     }
 }

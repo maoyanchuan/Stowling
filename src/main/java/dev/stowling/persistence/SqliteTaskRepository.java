@@ -1,5 +1,7 @@
 package dev.stowling.persistence;
 
+import dev.stowling.schedule.TaskDefinition;
+import dev.stowling.schedule.TaskKey;
 import dev.stowling.task.AutomationState;
 import dev.stowling.task.TaskKind;
 import dev.stowling.task.TaskRepository;
@@ -46,6 +48,57 @@ public final class SqliteTaskRepository implements TaskRepository {
     public SqliteTaskRepository(StowlingDatabase database) {
         this.database = Objects.requireNonNull(database, "database");
         database.ensureMigrated();
+        try (Connection connection = database.openConnection();
+                PreparedStatement statement = connection.prepareStatement("""
+                        CREATE TABLE IF NOT EXISTS task_run_definitions (
+                            run_id TEXT PRIMARY KEY REFERENCES tasks(task_id) ON DELETE CASCADE,
+                            definition_kind TEXT NOT NULL,
+                            definition_id TEXT NOT NULL,
+                            definition_name TEXT NOT NULL
+                        )
+                        """)) {
+            statement.execute();
+        } catch (SQLException exception) {
+            throw new PersistenceException("failed to initialize execution identities", exception);
+        }
+    }
+
+    public void saveRunDefinition(UUID runId, TaskDefinition definition) {
+        Objects.requireNonNull(runId, "runId");
+        Objects.requireNonNull(definition, "definition");
+        try (Connection connection = database.openConnection();
+                PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO task_run_definitions (
+                            run_id, definition_kind, definition_id, definition_name
+                        ) VALUES (?, ?, ?, ?)
+                        ON CONFLICT(run_id) DO NOTHING
+                        """)) {
+            statement.setString(1, runId.toString());
+            statement.setString(2, definition.kind());
+            statement.setString(3, definition.id());
+            statement.setString(4, definition.name());
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw new PersistenceException("failed to save execution identity", exception);
+        }
+    }
+
+    public Optional<TaskKey> runDefinition(UUID runId) {
+        Objects.requireNonNull(runId, "runId");
+        try (Connection connection = database.openConnection();
+                PreparedStatement statement = connection.prepareStatement("""
+                        SELECT definition_kind, definition_id FROM task_run_definitions
+                        WHERE run_id = ?
+                        """)) {
+            statement.setString(1, runId.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? Optional.of(new TaskKey(
+                        result.getString("definition_kind"), result.getString("definition_id")
+                )) : Optional.empty();
+            }
+        } catch (SQLException exception) {
+            throw new PersistenceException("failed to read execution identity", exception);
+        }
     }
 
     @Override

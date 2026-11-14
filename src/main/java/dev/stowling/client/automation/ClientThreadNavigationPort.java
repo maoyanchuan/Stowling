@@ -5,6 +5,7 @@ import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.NavigationTargetType;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.schedule.StopOutcome;
 import java.util.Objects;
 
 public final class ClientThreadNavigationPort implements NavigationPort {
@@ -60,5 +61,19 @@ public final class ClientThreadNavigationPort implements NavigationPort {
         if (scheduler.isClientThread()) {
             delegate.cancel();
         }
+    }
+
+    @Override
+    public StopOutcome requestStop() {
+        return scheduler.isClientThread()
+                ? delegate.requestStop()
+                : StopOutcome.UNSAFE;
+    }
+
+    @Override
+    public StopOutcome pollStop() {
+        return scheduler.isClientThread()
+                ? delegate.pollStop()
+                : StopOutcome.UNSAFE;
     }
 }

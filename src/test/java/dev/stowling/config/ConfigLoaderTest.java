@@ -23,6 +23,10 @@ import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
+import dev.stowling.schedule.InterruptionKind;
+import dev.stowling.schedule.TaskPriority;
+import dev.stowling.schedule.TaskSettings;
+import dev.stowling.schedule.TriggerKind;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,9 +48,29 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.load(path);
 
-        assertEquals(4, config.schemaVersion());
+        assertEquals(5, config.schemaVersion());
         assertEquals(Duration.ofSeconds(60), config.defaultIdleDelay());
         assertEquals("overflow", config.overflowContainer().id());
+    }
+
+    @Test
+    void canonicalConstructorUpgradesProgrammaticSchemaFour() {
+        StowlingConfig source = ConfigTestFixtures.config(List.of());
+
+        StowlingConfig config = new StowlingConfig(
+                4,
+                source.coordinatePoints(),
+                source.pickupRegions(),
+                source.cacheContainers(),
+                source.pickupWorkflows(),
+                List.of(),
+                source.storageRoutes(),
+                source.packingStations(),
+                source.auditSchedules(),
+                source.overflowContainer()
+        );
+
+        assertEquals(StowlingConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion());
     }
 
     @Test
@@ -101,7 +125,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(json);
 
-        assertEquals(4, config.schemaVersion());
+        assertEquals(5, config.schemaVersion());
         assertEquals(2, config.pickupRegions().size());
         assertEquals(1, config.cacheContainers().size());
         assertEquals(2, config.pickupWorkflows().size());
@@ -125,7 +149,7 @@ class ConfigLoaderTest {
         Path output = tempDir.resolve("migrated.json");
         loader.write(output, config);
         String written = Files.readString(output);
-        assertTrue(written.contains("\"schemaVersion\": 4"));
+        assertTrue(written.contains("\"schemaVersion\": 5"));
         assertTrue(written.contains("\"coordinatePoints\""));
         assertFalse(written.contains("pickupSites"));
         assertFalse(written.contains("defaultIdleDelay"));
@@ -148,7 +172,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(root.toString());
 
-        assertEquals(4, config.schemaVersion());
+        assertEquals(5, config.schemaVersion());
         assertEquals(2, config.coordinatePoints().size());
         PickupRegion migratedRegion = config.pickupRegions().getFirst();
         SpherePickupShape migratedShape = (SpherePickupShape) migratedRegion.shape();
@@ -168,8 +192,48 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(root.toString());
 
-        assertEquals(4, config.schemaVersion());
+        assertEquals(5, config.schemaVersion());
         assertTrue(config.automationWorkflows().isEmpty());
+    }
+
+    @Test
+    void migratesV4ByAddingDefaultSettingsWithoutEnablingTasks() throws IOException {
+        JsonObject root = JsonParser.parseString(
+                Files.readString(Path.of("src/main/resources/stowling.example.json"))
+        ).getAsJsonObject();
+        root.addProperty("schemaVersion", 4);
+        root.getAsJsonArray("pickupWorkflows")
+                .get(0)
+                .getAsJsonObject()
+                .remove("settings");
+        JsonObject automation = JsonParser.parseString("""
+                {
+                    "id": "wait-task",
+                    "name": "Wait task",
+                    "steps": [{
+                        "id": "wait",
+                        "type": "WAIT",
+                        "parameters": {"seconds": "1"}
+                    }]
+                }
+                """).getAsJsonObject();
+        root.getAsJsonArray("automationWorkflows").add(automation);
+
+        StowlingConfig config = loader.parse(root.toString());
+
+        assertEquals(5, config.schemaVersion());
+        assertEquals("farm-patrol", config.pickupWorkflows().getFirst().id());
+        assertEquals("wait-task", config.automationWorkflows().getFirst().id());
+        assertEquals(
+                TaskPriority.MEDIUM,
+                config.pickupWorkflows().getFirst().settings().priority()
+        );
+        TaskSettings settings = config.automationWorkflows().getFirst().settings();
+        assertEquals(TaskPriority.MEDIUM, settings.priority());
+        assertEquals(TriggerKind.MANUAL, settings.trigger().kind());
+        assertEquals("Asia/Shanghai", settings.trigger().zoneId());
+        assertEquals(InterruptionKind.NONE, settings.interruption().kind());
+        assertFalse(settings.autoStartOnRestart());
     }
 
     @Test

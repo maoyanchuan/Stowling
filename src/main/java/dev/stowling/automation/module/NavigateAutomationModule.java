@@ -11,6 +11,7 @@ import dev.stowling.automation.CoordinateResolver;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.schedule.StopOutcome;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -18,11 +19,16 @@ import java.util.Objects;
 public final class NavigateAutomationModule implements AutomationModule {
     private static final AutomationModuleDescriptor DESCRIPTOR =
             new AutomationModuleDescriptor(
-            AutomationStepType.NAVIGATE,
-            "前往命名坐标",
-            "解析命名坐标并等待导航端口确认到达。",
-            List.of(new Parameter("coordinateId", "目标命名坐标", "coordinate", true))
-    );
+                    AutomationStepType.NAVIGATE,
+                    "前往命名坐标",
+                    "解析命名坐标并等待导航端口确认到达。",
+                    List.of(new Parameter(
+                            "coordinateId",
+                            "目标命名坐标",
+                            "coordinate",
+                            true
+                    ))
+            );
 
     private final CoordinateResolver coordinates;
     private final NavigationPort navigation;
@@ -46,6 +52,16 @@ public final class NavigateAutomationModule implements AutomationModule {
     @Override
     public AutomationModuleResult execute(AutomationModuleContext context) {
         return ModuleParameters.guard(() -> navigate(context));
+    }
+
+    @Override
+    public StopOutcome stop(AutomationModuleContext context) {
+        return navigation.requestStop();
+    }
+
+    @Override
+    public StopOutcome pollStop(AutomationModuleContext context) {
+        return navigation.pollStop();
     }
 
     private AutomationModuleResult navigate(AutomationModuleContext context) {

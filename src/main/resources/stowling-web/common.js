@@ -21,6 +21,35 @@
         ["AUDIT", "库存盘点"],
         ["PACK", "潜影盒装箱"]
     ]);
+    const PRIORITY_LABELS = new Map([
+        ["HIGH", "高"],
+        ["MEDIUM", "中"],
+        ["LOW", "低"]
+    ]);
+    const TRIGGER_KIND_LABELS = new Map([
+        ["MANUAL", "手动运行"],
+        ["FIXED_INTERVAL", "固定间隔"],
+        ["DAILY", "每日定时"],
+        ["AFTER_COMPLETION", "完成后接续"],
+        ["ITEMS_PRESENT", "区域有物品时"]
+    ]);
+    const INTERRUPTION_KIND_LABELS = new Map([
+        ["NONE", "不中断"],
+        ["INLINE", "内联步骤"],
+        ["TASK_REFERENCE", "引用自定义任务"]
+    ]);
+    const SCHEDULE_STATE_LABELS = new Map([
+        ["IDLE", "空闲"],
+        ["WAITING", "等待触发"],
+        ["RUNNING", "运行中"],
+        ["FAILED", "失败"],
+        ["UNSAFE", "异常待处理"],
+        ["BLOCKED", "受阻"],
+        ["DISABLED", "已停用"]
+    ]);
+    const SCHEDULE_MESSAGE_LABELS = new Map([
+        ["items unobservable", "等待区域可见"]
+    ]);
     const TASK_STAGE_LABELS = new Map([
         ["NAVIGATE_PICKUP", "前往拾取区域"],
         ["COLLECT", "拾取掉落物"],
@@ -68,8 +97,8 @@
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "命名坐标" },
-        { page: "tasks", href: "/tasks.html", label: "任务编排" },
-        { page: "storage", href: "/storage.html", label: "仓库与库存" }
+        { page: "tasks", href: "/tasks.html", label: "任务与资源" },
+        { page: "storage", href: "/storage.html", label: "库存查询" }
     ]);
     const connectedHandlers = new Set();
 
@@ -184,6 +213,7 @@
     function friendlyMessage(code, fallback) {
         const messages = new Map([
             ["config_revision_conflict", "配置已被外部修改，请重新读取后再保存"],
+            ["task_revision_conflict", "任务已被外部修改，请重新读取后再保存"],
             ["active_task_conflict", "活动或暂停任务存在，请先取消任务或等待完成"],
             ["invalid_coordinate_points", "命名坐标未通过校验，请检查页面中的错误"],
             ["coordinate_point_in_use", "命名坐标仍被其他配置引用，暂不能删除"],
@@ -194,7 +224,9 @@
             ["container_not_found", "配置中找不到所选容器"],
             ["invalid_automation_workflow", "自动化任务未通过校验"],
             ["automation_workflow_not_found", "配置中找不到这个自动化任务"],
-            ["automation_module_not_found", "任务步骤使用了不可用的机器人模块"]
+            ["automation_module_not_found", "任务步骤使用了不可用的机器人模块"],
+            ["task_definition_not_found", "配置中找不到这个任务，请刷新任务列表"],
+            ["task_definition_exists", "该类型下已存在相同 ID 的任务"]
         ]);
         return messages.get(code) || fallback;
     }
@@ -539,6 +571,50 @@
      * @param {unknown} value
      * @returns {string}
      */
+    function priorityLabel(value) {
+        return translatedLabel(PRIORITY_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function triggerKindLabel(value) {
+        return translatedLabel(TRIGGER_KIND_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function interruptionKindLabel(value) {
+        return translatedLabel(INTERRUPTION_KIND_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function scheduleStateLabel(value) {
+        return translatedLabel(SCHEDULE_STATE_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function scheduleMessageLabel(value) {
+        const raw = String(value ?? "").trim();
+        if (!raw) {
+            return "";
+        }
+        return SCHEDULE_MESSAGE_LABELS.get(raw.toLowerCase()) || raw;
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
     function taskStageLabel(value) {
         return translatedLabel(TASK_STAGE_LABELS, value);
     }
@@ -615,15 +691,20 @@
         emptyState,
         formatDate,
         handleError,
+        interruptionKindLabel,
         isConnected,
         moduleStateLabel,
         mountPage,
         onConnected,
+        priorityLabel,
         request,
         revisionLabel,
+        scheduleMessageLabel,
+        scheduleStateLabel,
         showToast,
         taskKindLabel,
         taskStageLabel,
-        taskStatusLabel
+        taskStatusLabel,
+        triggerKindLabel
     });
 })();

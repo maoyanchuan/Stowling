@@ -15,11 +15,17 @@ import java.util.Objects;
 public final class WaitAutomationModule implements AutomationModule {
     private static final AutomationModuleDescriptor DESCRIPTOR =
             new AutomationModuleDescriptor(
-            AutomationStepType.WAIT,
-            "等待",
-            "按自动化时钟等待指定秒数，重启后继续使用原截止时间。",
-            List.of(new Parameter("seconds", "等待秒数", "positive-integer", true))
-    );
+                    AutomationStepType.WAIT,
+                    "等待",
+                    "按自动化时钟等待指定秒数，重启后继续使用原截止时间。",
+                    List.of(new Parameter(
+                            "seconds",
+                            "等待秒数",
+                            "positive-integer",
+                            true,
+                            List.of("durationSeconds")
+                    ))
+            );
 
     private final AutomationClock clock;
 

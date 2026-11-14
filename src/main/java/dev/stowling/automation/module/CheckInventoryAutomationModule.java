@@ -15,14 +15,14 @@ import java.util.Objects;
 public final class CheckInventoryAutomationModule implements AutomationModule {
     private static final AutomationModuleDescriptor DESCRIPTOR =
             new AutomationModuleDescriptor(
-            AutomationStepType.CHECK_INVENTORY,
-            "检查库存",
-            "读取玩家背包权威快照并核验物品数量。",
-            List.of(
+                    AutomationStepType.CHECK_INVENTORY,
+                    "检查库存",
+                    "读取玩家背包权威快照并核验物品数量。",
+                    List.of(
                             new Parameter("itemId", "物品 ID", "item", true),
                             new Parameter("count", "期望数量", "positive-integer", true)
-    )
-    );
+                    )
+            );
 
     private final InventoryQueryPort inventory;
 

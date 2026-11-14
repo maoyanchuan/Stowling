@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.PickupSite;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -204,6 +205,73 @@ class PickupAutomationEngineTest {
     }
 
     @Test
+    void continuousNewDropsDoNotExtendTheLockedCollectionRound() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+
+        support.world.setGroundItems(List.of(new GroundItem(
+                "locked-input",
+                STONE,
+                1,
+                new BlockPosition(3, 64, 0)
+        )));
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+
+        support.world.setGroundItems(List.of());
+        assertEquals(PickupStage.WAIT_FOR_IDLE, engine.tick().stage());
+        for (int tick = 0; tick < 3; tick++) {
+            support.world.setGroundItems(List.of(new GroundItem(
+                    "new-drop-" + tick,
+                    STONE,
+                    1,
+                    new BlockPosition(4 + tick, 64, 0)
+            )));
+            support.clock.advance(Duration.ofSeconds(15));
+            assertEquals(PickupStage.WAIT_FOR_IDLE, engine.tick().stage());
+        }
+
+        support.world.setGroundItems(List.of(new GroundItem(
+                "new-drop-final",
+                STONE,
+                1,
+                new BlockPosition(8, 64, 0)
+        )));
+        support.clock.advance(Duration.ofSeconds(15));
+        AutomationSnapshot completed = engine.tick();
+
+        assertTrue(
+                completed.stage() == PickupStage.COMPLETE
+                        || completed.stage() == PickupStage.CLASSIFY_BUFFER,
+                completed.toString()
+        );
+    }
+
+    @Test
+    void lockedUncollectableInputFailsAtTheRegionRoundDeadline() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+
+        support.world.setGroundItems(List.of(new GroundItem(
+                "unreachable-input",
+                STONE,
+                1,
+                new BlockPosition(3, 64, 0)
+        )));
+        assertEquals(PickupStage.COLLECT, engine.tick().stage());
+        support.clock.advance(Duration.ofSeconds(30));
+
+        AutomationSnapshot failed = engine.tick();
+
+        assertEquals(PickupStage.FAILED, failed.stage());
+        assertEquals(
+                "COLLECTION_TIMEOUT",
+                failed.pauseReason().orElseThrow().code()
+        );
+    }
+
+    @Test
     void retriesPendingContainerTransactionWithinBudget() {
         AutomationTestSupport support = depositSupport();
         support.containers.addResult(pending());
@@ -376,6 +444,102 @@ class PickupAutomationEngineTest {
         assertEquals(PickupStage.PACK, pending.stage());
         assertTrue(pending.pauseReason().isEmpty());
         assertEquals(1, support.packing.requests().size());
+    }
+
+    @Test
+    void pendingPackingSubmitsOnceAndPollsOnLaterTicks() {
+        AutomationTestSupport support = bufferSupport(DIAMOND);
+        support.packing.setDisposition(PackingDisposition.PENDING);
+        PickupAutomationEngine engine = support.engine(
+                List.of(AutomationTestSupport.packingRoute(DIAMOND)),
+                1
+        );
+
+        engine.start();
+        AutomationSnapshot classified = engine.tick();
+        support.navigation.setPosition(
+                classified.activeDelivery().orElseThrow().buffer().position()
+        );
+        assertEquals(PickupStage.PACK, engine.tick().stage());
+        assertEquals(PickupStage.PACK, engine.tick().stage());
+        assertEquals(PickupStage.PACK, engine.tick().stage());
+
+        assertEquals(1, support.packing.submits());
+        assertEquals(2, support.packing.polls());
+    }
+
+    @Test
+    void safeStopWaitsForContainerConfirmation() {
+        AutomationTestSupport support = depositSupport();
+        support.navigation.setPosition(support.cache.position());
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        engine.start();
+        engine.tick();
+        engine.tick();
+        support.containers.setStopOutcome(StopOutcome.PENDING);
+
+        engine.requestStop();
+        assertEquals(StopOutcome.PENDING, engine.pollStop());
+
+        support.containers.setStopOutcome(StopOutcome.CLEAN);
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(PickupStage.FAILED, engine.snapshot().stage());
+        assertEquals(1, support.containers.stopRequests());
+    }
+
+    @Test
+    void safeStopWaitsForPackingConfirmation() {
+        AutomationTestSupport support = bufferSupport(DIAMOND);
+        support.packing.setDisposition(PackingDisposition.PENDING);
+        support.packing.setStopOutcome(StopOutcome.PENDING);
+        PickupAutomationEngine engine = support.engine(
+                List.of(AutomationTestSupport.packingRoute(DIAMOND)),
+                1
+        );
+        engine.start();
+        AutomationSnapshot classified = engine.tick();
+        support.navigation.setPosition(
+                classified.activeDelivery().orElseThrow().buffer().position()
+        );
+        assertEquals(PickupStage.PACK, engine.tick().stage());
+
+        engine.requestStop();
+        assertEquals(StopOutcome.PENDING, engine.pollStop());
+
+        support.packing.setStopOutcome(StopOutcome.CLEAN);
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(1, support.packing.stopRequests());
+    }
+
+    @Test
+    void completedPickupStopIsCleanAndIdempotent() {
+        AutomationTestSupport support = new AutomationTestSupport();
+        support.checkpoint(PickupStage.COMPLETE, Optional.empty(), Map.of());
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        engine.start();
+
+        engine.requestStop();
+
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+    }
+
+    @Test
+    void pausedContainerWithUnknownClickStateStopsUnsafe() {
+        AutomationTestSupport support = depositSupport();
+        support.navigation.setPosition(support.cache.position());
+        support.containers.setStopOutcome(StopOutcome.PENDING);
+        PickupAutomationEngine engine = support.engine(List.of(), 1);
+        engine.start();
+        engine.tick();
+        engine.tick();
+
+        engine.pauseForControl();
+        engine.requestStop();
+
+        assertEquals(StopOutcome.UNSAFE, engine.pollStop());
     }
 
     @Test

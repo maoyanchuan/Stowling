@@ -1,5 +1,6 @@
 package dev.stowling.domain;
 
+import dev.stowling.schedule.TaskSettings;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -13,7 +14,8 @@ public record PickupWorkflow(
         CachePolicy cachePolicy,
         ClassificationTiming classificationTiming,
         CompletionMode completionMode,
-        Duration completionIdleDelay
+        Duration completionIdleDelay,
+        TaskSettings settings
 ) {
     public PickupWorkflow {
         id = DomainChecks.requireText(id, "pickup workflow id");
@@ -34,5 +36,31 @@ public record PickupWorkflow(
         if (completionIdleDelay.isNegative()) {
             throw new IllegalArgumentException("completionIdleDelay must not be negative");
         }
+        settings = Objects.requireNonNull(settings, "settings");
+    }
+
+    public PickupWorkflow(
+            String id,
+            String name,
+            String dimension,
+            List<PickupRegionBinding> regions,
+            List<String> cacheIds,
+            CachePolicy cachePolicy,
+            ClassificationTiming classificationTiming,
+            CompletionMode completionMode,
+            Duration completionIdleDelay
+    ) {
+        this(
+                id,
+                name,
+                dimension,
+                regions,
+                cacheIds,
+                cachePolicy,
+                classificationTiming,
+                completionMode,
+                completionIdleDelay,
+                TaskSettings.defaults()
+        );
     }
 }

@@ -16,6 +16,12 @@ final class ContainerClickConfirmation {
         return new Evaluation(true, moved);
     }
 
+    static boolean isUnchanged(Pending pending, Snapshot observed) {
+        Objects.requireNonNull(pending, "pending");
+        Objects.requireNonNull(observed, "observed");
+        return pending.before().equals(observed);
+    }
+
     private static int movedAmount(Pending pending) {
         Snapshot before = pending.before();
         Snapshot predicted = pending.predicted();

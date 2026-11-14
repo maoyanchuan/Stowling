@@ -53,6 +53,8 @@ import dev.stowling.persistence.SqliteGenericAutomationCheckpointStore;
 import dev.stowling.persistence.SqliteInventoryRepository;
 import dev.stowling.persistence.SqliteTaskRepository;
 import dev.stowling.persistence.StowlingDatabase;
+import dev.stowling.persistence.SqliteTaskScheduleStore;
+import java.time.Clock;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -231,6 +233,13 @@ public final class StowlingRuntime implements AutoCloseable {
                 automationFactory
         );
 
+        service.configureScheduling(
+                new SqliteTaskScheduleStore(database),
+                new ScheduledRegionItemProbe(minecraft, worldObserver, service::activeConfig),
+                Clock.systemUTC()
+        );
+        service.recoverPendingPickups();
+
         int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);
         StowlingHttpServer server = StowlingHttpServer.loopbackWithTokenFile(
                 service,
@@ -246,7 +255,6 @@ public final class StowlingRuntime implements AutoCloseable {
         );
         server.start();
         HeadlessControlBridge.install(service);
-        service.recoverPendingPickups();
         Stowling.LOGGER.info("Stowling control runtime started on loopback port {}", port);
         return runtime;
     }

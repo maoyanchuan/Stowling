@@ -47,6 +47,17 @@ class ClientThreadContainerInteractionTest {
         assertThrows(IllegalStateException.class, () -> interaction.observe(container));
     }
 
+    @Test
+    void captureInventoryDoesNotOpenAnUnconfirmedContainer() {
+        MinecraftContainerInteraction interaction = new MinecraftContainerInteraction(
+                new ImmediateScheduler(true),
+                ignored -> Optional.empty(),
+                new NoopDriver()
+        );
+
+        assertEquals(Optional.empty(), interaction.captureInventory(container));
+    }
+
     private static final class ImmediateScheduler implements ClientActionScheduler {
         private final boolean clientThread;
 
@@ -98,6 +109,28 @@ class ClientThreadContainerInteractionTest {
         @Override
         public void cancel(ContainerAttempt attempt) {
             // No pending transaction is retained by this fake.
+        }
+    }
+
+    private static final class NoopDriver
+            implements MinecraftContainerInteraction.OperationDriver {
+        @Override
+        public ContainerAttemptResult start(
+                MinecraftContainerInteraction.AttemptToken token,
+                MinecraftContainerInteraction.TransferSpec transfer
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ContainerAttemptResult poll(
+                MinecraftContainerInteraction.AttemptToken token
+        ) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void cancel(MinecraftContainerInteraction.AttemptToken token) {
         }
     }
 }

@@ -12,8 +12,11 @@ import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupWorkflow;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,6 +38,7 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
     private final PickupEngineFactory engineFactory;
     private final ClientActionScheduler scheduler;
     private final Map<String, PickupAttempt> attempts = new LinkedHashMap<>();
+    private final Map<UUID, StopOutcome> stopOutcomes = new LinkedHashMap<>();
 
     public ClientPickupWorkflowPort(
             Supplier<StowlingConfig> config,
@@ -82,6 +86,7 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
                     loaded
             ));
             engine.start();
+            stopOutcomes.remove(taskId);
             attempts.put(operationKey, new PickupAttempt(engine));
             return map(operationKey, engine.tick());
         } catch (RuntimeException exception) {
@@ -122,19 +127,55 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         return map(operationKey, attempt.engine.tick());
     }
 
+    @Override
+    public synchronized StopOutcome requestStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        if (!scheduler.isClientThread()) {
+            return StopOutcome.UNSAFE;
+        }
+        List<Map.Entry<String, PickupAttempt>> matches = attemptEntries(attemptId);
+        if (matches.isEmpty()) {
+            return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
+        }
+        StopOutcome outcome = StopOutcome.CLEAN;
+        for (Map.Entry<String, PickupAttempt> entry : matches) {
+            StopOutcome current = entry.getValue().engine.requestStopAndPoll();
+            outcome = combine(outcome, current);
+            if (current == StopOutcome.CLEAN || current == StopOutcome.UNSAFE) {
+                attempts.remove(entry.getKey());
+            }
+        }
+        return retainStopOutcome(attemptId, outcome);
+    }
+
+    @Override
+    public synchronized StopOutcome pollStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        if (!scheduler.isClientThread()) {
+            return StopOutcome.UNSAFE;
+        }
+        List<Map.Entry<String, PickupAttempt>> matches = attemptEntries(attemptId);
+        if (matches.isEmpty()) {
+            return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
+        }
+        StopOutcome outcome = StopOutcome.CLEAN;
+        for (Map.Entry<String, PickupAttempt> entry : matches) {
+            StopOutcome current = entry.getValue().engine.pollStop();
+            outcome = combine(outcome, current);
+            if (current == StopOutcome.CLEAN || current == StopOutcome.UNSAFE) {
+                attempts.remove(entry.getKey());
+            }
+        }
+        return retainStopOutcome(attemptId, outcome);
+    }
+
     private AutomationOperationResult map(
             String operationKey,
             AutomationSnapshot snapshot
     ) {
         return switch (snapshot.stage()) {
-            case COMPLETE -> {
-                attempts.remove(operationKey);
-                yield AutomationOperationResult.succeeded(
-                        "RUN_PICKUP:" + snapshot.workflowId()
-                );
-            }
+            case COMPLETE -> complete(operationKey, snapshot);
             case FAILED -> {
-                attempts.remove(operationKey);
                 yield AutomationOperationResult.failed(pauseDetail(snapshot));
             }
             case PAUSED -> AutomationOperationResult.paused(
@@ -142,6 +183,45 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
             );
             default -> AutomationOperationResult.running(
                     snapshot.stage().name()
+            );
+        };
+    }
+
+    private AutomationOperationResult complete(
+            String operationKey,
+            AutomationSnapshot snapshot
+    ) {
+        PickupAttempt attempt = attempts.get(operationKey);
+        if (attempt == null) {
+            return AutomationOperationResult.paused(MANUAL_RECOVERY);
+        }
+        StopOutcome outcome = attempt.engine.requestStopAndPoll();
+        UUID taskId = taskId(operationKey);
+        if (outcome == StopOutcome.CLEAN) {
+            attempts.remove(operationKey);
+            if (taskId != null) {
+                retainStopOutcome(taskId, outcome);
+            }
+        } else if (outcome == StopOutcome.UNSAFE && taskId != null) {
+            retainStopOutcome(taskId, outcome);
+        }
+        return stopCompletionResult(snapshot.workflowId(), outcome);
+    }
+
+    static AutomationOperationResult stopCompletionResult(
+            String workflowId,
+            StopOutcome outcome
+    ) {
+        Objects.requireNonNull(workflowId, "workflowId");
+        return switch (Objects.requireNonNull(outcome, "outcome")) {
+            case CLEAN -> AutomationOperationResult.succeeded(
+                    "RUN_PICKUP:" + workflowId
+            );
+            case PENDING -> AutomationOperationResult.running(
+                    "waiting for clean pickup stop"
+            );
+            case UNSAFE -> AutomationOperationResult.failed(
+                    "pickup completed but safe stop could not be confirmed"
             );
         };
     }
@@ -162,6 +242,38 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         } catch (IllegalArgumentException exception) {
             return null;
         }
+    }
+
+    private List<Map.Entry<String, PickupAttempt>> attemptEntries(UUID taskId) {
+        List<Map.Entry<String, PickupAttempt>> result = new ArrayList<>();
+        for (Map.Entry<String, PickupAttempt> entry : attempts.entrySet()) {
+            if (taskId.equals(taskId(entry.getKey()))) {
+                result.add(Map.entry(entry.getKey(), entry.getValue()));
+            }
+        }
+        return result;
+    }
+
+    private static StopOutcome combine(StopOutcome first, StopOutcome second) {
+        if (first == StopOutcome.UNSAFE || second == StopOutcome.UNSAFE) {
+            return StopOutcome.UNSAFE;
+        }
+        if (first == StopOutcome.PENDING || second == StopOutcome.PENDING) {
+            return StopOutcome.PENDING;
+        }
+        return StopOutcome.CLEAN;
+    }
+
+    private StopOutcome retainStopOutcome(UUID taskId, StopOutcome outcome) {
+        if (outcome == StopOutcome.PENDING) {
+            return outcome;
+        }
+        stopOutcomes.put(taskId, outcome);
+        if (stopOutcomes.size() > 128) {
+            UUID oldest = stopOutcomes.keySet().iterator().next();
+            stopOutcomes.remove(oldest);
+        }
+        return outcome;
     }
 
     private static PickupAutomationPlan plan(
@@ -199,5 +311,9 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
     }
 
     private record PickupAttempt(PickupAutomationEngine engine) {
+        private StopOutcome requestStopAndPoll() {
+            engine.requestStop();
+            return engine.pollStop();
+        }
     }
 }

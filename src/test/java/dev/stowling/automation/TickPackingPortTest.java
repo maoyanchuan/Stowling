@@ -14,6 +14,7 @@ import dev.stowling.domain.StorageRoute;
 import dev.stowling.packing.PackingBoxContents;
 import dev.stowling.packing.PackingStationTickPort;
 import dev.stowling.packing.PackingWorkcell;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -83,10 +84,38 @@ class TickPackingPortTest {
         assertTrue(fixture.station.prepared.contains("station-b"));
     }
 
+    @Test
+    void stopPollReplacesPendingNavigationAndRemembersCleanOutcome() {
+        Fixture fixture = new Fixture(10, 0, false);
+        assertEquals(PackingDisposition.PENDING, fixture.port.submit(fixture.request()));
+        fixture.navigation.stopOutcome = StopOutcome.PENDING;
+
+        assertEquals(StopOutcome.PENDING, fixture.port.requestStop(TASK));
+
+        fixture.navigation.stopOutcome = StopOutcome.CLEAN;
+        assertEquals(StopOutcome.CLEAN, fixture.port.pollStop(TASK));
+        assertEquals(StopOutcome.CLEAN, fixture.port.pollStop(TASK));
+    }
+
+    @Test
+    void acceptedPackingRequestRemainsIdempotentlyCleanStoppable() {
+        Fixture fixture = new Fixture(10, 8, false);
+        PackingDisposition disposition = PackingDisposition.PENDING;
+        for (int tick = 0; tick < 10
+                && disposition == PackingDisposition.PENDING; tick++) {
+            disposition = fixture.port.submit(fixture.request());
+        }
+        assertEquals(PackingDisposition.ACCEPTED, disposition);
+
+        assertEquals(StopOutcome.CLEAN, fixture.port.requestStop(TASK));
+        assertEquals(StopOutcome.CLEAN, fixture.port.pollStop(TASK));
+    }
+
     private static final class Fixture {
         private final MutableClock clock = new MutableClock(START);
         private final FakeContainerInteraction containers = new FakeContainerInteraction();
         private final FakeStation station = new FakeStation();
+        private final FakeNavigation navigation = new FakeNavigation();
         private final ContainerRef buffer = container("buffer", 0, ContainerType.CHEST);
         private final ContainerRef bulk = container("bulk", 10, ContainerType.CHEST);
         private final ContainerRef overflow = container("overflow", 30, ContainerType.CHEST);
@@ -131,7 +160,7 @@ class TickPackingPortTest {
             port = new TickPackingPort(
                     () -> config,
                     new FakeWorld(),
-                    new FakeNavigation(),
+                    navigation,
                     containers,
                     station,
                     clock
@@ -183,6 +212,8 @@ class TickPackingPortTest {
     }
 
     private static final class FakeNavigation implements NavigationPort {
+        private StopOutcome stopOutcome = StopOutcome.CLEAN;
+
         @Override
         public NavigationStatus start(BlockPosition target) {
             return NavigationStatus.ARRIVED;
@@ -195,6 +226,16 @@ class TickPackingPortTest {
 
         @Override
         public void cancel() {
+        }
+
+        @Override
+        public StopOutcome requestStop() {
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop() {
+            return stopOutcome;
         }
     }
 
@@ -253,6 +294,16 @@ class TickPackingPortTest {
         @Override
         public void cancel(ContainerAttempt attempt) {
             transfersById.remove(attempt.attemptId());
+        }
+
+        @Override
+        public StopOutcome requestStop(ContainerAttempt attempt) {
+            return StopOutcome.CLEAN;
+        }
+
+        @Override
+        public StopOutcome pollStop(ContainerAttempt attempt) {
+            return StopOutcome.CLEAN;
         }
 
         private void put(ContainerRef container, String itemId, int count) {

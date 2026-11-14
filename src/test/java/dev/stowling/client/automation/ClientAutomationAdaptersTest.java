@@ -39,6 +39,7 @@ import dev.stowling.persistence.SqliteGenericAutomationCheckpointStore;
 import dev.stowling.persistence.SqliteInventoryRepository;
 import dev.stowling.persistence.SqliteTaskRepository;
 import dev.stowling.persistence.StowlingDatabase;
+import dev.stowling.schedule.StopOutcome;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -46,6 +47,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -223,6 +225,34 @@ class ClientAutomationAdaptersTest {
         assertTrue(recordingTransfer.started.isEmpty());
     }
 
+    @Test
+    void itemTransferStopWaitsForClientContainerConfirmation() {
+        TestScheduler scheduler = new TestScheduler(true);
+        TestContainerInteraction containers = new TestContainerInteraction();
+        containers.stopOutcome = StopOutcome.PENDING;
+        containers.pollStopOutcome = StopOutcome.CLEAN;
+        ClientThreadItemTransferPort transfers =
+                new ClientThreadItemTransferPort(containers, scheduler);
+        UUID taskId = UUID.randomUUID();
+        String key = taskId + ":transfer";
+        transfers.start(
+                key,
+                new ItemTransferPort.Request(
+                        ItemTransferPort.Mode.PUT,
+                        "PLAYER",
+                        "storage",
+                        "minecraft:stone",
+                        2
+                )
+        );
+
+        assertEquals(StopOutcome.PENDING, transfers.requestStop(taskId));
+        assertEquals(StopOutcome.CLEAN, transfers.pollStop(taskId));
+        assertEquals(StopOutcome.CLEAN, transfers.pollStop(taskId));
+        assertEquals(1, containers.requestStopCalls);
+        assertEquals(1, containers.pollStopCalls);
+    }
+
     private SqliteInventoryRepository inventories(String fileName) {
         return new SqliteInventoryRepository(database(fileName));
     }
@@ -322,6 +352,10 @@ class ClientAutomationAdaptersTest {
     private static final class TestContainerInteraction
             implements ContainerInteraction, ItemTransferPort {
         private final List<Request> starts = new ArrayList<>();
+        private StopOutcome stopOutcome = StopOutcome.UNSAFE;
+        private StopOutcome pollStopOutcome = StopOutcome.UNSAFE;
+        private int requestStopCalls;
+        private int pollStopCalls;
 
         @Override
         public void prepare(ContainerRef container) {
@@ -366,6 +400,18 @@ class ClientAutomationAdaptersTest {
         @Override
         public AutomationOperationResult reconcile(String operationKey) {
             return AutomationOperationResult.paused("manual recovery");
+        }
+
+        @Override
+        public StopOutcome requestStop(UUID attemptId) {
+            requestStopCalls++;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop(UUID attemptId) {
+            pollStopCalls++;
+            return pollStopOutcome;
         }
     }
 

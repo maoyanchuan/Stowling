@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.stowling.domain.PickupShape;
+import dev.stowling.schedule.TaskDefinition;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 public final class ConfigLoader {
@@ -69,6 +71,7 @@ public final class ConfigLoader {
             "auditSchedules",
             "overflowContainer"
     );
+    private static final Set<String> V5_ROOT_FIELDS = V4_ROOT_FIELDS;
     private static final Pattern SAFE_ID = Pattern.compile(
             "[a-z0-9][a-z0-9._-]{0,63}"
     );
@@ -117,6 +120,10 @@ public final class ConfigLoader {
             }
             if (schemaVersion == 3) {
                 root = migrateV3(root);
+                schemaVersion = 4;
+            }
+            if (schemaVersion == 4) {
+                root = migrateV4(root);
             }
             resolveCoordinateReferences(root);
             StowlingConfig config = gson.fromJson(root, StowlingConfig.class);
@@ -142,6 +149,34 @@ public final class ConfigLoader {
             }
             throw new ConfigLoadException("Unable to parse configuration", exception);
         }
+    }
+
+    String canonicalJson(TaskDefinition definition) {
+        Objects.requireNonNull(definition, "definition");
+        JsonElement tree = JsonParser.parseString(gson.toJson(definition));
+        return gson.toJson(canonicalize(tree));
+    }
+
+    private static JsonElement canonicalize(JsonElement element) {
+        if (element.isJsonObject()) {
+            JsonObject sorted = new JsonObject();
+            TreeMap<String, JsonElement> fields = new TreeMap<>();
+            for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+                fields.put(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<String, JsonElement> entry : fields.entrySet()) {
+                sorted.add(entry.getKey(), canonicalize(entry.getValue()));
+            }
+            return sorted;
+        }
+        if (element.isJsonArray()) {
+            JsonArray sorted = new JsonArray();
+            for (JsonElement value : element.getAsJsonArray()) {
+                sorted.add(canonicalize(value));
+            }
+            return sorted;
+        }
+        return element.deepCopy();
     }
 
     public void write(Path path, StowlingConfig config) {
@@ -253,6 +288,8 @@ public final class ConfigLoader {
             allowedFields = V3_ROOT_FIELDS;
         } else if (schemaVersion == 4) {
             allowedFields = V4_ROOT_FIELDS;
+        } else if (schemaVersion == StowlingConfig.CURRENT_SCHEMA_VERSION) {
+            allowedFields = V5_ROOT_FIELDS;
         } else {
             throw new ConfigLoadException(
                     "Unsupported configuration schemaVersion: " + schemaVersion
@@ -427,6 +464,50 @@ public final class ConfigLoader {
             migrated.add("automationWorkflows", new JsonArray());
         }
         return migrated;
+    }
+
+    private static JsonObject migrateV4(JsonObject source) {
+        JsonObject migrated = source.deepCopy();
+        migrated.addProperty(
+                "schemaVersion",
+                StowlingConfig.CURRENT_SCHEMA_VERSION
+        );
+        addDefaultSettings(migrated, "pickupWorkflows");
+        addDefaultSettings(migrated, "automationWorkflows");
+        return migrated;
+    }
+
+    private static void addDefaultSettings(JsonObject root, String workflowField) {
+        JsonElement workflowsElement = root.get(workflowField);
+        if (workflowsElement == null || !workflowsElement.isJsonArray()) {
+            return;
+        }
+        for (JsonElement workflowElement : workflowsElement.getAsJsonArray()) {
+            if (workflowElement.isJsonObject()) {
+                JsonObject workflow = workflowElement.getAsJsonObject();
+                if (!workflow.has("settings")) {
+                    workflow.add("settings", defaultTaskSettings());
+                }
+            }
+        }
+    }
+
+    private static JsonObject defaultTaskSettings() {
+        JsonObject settings = new JsonObject();
+        settings.addProperty("priority", "MEDIUM");
+        JsonObject trigger = new JsonObject();
+        trigger.addProperty("kind", "MANUAL");
+        trigger.addProperty("intervalSeconds", 0L);
+        trigger.add("times", new JsonArray());
+        trigger.addProperty("zoneId", "Asia/Shanghai");
+        trigger.add("regionIds", new JsonArray());
+        settings.add("trigger", trigger);
+        settings.addProperty("autoStartOnRestart", false);
+        JsonObject interruption = new JsonObject();
+        interruption.addProperty("kind", "NONE");
+        interruption.add("steps", new JsonArray());
+        settings.add("interruption", interruption);
+        return settings;
     }
 
     private static Set<String> pickupResourceIds(JsonObject root) {

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
 class ContainerClickConfirmationTest {
@@ -95,6 +96,44 @@ class ContainerClickConfirmationTest {
 
         assertFalse(result.confirmed());
         assertEquals(0, result.moved());
+    }
+
+    @Test
+    void reportsUnchangedStateAsWaitingRatherThanCorrection() {
+        ContainerClickConfirmation.Snapshot before = snapshot(
+                stack(STONE, 8),
+                EMPTY,
+                0,
+                8
+        );
+        ContainerClickConfirmation.Snapshot predicted = snapshot(
+                EMPTY,
+                EMPTY,
+                8,
+                0
+        );
+        ContainerClickConfirmation.Pending pending = pending(
+                ContainerClickConfirmation.ClickType.EXTRACT,
+                before,
+                predicted
+        );
+
+        assertTrue(ContainerClickConfirmation.isUnchanged(pending, before));
+        assertFalse(ContainerClickConfirmation.isUnchanged(pending, predicted));
+    }
+
+    @Test
+    void stopClickConfirmationUsesABoundedDeadline() {
+        Instant startedAt = Instant.parse("2026-11-15T00:00:00Z");
+
+        assertFalse(MinecraftContainerInteraction.stopClickTimedOut(
+                startedAt,
+                startedAt.plusSeconds(7)
+        ));
+        assertTrue(MinecraftContainerInteraction.stopClickTimedOut(
+                startedAt,
+                startedAt.plusSeconds(8)
+        ));
     }
 
     @Test

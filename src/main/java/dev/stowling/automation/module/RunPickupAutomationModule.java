@@ -7,20 +7,21 @@ import dev.stowling.automation.AutomationModuleDescriptor.Parameter;
 import dev.stowling.automation.AutomationModuleResult;
 import dev.stowling.automation.AutomationStepType;
 import dev.stowling.automation.PickupWorkflowPort;
+import dev.stowling.schedule.StopOutcome;
 import java.util.List;
 import java.util.Objects;
 
 public final class RunPickupAutomationModule implements AutomationModule {
     private static final AutomationModuleDescriptor DESCRIPTOR =
             new AutomationModuleDescriptor(
-            AutomationStepType.RUN_PICKUP,
-            "运行拾取",
-            "运行完整拾取流程或指定一个区域。",
-            List.of(
+                    AutomationStepType.RUN_PICKUP,
+                    "运行拾取",
+                    "运行完整拾取流程或指定一个区域。",
+                    List.of(
                             new Parameter("workflowId", "拾取流程", "pickup", true),
                             new Parameter("regionId", "只运行区域", "pickup-region", false)
-    )
-    );
+                    )
+            );
 
     private final PickupWorkflowPort pickup;
 
@@ -42,5 +43,15 @@ public final class RunPickupAutomationModule implements AutomationModule {
             );
             return OperationModuleSupport.execute(context, request, pickup);
         });
+    }
+
+    @Override
+    public StopOutcome stop(AutomationModuleContext context) {
+        return OperationModuleSupport.stop(context, pickup);
+    }
+
+    @Override
+    public StopOutcome pollStop(AutomationModuleContext context) {
+        return OperationModuleSupport.pollStop(context, pickup);
     }
 }

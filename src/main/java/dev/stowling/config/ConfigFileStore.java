@@ -1,5 +1,6 @@
 package dev.stowling.config;
 
+import dev.stowling.schedule.TaskDefinition;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,13 +19,16 @@ public final class ConfigFileStore {
         this.loader = Objects.requireNonNull(loader, "loader");
     }
 
-    public ConfigFileSnapshot read() {
+    public synchronized ConfigFileSnapshot read() {
         byte[] content = readContent();
         StowlingConfig config = loader.parse(new String(content, StandardCharsets.UTF_8));
         return new ConfigFileSnapshot(revision(content), config);
     }
 
-    public ConfigFileSnapshot save(String expectedRevision, StowlingConfig config) {
+    public synchronized ConfigFileSnapshot save(
+            String expectedRevision,
+            StowlingConfig config
+    ) {
         Objects.requireNonNull(expectedRevision, "expectedRevision");
         ConfigValidator.requireValid(config);
         byte[] currentContent = readContent();
@@ -33,6 +37,12 @@ public final class ConfigFileStore {
         }
         loader.writeAtomicWithBackup(path, config);
         return read();
+    }
+
+    synchronized String taskRevision(TaskDefinition definition) {
+        byte[] canonicalContent = loader.canonicalJson(definition)
+                .getBytes(StandardCharsets.UTF_8);
+        return revision(canonicalContent);
     }
 
     private byte[] readContent() {

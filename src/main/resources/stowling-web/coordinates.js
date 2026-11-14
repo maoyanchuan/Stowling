@@ -566,15 +566,15 @@
      */
     async function loadReferences() {
         const results = await Promise.allSettled([
-            Stowling.request("/v1/config/pickup"),
-            Stowling.request("/v1/config/automation-workflows")
+            Stowling.request("/v1/config/task-resources"),
+            Stowling.request("/v1/task-definitions")
         ]);
         state.references = new Map();
         if (results[0].status === "fulfilled") {
             addPickupReferences(results[0].value);
         }
         if (results[1].status === "fulfilled") {
-            addAutomationReferences(results[1].value);
+            addTaskReferences(results[1].value);
         }
         renderUsage();
     }
@@ -608,14 +608,18 @@
      * @param {object} source
      * @returns {void}
      */
-    function addAutomationReferences(source) {
-        for (const workflow of source?.automationWorkflows || []) {
-            for (const step of workflow.steps || []) {
+    function addTaskReferences(source) {
+        for (const task of source?.tasks || []) {
+            const steps = [
+                ...(task.steps || []),
+                ...(task.settings?.interruption?.steps || [])
+            ];
+            for (const step of steps) {
                 for (const [key, value] of Object.entries(step.parameters || {})) {
                     if (key.endsWith("CoordinateId") && typeof value === "string") {
                         addReference(
                             value,
-                            `任务“${workflow.name || workflow.id}”步骤 ${step.id}`
+                            `任务“${task.name || task.id}”步骤 ${step.id}`
                         );
                     }
                 }

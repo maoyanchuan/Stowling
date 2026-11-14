@@ -22,6 +22,12 @@ import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
+import dev.stowling.schedule.InterruptionKind;
+import dev.stowling.schedule.TaskInterruption;
+import dev.stowling.schedule.TaskPriority;
+import dev.stowling.schedule.TaskSettings;
+import dev.stowling.schedule.TaskTrigger;
+import dev.stowling.schedule.TriggerKind;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -343,6 +349,244 @@ class ConfigValidatorTest {
         assertTrue(exception.getMessage().contains("duplicate id"));
     }
 
+    @Test
+    void rejectsInvalidTriggerParametersAndRegionReferences() {
+        PickupRegion region = region("farm", "minecraft:overworld");
+        NamedCache cache = cache("cache", "minecraft:overworld", 8);
+        PickupWorkflow base = workflow(
+                "patrol",
+                "minecraft:overworld",
+                List.of("farm"),
+                List.of("cache")
+        );
+        TaskSettings settings = new TaskSettings(
+                TaskPriority.HIGH,
+                new TaskTrigger(
+                        TriggerKind.DAILY,
+                        10L,
+                        List.of("25:00"),
+                        "Mars/Base",
+                        List.of("missing-region")
+                ),
+                false,
+                TaskInterruption.none()
+        );
+        PickupWorkflow configured = new PickupWorkflow(
+                base.id(),
+                base.name(),
+                base.dimension(),
+                base.regions(),
+                base.cacheIds(),
+                base.cachePolicy(),
+                base.classificationTiming(),
+                base.completionMode(),
+                base.completionIdleDelay(),
+                settings
+        );
+        StowlingConfig invalid = config(
+                List.of(region),
+                List.of(cache),
+                List.of(configured)
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(invalid)
+        );
+
+        assertTrue(exception.getMessage().contains("interval is only valid"));
+        assertTrue(exception.getMessage().contains("time must use HH:mm"));
+        assertTrue(exception.getMessage().contains("unknown time zone"));
+        assertTrue(exception.getMessage().contains("pickup region does not exist"));
+    }
+
+    @Test
+    void allowsPickupItemsPresentTriggerToUseItsOwnRegions() {
+        PickupRegion region = region("farm", "minecraft:overworld");
+        NamedCache cache = cache("cache", "minecraft:overworld", 8);
+        PickupWorkflow base = workflow(
+                "patrol",
+                "minecraft:overworld",
+                List.of("farm"),
+                List.of("cache")
+        );
+        PickupWorkflow configured = withPickupSettings(
+                base,
+                taskSettings(new TaskTrigger(
+                        TriggerKind.ITEMS_PRESENT,
+                        0L,
+                        List.of(),
+                        "Asia/Shanghai",
+                        List.of()
+                ))
+        );
+        StowlingConfig valid = config(
+                List.of(region),
+                List.of(cache),
+                List.of(configured)
+        );
+
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(valid));
+    }
+
+    @Test
+    void rejectsAutomationItemsPresentTriggerWithoutRegions() {
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "items-task",
+                "Items task",
+                List.of(waitStep("wait")),
+                taskSettings(new TaskTrigger(
+                        TriggerKind.ITEMS_PRESENT,
+                        0L,
+                        List.of(),
+                        "Asia/Shanghai",
+                        List.of()
+                ))
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(
+                        ConfigTestFixtures.configWithAutomation(List.of(workflow))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("requires at least one region"));
+    }
+
+    @Test
+    void requiresPositiveAfterCompletionInterval() {
+        PickupRegion region = region("farm", "minecraft:overworld");
+        NamedCache cache = cache("cache", "minecraft:overworld", 8);
+        PickupWorkflow base = workflow(
+                "patrol",
+                "minecraft:overworld",
+                List.of("farm"),
+                List.of("cache")
+        );
+        StowlingConfig invalid = config(
+                List.of(region),
+                List.of(cache),
+                List.of(withPickupSettings(
+                        base,
+                        taskSettings(new TaskTrigger(
+                                TriggerKind.AFTER_COMPLETION,
+                                0L,
+                                List.of(),
+                                "Asia/Shanghai",
+                                List.of()
+                        ))
+                ))
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(invalid)
+        );
+
+        assertTrue(exception.getMessage().contains(
+                "after-completion interval must be positive"
+        ));
+        StowlingConfig valid = config(
+                List.of(region),
+                List.of(cache),
+                List.of(withPickupSettings(
+                        base,
+                        taskSettings(new TaskTrigger(
+                                TriggerKind.AFTER_COMPLETION,
+                                30L,
+                                List.of(),
+                                "Asia/Shanghai",
+                                List.of()
+                        ))
+                ))
+        );
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(valid));
+    }
+
+    @Test
+    void rejectsInterruptionReferenceToNonAutomationTask() {
+        String pickupId = ConfigTestFixtures.config(List.of())
+                .pickupWorkflows()
+                .getFirst()
+                .id();
+        TaskSettings settings = settingsWithReference(pickupId);
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "reference-task",
+                "Reference task",
+                List.of(waitStep("wait")),
+                settings
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(
+                        ConfigTestFixtures.configWithAutomation(List.of(workflow))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("not an automation task"));
+    }
+
+    @Test
+    void rejectsInterruptionReferenceCycles() {
+        AutomationWorkflow first = new AutomationWorkflow(
+                "first",
+                "First",
+                List.of(waitStep("wait-first")),
+                settingsWithReference("second")
+        );
+        AutomationWorkflow second = new AutomationWorkflow(
+                "second",
+                "Second",
+                List.of(waitStep("wait-second")),
+                settingsWithReference("first")
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(
+                        ConfigTestFixtures.configWithAutomation(List.of(first, second))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("creates a cycle"));
+    }
+
+    @Test
+    void validatesInlineInterruptionSteps() {
+        AutomationStep invalid = new AutomationStep(
+                "take",
+                AutomationStepType.TAKE_ITEMS,
+                Map.of(
+                        "containerId", "missing-container",
+                        "itemId", "minecraft:stone",
+                        "count", "1"
+                )
+        );
+        TaskSettings settings = new TaskSettings(
+                TaskPriority.MEDIUM,
+                new TaskTrigger(),
+                false,
+                new TaskInterruption(InterruptionKind.INLINE, List.of(invalid), null)
+        );
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "inline-task",
+                "Inline task",
+                List.of(waitStep("wait")),
+                settings
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(
+                        ConfigTestFixtures.configWithAutomation(List.of(workflow))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("container does not exist"));
+    }
+
     private static PickupRegion region(String id, String dimension) {
         BlockPosition center = new BlockPosition(0, 64, 0);
         return new PickupRegion(
@@ -384,6 +628,50 @@ class ConfigValidatorTest {
                 CompletionMode.ALL_IDLE,
                 Duration.ofSeconds(300)
         );
+    }
+
+    private static TaskSettings settingsWithReference(String taskId) {
+        return new TaskSettings(
+                TaskPriority.MEDIUM,
+                new TaskTrigger(),
+                false,
+                new TaskInterruption(
+                        InterruptionKind.TASK_REFERENCE,
+                        List.of(),
+                        taskId
+                )
+        );
+    }
+
+    private static TaskSettings taskSettings(TaskTrigger trigger) {
+        return new TaskSettings(
+                TaskPriority.MEDIUM,
+                trigger,
+                false,
+                TaskInterruption.none()
+        );
+    }
+
+    private static PickupWorkflow withPickupSettings(
+            PickupWorkflow workflow,
+            TaskSettings settings
+    ) {
+        return new PickupWorkflow(
+                workflow.id(),
+                workflow.name(),
+                workflow.dimension(),
+                workflow.regions(),
+                workflow.cacheIds(),
+                workflow.cachePolicy(),
+                workflow.classificationTiming(),
+                workflow.completionMode(),
+                workflow.completionIdleDelay(),
+                settings
+        );
+    }
+
+    private static AutomationStep waitStep(String id) {
+        return new AutomationStep(id, AutomationStepType.WAIT, Map.of("seconds", "1"));
     }
 
     private static PickupRegionBinding binding(String regionId) {

@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.stowling.config.ConfigRevisionConflictException;
 import dev.stowling.config.ConfigValidationException;
+import dev.stowling.config.TaskDefinitionNotFoundException;
 import dev.stowling.control.ActiveTaskConflictException;
 import dev.stowling.control.AuditRequest;
 import dev.stowling.control.AutomationTaskRequest;
@@ -24,6 +25,10 @@ import dev.stowling.control.PickupSiteNotFoundException;
 import dev.stowling.control.PickupWorkflowNotFoundException;
 import dev.stowling.control.StowlingControlService;
 import dev.stowling.control.TaskNotFoundException;
+import dev.stowling.schedule.TaskDefinition;
+import dev.stowling.schedule.TaskKey;
+import dev.stowling.schedule.TaskScheduleInfo;
+import dev.stowling.schedule.VersionedTaskDefinition;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -209,8 +214,10 @@ public final class StowlingHttpServer implements AutoCloseable {
             sendErrorQuietly(exchange, 400, "invalid_coordinate_points", exception.getMessage());
         } catch (InvalidConfigCoordinatesException exception) {
             sendErrorQuietly(exchange, 400, "invalid_config_coordinates", exception.getMessage());
-        } catch (InvalidPickupConfigException | ConfigValidationException exception) {
+        } catch (InvalidPickupConfigException exception) {
             sendErrorQuietly(exchange, 400, "invalid_pickup_config", exception.getMessage());
+        } catch (ConfigValidationException exception) {
+            sendErrorQuietly(exchange, 400, "invalid_configuration", exception.getMessage());
         } catch (InvalidAutomationConfigException exception) {
             sendErrorQuietly(
                     exchange,
@@ -260,8 +267,23 @@ public final class StowlingHttpServer implements AutoCloseable {
             );
         } catch (TaskNotFoundException exception) {
             sendErrorQuietly(exchange, 404, "task_not_found", "Task not found");
+        } catch (TaskDefinitionNotFoundException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    404,
+                    "task_definition_not_found",
+                    "Task definition not found"
+            );
         } catch (ContainerNotFoundException exception) {
             sendErrorQuietly(exchange, 404, "container_not_found", "Container not found");
+        } catch (IllegalArgumentException exception) {
+            String message = exception.getMessage();
+            sendErrorQuietly(
+                    exchange,
+                    400,
+                    "invalid_request",
+                    message == null || message.isBlank() ? "Invalid request" : message
+            );
         } catch (Exception exception) {
             sendErrorQuietly(
                     exchange,
@@ -352,6 +374,10 @@ public final class StowlingHttpServer implements AutoCloseable {
                         readStaticContent("stowling-web/storage.js", javascript)
                 ),
                 Map.entry(
+                        "/task-resources.js",
+                        readStaticContent("stowling-web/task-resources.js", javascript)
+                ),
+                Map.entry(
                         "/icon.svg",
                         readStaticContent("assets/stowling/icon.svg", "image/svg+xml")
                 ),
@@ -429,13 +455,56 @@ public final class StowlingHttpServer implements AutoCloseable {
                 requestParser.requireEmpty(body);
                 sendJson(exchange, 200, List.copyOf(service.containers()));
             }
-            case PAUSE -> {
+            case TASK_DEFINITIONS_GET -> {
                 requestParser.requireEmpty(body);
-                sendJson(exchange, 200, service.pause());
+                sendJson(exchange, 200, new TaskDefinitionsResponse(
+                        List.copyOf(service.taskDefinitions()),
+                        List.copyOf(service.taskScheduling())
+                ));
             }
-            case RESUME -> {
+            case TASK_DEFINITIONS_POST -> {
+                TaskDefinition definition = requestParser.parseTaskDefinition(body);
+                sendJson(exchange, 201, service.createTaskDefinition(definition));
+            }
+            case TASK_DEFINITION_GET -> {
                 requestParser.requireEmpty(body);
-                sendJson(exchange, 200, service.resume());
+                sendJson(exchange, 200, service.taskDefinition(match.taskKey()));
+            }
+            case TASK_DEFINITION_PUT -> {
+                VersionedTaskDefinition update =
+                        requestParser.parseVersionedTaskDefinition(body);
+                sendJson(
+                        exchange,
+                        200,
+                        service.updateTaskDefinition(
+                                match.taskKey(),
+                                update.revision(),
+                                update.definition()
+                        )
+                );
+            }
+            case TASK_DEFINITION_DELETE -> {
+                String revision = requestParser.parseTaskDefinitionRevision(body);
+                service.deleteTaskDefinition(match.taskKey(), revision);
+                sendNoContent(exchange);
+            }
+            case TASK_DEFINITION_ENABLE -> {
+                requestParser.requireEmpty(body);
+                service.enableTaskDefinition(match.taskKey());
+                sendJson(exchange, 200, new TaskSchedulingResponse(
+                        List.copyOf(service.taskScheduling())
+                ));
+            }
+            case TASK_DEFINITION_DISABLE -> {
+                requestParser.requireEmpty(body);
+                service.disableTaskDefinition(match.taskKey());
+                sendJson(exchange, 200, new TaskSchedulingResponse(
+                        List.copyOf(service.taskScheduling())
+                ));
+            }
+            case TASK_DEFINITION_RUN -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 202, service.runTaskDefinition(match.taskKey()));
             }
             case CONFIG_RELOAD -> {
                 requestParser.requireEmpty(body);
@@ -467,6 +536,15 @@ public final class StowlingHttpServer implements AutoCloseable {
                 PickupConfigUpdateRequest request =
                         requestParser.parsePickupConfigUpdate(body);
                 sendJson(exchange, 200, service.updatePickupConfig(request));
+            }
+            case CONFIG_TASK_RESOURCES_GET -> {
+                requestParser.requireEmpty(body);
+                sendJson(exchange, 200, service.taskResources());
+            }
+            case CONFIG_TASK_RESOURCES_PUT -> {
+                PickupConfigUpdateRequest request =
+                        requestParser.parseTaskResourcesUpdate(body);
+                sendJson(exchange, 200, service.updateTaskResources(request));
             }
             case CONFIG_AUTOMATION_WORKFLOWS_GET -> {
                 requestParser.requireEmpty(body);
@@ -506,10 +584,14 @@ public final class StowlingHttpServer implements AutoCloseable {
         if (!routes.isEmpty()) {
             for (Route route : routes) {
                 if (route.method().equals(method)) {
-                    return new RouteMatch(route, null);
+                    return new RouteMatch(route, null, null);
                 }
             }
             throw new MethodNotAllowedException(Route.allowedMethods(routes));
+        }
+        RouteMatch taskDefinitionRoute = matchTaskDefinitionRoute(path, method);
+        if (taskDefinitionRoute != null) {
+            return taskDefinitionRoute;
         }
         String prefix = "/v1/tasks/";
         String suffix = "/cancel";
@@ -517,12 +599,47 @@ public final class StowlingHttpServer implements AutoCloseable {
             String taskId = path.substring(prefix.length(), path.length() - suffix.length());
             if (!taskId.isEmpty() && taskId.indexOf('/') < 0) {
                 if (Route.CANCEL.method().equals(method)) {
-                    return new RouteMatch(Route.CANCEL, taskId);
+                    return new RouteMatch(Route.CANCEL, taskId, null);
                 }
                 throw new MethodNotAllowedException(Route.CANCEL.method());
             }
         }
         return null;
+    }
+
+    private RouteMatch matchTaskDefinitionRoute(String path, String method)
+            throws InvalidRequestException, MethodNotAllowedException {
+        String prefix = "/v1/task-definitions/";
+        if (!path.startsWith(prefix)) {
+            return null;
+        }
+        String[] segments = path.substring(prefix.length()).split("/", -1);
+        if (segments.length < 2 || segments.length > 3) {
+            return null;
+        }
+        TaskKey key = requestParser.parseTaskKey(segments[0], segments[1]);
+        if (segments.length == 2) {
+            Route route = switch (method) {
+                case "GET" -> Route.TASK_DEFINITION_GET;
+                case "PUT" -> Route.TASK_DEFINITION_PUT;
+                case "DELETE" -> Route.TASK_DEFINITION_DELETE;
+                default -> throw new MethodNotAllowedException("GET, PUT, DELETE");
+            };
+            return new RouteMatch(route, null, key);
+        }
+        Route route = switch (segments[2]) {
+            case "enable" -> Route.TASK_DEFINITION_ENABLE;
+            case "disable" -> Route.TASK_DEFINITION_DISABLE;
+            case "run" -> Route.TASK_DEFINITION_RUN;
+            default -> null;
+        };
+        if (route == null) {
+            return null;
+        }
+        if (!route.method().equals(method)) {
+            throw new MethodNotAllowedException(route.method());
+        }
+        return new RouteMatch(route, null, key);
     }
 
     private static void validateRequestTarget(HttpExchange exchange)
@@ -632,6 +749,13 @@ public final class StowlingHttpServer implements AutoCloseable {
         }
     }
 
+    private static void sendNoContent(HttpExchange exchange) throws IOException {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Cache-Control", "no-store");
+        headers.set("X-Content-Type-Options", "nosniff");
+        exchange.sendResponseHeaders(204, -1);
+    }
+
     private static byte[] hashToken(String token) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -662,11 +786,17 @@ public final class StowlingHttpServer implements AutoCloseable {
         AUTOMATION_TASK("POST", "/v1/tasks/automation"),
         AUTOMATION_MODULES("GET", "/v1/automation-modules"),
         CANCEL("POST", null),
+        TASK_DEFINITIONS_GET("GET", "/v1/task-definitions"),
+        TASK_DEFINITIONS_POST("POST", "/v1/task-definitions"),
+        TASK_DEFINITION_GET("GET", null),
+        TASK_DEFINITION_PUT("PUT", null),
+        TASK_DEFINITION_DELETE("DELETE", null),
+        TASK_DEFINITION_ENABLE("POST", null),
+        TASK_DEFINITION_DISABLE("POST", null),
+        TASK_DEFINITION_RUN("POST", null),
         AUDITS("POST", "/v1/audits"),
         INVENTORY("GET", "/v1/inventory"),
         CONTAINERS("GET", "/v1/containers"),
-        PAUSE("POST", "/v1/pause"),
-        RESUME("POST", "/v1/resume"),
         CONFIG_RELOAD("POST", "/v1/config/reload"),
         CONFIG_COORDINATE_POINTS_GET("GET", "/v1/config/coordinate-points"),
         CONFIG_COORDINATE_POINTS_PUT("PUT", "/v1/config/coordinate-points"),
@@ -674,6 +804,8 @@ public final class StowlingHttpServer implements AutoCloseable {
         CONFIG_COORDINATES_PUT("PUT", "/v1/config/coordinates"),
         CONFIG_PICKUP_GET("GET", "/v1/config/pickup"),
         CONFIG_PICKUP_PUT("PUT", "/v1/config/pickup"),
+        CONFIG_TASK_RESOURCES_GET("GET", "/v1/config/task-resources"),
+        CONFIG_TASK_RESOURCES_PUT("PUT", "/v1/config/task-resources"),
         CONFIG_AUTOMATION_WORKFLOWS_GET(
                 "GET",
                 "/v1/config/automation-workflows"
@@ -712,7 +844,16 @@ public final class StowlingHttpServer implements AutoCloseable {
         }
     }
 
-    private record RouteMatch(Route route, String taskId) {
+    private record RouteMatch(Route route, String taskId, TaskKey taskKey) {
+    }
+
+    private record TaskDefinitionsResponse(
+            List<TaskDefinition> tasks,
+            List<TaskScheduleInfo> scheduling
+    ) {
+    }
+
+    private record TaskSchedulingResponse(List<TaskScheduleInfo> scheduling) {
     }
 
     private record StaticContent(byte[] bytes, String contentType) {

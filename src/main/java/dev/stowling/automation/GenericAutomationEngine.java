@@ -1,5 +1,6 @@
 package dev.stowling.automation;
 
+import dev.stowling.schedule.StopOutcome;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -25,6 +26,11 @@ public final class GenericAutomationEngine {
     private Optional<String> message = Optional.empty();
     private boolean started;
     private boolean recovered;
+    private boolean stopRequested;
+    private StopOutcome stopOutcome = StopOutcome.CLEAN;
+    private AutomationModule activeModule;
+    private AutomationModuleContext activeContext;
+    private boolean moduleExecutionUnconfirmed;
 
     public GenericAutomationEngine(
             UUID taskId,
@@ -55,6 +61,9 @@ public final class GenericAutomationEngine {
 
     public synchronized GenericAutomationSnapshot tick() {
         start();
+        if (stopRequested && stopOutcome != StopOutcome.CLEAN) {
+            return snapshot();
+        }
         if (status == AutomationExecutionStatus.READY) {
             status = AutomationExecutionStatus.RUNNING;
         }
@@ -68,6 +77,7 @@ public final class GenericAutomationEngine {
         }
         AutomationStep step = workflow.steps().get(stepIndex);
         AutomationModule module = registry.require(step.type());
+        module.descriptor().requireValid(step.parameters());
         AutomationModuleContext context = new AutomationModuleContext(
                 taskId,
                 step,
@@ -75,11 +85,20 @@ public final class GenericAutomationEngine {
                 recovered,
                 lastConfirmedAction
         );
-        AutomationModuleResult result = Objects.requireNonNull(
-                module.execute(context),
-                "module result"
-        );
+        rememberActiveModule(module, context, AutomationModuleStatus.RUNNING);
+        AutomationModuleResult result;
+        try {
+            result = Objects.requireNonNull(
+                    module.execute(context),
+                    "module result"
+            );
+        } catch (RuntimeException exception) {
+            moduleExecutionUnconfirmed = true;
+            throw exception;
+        }
+        moduleExecutionUnconfirmed = false;
         recovered = false;
+        rememberActiveModule(module, context, result.status());
         apply(result);
         return snapshot();
     }
@@ -105,13 +124,87 @@ public final class GenericAutomationEngine {
     }
 
     public synchronized void cancel() {
+        requestStop();
+    }
+
+    public synchronized void requestStop() {
         start();
-        if (status == AutomationExecutionStatus.SUCCEEDED
-                || status == AutomationExecutionStatus.FAILED) {
+        if (stopRequested) {
             return;
         }
-        status = AutomationExecutionStatus.FAILED;
-        message = Optional.of("cancelled by control request");
+        if (activeModule == null
+                && activeContext == null
+                && moduleState.isEmpty()) {
+            stopRequested = true;
+            stopOutcome = StopOutcome.CLEAN;
+            return;
+        }
+        stopRequested = true;
+        stopOutcome = StopOutcome.PENDING;
+        message = Optional.of("stop requested");
+        if (moduleExecutionUnconfirmed) {
+            stopOutcome = StopOutcome.UNSAFE;
+            finishStop(stopOutcome);
+            return;
+        }
+        AutomationModuleContext context;
+        try {
+            context = stopContext();
+        } catch (RuntimeException exception) {
+            stopOutcome = StopOutcome.UNSAFE;
+            finishStop(stopOutcome);
+            return;
+        }
+        if (context == null) {
+            finishStop(StopOutcome.CLEAN);
+            return;
+        }
+        try {
+            stopOutcome = Objects.requireNonNull(
+                    activeModule.stop(context),
+                    "module stop outcome"
+            );
+        } catch (RuntimeException exception) {
+            stopOutcome = StopOutcome.UNSAFE;
+        }
+        if (stopOutcome != StopOutcome.PENDING) {
+            finishStop(stopOutcome);
+        }
+    }
+
+    public synchronized StopOutcome pollStop() {
+        if (!stopRequested || stopOutcome != StopOutcome.PENDING) {
+            return stopOutcome;
+        }
+        if (moduleExecutionUnconfirmed) {
+            stopOutcome = StopOutcome.UNSAFE;
+            finishStop(stopOutcome);
+            return stopOutcome;
+        }
+        AutomationModuleContext context;
+        try {
+            context = stopContext();
+        } catch (RuntimeException exception) {
+            stopOutcome = StopOutcome.UNSAFE;
+            finishStop(stopOutcome);
+            return stopOutcome;
+        }
+        if (context == null) {
+            finishStop(StopOutcome.CLEAN);
+            return stopOutcome;
+        }
+        try {
+            stopOutcome = Objects.requireNonNull(
+                    activeModule.pollStop(context),
+                    "module stop poll outcome"
+            );
+        } catch (RuntimeException exception) {
+            stopOutcome = StopOutcome.UNSAFE;
+        }
+        if (stopOutcome != StopOutcome.PENDING) {
+            finishStop(stopOutcome);
+        }
+        return stopOutcome;
     }
 
     public synchronized GenericAutomationSnapshot snapshot() {
@@ -154,6 +247,8 @@ public final class GenericAutomationEngine {
         stepIndex++;
         moduleState = Map.of();
         message = Optional.empty();
+        activeModule = null;
+        activeContext = null;
         if (stepIndex >= workflow.steps().size()) {
             status = AutomationExecutionStatus.SUCCEEDED;
         } else {
@@ -177,6 +272,51 @@ public final class GenericAutomationEngine {
             status = AutomationExecutionStatus.RUNNING;
         }
         message = Optional.empty();
+    }
+
+    private void rememberActiveModule(
+            AutomationModule module,
+            AutomationModuleContext context,
+            AutomationModuleStatus resultStatus
+    ) {
+        activeModule = switch (resultStatus) {
+            case RUNNING, PAUSED, FAILED -> module;
+            case SUCCEEDED -> null;
+        };
+        activeContext = activeModule == null ? null : context;
+    }
+
+    private AutomationModuleContext stopContext() {
+        if (activeModule != null && activeContext != null) {
+            return activeContext;
+        }
+        if (stepIndex >= workflow.steps().size()) {
+            return null;
+        }
+        AutomationStep step = workflow.steps().get(stepIndex);
+        activeModule = registry.require(step.type());
+        activeContext = new AutomationModuleContext(
+                taskId,
+                step,
+                moduleState,
+                recovered,
+                lastConfirmedAction
+        );
+        return activeContext;
+    }
+
+    private void finishStop(StopOutcome outcome) {
+        if (outcome == StopOutcome.CLEAN
+                && status != AutomationExecutionStatus.FAILED) {
+            status = AutomationExecutionStatus.FAILED;
+            message = Optional.of("cancelled by control request");
+        } else if (outcome == StopOutcome.UNSAFE
+                && status != AutomationExecutionStatus.FAILED) {
+            status = AutomationExecutionStatus.FAILED;
+            message = Optional.of("automation stop could not be confirmed");
+        }
+        activeModule = null;
+        activeContext = null;
     }
 
     private void saveCheckpoint() {

@@ -1,6 +1,7 @@
 package dev.stowling.automation;
 
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.schedule.StopOutcome;
 import java.util.Optional;
 
 /**
@@ -21,4 +22,12 @@ public interface ContainerInteraction {
     ContainerAttemptResult poll(ContainerAttempt attempt);
 
     void cancel(ContainerAttempt attempt);
+
+    default StopOutcome requestStop(ContainerAttempt attempt) {
+        return StopOutcome.UNSAFE;
+    }
+
+    default StopOutcome pollStop(ContainerAttempt attempt) {
+        return StopOutcome.UNSAFE;
+    }
 }

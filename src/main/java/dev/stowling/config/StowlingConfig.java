@@ -40,8 +40,13 @@ public record StowlingConfig(
         List<AuditSchedule> auditSchedules,
         ContainerRef overflowContainer
 ) {
+    public static final int CURRENT_SCHEMA_VERSION = 5;
+
     public StowlingConfig {
-        if (schemaVersion != 4) {
+        if (schemaVersion == 4) {
+            schemaVersion = CURRENT_SCHEMA_VERSION;
+        }
+        if (schemaVersion != CURRENT_SCHEMA_VERSION) {
             throw new IllegalArgumentException(
                     "unsupported config schemaVersion: " + schemaVersion
             );
@@ -107,7 +112,7 @@ public record StowlingConfig(
             ContainerRef overflowContainer
     ) {
         this(
-                4,
+                CURRENT_SCHEMA_VERSION,
                 resources.coordinates(),
                 resources.regions(),
                 resources.caches(),
@@ -132,7 +137,7 @@ public record StowlingConfig(
             ContainerRef overflowContainer
     ) {
         this(
-                4,
+                CURRENT_SCHEMA_VERSION,
                 coordinatePoints,
                 pickupRegions,
                 cacheContainers,
@@ -236,7 +241,7 @@ public record StowlingConfig(
             Duration defaultIdleDelay,
             List<PickupSite> pickupSites
     ) {
-        if (schemaVersion < 1 || schemaVersion > 4) {
+        if (schemaVersion < 1 || schemaVersion > CURRENT_SCHEMA_VERSION) {
             throw new IllegalArgumentException(
                     "unsupported legacy config schemaVersion: " + schemaVersion
             );
@@ -293,7 +298,7 @@ public record StowlingConfig(
             List<NamedCache> caches,
             List<PickupWorkflow> workflows
     ) {
-        if (schemaVersion < 2 || schemaVersion > 4) {
+        if (schemaVersion < 2 || schemaVersion > CURRENT_SCHEMA_VERSION) {
             throw new IllegalArgumentException(
                     "unsupported config schemaVersion: " + schemaVersion
             );

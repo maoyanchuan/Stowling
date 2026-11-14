@@ -67,7 +67,7 @@ final class ConfigTestFixtures {
     static StowlingConfig configWithAutomation(List<AutomationWorkflow> workflows) {
         StowlingConfig base = config(List.of());
         return new StowlingConfig(
-                4,
+                5,
                 base.coordinatePoints(),
                 base.pickupRegions(),
                 base.cacheContainers(),

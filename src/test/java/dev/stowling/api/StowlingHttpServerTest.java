@@ -102,6 +102,18 @@ class StowlingHttpServerTest {
     }
 
     @Test
+    void removedPauseAndResumeRoutesDoNotCallControlService() throws Exception {
+        for (String path : List.of("/v1/pause", "/v1/resume")) {
+            HttpResponse<String> authenticated = send("POST", path, null, TOKEN);
+            HttpResponse<String> wrongToken = send("POST", path, null, "wrong-token");
+
+            assertEquals(404, authenticated.statusCode());
+            assertEquals(401, wrongToken.statusCode());
+        }
+        assertEquals(0, service.calls());
+    }
+
+    @Test
     void acceptsCorrectToken() throws Exception {
         HttpResponse<String> response = send("GET", "/v1/status", null, TOKEN);
 
@@ -242,8 +254,8 @@ class StowlingHttpServerTest {
         assertStatus(202, "POST", "/v1/audits", "{\"containerIds\":[\"overflow\"]}");
         assertStatus(200, "GET", "/v1/inventory", null);
         assertStatus(200, "GET", "/v1/containers", null);
-        assertStatus(200, "POST", "/v1/pause", null);
-        assertStatus(200, "POST", "/v1/resume", null);
+        assertStatus(404, "POST", "/v1/pause", null);
+        assertStatus(404, "POST", "/v1/resume", null);
         assertStatus(200, "POST", "/v1/config/reload", null);
         assertStatus(200, "GET", "/v1/automation-modules", null);
         assertStatus(200, "GET", "/v1/config/automation-workflows", null);

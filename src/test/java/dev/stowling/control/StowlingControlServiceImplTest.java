@@ -1,6 +1,7 @@
 package dev.stowling.control;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -500,7 +501,7 @@ class StowlingControlServiceImplTest {
     }
 
     @Test
-    void rejectsPickupConfigurationWhilePausedTaskExists() {
+    void ignoresLegacyPausedTasksWhenSchedulerIsIdle() {
         ContainerRef cache = container("cache", 0);
         ContainerRef overflow = container("overflow", 10);
         StowlingConfig config = config(cache, overflow);
@@ -532,26 +533,27 @@ class StowlingControlServiceImplTest {
                 store
         );
         PickupConfigSnapshot before = service.pickupConfig();
+
+        PickupConfigSnapshot saved = service.updatePickupConfig(
+                new PickupConfigUpdateRequest(
+                        before.revision(),
+                        before.pickupRegions(),
+                        before.cacheContainers(),
+                        before.pickupWorkflows()
+                )
+        );
         ConfigCoordinatePointsSnapshot points = service.coordinatePoints();
         ConfigCoordinatePointsUpdateRequest pointRequest =
                 new ConfigCoordinatePointsUpdateRequest(
-                points.revision(),
-                points.coordinatePoints()
+                        points.revision(),
+                        points.coordinatePoints()
+                );
+        ConfigCoordinatePointsSnapshot savedPoints = service.updateCoordinatePoints(
+                pointRequest
         );
 
-        assertThrows(
-                ActiveTaskConflictException.class,
-                () -> service.updatePickupConfig(new PickupConfigUpdateRequest(
-                before.revision(),
-                before.pickupRegions(),
-                before.cacheContainers(),
-                before.pickupWorkflows()
-        ))
-        );
-        assertThrows(
-                ActiveTaskConflictException.class,
-                () -> service.updateCoordinatePoints(pointRequest)
-        );
+        assertEquals(before.pickupWorkflows(), saved.pickupWorkflows());
+        assertEquals(points.coordinatePoints(), savedPoints.coordinatePoints());
     }
 
     @Test
@@ -588,16 +590,25 @@ class StowlingControlServiceImplTest {
     }
 
     @Test
-    void legacyPausedRecoveryFailsWithoutBlockingANewPickup() {
-        assertInvalidRecoveryDoesNotBlock("farm|PAUSED", "legacy-paused");
+    void legacyPausedRecoveryFailsWithoutReplayingCheckpoint() {
+        assertRecoveryDiscardsCheckpointAndQueuesNewPickup(
+                "farm|PAUSED",
+                "legacy-paused"
+        );
     }
 
     @Test
-    void damagedRecoveryFailsWithoutBlockingANewPickup() {
-        assertInvalidRecoveryDoesNotBlock("{damaged-json", "damaged");
+    void damagedRecoveryFailsWithoutReplayingCheckpoint() {
+        assertRecoveryDiscardsCheckpointAndQueuesNewPickup(
+                "{damaged-json",
+                "damaged"
+        );
     }
 
-    private void assertInvalidRecoveryDoesNotBlock(String checkpoint, String suffix) {
+    private void assertRecoveryDiscardsCheckpointAndQueuesNewPickup(
+            String checkpoint,
+            String suffix
+    ) {
         ContainerRef cache = container("cache", 0);
         StowlingConfig config = config(cache, container("overflow", 10));
         StowlingDatabase database = new StowlingDatabase(
@@ -640,16 +651,31 @@ class StowlingControlServiceImplTest {
         service.recoverPendingPickups();
 
         assertEquals(TaskStatus.FAILED, tasks.findById(oldTaskId).orElseThrow().status());
+        assertTrue(tasks.findRecordById(oldTaskId)
+                .orElseThrow()
+                .recoveryCheckpoint()
+                .isEmpty());
         assertEquals(0, factoryCalls.get());
-        assertThrows(
-                AssertionError.class,
-                () -> service.requestPickup(new PickupRequest("farm-workflow"))
+        TaskInfo queued = service.requestPickup(new PickupRequest("farm-workflow"));
+        assertEquals(TaskStatus.PENDING.name(), queued.status());
+        assertEquals(0, factoryCalls.get());
+        assertEquals(
+                "QUEUED",
+                service.taskScheduling().stream()
+                        .filter(info -> info.key().equals(
+                                new dev.stowling.schedule.TaskKey(
+                                        dev.stowling.schedule.TaskKey.PICKUP,
+                                        "farm-workflow"
+                                )
+                        ))
+                        .findFirst()
+                        .orElseThrow()
+                        .state()
         );
-        assertEquals(1, factoryCalls.get());
     }
 
     @Test
-    void startsPausesResumesAndCancelsAutomationTasks() {
+    void queuedAutomationRequiresTwoTicksThenCancellationCompletes() {
         ContainerRef cache = container("cache", 0);
         StowlingConfig config = automationConfig(
                 config(cache, container("overflow", 10)),
@@ -671,120 +697,103 @@ class StowlingControlServiceImplTest {
                 factory
         );
 
-        TaskInfo started = service.requestAutomation(new AutomationTaskRequest("daily"));
-        service.pause();
-        TaskInfo paused = service.tasks().stream()
-                .filter(task -> task.id().equals(started.id()))
-                .findFirst()
-                .orElseThrow();
-        service.resume();
-        TaskInfo resumed = service.tasks().stream()
-                .filter(task -> task.id().equals(started.id()))
-                .findFirst()
-                .orElseThrow();
-        TaskInfo cancelled = service.cancelTask(started.id());
+        TaskInfo queued = service.requestAutomation(
+                new AutomationTaskRequest("daily")
+        );
+        assertEquals(TaskStatus.PENDING.name(), queued.status());
+        assertEquals(0, factory.createCalls());
 
-        assertEquals("AUTOMATION", started.kind());
-        assertEquals("daily", started.workflowId());
-        assertEquals("wait", started.currentStepId());
-        assertEquals("PAUSED", paused.status());
-        assertEquals("RUNNING", resumed.status());
+        service.tickOnClientThread();
+        assertEquals(1, factory.createCalls());
+        service.tickOnClientThread();
+        TaskInfo running = service.tasks().stream()
+                .filter(task -> task.id().equals(queued.id()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("AUTOMATION", running.kind());
+        assertEquals("daily", running.workflowId());
+        assertEquals("wait", running.currentStepId());
+        assertEquals("RUNNING", running.status());
+
+        service.cancelTask(queued.id());
+        service.tickOnClientThread();
+        TaskInfo cancelled = service.tasks().stream()
+                .filter(task -> task.id().equals(queued.id()))
+                .findFirst()
+                .orElseThrow();
         assertEquals("CANCELLED", cancelled.status());
     }
 
     @Test
-    void rejectsPickupAndAutomationStartsWhileEitherKindIsActive() {
+    void queuesPickupAndAutomationWithoutCreatingRuntime() {
         ContainerRef cache = container("cache", 0);
         StowlingConfig config = automationConfig(
                 config(cache, container("overflow", 10)),
                 automationWorkflow()
         );
-        for (TaskKind kind : List.of(TaskKind.PICKUP, TaskKind.AUTOMATION)) {
-            String suffix = kind.name().toLowerCase(java.util.Locale.ROOT);
-            StowlingDatabase database = new StowlingDatabase(
-                    tempDir.resolve("activity-" + suffix + ".db")
-            );
-            SqliteTaskRepository tasks = new SqliteTaskRepository(database);
-            Instant now = Instant.now();
-            tasks.save(new TaskSnapshot(
-                    UUID.randomUUID(),
-                    kind,
-                    TaskStatus.RUNNING,
-                    kind == TaskKind.PICKUP
-                    ? AutomationState.PICKING_UP
-                    : AutomationState.IDLE_WAITING,
-                    now,
-                    now,
-                    Optional.empty()
-            ));
-            TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
-                    new InMemoryGenericAutomationCheckpointStore(),
-                    context -> AutomationModuleResult.running(Map.of())
-            );
-            StowlingControlServiceImpl service = automationService(
-                    config,
-                    tasks,
-                    database,
-                    source(capture(cache)),
-                    factory,
-                    "activity-" + suffix + ".json"
-            );
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("queued-activity.db")
+        );
+        TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                new InMemoryGenericAutomationCheckpointStore(),
+                context -> AutomationModuleResult.running(Map.of())
+        );
+        StowlingControlServiceImpl service = automationService(
+                config,
+                new SqliteTaskRepository(database),
+                database,
+                source(capture(cache)),
+                factory,
+                "queued-activity.json"
+        );
 
-            assertThrows(
-                    ActiveTaskConflictException.class,
-                    () -> service.requestPickup(new PickupRequest("farm-workflow"))
-            );
-            assertThrows(
-                    ActiveTaskConflictException.class,
-                    () -> service.requestAutomation(new AutomationTaskRequest("daily"))
-            );
-        }
+        TaskInfo pickup = service.requestPickup(new PickupRequest("farm-workflow"));
+        TaskInfo automation = service.requestAutomation(
+                new AutomationTaskRequest("daily")
+        );
+
+        assertEquals(TaskStatus.PENDING.name(), pickup.status());
+        assertEquals(TaskStatus.PENDING.name(), automation.status());
+        assertEquals(0, factory.createCalls());
+        assertEquals(
+                2L,
+                service.taskScheduling().stream()
+                        .filter(info -> "QUEUED".equals(info.state()))
+                        .count()
+        );
     }
 
     @Test
-    void blocksAllPermanentConfigurationWritesWhileEitherKindIsPaused() {
+    void blocksConfigurationWritesWhileScheduledRunIsActive() {
         ContainerRef cache = container("cache", 0);
         StowlingConfig config = automationConfig(
                 config(cache, container("overflow", 10)),
                 automationWorkflow()
         );
-        for (TaskKind kind : List.of(TaskKind.PICKUP, TaskKind.AUTOMATION)) {
-            String suffix = kind.name().toLowerCase(java.util.Locale.ROOT);
-            StowlingDatabase database = new StowlingDatabase(
-                    tempDir.resolve("config-lock-" + suffix + ".db")
-            );
-            SqliteTaskRepository tasks = new SqliteTaskRepository(database);
-            Instant now = Instant.now();
-            tasks.save(new TaskSnapshot(
-                    UUID.randomUUID(),
-                    kind,
-                    TaskStatus.PAUSED,
-                    kind == TaskKind.PICKUP
-                    ? AutomationState.PICKING_UP
-                    : AutomationState.IDLE_WAITING,
-                    now,
-                    now,
-                    Optional.empty()
-            ));
-            TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
-                    new InMemoryGenericAutomationCheckpointStore(),
-                    context -> AutomationModuleResult.running(Map.of())
-            );
-            StowlingControlServiceImpl service = automationService(
-                    config,
-                    tasks,
-                    database,
-                    source(capture(cache)),
-                    factory,
-                    "config-lock-" + suffix + ".json"
-            );
+        StowlingDatabase database = new StowlingDatabase(
+                tempDir.resolve("config-lock-active.db")
+        );
+        TestAutomationRuntimeFactory factory = new TestAutomationRuntimeFactory(
+                new InMemoryGenericAutomationCheckpointStore(),
+                context -> AutomationModuleResult.running(Map.of())
+        );
+        StowlingControlServiceImpl service = automationService(
+                config,
+                new SqliteTaskRepository(database),
+                database,
+                source(capture(cache)),
+                factory,
+                "config-lock-active.json"
+        );
+        service.requestAutomation(new AutomationTaskRequest("daily"));
+        service.tickOnClientThread();
 
-            assertConfigurationWritesBlocked(service);
-        }
+        assertEquals(1, factory.createCalls());
+        assertConfigurationWritesBlocked(service);
     }
 
     @Test
-    void cancelReleasesActiveSlotForTheNextAutomationTask() {
+    void cancelQueuedRunAllowsAnotherRunToQueue() {
         ContainerRef cache = container("cache", 0);
         StowlingConfig config = automationConfig(
                 config(cache, container("overflow", 10)),
@@ -807,11 +816,14 @@ class StowlingControlServiceImplTest {
         );
 
         TaskInfo first = service.requestAutomation(new AutomationTaskRequest("daily"));
+        assertEquals(TaskStatus.PENDING.name(), first.status());
         TaskInfo cancelled = service.cancelTask(first.id());
         TaskInfo second = service.requestAutomation(new AutomationTaskRequest("daily"));
 
         assertEquals("CANCELLED", cancelled.status());
         assertTrue(!first.id().equals(second.id()));
+        assertEquals(TaskStatus.PENDING.name(), second.status());
+        assertEquals(0, factory.createCalls());
     }
 
     @Test
@@ -839,6 +851,9 @@ class StowlingControlServiceImplTest {
         );
 
         TaskInfo first = service.requestAutomation(new AutomationTaskRequest("daily"));
+        assertEquals(0, factory.createCalls());
+        service.tickOnClientThread();
+        assertEquals(1, factory.createCalls());
         service.tickOnClientThread();
         TaskInfo second = service.requestAutomation(new AutomationTaskRequest("daily"));
 
@@ -847,7 +862,7 @@ class StowlingControlServiceImplTest {
     }
 
     @Test
-    void recoveryUsesCheckpointStateInsteadOfBeginningAgain() {
+    void recoveryDiscardsAutomationCheckpointInsteadOfResuming() {
         ContainerRef cache = container("cache", 0);
         AutomationWorkflow workflow = automationWorkflow();
         StowlingConfig config = automationConfig(
@@ -901,11 +916,18 @@ class StowlingControlServiceImplTest {
         service.recoverPendingPickups();
         service.tickOnClientThread();
 
-        assertTrue(recovered.get());
+        assertFalse(recovered.get());
         assertEquals(
-                TaskStatus.SUCCEEDED,
+                TaskStatus.FAILED,
                 tasks.findById(taskId).orElseThrow().status()
         );
+        assertTrue(tasks.findById(taskId)
+                .orElseThrow()
+                .failureReason()
+                .orElseThrow()
+                .contains("checkpoint discarded"));
+        assertTrue(checkpoints.load(taskId).isEmpty());
+        assertEquals(0, factory.createCalls());
     }
 
     @Test
@@ -1047,6 +1069,15 @@ class StowlingControlServiceImplTest {
                 workflows.automationWorkflows()
         ))
         );
+        assertThrows(
+                ActiveTaskConflictException.class,
+                () -> service.updateTaskResources(new PickupConfigUpdateRequest(
+                pickup.revision(),
+                pickup.pickupRegions(),
+                pickup.cacheContainers(),
+                List.of()
+        ))
+        );
         assertThrows(ActiveTaskConflictException.class, service::reloadConfig);
     }
 
@@ -1162,7 +1193,7 @@ class StowlingControlServiceImplTest {
             AutomationWorkflow workflow
     ) {
         return new StowlingConfig(
-                4,
+                StowlingConfig.CURRENT_SCHEMA_VERSION,
                 source.coordinatePoints(),
                 source.pickupRegions(),
                 source.cacheContainers(),
@@ -1346,6 +1377,7 @@ class StowlingControlServiceImplTest {
             implements AutomationRuntimeFactory {
         private final dev.stowling.automation.GenericAutomationCheckpointStore checkpoints;
         private final Function<AutomationModuleContext, AutomationModuleResult> executor;
+        private final AtomicInteger createCalls = new AtomicInteger();
 
         private TestAutomationRuntimeFactory(
                 dev.stowling.automation.GenericAutomationCheckpointStore checkpoints,
@@ -1360,6 +1392,7 @@ class StowlingControlServiceImplTest {
                 UUID taskId,
                 AutomationWorkflow workflow
         ) {
+            createCalls.incrementAndGet();
             AutomationModuleRegistry registry = new AutomationModuleRegistry();
             registry.register(new AutomationModule() {
                 @Override
@@ -1386,6 +1419,10 @@ class StowlingControlServiceImplTest {
         @Override
         public List<AutomationModuleDescriptor> modules() {
             return List.of(new AutomationModuleDescriptor(AutomationStepType.WAIT, "Wait"));
+        }
+
+        private int createCalls() {
+            return createCalls.get();
         }
     }
 }

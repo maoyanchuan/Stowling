@@ -6,6 +6,7 @@ import dev.stowling.automation.ContainerInteraction;
 import dev.stowling.automation.ContainerTransfer;
 import dev.stowling.automation.ContainerView;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.schedule.StopOutcome;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -49,6 +50,18 @@ public final class ClientThreadContainerInteraction implements ContainerInteract
     public void cancel(ContainerAttempt attempt) {
         requireClientThread();
         delegate.cancel(attempt);
+    }
+
+    @Override
+    public StopOutcome requestStop(ContainerAttempt attempt) {
+        requireClientThread();
+        return delegate.requestStop(attempt);
+    }
+
+    @Override
+    public StopOutcome pollStop(ContainerAttempt attempt) {
+        requireClientThread();
+        return delegate.pollStop(attempt);
     }
 
     private void requireClientThread() {

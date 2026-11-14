@@ -4,6 +4,7 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupSite;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 final class AutomationFakes {
     private AutomationFakes() {
@@ -127,6 +129,8 @@ final class AutomationFakes {
         private boolean active;
         private boolean failWhenInactive;
         private final List<BlockPosition> startedTargets = new ArrayList<>();
+        private StopOutcome stopOutcome = StopOutcome.CLEAN;
+        private int stopRequests;
 
         FakeNavigation(BlockPosition position) {
             this.position = position;
@@ -164,6 +168,18 @@ final class AutomationFakes {
             cancelCount++;
         }
 
+        @Override
+        public StopOutcome requestStop() {
+            stopRequests++;
+            active = false;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop() {
+            return stopOutcome;
+        }
+
         void setPosition(BlockPosition position) {
             this.position = position;
         }
@@ -180,6 +196,10 @@ final class AutomationFakes {
             this.failWhenInactive = failWhenInactive;
         }
 
+        void setStopOutcome(StopOutcome stopOutcome) {
+            this.stopOutcome = stopOutcome;
+        }
+
         List<BlockPosition> startedTargets() {
             return List.copyOf(startedTargets);
         }
@@ -192,6 +212,9 @@ final class AutomationFakes {
         private final List<String> observedContainers = new ArrayList<>();
         private final Instant attemptStartedAt;
         private int cancelCount;
+        private StopOutcome stopOutcome = StopOutcome.CLEAN;
+        private int stopRequests;
+        private ContainerAttempt stopAttempt;
 
         FakeContainers(Instant attemptStartedAt) {
             this.attemptStartedAt = attemptStartedAt;
@@ -234,6 +257,18 @@ final class AutomationFakes {
             cancelCount++;
         }
 
+        @Override
+        public StopOutcome requestStop(ContainerAttempt attempt) {
+            stopRequests++;
+            stopAttempt = attempt;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop(ContainerAttempt attempt) {
+            return stopOutcome;
+        }
+
         void putView(ContainerView view) {
             views.put(view.containerId(), view);
         }
@@ -249,16 +284,46 @@ final class AutomationFakes {
         List<String> observedContainers() {
             return List.copyOf(observedContainers);
         }
+
+        void setStopOutcome(StopOutcome stopOutcome) {
+            this.stopOutcome = stopOutcome;
+        }
+
+        int stopRequests() {
+            return stopRequests;
+        }
     }
 
     static final class FakePacking implements PackingPort {
         private PackingDisposition disposition = PackingDisposition.ACCEPTED;
         private final List<PackingRequest> requests = new ArrayList<>();
+        private int submits;
+        private int polls;
+        private int stopRequests;
+        private StopOutcome stopOutcome = StopOutcome.CLEAN;
 
         @Override
         public PackingDisposition submit(PackingRequest request) {
+            submits++;
             requests.add(request);
             return disposition;
+        }
+
+        @Override
+        public PackingDisposition poll(PackingRequest request) {
+            polls++;
+            return disposition;
+        }
+
+        @Override
+        public StopOutcome requestStop(UUID taskId) {
+            stopRequests++;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop(UUID taskId) {
+            return stopOutcome;
         }
 
         void setDisposition(PackingDisposition disposition) {
@@ -267,6 +332,22 @@ final class AutomationFakes {
 
         List<PackingRequest> requests() {
             return List.copyOf(requests);
+        }
+
+        void setStopOutcome(StopOutcome stopOutcome) {
+            this.stopOutcome = stopOutcome;
+        }
+
+        int submits() {
+            return submits;
+        }
+
+        int polls() {
+            return polls;
+        }
+
+        int stopRequests() {
+            return stopRequests;
         }
     }
 

@@ -13,6 +13,14 @@ import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
+import dev.stowling.schedule.InterruptionKind;
+import dev.stowling.schedule.TaskKey;
+import dev.stowling.schedule.TaskInterruption;
+import dev.stowling.schedule.TaskSettings;
+import dev.stowling.schedule.TaskTrigger;
+import dev.stowling.schedule.TriggerKind;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,6 +33,9 @@ import java.util.regex.Pattern;
 public final class ConfigValidator {
     private static final Pattern SAFE_ID = Pattern.compile(
             "[a-z0-9][a-z0-9._-]{0,63}"
+    );
+    private static final Pattern TIME_OF_DAY = Pattern.compile(
+            "(?:[01][0-9]|2[0-3]):[0-5][0-9]"
     );
 
     private ConfigValidator() {
@@ -94,6 +105,14 @@ public final class ConfigValidator {
         validateAutomationWorkflows(
                 violations,
                 resourceIds,
+                coordinates,
+                containers,
+                config.pickupWorkflows(),
+                config.automationWorkflows()
+        );
+        validateTaskSettings(
+                violations,
+                regions,
                 coordinates,
                 containers,
                 config.pickupWorkflows(),
@@ -471,6 +490,412 @@ public final class ConfigValidator {
                 );
             }
         }
+    }
+
+    private static void validateTaskSettings(
+            List<ConfigViolation> violations,
+            Map<String, PickupRegion> regions,
+            Map<String, NamedCoordinate> coordinates,
+            Map<String, ContainerRef> containers,
+            List<PickupWorkflow> pickups,
+            List<AutomationWorkflow> automations
+    ) {
+        Map<String, PickupWorkflow> pickupsById = new HashMap<>();
+        for (PickupWorkflow pickup : pickups) {
+            pickupsById.put(pickup.id(), pickup);
+        }
+        Map<String, TaskSettings> automationSettings = new HashMap<>();
+        Map<String, String> automationPaths = new HashMap<>();
+        List<TaskSettings> allSettings = new ArrayList<>();
+        List<String> allPaths = new ArrayList<>();
+        for (int index = 0; index < pickups.size(); index++) {
+            PickupWorkflow pickup = pickups.get(index);
+            String path = "pickupWorkflows[" + index + "].settings";
+            allSettings.add(pickup.settings());
+            allPaths.add(path);
+            validateTaskSettings(
+                    violations,
+                    TaskKey.PICKUP,
+                    pickup.settings(),
+                    path,
+                    regions,
+                    coordinates,
+                    containers,
+                    pickupsById
+            );
+        }
+        for (int index = 0; index < automations.size(); index++) {
+            AutomationWorkflow automation = automations.get(index);
+            String path = "automationWorkflows[" + index + "].settings";
+            automationSettings.put(automation.id(), automation.settings());
+            automationPaths.put(automation.id(), path);
+            allSettings.add(automation.settings());
+            allPaths.add(path);
+            validateTaskSettings(
+                    violations,
+                    TaskKey.AUTOMATION,
+                    automation.settings(),
+                    path,
+                    regions,
+                    coordinates,
+                    containers,
+                    pickupsById
+            );
+        }
+        validateTaskReferences(
+                violations,
+                allSettings,
+                allPaths,
+                automationSettings
+        );
+        validateInterruptionCycles(
+                violations,
+                automationSettings,
+                automationPaths
+        );
+    }
+
+    private static void validateTaskSettings(
+            List<ConfigViolation> violations,
+            String taskKind,
+            TaskSettings settings,
+            String path,
+            Map<String, PickupRegion> regions,
+            Map<String, NamedCoordinate> coordinates,
+            Map<String, ContainerRef> containers,
+            Map<String, PickupWorkflow> pickupsById
+    ) {
+        validateTrigger(
+                violations,
+                taskKind,
+                settings.trigger(),
+                path + ".trigger",
+                regions
+        );
+        validateInterruptionFields(
+                violations,
+                settings.interruption(),
+                path + ".interruption",
+                coordinates,
+                containers,
+                pickupsById
+        );
+    }
+
+    private static void validateTrigger(
+            List<ConfigViolation> violations,
+            String taskKind,
+            TaskTrigger trigger,
+            String path,
+            Map<String, PickupRegion> regions
+    ) {
+        TriggerKind kind = trigger.kind();
+        validateZoneId(violations, trigger.zoneId(), path + ".zoneId");
+        validateTimeValues(violations, trigger.times(), path + ".times");
+        validateTriggerRegionReferences(
+                violations,
+                trigger.regionIds(),
+                path + ".regionIds",
+                regions
+        );
+        boolean intervalAllowed = kind == TriggerKind.FIXED_INTERVAL
+                || kind == TriggerKind.AFTER_COMPLETION;
+        if (!intervalAllowed && trigger.intervalSeconds() != 0L) {
+            violations.add(new ConfigViolation(
+                    path + ".intervalSeconds",
+                    "interval is only valid for FIXED_INTERVAL or "
+                            + "AFTER_COMPLETION triggers"
+            ));
+        }
+        if (kind != TriggerKind.DAILY && !trigger.times().isEmpty()) {
+            violations.add(new ConfigViolation(
+                    path + ".times",
+                    "times are only valid for DAILY triggers"
+            ));
+        }
+        if (kind != TriggerKind.ITEMS_PRESENT && !trigger.regionIds().isEmpty()) {
+            violations.add(new ConfigViolation(
+                    path + ".regionIds",
+                    "regions are only valid for ITEMS_PRESENT triggers"
+            ));
+        }
+        switch (kind) {
+            case FIXED_INTERVAL -> {
+                if (trigger.intervalSeconds() <= 0L) {
+                    violations.add(new ConfigViolation(
+                            path + ".intervalSeconds",
+                            "interval must be positive"
+                    ));
+                }
+            }
+            case DAILY -> {
+                if (trigger.times().isEmpty()) {
+                    violations.add(new ConfigViolation(
+                            path + ".times",
+                            "daily trigger requires at least one time"
+                    ));
+                }
+            }
+            case ITEMS_PRESENT -> {
+                if (trigger.regionIds().isEmpty()
+                        && !TaskKey.PICKUP.equals(taskKind)) {
+                    violations.add(new ConfigViolation(
+                            path + ".regionIds",
+                            "items-present trigger requires at least one region"
+                    ));
+                }
+            }
+            case AFTER_COMPLETION -> {
+                if (trigger.intervalSeconds() <= 0L) {
+                    violations.add(new ConfigViolation(
+                            path + ".intervalSeconds",
+                            "after-completion interval must be positive"
+                    ));
+                }
+            }
+            case MANUAL -> {
+                // Manual triggers have no additional parameters.
+            }
+            default -> throw new IllegalStateException("unsupported trigger kind");
+        }
+    }
+
+    private static void validateZoneId(
+            List<ConfigViolation> violations,
+            String zoneId,
+            String path
+    ) {
+        if (zoneId == null || zoneId.isBlank()) {
+            violations.add(new ConfigViolation(path, "zone id must not be blank"));
+            return;
+        }
+        try {
+            ZoneId.of(zoneId);
+        } catch (DateTimeException exception) {
+            violations.add(new ConfigViolation(path, "unknown time zone: " + zoneId));
+        }
+    }
+
+    private static void validateTimeValues(
+            List<ConfigViolation> violations,
+            List<String> times,
+            String path
+    ) {
+        Set<String> seen = new HashSet<>();
+        for (int index = 0; index < times.size(); index++) {
+            String value = times.get(index);
+            String valuePath = path + "[" + index + "]";
+            if (value == null || !TIME_OF_DAY.matcher(value).matches()) {
+                violations.add(new ConfigViolation(
+                        valuePath,
+                        "time must use HH:mm"
+                ));
+            } else if (!seen.add(value)) {
+                violations.add(new ConfigViolation(
+                        valuePath,
+                        "duplicate daily time"
+                ));
+            }
+        }
+    }
+
+    private static void validateTriggerRegionReferences(
+            List<ConfigViolation> violations,
+            List<String> regionIds,
+            String path,
+            Map<String, PickupRegion> regions
+    ) {
+        Set<String> seen = new HashSet<>();
+        for (int index = 0; index < regionIds.size(); index++) {
+            String regionId = regionIds.get(index);
+            String regionPath = path + "[" + index + "]";
+            requireSafeId(violations, regionId, regionPath);
+            if (!seen.add(regionId)) {
+                violations.add(new ConfigViolation(
+                        regionPath,
+                        "duplicate region reference"
+                ));
+            }
+            if (!regions.containsKey(regionId)) {
+                violations.add(new ConfigViolation(
+                        regionPath,
+                        "pickup region does not exist: " + regionId
+                ));
+            }
+        }
+    }
+
+    private static void validateInterruptionFields(
+            List<ConfigViolation> violations,
+            TaskInterruption interruption,
+            String path,
+            Map<String, NamedCoordinate> coordinates,
+            Map<String, ContainerRef> containers,
+            Map<String, PickupWorkflow> pickupsById
+    ) {
+        if (interruption.kind() != InterruptionKind.INLINE
+                && !interruption.steps().isEmpty()) {
+            violations.add(new ConfigViolation(
+                    path + ".steps",
+                    "steps are only valid for INLINE interruptions"
+            ));
+        }
+        if (interruption.kind() != InterruptionKind.TASK_REFERENCE
+                && interruption.taskId() != null) {
+            violations.add(new ConfigViolation(
+                    path + ".taskId",
+                    "task id is only valid for TASK_REFERENCE interruptions"
+            ));
+        }
+        switch (interruption.kind()) {
+            case NONE -> {
+                // No interruption work is configured.
+            }
+            case INLINE -> validateInlineSteps(
+                    violations,
+                    interruption.steps(),
+                    path + ".steps",
+                    coordinates,
+                    containers,
+                    pickupsById
+            );
+            case TASK_REFERENCE -> {
+                if (interruption.taskId() == null) {
+                    violations.add(new ConfigViolation(
+                            path + ".taskId",
+                            "task reference interruption requires a task id"
+                    ));
+                }
+            }
+            default -> throw new IllegalStateException("unsupported interruption kind");
+        }
+    }
+
+    private static void validateInlineSteps(
+            List<ConfigViolation> violations,
+            List<AutomationStep> steps,
+            String path,
+            Map<String, NamedCoordinate> coordinates,
+            Map<String, ContainerRef> containers,
+            Map<String, PickupWorkflow> pickupsById
+    ) {
+        if (steps.isEmpty()) {
+            violations.add(new ConfigViolation(
+                    path,
+                    "inline interruption requires at least one step"
+            ));
+            return;
+        }
+        Map<String, String> stepIds = new HashMap<>();
+        for (int index = 0; index < steps.size(); index++) {
+            AutomationStep step = steps.get(index);
+            String stepPath = path + "[" + index + "]";
+            requireUnique(violations, stepIds, step.id(), stepPath + ".id");
+            requireSafeId(violations, step.id(), stepPath + ".id");
+            validateAutomationStep(
+                    violations,
+                    step,
+                    stepPath,
+                    coordinates,
+                    containers,
+                    pickupsById
+            );
+        }
+    }
+
+    private static void validateTaskReferences(
+            List<ConfigViolation> violations,
+            List<TaskSettings> allSettings,
+            List<String> allPaths,
+            Map<String, TaskSettings> automationSettings
+    ) {
+        for (int index = 0; index < allSettings.size(); index++) {
+            validateTaskReference(
+                    violations,
+                    allSettings.get(index).interruption(),
+                    allPaths.get(index) + ".interruption.taskId",
+                    automationSettings
+            );
+        }
+    }
+
+    private static void validateTaskReference(
+            List<ConfigViolation> violations,
+            TaskInterruption interruption,
+            String path,
+            Map<String, TaskSettings> automationSettings
+    ) {
+        if (interruption.kind() != InterruptionKind.TASK_REFERENCE
+                || interruption.taskId() == null) {
+            return;
+        }
+        requireSafeId(violations, interruption.taskId(), path);
+        if (!automationSettings.containsKey(interruption.taskId())) {
+            violations.add(new ConfigViolation(
+                    path,
+                    "interruption task does not exist or is not an automation task: "
+                            + interruption.taskId()
+            ));
+        }
+    }
+
+    private static void validateInterruptionCycles(
+            List<ConfigViolation> violations,
+            Map<String, TaskSettings> automationSettings,
+            Map<String, String> automationPaths
+    ) {
+        Set<String> visited = new HashSet<>();
+        List<String> stack = new ArrayList<>();
+        for (String taskId : automationSettings.keySet()) {
+            visitInterruptionTask(
+                    taskId,
+                    automationSettings,
+                    automationPaths,
+                    visited,
+                    stack,
+                    violations
+            );
+        }
+    }
+
+    private static void visitInterruptionTask(
+            String taskId,
+            Map<String, TaskSettings> automationSettings,
+            Map<String, String> automationPaths,
+            Set<String> visited,
+            List<String> stack,
+            List<ConfigViolation> violations
+    ) {
+        if (visited.contains(taskId)) {
+            return;
+        }
+        stack.add(taskId);
+        TaskInterruption interruption = automationSettings.get(taskId).interruption();
+        if (interruption.kind() == InterruptionKind.TASK_REFERENCE
+                && interruption.taskId() != null
+                && automationSettings.containsKey(interruption.taskId())) {
+            if (stack.contains(interruption.taskId())) {
+                int start = stack.indexOf(interruption.taskId());
+                List<String> cycle = new ArrayList<>(stack.subList(start, stack.size()));
+                cycle.add(interruption.taskId());
+                violations.add(new ConfigViolation(
+                        automationPaths.get(taskId) + ".interruption.taskId",
+                        "interruption task reference creates a cycle: "
+                                + String.join(" -> ", cycle)
+                ));
+            } else {
+                visitInterruptionTask(
+                        interruption.taskId(),
+                        automationSettings,
+                        automationPaths,
+                        visited,
+                        stack,
+                        violations
+                );
+            }
+        }
+        stack.remove(stack.size() - 1);
+        visited.add(taskId);
     }
 
     private static void validateAutomationStep(

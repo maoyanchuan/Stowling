@@ -11,6 +11,10 @@ ICON_SVG = RESOURCE_ROOT / "assets" / "stowling" / "icon.svg"
 ICON_PNG = RESOURCE_ROOT / "assets" / "stowling" / "icon.png"
 ICON_SCRIPT = ROOT / "scripts" / "generate-brand-icon.ps1"
 FABRIC_MOD = RESOURCE_ROOT / "fabric.mod.json"
+HTTP_SERVER = (
+    ROOT / "src" / "main" / "java" / "dev" / "stowling" / "api"
+    / "StowlingHttpServer.java"
+)
 
 
 def read_web(name: str) -> str:
@@ -38,18 +42,19 @@ PAGES = {
 COMMON = read_web("common.js")
 COORDINATES = read_web("coordinates.js")
 TASKS = read_web("tasks.js")
+RESOURCES = read_web("task-resources.js")
 STORAGE = read_web("storage.js")
 DASHBOARD = read_web("dashboard.js")
 STYLES = read_web("styles.css")
-SCRIPTS = COMMON + COORDINATES + TASKS + STORAGE + DASHBOARD
+SCRIPTS = COMMON + COORDINATES + TASKS + RESOURCES + STORAGE + DASHBOARD
 
 
 def test_four_pages_are_real_urls_with_shared_assets() -> None:
     expected_titles = {
         "index.html": "状态概览",
         "coordinates.html": "命名坐标",
-        "tasks.html": "任务编排",
-        "storage.html": "仓库与库存",
+        "tasks.html": "任务与资源",
+        "storage.html": "库存查询",
     }
 
     for filename, html in PAGES.items():
@@ -115,323 +120,289 @@ def test_project_icon_matches_brand_mark_and_is_reproducible() -> None:
         assert any("assets/stowling/icon.svg" in line for line in header)
 
 
-def test_each_page_loads_its_focused_script() -> None:
+def test_each_page_loads_its_focused_scripts() -> None:
     assert 'src="/dashboard.js"' in PAGES["index.html"]
     assert 'src="/coordinates.js"' in PAGES["coordinates.html"]
+    assert 'src="/task-resources.js"' in PAGES["tasks.html"]
     assert 'src="/tasks.js"' in PAGES["tasks.html"]
     assert 'src="/storage.js"' in PAGES["storage.html"]
     assert "app.js" not in "".join(PAGES.values())
 
 
-def test_coordinate_page_supports_named_coordinate_crud_and_ordering() -> None:
-    html = PAGES["coordinates.html"]
-    for element_id in (
-        "coordinate-form",
-        "coordinate-list",
-        "add-coordinate-button",
-        "discard-coordinate-button",
-        "save-coordinate-button",
-        "coordinate-errors",
-    ):
-        assert f'id="{element_id}"' in html
-
-    for fragment in (
-        "function addPoint()",
-        "function removePoint(index)",
-        "function movePoint(index, offset)",
-        "function createPointCard(point, index)",
-        'for (const axis of ["x", "y", "z"])',
-        'document.createElement("select")',
-        "state.draft.coordinatePoints.splice(index, 1)",
-    ):
-        assert fragment in COORDINATES
-
-    assert "坐标 ID" in COORDINATES
-    assert "显示名称" in COORDINATES
-    assert "维度" in COORDINATES
+def test_task_resources_script_has_a_static_route() -> None:
+    server = read_resource(HTTP_SERVER)
+    assert '"/task-resources.js"' in server
+    assert '"stowling-web/task-resources.js"' in server
 
 
-def test_coordinate_cards_use_a_dedicated_drag_handle() -> None:
-    assert "card.draggable = true" not in COORDINATES
-    assert 'const dragHandle = Stowling.element("button", "drag-handle", "⋮⋮")' \
-        in COORDINATES
-    assert "dragHandle.draggable = true" in COORDINATES
-    assert 'dragHandle.title = "拖动排序"' in COORDINATES
-    assert 'dragHandle.setAttribute("aria-label", "拖动排序")' in COORDINATES
-    assert 'dragHandle.addEventListener("dragstart"' in COORDINATES
-    assert "installDragEvents(card, dragHandle, index)" in COORDINATES
-    assert 'card.addEventListener("dragover"' in COORDINATES
-    assert 'card.addEventListener("drop"' in COORDINATES
-    assert ".drag-handle {" in STYLES
-    assert "cursor: grab;" in STYLES
-    assert "cursor: grabbing;" in STYLES
-
-
-def test_coordinate_page_uses_atomic_revision_save() -> None:
-    assert 'Stowling.request("/v1/config/coordinate-points")' in COORDINATES
-    assert 'method: "PUT"' in COORDINATES
-    assert "revision: state.snapshot.revision" in COORDINATES
-    assert "coordinatePoints:" in COORDINATES
-    assert 'error.status === 409' in COORDINATES
-    assert 'error?.code === "active_task_conflict"' in COORDINATES
-    assert "配置已被外部修改" in COORDINATES
-    assert "活动或暂停任务存在" in COORDINATES
-
-
-def test_coordinate_delete_checks_pickup_and_automation_references() -> None:
-    assert 'Stowling.request("/v1/config/pickup")' in COORDINATES
-    assert 'Stowling.request("/v1/config/automation-workflows")' in COORDINATES
-    assert "standbyCoordinateId" in COORDINATES
-    assert "centerCoordinateId" in COORDINATES
-    assert "firstCornerCoordinateId" in COORDINATES
-    assert "secondCornerCoordinateId" in COORDINATES
-    assert "仍被" in COORDINATES
-    assert "请先在对应页面解除引用" in COORDINATES
-
-
-def test_task_page_is_a_visual_module_builder() -> None:
+def test_tasks_page_unifies_pickup_and_automation_with_filters() -> None:
     html = PAGES["tasks.html"]
     for element_id in (
-        "workflow-form",
-        "workflow-list",
-        "workflow-editor",
-        "step-list",
-        "add-workflow-button",
-        "add-step-button",
-        "save-workflow-button",
-        "launch-workflow",
-        "start-task-button",
+        "task-filter-name",
+        "task-filter-kind",
         "task-list",
+        "add-task-button",
+        "task-form",
+        "task-kind",
+        "task-priority",
+        "save-task-button",
+        "delete-task-button",
+        "run-task-button",
+        "enable-task-button",
+        "disable-task-button",
     ):
         assert f'id="{element_id}"' in html
 
+    assert '<option value="PICKUP">自动拾取</option>' in html
+    assert '<option value="AUTOMATION">自定义任务</option>' in html
+    assert "function renderTaskList()" in TASKS
+    assert "elements.filterName.value.trim().toLowerCase()" in TASKS
+    assert "const matchesKind = !kind || entry.kind === kind;" in TASKS
+    assert "function selectDefinition(kind, id)" in TASKS
+    assert "function saveTask()" in TASKS
+    assert "function deleteSelectedTask()" in TASKS
+
+
+def test_task_definition_http_contract_is_atomic_and_single_item() -> None:
+    assert '"/v1/task-definitions"' in TASKS
+    assert (
+        "`/v1/task-definitions/${encodeURIComponent(kind)}`"
+        in TASKS
+    )
+    assert "`/${encodeURIComponent(id)}`" in TASKS
+    assert "state.revision ? \"PUT\" : \"POST\"" in TASKS
+    assert "{ revision: state.revision, definition }" in TASKS
+    assert 'method: "DELETE"' in TASKS
+    assert "body: JSON.stringify({ revision: state.revision })" in TASKS
+    assert (
+        "const suffix = enabled ? \"enable\" : \"disable\";"
+        in TASKS
+    )
+    assert "state.schedules = scheduleMap(result?.scheduling);" in TASKS
+    assert "`/${encodeURIComponent(draft.id)}/run`" in TASKS
+    assert "任务已保存；调度保持当前启用状态" in TASKS
+    assert "/v1/config/automation-workflows" not in TASKS
+
+
+def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
+    for trigger in (
+        "MANUAL",
+        "FIXED_INTERVAL",
+        "DAILY",
+        "AFTER_COMPLETION",
+        "ITEMS_PRESENT",
+    ):
+        assert f'"{trigger}"' in TASKS
+        assert f'value="{trigger}"' in PAGES["tasks.html"]
+
+    assert "intervalSeconds:" in TASKS
+    assert "trigger.kind === \"FIXED_INTERVAL\"" in TASKS
+    assert "|| trigger.kind === \"AFTER_COMPLETION\"" in TASKS
+    assert '"该触发器必须填写大于等于 1 的间隔秒数"' in TASKS
+    assert "times: [...draft.settings.trigger.times]" in TASKS
+    assert 'zoneId: "Asia/Shanghai"' in TASKS
+    assert "regionIds: [...draft.settings.trigger.regionIds]" in TASKS
+    assert "autoStartOnRestart: draft.settings.autoStartOnRestart" in TASKS
+    assert "kind: \"NONE\"" in TASKS
+    assert '["NONE", "INLINE", "TASK_REFERENCE"]' in TASKS
+    assert "entry.kind === \"AUTOMATION\" && entry.id !== state.draft.id" \
+        in TASKS
+    assert "留空时使用自身全部区域" in TASKS
+    assert "填写区域 ID 表示明确选择自定义区域" in TASKS
+    assert "taskId: draft.settings.interruption.kind === \"TASK_REFERENCE\"" \
+        in TASKS
+
+
+def test_task_modules_and_parameters_come_from_descriptors() -> None:
+    assert '"/v1/automation/modules"' in TASKS
+    assert "FIELD_DEFINITIONS" not in TASKS
+    assert "FALLBACK_MODULES" not in TASKS
+    assert "const modules = Array.isArray(payload) ? payload : payload?.modules;" \
+        in TASKS
+    assert "parameters: (Array.isArray(module?.parameters)" in TASKS
+    assert "moduleId: String(module?.moduleId || type)" in TASKS
+    assert "aliases: Array.isArray(parameter?.aliases)" in TASKS
+    assert "const definitions = moduleFor(step.type)?.parameters || [];" in TASKS
+    assert "function moduleSelect(step, steps, scope)" in TASKS
+    assert "function parameterControl(steps, step, definition, index, scope)" \
+        in TASKS
+    assert "step.parameters = {};" in TASKS
+    assert "const option = new Option(module.name, module.moduleId);" in TASKS
+    assert "step.type = moduleById(select.value)?.type || select.value;" in TASKS
+    assert "function parameterValue(step, definition)" in TASKS
+    assert "for (const name of [definition.key, ...(definition.aliases || [])])" \
+        in TASKS
+    assert "function appendParameterAliases(editor, aliases)" in TASKS
+    assert "function renderModuleCatalog()" in TASKS
+
+
+def test_pickup_and_automation_task_shapes_match_contract() -> None:
+    assert "pickup: null," in TASKS
+    assert "steps: draft.kind === \"AUTOMATION\"" in TASKS
+    assert "id: result.id," in TASKS
+    assert "name: result.name," in TASKS
+    assert "regions: draft.pickup.regions.map((binding)" in TASKS
+    assert "cacheIds: [...draft.pickup.cacheIds]" in TASKS
+    assert "completionIdleDelay: Number(draft.pickup.completionIdleDelay)" \
+        in TASKS
+    assert "settings" in TASKS
+    assert "function validatePickupTask(errors)" in TASKS
+    assert "拾取任务至少选择一个区域" in TASKS
+    assert "拾取任务至少选择一个缓存" in TASKS
+    assert "自定义任务至少需要一个步骤" in TASKS
+
+
+def test_schedule_information_and_runtime_actions_are_visible() -> None:
     for fragment in (
-        "function addWorkflow()",
-        "function addStep()",
-        "function moveWorkflow(index, offset)",
-        "function moveStep(workflow, index, offset)",
-        "function moduleSelect(step, index, workflowIndex)",
-        "function parameterControl(step, definition, stepIndex, workflowIndex)",
-        "workflow.steps.splice(index, 1)",
+        "enabled: Boolean(value?.enabled)",
+        'state: String(value?.state || "UNKNOWN")',
+        'priority: String(value?.priority || "MEDIUM")',
+        "nextRunAt: value?.nextRunAt || null",
+        "runId: value?.runId || null",
+        'message: String(value?.message || "")',
     ):
         assert fragment in TASKS
 
-
-def test_task_builder_exposes_all_first_release_modules() -> None:
-    expected_types = (
-        "NAVIGATE",
-        "WAIT",
-        "RUN_PICKUP",
-        "TAKE_ITEMS",
-        "PUT_ITEMS",
-        "TRANSFER_ITEMS",
-        "CHECK_INVENTORY",
-        "ACQUIRE_MATERIALS",
-        "CRAFT_ITEM",
-    )
-    for module_type in expected_types:
-        assert module_type in TASKS
-
-    for field_name in (
-        "coordinateId",
-        "workflowId",
-        "regionId",
-        "sourceContainerId",
-        "destinationContainerId",
-        "itemId",
-        "count",
-        "durationSeconds",
-    ):
-        assert field_name in TASKS
+    assert "Stowling.scheduleStateLabel(schedule.state)" in TASKS
+    assert "Stowling.formatDate(schedule.nextRunAt)" in TASKS
+    assert "Stowling.priorityLabel(schedule.priority)" in TASKS
+    assert "schedule?.message" in TASKS
+    assert "function scheduleStateBadge(schedule)" in TASKS
+    assert "function scheduleCountdown(value)" in TASKS
+    assert "`倒计时：${scheduleCountdown(schedule.nextRunAt)}`" in TASKS
+    assert '["UNSAFE", "未安全中断"]' in COMMON
+    assert "function runSelectedTask()" in TASKS
+    assert "function changeSchedule(kind, id, enabled)" in TASKS
 
 
-def test_task_module_types_are_internal_values_not_visible_codes() -> None:
-    assert "option.value = module.type;" in TASKS
-    assert "option.textContent = module.name;" in TASKS
-    assert "option.title = module.type;" in TASKS
-    assert 'card.dataset.moduleType = module.type;' in TASKS
-    assert 'Stowling.element("code", "", module.type)' not in TASKS
-    assert "`${module.name} · ${module.type}`" not in TASKS
+def test_task_polling_refreshes_schedules_without_replacing_draft() -> None:
+    definition_start = TASKS.index("async function loadDefinitions")
+    definition_end = TASKS.index("function scheduleMap", definition_start)
+    definition_refresh = TASKS[definition_start:definition_end]
+    assert "async function loadDefinitions(background = false)" in TASKS
+    assert "state.schedules = scheduleMap(payload?.scheduling);" in TASKS
+    assert "state.draft" not in definition_refresh
+
+    assert "async function refreshLiveState(reportErrors = false)" in TASKS
+    assert "loadDefinitions(true)," in TASKS
+    assert "loadRuntimeTasks()" in TASKS
+    assert "void refreshLiveState(false);" in TASKS
+    assert "void refreshLiveState(true);" in TASKS
+    assert 'elements.triggerKind.addEventListener("change"' in TASKS
+    assert "async function saveTask()" in TASKS
 
 
-def test_task_requests_match_backend_parameter_contract() -> None:
-    assert 'type === "WAIT"' in TASKS
-    assert "result.seconds" in TASKS
-    assert "result.containerId" in TASKS
-    assert "result.destination" in TASKS
-    assert 'String(parameters.durationSeconds ?? "")' in TASKS
-    assert 'String(parameters.sourceContainerId || "")' in TASKS
-    assert 'String(parameters.destinationContainerId || "")' in TASKS
-    assert "delete result[key]" in TASKS
+def test_task_resources_use_new_resource_api_without_batch_tasks() -> None:
+    assert 'Stowling.request("/v1/config/task-resources")' in RESOURCES
+    assert 'method: "PUT"' in RESOURCES
+    assert "revision: state.pickupSnapshot.revision" in RESOURCES
+    assert "pickupRegions," in RESOURCES
+    assert "cacheContainers" in RESOURCES
+    assert "pickupWorkflows" not in RESOURCES
+    assert "/v1/config/pickup" not in RESOURCES
+    assert "/v1/config/automation-workflows" not in RESOURCES
 
-
-def test_task_page_uses_expected_automation_apis() -> None:
-    assert '"/v1/config/automation-workflows"' in TASKS
-    assert '"/v1/automation-modules"' in TASKS
-    assert '"/v1/tasks/automation"' in TASKS
-    assert '"/v1/tasks"' in TASKS
-    assert "`/v1/tasks/${encodeURIComponent(taskId)}/cancel`" in TASKS
-    assert '"/v1/pause"' in TASKS
-    assert '"/v1/resume"' in TASKS
-    assert "workflowId" in TASKS
-    assert "currentStepId" in TASKS
-    assert "moduleState" in TASKS
-
-
-def test_task_page_displays_navigation_failure_reason() -> None:
-    assert "Stowling.conciseFailureReason(task.failureReason)" in TASKS
-    assert 'metaText("原因", failureReason)' in TASKS
-    assert "reason.title = String(task.failureReason);" in TASKS
-    assert "function conciseFailureReason(value)" in COMMON
-    assert 'return "目标不可达";' in COMMON
-    assert 'return "客户端已断开";' in COMMON
-    assert 'return "操作超时";' in COMMON
-    assert 'if (["FAILED", "CANCELLED"].includes(status))' in TASKS
-    assert 'badge.classList.add("danger")' in TASKS
-
-
-def test_task_save_is_atomic_and_validation_is_explicit() -> None:
-    assert "revision: state.snapshot.revision" in TASKS
-    assert "automationWorkflows:" in TASKS
-    assert 'method: "PUT"' in TASKS
-    assert "function validateDraft()" in TASKS
-    assert "至少需要一个步骤" in TASKS
-    assert "重复任务 ID" in TASKS
-    assert "不能为空" in TASKS
-    assert "配置版本冲突或任务正在运行" in TASKS
-
-
-def test_pickup_region_options_use_api_id_and_filter_missing_values() -> None:
-    assert 'field("regionId", "运行范围（可选）", "pickup-region", false)' in TASKS
-    assert '"整个流程（全部区域）"' in TASKS
-    assert 'placeholder.textContent = definition.required ? "请选择" : "不指定";' in TASKS
-    assert "const id = region.id || region.regionId;" in TASKS
-    assert 'if (id === undefined || id === null || id === "") {' in TASKS
-    assert "名称：" in TASKS
-    assert "ID：${workflow.id}" in TASKS
-    assert "ID：${id}" in TASKS
-
-
-def test_user_visible_enum_labels_are_localized_without_changing_values() -> None:
-    for label in (
-        '"minecraft:overworld", "主世界"',
-        '"minecraft:the_nether", "下界"',
-        '"minecraft:the_end", "末地"',
-        '"NEAREST_AVAILABLE", "最近可用缓存"',
-        '"AFTER_REGION", "每个区域结束后"',
-        '"AFTER_ROUND", "整轮结束后"',
-        '"ALL_IDLE", "全部区域空闲后"',
-        '"NAVIGATE_PICKUP", "前往拾取区域"',
-        '"SUCCEEDED", "已完成"'
-    ):
-        assert label in COMMON
-
-    assert "option.value = dimension;" in COORDINATES
-    assert "option.textContent = Stowling.dimensionLabel(dimension);" in COORDINATES
-    assert '["NEAREST_AVAILABLE", Stowling.cachePolicyLabel("NEAREST_AVAILABLE")]' \
-        in STORAGE
-    assert "Stowling.taskStageLabel(task.stage || task.automationState)" in TASKS
-    assert "Stowling.moduleStateLabel(task.moduleState || task.automationState)" \
-        in TASKS
-    assert "Stowling.containerTypeLabel(container.type || \"OTHER\")" in STORAGE
-    assert "配置版本：" in "".join(PAGES.values())
-    assert "revision: --" not in "".join(PAGES.values())
-
-
-def test_draft_errors_describe_location_field_and_fix_while_editing() -> None:
-    assert "showErrors(state.dirty || errors.length > 0 ? errors : [])" in TASKS
-    assert "showPickupErrors(state.pickupDirty || errors.length > 0 ? errors : [])" \
-        in STORAGE
-    assert "showErrors(state.dirty || blocked ? errors : [])" in COORDINATES
-    assert "第 ${workflowIndex + 1} 个任务" not in TASKS
-    assert "任务 ${workflowIndex + 1}" in TASKS
-    assert "的第 ${stepIndex + 1} 个步骤" in TASKS
-    assert "第 ${index + 1} 个命名坐标" in COORDINATES
-    assert "拾取区域 ${index + 1}" in STORAGE
-    assert "缓存容器 ${index + 1}" in STORAGE
-    assert "请先解除这些引用" in COORDINATES
-    assert "必须选择一个已保存的命名坐标作为待机点；请从下拉框选择" in STORAGE
-    assert 'setAttribute("aria-invalid", "true")' in TASKS
-    assert 'setAttribute("aria-invalid", "true")' in COORDINATES
-    assert 'setAttribute("aria-invalid", "true")' in STORAGE
-    assert '.editor-field.has-error > label' in STYLES
-    assert 'input[aria-invalid="true"]' in STYLES
-
-
-def test_generated_resource_ids_can_be_cleared_and_references_are_protected() -> None:
-    assert "state.editableWorkflowIds" not in TASKS
-    assert "elements.workflowId.disabled" not in TASKS
-    assert "state.editableIds" not in COORDINATES
-    assert "idInput.disabled" not in COORDINATES
-    assert "state.pickupEditableIds" not in STORAGE
-    assert "input.disabled = !editable" not in STORAGE
-
-    assert "point._originalId" in COORDINATES
-    assert "旧 ID 仍被" in COORDINATES
-    assert "_originalId: \"\"" in COORDINATES
-    assert "_originalId: \"\"" in STORAGE
-    assert "input.dataset.lastValidId" in STORAGE
-    assert "replacePickupReferences(kind, previousValid, candidate)" in STORAGE
-    assert "automationReferencesFor(originalId)" in STORAGE
-
-
-def test_storage_page_groups_containers_inventory_and_warehouse_config() -> None:
-    html = PAGES["storage.html"]
+    html = PAGES["tasks.html"]
     for element_id in (
-        "container-list",
-        "inventory-list",
-        "audit-button",
-        "base-coordinate-form",
-        "pickup-form",
-        "region-list",
+        "pickup-region-list",
         "cache-list",
-        "pickup-workflow-list",
-        "save-pickup-button",
+        "add-pickup-region-button",
+        "add-cache-button",
+        "save-pickup-resources-button",
+        "pickup-resource-errors",
+    ):
+        assert f'id="{element_id}"' in html
+    assert "function validatePickupResources()" in RESOURCES
+    assert "function savePickupResources()" in RESOURCES
+    assert "function pickupRequest()" in RESOURCES
+    assert "function renderPickupResources()" in RESOURCES
+
+
+def test_warehouse_base_coordinates_live_on_tasks_page() -> None:
+    html = PAGES["tasks.html"]
+    for element_id in (
+        "base-coordinate-list",
+        "save-base-coordinates-button",
+        "discard-base-coordinates-button",
+        "base-coordinate-errors",
     ):
         assert f'id="{element_id}"' in html
 
-    for path in (
-        "/v1/containers",
-        "/v1/inventory",
-        "/v1/audits",
-        "/v1/config/coordinates",
-        "/v1/config/coordinate-points",
-        "/v1/config/pickup",
-    ):
-        assert path in STORAGE
+    assert 'Stowling.request("/v1/config/coordinates")' in RESOURCES
+    assert "revision: state.baseSnapshot.revision" in RESOURCES
+    assert "coordinates: state.baseDraft.map((coordinate)" in RESOURCES
+    assert "仓库基础坐标" in html
+    assert "仓库同步" not in html
+    assert "function saveBaseCoordinates()" in RESOURCES
 
 
-def test_pickup_editor_preserves_multi_region_resource_workflow() -> None:
-    for fragment in (
-        "function addRegion()",
-        "function addCache()",
-        "function addPickupWorkflow()",
-        "function removePickupResource(kind, index)",
-        "function movePickupResource(kind, index, offset)",
-        "binding.priority",
-        "binding.idleDelay",
-        "classificationTiming",
-        "completionMode",
-        "cacheIds",
-        "hydratePickupRequest()",
-    ):
-        assert fragment in STORAGE
+def test_storage_is_inventory_only_and_never_starts_an_audit() -> None:
+    html = PAGES["storage.html"]
+    assert 'id="inventory-list"' in html
+    assert 'id="refresh-storage-button"' in html
+    assert 'id="audit-button"' not in html
+    assert 'id="container-list"' not in html
+    assert 'id="pickup-form"' not in html
+    assert 'id="base-coordinate-form"' not in html
+    assert "刷新库存" in html
+    assert "不会发起盘点或改变游戏状态" in html
+    assert 'id="inventory-filter-item"' in html
+    assert 'id="inventory-filter-container"' in html
 
-    assert "至少选择一个区域" in STORAGE
-    assert "至少选择一个缓存" in STORAGE
-    assert "第一角点必须位于第二角点的负方向" in STORAGE
-    assert "半径必须为 1-128" in STORAGE
-    assert "维度不一致" in STORAGE
-    assert "活动或暂停任务存在" in STORAGE
+    assert 'Stowling.request("/v1/inventory")' in STORAGE
+    assert STORAGE.count("Stowling.request(") == 1
+    assert "const inventory = Array.isArray(payload)" in STORAGE
+    assert "/v1/audits" not in STORAGE
+    assert "/v1/containers" not in STORAGE
+    assert "/v1/config/" not in STORAGE
+    assert '"POST"' not in STORAGE
+    assert "来源" in STORAGE
+    assert "采集时间" in STORAGE
+    assert "有效性" in STORAGE
+    assert '["FRESH", { text: "有效", className: "badge" }]' in STORAGE
+    assert '["STALE", { text: "已过期", className: "badge warning" }]' \
+        in STORAGE
+    assert "本次操作未发起盘点" in STORAGE
+    assert "function filterSnapshot(snapshot)" in STORAGE
+    assert "snapshot.containerId," in STORAGE
+    assert "snapshot.sourceId," in STORAGE
+    assert "matchingItems.length === 0" in STORAGE
+    assert "本地筛选已更新；未发起新请求" in STORAGE
+    assert "已有库存尚未写入" in STORAGE
+    assert "等待盘点任务" not in STORAGE
 
 
-def test_pickup_workflow_delete_checks_current_and_original_task_references() -> None:
-    assert "function automationReferencesFor(...resourceIds)" in STORAGE
-    assert "automationReferencesFor(resource.id, resource._originalId)" in STORAGE
-    assert "automationReferencesFor(originalId)" in STORAGE
-    assert 'kind === "workflow"' in STORAGE
-    assert '[...new Set(references)].join("、")' in STORAGE
-    assert "请先解除引用并保存。" in STORAGE
+def test_coordinates_remain_independent_and_use_current_references() -> None:
+    html = PAGES["coordinates.html"]
+    assert 'id="coordinate-form"' in html
+    assert 'id="coordinate-list"' in html
+    assert "function addPoint()" in COORDINATES
+    assert "function removePoint(index)" in COORDINATES
+    assert "function movePoint(index, offset)" in COORDINATES
+    assert "dragHandle.draggable = true" in COORDINATES
+    assert "function createPointCard(point, index)" in COORDINATES
+    assert "state.draft.coordinatePoints.splice(index, 1)" in COORDINATES
+    assert 'Stowling.request("/v1/config/coordinate-points")' in COORDINATES
+    assert 'Stowling.request("/v1/config/task-resources")' in COORDINATES
+    assert 'Stowling.request("/v1/task-definitions")' in COORDINATES
+    assert "/v1/config/pickup" not in COORDINATES
+    assert "/v1/config/automation-workflows" not in COORDINATES
+
+
+def test_dashboard_has_no_pause_or_resume_controls() -> None:
+    html = PAGES["index.html"]
+    assert 'id="pause-button"' not in html
+    assert 'id="resume-button"' not in html
+    assert 'id="status-paused"' not in html
+    assert "/v1/pause" not in DASHBOARD
+    assert "/v1/resume" not in DASHBOARD
+    assert "elements.pause" not in DASHBOARD
+    assert "elements.resume" not in DASHBOARD
+    assert 'Stowling.request("/v1/task-definitions")' in DASHBOARD
+    assert 'id="cancel-task-button"' in html
+    assert "function renderTaskOverview(tasks)" in DASHBOARD
+    assert "每 5 秒自动同步机器人状态" in html
+    assert "}, 5000);" in DASHBOARD
 
 
 def test_authentication_is_shared_bearer_middleware() -> None:
@@ -462,53 +433,41 @@ def test_scripts_do_not_log_sensitive_values() -> None:
     assert "chat" not in SCRIPTS.lower()
 
 
-def test_dashboard_is_status_overview_not_a_configuration_page() -> None:
-    html = PAGES["index.html"]
-    assert 'id="status-state"' in html
-    assert 'id="running-task-list"' in html
-    assert 'id="queued-task-list"' in html
-    assert 'id="interrupted-task-list"' in html
-    assert 'id="control-task-select"' in html
-    assert 'id="cancel-task-button"' in html
-    assert 'id="recent-tasks"' in html
-    assert 'id="coordinate-form"' not in html
-    assert 'id="workflow-form"' not in html
-    assert 'href="/tasks.html"' in html
-    assert 'href="/coordinates.html"' in html
-
-
-def test_dashboard_groups_tasks_by_runtime_state() -> None:
-    assert 'const RUNNING_TASK_STATES = new Set(["RUNNING"]);' in DASHBOARD
-    assert 'const QUEUED_TASK_STATES = new Set(["PENDING", "WAITING"]);' in DASHBOARD
-    assert (
-        'const INTERRUPTED_TASK_STATES = new Set(["PAUSED", "FAILED", "CANCELLED"]);'
-        in DASHBOARD
+def test_javascript_functions_have_jsdoc_type_annotations() -> None:
+    pattern = re.compile(
+        r"(?m)^(?P<indent>[ ]*)(?:async\s+)?function\s+"
+        r"(?P<name>[A-Za-z0-9_]+)\s*"
+        r"\((?P<params>[^)]*)\)"
     )
-    assert "function renderTaskOverview(tasks)" in DASHBOARD
-    assert "renderTaskGroup(" in DASHBOARD
-    assert "Stowling.conciseFailureReason(task.failureReason)" in DASHBOARD
-
-
-def test_dashboard_syncs_robot_state_every_five_seconds() -> None:
-    assert "每 5 秒自动同步机器人状态" in PAGES["index.html"]
-    assert "}, 5000);" in DASHBOARD
-    assert "}, 10000);" not in DASHBOARD
-
-
-def test_dashboard_remote_control_lists_active_tasks() -> None:
-    assert "function renderControlTaskOptions(tasks)" in DASHBOARD
-    assert "Stowling.ACTIVE_TASK_STATES.has(task.status)" in DASHBOARD
-    assert 'elements.controlTaskSelect.append(new Option("请选择任务", ""));' \
-        in DASHBOARD
-    assert 'elements.cancelTask.addEventListener("click"' in DASHBOARD
-    assert "/v1/tasks/${encodeURIComponent(taskId)}/cancel" in DASHBOARD
+    for source_name, source in (
+        ("common.js", COMMON),
+        ("coordinates.js", COORDINATES),
+        ("tasks.js", TASKS),
+        ("task-resources.js", RESOURCES),
+        ("storage.js", STORAGE),
+        ("dashboard.js", DASHBOARD),
+    ):
+        for match in pattern.finditer(source):
+            prefix = source[:match.start()].rstrip()
+            assert prefix.endswith("*/"), f"{source_name}:{match.group('name')}"
+            block_start = prefix.rfind("/**")
+            assert block_start >= 0, f"{source_name}:{match.group('name')}"
+            block = prefix[block_start:]
+            assert "@returns" in block, f"{source_name}:{match.group('name')}"
+            params = [
+                value for value in match.group("params").split(",")
+                if value.strip()
+            ]
+            if params:
+                assert "@param" in block, f"{source_name}:{match.group('name')}"
 
 
 def test_layout_is_responsive_and_supports_dark_mode() -> None:
     assert ".page-workspace" in STYLES
     assert ".builder-grid" in STYLES
     assert ".module-catalog" in STYLES
-    assert ".task-launch-grid" in STYLES
+    assert ".task-definition-list" in STYLES
+    assert ".resource-editor-grid" in STYLES
     assert "@media (max-width: 760px)" in STYLES
     assert "@media (prefers-color-scheme: dark)" in STYLES
 
@@ -517,7 +476,9 @@ def test_all_web_sources_follow_line_length_rule() -> None:
     files = [path for path in WEB_ROOT.iterdir() if path.is_file()]
     violations = []
     for path in files:
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        content = path.read_text(encoding="utf-8")
+        assert "\t" not in content, path.name
+        for number, line in enumerate(content.splitlines(), 1):
             if len(line) > 100:
                 violations.append(f"{path.name}:{number}:{len(line)}")
     assert violations == []

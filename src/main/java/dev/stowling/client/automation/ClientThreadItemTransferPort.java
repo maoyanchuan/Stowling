@@ -4,9 +4,13 @@ import dev.stowling.automation.AutomationOperationResult;
 import dev.stowling.automation.ContainerInteraction;
 import dev.stowling.automation.ItemTransferPort;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.schedule.StopOutcome;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Tracks operation keys without persisting clicks or duplicating transfer attempts.
@@ -19,6 +23,7 @@ public final class ClientThreadItemTransferPort implements ItemTransferPort {
     private final ClientActionScheduler scheduler;
     private final Map<String, AutomationOperationResult> attempts =
             new LinkedHashMap<>();
+    private final Map<UUID, StopOutcome> stopOutcomes = new LinkedHashMap<>();
 
     public ClientThreadItemTransferPort(
             ContainerInteraction containerInteraction,
@@ -55,6 +60,10 @@ public final class ClientThreadItemTransferPort implements ItemTransferPort {
                 delegate.start(operationKey, request),
                 "transfer start result"
         );
+        UUID operationTaskId = taskId(operationKey);
+        if (operationTaskId != null) {
+            stopOutcomes.remove(operationTaskId);
+        }
         retain(operationKey, result);
         return result;
     }
@@ -103,13 +112,80 @@ public final class ClientThreadItemTransferPort implements ItemTransferPort {
         return result;
     }
 
+    @Override
+    public synchronized StopOutcome requestStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        if (!scheduler.isClientThread() || delegate == null) {
+            return StopOutcome.UNSAFE;
+        }
+        List<String> keys = matchingKeys(attemptId);
+        if (keys.isEmpty()) {
+            return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
+        }
+        StopOutcome outcome = delegate.requestStop(attemptId);
+        if (outcome == StopOutcome.CLEAN || outcome == StopOutcome.UNSAFE) {
+            keys.forEach(attempts::remove);
+        }
+        return retainStopOutcome(attemptId, outcome);
+    }
+
+    @Override
+    public synchronized StopOutcome pollStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        if (!scheduler.isClientThread() || delegate == null) {
+            return StopOutcome.UNSAFE;
+        }
+        List<String> keys = matchingKeys(attemptId);
+        if (keys.isEmpty()) {
+            return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
+        }
+        StopOutcome outcome = delegate.pollStop(attemptId);
+        if (outcome == StopOutcome.CLEAN || outcome == StopOutcome.UNSAFE) {
+            keys.forEach(attempts::remove);
+        }
+        return retainStopOutcome(attemptId, outcome);
+    }
+
     private void retain(
             String operationKey,
             AutomationOperationResult result
     ) {
         switch (result.status()) {
-            case RUNNING, PAUSED -> attempts.put(operationKey, result);
-            case SUCCEEDED, FAILED -> attempts.remove(operationKey);
+            case RUNNING, PAUSED, FAILED -> attempts.put(operationKey, result);
+            case SUCCEEDED -> attempts.remove(operationKey);
         }
+    }
+
+    private List<String> matchingKeys(UUID taskId) {
+        List<String> result = new ArrayList<>();
+        for (String key : attempts.keySet()) {
+            if (taskId.equals(taskId(key))) {
+                result.add(key);
+            }
+        }
+        return result;
+    }
+
+    private static UUID taskId(String operationKey) {
+        int separator = operationKey.indexOf(':');
+        String candidate = separator < 0
+                ? operationKey
+                : operationKey.substring(0, separator);
+        try {
+            return UUID.fromString(candidate);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private StopOutcome retainStopOutcome(UUID taskId, StopOutcome outcome) {
+        if (outcome != StopOutcome.PENDING) {
+            stopOutcomes.put(taskId, outcome);
+            if (stopOutcomes.size() > 128) {
+                UUID oldest = stopOutcomes.keySet().iterator().next();
+                stopOutcomes.remove(oldest);
+            }
+        }
+        return outcome;
     }
 }

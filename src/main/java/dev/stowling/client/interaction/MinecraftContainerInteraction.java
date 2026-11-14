@@ -14,10 +14,12 @@ import dev.stowling.domain.ContainerRef;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryItemKind;
 import dev.stowling.inventory.MenuSlotClassification;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,6 +52,7 @@ import net.minecraft.world.phys.Vec3;
 public final class MinecraftContainerInteraction
         implements ContainerInteraction, ItemTransferPort {
     private static final Duration OPEN_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration STOP_CLICK_TIMEOUT = Duration.ofSeconds(8);
     private static final String PLAYER = "PLAYER";
 
     private final Minecraft minecraft;
@@ -58,8 +61,10 @@ public final class MinecraftContainerInteraction
     private final OperationDriver operationDriver;
     private final Map<String, Transaction> transactions = new HashMap<>();
     private final Map<String, ActiveOperation> operations = new HashMap<>();
+    private final Map<String, StopOutcome> stopOutcomes = new LinkedHashMap<>();
 
     private ContainerRef openedContainer;
+    private AbstractContainerMenu openedMenu;
     private ContainerRef pendingOpen;
     private Instant pendingOpenedAt;
 
@@ -146,6 +151,7 @@ public final class MinecraftContainerInteraction
         }
         if (pendingOpen != null) {
             openedContainer = pendingOpen;
+            openedMenu = menu;
             pendingOpen = null;
             pendingOpenedAt = null;
         }
@@ -160,17 +166,15 @@ public final class MinecraftContainerInteraction
     ) {
         requireClientThread();
         Objects.requireNonNull(container, "container");
-        prepare(container);
-        AbstractContainerMenu menu = currentContainerMenu();
-        if (menu == null) {
+        if (!container.equals(openedContainer)) {
             return Optional.empty();
         }
-        if (pendingOpen != null) {
-            openedContainer = pendingOpen;
-            pendingOpen = null;
-            pendingOpenedAt = null;
-        }
-        if (!container.equals(openedContainer)) {
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        AbstractContainerMenu menu = currentContainerMenu();
+        if (screen == null
+                || menu == null
+                || screen.getMenu() != menu
+                || openedMenu != menu) {
             return Optional.empty();
         }
         return Optional.of(captureSlots(menu));
@@ -412,6 +416,7 @@ public final class MinecraftContainerInteraction
         }
         if (pendingOpen != null) {
             openedContainer = pendingOpen;
+            openedMenu = menu;
             pendingOpen = null;
             pendingOpenedAt = null;
         }
@@ -446,19 +451,287 @@ public final class MinecraftContainerInteraction
         };
     }
 
+    private StopOutcome beginSafeStop(AttemptToken token) {
+        Transaction transaction = transactions.get(token.attemptId());
+        if (transaction == null) {
+            return stopOutcomes.getOrDefault(
+                    token.attemptId(),
+                    StopOutcome.UNSAFE
+            );
+        }
+        StopOutcome existing = stopOutcomes.get(token.attemptId());
+        if (existing != null) {
+            return existing;
+        }
+        transaction.stopRequested = true;
+        if (transaction.pendingClick != null) {
+            transaction.stopClickStartedAt = Instant.now();
+        }
+        recordStopOutcome(token.attemptId(), StopOutcome.PENDING);
+        return StopOutcome.PENDING;
+    }
+
+    private StopOutcome pollSafeStop(AttemptToken token) {
+        Transaction transaction = transactions.get(token.attemptId());
+        if (transaction == null) {
+            return stopOutcomes.getOrDefault(
+                    token.attemptId(),
+                    StopOutcome.UNSAFE
+            );
+        }
+        if (!transaction.stopRequested) {
+            return beginSafeStop(token);
+        }
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        AbstractContainerMenu menu = currentContainerMenu();
+        if (transaction.pendingClick != null) {
+            if (menu == null) {
+                return unsafeStop(
+                        token,
+                        "container closed before the pending click was confirmed"
+                );
+            }
+            ContainerClickConfirmation.Snapshot observed = clickSnapshot(
+                    menu,
+                    transaction.pendingSlot,
+                    transaction.pendingClick.itemId()
+            );
+            if (ContainerClickConfirmation.isUnchanged(
+                    transaction.pendingClick,
+                    observed
+            )) {
+                return stopClickPending(token, transaction);
+            }
+            ContainerClickConfirmation.Evaluation evaluation =
+                    ContainerClickConfirmation.evaluate(
+                            transaction.pendingClick,
+                            observed
+                    );
+            if (!evaluation.confirmed()) {
+                return unsafeStop(
+                        token,
+                        "pending container click could not be confirmed"
+                );
+            }
+            applyConfirmedClick(transaction, evaluation.moved());
+            transaction.pendingClick = null;
+            transaction.stopClickStartedAt = null;
+            transaction.cursorMayBeHeld = observed.carried().count() > 0;
+            transaction.cursorConfirmedEmpty = observed.carried().count() == 0;
+        }
+        if (menu != null && !menu.getCarried().isEmpty()) {
+            return returnCursorDuringStop(token, transaction, menu);
+        }
+        if (menu != null && menu.getCarried().isEmpty()) {
+            transaction.cursorConfirmedEmpty = true;
+        }
+        if (screen != null) {
+            if (transaction.cursorMayBeHeld && !transaction.cursorConfirmedEmpty) {
+                return unsafeStop(
+                        token,
+                        "container cursor state is unavailable"
+                );
+            }
+            if (!transaction.menuExitRequested) {
+                transaction.menuExitRequested = true;
+                transaction.menuExitStartedAt = Instant.now();
+                closeCurrentContainer();
+            } else if (transaction.menuExitStartedAt != null
+                    && Duration.between(
+                    transaction.menuExitStartedAt,
+                    Instant.now()
+            ).compareTo(OPEN_TIMEOUT) >= 0) {
+                return unsafeStop(
+                        token,
+                        "container menu did not close after cursor recovery"
+                );
+            }
+            return StopOutcome.PENDING;
+        }
+        if (pendingOpen != null) {
+            if (pendingOpenedAt != null
+                    && Duration.between(pendingOpenedAt, Instant.now())
+                    .compareTo(OPEN_TIMEOUT) >= 0) {
+                return unsafeStop(
+                        token,
+                        "container-open interaction could not be confirmed"
+                );
+            }
+            return StopOutcome.PENDING;
+        }
+        if (transaction.cursorMayBeHeld && !transaction.cursorConfirmedEmpty) {
+            return unsafeStop(
+                    token,
+                    "container state was lost before cursor confirmation"
+            );
+        }
+        recordStopOutcome(token.attemptId(), StopOutcome.CLEAN);
+        transactions.remove(token.attemptId());
+        operations.remove(token.attemptId());
+        openedContainer = null;
+        openedMenu = null;
+        pendingOpen = null;
+        pendingOpenedAt = null;
+        return StopOutcome.CLEAN;
+    }
+
+    private StopOutcome returnCursorDuringStop(
+            AttemptToken token,
+            Transaction transaction,
+            AbstractContainerMenu menu
+    ) {
+        ItemStack carried = menu.getCarried();
+        String carriedItem = itemId(carried);
+        int returnSlot = findReturnSlot(
+                menu,
+                slotClassification(menu).playerSlots(),
+                transaction.pickupOriginSlot,
+                carried
+        );
+        if (returnSlot < 0) {
+            return unsafeStop(
+                    token,
+                    "player inventory has no slot for the cursor stack"
+            );
+        }
+        ContainerClickConfirmation.Snapshot before = clickSnapshot(
+                menu,
+                returnSlot,
+                carriedItem
+        );
+        click(menu, returnSlot, 0, ContainerInput.PICKUP);
+        transaction.cursorMayBeHeld = true;
+        ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
+                menu,
+                returnSlot,
+                carriedItem
+        );
+        transaction.pendingClick = new ContainerClickConfirmation.Pending(
+                ContainerClickConfirmation.ClickType.RETURN_CURSOR,
+                carriedItem,
+                before,
+                predicted
+        );
+        transaction.pendingSlot = returnSlot;
+        transaction.stopClickStartedAt = Instant.now();
+        return StopOutcome.PENDING;
+    }
+
+    private StopOutcome stopClickPending(
+            AttemptToken token,
+            Transaction transaction
+    ) {
+        Instant startedAt = transaction.stopClickStartedAt;
+        if (startedAt == null) {
+            transaction.stopClickStartedAt = Instant.now();
+            return StopOutcome.PENDING;
+        }
+        if (stopClickTimedOut(startedAt, Instant.now())) {
+            return unsafeStop(
+                    token,
+                    "pending container click did not receive an acknowledgement"
+            );
+        }
+        return StopOutcome.PENDING;
+    }
+
+    static boolean stopClickTimedOut(Instant startedAt, Instant now) {
+        Objects.requireNonNull(startedAt, "startedAt");
+        Objects.requireNonNull(now, "now");
+        return Duration.between(startedAt, now)
+                .compareTo(STOP_CLICK_TIMEOUT) >= 0;
+    }
+
+    private StopOutcome unsafeStop(AttemptToken token, String detail) {
+        recordStopOutcome(token.attemptId(), StopOutcome.UNSAFE);
+        transactions.remove(token.attemptId());
+        operations.remove(token.attemptId());
+        return StopOutcome.UNSAFE;
+    }
+
     @Override
     public void cancel(ContainerAttempt attempt) {
         requireClientThread();
         Objects.requireNonNull(attempt, "attempt");
-        Transaction transaction = transactions.remove(attempt.attemptId());
-        if (transaction == null) {
-            return;
+        requestStop(attempt.attemptId());
+    }
+
+    @Override
+    public StopOutcome requestStop(ContainerAttempt attempt) {
+        requireClientThread();
+        Objects.requireNonNull(attempt, "attempt");
+        return requestStop(attempt.attemptId());
+    }
+
+    @Override
+    public StopOutcome pollStop(ContainerAttempt attempt) {
+        requireClientThread();
+        Objects.requireNonNull(attempt, "attempt");
+        return pollStop(attempt.attemptId());
+    }
+
+    @Override
+    public StopOutcome requestStop(UUID attemptId) {
+        requireClientThread();
+        Objects.requireNonNull(attemptId, "attemptId");
+        List<ActiveOperation> matches = matchingOperations(attemptId);
+        if (matches.isEmpty()) {
+            return recordedStopOutcome(attemptId);
         }
-        ContainerRef activeTarget = openedContainer;
-        if (activeTarget != null
-                && transaction.references(activeTarget)) {
-            closeCurrentContainer();
+        StopOutcome outcome = StopOutcome.CLEAN;
+        for (ActiveOperation operation : matches) {
+            outcome = combine(outcome, operationDriver.requestStop(
+                    operation.token()
+            ));
         }
+        return outcome;
+    }
+
+    @Override
+    public StopOutcome pollStop(UUID attemptId) {
+        requireClientThread();
+        Objects.requireNonNull(attemptId, "attemptId");
+        List<Map.Entry<String, ActiveOperation>> matches =
+                matchingOperationEntries(attemptId);
+        if (matches.isEmpty()) {
+            return recordedStopOutcome(attemptId);
+        }
+        StopOutcome outcome = StopOutcome.CLEAN;
+        for (Map.Entry<String, ActiveOperation> entry : matches) {
+            StopOutcome current = operationDriver.pollStop(entry.getValue().token());
+            outcome = combine(outcome, current);
+            if (current == StopOutcome.CLEAN || current == StopOutcome.UNSAFE) {
+                operations.remove(entry.getKey());
+            }
+        }
+        return outcome;
+    }
+
+    private StopOutcome requestStop(String attemptId) {
+        String checkedId = requireText(attemptId, "attemptId");
+        AttemptToken token = token(checkedId);
+        if (token == null) {
+            return stopOutcomes.getOrDefault(checkedId, StopOutcome.UNSAFE);
+        }
+        return operationDriver.requestStop(token);
+    }
+
+    private StopOutcome pollStop(String attemptId) {
+        String checkedId = requireText(attemptId, "attemptId");
+        AttemptToken token = token(checkedId);
+        if (token == null) {
+            return stopOutcomes.getOrDefault(checkedId, StopOutcome.UNSAFE);
+        }
+        return operationDriver.pollStop(token);
+    }
+
+    private AttemptToken token(String attemptId) {
+        Transaction transaction = transactions.get(attemptId);
+        if (transaction != null) {
+            return new AttemptToken(attemptId, transaction.baselineRevision);
+        }
+        ActiveOperation operation = operations.get(attemptId);
+        return operation == null ? null : operation.token();
     }
 
     private ContainerAttemptResult openSource(
@@ -666,6 +939,7 @@ public final class MinecraftContainerInteraction
                     pickedItemId
             );
             click(menu, picked, 0, ContainerInput.PICKUP);
+            transaction.cursorMayBeHeld = true;
             ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
                     menu,
                     picked,
@@ -707,6 +981,7 @@ public final class MinecraftContainerInteraction
                 carriedItem
         );
         click(menu, destinationSlot, button, ContainerInput.PICKUP);
+        transaction.cursorMayBeHeld = true;
         ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
                 menu,
                 destinationSlot,
@@ -761,6 +1036,7 @@ public final class MinecraftContainerInteraction
                 carriedItem
         );
         click(menu, returnSlot, 0, ContainerInput.PICKUP);
+        transaction.cursorMayBeHeld = true;
         ContainerClickConfirmation.Snapshot predicted = clickSnapshot(
                 menu,
                 returnSlot,
@@ -1026,6 +1302,7 @@ public final class MinecraftContainerInteraction
             player.closeContainer();
         }
         openedContainer = null;
+        openedMenu = null;
         pendingOpen = null;
         pendingOpenedAt = null;
     }
@@ -1206,6 +1483,66 @@ public final class MinecraftContainerInteraction
         operations.remove(token.attemptId());
     }
 
+    private List<ActiveOperation> matchingOperations(UUID taskId) {
+        return matchingOperationEntries(taskId).stream()
+                .map(Map.Entry::getValue)
+                .toList();
+    }
+
+    private List<Map.Entry<String, ActiveOperation>> matchingOperationEntries(
+            UUID taskId
+    ) {
+        List<Map.Entry<String, ActiveOperation>> result = new ArrayList<>();
+        for (Map.Entry<String, ActiveOperation> entry : operations.entrySet()) {
+            if (taskId.equals(taskId(entry.getKey()))) {
+                result.add(Map.entry(entry.getKey(), entry.getValue()));
+            }
+        }
+        return result;
+    }
+
+    private static UUID taskId(String operationKey) {
+        int separator = operationKey.indexOf(':');
+        String candidate = separator < 0
+                ? operationKey
+                : operationKey.substring(0, separator);
+        try {
+            return UUID.fromString(candidate);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private static StopOutcome combine(StopOutcome first, StopOutcome second) {
+        if (first == StopOutcome.UNSAFE || second == StopOutcome.UNSAFE) {
+            return StopOutcome.UNSAFE;
+        }
+        if (first == StopOutcome.PENDING || second == StopOutcome.PENDING) {
+            return StopOutcome.PENDING;
+        }
+        return StopOutcome.CLEAN;
+    }
+
+    private void recordStopOutcome(String attemptId, StopOutcome outcome) {
+        stopOutcomes.put(attemptId, outcome);
+        if (stopOutcomes.size() > 128) {
+            String oldest = stopOutcomes.keySet().iterator().next();
+            stopOutcomes.remove(oldest);
+        }
+    }
+
+    private StopOutcome recordedStopOutcome(UUID taskId) {
+        StopOutcome outcome = null;
+        for (Map.Entry<String, StopOutcome> entry : stopOutcomes.entrySet()) {
+            if (taskId.equals(taskId(entry.getKey()))) {
+                outcome = outcome == null
+                        ? entry.getValue()
+                        : combine(outcome, entry.getValue());
+            }
+        }
+        return outcome == null ? StopOutcome.UNSAFE : outcome;
+    }
+
     private void requireClientThread() {
         if (!scheduler.isClientThread()) {
             throw new IllegalStateException("container interaction must run on client thread");
@@ -1279,6 +1616,14 @@ public final class MinecraftContainerInteraction
         ContainerAttemptResult poll(AttemptToken token);
 
         void cancel(AttemptToken token);
+
+        default StopOutcome requestStop(AttemptToken token) {
+            return StopOutcome.UNSAFE;
+        }
+
+        default StopOutcome pollStop(AttemptToken token) {
+            return StopOutcome.UNSAFE;
+        }
     }
 
     private final class TransactionOperationDriver implements OperationDriver {
@@ -1313,13 +1658,19 @@ public final class MinecraftContainerInteraction
         @Override
         public void cancel(AttemptToken token) {
             requireClientThread();
-            Transaction transaction = transactions.remove(token.attemptId());
-            if (transaction == null) {
-                return;
-            }
-            if (openedContainer != null && transaction.references(openedContainer)) {
-                closeCurrentContainer();
-            }
+            beginSafeStop(token);
+        }
+
+        @Override
+        public StopOutcome requestStop(AttemptToken token) {
+            requireClientThread();
+            return beginSafeStop(token);
+        }
+
+        @Override
+        public StopOutcome pollStop(AttemptToken token) {
+            requireClientThread();
+            return pollSafeStop(token);
         }
     }
 
@@ -1337,6 +1688,12 @@ public final class MinecraftContainerInteraction
         private ContainerClickConfirmation.Pending pendingClick;
         private int pendingSlot = -1;
         private int pickupOriginSlot = -1;
+        private boolean stopRequested;
+        private boolean cursorMayBeHeld;
+        private boolean cursorConfirmedEmpty;
+        private boolean menuExitRequested;
+        private Instant stopClickStartedAt;
+        private Instant menuExitStartedAt;
 
         private Transaction(
                 TransferSpec transfer,

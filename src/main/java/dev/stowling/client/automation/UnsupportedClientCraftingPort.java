@@ -2,7 +2,9 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.AutomationOperationResult;
 import dev.stowling.automation.CraftingPort;
+import dev.stowling.schedule.StopOutcome;
 import java.util.Objects;
+import java.util.UUID;
 
 public final class UnsupportedClientCraftingPort implements CraftingPort {
     private static final String LIMITATION =
@@ -25,5 +27,17 @@ public final class UnsupportedClientCraftingPort implements CraftingPort {
     public AutomationOperationResult reconcile(String operationKey) {
         Objects.requireNonNull(operationKey, "operationKey");
         return AutomationOperationResult.paused(LIMITATION);
+    }
+
+    @Override
+    public StopOutcome requestStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        return StopOutcome.CLEAN;
+    }
+
+    @Override
+    public StopOutcome pollStop(UUID attemptId) {
+        Objects.requireNonNull(attemptId, "attemptId");
+        return StopOutcome.CLEAN;
     }
 }

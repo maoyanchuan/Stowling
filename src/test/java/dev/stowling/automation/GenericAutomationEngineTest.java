@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.schedule.StopOutcome;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -172,6 +173,90 @@ class GenericAutomationEngineTest {
         assertTrue(exception.getMessage().contains("unknown automation module"));
     }
 
+    @Test
+    void requestStopWaitsForActiveModuleAndIsIdempotent() {
+        AutomationModuleRegistry registry = new AutomationModuleRegistry();
+        StoppingModule module = new StoppingModule(
+                StopOutcome.PENDING,
+                StopOutcome.CLEAN
+        );
+        registry.register(module);
+        GenericAutomationEngine engine = engine(
+                workflow(step("wait", AutomationStepType.WAIT)),
+                registry
+        );
+        engine.tick();
+
+        engine.requestStop();
+        engine.requestStop();
+
+        assertEquals(1, module.stopCalls);
+        assertEquals(StopOutcome.PENDING, engine.pollStop());
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(1, module.pollStopCalls);
+    }
+
+    @Test
+    void terminalRequestStopWithNoActiveWorkIsClean() {
+        AutomationModuleRegistry registry = new AutomationModuleRegistry();
+        registry.register(new TestModule(
+                AutomationStepType.WAIT,
+                context -> AutomationModuleResult.succeeded(Map.of(), "done")
+        ));
+        GenericAutomationEngine engine = engine(
+                workflow(step("wait", AutomationStepType.WAIT)),
+                registry
+        );
+        engine.tick();
+
+        engine.requestStop();
+
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+    }
+
+    @Test
+    void failedModuleStillUsesStopBarrierBeforeClean() {
+        AutomationModuleRegistry registry = new AutomationModuleRegistry();
+        StoppingModule module = new StoppingModule(
+                AutomationModuleStatus.FAILED,
+                StopOutcome.PENDING,
+                StopOutcome.CLEAN
+        );
+        registry.register(module);
+        GenericAutomationEngine engine = engine(
+                workflow(step("fail", AutomationStepType.WAIT)),
+                registry
+        );
+        assertEquals(AutomationExecutionStatus.FAILED, engine.tick().status());
+
+        engine.requestStop();
+
+        assertEquals(1, module.stopCalls);
+        assertEquals(StopOutcome.PENDING, engine.pollStop());
+        assertEquals(StopOutcome.CLEAN, engine.pollStop());
+        assertEquals(1, module.pollStopCalls);
+    }
+
+    @Test
+    void moduleExceptionWithoutConfirmableStateStopsUnsafe() {
+        AutomationModuleRegistry registry = new AutomationModuleRegistry();
+        registry.register(new TestModule(
+                AutomationStepType.TAKE_ITEMS,
+                context -> {
+                    throw new IllegalStateException("lost confirmation");
+                }
+        ));
+        GenericAutomationEngine engine = engine(
+                workflow(step("take", AutomationStepType.TAKE_ITEMS)),
+                registry
+        );
+        assertThrows(IllegalStateException.class, engine::tick);
+
+        engine.requestStop();
+
+        assertEquals(StopOutcome.UNSAFE, engine.pollStop());
+    }
+
     private static GenericAutomationEngine engine(
             AutomationWorkflow workflow,
             AutomationModuleRegistry registry
@@ -217,6 +302,63 @@ class GenericAutomationEngineTest {
         @Override
         public AutomationModuleResult execute(AutomationModuleContext context) {
             return function.apply(context);
+        }
+    }
+
+    private static final class StoppingModule implements AutomationModule {
+        private final StopOutcome stopOutcome;
+        private final StopOutcome pollStopOutcome;
+        private final AutomationModuleStatus resultStatus;
+        private int stopCalls;
+        private int pollStopCalls;
+
+        private StoppingModule(
+                StopOutcome stopOutcome,
+                StopOutcome pollStopOutcome
+        ) {
+            this(
+                    AutomationModuleStatus.RUNNING,
+                    stopOutcome,
+                    pollStopOutcome
+            );
+        }
+
+        private StoppingModule(
+                AutomationModuleStatus resultStatus,
+                StopOutcome stopOutcome,
+                StopOutcome pollStopOutcome
+        ) {
+            this.resultStatus = resultStatus;
+            this.stopOutcome = stopOutcome;
+            this.pollStopOutcome = pollStopOutcome;
+        }
+
+        @Override
+        public AutomationModuleDescriptor descriptor() {
+            return new AutomationModuleDescriptor(
+                    AutomationStepType.WAIT,
+                    "Stopping wait"
+            );
+        }
+
+        @Override
+        public AutomationModuleResult execute(AutomationModuleContext context) {
+            if (resultStatus == AutomationModuleStatus.FAILED) {
+                return AutomationModuleResult.failed("module failed");
+            }
+            return AutomationModuleResult.running(Map.of("active", "true"));
+        }
+
+        @Override
+        public StopOutcome stop(AutomationModuleContext context) {
+            stopCalls++;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop(AutomationModuleContext context) {
+            pollStopCalls++;
+            return pollStopOutcome;
         }
     }
 }

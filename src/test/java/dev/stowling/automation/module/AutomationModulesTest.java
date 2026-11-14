@@ -27,6 +27,7 @@ import dev.stowling.automation.PickupWorkflowPort;
 import dev.stowling.automation.PlayerInventorySlot;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -470,10 +471,71 @@ class AutomationModulesTest {
             AutomationModuleDescriptor descriptor =
                     registry.require(type).descriptor();
             assertEquals(type, descriptor.type());
+            assertEquals(type.name(), descriptor.moduleId());
             assertFalse(descriptor.displayName().isBlank());
             assertFalse(descriptor.description().isBlank());
             assertFalse(descriptor.parameters().isEmpty());
         }
+    }
+
+    @Test
+    void descriptorValidationPreservesLegacyAliasesAndChecksParameterKinds() {
+        WaitAutomationModule module = new WaitAutomationModule(
+                new MutableClock(START)
+        );
+        AutomationModuleDescriptor descriptor = module.descriptor();
+
+        assertTrue(descriptor.validate(Map.of("durationSeconds", "5")).isEmpty());
+        assertFalse(descriptor.validate(Map.of("seconds", "0")).isEmpty());
+        assertFalse(descriptor.validate(Map.of()).isEmpty());
+    }
+
+    @Test
+    void runPickupOperationTargetsTheSameSubjectOnce() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+        AutomationStep step = step(
+                "pickup-once",
+                AutomationStepType.RUN_PICKUP,
+                Map.of("workflowId", "quarry", "regionId", "north")
+        );
+        AutomationModuleResult started = execute(module, step, Map.of(), false);
+
+        execute(module, step, started.moduleState(), false);
+        execute(module, step, started.moduleState(), false);
+
+        assertEquals(1, pickup.startCount);
+        assertEquals(1, pickup.requests.size());
+        assertEquals(
+                new PickupWorkflowPort.Request("quarry", Optional.of("north")),
+                pickup.requests.getFirst()
+        );
+    }
+
+    @Test
+    void runPickupStopIsDelegatedThroughTheOperationPort() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        pickup.stopOutcome = StopOutcome.PENDING;
+        pickup.pollStopOutcome = StopOutcome.CLEAN;
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+        AutomationStep step = step(
+                "pickup-stop",
+                AutomationStepType.RUN_PICKUP,
+                Map.of("workflowId", "quarry")
+        );
+        AutomationModuleResult started = execute(module, step, Map.of(), false);
+        AutomationModuleContext context = new AutomationModuleContext(
+                TASK_ID,
+                step,
+                started.moduleState(),
+                false,
+                Optional.empty()
+        );
+
+        assertEquals(StopOutcome.PENDING, module.stop(context));
+        assertEquals(StopOutcome.CLEAN, module.pollStop(context));
+        assertEquals(1, pickup.requestStopCount);
+        assertEquals(1, pickup.pollStopCount);
     }
 
     @Test
@@ -711,6 +773,10 @@ class AutomationModulesTest {
         private int startCount;
         private int pollCount;
         private int reconcileCount;
+        private int requestStopCount;
+        private int pollStopCount;
+        private StopOutcome stopOutcome = StopOutcome.UNSAFE;
+        private StopOutcome pollStopOutcome = StopOutcome.UNSAFE;
 
         @Override
         public AutomationOperationResult start(
@@ -735,6 +801,18 @@ class AutomationModulesTest {
             reconcileCount++;
             keys.add(operationKey);
             return reconcileResult;
+        }
+
+        @Override
+        public StopOutcome requestStop(UUID attemptId) {
+            requestStopCount++;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop(UUID attemptId) {
+            pollStopCount++;
+            return pollStopOutcome;
         }
     }
 

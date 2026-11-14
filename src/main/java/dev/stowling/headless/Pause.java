@@ -1,16 +1,17 @@
 package dev.stowling.headless;
 
-import dev.stowling.control.ControlStatus;
 import java.util.concurrent.Callable;
 
+/**
+ * Compatibility adapter for the removed pause command; no longer registered or executable.
+ */
+@Deprecated
 public final class Pause implements Callable<Integer> {
     public Pause() {
     }
 
     @Override
     public Integer call() {
-        ControlStatus status = HeadlessControlBridge.requireService().pause();
-        System.out.printf("Stowling paused=%s%n", status.paused());
-        return 0;
+        throw new UnsupportedOperationException("The pause command has been removed");
     }
 }

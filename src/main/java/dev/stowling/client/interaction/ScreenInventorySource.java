@@ -3,7 +3,6 @@ package dev.stowling.client.interaction;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.inventory.InventoryCapture;
 import dev.stowling.inventory.InventoryFreshness;
-import dev.stowling.inventory.InventorySnapshot;
 import dev.stowling.inventory.InventorySource;
 import java.time.Instant;
 import java.util.List;
@@ -15,14 +14,34 @@ public final class ScreenInventorySource implements InventorySource {
     private static final String SOURCE_ID = "opened-screen";
 
     private final ClientActionScheduler scheduler;
-    private final MinecraftContainerInteraction containers;
+    private final CaptureReader captureInventory;
 
     public ScreenInventorySource(
             ClientActionScheduler scheduler,
             MinecraftContainerInteraction containers
     ) {
+        this(
+                scheduler,
+                Objects.requireNonNull(containers, "containers")::captureInventory
+        );
+    }
+
+    ScreenInventorySource(
+            ClientActionScheduler scheduler,
+            CaptureReader captureInventory
+    ) {
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
-        this.containers = Objects.requireNonNull(containers, "containers");
+        this.captureInventory = Objects.requireNonNull(
+                captureInventory,
+                "captureInventory"
+        );
+    }
+
+    @FunctionalInterface
+    interface CaptureReader {
+        Optional<List<InventoryCapture.SlotCapture>> capture(
+                ContainerRef container
+        );
     }
 
     @Override
@@ -37,28 +56,21 @@ public final class ScreenInventorySource implements InventorySource {
     }
 
     private InventoryCapture captureOnClientThread(ContainerRef container) {
-        Optional<List<InventoryCapture.SlotCapture>> slots = containers.captureInventory(
-                container
-        );
+        List<InventoryCapture.SlotCapture> slots = Objects.requireNonNull(
+                captureInventory.capture(container),
+                "capture result"
+        )
+                .orElseThrow(() -> new IllegalStateException(
+                        "container is not open in the current screen"
+                ));
         Instant capturedAt = Instant.now();
-        if (slots.isEmpty()) {
-            InventorySnapshot snapshot = new InventorySnapshot(
-                    SOURCE_ID,
-                    container.id(),
-                    container.dimension(),
-                    capturedAt,
-                    InventoryFreshness.UNKNOWN,
-                    List.of()
-            );
-            return new InventoryCapture(snapshot, List.of());
-        }
         return InventoryCapture.fromSlots(
                 SOURCE_ID,
                 container.id(),
                 container.dimension(),
                 capturedAt,
                 InventoryFreshness.FRESH,
-                slots.orElseThrow()
+                slots
         );
     }
 }

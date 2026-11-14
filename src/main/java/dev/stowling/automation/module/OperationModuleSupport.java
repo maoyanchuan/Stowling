@@ -4,9 +4,11 @@ import dev.stowling.automation.AutomationModuleContext;
 import dev.stowling.automation.AutomationModuleResult;
 import dev.stowling.automation.AutomationOperationPort;
 import dev.stowling.automation.AutomationOperationResult;
+import dev.stowling.schedule.StopOutcome;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 final class OperationModuleSupport {
     private static final String PHASE = "phase";
@@ -47,6 +49,38 @@ final class OperationModuleSupport {
             nextPhase = POLLING;
         }
         return map(result, storedKey, nextPhase);
+    }
+
+    static StopOutcome stop(
+            AutomationModuleContext context,
+            AutomationOperationPort<?> port
+    ) {
+        Objects.requireNonNull(port, "port");
+        String operationKey = context.moduleState().get(OPERATION_KEY);
+        if (operationKey == null) {
+            return StopOutcome.CLEAN;
+        }
+        UUID attemptId = attemptId(operationKey);
+        if (attemptId == null) {
+            return StopOutcome.UNSAFE;
+        }
+        return port.requestStop(attemptId);
+    }
+
+    static StopOutcome pollStop(
+            AutomationModuleContext context,
+            AutomationOperationPort<?> port
+    ) {
+        Objects.requireNonNull(port, "port");
+        String operationKey = context.moduleState().get(OPERATION_KEY);
+        if (operationKey == null) {
+            return StopOutcome.CLEAN;
+        }
+        UUID attemptId = attemptId(operationKey);
+        if (attemptId == null) {
+            return StopOutcome.UNSAFE;
+        }
+        return port.pollStop(attemptId);
     }
 
     private static <Request> AutomationModuleResult begin(
@@ -108,5 +142,17 @@ final class OperationModuleSupport {
         state.put(PHASE, phase);
         state.put(OPERATION_KEY, operationKey);
         return Map.copyOf(state);
+    }
+
+    private static UUID attemptId(String operationKey) {
+        int separator = operationKey.indexOf(':');
+        String candidate = separator < 0
+                ? operationKey
+                : operationKey.substring(0, separator);
+        try {
+            return UUID.fromString(candidate);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 }

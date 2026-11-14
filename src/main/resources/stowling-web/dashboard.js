@@ -9,14 +9,11 @@
 
     const elements = {
         refresh: document.querySelector("#refresh-button"),
-        pause: document.querySelector("#pause-button"),
-        resume: document.querySelector("#resume-button"),
         cancelTask: document.querySelector("#cancel-task-button"),
         controlTaskSelect: document.querySelector("#control-task-select"),
         reload: document.querySelector("#reload-button"),
         controlMessage: document.querySelector("#control-message"),
         state: document.querySelector("#status-state"),
-        paused: document.querySelector("#status-paused"),
         observed: document.querySelector("#status-observed"),
         runningCount: document.querySelector("#running-task-count"),
         runningList: document.querySelector("#running-task-list"),
@@ -38,7 +35,6 @@
     async function loadStatus() {
         const status = await Stowling.request("/v1/status");
         elements.state.textContent = Stowling.taskStatusLabel(status?.state);
-        elements.paused.textContent = status?.paused ? "是" : "否";
         elements.observed.textContent = Stowling.formatDate(status?.observedAt);
     }
 
@@ -60,9 +56,8 @@
     async function loadResources() {
         const results = await Promise.allSettled([
             Stowling.request("/v1/config/coordinate-points"),
-            Stowling.request("/v1/config/automation-workflows"),
-            Stowling.request("/v1/containers"),
-            Stowling.request("/v1/pickup-workflows")
+            Stowling.request("/v1/task-definitions"),
+            Stowling.request("/v1/containers")
         ]);
         setCount(
             elements.coordinateCount,
@@ -72,15 +67,22 @@
         setCount(
             elements.automationCount,
             results[1],
-            (value) => value?.automationWorkflows?.length
+            (value) => value?.tasks?.filter((task) => {
+                return task.kind === "AUTOMATION";
+            }).length
         );
         setCount(elements.containerCount, results[2], (value) => value?.length);
-        setCount(elements.pickupCount, results[3], (value) => value?.length);
+        setCount(
+            elements.pickupCount,
+            results[1],
+            (value) => value?.tasks?.filter((task) => task.kind === "PICKUP").length
+        );
         const failures = results
             .map((result, index) => [result, index])
             .filter(([result]) => result.status === "rejected")
-            .filter(([, index]) => ![1, 2, 3].includes(index)
-                || resultLooksUnavailable(results[index]));
+            .filter(([, index]) => {
+                return index !== 2 || resultLooksUnavailable(results[index]);
+            });
         if (failures.length > 0) {
             showErrors([
                 "部分资源无法读取，请确认客户端已进入世界并加载最新后端。"
@@ -339,24 +341,6 @@
     }
 
     /**
-     * @param {string} path
-     * @param {string} label
-     * @returns {Promise<void>}
-     */
-    async function runControl(path, label) {
-        elements.controlMessage.textContent = `正在${label}…`;
-        try {
-            await Stowling.request(path, { method: "POST" });
-            Stowling.showToast(`${label}成功`);
-            elements.controlMessage.textContent = `${label}成功`;
-            await Promise.allSettled([loadStatus(), loadTasks()]);
-        } catch (error) {
-            elements.controlMessage.textContent = `${label}失败`;
-            Stowling.handleError(error, `${label}失败`);
-        }
-    }
-
-    /**
      * @returns {Promise<void>}
      */
     async function cancelSelectedTask() {
@@ -384,12 +368,6 @@
 
     elements.refresh.addEventListener("click", () => {
         void refreshDashboard();
-    });
-    elements.pause.addEventListener("click", () => {
-        void runControl("/v1/pause", "暂停机器人");
-    });
-    elements.resume.addEventListener("click", () => {
-        void runControl("/v1/resume", "恢复机器人");
     });
     elements.cancelTask.addEventListener("click", () => {
         void cancelSelectedTask();

@@ -13,9 +13,11 @@ import dev.stowling.automation.ItemTransferPort;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.schedule.StopOutcome;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -154,6 +156,44 @@ class MinecraftContainerInteractionItemTransferTest {
         assertTrue(stale.message().orElseThrow().contains("manual recovery"));
     }
 
+    @Test
+    void cancelRequestsSafeConfirmationInsteadOfClosingImmediately() {
+        RecordingDriver driver = new RecordingDriver();
+        driver.stopOutcome = StopOutcome.PENDING;
+        driver.pollStopOutcome = StopOutcome.PENDING;
+        MinecraftContainerInteraction interaction = interaction(driver);
+        UUID taskId = UUID.randomUUID();
+        String operationKey = taskId + ":transfer";
+        ItemTransferPort.Request request = request(
+                ItemTransferPort.Mode.PUT,
+                "PLAYER",
+                STORAGE,
+                4
+        );
+        interaction.start(operationKey, request);
+        ContainerAttempt attempt = new ContainerAttempt(
+                operationKey,
+                new ContainerTransfer(
+                        "stop-transfer",
+                        Optional.empty(),
+                        Optional.of(storage),
+                        List.of(new ItemAmount(STONE, 4))
+                ),
+                0,
+                java.time.Instant.EPOCH
+        );
+
+        interaction.cancel(attempt);
+
+        assertEquals(1, driver.stopCalls);
+        assertEquals(0, driver.cancelCalls);
+        assertEquals(StopOutcome.PENDING, interaction.pollStop(attempt));
+
+        driver.pollStopOutcome = StopOutcome.CLEAN;
+        assertEquals(StopOutcome.CLEAN, interaction.pollStop(attempt));
+        assertEquals(StopOutcome.CLEAN, interaction.pollStop(attempt));
+    }
+
     private MinecraftContainerInteraction interaction(RecordingDriver driver) {
         return new MinecraftContainerInteraction(
                 new ImmediateScheduler(),
@@ -190,6 +230,11 @@ class MinecraftContainerInteractionItemTransferTest {
             implements MinecraftContainerInteraction.OperationDriver {
         private int startCount;
         private int pollCount;
+        private int stopCalls;
+        private int pollStopCalls;
+        private int cancelCalls;
+        private StopOutcome stopOutcome = StopOutcome.UNSAFE;
+        private StopOutcome pollStopOutcome = StopOutcome.UNSAFE;
         private MinecraftContainerInteraction.TransferSpec transfer;
         private ContainerAttemptResult pollResult = new ContainerAttemptResult(
                 ContainerAttemptStatus.PENDING,
@@ -225,7 +270,23 @@ class MinecraftContainerInteractionItemTransferTest {
 
         @Override
         public void cancel(MinecraftContainerInteraction.AttemptToken token) {
-            // The fake does not retain click state.
+            cancelCalls++;
+        }
+
+        @Override
+        public StopOutcome requestStop(
+                MinecraftContainerInteraction.AttemptToken token
+        ) {
+            stopCalls++;
+            return stopOutcome;
+        }
+
+        @Override
+        public StopOutcome pollStop(
+                MinecraftContainerInteraction.AttemptToken token
+        ) {
+            pollStopCalls++;
+            return pollStopOutcome;
         }
     }
 

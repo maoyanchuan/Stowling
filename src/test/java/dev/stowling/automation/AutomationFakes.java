@@ -42,6 +42,9 @@ final class AutomationFakes {
         private List<GroundItem> groundItems = List.of();
         private final Map<String, List<GroundItem>> regionItems = new HashMap<>();
         private final Map<String, Set<String>> tags = new HashMap<>();
+        private PickupRegion lastObservedRegion;
+        private boolean filterByRegionGeometry;
+        private List<GroundItem> geometryCandidates = List.of();
 
         FakeWorldObserver(WorldObservation world) {
             this.world = world;
@@ -59,7 +62,13 @@ final class AutomationFakes {
 
         @Override
         public List<GroundItem> observeGroundItems(PickupRegion region) {
-            return regionItems.getOrDefault(region.id(), groundItems);
+            lastObservedRegion = region;
+            List<GroundItem> candidates = filterByRegionGeometry
+                    ? geometryCandidates
+                    : regionItems.getOrDefault(region.id(), groundItems);
+            return candidates.stream()
+                    .filter(item -> region.contains(item.position()))
+                    .toList();
         }
 
         @Override
@@ -81,6 +90,15 @@ final class AutomationFakes {
 
         void setTags(String itemId, Set<String> itemTags) {
             tags.put(itemId, Set.copyOf(itemTags));
+        }
+
+        void setGeometryCandidates(List<GroundItem> items) {
+            filterByRegionGeometry = true;
+            geometryCandidates = List.copyOf(items);
+        }
+
+        PickupRegion lastObservedRegion() {
+            return lastObservedRegion;
         }
     }
 

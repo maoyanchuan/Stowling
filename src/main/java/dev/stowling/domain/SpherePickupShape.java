@@ -2,12 +2,20 @@ package dev.stowling.domain;
 
 import java.util.Objects;
 
-public record SpherePickupShape(BlockPosition center, int radius) implements PickupShape {
+public record SpherePickupShape(
+        String centerCoordinateId,
+        BlockPosition center,
+        int radius
+) implements PickupShape {
     public SpherePickupShape {
         center = Objects.requireNonNull(center, "center");
         if (radius < 1 || radius > 128) {
             throw new IllegalArgumentException("radius must be between 1 and 128");
         }
+    }
+
+    public SpherePickupShape(BlockPosition center, int radius) {
+        this(null, center, radius);
     }
 
     @Override

@@ -2,11 +2,14 @@ package dev.stowling.config;
 
 import dev.stowling.domain.AuditSchedule;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupWorkflow;
+import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.domain.StorageRoute;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,7 +35,7 @@ public final class ConfigValidator {
         Map<String, String> resourceIds = new HashMap<>();
         Map<String, PickupRegion> regions = new HashMap<>();
         Map<String, NamedCache> caches = new HashMap<>();
-        Map<CacheLocation, String> cacheLocations = new HashMap<>();
+        Map<String, NamedCoordinate> coordinates = new HashMap<>();
 
         registerContainer(
                 violations,
@@ -46,13 +49,25 @@ public final class ConfigValidator {
                 "overflowContainer.id"
         );
 
-        validatePickupRegions(violations, resourceIds, regions, config.pickupRegions());
+        validateCoordinates(
+                violations,
+                resourceIds,
+                coordinates,
+                config.coordinatePoints()
+        );
+        validatePickupRegions(
+                violations,
+                resourceIds,
+                coordinates,
+                regions,
+                config.pickupRegions()
+        );
         validateCaches(
                 violations,
                 resourceIds,
                 containers,
+                coordinates,
                 caches,
-                cacheLocations,
                 config.cacheContainers()
         );
         validateWorkflows(
@@ -84,9 +99,25 @@ public final class ConfigValidator {
         }
     }
 
+    private static void validateCoordinates(
+            List<ConfigViolation> violations,
+            Map<String, String> resourceIds,
+            Map<String, NamedCoordinate> coordinates,
+            List<NamedCoordinate> coordinatePoints
+    ) {
+        for (int index = 0; index < coordinatePoints.size(); index++) {
+            NamedCoordinate coordinate = coordinatePoints.get(index);
+            String path = "coordinatePoints[" + index + "]";
+            registerResourceId(violations, resourceIds, coordinate.id(), path + ".id");
+            requireName(violations, coordinate.name(), path + ".name");
+            coordinates.put(coordinate.id(), coordinate);
+        }
+    }
+
     private static void validatePickupRegions(
             List<ConfigViolation> violations,
             Map<String, String> resourceIds,
+            Map<String, NamedCoordinate> coordinates,
             Map<String, PickupRegion> regions,
             List<PickupRegion> pickupRegions
     ) {
@@ -95,16 +126,61 @@ public final class ConfigValidator {
             String path = "pickupRegions[" + index + "]";
             registerResourceId(violations, resourceIds, region.id(), path + ".id");
             requireName(violations, region.name(), path + ".name");
+            validateCoordinateReference(
+                    violations,
+                    coordinates,
+                    region.standbyCoordinateId(),
+                    region.dimension(),
+                    path + ".standbyCoordinateId",
+                    "pickup region " + region.id()
+            );
+            validateShapeCoordinates(violations, coordinates, region, path);
             regions.put(region.id(), region);
         }
+    }
+
+    private static void validateShapeCoordinates(
+            List<ConfigViolation> violations,
+            Map<String, NamedCoordinate> coordinates,
+            PickupRegion region,
+            String path
+    ) {
+        if (region.shape() instanceof SpherePickupShape sphere) {
+            validateCoordinateReference(
+                    violations,
+                    coordinates,
+                    sphere.centerCoordinateId(),
+                    region.dimension(),
+                    path + ".shape.centerCoordinateId",
+                    "pickup region " + region.id()
+            );
+            return;
+        }
+        CuboidPickupShape cuboid = (CuboidPickupShape) region.shape();
+        validateCoordinateReference(
+                violations,
+                coordinates,
+                cuboid.firstCornerCoordinateId(),
+                region.dimension(),
+                path + ".shape.firstCornerCoordinateId",
+                "pickup region " + region.id()
+        );
+        validateCoordinateReference(
+                violations,
+                coordinates,
+                cuboid.secondCornerCoordinateId(),
+                region.dimension(),
+                path + ".shape.secondCornerCoordinateId",
+                "pickup region " + region.id()
+        );
     }
 
     private static void validateCaches(
             List<ConfigViolation> violations,
             Map<String, String> resourceIds,
             Map<String, ContainerRef> containers,
+            Map<String, NamedCoordinate> coordinates,
             Map<String, NamedCache> caches,
-            Map<CacheLocation, String> cacheLocations,
             List<NamedCache> cacheContainers
     ) {
         for (int index = 0; index < cacheContainers.size(); index++) {
@@ -112,21 +188,46 @@ public final class ConfigValidator {
             String path = "cacheContainers[" + index + "]";
             registerResourceId(violations, resourceIds, cache.id(), path + ".id");
             requireName(violations, cache.name(), path + ".name");
+            validateCoordinateReference(
+                    violations,
+                    coordinates,
+                    cache.coordinateId(),
+                    cache.dimension(),
+                    path + ".coordinateId",
+                    "cache " + cache.id()
+            );
             caches.put(cache.id(), cache);
             registerContainer(violations, containers, path, cache.toContainerRef());
-            CacheLocation location = new CacheLocation(
-                    cache.dimension(),
-                    cache.position().x(),
-                    cache.position().y(),
-                    cache.position().z()
-            );
-            String previous = cacheLocations.putIfAbsent(location, path);
-            if (previous != null) {
-                violations.add(new ConfigViolation(
-                        path,
-                        "duplicate cache location already declared at " + previous
-                ));
-            }
+        }
+    }
+
+    private static void validateCoordinateReference(
+            List<ConfigViolation> violations,
+            Map<String, NamedCoordinate> coordinates,
+            String coordinateId,
+            String dimension,
+            String path,
+            String owner
+    ) {
+        if (coordinateId == null || coordinateId.isBlank()) {
+            violations.add(new ConfigViolation(
+                    path,
+                    owner + " requires a coordinate reference"
+            ));
+            return;
+        }
+        requireSafeId(violations, coordinateId, path);
+        NamedCoordinate coordinate = coordinates.get(coordinateId);
+        if (coordinate == null) {
+            violations.add(new ConfigViolation(
+                    path,
+                    owner + " references unknown coordinate: " + coordinateId
+            ));
+        } else if (!dimension.equals(coordinate.dimension())) {
+            violations.add(new ConfigViolation(
+                    path,
+                    owner + " coordinate must be in dimension " + dimension
+            ));
         }
     }
 
@@ -413,11 +514,4 @@ public final class ConfigValidator {
         }
     }
 
-    private record CacheLocation(
-            String dimension,
-            int x,
-            int y,
-            int z
-    ) {
-    }
 }

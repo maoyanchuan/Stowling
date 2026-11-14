@@ -1,10 +1,33 @@
 {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
+    "coordinatePoints": [
+        {
+            "id": "north-farm-center",
+            "name": "North Farm Center",
+            "dimension": "minecraft:overworld",
+            "position": {
+                "x": 0,
+                "y": 64,
+                "z": 0
+            }
+        },
+        {
+            "id": "north-cache-position",
+            "name": "North Cache Position",
+            "dimension": "minecraft:overworld",
+            "position": {
+                "x": 8,
+                "y": 64,
+                "z": 0
+            }
+        }
+    ],
     "pickupRegions": [
         {
             "id": "north-farm",
             "name": "North Farm",
             "dimension": "minecraft:overworld",
+            "standbyCoordinateId": "north-farm-center",
             "standbyPosition": {
                 "x": 0,
                 "y": 64,
@@ -12,6 +35,7 @@
             },
             "shape": {
                 "type": "SPHERE",
+                "centerCoordinateId": "north-farm-center",
                 "center": {
                     "x": 0,
                     "y": 64,
@@ -25,6 +49,7 @@
         {
             "id": "north-cache",
             "name": "North Cache",
+            "coordinateId": "north-cache-position",
             "dimension": "minecraft:overworld",
             "position": {
                 "x": 8,

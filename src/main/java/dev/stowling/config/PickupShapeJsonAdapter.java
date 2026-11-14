@@ -25,11 +25,20 @@ final class PickupShapeJsonAdapter
         JsonObject json = new JsonObject();
         json.addProperty("type", shape.type().name());
         if (shape instanceof SpherePickupShape sphere) {
+            json.addProperty("centerCoordinateId", sphere.centerCoordinateId());
             json.add("center", context.serialize(sphere.center()));
             json.addProperty("radius", sphere.radius());
             return json;
         }
         CuboidPickupShape cuboid = (CuboidPickupShape) shape;
+        json.addProperty(
+                "firstCornerCoordinateId",
+                cuboid.firstCornerCoordinateId()
+        );
+        json.addProperty(
+                "secondCornerCoordinateId",
+                cuboid.secondCornerCoordinateId()
+        );
         json.add("firstCorner", context.serialize(cuboid.firstCorner()));
         json.add("secondCorner", context.serialize(cuboid.secondCorner()));
         return json;
@@ -50,13 +59,25 @@ final class PickupShapeJsonAdapter
                 PickupShapeType.class
         );
         if (shapeType == PickupShapeType.SPHERE) {
+            String centerCoordinateId = requireField(
+                    json,
+                    "centerCoordinateId"
+            ).getAsString();
             BlockPosition center = context.deserialize(
                     requireField(json, "center"),
                     BlockPosition.class
             );
             int radius = requireField(json, "radius").getAsInt();
-            return new SpherePickupShape(center, radius);
+            return new SpherePickupShape(centerCoordinateId, center, radius);
         }
+        String firstCornerCoordinateId = requireField(
+                json,
+                "firstCornerCoordinateId"
+        ).getAsString();
+        String secondCornerCoordinateId = requireField(
+                json,
+                "secondCornerCoordinateId"
+        ).getAsString();
         BlockPosition firstCorner = context.deserialize(
                 requireField(json, "firstCorner"),
                 BlockPosition.class
@@ -65,7 +86,12 @@ final class PickupShapeJsonAdapter
                 requireField(json, "secondCorner"),
                 BlockPosition.class
         );
-        return new CuboidPickupShape(firstCorner, secondCorner);
+        return new CuboidPickupShape(
+                firstCornerCoordinateId,
+                secondCornerCoordinateId,
+                firstCorner,
+                secondCorner
+        );
     }
 
     private static JsonElement requireField(JsonObject json, String name) {

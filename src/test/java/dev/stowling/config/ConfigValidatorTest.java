@@ -123,7 +123,7 @@ class ConfigValidatorTest {
     }
 
     @Test
-    void rejectsDuplicateCacheLocations() {
+    void allowsCachesToShareNamedCoordinates() {
         PickupRegion region = region("farm", "minecraft:overworld");
         NamedCache first = cache("cache-one", "minecraft:overworld", 8);
         NamedCache duplicate = cache("cache-two", "minecraft:overworld", 8);
@@ -133,18 +133,17 @@ class ConfigValidatorTest {
                 List.of("farm"),
                 List.of("cache-one")
         );
-        StowlingConfig invalid = config(
+        StowlingConfig valid = config(
                 List.of(region),
                 List.of(first, duplicate),
                 List.of(workflow)
         );
 
-        ConfigValidationException exception = assertThrows(
-                ConfigValidationException.class,
-                () -> ConfigValidator.requireValid(invalid)
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(valid));
+        assertEquals(
+                valid.cacheContainers().getFirst().coordinateId(),
+                valid.cacheContainers().getLast().coordinateId()
         );
-
-        assertTrue(exception.getMessage().contains("duplicate cache location"));
     }
 
     @Test

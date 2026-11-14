@@ -6,6 +6,7 @@ public record PickupRegion(
         String id,
         String name,
         String dimension,
+        String standbyCoordinateId,
         BlockPosition standbyPosition,
         PickupShape shape
 ) {
@@ -15,6 +16,16 @@ public record PickupRegion(
         dimension = DomainChecks.requireText(dimension, "dimension");
         standbyPosition = Objects.requireNonNull(standbyPosition, "standbyPosition");
         shape = Objects.requireNonNull(shape, "shape");
+    }
+
+    public PickupRegion(
+            String id,
+            String name,
+            String dimension,
+            BlockPosition standbyPosition,
+            PickupShape shape
+    ) {
+        this(id, name, dimension, null, standbyPosition, shape);
     }
 
     public boolean contains(BlockPosition position) {

@@ -3,6 +3,8 @@ package dev.stowling.domain;
 import java.util.Objects;
 
 public record CuboidPickupShape(
+        String firstCornerCoordinateId,
+        String secondCornerCoordinateId,
         BlockPosition firstCorner,
         BlockPosition secondCorner
 ) implements PickupShape {
@@ -16,6 +18,13 @@ public record CuboidPickupShape(
                     "firstCorner coordinates must not exceed secondCorner coordinates"
             );
         }
+    }
+
+    public CuboidPickupShape(
+            BlockPosition firstCorner,
+            BlockPosition secondCorner
+    ) {
+        this(null, null, firstCorner, secondCorner);
     }
 
     @Override

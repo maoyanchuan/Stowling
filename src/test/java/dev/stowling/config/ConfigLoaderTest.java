@@ -1,5 +1,8 @@
 package dev.stowling.config;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -12,6 +15,7 @@ import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerType;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupWorkflow;
@@ -37,7 +41,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.load(path);
 
-        assertEquals(2, config.schemaVersion());
+        assertEquals(3, config.schemaVersion());
         assertEquals(Duration.ofSeconds(60), config.defaultIdleDelay());
         assertEquals("overflow", config.overflowContainer().id());
     }
@@ -94,7 +98,7 @@ class ConfigLoaderTest {
 
         StowlingConfig config = loader.parse(json);
 
-        assertEquals(2, config.schemaVersion());
+        assertEquals(3, config.schemaVersion());
         assertEquals(2, config.pickupRegions().size());
         assertEquals(1, config.cacheContainers().size());
         assertEquals(2, config.pickupWorkflows().size());
@@ -111,13 +115,147 @@ class ConfigLoaderTest {
                 config.pickupWorkflows().getFirst().cacheIds(),
                 config.pickupWorkflows().getLast().cacheIds()
         );
+        PickupRegion firstRegion = config.pickupRegions().getFirst();
+        SpherePickupShape firstShape = (SpherePickupShape) firstRegion.shape();
+        assertEquals(firstRegion.standbyCoordinateId(), firstShape.centerCoordinateId());
 
         Path output = tempDir.resolve("migrated.json");
         loader.write(output, config);
         String written = Files.readString(output);
-        assertTrue(written.contains("\"schemaVersion\": 2"));
+        assertTrue(written.contains("\"schemaVersion\": 3"));
+        assertTrue(written.contains("\"coordinatePoints\""));
         assertFalse(written.contains("pickupSites"));
         assertFalse(written.contains("defaultIdleDelay"));
+    }
+
+    @Test
+    void migratesV2CoordinatesByDimensionAndPosition() throws IOException {
+        JsonObject root = JsonParser.parseString(
+                Files.readString(Path.of("src/main/resources/stowling.example.json"))
+        ).getAsJsonObject();
+        root.addProperty("schemaVersion", 2);
+        root.remove("coordinatePoints");
+        JsonObject region = root.getAsJsonArray("pickupRegions").get(0).getAsJsonObject();
+        region.remove("standbyCoordinateId");
+        JsonObject shape = region.getAsJsonObject("shape");
+        shape.remove("centerCoordinateId");
+        JsonObject cache = root.getAsJsonArray("cacheContainers").get(0).getAsJsonObject();
+        cache.remove("coordinateId");
+
+        StowlingConfig config = loader.parse(root.toString());
+
+        assertEquals(3, config.schemaVersion());
+        assertEquals(2, config.coordinatePoints().size());
+        PickupRegion migratedRegion = config.pickupRegions().getFirst();
+        SpherePickupShape migratedShape = (SpherePickupShape) migratedRegion.shape();
+        assertEquals(
+                migratedRegion.standbyCoordinateId(),
+                migratedShape.centerCoordinateId()
+        );
+    }
+
+    @Test
+    void coordinateChangesPropagateToAllReferencesAfterReload() throws IOException {
+        StowlingConfig config = ConfigTestFixtures.config(List.of());
+        Path output = tempDir.resolve("coordinate-propagation.json");
+        loader.write(output, config);
+        JsonObject root = JsonParser.parseString(Files.readString(output)).getAsJsonObject();
+        PickupRegion originalRegion = config.pickupRegions().getFirst();
+        String coordinateId = originalRegion.standbyCoordinateId();
+        JsonObject coordinate = coordinate(root, coordinateId);
+        coordinate.getAsJsonObject("position").addProperty("x", 42);
+        Files.writeString(output, root.toString());
+
+        StowlingConfig reloaded = loader.load(output);
+
+        PickupRegion region = reloaded.pickupRegions().getFirst();
+        SpherePickupShape shape = (SpherePickupShape) region.shape();
+        assertEquals(new BlockPosition(42, 64, 0), region.standbyPosition());
+        assertEquals(new BlockPosition(42, 64, 0), shape.center());
+    }
+
+    @Test
+    void rejectsUnknownCoordinateReferenceWithOwnerPath() throws IOException {
+        StowlingConfig config = ConfigTestFixtures.config(List.of());
+        Path output = tempDir.resolve("unknown-coordinate.json");
+        loader.write(output, config);
+        JsonObject root = JsonParser.parseString(Files.readString(output)).getAsJsonObject();
+        root.getAsJsonArray("pickupRegions")
+                .get(0)
+                .getAsJsonObject()
+                .addProperty("standbyCoordinateId", "missing-coordinate");
+
+        ConfigLoadException exception = assertThrows(
+                ConfigLoadException.class,
+                () -> loader.parse(root.toString())
+        );
+
+        assertTrue(exception.getMessage().contains("pickupRegions[0]"));
+        assertTrue(exception.getMessage().contains("missing-coordinate"));
+    }
+
+    @Test
+    void rejectsRegionReferencesAcrossCoordinateDimensions() throws IOException {
+        StowlingConfig base = ConfigTestFixtures.config(List.of());
+        PickupRegion region = new PickupRegion(
+                "split-region",
+                "Split region",
+                "minecraft:overworld",
+                new BlockPosition(20, 64, 0),
+                new SpherePickupShape(new BlockPosition(0, 64, 0), 8)
+        );
+        PickupWorkflow workflow = new PickupWorkflow(
+                "split-workflow",
+                "Split workflow",
+                "minecraft:overworld",
+                List.of(new PickupRegionBinding(
+                        region.id(),
+                        100,
+                        Duration.ofSeconds(60)
+                )),
+                List.of(base.cacheContainers().getFirst().id()),
+                CachePolicy.NEAREST_AVAILABLE,
+                ClassificationTiming.AFTER_ROUND,
+                CompletionMode.MANUAL,
+                Duration.ofSeconds(300)
+        );
+        StowlingConfig config = new StowlingConfig(
+                2,
+                List.of(region),
+                base.cacheContainers(),
+                List.of(workflow),
+                base.storageRoutes(),
+                base.packingStations(),
+                base.auditSchedules(),
+                base.overflowContainer()
+        );
+        Path output = tempDir.resolve("cross-dimension.json");
+        loader.write(output, config);
+        JsonObject root = JsonParser.parseString(Files.readString(output)).getAsJsonObject();
+        SpherePickupShape shape = (SpherePickupShape) config.pickupRegions()
+                .getFirst()
+                .shape();
+        coordinate(root, shape.centerCoordinateId())
+                .addProperty("dimension", "minecraft:the_nether");
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> loader.parse(root.toString())
+        );
+
+        assertTrue(exception.getMessage().contains("pickup region split-region"));
+        assertTrue(exception.getMessage().contains("dimension"));
+    }
+
+    private static JsonObject coordinate(JsonObject root, String id) {
+        JsonArray coordinates = root.getAsJsonArray("coordinatePoints");
+        for (int index = 0; index < coordinates.size(); index++) {
+            JsonObject coordinate = coordinates.get(index).getAsJsonObject();
+            if (id.equals(coordinate.get("id").getAsString())) {
+                return coordinate;
+            }
+        }
+        throw new AssertionError("missing coordinate " + id);
     }
 
     @Test

@@ -46,6 +46,17 @@ public final class ConfigLoader {
             "auditSchedules",
             "overflowContainer"
     );
+    private static final Set<String> V3_ROOT_FIELDS = Set.of(
+            "schemaVersion",
+            "coordinatePoints",
+            "pickupRegions",
+            "cacheContainers",
+            "pickupWorkflows",
+            "storageRoutes",
+            "packingStations",
+            "auditSchedules",
+            "overflowContainer"
+    );
     private static final Pattern SAFE_ID = Pattern.compile(
             "[a-z0-9][a-z0-9._-]{0,63}"
     );
@@ -86,7 +97,12 @@ public final class ConfigLoader {
             normalizeCompatibilityFields(root);
             if (schemaVersion == 1) {
                 root = migrateV1(root);
+                schemaVersion = 2;
             }
+            if (schemaVersion == 2) {
+                root = migrateV2(root);
+            }
+            resolveCoordinateReferences(root);
             StowlingConfig config = gson.fromJson(root, StowlingConfig.class);
             if (config == null) {
                 throw new ConfigLoadException("Configuration root must be a JSON object");
@@ -193,7 +209,9 @@ public final class ConfigLoader {
         JsonElement element = root.get("schemaVersion");
         if (element == null || !element.isJsonPrimitive()) {
             for (String field : root.keySet()) {
-                if (!V1_ROOT_FIELDS.contains(field) && !V2_ROOT_FIELDS.contains(field)) {
+                if (!V1_ROOT_FIELDS.contains(field)
+                        && !V2_ROOT_FIELDS.contains(field)
+                        && !V3_ROOT_FIELDS.contains(field)) {
                     throw new ConfigLoadException(
                             "Unknown configuration field: " + field
                     );
@@ -214,6 +232,8 @@ public final class ConfigLoader {
             allowedFields = V1_ROOT_FIELDS;
         } else if (schemaVersion == 2) {
             allowedFields = V2_ROOT_FIELDS;
+        } else if (schemaVersion == 3) {
+            allowedFields = V3_ROOT_FIELDS;
         } else {
             throw new ConfigLoadException(
                     "Unsupported configuration schemaVersion: " + schemaVersion
@@ -326,6 +346,246 @@ public final class ConfigLoader {
         );
         copyRequired(source, migrated, "overflowContainer");
         return migrated;
+    }
+
+    private static JsonObject migrateV2(JsonObject source) {
+        JsonObject migrated = source.deepCopy();
+        migrated.addProperty("schemaVersion", 3);
+        JsonArray coordinates = new JsonArray();
+        Map<String, String> coordinateIds = new LinkedHashMap<>();
+        Set<String> usedIds = pickupResourceIds(migrated);
+        JsonArray regions = requireArray(migrated, "pickupRegions");
+        for (int index = 0; index < regions.size(); index++) {
+            JsonObject region = requireObject(
+                    regions.get(index),
+                    "pickupRegions[" + index + "]"
+            );
+            String name = requireText(region, "name");
+            String dimension = requireText(region, "dimension");
+            String standbyId = coordinateId(
+                    coordinates,
+                    coordinateIds,
+                    usedIds,
+                    dimension,
+                    requireObject(region.get("standbyPosition"), "standbyPosition"),
+                    name + " standby"
+            );
+            region.addProperty("standbyCoordinateId", standbyId);
+            JsonObject shape = requireObject(region.get("shape"), "shape");
+            migrateShapeCoordinates(
+                    shape,
+                    name,
+                    dimension,
+                    coordinates,
+                    coordinateIds,
+                    usedIds
+            );
+        }
+        JsonArray caches = requireArray(migrated, "cacheContainers");
+        for (int index = 0; index < caches.size(); index++) {
+            JsonObject cache = requireObject(
+                    caches.get(index),
+                    "cacheContainers[" + index + "]"
+            );
+            String coordinateId = coordinateId(
+                    coordinates,
+                    coordinateIds,
+                    usedIds,
+                    requireText(cache, "dimension"),
+                    requireObject(cache.get("position"), "cache position"),
+                    requireText(cache, "name") + " position"
+            );
+            cache.addProperty("coordinateId", coordinateId);
+        }
+        migrated.add("coordinatePoints", coordinates);
+        return migrated;
+    }
+
+    private static Set<String> pickupResourceIds(JsonObject root) {
+        Set<String> ids = new LinkedHashSet<>();
+        for (String field : List.of(
+                "pickupRegions",
+                "cacheContainers",
+                "pickupWorkflows"
+        )) {
+            for (JsonElement element : requireArray(root, field)) {
+                ids.add(requireText(requireObject(element, field), "id"));
+            }
+        }
+        return ids;
+    }
+
+    private static void migrateShapeCoordinates(
+            JsonObject shape,
+            String resourceName,
+            String dimension,
+            JsonArray coordinates,
+            Map<String, String> coordinateIds,
+            Set<String> usedIds
+    ) {
+        String type = requireText(shape, "type");
+        if ("SPHERE".equals(type)) {
+            String id = coordinateId(
+                    coordinates,
+                    coordinateIds,
+                    usedIds,
+                    dimension,
+                    requireObject(shape.get("center"), "sphere center"),
+                    resourceName + " center"
+            );
+            shape.addProperty("centerCoordinateId", id);
+            return;
+        }
+        String firstId = coordinateId(
+                coordinates,
+                coordinateIds,
+                usedIds,
+                dimension,
+                requireObject(shape.get("firstCorner"), "first corner"),
+                resourceName + " first corner"
+        );
+        String secondId = coordinateId(
+                coordinates,
+                coordinateIds,
+                usedIds,
+                dimension,
+                requireObject(shape.get("secondCorner"), "second corner"),
+                resourceName + " second corner"
+        );
+        shape.addProperty("firstCornerCoordinateId", firstId);
+        shape.addProperty("secondCornerCoordinateId", secondId);
+    }
+
+    private static String coordinateId(
+            JsonArray coordinates,
+            Map<String, String> coordinateIds,
+            Set<String> usedIds,
+            String dimension,
+            JsonObject position,
+            String name
+    ) {
+        String key = coordinateLocationKey(dimension, position);
+        String existing = coordinateIds.get(key);
+        if (existing != null) {
+            return existing;
+        }
+        String id = stableId(name, "coordinate-" + (coordinates.size() + 1), usedIds);
+        JsonObject coordinate = new JsonObject();
+        coordinate.addProperty("id", id);
+        coordinate.addProperty("name", name);
+        coordinate.addProperty("dimension", dimension);
+        coordinate.add("position", position.deepCopy());
+        coordinates.add(coordinate);
+        coordinateIds.put(key, id);
+        return id;
+    }
+
+    private static String coordinateLocationKey(String dimension, JsonObject position) {
+        return dimension
+                + '|'
+                + requireField(position, "x").getAsInt()
+                + '|'
+                + requireField(position, "y").getAsInt()
+                + '|'
+                + requireField(position, "z").getAsInt();
+    }
+
+    private static void resolveCoordinateReferences(JsonObject root) {
+        Map<String, JsonObject> coordinates = coordinateMap(root);
+        JsonArray regions = requireArray(root, "pickupRegions");
+        for (int index = 0; index < regions.size(); index++) {
+            JsonObject region = requireObject(
+                    regions.get(index),
+                    "pickupRegions[" + index + "]"
+            );
+            String regionPath = "pickupRegions[" + index + "]";
+            JsonObject standby = referencedCoordinate(
+                    coordinates,
+                    region,
+                    "standbyCoordinateId",
+                    regionPath
+            );
+            region.add("dimension", requireField(standby, "dimension").deepCopy());
+            region.add("standbyPosition", requireField(standby, "position").deepCopy());
+            resolveShapeReferences(coordinates, region, regionPath);
+        }
+        JsonArray caches = requireArray(root, "cacheContainers");
+        for (int index = 0; index < caches.size(); index++) {
+            JsonObject cache = requireObject(
+                    caches.get(index),
+                    "cacheContainers[" + index + "]"
+            );
+            String path = "cacheContainers[" + index + "]";
+            JsonObject coordinate = referencedCoordinate(
+                    coordinates,
+                    cache,
+                    "coordinateId",
+                    path
+            );
+            cache.add("dimension", requireField(coordinate, "dimension").deepCopy());
+            cache.add("position", requireField(coordinate, "position").deepCopy());
+        }
+    }
+
+    private static Map<String, JsonObject> coordinateMap(JsonObject root) {
+        Map<String, JsonObject> coordinates = new LinkedHashMap<>();
+        JsonArray values = requireArray(root, "coordinatePoints");
+        for (int index = 0; index < values.size(); index++) {
+            JsonObject coordinate = requireObject(
+                    values.get(index),
+                    "coordinatePoints[" + index + "]"
+            );
+            coordinates.put(requireText(coordinate, "id"), coordinate);
+        }
+        return coordinates;
+    }
+
+    private static JsonObject referencedCoordinate(
+            Map<String, JsonObject> coordinates,
+            JsonObject resource,
+            String field,
+            String path
+    ) {
+        String id = requireText(resource, field);
+        JsonObject coordinate = coordinates.get(id);
+        if (coordinate == null) {
+            throw new ConfigLoadException(
+                    path + "." + field + " references unknown coordinate: " + id
+            );
+        }
+        return coordinate;
+    }
+
+    private static void resolveShapeReferences(
+            Map<String, JsonObject> coordinates,
+            JsonObject region,
+            String regionPath
+    ) {
+        JsonObject shape = requireObject(region.get("shape"), regionPath + ".shape");
+        if ("SPHERE".equals(requireText(shape, "type"))) {
+            JsonObject center = referencedCoordinate(
+                    coordinates,
+                    shape,
+                    "centerCoordinateId",
+                    regionPath + ".shape"
+            );
+            shape.add("center", requireField(center, "position").deepCopy());
+            return;
+        }
+        JsonObject first = referencedCoordinate(
+                coordinates,
+                shape,
+                "firstCornerCoordinateId",
+                regionPath + ".shape"
+        );
+        JsonObject second = referencedCoordinate(
+                coordinates,
+                shape,
+                "secondCornerCoordinateId",
+                regionPath + ".shape"
+        );
+        shape.add("firstCorner", requireField(first, "position").deepCopy());
+        shape.add("secondCorner", requireField(second, "position").deepCopy());
     }
 
     private static List<String> migrateSiteCaches(

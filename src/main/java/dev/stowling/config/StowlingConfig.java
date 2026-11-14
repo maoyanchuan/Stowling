@@ -8,9 +8,11 @@ import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
+import dev.stowling.domain.PickupShape;
 import dev.stowling.domain.PickupSite;
 import dev.stowling.domain.PickupWorkflow;
 import dev.stowling.domain.SpherePickupShape;
@@ -18,12 +20,16 @@ import dev.stowling.domain.StorageRoute;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public record StowlingConfig(
         int schemaVersion,
+        List<NamedCoordinate> coordinatePoints,
         List<PickupRegion> pickupRegions,
         List<NamedCache> cacheContainers,
         List<PickupWorkflow> pickupWorkflows,
@@ -33,30 +39,43 @@ public record StowlingConfig(
         ContainerRef overflowContainer
 ) {
     public StowlingConfig {
-        if (schemaVersion != 2) {
+        if (schemaVersion != 3) {
             throw new IllegalArgumentException(
                     "unsupported config schemaVersion: " + schemaVersion
             );
         }
-        pickupRegions = List.copyOf(Objects.requireNonNull(
-                pickupRegions,
-                "pickupRegions"
-        ));
-        cacheContainers = List.copyOf(Objects.requireNonNull(
-                cacheContainers,
-                "cacheContainers"
-        ));
-        pickupWorkflows = List.copyOf(Objects.requireNonNull(
-                pickupWorkflows,
-                "pickupWorkflows"
-        ));
-        storageRoutes = List.copyOf(Objects.requireNonNull(storageRoutes, "storageRoutes"));
-        packingStations = List.copyOf(Objects.requireNonNull(
-                packingStations,
-                "packingStations"
-        ));
-        auditSchedules = List.copyOf(Objects.requireNonNull(auditSchedules, "auditSchedules"));
+        coordinatePoints = copy(coordinatePoints, "coordinatePoints");
+        pickupRegions = copy(pickupRegions, "pickupRegions");
+        cacheContainers = copy(cacheContainers, "cacheContainers");
+        pickupWorkflows = copy(pickupWorkflows, "pickupWorkflows");
+        storageRoutes = copy(storageRoutes, "storageRoutes");
+        packingStations = copy(packingStations, "packingStations");
+        auditSchedules = copy(auditSchedules, "auditSchedules");
         overflowContainer = Objects.requireNonNull(overflowContainer, "overflowContainer");
+    }
+
+    public StowlingConfig(
+            int schemaVersion,
+            List<PickupRegion> pickupRegions,
+            List<NamedCache> cacheContainers,
+            List<PickupWorkflow> pickupWorkflows,
+            List<StorageRoute> storageRoutes,
+            List<PackingStation> packingStations,
+            List<AuditSchedule> auditSchedules,
+            ContainerRef overflowContainer
+    ) {
+        this(
+                upgradeResources(
+                        schemaVersion,
+                        pickupRegions,
+                        cacheContainers,
+                        pickupWorkflows
+                ),
+                storageRoutes,
+                packingStations,
+                auditSchedules,
+                overflowContainer
+        );
     }
 
     public StowlingConfig(
@@ -78,14 +97,15 @@ public record StowlingConfig(
     }
 
     private StowlingConfig(
-            LegacyResources resources,
+            CoordinateResources resources,
             List<StorageRoute> storageRoutes,
             List<PackingStation> packingStations,
             List<AuditSchedule> auditSchedules,
             ContainerRef overflowContainer
     ) {
         this(
-                2,
+                3,
+                resources.coordinates(),
                 resources.regions(),
                 resources.caches(),
                 resources.workflows(),
@@ -135,6 +155,10 @@ public record StowlingConfig(
         return List.copyOf(sites);
     }
 
+    private static <T> List<T> copy(List<T> values, String name) {
+        return List.copyOf(Objects.requireNonNull(values, name));
+    }
+
     private static PickupSite toLegacySite(
             PickupRegion region,
             PickupRegionBinding binding,
@@ -178,12 +202,12 @@ public record StowlingConfig(
         return Math.max(x, Math.max(y, z)) / 2 + 1;
     }
 
-    private static LegacyResources legacyResources(
+    private static CoordinateResources legacyResources(
             int schemaVersion,
             Duration defaultIdleDelay,
             List<PickupSite> pickupSites
     ) {
-        if (schemaVersion != 1 && schemaVersion != 2) {
+        if (schemaVersion < 1 || schemaVersion > 3) {
             throw new IllegalArgumentException(
                     "unsupported legacy config schemaVersion: " + schemaVersion
             );
@@ -226,13 +250,203 @@ public record StowlingConfig(
                     site.idleDelay()
             ));
         }
-        return new LegacyResources(regions, List.copyOf(caches.values()), workflows);
+        return upgradeResources(
+                2,
+                regions,
+                List.copyOf(caches.values()),
+                workflows
+        );
     }
 
-    private record LegacyResources(
+    private static CoordinateResources upgradeResources(
+            int schemaVersion,
             List<PickupRegion> regions,
             List<NamedCache> caches,
             List<PickupWorkflow> workflows
     ) {
+        if (schemaVersion < 2 || schemaVersion > 3) {
+            throw new IllegalArgumentException(
+                    "unsupported config schemaVersion: " + schemaVersion
+            );
+        }
+        CoordinateBuilder coordinates = new CoordinateBuilder(
+                resourceIds(regions, caches, workflows)
+        );
+        List<PickupRegion> upgradedRegions = regions.stream()
+                .map(region -> upgradeRegion(region, coordinates))
+                .toList();
+        List<NamedCache> upgradedCaches = caches.stream()
+                .map(cache -> upgradeCache(cache, coordinates))
+                .toList();
+        return new CoordinateResources(
+                coordinates.values(),
+                upgradedRegions,
+                upgradedCaches,
+                List.copyOf(workflows)
+        );
+    }
+
+    private static Set<String> resourceIds(
+            List<PickupRegion> regions,
+            List<NamedCache> caches,
+            List<PickupWorkflow> workflows
+    ) {
+        Set<String> ids = new LinkedHashSet<>();
+        regions.forEach(region -> ids.add(region.id()));
+        caches.forEach(cache -> ids.add(cache.id()));
+        workflows.forEach(workflow -> ids.add(workflow.id()));
+        return ids;
+    }
+
+    private static PickupRegion upgradeRegion(
+            PickupRegion region,
+            CoordinateBuilder coordinates
+    ) {
+        NamedCoordinate standby = coordinates.resolve(
+                region.standbyCoordinateId(),
+                region.name() + " standby",
+                region.dimension(),
+                region.standbyPosition()
+        );
+        PickupShape shape = upgradeShape(region, coordinates);
+        return new PickupRegion(
+                region.id(),
+                region.name(),
+                standby.dimension(),
+                standby.id(),
+                standby.position(),
+                shape
+        );
+    }
+
+    private static PickupShape upgradeShape(
+            PickupRegion region,
+            CoordinateBuilder coordinates
+    ) {
+        if (region.shape() instanceof SpherePickupShape sphere) {
+            NamedCoordinate center = coordinates.resolve(
+                    sphere.centerCoordinateId(),
+                    region.name() + " center",
+                    region.dimension(),
+                    sphere.center()
+            );
+            return new SpherePickupShape(center.id(), center.position(), sphere.radius());
+        }
+        CuboidPickupShape cuboid = (CuboidPickupShape) region.shape();
+        NamedCoordinate first = coordinates.resolve(
+                cuboid.firstCornerCoordinateId(),
+                region.name() + " first corner",
+                region.dimension(),
+                cuboid.firstCorner()
+        );
+        NamedCoordinate second = coordinates.resolve(
+                cuboid.secondCornerCoordinateId(),
+                region.name() + " second corner",
+                region.dimension(),
+                cuboid.secondCorner()
+        );
+        return new CuboidPickupShape(
+                first.id(),
+                second.id(),
+                first.position(),
+                second.position()
+        );
+    }
+
+    private static NamedCache upgradeCache(
+            NamedCache cache,
+            CoordinateBuilder coordinates
+    ) {
+        NamedCoordinate coordinate = coordinates.resolve(
+                cache.coordinateId(),
+                cache.name() + " position",
+                cache.dimension(),
+                cache.position()
+        );
+        return new NamedCache(
+                cache.id(),
+                cache.name(),
+                coordinate.id(),
+                coordinate.dimension(),
+                coordinate.position(),
+                cache.type()
+        );
+    }
+
+    private record CoordinateResources(
+            List<NamedCoordinate> coordinates,
+            List<PickupRegion> regions,
+            List<NamedCache> caches,
+            List<PickupWorkflow> workflows
+    ) {
+    }
+
+    private record CoordinateKey(String dimension, BlockPosition position) {
+    }
+
+    private static final class CoordinateBuilder {
+        private final Map<CoordinateKey, NamedCoordinate> coordinates = new LinkedHashMap<>();
+        private final Set<String> usedIds;
+
+        private CoordinateBuilder(Set<String> usedIds) {
+            this.usedIds = new LinkedHashSet<>(usedIds);
+        }
+
+        private NamedCoordinate resolve(
+                String preferredId,
+                String name,
+                String dimension,
+                BlockPosition position
+        ) {
+            CoordinateKey key = new CoordinateKey(dimension, position);
+            NamedCoordinate existing = coordinates.get(key);
+            if (existing != null) {
+                return existing;
+            }
+            String id = stableCoordinateId(preferredId, name, usedIds);
+            NamedCoordinate coordinate = new NamedCoordinate(id, name, dimension, position);
+            coordinates.put(key, coordinate);
+            return coordinate;
+        }
+
+        private List<NamedCoordinate> values() {
+            return List.copyOf(coordinates.values());
+        }
+    }
+
+    private static String stableCoordinateId(
+            String preferredId,
+            String name,
+            Set<String> usedIds
+    ) {
+        String base = normalizeId(preferredId);
+        if (base.isEmpty()) {
+            base = normalizeId(name);
+        }
+        if (base.isEmpty()) {
+            base = "coordinate";
+        }
+        String candidate = truncateId(base, 64);
+        int suffix = 2;
+        while (!usedIds.add(candidate)) {
+            String suffixText = "-" + suffix;
+            candidate = truncateId(base, 64 - suffixText.length()) + suffixText;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private static String normalizeId(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9._-]+", "-")
+                .replaceAll("^[^a-z0-9]+", "")
+                .replaceAll("-+$", "");
+    }
+
+    private static String truncateId(String value, int maximumLength) {
+        return value.length() <= maximumLength ? value : value.substring(0, maximumLength);
     }
 }

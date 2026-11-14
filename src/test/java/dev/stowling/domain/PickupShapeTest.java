@@ -1,6 +1,7 @@
 package dev.stowling.domain;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,5 +40,28 @@ class PickupShapeTest {
                 IllegalArgumentException.class,
                 () -> new CuboidPickupShape(reversedFirst, reversedSecond)
         );
+    }
+
+    @Test
+    void legacyConstructorsLeaveCoordinateReferencesForConfigUpgrade() {
+        BlockPosition position = new BlockPosition(1, 64, 2);
+        PickupRegion region = new PickupRegion(
+                "legacy-region",
+                "Legacy region",
+                "minecraft:overworld",
+                position,
+                new SpherePickupShape(position, 8)
+        );
+        NamedCache cache = new NamedCache(
+                "legacy-cache",
+                "Legacy cache",
+                "minecraft:overworld",
+                position,
+                ContainerType.CHEST
+        );
+
+        assertNull(region.standbyCoordinateId());
+        assertNull(((SpherePickupShape) region.shape()).centerCoordinateId());
+        assertNull(cache.coordinateId());
     }
 }

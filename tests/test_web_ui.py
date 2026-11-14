@@ -190,11 +190,15 @@ def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
         "FIXED_INTERVAL",
         "DAILY",
         "AFTER_COMPLETION",
-        "ITEMS_PRESENT",
     ):
         assert f'"{trigger}"' in TASKS
         assert f'value="{trigger}"' in PAGES["tasks.html"]
 
+    assert '"ITEMS_PRESENT"' in TASKS
+    assert 'value="ITEMS_PRESENT"' not in PAGES["tasks.html"]
+    assert "function renderTriggerKindOptions(kind)" in TASKS
+    assert "旧配置 · 区域有物品时" in TASKS
+    assert "旧任务的“区域有物品时”配置仅作兼容显示" in PAGES["tasks.html"]
     assert "intervalSeconds:" in TASKS
     assert "trigger.kind === \"FIXED_INTERVAL\"" in TASKS
     assert "|| trigger.kind === \"AFTER_COMPLETION\"" in TASKS
@@ -207,8 +211,8 @@ def test_task_editor_covers_settings_triggers_and_interruptions() -> None:
     assert '["NONE", "INLINE", "TASK_REFERENCE"]' in TASKS
     assert "entry.kind === \"AUTOMATION\" && entry.id !== state.draft.id" \
         in TASKS
-    assert "留空时使用自身全部区域" in TASKS
-    assert "填写区域 ID 表示明确选择自定义区域" in TASKS
+    assert "旧配置兼容：留空时使用自身全部区域" in TASKS
+    assert "旧配置兼容：填写区域 ID 表示明确选择自定义区域" in TASKS
     assert "taskId: draft.settings.interruption.kind === \"TASK_REFERENCE\"" \
         in TASKS
 

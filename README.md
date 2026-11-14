@@ -176,16 +176,23 @@ Configuration schema 5 stores scheduling settings with each pickup or automation
 Existing schema 1-4 files are migrated automatically. Migrated and newly saved task
 definitions start disabled; `autoStartOnRestart` defaults to `false`.
 
-Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`) and one of five triggers:
+Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four triggers:
 
 - `MANUAL`: only an explicit run request starts the task.
 - `FIXED_INTERVAL`: runs after each positive `intervalSeconds` interval.
 - `DAILY`: runs at one or more `HH:mm` times in the configured time zone.
 - `AFTER_COMPLETION`: waits for the positive `intervalSeconds` delay after a successful
   run, then queues the task.
-- `ITEMS_PRESENT`: watches the configured pickup regions and queues the task when items
-  are observed. A pickup task may leave `regionIds` empty to watch its own regions;
-  custom automation tasks must select one or more regions.
+
+The **Run pickup** step has an optional **Wait for items before pickup** condition
+(`waitForItems`, default `false`). Its optional pickup scope (`regionId`) limits execution
+and observation to one region; leaving it empty selects all regions in the chosen workflow.
+While waiting, the step observes client-visible drops once per second without navigating or
+loading chunks. Unobservable regions show a waiting-for-visibility status. This wait belongs
+to the running task and can be safely interrupted; it does not create a periodic child task.
+
+Legacy `ITEMS_PRESENT` task triggers remain supported and are shown explicitly as legacy
+settings when editing existing configurations; new tasks use the pickup step condition.
 
 An interruption can be `NONE`, an `INLINE` step list, or a `TASK_REFERENCE`. References
 must target automation tasks, and missing-target and cycle validation is applied before

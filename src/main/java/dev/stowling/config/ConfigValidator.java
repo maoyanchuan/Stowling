@@ -927,7 +927,7 @@ public final class ConfigValidator {
                         step,
                         path,
                         Set.of("workflowId"),
-                        Set.of("regionId")
+                        Set.of("regionId", "waitForItems")
                 );
                 validatePickupParameters(violations, step, path, pickupsById);
             }
@@ -1073,6 +1073,7 @@ public final class ConfigValidator {
             String path,
             Map<String, PickupWorkflow> pickupsById
     ) {
+        validateBooleanParameter(violations, step, path, "waitForItems");
         String workflowId = step.parameter("workflowId");
         if (workflowId == null) {
             return;
@@ -1099,6 +1100,25 @@ public final class ConfigValidator {
             violations.add(new ConfigViolation(
                     regionPath,
                     "pickup workflow does not contain region: " + regionId
+            ));
+        }
+    }
+
+    private static void validateBooleanParameter(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            String key
+    ) {
+        String value = step.parameter(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String normalized = value.trim();
+        if (!"true".equals(normalized) && !"false".equals(normalized)) {
+            violations.add(new ConfigViolation(
+                    path + ".parameters." + key,
+                    "must be true or false"
             ));
         }
     }

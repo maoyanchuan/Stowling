@@ -12,8 +12,11 @@ import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupWorkflow;
+import dev.stowling.schedule.RegionItemProbe;
 import dev.stowling.schedule.StopOutcome;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,13 +34,16 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
     private static final int MAX_CONTAINER_RETRIES = 3;
     private static final Duration CONTAINER_ACK_TIMEOUT = Duration.ofSeconds(8);
     private static final Duration NAVIGATION_TIMEOUT = Duration.ofMinutes(5);
+    private static final Duration REGION_PROBE_INTERVAL = Duration.ofSeconds(1);
     private static final String MANUAL_RECOVERY =
             "拾取流程的进程内操作已丢失；请人工确认拾取状态后重新创建任务。";
 
     private final Supplier<StowlingConfig> config;
     private final PickupEngineFactory engineFactory;
     private final ClientActionScheduler scheduler;
-    private final Map<String, PickupAttempt> attempts = new LinkedHashMap<>();
+    private final RegionItemProbe probe;
+    private final Clock clock;
+    private final Map<String, WorkflowEntry> attempts = new LinkedHashMap<>();
     private final Map<UUID, StopOutcome> stopOutcomes = new LinkedHashMap<>();
 
     public ClientPickupWorkflowPort(
@@ -45,9 +51,27 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
             PickupEngineFactory engineFactory,
             ClientActionScheduler scheduler
     ) {
+        this(
+                config,
+                engineFactory,
+                scheduler,
+                ignored -> RegionItemProbe.Observation.UNOBSERVABLE,
+                Clock.systemUTC()
+        );
+    }
+
+    public ClientPickupWorkflowPort(
+            Supplier<StowlingConfig> config,
+            PickupEngineFactory engineFactory,
+            ClientActionScheduler scheduler,
+            RegionItemProbe probe,
+            Clock clock
+    ) {
         this.config = Objects.requireNonNull(config, "config");
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.probe = Objects.requireNonNull(probe, "probe");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Override
@@ -79,12 +103,19 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
             );
         }
         try {
-            PickupAutomationEngine engine = engineFactory.create(plan(
+            PickupAutomationPlan pickupPlan = plan(
                     taskId,
                     workflow.orElseThrow(),
                     request.regionId(),
                     loaded
-            ));
+            );
+            if (request.waitForItems()) {
+                WaitingAttempt waiting = new WaitingAttempt(pickupPlan);
+                attempts.put(operationKey, waiting);
+                stopOutcomes.remove(taskId);
+                return advanceWaiting(operationKey, waiting);
+            }
+            PickupAutomationEngine engine = engineFactory.create(pickupPlan);
             engine.start();
             stopOutcomes.remove(taskId);
             attempts.put(operationKey, new PickupAttempt(engine));
@@ -100,8 +131,8 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
     @Override
     public synchronized AutomationOperationResult poll(String operationKey) {
         Objects.requireNonNull(operationKey, "operationKey");
-        PickupAttempt attempt = attempts.get(operationKey);
-        if (attempt == null) {
+        WorkflowEntry entry = attempts.get(operationKey);
+        if (entry == null) {
             return AutomationOperationResult.paused(MANUAL_RECOVERY);
         }
         if (!scheduler.isClientThread()) {
@@ -109,14 +140,18 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
                     "拾取流程只能在 Minecraft 客户端线程轮询。"
             );
         }
-        return map(operationKey, attempt.engine.tick());
+        if (entry instanceof WaitingAttempt waiting) {
+            return advanceWaiting(operationKey, waiting);
+        }
+        PickupAttempt attempt = (PickupAttempt) entry;
+        return map(operationKey, attempt.engine().tick());
     }
 
     @Override
     public synchronized AutomationOperationResult reconcile(String operationKey) {
         Objects.requireNonNull(operationKey, "operationKey");
-        PickupAttempt attempt = attempts.get(operationKey);
-        if (attempt == null) {
+        WorkflowEntry entry = attempts.get(operationKey);
+        if (entry == null) {
             return AutomationOperationResult.paused(MANUAL_RECOVERY);
         }
         if (!scheduler.isClientThread()) {
@@ -124,7 +159,11 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
                     "拾取流程只能在 Minecraft 客户端线程恢复。"
             );
         }
-        return map(operationKey, attempt.engine.tick());
+        if (entry instanceof WaitingAttempt waiting) {
+            return advanceWaiting(operationKey, waiting);
+        }
+        PickupAttempt attempt = (PickupAttempt) entry;
+        return map(operationKey, attempt.engine().tick());
     }
 
     @Override
@@ -133,12 +172,12 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         if (!scheduler.isClientThread()) {
             return StopOutcome.UNSAFE;
         }
-        List<Map.Entry<String, PickupAttempt>> matches = attemptEntries(attemptId);
+        List<Map.Entry<String, WorkflowEntry>> matches = attemptEntries(attemptId);
         if (matches.isEmpty()) {
             return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
         }
         StopOutcome outcome = StopOutcome.CLEAN;
-        for (Map.Entry<String, PickupAttempt> entry : matches) {
+        for (Map.Entry<String, WorkflowEntry> entry : matches) {
             StopOutcome current = entry.getValue().requestStopAndPoll();
             outcome = combine(outcome, current);
             if (current == StopOutcome.CLEAN || current == StopOutcome.UNSAFE) {
@@ -154,13 +193,13 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         if (!scheduler.isClientThread()) {
             return StopOutcome.UNSAFE;
         }
-        List<Map.Entry<String, PickupAttempt>> matches = attemptEntries(attemptId);
+        List<Map.Entry<String, WorkflowEntry>> matches = attemptEntries(attemptId);
         if (matches.isEmpty()) {
             return stopOutcomes.getOrDefault(attemptId, StopOutcome.UNSAFE);
         }
         StopOutcome outcome = StopOutcome.CLEAN;
-        for (Map.Entry<String, PickupAttempt> entry : matches) {
-            StopOutcome current = entry.getValue().engine.pollStop();
+        for (Map.Entry<String, WorkflowEntry> entry : matches) {
+            StopOutcome current = entry.getValue().pollStop();
             outcome = combine(outcome, current);
             if (current == StopOutcome.CLEAN || current == StopOutcome.UNSAFE) {
                 attempts.remove(entry.getKey());
@@ -191,7 +230,7 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
             String operationKey,
             AutomationSnapshot snapshot
     ) {
-        PickupAttempt attempt = attempts.get(operationKey);
+        WorkflowEntry attempt = attempts.get(operationKey);
         if (attempt == null) {
             return AutomationOperationResult.paused(MANUAL_RECOVERY);
         }
@@ -244,9 +283,9 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         }
     }
 
-    private List<Map.Entry<String, PickupAttempt>> attemptEntries(UUID taskId) {
-        List<Map.Entry<String, PickupAttempt>> result = new ArrayList<>();
-        for (Map.Entry<String, PickupAttempt> entry : attempts.entrySet()) {
+    private List<Map.Entry<String, WorkflowEntry>> attemptEntries(UUID taskId) {
+        List<Map.Entry<String, WorkflowEntry>> result = new ArrayList<>();
+        for (Map.Entry<String, WorkflowEntry> entry : attempts.entrySet()) {
             if (taskId.equals(taskId(entry.getKey()))) {
                 result.add(Map.entry(entry.getKey(), entry.getValue()));
             }
@@ -274,6 +313,48 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
             stopOutcomes.remove(oldest);
         }
         return outcome;
+    }
+
+    private AutomationOperationResult advanceWaiting(
+            String operationKey,
+            WaitingAttempt waiting
+    ) {
+        Instant now = clock.instant();
+        Optional<Instant> lastProbeAt = waiting.lastProbeAt();
+        if (lastProbeAt.isPresent()
+                && now.isBefore(lastProbeAt.orElseThrow().plus(REGION_PROBE_INTERVAL))) {
+            return waiting.result();
+        }
+        RegionItemProbe.Observation observation = probe.observe(
+                waiting.plan().orderedRegions().stream()
+                        .map(binding -> binding.regionId())
+                        .toList()
+        );
+        if (observation == RegionItemProbe.Observation.PRESENT) {
+            PickupAutomationEngine engine = engineFactory.create(waiting.plan());
+            engine.start();
+            attempts.put(operationKey, new PickupAttempt(engine));
+            return map(operationKey, engine.tick());
+        }
+        WaitingAttempt updated = new WaitingAttempt(
+                waiting.plan(),
+                Optional.of(now),
+                Optional.of(observation)
+        );
+        attempts.put(operationKey, updated);
+        return waitingResult(observation);
+    }
+
+    private static AutomationOperationResult waitingResult(
+            RegionItemProbe.Observation observation
+    ) {
+        return switch (observation) {
+            case EMPTY -> AutomationOperationResult.running("等待物品出现");
+            case UNOBSERVABLE -> AutomationOperationResult.running("等待区域可见");
+            case PRESENT -> throw new IllegalArgumentException(
+                    "present observation must start the pickup engine"
+            );
+        };
     }
 
     private static PickupAutomationPlan plan(
@@ -310,12 +391,52 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         PickupAutomationEngine create(PickupAutomationPlan plan);
     }
 
-    private record PickupAttempt(PickupAutomationEngine engine) {
-        private StopOutcome requestStopAndPoll() {
+    private interface WorkflowEntry {
+        StopOutcome requestStopAndPoll();
+
+        StopOutcome pollStop();
+    }
+
+    private record PickupAttempt(
+            PickupAutomationEngine engine
+    ) implements WorkflowEntry {
+        @Override
+        public StopOutcome requestStopAndPoll() {
             return ClientPickupWorkflowPort.requestStopAndPoll(
                     engine::requestStop,
                     engine::pollStop
             );
+        }
+
+        @Override
+        public StopOutcome pollStop() {
+            return engine.pollStop();
+        }
+    }
+
+    private record WaitingAttempt(
+            PickupAutomationPlan plan,
+            Optional<Instant> lastProbeAt,
+            Optional<RegionItemProbe.Observation> lastObservation
+    ) implements WorkflowEntry {
+        private WaitingAttempt(PickupAutomationPlan plan) {
+            this(plan, Optional.empty(), Optional.empty());
+        }
+
+        @Override
+        public StopOutcome requestStopAndPoll() {
+            return StopOutcome.CLEAN;
+        }
+
+        @Override
+        public StopOutcome pollStop() {
+            return StopOutcome.CLEAN;
+        }
+
+        private AutomationOperationResult result() {
+            return waitingResult(lastObservation.orElse(
+                    RegionItemProbe.Observation.UNOBSERVABLE
+            ));
         }
     }
 

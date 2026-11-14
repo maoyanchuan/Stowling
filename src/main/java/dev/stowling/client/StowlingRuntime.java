@@ -202,7 +202,11 @@ public final class StowlingRuntime implements AutoCloseable {
                 automationClock,
                 pickupCheckpoints
         ),
-                scheduler
+                scheduler,
+                new ScheduledRegionItemProbe(
+                        minecraft, worldObserver, () -> configLoader.load(configPath)
+                ),
+                Clock.systemUTC()
         );
         CraftingPort crafting = new UnsupportedClientCraftingPort();
         DefaultAutomationModuleRegistryFactory moduleFactory =

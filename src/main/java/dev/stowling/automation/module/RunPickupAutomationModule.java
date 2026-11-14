@@ -16,10 +16,21 @@ public final class RunPickupAutomationModule implements AutomationModule {
             new AutomationModuleDescriptor(
                     AutomationStepType.RUN_PICKUP,
                     "运行拾取",
-                    "运行完整拾取流程或指定一个区域。",
+                    "留空时执行流程全部区域；可等待选定范围有客户端可见物品。",
                     List.of(
                             new Parameter("workflowId", "拾取流程", "pickup", true),
-                            new Parameter("regionId", "只运行区域", "pickup-region", false)
+                            new Parameter(
+                                    "regionId",
+                                    "拾取范围（可选）",
+                                    "pickup-region",
+                                    false
+                            ),
+                            new Parameter(
+                                    "waitForItems",
+                                    "等待区域有物品再拾取",
+                                    "boolean",
+                                    false
+                            )
                     )
             );
 
@@ -37,12 +48,27 @@ public final class RunPickupAutomationModule implements AutomationModule {
     @Override
     public AutomationModuleResult execute(AutomationModuleContext context) {
         return ModuleParameters.guard(() -> {
+            boolean waitForItems = ModuleParameters.optional(
+                    context.step(),
+                    "waitForItems"
+            ).map(RunPickupAutomationModule::parseBoolean).orElse(false);
             PickupWorkflowPort.Request request = new PickupWorkflowPort.Request(
                     ModuleParameters.required(context.step(), "workflowId"),
-                    ModuleParameters.optional(context.step(), "regionId")
+                    ModuleParameters.optional(context.step(), "regionId"),
+                    waitForItems
             );
             return OperationModuleSupport.execute(context, request, pickup);
         });
+    }
+
+    private static boolean parseBoolean(String value) {
+        return switch (value) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalArgumentException(
+                    "waitForItems must be true or false"
+            );
+        };
     }
 
     @Override

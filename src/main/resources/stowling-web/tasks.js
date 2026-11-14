@@ -664,7 +664,7 @@
         elements.taskId.disabled = Boolean(state.revision);
         elements.taskName.value = draft.name;
         elements.taskPriority.value = draft.settings.priority;
-        elements.triggerKind.value = draft.settings.trigger.kind;
+        renderTriggerKindOptions(draft.settings.trigger.kind);
         elements.autoStart.checked = draft.settings.autoStartOnRestart;
         elements.interruptionKind.value = draft.settings.interruption.kind;
         elements.revision.textContent = state.revision
@@ -676,6 +676,25 @@
         renderPickupEditor();
         renderSteps();
         updateSaveState();
+    }
+
+    /**
+     * @param {string} kind
+     * @returns {void}
+     */
+    function renderTriggerKindOptions(kind) {
+        const legacyOption = elements.triggerKind.querySelector(
+            'option[value="ITEMS_PRESENT"]'
+        );
+        if (kind === "ITEMS_PRESENT" && !legacyOption) {
+            elements.triggerKind.append(new Option(
+                "旧配置 · 区域有物品时",
+                "ITEMS_PRESENT"
+            ));
+        } else if (kind !== "ITEMS_PRESENT" && legacyOption) {
+            legacyOption.remove();
+        }
+        elements.triggerKind.value = kind;
     }
 
     /**
@@ -710,8 +729,8 @@
             "span",
             "muted compact-help",
             state.draft?.kind === "PICKUP"
-                ? "留空时使用自身全部区域；填写区域 ID 表示明确选择自定义区域。"
-                : "自定义任务需要明确填写区域 ID。"
+                ? "旧配置兼容：留空时使用自身全部区域；填写区域 ID 表示明确选择自定义区域。"
+                : "旧配置兼容：自定义任务需要明确填写区域 ID。"
         ));
         if (state.draft?.kind !== "PICKUP") {
             return;
@@ -1020,6 +1039,20 @@
         fields.append(field("模块", moduleSelect(step, steps, scope)));
         const parameters = Stowling.element("div", "step-fields");
         const definitions = moduleFor(step.type)?.parameters || [];
+        if (step.type === "RUN_PICKUP") {
+            parameters.append(Stowling.element(
+                "p",
+                "muted compact-help pickup-step-hint",
+                [
+                    "拾取范围留空时运行所选流程的全部区域；",
+                    "选择后只运行该流程中的一个区域。",
+                    "勾选“等待区域有物品再拾取”后，仅当选定范围内有客户端可见掉落物才开始，",
+                    "无物品时保持等待、不巡逻，也不会主动加载区域。",
+                    "等待发生在任务执行中，可被高优先级任务打断。",
+                    "区域下拉只列出所选拾取流程包含的区域。"
+                ].join("")
+            ));
+        }
         definitions.forEach((definition) => {
             const editor = field(
                 `${definition.label}${definition.required ? " *" : ""}`,
@@ -1091,7 +1124,19 @@
                 options,
                 value,
                 definition,
-                (next) => setStepParameter(step, definition, next)
+                (next) => setPickupWorkflow(step, definition, next)
+            );
+        }
+        if (step.type === "RUN_PICKUP"
+                && definition.kind === "pickup-region") {
+            const workflowId = String(step.parameters.workflowId || "");
+            const options = pickupRegionOptions(workflowId);
+            return referenceSelect(
+                options,
+                value,
+                definition,
+                (next) => setStepParameter(step, definition, next),
+                "全部区域（所选拾取流程）"
             );
         }
         if (definition.kind === "pickup-region") {
@@ -1157,18 +1202,27 @@
      * @param {string} value
      * @param {object} definition
      * @param {(value: string) => void} onChange
+     * @param {string} [emptyLabel]
      * @returns {HTMLSelectElement}
      */
-    function referenceSelect(options, value, definition, onChange) {
+    function referenceSelect(
+        options,
+        value,
+        definition,
+        onChange,
+        emptyLabel = ""
+    ) {
         const select = document.createElement("select");
         select.required = definition.required;
         select.setAttribute("aria-label", definition.label);
-        if (!options.some(([optionValue]) => optionValue === value)) {
-            if (value) {
-                select.append(new Option(`保留原值 · ${value}`, value));
-            } else {
-                select.append(new Option("请选择", ""));
-            }
+        const hasValue = options.some(([optionValue]) => optionValue === value);
+        if (emptyLabel) {
+            select.append(new Option(emptyLabel, ""));
+        } else if (!hasValue && !value) {
+            select.append(new Option("请选择", ""));
+        }
+        if (value && !hasValue) {
+            select.append(new Option(`保留原值 · ${value}`, value));
         }
         for (const [optionValue, optionLabel] of options) {
             select.append(new Option(optionLabel, optionValue));
@@ -1186,6 +1240,53 @@
             String(point.id),
             `${point.name || point.id} · ${Stowling.dimensionLabel(point.dimension)}`
         ]);
+    }
+
+    /**
+     * @param {string} workflowId
+     * @returns {Array<string>}
+     */
+    function workflowRegionIds(workflowId) {
+        const id = String(workflowId || "");
+        if (!id) {
+            return [];
+        }
+        const workflow = state.definitions.find((entry) => {
+            return entry.kind === "PICKUP" && entry.id === id;
+        });
+        const regions = workflow?.definition?.pickup?.regions;
+        return (Array.isArray(regions) ? regions : [])
+            .map((binding) => String(binding?.regionId || ""))
+            .filter(Boolean);
+    }
+
+    /**
+     * @param {string} workflowId
+     * @returns {Array<Array<string>>}
+     */
+    function pickupRegionOptions(workflowId) {
+        const allowed = new Set(workflowRegionIds(workflowId));
+        return (state.resources.pickupRegions || [])
+            .filter((region) => allowed.has(String(region.id || "")))
+            .map((region) => [
+                String(region.id),
+                `${region.name || region.id} · ${region.id}`
+            ]);
+    }
+
+    /**
+     * @param {object} step
+     * @param {object} definition
+     * @param {string} workflowId
+     * @returns {void}
+     */
+    function setPickupWorkflow(step, definition, workflowId) {
+        setStepParameter(step, definition, workflowId);
+        const regionId = String(step.parameters.regionId || "");
+        if (regionId && !workflowRegionIds(workflowId).includes(regionId)) {
+            delete step.parameters.regionId;
+        }
+        markDirty(true);
     }
 
     /**
@@ -2126,7 +2227,12 @@
         ) {
             trigger.intervalSeconds = 300;
         }
-        markDirty(true);
+        if (trigger.kind !== "ITEMS_PRESENT") {
+            trigger.regionIds = [];
+        }
+        renderTriggerKindOptions(trigger.kind);
+        renderTriggerFields();
+        markDirty();
     });
     elements.triggerInterval.addEventListener("input", () => {
         state.draft.settings.trigger.intervalSeconds = Number(

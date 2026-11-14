@@ -116,7 +116,11 @@
                         <div class="step-heading">
                             <div>
                                 <h3 id="schedule-title">调度与中断</h3>
-                                <p>所有任务支持五种触发器；引用中断只接受已有自定义任务</p>
+                                <p>
+                                    支持手动、固定间隔、每日定时、完成后接续四种触发器；
+                                    旧任务的“区域有物品时”配置仅作兼容显示，切换后即可退出。
+                                    引用中断只接受已有自定义任务。
+                                </p>
                             </div>
                         </div>
                         <div class="editor-fields">
@@ -127,7 +131,6 @@
                                     <option value="FIXED_INTERVAL">固定间隔</option>
                                     <option value="DAILY">每日定时</option>
                                     <option value="AFTER_COMPLETION">完成后接续</option>
-                                    <option value="ITEMS_PRESENT">区域有物品时</option>
                                 </select>
                             </div>
                             <div id="trigger-interval-field" class="editor-field" hidden>
@@ -152,8 +155,11 @@
                         </div>
                         <div id="trigger-regions-field" class="editor-field" hidden>
                             <label for="trigger-regions">
-                                区域 ID（拾取任务默认使用自身区域，可追加自定义区域）
+                                旧配置区域 ID（仅兼容“区域有物品时”）
                             </label>
+                            <p class="muted compact-help">
+                                新任务请在 RUN_PICKUP 步骤中设置拾取范围与等待选项。
+                            </p>
                             <textarea id="trigger-regions" rows="3"></textarea>
                             <div id="trigger-region-hints" class="check-grid"></div>
                         </div>

@@ -4,7 +4,11 @@ import java.util.Objects;
 import java.util.Optional;
 
 public interface PickupWorkflowPort extends AutomationOperationPort<PickupWorkflowPort.Request> {
-    record Request(String workflowId, Optional<String> regionId) {
+    record Request(String workflowId, Optional<String> regionId, boolean waitForItems) {
+        public Request(String workflowId, Optional<String> regionId) {
+            this(workflowId, regionId, false);
+        }
+
         public Request {
             workflowId = requireText(workflowId, "workflowId");
             regionId = Optional.ofNullable(regionId).orElse(Optional.empty());

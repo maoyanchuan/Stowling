@@ -28,12 +28,18 @@ import dev.stowling.schedule.TaskPriority;
 import dev.stowling.schedule.TaskSettings;
 import dev.stowling.schedule.TaskTrigger;
 import dev.stowling.schedule.TriggerKind;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ConfigValidatorTest {
+    @TempDir
+    Path tempDir;
+
     @Test
     void rejectsEqualPriorityRouteAmbiguity() {
         StorageRoute first = ConfigTestFixtures.route(
@@ -318,6 +324,37 @@ class ConfigValidatorTest {
         assertTrue(exception.getMessage().contains("pickup workflow does not exist"));
         assertTrue(exception.getMessage().contains("positive integer"));
         assertTrue(exception.getMessage().contains("unknown parameter"));
+    }
+
+    @Test
+    void acceptsRunPickupWaitForItemsAndValidatesAfterRoundTrip() {
+        StowlingConfig config = runPickupAutomationConfig(
+                Map.of("waitForItems", "true")
+        );
+        ConfigLoader loader = new ConfigLoader();
+        Path output = tempDir.resolve("run-pickup-round-trip.json");
+
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(config));
+        loader.write(output, config);
+        StowlingConfig loaded = loader.load(output);
+
+        assertEquals(config, loaded);
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(loaded));
+    }
+
+    @Test
+    void rejectsInvalidRunPickupWaitForItemsBoolean() {
+        StowlingConfig config = runPickupAutomationConfig(
+                Map.of("waitForItems", "TRUE")
+        );
+
+        ConfigValidationException exception = assertThrows(
+                ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(config)
+        );
+
+        assertTrue(exception.getMessage().contains("waitForItems"));
+        assertTrue(exception.getMessage().contains("true or false"));
     }
 
     @Test
@@ -650,6 +687,32 @@ class ConfigValidatorTest {
                 false,
                 TaskInterruption.none()
         );
+    }
+
+    private static StowlingConfig runPickupAutomationConfig(
+            Map<String, String> parameters
+    ) {
+        StowlingConfig base = ConfigTestFixtures.config(List.of());
+        String pickupId = base.pickupWorkflows().getFirst().id();
+        String regionId = base.pickupWorkflows()
+                .getFirst()
+                .regions()
+                .getFirst()
+                .regionId();
+        Map<String, String> completeParameters = new HashMap<>(parameters);
+        completeParameters.put("workflowId", pickupId);
+        completeParameters.put("regionId", regionId);
+        AutomationStep pickup = new AutomationStep(
+                "pickup",
+                AutomationStepType.RUN_PICKUP,
+                completeParameters
+        );
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "pickup-wait",
+                "Pickup wait",
+                List.of(pickup)
+        );
+        return ConfigTestFixtures.configWithAutomation(List.of(workflow));
     }
 
     private static PickupWorkflow withPickupSettings(

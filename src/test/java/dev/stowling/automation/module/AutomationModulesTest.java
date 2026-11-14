@@ -164,7 +164,11 @@ class AutomationModulesTest {
                 Map.of("workflowId", "quarry", "regionId", "north")
         ), Map.of(), false);
         assertEquals(
-                new PickupWorkflowPort.Request("quarry", Optional.of("north")),
+                new PickupWorkflowPort.Request(
+                        "quarry",
+                        Optional.of("north"),
+                        false
+                ),
                 pickup.requests.getFirst()
         );
 
@@ -491,6 +495,92 @@ class AutomationModulesTest {
     }
 
     @Test
+    void runPickupDefaultsWaitForItemsToFalse() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+
+        execute(module, step(
+                "pickup-default",
+                AutomationStepType.RUN_PICKUP,
+                Map.of("workflowId", "quarry")
+        ), Map.of(), false);
+
+        assertEquals(
+                new PickupWorkflowPort.Request(
+                        "quarry",
+                        Optional.empty(),
+                        false
+                ),
+                pickup.requests.getFirst()
+        );
+    }
+
+    @Test
+    void runPickupPassesWaitForItemsTrueForSelectedRegion() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+
+        execute(module, step(
+                "pickup-wait",
+                AutomationStepType.RUN_PICKUP,
+                Map.of(
+                        "workflowId", "quarry",
+                        "regionId", "north",
+                        "waitForItems", "true"
+                )
+        ), Map.of(), false);
+
+        assertEquals(
+                new PickupWorkflowPort.Request(
+                        "quarry",
+                        Optional.of("north"),
+                        true
+                ),
+                pickup.requests.getFirst()
+        );
+    }
+
+    @Test
+    void runPickupRejectsInvalidWaitForItemsBeforeStarting() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+
+        AutomationModuleResult result = execute(module, step(
+                "pickup-invalid-wait",
+                AutomationStepType.RUN_PICKUP,
+                Map.of("workflowId", "quarry", "waitForItems", "TRUE")
+        ), Map.of(), false);
+
+        assertEquals(AutomationModuleStatus.FAILED, result.status());
+        assertTrue(result.message().orElseThrow().contains("true or false"));
+        assertEquals(0, pickup.startCount);
+    }
+
+    @Test
+    void runPickupDescriptorDocumentsOptionalRegionAndWaitBehavior() {
+        AutomationModuleDescriptor descriptor =
+                new RunPickupAutomationModule(new PickupRecordingPort()).descriptor();
+        AutomationModuleDescriptor.Parameter region = descriptor.parameters()
+                .stream()
+                .filter(parameter -> parameter.key().equals("regionId"))
+                .findFirst()
+                .orElseThrow();
+        AutomationModuleDescriptor.Parameter waitForItems = descriptor.parameters()
+                .stream()
+                .filter(parameter -> parameter.key().equals("waitForItems"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("RUN_PICKUP", descriptor.moduleId());
+        assertEquals("拾取范围（可选）", region.label());
+        assertFalse(region.required());
+        assertEquals("boolean", waitForItems.kind());
+        assertFalse(waitForItems.required());
+        assertTrue(descriptor.description().contains("留空时执行流程全部区域"));
+        assertTrue(descriptor.description().contains("客户端可见物品"));
+    }
+
+    @Test
     void runPickupOperationTargetsTheSameSubjectOnce() {
         PickupRecordingPort pickup = new PickupRecordingPort();
         RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
@@ -507,7 +597,11 @@ class AutomationModulesTest {
         assertEquals(1, pickup.startCount);
         assertEquals(1, pickup.requests.size());
         assertEquals(
-                new PickupWorkflowPort.Request("quarry", Optional.of("north")),
+                new PickupWorkflowPort.Request(
+                        "quarry",
+                        Optional.of("north"),
+                        false
+                ),
                 pickup.requests.getFirst()
         );
     }

@@ -42,17 +42,24 @@ class PickupNamedCoordinateAutomationTest {
                 new BlockPosition(20, 65, 4),
                 ContainerType.CHEST
         );
+        SpherePickupShape sphereShape = new SpherePickupShape(
+                "sphere-center",
+                new BlockPosition(1, 64, 2),
+                8
+        );
         PickupRegion sphere = new PickupRegion(
                 "sphere-region",
                 "Sphere region",
                 DIMENSION,
                 "sphere-standby",
                 new BlockPosition(30, 70, 30),
-                new SpherePickupShape(
-                        "sphere-center",
-                        new BlockPosition(1, 64, 2),
-                        8
-                )
+                sphereShape
+        );
+        CuboidPickupShape cuboidShape = new CuboidPickupShape(
+                "cuboid-first",
+                "cuboid-second",
+                new BlockPosition(-4, 60, -5),
+                new BlockPosition(4, 68, 5)
         );
         PickupRegion cuboid = new PickupRegion(
                 "cuboid-region",
@@ -60,12 +67,7 @@ class PickupNamedCoordinateAutomationTest {
                 DIMENSION,
                 "cuboid-standby",
                 new BlockPosition(-30, 70, -30),
-                new CuboidPickupShape(
-                        "cuboid-first",
-                        "cuboid-second",
-                        new BlockPosition(-4, 60, -5),
-                        new BlockPosition(4, 68, 5)
-                )
+                cuboidShape
         );
         PickupWorkflow workflow = workflow(
                 List.of(binding(sphere, 100), binding(cuboid, 50)),
@@ -84,8 +86,8 @@ class PickupNamedCoordinateAutomationTest {
         assertEquals(
                 List.of("sphere-region", "cuboid-region"),
                 plan.orderedRegions().stream()
-                        .map(PickupRegionBinding::regionId)
-                        .toList()
+                .map(PickupRegionBinding::regionId)
+                .toList()
         );
         assertEquals(sphere, plan.regionsById().get(sphere.id()));
         assertEquals(cuboid, plan.regionsById().get(cuboid.id()));
@@ -108,17 +110,18 @@ class PickupNamedCoordinateAutomationTest {
     void sphereRegionUsesResolvedStandbyCenterAndConfiguredBoundary() {
         AutomationTestSupport support = new AutomationTestSupport();
         BlockPosition standby = new BlockPosition(30, 70, 30);
+        SpherePickupShape shape = new SpherePickupShape(
+                "sphere-center",
+                new BlockPosition(0, 64, 0),
+                4
+        );
         PickupRegion region = new PickupRegion(
                 "sphere-region",
                 "Sphere region",
                 DIMENSION,
                 "sphere-standby",
                 standby,
-                new SpherePickupShape(
-                        "sphere-center",
-                        new BlockPosition(0, 64, 0),
-                        4
-                )
+                shape
         );
         support.world.setWorld(AutomationTestSupport.connectedAt(FAR_PLAYER_POSITION));
         support.navigation.setPosition(standby);
@@ -129,10 +132,10 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = engine(
                 support,
                 workflow(
-                        List.of(binding(region, 100)),
-                        List.of(support.cache.id()),
-                        ClassificationTiming.AFTER_ROUND
-                ),
+                List.of(binding(region, 100)),
+                List.of(support.cache.id()),
+                ClassificationTiming.AFTER_ROUND
+        ),
                 List.of(region),
                 List.of(namedCache(support.cache)),
                 Optional.empty()
@@ -146,8 +149,8 @@ class PickupNamedCoordinateAutomationTest {
         assertEquals(
                 List.of(new BlockPosition(4, 64, 0)),
                 support.navigation.startedTargets().stream()
-                        .filter(target -> target.equals(new BlockPosition(4, 64, 0)))
-                        .toList()
+                .filter(target -> target.equals(new BlockPosition(4, 64, 0)))
+                .toList()
         );
     }
 
@@ -155,18 +158,19 @@ class PickupNamedCoordinateAutomationTest {
     void cuboidRegionUsesResolvedCornersAndInclusiveConfiguredBoundary() {
         AutomationTestSupport support = new AutomationTestSupport();
         BlockPosition standby = new BlockPosition(-30, 70, -30);
+        CuboidPickupShape shape = new CuboidPickupShape(
+                "cuboid-first",
+                "cuboid-second",
+                new BlockPosition(10, 60, -1),
+                new BlockPosition(12, 64, 1)
+        );
         PickupRegion region = new PickupRegion(
                 "cuboid-region",
                 "Cuboid region",
                 DIMENSION,
                 "cuboid-standby",
                 standby,
-                new CuboidPickupShape(
-                        "cuboid-first",
-                        "cuboid-second",
-                        new BlockPosition(10, 60, -1),
-                        new BlockPosition(12, 64, 1)
-                )
+                shape
         );
         support.world.setWorld(AutomationTestSupport.connectedAt(FAR_PLAYER_POSITION));
         support.navigation.setPosition(standby);
@@ -177,10 +181,10 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = engine(
                 support,
                 workflow(
-                        List.of(binding(region, 100)),
-                        List.of(support.cache.id()),
-                        ClassificationTiming.AFTER_ROUND
-                ),
+                List.of(binding(region, 100)),
+                List.of(support.cache.id()),
+                ClassificationTiming.AFTER_ROUND
+        ),
                 List.of(region),
                 List.of(namedCache(support.cache)),
                 Optional.empty()
@@ -215,10 +219,10 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = engine(
                 support,
                 workflow(
-                        List.of(binding(high, 100), binding(low, 10)),
-                        List.of(support.cache.id()),
-                        ClassificationTiming.AFTER_ROUND
-                ),
+                List.of(binding(high, 100), binding(low, 10)),
+                List.of(support.cache.id()),
+                ClassificationTiming.AFTER_ROUND
+        ),
                 List.of(high, low),
                 List.of(namedCache(support.cache)),
                 Optional.of(low.id())
@@ -248,10 +252,10 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = engine(
                 support,
                 workflow(
-                        List.of(binding(high, 100), binding(low, 10)),
-                        List.of(support.cache.id()),
-                        ClassificationTiming.AFTER_REGION
-                ),
+                List.of(binding(high, 100), binding(low, 10)),
+                List.of(support.cache.id()),
+                ClassificationTiming.AFTER_REGION
+        ),
                 List.of(high, low),
                 List.of(namedCache(support.cache)),
                 Optional.empty()
@@ -340,12 +344,12 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = createEngine(
                 support,
                 plan(
-                        support,
-                        workflow,
-                        List.of(region),
-                        List.of(first, second),
-                        Optional.empty()
-                )
+                support,
+                workflow,
+                List.of(region),
+                List.of(first, second),
+                Optional.empty()
+        )
         );
 
         engine.start();
@@ -356,15 +360,15 @@ class PickupNamedCoordinateAutomationTest {
         assertEquals(
                 List.of(first.id(), second.id()),
                 support.containers.attempts().stream()
-                        .map(attempt -> attempt.transfer().destination().id())
-                        .toList()
+                .map(attempt -> attempt.transfer().destination().id())
+                .toList()
         );
         assertEquals(
                 DIMENSION,
                 support.containers.attempts().getLast()
-                        .transfer()
-                        .destination()
-                        .dimension()
+                .transfer()
+                .destination()
+                .dimension()
         );
     }
 
@@ -398,12 +402,12 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = createEngine(
                 support,
                 plan(
-                        support,
-                        workflow,
-                        List.of(region),
-                        List.of(namedCache(support.cache)),
-                        Optional.empty()
-                )
+                support,
+                workflow,
+                List.of(region),
+                List.of(namedCache(support.cache)),
+                Optional.empty()
+        )
         );
 
         engine.start();
@@ -427,10 +431,10 @@ class PickupNamedCoordinateAutomationTest {
         PickupAutomationEngine engine = engine(
                 support,
                 workflow(
-                        List.of(binding(region, 100)),
-                        List.of(support.cache.id()),
-                        ClassificationTiming.AFTER_ROUND
-                ),
+                List.of(binding(region, 100)),
+                List.of(support.cache.id()),
+                ClassificationTiming.AFTER_ROUND
+        ),
                 List.of(region),
                 List.of(namedCache(support.cache)),
                 Optional.empty()

@@ -66,11 +66,11 @@ public record StowlingConfig(
     ) {
         this(
                 upgradeResources(
-                        schemaVersion,
-                        pickupRegions,
-                        cacheContainers,
-                        pickupWorkflows
-                ),
+                schemaVersion,
+                pickupRegions,
+                cacheContainers,
+                pickupWorkflows
+        ),
                 storageRoutes,
                 packingStations,
                 auditSchedules,

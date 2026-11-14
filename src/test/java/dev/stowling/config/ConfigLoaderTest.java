@@ -15,7 +15,6 @@ import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerType;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
-import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupWorkflow;
@@ -209,10 +208,10 @@ class ConfigLoaderTest {
                 "Split workflow",
                 "minecraft:overworld",
                 List.of(new PickupRegionBinding(
-                        region.id(),
-                        100,
-                        Duration.ofSeconds(60)
-                )),
+                region.id(),
+                100,
+                Duration.ofSeconds(60)
+        )),
                 List.of(base.cacheContainers().getFirst().id()),
                 CachePolicy.NEAREST_AVAILABLE,
                 ClassificationTiming.AFTER_ROUND,

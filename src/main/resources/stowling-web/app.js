@@ -1922,6 +1922,74 @@
     }
 
     /**
+     * @returns {object}
+     */
+    function hydratePickupConfigForSave() {
+        if (!pickupConfigDraft) {
+            throw new Error("尚未读取拾取配置，无法生成保存请求");
+        }
+        const requestDraft = cloneJson(pickupConfigDraft);
+        for (const region of requestDraft.pickupRegions) {
+            const label = region.name || region.id;
+            region.standbyPosition = cloneJson(
+                requireSavedCoordinatePosition(
+                    region.standbyCoordinateId,
+                    `区域“${label}”的待机点`
+                )
+            );
+            if (!region.shape) {
+                throw new Error(`区域“${label}”尚未配置区域形状`);
+            }
+            if (region.shape?.type === "SPHERE") {
+                region.shape.center = cloneJson(
+                    requireSavedCoordinatePosition(
+                        region.shape.centerCoordinateId,
+                        `区域“${label}”的球心`
+                    )
+                );
+            } else {
+                region.shape.firstCorner = cloneJson(
+                    requireSavedCoordinatePosition(
+                        region.shape?.firstCornerCoordinateId,
+                        `区域“${label}”的第一角点`
+                    )
+                );
+                region.shape.secondCorner = cloneJson(
+                    requireSavedCoordinatePosition(
+                        region.shape?.secondCornerCoordinateId,
+                        `区域“${label}”的第二角点`
+                    )
+                );
+            }
+        }
+        for (const cache of requestDraft.cacheContainers) {
+            const label = cache.name || cache.id;
+            cache.position = cloneJson(
+                requireSavedCoordinatePosition(
+                    cache.coordinateId,
+                    `缓存“${label}”`
+                )
+            );
+        }
+        return requestDraft;
+    }
+
+    /**
+     * @param {string} coordinateId
+     * @param {string} label
+     * @returns {object}
+     */
+    function requireSavedCoordinatePosition(coordinateId, label) {
+        const point = coordinatePointById(coordinateId);
+        if (!point || !validPosition(point.position)) {
+            throw new Error(
+                `${label}引用的命名坐标不存在或无效，请先保存命名坐标并重新选择`
+            );
+        }
+        return point.position;
+    }
+
+    /**
      * @param {Array<string>} errors
      * @returns {void}
      */
@@ -2749,6 +2817,14 @@
         if (!pickupConfigSnapshot || !pickupConfigDirty) {
             return;
         }
+        let pickupConfigForSave;
+        try {
+            pickupConfigForSave = hydratePickupConfigForSave();
+        } catch (error) {
+            setPickupConfigErrors([error.message]);
+            showToast("拾取配置引用不完整，暂未保存", true);
+            return;
+        }
         elements.pickupConfigSave.disabled = true;
         elements.pickupConfigDiscard.disabled = true;
         elements.pickupConfigStatus.textContent = "正在保存全部拾取配置…";
@@ -2758,9 +2834,9 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     revision: pickupConfigSnapshot.revision,
-                    pickupRegions: pickupConfigDraft.pickupRegions,
-                    cacheContainers: pickupConfigDraft.cacheContainers,
-                    pickupWorkflows: pickupConfigDraft.pickupWorkflows
+                    pickupRegions: pickupConfigForSave.pickupRegions,
+                    cacheContainers: pickupConfigForSave.cacheContainers,
+                    pickupWorkflows: pickupConfigForSave.pickupWorkflows
                 })
             });
             pickupConfigDirty = false;

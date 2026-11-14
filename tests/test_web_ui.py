@@ -44,9 +44,9 @@ def test_editor_reads_and_atomically_saves_pickup_configuration() -> None:
     assert 'requestJson("/v1/config/pickup")' in SCRIPT
     assert 'requestJson("/v1/config/pickup", {' in SCRIPT
     assert "revision: pickupConfigSnapshot.revision" in SCRIPT
-    assert "pickupRegions: pickupConfigDraft.pickupRegions" in SCRIPT
-    assert "cacheContainers: pickupConfigDraft.cacheContainers" in SCRIPT
-    assert "pickupWorkflows: pickupConfigDraft.pickupWorkflows" in SCRIPT
+    assert "pickupRegions: pickupConfigForSave.pickupRegions" in SCRIPT
+    assert "cacheContainers: pickupConfigForSave.cacheContainers" in SCRIPT
+    assert "pickupWorkflows: pickupConfigForSave.pickupWorkflows" in SCRIPT
 
     save_block = re.search(
         r'pickupConfigForm\.addEventListener\("submit"[\s\S]+?'
@@ -171,10 +171,21 @@ def test_pickup_editors_reference_named_coordinates() -> None:
     assert "function createCoordinateSelectField(" in SCRIPT
     assert 'select.dataset.coordinateId = String(selectedId || "")' in SCRIPT
     assert "跨维度：坐标属于" in SCRIPT
-    assert 'createPositionEditor("待机点"' not in SCRIPT
-    assert 'createPositionEditor("容器坐标"' not in SCRIPT
-    assert "region.standbyPosition" not in SCRIPT
-    assert "cache.position" not in SCRIPT
+    region_editor = re.search(
+        r"function createRegionEditor\(region, index\) \{[\s\S]+?"
+        r"function changeRegionShape",
+        SCRIPT,
+    )
+    cache_editor = re.search(
+        r"function createCacheEditor\(cache, index\) \{[\s\S]+?"
+        r"function containerTypeOptions",
+        SCRIPT,
+    )
+    assert region_editor is not None
+    assert cache_editor is not None
+    assert 'createPositionEditor("待机点"' not in region_editor.group(0)
+    assert "region.standbyPosition" not in region_editor.group(0)
+    assert "cache.position" not in cache_editor.group(0)
 
 
 def test_referenced_coordinate_delete_is_blocked_with_resource_list() -> None:
@@ -195,7 +206,37 @@ def test_pickup_save_does_not_resend_named_coordinate_collection() -> None:
     assert save_block is not None
     block = save_block.group(0)
     assert 'requestJson("/v1/config/pickup"' in block
-    assert "pickupRegions: pickupConfigDraft.pickupRegions" in block
-    assert "cacheContainers: pickupConfigDraft.cacheContainers" in block
-    assert "pickupWorkflows: pickupConfigDraft.pickupWorkflows" in block
+    assert "pickupRegions: pickupConfigForSave.pickupRegions" in block
+    assert "cacheContainers: pickupConfigForSave.cacheContainers" in block
+    assert "pickupWorkflows: pickupConfigForSave.pickupWorkflows" in block
     assert "coordinatePoints" not in block
+
+
+def test_pickup_save_hydrates_strict_legacy_positions_from_coordinates() -> None:
+    hydrate_block = re.search(
+        r"function hydratePickupConfigForSave\(\) \{[\s\S]+?"
+        r"function requireSavedCoordinatePosition",
+        SCRIPT,
+    )
+    assert hydrate_block is not None
+    hydration = hydrate_block.group(0)
+    assert "const requestDraft = cloneJson(pickupConfigDraft);" in hydration
+    assert "region.standbyPosition = cloneJson(" in hydration
+    assert "region.shape.center = cloneJson(" in hydration
+    assert "region.shape.firstCorner = cloneJson(" in hydration
+    assert "region.shape.secondCorner = cloneJson(" in hydration
+    assert "cache.position = cloneJson(" in hydration
+    assert "requireSavedCoordinatePosition(" in hydration
+    assert "pickupConfigDraft.pickupRegions =" not in hydration
+    assert "命名坐标不存在或无效" in SCRIPT
+
+    save_block = re.search(
+        r'pickupConfigForm\.addEventListener\("submit"[\s\S]+?'
+        r'pickupConfigDiscard\.addEventListener',
+        SCRIPT,
+    )
+    assert save_block is not None
+    block = save_block.group(0)
+    assert "pickupConfigForSave = hydratePickupConfigForSave();" in block
+    assert "setPickupConfigErrors([error.message]);" in block
+    assert "拾取配置引用不完整，暂未保存" in block

@@ -24,7 +24,7 @@
         snapshot: null,
         draft: null,
         dirty: false,
-        editableIds: new Set(),
+        invalidFields: new Set(),
         references: new Map()
     };
 
@@ -41,10 +41,11 @@
             coordinatePoints: points
         });
         state.draft = Stowling.clone(state.snapshot);
+        for (const point of state.draft.coordinatePoints) {
+            point._originalId = String(point.id || "");
+        }
         state.dirty = false;
-        state.editableIds = new Set();
-        elements.revision.textContent =
-            `revision: ${state.snapshot.revision.slice(0, 12) || "--"}`;
+        elements.revision.textContent = Stowling.revisionLabel(state.snapshot.revision);
         elements.revision.title = state.snapshot.revision;
         elements.status.textContent = "命名坐标已与配置文件同步";
         showErrors([]);
@@ -110,7 +111,6 @@
                 markDirty();
             }
         );
-        idInput.disabled = !state.editableIds.has(point.id);
         idInput.pattern = "[a-z0-9][a-z0-9._-]{0,63}";
         const idField = field("坐标 ID", idInput);
         const nameInput = textInput(
@@ -143,6 +143,7 @@
                     markDirty();
                 }
             );
+            input.dataset.validation = "position";
             position.append(field(axis.toUpperCase(), input));
         }
 
@@ -188,7 +189,7 @@
      * @param {string} id
      * @param {string} label
      * @param {unknown} value
-     * @param {(value: number) => void} onChange
+     * @param {(value: number | string) => void} onChange
      * @returns {HTMLInputElement}
      */
     function numberInput(id, label, value, onChange) {
@@ -202,9 +203,7 @@
         input.setAttribute("aria-label", label);
         input.addEventListener("input", () => {
             const parsed = parseInteger(input.value);
-            if (parsed !== null) {
-                onChange(parsed);
-            }
+            onChange(parsed === null ? input.value : parsed);
         });
         return input;
     }
@@ -225,7 +224,8 @@
         for (const dimension of values) {
             const option = document.createElement("option");
             option.value = dimension;
-            option.textContent = dimension;
+            option.textContent = Stowling.dimensionLabel(dimension);
+            option.title = dimension;
             select.append(option);
         }
         select.value = String(point.dimension || DIMENSIONS[0]);
@@ -312,7 +312,10 @@
      */
     function removePoint(index) {
         const point = state.draft.coordinatePoints[index];
-        const references = referencesFor(point.id);
+        const references = [
+            ...referencesFor(point.id),
+            ...referencesFor(point._originalId)
+        ];
         if (references.length > 0) {
             const message = `无法删除“${point.name || point.id}”：仍被 ${references.join("、")}`
                 + " 引用。请先在对应页面解除引用并保存。";
@@ -321,7 +324,6 @@
             return;
         }
         state.draft.coordinatePoints.splice(index, 1);
-        state.editableIds.delete(point.id);
         markDirty(true);
     }
 
@@ -338,9 +340,9 @@
             id,
             name: "新命名坐标",
             dimension: DIMENSIONS[0],
-            position: { x: 0, y: 64, z: 0 }
+            position: { x: 0, y: 64, z: 0 },
+            _originalId: ""
         });
-        state.editableIds.add(id);
         markDirty(true);
     }
 
@@ -364,7 +366,6 @@
      */
     function markDirty(rerender = false) {
         state.dirty = true;
-        showErrors([]);
         if (rerender) {
             renderEditor();
             renderUsage();
@@ -382,45 +383,132 @@
         }
         const errors = [];
         const ids = new Set();
-        for (const point of state.draft.coordinatePoints) {
+        state.invalidFields.clear();
+        state.draft.coordinatePoints.forEach((point, index) => {
             const id = String(point.id || "").trim();
-            if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
-                errors.push(`命名坐标 ID“${id || "空"}”格式无效`);
+            const ordinal = `第 ${index + 1} 个命名坐标`;
+            const name = String(point.name || "").trim() || id || "未命名";
+            if (!id) {
+                addError(
+                    errors,
+                    `${ordinal}“${name}”的坐标 ID 不能为空；请输入 1-64 位小写字母、`
+                        + "数字、点、下划线或连字符，且必须以字母或数字开头",
+                    `coordinate-id-${index}`
+                );
+            } else if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
+                addError(
+                    errors,
+                    `${ordinal}“${name}”的坐标 ID“${id}”格式无效；只能使用小写字母、`
+                        + "数字、点、下划线和连字符，并以字母或数字开头",
+                    `coordinate-id-${index}`
+                );
             }
-            if (ids.has(id)) {
-                errors.push(`重复 ID“${id}”`);
+            if (id && ids.has(id)) {
+                addError(
+                    errors,
+                    `${ordinal}“${name}”使用了重复 ID“${id}”；请改成未使用的 ID`,
+                    `coordinate-id-${index}`
+                );
             }
-            ids.add(id);
+            if (id) {
+                ids.add(id);
+            }
+            const originalId = String(point._originalId || "");
+            if (originalId && id !== originalId) {
+                const references = referencesFor(originalId);
+                if (references.length > 0) {
+                    addError(
+                        errors,
+                        `${ordinal}“${name}”的 ID 已从“${originalId}”改为`
+                            + `“${id || "空"}”，但旧 ID 仍被 ${references.join("、")}`
+                            + " 引用；请先解除这些引用，或恢复旧 ID",
+                        `coordinate-id-${index}`
+                    );
+                }
+            }
             if (!String(point.name || "").trim()) {
-                errors.push(`命名坐标“${id || "未命名"}”的显示名称不能为空`);
+                addError(
+                    errors,
+                    `${ordinal}（ID：${id || "空"}）的显示名称不能为空；请输入便于识别的名称`,
+                    `coordinate-name-${index}`
+                );
             }
             if (!String(point.dimension || "").trim()) {
-                errors.push(`命名坐标“${id || "未命名"}”必须选择维度`);
+                addError(
+                    errors,
+                    `${ordinal}“${name}”必须选择维度；请选择主世界、下界或末地`,
+                    `coordinate-dimension-${index}`
+                );
             }
             for (const axis of ["x", "y", "z"]) {
                 if (parseInteger(point.position?.[axis]) === null) {
-                    errors.push(`命名坐标“${id || "未命名"}”的 ${axis.toUpperCase()}`
-                        + " 必须是 32 位整数");
+                    addError(
+                        errors,
+                        `${ordinal}“${name}”的 ${axis.toUpperCase()} 坐标`
+                            + "必须是 32 位整数；请填写有效方块坐标",
+                        `coordinate-${axis}-${index}`
+                    );
                 }
             }
-        }
+        });
         return [...new Set(errors)];
+    }
+
+    /**
+     * @param {Array<string>} errors
+     * @param {string} message
+     * @param {string} fieldId
+     * @returns {void}
+     */
+    function addError(errors, message, fieldId) {
+        errors.push(message);
+        state.invalidFields.add(fieldId);
+    }
+
+    /**
+     * @param {boolean} showValidation
+     * @returns {void}
+     */
+    function updateSaveState(showValidation = true) {
+        const errors = validateDraft();
+        const blocked = errors.length > 0;
+        elements.save.disabled = !state.dirty || blocked;
+        elements.status.classList.toggle("dirty", state.dirty);
+        if (showValidation) {
+            showErrors(state.dirty || blocked ? errors : []);
+        }
+        applyValidationStyles();
+        if (blocked) {
+            elements.status.textContent =
+                `发现 ${errors.length} 个命名坐标问题，保存已暂停`;
+        } else if (state.dirty) {
+            elements.status.textContent = "有未保存的命名坐标修改";
+        } else {
+            elements.status.textContent = "命名坐标已与配置文件同步";
+        }
     }
 
     /**
      * @returns {void}
      */
-    function updateSaveState() {
-        const errors = validateDraft();
-        const blocked = errors.length > 0;
-        elements.save.disabled = !state.dirty || blocked;
-        elements.status.classList.toggle("dirty", state.dirty);
-        if (blocked) {
-            elements.status.textContent = "草稿中有错误，修正后才能保存";
-        } else if (state.dirty) {
-            elements.status.textContent = "有未保存的命名坐标修改";
-        } else {
-            elements.status.textContent = "命名坐标已与配置文件同步";
+    function applyValidationStyles() {
+        for (const card of elements.list.querySelectorAll(".coordinate-point-editor")) {
+            card.classList.remove("has-error");
+            for (const control of card.querySelectorAll("input, select")) {
+                control.setAttribute("aria-invalid", "false");
+                control.closest(".editor-field, fieldset")?.classList.remove(
+                    "has-error"
+                );
+            }
+        }
+        for (const fieldId of state.invalidFields) {
+            const control = document.getElementById(fieldId);
+            if (!control) {
+                continue;
+            }
+            control.setAttribute("aria-invalid", "true");
+            control.closest(".editor-field, fieldset")?.classList.add("has-error");
+            control.closest(".coordinate-point-editor")?.classList.add("has-error");
         }
     }
 
@@ -570,14 +658,25 @@
             return;
         }
         for (const point of state.draft.coordinatePoints) {
-            const references = referencesFor(point.id);
+            const references = [
+                ...referencesFor(point.id),
+                ...referencesFor(point._originalId)
+            ];
             if (references.length === 0) {
                 continue;
             }
             const card = Stowling.element("article", "usage-card");
             card.append(
-                Stowling.element("strong", "", `${point.name || point.id} · ${point.id}`),
-                Stowling.element("span", "", references.join("；"))
+                Stowling.element(
+                    "strong",
+                    "",
+                    `${point.name || point.id} · ${point.id || "ID 为空"}`
+                ),
+                Stowling.element(
+                    "span",
+                    "",
+                    [...new Set(references)].join("；")
+                )
             );
             elements.usage.append(card);
         }
@@ -630,7 +729,7 @@
             Stowling.handleError(error, "保存命名坐标失败");
         } finally {
             elements.discard.disabled = false;
-            updateSaveState();
+            updateSaveState(false);
         }
     }
 

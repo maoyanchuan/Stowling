@@ -2,15 +2,6 @@
     "use strict";
 
     const Stowling = window.Stowling;
-    const STATUS_LABELS = new Map([
-        ["PENDING", "等待中"],
-        ["RUNNING", "运行中"],
-        ["WAITING", "等待条件"],
-        ["PAUSED", "已暂停"],
-        ["SUCCEEDED", "已完成"],
-        ["FAILED", "失败"],
-        ["CANCELLED", "已取消"]
-    ]);
     const FIELD_DEFINITIONS = Object.freeze({
         NAVIGATE: [
             field("coordinateId", "目标命名坐标", "coordinate", true)
@@ -94,7 +85,7 @@
         draft: null,
         selectedIndex: -1,
         dirty: false,
-        editableWorkflowIds: new Set(),
+        invalidFields: new Set(),
         modules: [...FALLBACK_MODULES],
         coordinates: [],
         pickups: [],
@@ -136,11 +127,9 @@
             automationWorkflows: workflows
         });
         state.draft = Stowling.clone(state.snapshot);
-        state.editableWorkflowIds = new Set();
         state.dirty = false;
         state.selectedIndex = state.draft.automationWorkflows.length > 0 ? 0 : -1;
-        elements.revision.textContent =
-            `revision: ${state.snapshot.revision.slice(0, 12) || "--"}`;
+        elements.revision.textContent = Stowling.revisionLabel(state.snapshot.revision);
         elements.revision.title = state.snapshot.revision;
         elements.status.textContent = "任务配置已与配置文件同步";
         showErrors([]);
@@ -367,7 +356,6 @@
             return;
         }
         state.draft.automationWorkflows.splice(index, 1);
-        state.editableWorkflowIds.delete(workflow.id);
         if (state.selectedIndex >= state.draft.automationWorkflows.length) {
             state.selectedIndex = state.draft.automationWorkflows.length - 1;
         }
@@ -390,7 +378,6 @@
             steps: []
         };
         state.draft.automationWorkflows.push(workflow);
-        state.editableWorkflowIds.add(workflow.id);
         state.selectedIndex = state.draft.automationWorkflows.length - 1;
         markDirty();
         renderWorkflowList();
@@ -425,7 +412,6 @@
             return;
         }
         elements.workflowId.value = String(workflow.id || "");
-        elements.workflowId.disabled = !state.editableWorkflowIds.has(workflow.id);
         elements.workflowName.value = String(workflow.name || "");
         renderSteps();
     }
@@ -451,7 +437,12 @@
         }
         workflow.steps ||= [];
         workflow.steps.forEach((step, index) => {
-            elements.stepList.append(createStepCard(workflow, step, index));
+            elements.stepList.append(createStepCard(
+                workflow,
+                step,
+                index,
+                state.selectedIndex
+            ));
         });
         if (workflow.steps.length === 0) {
             elements.stepList.append(Stowling.emptyState("还没有步骤"));
@@ -463,9 +454,10 @@
      * @param {object} workflow
      * @param {object} step
      * @param {number} index
+     * @param {number} workflowIndex
      * @returns {HTMLElement}
      */
-    function createStepCard(workflow, step, index) {
+    function createStepCard(workflow, step, index, workflowIndex) {
         const card = Stowling.element("article", "step-card");
         const heading = Stowling.element("div", "step-card-heading");
         const number = Stowling.element("span", "step-number", String(index + 1));
@@ -483,13 +475,16 @@
         heading.append(number, identity, actions);
 
         const topFields = Stowling.element("div", "editor-fields");
-        topFields.append(fieldWrap("模块类型", moduleSelect(step, index, workflow)));
+        topFields.append(fieldWrap(
+            "模块类型",
+            moduleSelect(step, index, workflowIndex)
+        ));
         const fields = Stowling.element("div", "step-fields");
         const definitions = parametersFor(step.type);
         for (const definition of definitions) {
             fields.append(fieldWrap(
                 definition.label,
-                parameterControl(step, definition, index)
+                parameterControl(step, definition, index, workflowIndex)
             ));
         }
         if (definitions.length === 0) {
@@ -517,17 +512,18 @@
     /**
      * @param {object} step
      * @param {number} index
-     * @param {object} workflow
+     * @param {number} workflowIndex
      * @returns {HTMLSelectElement}
      */
-    function moduleSelect(step, index, workflow) {
+    function moduleSelect(step, index, workflowIndex) {
         const select = document.createElement("select");
-        select.id = `step-module-${index}`;
+        select.id = stepFieldId(workflowIndex, index, "module");
         select.setAttribute("aria-label", `第 ${index + 1} 步模块`);
         for (const module of state.modules) {
             const option = document.createElement("option");
             option.value = module.type;
-            option.textContent = `${module.name} · ${module.type}`;
+            option.textContent = module.name;
+            option.title = module.type;
             select.append(option);
         }
         select.value = String(step.type || "");
@@ -536,7 +532,6 @@
             step.parameters = defaultParameters(step.type);
             markDirty(true);
             renderWorkflowList();
-            void workflow;
         });
         return select;
     }
@@ -573,14 +568,21 @@
      * @param {object} step
      * @param {object} definition
      * @param {number} stepIndex
+     * @param {number} workflowIndex
      * @returns {HTMLElement}
      */
-    function parameterControl(step, definition, stepIndex) {
+    function parameterControl(step, definition, stepIndex, workflowIndex) {
         step.parameters ||= {};
         const value = step.parameters[definition.key] ?? "";
         let control;
         if (["coordinate", "pickup", "pickup-region", "container"].includes(definition.kind)) {
-            control = referenceSelect(definition, step, stepIndex, value);
+            control = referenceSelect(
+                definition,
+                step,
+                stepIndex,
+                workflowIndex,
+                value
+            );
         } else {
             control = document.createElement("input");
             control.type = ["positive-integer", "non-negative-integer"].includes(definition.kind)
@@ -603,7 +605,7 @@
                 updateSaveState();
             });
         }
-        control.id = `step-${stepIndex}-${definition.key}`;
+        control.id = stepFieldId(workflowIndex, stepIndex, definition.key);
         return control;
     }
 
@@ -611,10 +613,11 @@
      * @param {object} definition
      * @param {object} step
      * @param {number} stepIndex
+     * @param {number} workflowIndex
      * @param {unknown} value
      * @returns {HTMLSelectElement}
      */
-    function referenceSelect(definition, step, stepIndex, value) {
+    function referenceSelect(definition, step, stepIndex, workflowIndex, value) {
         const select = document.createElement("select");
         const placeholder = document.createElement("option");
         placeholder.value = "";
@@ -645,8 +648,18 @@
             }
             markDirty(true);
         });
-        select.id = `step-${stepIndex}-${definition.key}`;
+        select.id = stepFieldId(workflowIndex, stepIndex, definition.key);
         return select;
+    }
+
+    /**
+     * @param {number} workflowIndex
+     * @param {number} stepIndex
+     * @param {string} key
+     * @returns {string}
+     */
+    function stepFieldId(workflowIndex, stepIndex, key) {
+        return `workflow-${workflowIndex}-step-${stepIndex}-${key}`;
     }
 
     /**
@@ -658,7 +671,8 @@
         if (kind === "coordinate") {
             return state.coordinates.map((point) => ({
                 id: point.id,
-                label: `${point.name || point.id} · ${point.dimension}`
+                label: `${point.name || point.id} · `
+                    + Stowling.dimensionLabel(point.dimension)
             }));
         }
         if (kind === "pickup") {
@@ -685,7 +699,8 @@
         }
         return state.containers.map((container) => ({
             id: container.id,
-            label: `${container.name || container.id} · ${container.type || "容器"}`
+            label: `${container.name || container.id} · `
+                + Stowling.containerTypeLabel(container.type || "OTHER")
         }));
     }
 
@@ -776,7 +791,6 @@
      */
     function markDirty(rerenderEditor = false) {
         state.dirty = true;
-        showErrors([]);
         updateSaveState();
         if (rerenderEditor) {
             renderSteps();
@@ -792,79 +806,255 @@
         }
         const errors = [];
         const workflowIds = new Set();
-        for (const workflow of state.draft.automationWorkflows) {
+        state.invalidFields.clear();
+        state.draft.automationWorkflows.forEach((workflow, workflowIndex) => {
             const id = String(workflow.id || "").trim();
-            if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
-                errors.push(`任务 ID“${id || "空"}”格式无效`);
+            const name = String(workflow.name || "").trim() || id || "未命名";
+            const workflowLabel = `任务 ${workflowIndex + 1}“${name}”`;
+            const idField = workflowIndex === state.selectedIndex ? "workflow-id" : "";
+            const nameField = workflowIndex === state.selectedIndex ? "workflow-name" : "";
+            if (!id) {
+                addTaskError(
+                    errors,
+                    `${workflowLabel}的任务 ID 不能为空；请输入 1-64 位小写字母、数字、`
+                        + "点、下划线或连字符，且必须以字母或数字开头",
+                    idField
+                );
+            } else if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
+                addTaskError(
+                    errors,
+                    `${workflowLabel}的任务 ID“${id}”格式无效；只能使用小写字母、数字、`
+                        + "点、下划线和连字符，并以字母或数字开头",
+                    idField
+                );
             }
-            if (workflowIds.has(id)) {
-                errors.push(`重复任务 ID“${id}”`);
+            if (id && workflowIds.has(id)) {
+                addTaskError(
+                    errors,
+                    `${workflowLabel}使用了重复任务 ID“${id}”；请改成未使用的 ID`,
+                    idField
+                );
             }
-            workflowIds.add(id);
+            if (id) {
+                workflowIds.add(id);
+            }
             if (!String(workflow.name || "").trim()) {
-                errors.push(`任务“${id || "未命名"}”的显示名称不能为空`);
+                addTaskError(
+                    errors,
+                    `${workflowLabel}的显示名称不能为空；请输入便于识别的任务名称`,
+                    nameField
+                );
             }
             const steps = Array.isArray(workflow.steps) ? workflow.steps : [];
             if (steps.length === 0) {
-                errors.push(`任务“${workflow.name || id}”至少需要一个步骤`);
+                errors.push(
+                    `${workflowLabel}至少需要一个步骤；请点击“添加步骤”并配置机器人模块`
+                );
             }
             const stepIds = new Set();
-            for (const step of steps) {
+            steps.forEach((step, stepIndex) => {
                 const stepId = String(step.id || "");
+                const stepLabel = `${workflowLabel}的第 ${stepIndex + 1} 个步骤`
+                    + `（ID：${stepId || "空"}）`;
                 if (!stepId) {
-                    errors.push(`任务“${workflow.name || id}”存在无 ID 步骤`);
+                    errors.push(`${stepLabel}缺少步骤 ID；请删除后重新添加步骤`);
                 } else if (stepIds.has(stepId)) {
-                    errors.push(`任务“${workflow.name || id}”存在重复步骤 ID“${stepId}”`);
+                    errors.push(
+                        `${stepLabel}使用了重复步骤 ID“${stepId}”；请删除后重新添加步骤`
+                    );
                 }
                 stepIds.add(stepId);
-                validateStep(workflow, step, errors);
-            }
-        }
+                validateStep(
+                    workflow,
+                    step,
+                    errors,
+                    workflowIndex,
+                    stepIndex,
+                    stepLabel
+                );
+            });
+        });
         return [...new Set(errors)];
+    }
+
+    /**
+     * @param {Array<string>} errors
+     * @param {string} message
+     * @param {string} fieldId
+     * @returns {void}
+     */
+    function addTaskError(errors, message, fieldId) {
+        errors.push(message);
+        if (fieldId) {
+            state.invalidFields.add(fieldId);
+        }
     }
 
     /**
      * @param {object} workflow
      * @param {object} step
      * @param {Array<string>} errors
+     * @param {number} workflowIndex
+     * @param {number} stepIndex
+     * @param {string} stepLabel
      * @returns {void}
      */
-    function validateStep(workflow, step, errors) {
+    function validateStep(
+        workflow,
+        step,
+        errors,
+        workflowIndex,
+        stepIndex,
+        stepLabel
+    ) {
         const module = moduleFor(step.type);
-        const label = `任务“${workflow.name || workflow.id}”步骤 ${step.id}`;
+        const moduleField = stepFieldId(workflowIndex, stepIndex, "module");
         if (!module) {
-            errors.push(`${label} 使用了不可用模块“${step.type || "空"}”`);
+            addTaskError(
+                errors,
+                `${stepLabel}使用了不可用模块“${step.type || "空"}”；请重新选择模块`,
+                moduleField
+            );
             return;
         }
         for (const definition of module.parameters || []) {
             const value = step.parameters?.[definition.key];
+            const fieldId = stepFieldId(workflowIndex, stepIndex, definition.key);
             if (definition.required && String(value ?? "").trim() === "") {
-                errors.push(`${label} 的“${definition.label}”不能为空`);
+                addTaskError(
+                    errors,
+                    `${stepLabel}的“${definition.label}”不能为空；${fieldHint(definition.kind)}`,
+                    fieldId
+                );
                 continue;
             }
             if (definition.kind.includes("integer") && value !== "") {
                 const minimum = definition.kind === "positive-integer" ? 1 : 0;
                 if (!Number.isInteger(value) || value < minimum) {
-                    errors.push(`${label} 的“${definition.label}”必须是大于等于 `
-                        + `${minimum} 的整数`);
+                    addTaskError(
+                        errors,
+                        `${stepLabel}的“${definition.label}”必须是大于等于 `
+                            + `${minimum} 的整数；请填写有效数字`,
+                        fieldId
+                    );
                 }
             }
+            validateReference(definition, value, errors, stepLabel, fieldId, step);
+        }
+    }
+
+    /**
+     * @param {object} definition
+     * @param {unknown} value
+     * @param {Array<string>} errors
+     * @param {string} stepLabel
+     * @param {string} fieldId
+     * @param {object} step
+     * @returns {void}
+     */
+    function validateReference(definition, value, errors, stepLabel, fieldId, step) {
+        const id = String(value ?? "").trim();
+        if (!id) {
+            return;
+        }
+        if (definition.kind === "coordinate"
+                && !state.coordinates.some((point) => point.id === id)) {
+            addTaskError(
+                errors,
+                `${stepLabel}的“${definition.label}”引用了不存在的命名坐标“${id}”；`
+                    + "请重新选择",
+                fieldId
+            );
+        } else if (definition.kind === "pickup"
+                && !state.pickups.some((workflow) => workflow.id === id)) {
+            addTaskError(
+                errors,
+                `${stepLabel}的“${definition.label}”引用了不存在的拾取流程“${id}”；`
+                    + "请重新选择",
+                fieldId
+            );
+        } else if (definition.kind === "container"
+                && !state.containers.some((container) => container.id === id)) {
+            addTaskError(
+                errors,
+                `${stepLabel}的“${definition.label}”引用了不存在的容器“${id}”；`
+                    + "请重新选择",
+                fieldId
+            );
+        } else if (definition.kind === "pickup-region") {
+            const pickupId = String(step.parameters?.workflowId || "");
+            const pickup = state.pickups.find((workflow) => workflow.id === pickupId);
+            const exists = (pickup?.regions || []).some((region) => {
+                return String(region.id || region.regionId || "") === id;
+            });
+            if (!exists) {
+                addTaskError(
+                    errors,
+                    `${stepLabel}的“${definition.label}”不属于所选拾取流程，`
+                        + `或区域“${id}”已不存在；请重新选择`,
+                    fieldId
+                );
+            }
+        }
+    }
+
+    /**
+     * @param {string} kind
+     * @returns {string}
+     */
+    function fieldHint(kind) {
+        const hints = new Map([
+            ["coordinate", "请选择一个已保存的命名坐标"],
+            ["pickup", "请选择一个已保存的拾取流程"],
+            ["pickup-region", "请选择流程内的区域"],
+            ["container", "请选择一个已发现的容器"],
+            ["item", "请填写完整物品 ID，例如 minecraft:iron_ingot"],
+            ["positive-integer", "请填写大于等于 1 的整数"]
+        ]);
+        return hints.get(kind) || "请填写该参数";
+    }
+
+    /**
+     * @param {boolean} showValidation
+     * @returns {void}
+     */
+    function updateSaveState(showValidation = true) {
+        const errors = validateDraft();
+        elements.save.disabled = !state.dirty || errors.length > 0;
+        elements.status.classList.toggle("dirty", state.dirty);
+        if (showValidation) {
+            showErrors(state.dirty || errors.length > 0 ? errors : []);
+        }
+        applyTaskValidationStyles();
+        if (state.dirty && errors.length > 0) {
+            elements.status.textContent =
+                `发现 ${errors.length} 个任务配置问题，保存已暂停`;
+        } else if (state.dirty) {
+            elements.status.textContent = "有未保存的任务配置修改";
+        } else {
+            elements.status.textContent = "任务配置已与配置文件同步";
         }
     }
 
     /**
      * @returns {void}
      */
-    function updateSaveState() {
-        const errors = validateDraft();
-        elements.save.disabled = !state.dirty || errors.length > 0;
-        elements.status.classList.toggle("dirty", state.dirty);
-        if (state.dirty && errors.length > 0) {
-            elements.status.textContent = "草稿中有错误，修正后才能保存";
-        } else if (state.dirty) {
-            elements.status.textContent = "有未保存的任务配置修改";
-        } else {
-            elements.status.textContent = "任务配置已与配置文件同步";
+    function applyTaskValidationStyles() {
+        for (const card of elements.form.querySelectorAll(".step-card")) {
+            card.classList.remove("has-error");
+        }
+        for (const control of elements.form.querySelectorAll("input, select")) {
+            control.setAttribute("aria-invalid", "false");
+            control.closest(".editor-field")?.classList.remove("has-error");
+        }
+        for (const fieldId of state.invalidFields) {
+            const control = document.getElementById(fieldId);
+            if (!control) {
+                continue;
+            }
+            control.setAttribute("aria-invalid", "true");
+            control.closest(".editor-field")?.classList.add("has-error");
+            control.closest(".step-card")?.classList.add("has-error");
         }
     }
 
@@ -915,7 +1105,7 @@
             await Promise.allSettled([loadReferences(), loadTasks()]);
             Stowling.showToast("任务配置已保存，旧配置已生成备份");
             if (saved?.revision) {
-                elements.revision.textContent = `revision: ${saved.revision.slice(0, 12)}`;
+                elements.revision.textContent = Stowling.revisionLabel(saved.revision);
             }
         } catch (error) {
             const conflict = error instanceof Stowling.ApiError && error.status === 409;
@@ -933,7 +1123,7 @@
             Stowling.handleError(error, "保存任务配置失败");
         } finally {
             elements.discard.disabled = false;
-            updateSaveState();
+            updateSaveState(false);
         }
     }
 
@@ -1139,15 +1329,21 @@
             const title = Stowling.element(
                 "div",
                 "task-title",
-                String(task.workflowId || task.kind || "任务")
+                String(task.workflowId || Stowling.taskKindLabel(task.kind))
             );
             title.append(statusBadge(task.status));
             const id = Stowling.element("div", "task-id", String(task.id || "未知 ID"));
             const meta = Stowling.element("div", "task-meta");
             meta.append(
-                metaText("阶段", String(task.stage || task.automationState || "未知")),
+                metaText(
+                    "阶段",
+                    Stowling.taskStageLabel(task.stage || task.automationState)
+                ),
                 metaText("当前步骤", String(task.currentStepId || task.stage || "-")),
-                metaText("模块状态", String(task.moduleState || task.automationState || "-")),
+                metaText(
+                    "模块状态",
+                    Stowling.moduleStateLabel(task.moduleState || task.automationState)
+                ),
                 metaText("更新", Stowling.formatDate(task.updatedAt))
             );
             if (task.failureReason) {
@@ -1180,7 +1376,11 @@
      */
     function statusBadge(value) {
         const status = String(value || "UNKNOWN");
-        const badge = Stowling.element("span", "badge", STATUS_LABELS.get(status) || status);
+        const badge = Stowling.element(
+            "span",
+            "badge",
+            Stowling.taskStatusLabel(status)
+        );
         if (["FAILED", "CANCELLED"].includes(status)) {
             badge.classList.add("danger");
         } else if (["PAUSED", "WAITING", "UNKNOWN"].includes(status)) {
@@ -1232,8 +1432,9 @@
         elements.moduleCount.textContent = `${state.modules.length} 个模块`;
         for (const module of state.modules) {
             const card = Stowling.element("article", "module-card");
+            card.title = `模块类型：${module.type}`;
+            card.dataset.moduleType = module.type;
             card.append(
-                Stowling.element("code", "", module.type),
                 Stowling.element("strong", "", module.name),
                 Stowling.element("p", "", module.description)
             );

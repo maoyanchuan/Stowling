@@ -3,6 +3,68 @@
 
     const TOKEN_KEY = "stowling.control.token";
     const ACTIVE_TASK_STATES = new Set(["PENDING", "RUNNING", "WAITING", "PAUSED"]);
+    const TASK_STATUS_LABELS = new Map([
+        ["PENDING", "等待中"],
+        ["RUNNING", "运行中"],
+        ["WAITING", "等待条件"],
+        ["PAUSED", "已暂停"],
+        ["SUCCEEDED", "已完成"],
+        ["FAILED", "失败"],
+        ["CANCELLED", "已取消"],
+        ["READY", "就绪"],
+        ["UNKNOWN", "未知"]
+    ]);
+    const TASK_KIND_LABELS = new Map([
+        ["PICKUP", "自动拾取"],
+        ["AUTOMATION", "自定义任务"],
+        ["TRANSFER", "容器搬运"],
+        ["AUDIT", "库存盘点"],
+        ["PACK", "潜影盒装箱"]
+    ]);
+    const TASK_STAGE_LABELS = new Map([
+        ["NAVIGATE_PICKUP", "前往拾取区域"],
+        ["COLLECT", "拾取掉落物"],
+        ["DEPOSIT_BUFFER", "存入缓存"],
+        ["WAIT_FOR_IDLE", "等待区域空闲"],
+        ["CLASSIFY_BUFFER", "分类缓存"],
+        ["DELIVER_LOOSE", "散装入库"],
+        ["PACK", "潜影盒装箱"],
+        ["COMPLETE", "已完成"],
+        ["READY", "就绪"],
+        ["RUNNING", "运行中"],
+        ["PAUSED", "已暂停"],
+        ["FAILED", "失败"]
+    ]);
+    const MODULE_STATE_LABELS = new Map([
+        ["RUNNING", "运行中"],
+        ["SUCCEEDED", "已完成"],
+        ["PAUSED", "已暂停"],
+        ["FAILED", "失败"]
+    ]);
+    const DIMENSION_LABELS = new Map([
+        ["minecraft:overworld", "主世界"],
+        ["minecraft:the_nether", "下界"],
+        ["minecraft:the_end", "末地"]
+    ]);
+    const CONTAINER_TYPE_LABELS = new Map([
+        ["CHEST", "箱子"],
+        ["TRAPPED_CHEST", "陷阱箱"],
+        ["BARREL", "木桶"],
+        ["SHULKER_BOX", "潜影盒"],
+        ["HOPPER", "漏斗"],
+        ["OTHER", "其他"]
+    ]);
+    const CACHE_POLICY_LABELS = new Map([
+        ["NEAREST_AVAILABLE", "最近可用缓存"]
+    ]);
+    const CLASSIFICATION_TIMING_LABELS = new Map([
+        ["AFTER_REGION", "每个区域结束后"],
+        ["AFTER_ROUND", "整轮结束后"]
+    ]);
+    const COMPLETION_MODE_LABELS = new Map([
+        ["MANUAL", "手动停止"],
+        ["ALL_IDLE", "全部区域空闲后"]
+    ]);
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "命名坐标" },
@@ -230,7 +292,7 @@
         );
         const form = element("form", "token-form");
         form.id = "auth-form";
-        const label = element("label", "", "Bearer Token");
+        const label = element("label", "", "访问令牌（Bearer Token）");
         label.htmlFor = "token-input";
         const controls = element("div", "inline-control");
         const input = document.createElement("input");
@@ -407,19 +469,124 @@
         }).format(date);
     }
 
+    /**
+     * @param {Map<string, string>} labels
+     * @param {unknown} value
+     * @param {string} fallback
+     * @returns {string}
+     */
+    function translatedLabel(labels, value, fallback = "未知") {
+        const raw = String(value ?? "").trim();
+        if (!raw) {
+            return fallback;
+        }
+        return labels.get(raw) || labels.get(raw.toUpperCase()) || raw;
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function taskStatusLabel(value) {
+        return translatedLabel(TASK_STATUS_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function taskKindLabel(value) {
+        return translatedLabel(TASK_KIND_LABELS, value, "任务");
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function taskStageLabel(value) {
+        return translatedLabel(TASK_STAGE_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function moduleStateLabel(value) {
+        return translatedLabel(MODULE_STATE_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function dimensionLabel(value) {
+        return translatedLabel(DIMENSION_LABELS, value, "未选择");
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function containerTypeLabel(value) {
+        return translatedLabel(CONTAINER_TYPE_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function cachePolicyLabel(value) {
+        return translatedLabel(CACHE_POLICY_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function classificationTimingLabel(value) {
+        return translatedLabel(CLASSIFICATION_TIMING_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function completionModeLabel(value) {
+        return translatedLabel(COMPLETION_MODE_LABELS, value);
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function revisionLabel(value) {
+        const raw = String(value ?? "");
+        return `配置版本：${raw.slice(0, 12) || "--"}`;
+    }
+
     window.Stowling = Object.freeze({
         ACTIVE_TASK_STATES,
         ApiError,
+        cachePolicyLabel,
+        classificationTimingLabel,
         clearAuthentication,
         clone,
+        completionModeLabel,
+        containerTypeLabel,
+        dimensionLabel,
         element,
         emptyState,
         formatDate,
         handleError,
         isConnected,
+        moduleStateLabel,
         mountPage,
         onConnected,
         request,
-        showToast
+        revisionLabel,
+        showToast,
+        taskKindLabel,
+        taskStageLabel,
+        taskStatusLabel
     });
 })();

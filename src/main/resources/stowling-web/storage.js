@@ -57,7 +57,8 @@
         pickupSnapshot: null,
         pickupDraft: null,
         pickupDirty: false,
-        pickupEditableIds: new Set()
+        pickupInvalidFields: new Set(),
+        automationReferences: new Map()
     };
 
     /**
@@ -108,8 +109,8 @@
             );
             const position = container.position || {};
             const detail = Stowling.element("span", "", [
-                container.type || "未知类型",
-                container.dimension || "未知维度",
+                Stowling.containerTypeLabel(container.type || "OTHER"),
+                Stowling.dimensionLabel(container.dimension),
                 `${position.x ?? "?"}, ${position.y ?? "?"}, ${position.z ?? "?"}`
             ].join(" · "));
             option.append(checkbox, title, detail);
@@ -142,7 +143,7 @@
             const meta = Stowling.element("div", "inventory-meta");
             meta.append(
                 metaText("来源", String(snapshot.sourceId || "未知")),
-                metaText("维度", String(snapshot.dimension || "未知")),
+                metaText("维度", Stowling.dimensionLabel(snapshot.dimension)),
                 metaText("采集", Stowling.formatDate(snapshot.capturedAt))
             );
             card.append(title, meta);
@@ -267,8 +268,9 @@
         state.baseDirty = false;
         renderBaseCoordinates();
         elements.baseStatus.textContent = "仓库坐标已与配置文件同步";
-        elements.baseRevision.textContent =
-            `revision: ${state.baseSnapshot.revision.slice(0, 12) || "--"}`;
+        elements.baseRevision.textContent = Stowling.revisionLabel(
+            state.baseSnapshot.revision
+        );
         elements.baseRevision.title = state.baseSnapshot.revision;
     }
 
@@ -325,7 +327,11 @@
         const identity = Stowling.element("div", "coordinate-identity");
         identity.append(
             Stowling.element("strong", "", String(coordinate.ownerId || "未命名")),
-            Stowling.element("span", "", `${coordinate.dimension} · ${coordinate.key}`)
+            Stowling.element(
+                "span",
+                "",
+                `${Stowling.dimensionLabel(coordinate.dimension)} · ${coordinate.key}`
+            )
         );
         row.append(identity);
         for (const axis of ["x", "y", "z"]) {
@@ -456,8 +462,9 @@
             state.baseDirty = false;
             renderBaseCoordinates();
             elements.baseStatus.textContent = "仓库坐标已保存";
-            elements.baseRevision.textContent =
-                `revision: ${state.baseSnapshot.revision.slice(0, 12)}`;
+            elements.baseRevision.textContent = Stowling.revisionLabel(
+                state.baseSnapshot.revision
+            );
             Stowling.showToast("仓库坐标已保存，旧配置已生成备份");
         } catch (error) {
             updateBaseDirtyState();
@@ -473,9 +480,11 @@
     async function loadPackages() {
         const results = await Promise.all([
             Stowling.request("/v1/config/coordinate-points"),
-            Stowling.request("/v1/config/pickup")
+            Stowling.request("/v1/config/pickup"),
+            Stowling.request("/v1/config/automation-workflows")
         ]);
         state.coordinates = results[0]?.coordinatePoints || [];
+        state.automationReferences = collectAutomationReferences(results[2]);
         renderPickupSnapshot(results[1]);
     }
 
@@ -497,14 +506,20 @@
                 : []
         });
         state.pickupDraft = Stowling.clone(state.pickupSnapshot);
+        for (const resource of [
+            ...state.pickupDraft.pickupRegions,
+            ...state.pickupDraft.cacheContainers,
+            ...state.pickupDraft.pickupWorkflows
+        ]) {
+            resource._originalId = String(resource.id || "");
+        }
         state.pickupDirty = false;
-        state.pickupEditableIds = new Set();
-        renderPickupEditor();
         elements.pickupStatus.textContent = "拾取配置已与配置文件同步";
-        elements.pickupRevision.textContent =
-            `revision: ${state.pickupSnapshot.revision.slice(0, 12) || "--"}`;
+        elements.pickupRevision.textContent = Stowling.revisionLabel(
+            state.pickupSnapshot.revision
+        );
         elements.pickupRevision.title = state.pickupSnapshot.revision;
-        showPickupErrors([]);
+        renderPickupEditor();
     }
 
     /**
@@ -555,7 +570,7 @@
             editableIdField(
                 `region-id-${index}`,
                 region,
-                state.pickupEditableIds.has(region.id)
+                "region"
             ),
             textField(`region-name-${index}`, "显示名称", region.name, (value) => {
                 region.name = value;
@@ -658,7 +673,7 @@
             editableIdField(
                 `cache-id-${index}`,
                 cache,
-                state.pickupEditableIds.has(cache.id)
+                "cache"
             ),
             textField(`cache-name-${index}`, "显示名称", cache.name, (value) => {
                 cache.name = value;
@@ -690,7 +705,7 @@
         const hint = Stowling.element(
             "p",
             "coordinate-select-hint",
-            `维度由坐标决定：${cache.dimension || "未选择"}`
+            `维度由坐标决定：${Stowling.dimensionLabel(cache.dimension)}`
         );
         card.append(hint);
         return card;
@@ -701,15 +716,7 @@
      * @returns {string}
      */
     function containerTypeLabel(type) {
-        const labels = new Map([
-            ["CHEST", "箱子"],
-            ["TRAPPED_CHEST", "陷阱箱"],
-            ["BARREL", "木桶"],
-            ["SHULKER_BOX", "潜影盒"],
-            ["HOPPER", "漏斗"],
-            ["OTHER", "其他"]
-        ]);
-        return labels.get(type) || type;
+        return Stowling.containerTypeLabel(type);
     }
 
     /**
@@ -729,7 +736,7 @@
             editableIdField(
                 `pickup-workflow-id-${index}`,
                 workflow,
-                state.pickupEditableIds.has(workflow.id)
+                "workflow"
             ),
             textField(
                 `pickup-workflow-name-${index}`,
@@ -759,6 +766,16 @@
                 }
             ),
             selectField(
+                `pickup-workflow-cache-policy-${index}`,
+                "缓存选择策略",
+                [["NEAREST_AVAILABLE", Stowling.cachePolicyLabel("NEAREST_AVAILABLE")]],
+                workflow.cachePolicy || "NEAREST_AVAILABLE",
+                (value) => {
+                    workflow.cachePolicy = value;
+                    markPickupDirty();
+                }
+            ),
+            selectField(
                 `pickup-workflow-mode-${index}`,
                 "结束方式",
                 [["MANUAL", "手动停止"], ["ALL_IDLE", "全部空闲后"]],
@@ -779,6 +796,8 @@
             )
         );
         const regions = Stowling.element("div", "binding-section");
+        regions.id = `pickup-workflow-regions-${index}`;
+        regions.dataset.validationContainer = "true";
         regions.append(Stowling.element("h4", "", "区域优先级"));
         workflow.regions ||= [];
         workflow.regions.forEach((binding, bindingIndex) => {
@@ -815,11 +834,14 @@
         const caches = Stowling.element("div", "binding-section");
         caches.append(Stowling.element("h4", "", "可用缓存"));
         const checks = Stowling.element("div", "check-grid");
+        checks.id = `pickup-workflow-caches-${index}`;
+        checks.dataset.validationContainer = "true";
         workflow.cacheIds ||= [];
-        for (const cache of state.pickupDraft.cacheContainers) {
+        state.pickupDraft.cacheContainers.forEach((cache, cacheIndex) => {
             const label = Stowling.element("label", "check-option");
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
+            checkbox.id = `pickup-workflow-cache-${index}-${cacheIndex}`;
             checkbox.value = cache.id;
             checkbox.checked = workflow.cacheIds.includes(cache.id);
             checkbox.addEventListener("change", () => {
@@ -832,7 +854,7 @@
             });
             label.append(checkbox, Stowling.element("span", "", cache.name || cache.id));
             checks.append(label);
-        }
+        });
         caches.append(checks);
         card.append(fields, regions, caches);
         return card;
@@ -912,20 +934,110 @@
     /**
      * @param {string} id
      * @param {object} resource
-     * @param {boolean} editable
+     * @param {string} kind
      * @returns {HTMLElement}
      */
-    function editableIdField(id, resource, editable) {
+    function editableIdField(id, resource, kind) {
         const input = document.createElement("input");
         input.id = id;
         input.value = String(resource.id || "");
-        input.disabled = !editable;
+        input.dataset.lastValidId = String(resource.id || "");
         input.pattern = "[a-z0-9][a-z0-9._-]{0,63}";
         input.addEventListener("input", () => {
-            resource.id = input.value;
+            updateResourceId(resource, kind, input);
             markPickupDirty();
         });
         return field("资源 ID", input);
+    }
+
+    /**
+     * @param {object} resource
+     * @param {string} kind
+     * @param {HTMLInputElement} input
+     * @returns {void}
+     */
+    function updateResourceId(resource, kind, input) {
+        const candidate = input.value.trim();
+        const previousValid = String(input.dataset.lastValidId || "");
+        resource.id = candidate;
+        if (!validResourceId(candidate)
+                || pickupResources().some((other) => {
+                    return other !== resource && String(other.id || "") === candidate;
+                })) {
+            return;
+        }
+        if (kind !== "workflow" && previousValid && previousValid !== candidate) {
+            replacePickupReferences(kind, previousValid, candidate);
+        }
+        input.dataset.lastValidId = candidate;
+    }
+
+    /**
+     * @param {string} value
+     * @returns {boolean}
+     */
+    function validResourceId(value) {
+        return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(String(value || ""));
+    }
+
+    /**
+     * @param {string} kind
+     * @param {string} oldId
+     * @param {string} newId
+     * @returns {void}
+     */
+    function replacePickupReferences(kind, oldId, newId) {
+        if (kind === "region") {
+            for (const workflow of state.pickupDraft.pickupWorkflows) {
+                for (const binding of workflow.regions || []) {
+                    if (binding.regionId === oldId) {
+                        binding.regionId = newId;
+                    }
+                }
+            }
+        }
+        if (kind === "cache") {
+            for (const workflow of state.pickupDraft.pickupWorkflows) {
+                workflow.cacheIds = (workflow.cacheIds || []).map((id) => {
+                    return id === oldId ? newId : id;
+                });
+            }
+        }
+    }
+
+    /**
+     * @param {object|null} source
+     * @returns {Map<string, Array<string>>}
+     */
+    function collectAutomationReferences(source) {
+        const references = new Map();
+        for (const workflow of source?.automationWorkflows || []) {
+            for (const step of workflow.steps || []) {
+                const pickupId = String(step.parameters?.workflowId || "");
+                if (!pickupId) {
+                    continue;
+                }
+                const label = `任务“${workflow.name || workflow.id}”`
+                    + `的第 ${step.id || "未知"} 步`;
+                const values = references.get(pickupId) || [];
+                if (!values.includes(label)) {
+                    values.push(label);
+                    references.set(pickupId, values);
+                }
+            }
+        }
+        return references;
+    }
+
+    /**
+     * @returns {Array<object>}
+     */
+    function pickupResources() {
+        return [
+            ...state.pickupDraft.pickupRegions,
+            ...state.pickupDraft.cacheContainers,
+            ...state.pickupDraft.pickupWorkflows
+        ];
     }
 
     /**
@@ -997,7 +1109,10 @@
         return selectField(
             id,
             "维度",
-            DIMENSIONS.map((dimension) => [dimension, dimension]),
+            DIMENSIONS.map((dimension) => [
+                dimension,
+                Stowling.dimensionLabel(dimension)
+            ]),
             String(value || DIMENSIONS[0]),
             onChange
         );
@@ -1020,7 +1135,8 @@
         for (const point of state.coordinates) {
             const option = document.createElement("option");
             option.value = point.id;
-            option.textContent = `${point.name || point.id} · ${point.dimension}`;
+            option.textContent = `${point.name || point.id} · `
+                + Stowling.dimensionLabel(point.dimension);
             select.append(option);
         }
         if (value && !state.coordinates.some((point) => point.id === value)) {
@@ -1055,16 +1171,22 @@
         };
         const [collection, label] = collections[kind];
         const resource = collection[index];
-        const references = pickupReferences(kind, resource.id);
+        const references = [
+            ...pickupReferences(kind, resource.id),
+            ...pickupReferences(kind, resource._originalId),
+            ...(kind === "workflow"
+                ? automationReferencesFor(resource.id, resource._originalId)
+                : [])
+        ];
         if (references.length > 0) {
             showPickupErrors([
                 `无法删除${label}“${resource.name || resource.id}”：仍被`
-                    + ` ${references.join("、")} 引用。`
+                    + ` ${[...new Set(references)].join("、")} 引用。`
+                    + "请先解除引用并保存。"
             ]);
             return;
         }
         collection.splice(index, 1);
-        state.pickupEditableIds.delete(resource.id);
         markPickupDirty(true);
     }
 
@@ -1123,9 +1245,9 @@
                 type: "SPHERE",
                 centerCoordinateId: state.coordinates[0]?.id || "",
                 radius: 32
-            }
+            },
+            _originalId: ""
         });
-        state.pickupEditableIds.add(id);
         markPickupDirty(true);
     }
 
@@ -1139,9 +1261,9 @@
             name: "新缓存箱",
             coordinateId: state.coordinates[0]?.id || "",
             dimension: state.coordinates[0]?.dimension || DIMENSIONS[0],
-            type: "CHEST"
+            type: "CHEST",
+            _originalId: ""
         });
-        state.pickupEditableIds.add(id);
         markPickupDirty(true);
     }
 
@@ -1159,9 +1281,9 @@
             cachePolicy: "NEAREST_AVAILABLE",
             classificationTiming: "AFTER_ROUND",
             completionMode: "MANUAL",
-            completionIdleDelay: 300
+            completionIdleDelay: 300,
+            _originalId: ""
         });
-        state.pickupEditableIds.add(id);
         markPickupDirty(true);
     }
 
@@ -1188,7 +1310,6 @@
      */
     function markPickupDirty(rerender = false) {
         state.pickupDirty = true;
-        showPickupErrors([]);
         if (rerender) {
             renderPickupEditor();
             return;
@@ -1205,23 +1326,59 @@
         }
         const errors = [];
         const ids = new Set();
-        const allResources = [
-            ...state.pickupDraft.pickupRegions,
-            ...state.pickupDraft.cacheContainers,
-            ...state.pickupDraft.pickupWorkflows
+        state.pickupInvalidFields.clear();
+        const groups = [
+            ["region", "拾取区域", state.pickupDraft.pickupRegions],
+            ["cache", "缓存容器", state.pickupDraft.cacheContainers],
+            ["workflow", "拾取流程", state.pickupDraft.pickupWorkflows]
         ];
-        for (const resource of allResources) {
-            const id = String(resource.id || "");
-            if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) {
-                errors.push(`资源 ID“${id || "空"}”格式无效`);
-            }
-            if (ids.has(id)) {
-                errors.push(`重复 ID“${id}”`);
-            }
-            ids.add(id);
-            if (!String(resource.name || "").trim()) {
-                errors.push(`资源“${id || "未命名"}”的显示名称不能为空`);
-            }
+        for (const [kind, typeLabel, resources] of groups) {
+            resources.forEach((resource, index) => {
+                const id = String(resource.id || "").trim();
+                const name = String(resource.name || "").trim() || id || "未命名";
+                const label = `${typeLabel} ${index + 1}“${name}”`;
+                const idField = resourceFieldId(kind, index, "id");
+                const nameField = resourceFieldId(kind, index, "name");
+                if (!id) {
+                    addPickupError(
+                        errors,
+                        `${label}的资源 ID 不能为空；请输入 1-64 位小写字母、数字、`
+                            + "点、下划线或连字符，且必须以字母或数字开头",
+                        idField
+                    );
+                } else if (!validResourceId(id)) {
+                    addPickupError(
+                        errors,
+                        `${label}的资源 ID“${id}”格式无效；只能使用小写字母、数字、`
+                            + "点、下划线和连字符",
+                        idField
+                    );
+                } else if (ids.has(id)) {
+                    addPickupError(
+                        errors,
+                        `${label}使用了重复 ID“${id}”；请改成未使用的 ID`,
+                        idField
+                    );
+                }
+                if (id) {
+                    ids.add(id);
+                }
+                if (!String(resource.name || "").trim()) {
+                    addPickupError(
+                        errors,
+                        `${label}的显示名称不能为空；请输入便于识别的名称`,
+                        nameField
+                    );
+                }
+                validateRenamedResource(
+                    kind,
+                    resource,
+                    id,
+                    label,
+                    idField,
+                    errors
+                );
+            });
         }
         validateRegions(errors);
         validateCaches(errors);
@@ -1230,48 +1387,172 @@
     }
 
     /**
+     * @param {string} kind
+     * @param {number} index
+     * @param {string} field
+     * @returns {string}
+     */
+    function resourceFieldId(kind, index, field) {
+        if (kind === "workflow") {
+            return `pickup-workflow-${field}-${index}`;
+        }
+        return `${kind}-${field}-${index}`;
+    }
+
+    /**
+     * @param {string} kind
+     * @param {object} resource
+     * @param {string} id
+     * @param {string} label
+     * @param {string} idField
+     * @param {Array<string>} errors
+     * @returns {void}
+     */
+    function validateRenamedResource(kind, resource, id, label, idField, errors) {
+        const originalId = String(resource._originalId || "");
+        if (!originalId || id === originalId) {
+            return;
+        }
+        if (kind === "workflow") {
+            const references = automationReferencesFor(originalId);
+            if (references.length > 0) {
+                addPickupError(
+                    errors,
+                    `${label}的 ID 已从“${originalId}”改为“${id || "空"}”，但旧 ID `
+                        + `仍被 ${references.join("、")} 引用；请先修改这些任务，或恢复旧 ID`,
+                    idField
+                );
+            }
+            return;
+        }
+        const references = pickupReferences(kind, originalId);
+        if (references.length > 0) {
+            addPickupError(
+                errors,
+                `${label}的 ID 正在从“${originalId}”改为“${id || "空"}”，但草稿引用`
+                    + `尚未同步；请输入格式正确且不重复的新 ID`,
+                idField
+            );
+        }
+    }
+
+    /**
+     * @param {...unknown} resourceIds
+     * @returns {Array<string>}
+     */
+    function automationReferencesFor(...resourceIds) {
+        const references = [];
+        const seenIds = new Set();
+        for (const value of resourceIds) {
+            const id = String(value || "").trim();
+            if (!id || seenIds.has(id)) {
+                continue;
+            }
+            seenIds.add(id);
+            references.push(...(state.automationReferences.get(id) || []));
+        }
+        return [...new Set(references)];
+    }
+
+    /**
+     * @param {Array<string>} errors
+     * @param {string} message
+     * @param {...string} fieldIds
+     * @returns {void}
+     */
+    function addPickupError(errors, message, ...fieldIds) {
+        errors.push(message);
+        for (const fieldId of fieldIds.filter(Boolean)) {
+            state.pickupInvalidFields.add(fieldId);
+        }
+    }
+
+    /**
      * @param {Array<string>} errors
      * @returns {void}
      */
     function validateRegions(errors) {
-        for (const region of state.pickupDraft.pickupRegions) {
-            const label = `拾取区域“${region.name || region.id}”`;
+        state.pickupDraft.pickupRegions.forEach((region, index) => {
+            const label = `拾取区域 ${index + 1}“${region.name || region.id || "未命名"}”`;
             const standby = coordinateFor(region.standbyCoordinateId);
             if (!standby) {
-                errors.push(`${label}必须选择一个已保存的命名坐标作为待机点`);
-                continue;
-            }
-            if (standby.dimension !== region.dimension) {
-                errors.push(`${label}的待机点与区域跨维度`);
+                addPickupError(
+                    errors,
+                    `${label}必须选择一个已保存的命名坐标作为待机点；请从下拉框选择`,
+                    `region-standby-${index}`
+                );
+            } else if (standby.dimension !== region.dimension) {
+                addPickupError(
+                    errors,
+                    `${label}的待机点位于${Stowling.dimensionLabel(standby.dimension)}，`
+                        + `与区域维度${Stowling.dimensionLabel(region.dimension)}不一致`,
+                    `region-standby-${index}`,
+                    `region-dimension-${index}`
+                );
             }
             if (region.shape?.type === "CUBOID") {
                 const first = coordinateFor(region.shape.firstCornerCoordinateId);
                 const second = coordinateFor(region.shape.secondCornerCoordinateId);
-                if (!first || !second) {
-                    errors.push(`${label}的长方体角点必须引用命名坐标`);
-                    continue;
+                if (!first) {
+                    addPickupError(
+                        errors,
+                        `${label}的第一角点必须选择一个命名坐标`,
+                        `region-first-${index}`
+                    );
                 }
-                if (first.dimension !== region.dimension
-                        || second.dimension !== region.dimension) {
-                    errors.push(`${label}的角点与区域跨维度`);
+                if (!second) {
+                    addPickupError(
+                        errors,
+                        `${label}的第二角点必须选择一个命名坐标`,
+                        `region-second-${index}`
+                    );
                 }
-                if (comparePosition(first.position, second.position) > 0) {
-                    errors.push(`${label}的第一角点不能大于第二角点`);
+                if (first && second && (
+                    first.dimension !== region.dimension
+                        || second.dimension !== region.dimension)) {
+                    addPickupError(
+                        errors,
+                        `${label}的角点维度必须与区域维度一致`,
+                        `region-first-${index}`,
+                        `region-second-${index}`
+                    );
+                }
+                if (first && second
+                        && comparePosition(first.position, second.position) > 0) {
+                    addPickupError(
+                        errors,
+                        `${label}的第一角点必须位于第二角点的负方向；请交换两个角点`,
+                        `region-first-${index}`,
+                        `region-second-${index}`
+                    );
                 }
             } else {
                 const center = coordinateFor(region.shape?.centerCoordinateId);
                 if (!center) {
-                    errors.push(`${label}的球心必须引用命名坐标`);
+                    addPickupError(
+                        errors,
+                        `${label}的球心必须选择一个命名坐标`,
+                        `region-center-${index}`
+                    );
                 } else if (center.dimension !== region.dimension) {
-                    errors.push(`${label}的球心与区域跨维度`);
+                    addPickupError(
+                        errors,
+                        `${label}的球心维度必须与区域维度一致`,
+                        `region-center-${index}`,
+                        `region-dimension-${index}`
+                    );
                 }
                 if (!Number.isInteger(region.shape?.radius)
                         || region.shape.radius < 1
                         || region.shape.radius > 128) {
-                    errors.push(`${label}的半径必须为 1-128`);
+                    addPickupError(
+                        errors,
+                        `${label}的半径必须为 1-128；请填写整数`,
+                        `region-radius-${index}`
+                    );
                 }
             }
-        }
+        });
     }
 
     /**
@@ -1279,15 +1560,24 @@
      * @returns {void}
      */
     function validateCaches(errors) {
-        for (const cache of state.pickupDraft.cacheContainers) {
-            const label = `缓存容器“${cache.name || cache.id}”`;
+        state.pickupDraft.cacheContainers.forEach((cache, index) => {
+            const label = `缓存容器 ${index + 1}`
+                + `“${cache.name || cache.id || "未命名"}”`;
             const coordinate = coordinateFor(cache.coordinateId);
             if (!coordinate) {
-                errors.push(`${label}必须选择一个已保存的命名坐标`);
+                addPickupError(
+                    errors,
+                    `${label}必须选择一个已保存的命名坐标`,
+                    `cache-coordinate-${index}`
+                );
             } else if (coordinate.dimension !== cache.dimension) {
-                errors.push(`${label}与所选坐标跨维度`);
+                addPickupError(
+                    errors,
+                    `${label}的维度与命名坐标不一致；请重新选择坐标`,
+                    `cache-coordinate-${index}`
+                );
             }
-        }
+        });
     }
 
     /**
@@ -1295,48 +1585,112 @@
      * @returns {void}
      */
     function validatePickupWorkflows(errors) {
-        for (const workflow of state.pickupDraft.pickupWorkflows) {
-            const label = `拾取流程“${workflow.name || workflow.id}”`;
+        state.pickupDraft.pickupWorkflows.forEach((workflow, workflowIndex) => {
+            const label = `拾取流程 ${workflowIndex + 1}`
+                + `“${workflow.name || workflow.id || "未命名"}”`;
+            const cacheListField = `pickup-workflow-caches-${workflowIndex}`;
             if (!workflow.regions || workflow.regions.length === 0) {
-                errors.push(`${label}至少选择一个区域`);
+                addPickupError(
+                    errors,
+                    `${label}至少选择一个区域；请从区域下拉框添加`,
+                    `pickup-workflow-regions-${workflowIndex}`
+                );
             }
             if (!workflow.cacheIds || workflow.cacheIds.length === 0) {
-                errors.push(`${label}至少选择一个缓存`);
+                addPickupError(
+                    errors,
+                    `${label}至少选择一个缓存；请勾选可用缓存`,
+                    cacheListField
+                );
             }
             for (const id of workflow.cacheIds || []) {
                 if (!state.pickupDraft.cacheContainers.some((cache) => cache.id === id)) {
-                    errors.push(`${label}引用了不存在的缓存“${id}”`);
+                    addPickupError(
+                        errors,
+                        `${label}引用了不存在的缓存“${id}”；请取消勾选或重新创建缓存`,
+                        cacheListField
+                    );
                 }
             }
-            for (const binding of workflow.regions || []) {
+            (workflow.regions || []).forEach((binding, bindingIndex) => {
                 const region = state.pickupDraft.pickupRegions.find((item) => {
                     return item.id === binding.regionId;
                 });
                 if (!region) {
-                    errors.push(`${label}引用了不存在的区域“${binding.regionId}”`);
-                    continue;
-                }
-                if (region.dimension !== workflow.dimension) {
-                    errors.push(`${label}与区域“${region.name || region.id}”跨维度`);
+                    addPickupError(
+                        errors,
+                        `${label}的第 ${bindingIndex + 1} 个区域引用不存在；请移除后`
+                            + "重新添加区域",
+                        `binding-priority-${workflowIndex}-${bindingIndex}`
+                    );
+                } else if (region.dimension !== workflow.dimension) {
+                    addPickupError(
+                        errors,
+                        `${label}与区域“${region.name || region.id}”维度不一致；`
+                            + "请统一流程和区域维度",
+                        `pickup-workflow-dimension-${workflowIndex}`,
+                        `region-dimension-${state.pickupDraft.pickupRegions.indexOf(region)}`
+                    );
                 }
                 if (!Number.isInteger(binding.idleDelay) || binding.idleDelay < 0) {
-                    errors.push(`${label}的区域空闲时间必须是正整数`);
+                    addPickupError(
+                        errors,
+                        `${label}的第 ${bindingIndex + 1} 个区域空闲秒数必须`
+                            + "是非负整数",
+                        `binding-idle-${workflowIndex}-${bindingIndex}`
+                    );
                 }
                 if (!Number.isInteger(binding.priority)) {
-                    errors.push(`${label}的区域优先级必须是整数`);
+                    addPickupError(
+                        errors,
+                        `${label}的第 ${bindingIndex + 1} 个区域优先级必须是整数`,
+                        `binding-priority-${workflowIndex}-${bindingIndex}`
+                    );
                 }
-            }
+            });
             const caches = (workflow.cacheIds || [])
                 .map((id) => state.pickupDraft.cacheContainers.find((item) => item.id === id))
                 .filter(Boolean);
             if (caches.some((cache) => cache.dimension !== workflow.dimension)) {
-                errors.push(`${label}与缓存跨维度`);
+                addPickupError(
+                    errors,
+                    `${label}与所选缓存维度不一致；请调整流程或缓存坐标`,
+                    `pickup-workflow-dimension-${workflowIndex}`,
+                    cacheListField
+                );
             }
             if (!Number.isInteger(workflow.completionIdleDelay)
                     || workflow.completionIdleDelay < 0) {
-                errors.push(`${label}的完成空闲时间必须是正整数`);
+                addPickupError(
+                    errors,
+                    `${label}的流程空闲秒数必须是非负整数`,
+                    `pickup-workflow-idle-${workflowIndex}`
+                );
             }
-        }
+            if (workflow.cachePolicy !== "NEAREST_AVAILABLE") {
+                addPickupError(
+                    errors,
+                    `${label}的缓存选择策略无效；请选择“最近可用缓存”`,
+                    `pickup-workflow-cache-policy-${workflowIndex}`
+                );
+            }
+            if (!["AFTER_REGION", "AFTER_ROUND"].includes(
+                workflow.classificationTiming
+            )) {
+                addPickupError(
+                    errors,
+                    `${label}的分类时机无效；请重新选择`,
+                    `pickup-workflow-timing-${workflowIndex}`
+                );
+            }
+            if (!["MANUAL", "ALL_IDLE"].includes(workflow.completionMode)) {
+                addPickupError(
+                    errors,
+                    `${label}的结束方式无效；请重新选择`,
+                    `pickup-workflow-mode-${workflowIndex}`
+                );
+            }
+        });
     }
 
     /**
@@ -1358,18 +1712,48 @@
     }
 
     /**
+     * @param {boolean} showValidation
      * @returns {void}
      */
-    function updatePickupState() {
+    function updatePickupState(showValidation = true) {
         const errors = validatePickupDraft();
         elements.pickupSave.disabled = !state.pickupDirty || errors.length > 0;
         elements.pickupStatus.classList.toggle("dirty", state.pickupDirty);
+        if (showValidation) {
+            showPickupErrors(state.pickupDirty || errors.length > 0 ? errors : []);
+        }
+        applyPickupValidationStyles();
         if (state.pickupDirty && errors.length > 0) {
-            elements.pickupStatus.textContent = "草稿中有错误，修正后才能保存";
+            elements.pickupStatus.textContent =
+                `发现 ${errors.length} 个拾取配置问题，保存已暂停`;
         } else if (state.pickupDirty) {
             elements.pickupStatus.textContent = "有未保存的拾取配置修改";
         } else {
             elements.pickupStatus.textContent = "拾取配置已与配置文件同步";
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function applyPickupValidationStyles() {
+        for (const card of elements.pickupForm.querySelectorAll(".editor-card")) {
+            card.classList.remove("has-error");
+        }
+        for (const control of elements.pickupForm.querySelectorAll(
+            "input, select, textarea, [data-validation-container]"
+        )) {
+            control.setAttribute("aria-invalid", "false");
+            control.closest(".editor-field")?.classList.remove("has-error");
+        }
+        for (const fieldId of state.pickupInvalidFields) {
+            const control = document.getElementById(fieldId);
+            if (!control) {
+                continue;
+            }
+            control.setAttribute("aria-invalid", "true");
+            control.closest(".editor-field")?.classList.add("has-error");
+            control.closest(".editor-card")?.classList.add("has-error");
         }
     }
 
@@ -1451,7 +1835,17 @@
             revision: state.pickupSnapshot.revision,
             pickupRegions: regions,
             cacheContainers: caches,
-            pickupWorkflows: Stowling.clone(state.pickupDraft.pickupWorkflows)
+            pickupWorkflows: state.pickupDraft.pickupWorkflows.map((workflow) => ({
+                id: String(workflow.id || "").trim(),
+                name: String(workflow.name || "").trim(),
+                dimension: workflow.dimension,
+                regions: Stowling.clone(workflow.regions || []),
+                cacheIds: Stowling.clone(workflow.cacheIds || []),
+                cachePolicy: workflow.cachePolicy,
+                classificationTiming: workflow.classificationTiming,
+                completionMode: workflow.completionMode,
+                completionIdleDelay: workflow.completionIdleDelay
+            }))
         };
     }
 
@@ -1498,7 +1892,7 @@
             Stowling.handleError(error, "保存拾取配置失败");
         } finally {
             elements.pickupDiscard.disabled = false;
-            updatePickupState();
+            updatePickupState(false);
         }
     }
 

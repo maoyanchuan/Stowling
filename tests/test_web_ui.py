@@ -146,8 +146,8 @@ def test_task_page_is_a_visual_module_builder() -> None:
         "function addStep()",
         "function moveWorkflow(index, offset)",
         "function moveStep(workflow, index, offset)",
-        "function moduleSelect(step, index, workflow)",
-        "function parameterControl(step, definition, stepIndex)",
+        "function moduleSelect(step, index, workflowIndex)",
+        "function parameterControl(step, definition, stepIndex, workflowIndex)",
         "workflow.steps.splice(index, 1)",
     ):
         assert fragment in TASKS
@@ -179,6 +179,15 @@ def test_task_builder_exposes_all_first_release_modules() -> None:
         "durationSeconds",
     ):
         assert field_name in TASKS
+
+
+def test_task_module_types_are_internal_values_not_visible_codes() -> None:
+    assert "option.value = module.type;" in TASKS
+    assert "option.textContent = module.name;" in TASKS
+    assert "option.title = module.type;" in TASKS
+    assert 'card.dataset.moduleType = module.type;' in TASKS
+    assert 'Stowling.element("code", "", module.type)' not in TASKS
+    assert "`${module.name} · ${module.type}`" not in TASKS
 
 
 def test_task_requests_match_backend_parameter_contract() -> None:
@@ -227,6 +236,69 @@ def test_pickup_region_options_use_api_id_and_filter_missing_values() -> None:
     assert "ID：${id}" in TASKS
 
 
+def test_user_visible_enum_labels_are_localized_without_changing_values() -> None:
+    for label in (
+        '"minecraft:overworld", "主世界"',
+        '"minecraft:the_nether", "下界"',
+        '"minecraft:the_end", "末地"',
+        '"NEAREST_AVAILABLE", "最近可用缓存"',
+        '"AFTER_REGION", "每个区域结束后"',
+        '"AFTER_ROUND", "整轮结束后"',
+        '"ALL_IDLE", "全部区域空闲后"',
+        '"NAVIGATE_PICKUP", "前往拾取区域"',
+        '"SUCCEEDED", "已完成"'
+    ):
+        assert label in COMMON
+
+    assert "option.value = dimension;" in COORDINATES
+    assert "option.textContent = Stowling.dimensionLabel(dimension);" in COORDINATES
+    assert '["NEAREST_AVAILABLE", Stowling.cachePolicyLabel("NEAREST_AVAILABLE")]' \
+        in STORAGE
+    assert "Stowling.taskStageLabel(task.stage || task.automationState)" in TASKS
+    assert "Stowling.moduleStateLabel(task.moduleState || task.automationState)" \
+        in TASKS
+    assert "Stowling.containerTypeLabel(container.type || \"OTHER\")" in STORAGE
+    assert "配置版本：" in "".join(PAGES.values())
+    assert "revision: --" not in "".join(PAGES.values())
+
+
+def test_draft_errors_describe_location_field_and_fix_while_editing() -> None:
+    assert "showErrors(state.dirty || errors.length > 0 ? errors : [])" in TASKS
+    assert "showPickupErrors(state.pickupDirty || errors.length > 0 ? errors : [])" \
+        in STORAGE
+    assert "showErrors(state.dirty || blocked ? errors : [])" in COORDINATES
+    assert "第 ${workflowIndex + 1} 个任务" not in TASKS
+    assert "任务 ${workflowIndex + 1}" in TASKS
+    assert "的第 ${stepIndex + 1} 个步骤" in TASKS
+    assert "第 ${index + 1} 个命名坐标" in COORDINATES
+    assert "拾取区域 ${index + 1}" in STORAGE
+    assert "缓存容器 ${index + 1}" in STORAGE
+    assert "请先解除这些引用" in COORDINATES
+    assert "必须选择一个已保存的命名坐标作为待机点；请从下拉框选择" in STORAGE
+    assert 'setAttribute("aria-invalid", "true")' in TASKS
+    assert 'setAttribute("aria-invalid", "true")' in COORDINATES
+    assert 'setAttribute("aria-invalid", "true")' in STORAGE
+    assert '.editor-field.has-error > label' in STYLES
+    assert 'input[aria-invalid="true"]' in STYLES
+
+
+def test_generated_resource_ids_can_be_cleared_and_references_are_protected() -> None:
+    assert "state.editableWorkflowIds" not in TASKS
+    assert "elements.workflowId.disabled" not in TASKS
+    assert "state.editableIds" not in COORDINATES
+    assert "idInput.disabled" not in COORDINATES
+    assert "state.pickupEditableIds" not in STORAGE
+    assert "input.disabled = !editable" not in STORAGE
+
+    assert "point._originalId" in COORDINATES
+    assert "旧 ID 仍被" in COORDINATES
+    assert "_originalId: \"\"" in COORDINATES
+    assert "_originalId: \"\"" in STORAGE
+    assert "input.dataset.lastValidId" in STORAGE
+    assert "replacePickupReferences(kind, previousValid, candidate)" in STORAGE
+    assert "automationReferencesFor(originalId)" in STORAGE
+
+
 def test_storage_page_groups_containers_inventory_and_warehouse_config() -> None:
     html = PAGES["storage.html"]
     for element_id in (
@@ -271,10 +343,19 @@ def test_pickup_editor_preserves_multi_region_resource_workflow() -> None:
 
     assert "至少选择一个区域" in STORAGE
     assert "至少选择一个缓存" in STORAGE
-    assert "第一角点不能大于第二角点" in STORAGE
+    assert "第一角点必须位于第二角点的负方向" in STORAGE
     assert "半径必须为 1-128" in STORAGE
-    assert "跨维度" in STORAGE
+    assert "维度不一致" in STORAGE
     assert "活动或暂停任务存在" in STORAGE
+
+
+def test_pickup_workflow_delete_checks_current_and_original_task_references() -> None:
+    assert "function automationReferencesFor(...resourceIds)" in STORAGE
+    assert "automationReferencesFor(resource.id, resource._originalId)" in STORAGE
+    assert "automationReferencesFor(originalId)" in STORAGE
+    assert 'kind === "workflow"' in STORAGE
+    assert '[...new Set(references)].join("、")' in STORAGE
+    assert "请先解除引用并保存。" in STORAGE
 
 
 def test_authentication_is_shared_bearer_middleware() -> None:

@@ -2,15 +2,6 @@
     "use strict";
 
     const Stowling = window.Stowling;
-    const STATUS_LABELS = new Map([
-        ["PENDING", "等待中"],
-        ["RUNNING", "运行中"],
-        ["WAITING", "等待条件"],
-        ["PAUSED", "已暂停"],
-        ["SUCCEEDED", "已完成"],
-        ["FAILED", "失败"],
-        ["CANCELLED", "已取消"]
-    ]);
 
     const elements = {
         refresh: document.querySelector("#refresh-button"),
@@ -35,7 +26,7 @@
      */
     async function loadStatus() {
         const status = await Stowling.request("/v1/status");
-        elements.state.textContent = String(status?.state || "未知");
+        elements.state.textContent = Stowling.taskStatusLabel(status?.state);
         elements.paused.textContent = status?.paused ? "是" : "否";
         elements.observed.textContent = Stowling.formatDate(status?.observedAt);
     }
@@ -129,13 +120,16 @@
             const title = Stowling.element(
                 "div",
                 "task-title",
-                String(task.workflowId || task.kind || "任务")
+                String(task.workflowId || Stowling.taskKindLabel(task.kind))
             );
             title.append(statusBadge(task.status));
             const meta = Stowling.element("div", "task-meta");
             meta.append(
                 metaText("任务 ID", String(task.id || "未知")),
-                metaText("阶段", String(task.stage || task.automationState || "未知")),
+                metaText(
+                    "阶段",
+                    Stowling.taskStageLabel(task.stage || task.automationState)
+                ),
                 metaText("更新", Stowling.formatDate(task.updatedAt))
             );
             content.append(title, meta);
@@ -159,7 +153,11 @@
      */
     function statusBadge(value) {
         const status = String(value || "UNKNOWN");
-        const badge = Stowling.element("span", "badge", STATUS_LABELS.get(status) || status);
+        const badge = Stowling.element(
+            "span",
+            "badge",
+            Stowling.taskStatusLabel(status)
+        );
         if (["FAILED", "CANCELLED"].includes(status)) {
             badge.classList.add("danger");
         } else if (["PAUSED", "WAITING", "UNKNOWN"].includes(status)) {

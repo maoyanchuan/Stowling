@@ -559,6 +559,22 @@ section[id] {
     background: rgba(95, 110, 99, 0.08);
 }
 
+.editor-field.has-error > label {
+    color: var(--danger);
+    font-weight: 750;
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+[data-validation-container][aria-invalid="true"] {
+    border-color: rgba(161, 61, 55, 0.72);
+    box-shadow: 0 0 0 2px rgba(161, 61, 55, 0.13);
+}
+
+.editor-card.has-error {
+    border-left: 4px solid var(--danger);
+}
+
 .position-editor {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

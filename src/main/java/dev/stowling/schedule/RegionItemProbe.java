@@ -1,5 +1,6 @@
 package dev.stowling.schedule;
 
+import dev.stowling.domain.PickupRegion;
 import java.util.List;
 
 public interface RegionItemProbe {
@@ -10,4 +11,8 @@ public interface RegionItemProbe {
     }
 
     Observation observe(List<String> regionIds);
+
+    default Observation observeRegions(List<PickupRegion> regions) {
+        return Observation.UNOBSERVABLE;
+    }
 }

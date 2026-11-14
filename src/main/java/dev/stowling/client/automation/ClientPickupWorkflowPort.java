@@ -94,23 +94,24 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
             return AutomationOperationResult.failed("拾取操作键无效。");
         }
         StowlingConfig loaded = Objects.requireNonNull(config.get(), "config");
-        Optional<PickupWorkflow> workflow = loaded.pickupWorkflows().stream()
-                .filter(candidate -> candidate.id().equals(request.workflowId()))
-                .findFirst();
-        if (workflow.isEmpty()) {
-            return AutomationOperationResult.failed(
-                    "未知拾取流程: " + request.workflowId()
-            );
-        }
         try {
-            PickupAutomationPlan pickupPlan = plan(
-                    taskId,
-                    workflow.orElseThrow(),
-                    request.regionId(),
-                    loaded
-            );
+            PickupAutomationPlan pickupPlan;
+            boolean customRegions = request.customRules().isPresent();
+            if (customRegions) {
+                pickupPlan = request.customRules().orElseThrow().plan(taskId, loaded);
+            } else {
+                Optional<PickupWorkflow> workflow = loaded.pickupWorkflows().stream()
+                        .filter(candidate -> candidate.id().equals(request.workflowId()))
+                        .findFirst();
+                if (workflow.isEmpty()) {
+                    return AutomationOperationResult.failed(
+                            "未知拾取流程: " + request.workflowId()
+                    );
+                }
+                pickupPlan = plan(taskId, workflow.orElseThrow(), request.regionId(), loaded);
+            }
             if (request.waitForItems()) {
-                WaitingAttempt waiting = new WaitingAttempt(pickupPlan);
+                WaitingAttempt waiting = new WaitingAttempt(pickupPlan, customRegions);
                 attempts.put(operationKey, waiting);
                 stopOutcomes.remove(taskId);
                 return advanceWaiting(operationKey, waiting);
@@ -325,11 +326,14 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
                 && now.isBefore(lastProbeAt.orElseThrow().plus(REGION_PROBE_INTERVAL))) {
             return waiting.result();
         }
-        RegionItemProbe.Observation observation = probe.observe(
-                waiting.plan().orderedRegions().stream()
-                        .map(binding -> binding.regionId())
-                        .toList()
-        );
+        List<String> regionIds = waiting.plan().orderedRegions().stream()
+                .map(binding -> binding.regionId())
+                .toList();
+        RegionItemProbe.Observation observation = waiting.customRegions()
+                ? probe.observeRegions(regionIds.stream()
+                        .map(waiting.plan().regionsById()::get)
+                        .toList())
+                : probe.observe(regionIds);
         if (observation == RegionItemProbe.Observation.PRESENT) {
             PickupAutomationEngine engine = engineFactory.create(waiting.plan());
             engine.start();
@@ -338,6 +342,7 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
         }
         WaitingAttempt updated = new WaitingAttempt(
                 waiting.plan(),
+                waiting.customRegions(),
                 Optional.of(now),
                 Optional.of(observation)
         );
@@ -416,11 +421,12 @@ public final class ClientPickupWorkflowPort implements PickupWorkflowPort {
 
     private record WaitingAttempt(
             PickupAutomationPlan plan,
+            boolean customRegions,
             Optional<Instant> lastProbeAt,
             Optional<RegionItemProbe.Observation> lastObservation
     ) implements WorkflowEntry {
-        private WaitingAttempt(PickupAutomationPlan plan) {
-            this(plan, Optional.empty(), Optional.empty());
+        private WaitingAttempt(PickupAutomationPlan plan, boolean customRegions) {
+            this(plan, customRegions, Optional.empty(), Optional.empty());
         }
 
         @Override

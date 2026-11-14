@@ -33,6 +33,7 @@ import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationStepType;
 import dev.stowling.automation.AutomationWorkflow;
+import dev.stowling.automation.CustomPickupRules;
 import dev.stowling.schedule.InterruptionKind;
 import dev.stowling.schedule.TaskDefinition;
 import dev.stowling.schedule.TaskInterruption;
@@ -726,6 +727,15 @@ final class StrictRequestParser {
             }
             result.put(entry.getKey(), parameter);
         }
+        if (type == AutomationStepType.RUN_PICKUP) {
+            if (CustomPickupRules.fromParameters(result).isEmpty()) {
+                require(result.containsKey("workflowId"), "Missing JSON field: workflowId");
+            }
+            String waitForItems = result.get("waitForItems");
+            require(waitForItems == null || "true".equals(waitForItems)
+                            || "false".equals(waitForItems),
+                    "parameters.waitForItems must be true or false");
+        }
         return Map.copyOf(result);
     }
 
@@ -733,7 +743,7 @@ final class StrictRequestParser {
         return switch (type) {
             case NAVIGATE -> Set.of("coordinateId");
             case WAIT -> Set.of("seconds");
-            case RUN_PICKUP -> Set.of("workflowId");
+            case RUN_PICKUP -> Set.of();
             case TAKE_ITEMS, PUT_ITEMS -> Set.of("containerId", "itemId", "count");
             case TRANSFER_ITEMS -> Set.of(
                     "sourceContainerId",
@@ -748,7 +758,11 @@ final class StrictRequestParser {
 
     private static Set<String> optionalAutomationParameters(AutomationStepType type) {
         return type == AutomationStepType.RUN_PICKUP
-                ? Set.of("regionId")
+                ? Set.of(
+                        "workflowId", "regionId", "waitForItems", "standbyCoordinateId",
+                        "firstCornerCoordinateId", "secondCornerCoordinateId", "cacheIds",
+                        "idleSeconds", "classificationTiming"
+                )
                 : Set.of();
     }
 

@@ -18,6 +18,7 @@ import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationStepType;
 import dev.stowling.automation.CoordinateResolver;
 import dev.stowling.automation.CraftingPort;
+import dev.stowling.automation.CustomPickupRules;
 import dev.stowling.automation.InventoryQueryPort;
 import dev.stowling.automation.ItemTransferPort;
 import dev.stowling.automation.MaterialAcquisitionPort;
@@ -27,10 +28,12 @@ import dev.stowling.automation.PickupWorkflowPort;
 import dev.stowling.automation.PlayerInventorySlot;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.ClassificationTiming;
 import dev.stowling.schedule.StopOutcome;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -557,7 +560,7 @@ class AutomationModulesTest {
     }
 
     @Test
-    void runPickupDescriptorDocumentsOptionalRegionAndWaitBehavior() {
+    void runPickupDescriptorDocumentsIndependentRulesAndLegacyParameters() {
         AutomationModuleDescriptor descriptor =
                 new RunPickupAutomationModule(new PickupRecordingPort()).descriptor();
         AutomationModuleDescriptor.Parameter region = descriptor.parameters()
@@ -572,12 +575,107 @@ class AutomationModulesTest {
                 .orElseThrow();
 
         assertEquals("RUN_PICKUP", descriptor.moduleId());
-        assertEquals("拾取范围（可选）", region.label());
+        assertTrue(region.label().contains("旧配置"));
         assertFalse(region.required());
         assertEquals("boolean", waitForItems.kind());
         assertFalse(waitForItems.required());
-        assertTrue(descriptor.description().contains("留空时执行流程全部区域"));
+        assertTrue(descriptor.description().contains("拾取角点和缓存"));
         assertTrue(descriptor.description().contains("客户端可见物品"));
+        for (AutomationModuleDescriptor.Parameter parameter : descriptor.parameters()) {
+            assertFalse(parameter.required());
+        }
+        Map<String, String> kinds = new HashMap<>();
+        descriptor.parameters().forEach(parameter -> kinds.put(parameter.key(), parameter.kind()));
+        assertEquals("coordinate", kinds.get("standbyCoordinateId"));
+        assertEquals("coordinate", kinds.get("firstCornerCoordinateId"));
+        assertEquals("coordinate", kinds.get("secondCornerCoordinateId"));
+        assertEquals("containers", kinds.get("cacheIds"));
+        assertEquals("nonnegative-integer", kinds.get("idleSeconds"));
+        assertEquals("choice", kinds.get("classificationTiming"));
+        AutomationModuleDescriptor.Parameter timing = descriptor.parameters().stream()
+                .filter(parameter -> parameter.key().equals("classificationTiming"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                List.of("AFTER_REGION", "AFTER_ROUND"),
+                timing.options().stream().map(AutomationModuleDescriptor.Choice::value).toList()
+        );
+        assertTrue(descriptor.validate(customPickupParameters(Map.of())).isEmpty());
+    }
+
+    @Test
+    void runPickupWithoutWorkflowPassesIndependentRulesWithDefaultsOnce() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+        AutomationStep step = step(
+                "custom-pickup", AutomationStepType.RUN_PICKUP, customPickupParameters(Map.of())
+        );
+
+        AutomationModuleResult started = execute(module, step, Map.of(), false);
+        AutomationModuleResult completed = execute(module, step, started.moduleState(), false);
+
+        assertEquals(AutomationModuleStatus.RUNNING, started.status());
+        assertEquals(AutomationModuleStatus.SUCCEEDED, completed.status());
+        assertEquals(1, pickup.startCount);
+        assertEquals(1, pickup.requests.size());
+        assertEquals(
+                PickupWorkflowPort.Request.custom(new CustomPickupRules(
+                        "standby", "corner-one", "corner-two", List.of("cache"),
+                        Duration.ofSeconds(2), ClassificationTiming.AFTER_ROUND
+                ), false),
+                pickup.requests.getFirst()
+        );
+    }
+
+    @Test
+    void runPickupPassesCustomCacheOrderTimingIdleAndWait() {
+        PickupRecordingPort pickup = new PickupRecordingPort();
+        RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
+
+        execute(module, step(
+                "custom-pickup", AutomationStepType.RUN_PICKUP, customPickupParameters(Map.of(
+                        "cacheIds", "cache-two, cache-one",
+                        "idleSeconds", "0",
+                        "classificationTiming", "AFTER_REGION",
+                        "waitForItems", "true"
+                ))
+        ), Map.of(), false);
+
+        assertEquals(
+                PickupWorkflowPort.Request.custom(new CustomPickupRules(
+                        "standby", "corner-one", "corner-two",
+                        List.of("cache-two", "cache-one"), Duration.ZERO,
+                        ClassificationTiming.AFTER_REGION
+                ), true),
+                pickup.requests.getFirst()
+        );
+    }
+
+    @Test
+    void runPickupRejectsIncompleteMixedAndInvalidCustomRulesBeforeStarting() {
+        List<Map<String, String>> invalidParameters = List.of(
+                Map.of(),
+                Map.of("standbyCoordinateId", "standby"),
+                customPickupParameters(Map.of("workflowId", "quarry")),
+                customPickupParameters(Map.of("regionId", "north")),
+                customPickupParameters(Map.of("cacheIds", "cache,cache")),
+                customPickupParameters(Map.of("idleSeconds", "-1")),
+                customPickupParameters(Map.of("idleSeconds", "1.5")),
+                customPickupParameters(Map.of("classificationTiming", "INVALID")),
+                customPickupParameters(Map.of("waitForItems", "TRUE"))
+        );
+        for (Map<String, String> parameters : invalidParameters) {
+            PickupRecordingPort pickup = new PickupRecordingPort();
+            AutomationModuleResult result = execute(
+                    new RunPickupAutomationModule(pickup),
+                    step("invalid-custom", AutomationStepType.RUN_PICKUP, parameters),
+                    Map.of(), false
+            );
+
+            assertEquals(AutomationModuleStatus.FAILED, result.status(), parameters.toString());
+            assertEquals(0, pickup.startCount);
+            assertTrue(pickup.requests.isEmpty());
+        }
     }
 
     @Test
@@ -771,6 +869,17 @@ class AutomationModulesTest {
                         "count", "4"
                 )
         );
+    }
+
+    private static Map<String, String> customPickupParameters(Map<String, String> overrides) {
+        Map<String, String> parameters = new HashMap<>(Map.of(
+                "standbyCoordinateId", "standby",
+                "firstCornerCoordinateId", "corner-one",
+                "secondCornerCoordinateId", "corner-two",
+                "cacheIds", "cache"
+        ));
+        parameters.putAll(overrides);
+        return parameters;
     }
 
     private static AutomationStep itemStep(

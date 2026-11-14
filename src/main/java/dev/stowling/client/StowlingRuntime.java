@@ -189,19 +189,18 @@ public final class StowlingRuntime implements AutoCloseable {
                 inventories,
                 transfers
         );
-        InMemoryAutomationCheckpointStore pickupCheckpoints =
-                new InMemoryAutomationCheckpointStore();
         PickupWorkflowPort pickups = new ClientPickupWorkflowPort(
                 () -> configLoader.load(configPath),
+                // Each child pickup starts afresh, even within the same parent task.
                 plan -> createPickupEngine(
-                plan,
-                worldObserver,
-                navigationPort,
-                containers,
-                packingPort,
-                automationClock,
-                pickupCheckpoints
-        ),
+                        plan,
+                        worldObserver,
+                        navigationPort,
+                        containers,
+                        packingPort,
+                        automationClock,
+                        new InMemoryAutomationCheckpointStore()
+                ),
                 scheduler,
                 new ScheduledRegionItemProbe(
                         minecraft, worldObserver, () -> configLoader.load(configPath)

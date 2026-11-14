@@ -1,6 +1,7 @@
 package dev.stowling.client.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.AutomationOperationResult;
@@ -10,6 +11,7 @@ import dev.stowling.automation.ContainerAttemptResult;
 import dev.stowling.automation.ContainerInteraction;
 import dev.stowling.automation.ContainerTransfer;
 import dev.stowling.automation.ContainerView;
+import dev.stowling.automation.CustomPickupRules;
 import dev.stowling.automation.GroundItem;
 import dev.stowling.automation.InMemoryAutomationCheckpointStore;
 import dev.stowling.automation.NavigationPort;
@@ -28,7 +30,9 @@ import dev.stowling.domain.ClassificationTiming;
 import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupRegionBinding;
 import dev.stowling.domain.PickupSite;
@@ -48,6 +52,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
@@ -225,6 +230,224 @@ class ClientPickupWorkflowPortTest {
     }
 
     @Test
+    void customRulesStartImmediatelyWithoutConfiguredWorkflowOrRegion() {
+        MutableClock clock = new MutableClock(START);
+        RecordingProbe probe = new RecordingProbe();
+        RecordingFactory factory = factory(true, NavigationStatus.ARRIVED);
+        StowlingConfig loaded = customConfig();
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                () -> loaded, factory, new TestScheduler(), probe, clock
+        );
+
+        AutomationOperationResult result = port.start(
+                OPERATION_KEY, Request.custom(customRules(), false)
+        );
+
+        assertEquals(AutomationOperationStatus.RUNNING, result.status());
+        assertEquals(1, factory.created());
+        assertEquals(1, factory.navigation().starts());
+        assertEquals(TASK_ID, factory.lastPlan().taskId());
+        assertEquals("custom-pickup", factory.lastPlan().workflow().id());
+        assertEquals(CompletionMode.ALL_IDLE, factory.lastPlan().workflow().completionMode());
+        assertEquals(Duration.ZERO, factory.lastPlan().workflow().completionIdleDelay());
+        assertEquals(CachePolicy.NEAREST_AVAILABLE, factory.lastPlan().workflow().cachePolicy());
+        assertEquals(
+                Duration.ofSeconds(3),
+                factory.lastPlan().orderedRegions().getFirst().idleDelay()
+        );
+        assertEquals(List.of("custom-cache"), factory.lastPlan().workflow().cacheIds());
+        assertEquals(
+                ClassificationTiming.AFTER_ROUND,
+                factory.lastPlan().workflow().classificationTiming()
+        );
+        PickupRegion region = factory.lastPlan().regionsById().values().iterator().next();
+        assertEquals("custom-pickup-region", region.id());
+        assertEquals("custom-standby", region.standbyCoordinateId());
+        assertEquals(STANDBY, region.standbyPosition());
+        CuboidPickupShape shape = assertInstanceOf(CuboidPickupShape.class, region.shape());
+        assertEquals(new BlockPosition(-17, 60, -1), shape.firstCorner());
+        assertEquals(new BlockPosition(33, 70, 32), shape.secondCorner());
+        assertTrue(probe.observations().isEmpty());
+        assertTrue(probe.regionObservations().isEmpty());
+        assertTrue(loaded.pickupRegions().isEmpty());
+        assertTrue(loaded.pickupWorkflows().isEmpty());
+    }
+
+    @Test
+    void customWaitingUsesRegionObjectsAndStartsOnceAfterThrottledPresent() {
+        MutableClock clock = new MutableClock(START);
+        RecordingProbe probe = new RecordingProbe();
+        RecordingFactory factory = factory(true, NavigationStatus.ARRIVED);
+        AtomicInteger configLoads = new AtomicInteger();
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                () -> {
+                    configLoads.incrementAndGet();
+                    return customConfig();
+                },
+                factory,
+                new TestScheduler(),
+                probe,
+                clock
+        );
+
+        AutomationOperationResult waiting = port.start(
+                OPERATION_KEY, Request.custom(customRules(), true)
+        );
+
+        assertEquals(AutomationOperationStatus.RUNNING, waiting.status());
+        assertEquals("等待物品出现", waiting.message().orElseThrow());
+        assertEquals(1, probe.regionObservations().size());
+        assertTrue(probe.observations().isEmpty());
+        PickupRegion region = probe.regionObservations().getFirst().getFirst();
+        assertInstanceOf(CuboidPickupShape.class, region.shape());
+        assertTrue(region.contains(new BlockPosition(-17, 60, -1)));
+        assertTrue(region.contains(new BlockPosition(33, 70, 32)));
+        assertEquals(0, factory.created());
+        assertEquals(0, factory.navigation().starts());
+        assertEquals(0, factory.containers().observations());
+        assertEquals(0, factory.containers().begins());
+
+        probe.setObservation(RegionItemProbe.Observation.PRESENT);
+        port.start(OPERATION_KEY, Request.custom(customRules(), true));
+        clock.advance(Duration.ofMillis(999));
+        port.reconcile(OPERATION_KEY);
+        assertEquals(1, probe.regionObservations().size());
+        assertEquals(0, factory.created());
+
+        clock.advance(Duration.ofMillis(1));
+        AutomationOperationResult started = port.reconcile(OPERATION_KEY);
+        assertEquals(AutomationOperationStatus.RUNNING, started.status());
+        assertEquals(1, factory.created());
+        assertEquals(1, factory.navigation().starts());
+        assertEquals(1, configLoads.get());
+        assertEquals(List.of(region), probe.regionObservations().get(1));
+        assertEquals(region, factory.lastPlan().regionsById().get(region.id()));
+
+        port.poll(OPERATION_KEY);
+        assertEquals(1, factory.created());
+        assertEquals(2, probe.regionObservations().size());
+    }
+
+    @Test
+    void customUnobservableRangeWaitsWithoutStartingAnyActions() {
+        RecordingProbe probe = new RecordingProbe();
+        probe.setObservation(RegionItemProbe.Observation.UNOBSERVABLE);
+        RecordingFactory factory = factory(false, NavigationStatus.ARRIVED);
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                ClientPickupWorkflowPortTest::customConfig,
+                factory,
+                new TestScheduler(),
+                probe,
+                new MutableClock(START)
+        );
+
+        AutomationOperationResult result = port.start(
+                OPERATION_KEY, Request.custom(customRules(), true)
+        );
+
+        assertEquals(AutomationOperationStatus.RUNNING, result.status());
+        assertEquals("等待区域可见", result.message().orElseThrow());
+        assertEquals(1, probe.regionObservations().size());
+        assertTrue(probe.observations().isEmpty());
+        assertEquals(0, factory.created());
+        assertEquals(0, factory.navigation().starts());
+        assertEquals(0, factory.containers().begins());
+    }
+
+    @Test
+    void customWaitingStopsCleanlyAndDoesNotRestoreRemovedEntry() {
+        MutableClock clock = new MutableClock(START);
+        RecordingProbe probe = new RecordingProbe();
+        RecordingFactory factory = factory(false, NavigationStatus.ARRIVED);
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                ClientPickupWorkflowPortTest::customConfig,
+                factory, new TestScheduler(), probe, clock
+        );
+        port.start(OPERATION_KEY, Request.custom(customRules(), true));
+
+        assertEquals(StopOutcome.CLEAN, port.requestStop(TASK_ID));
+        assertEquals(StopOutcome.CLEAN, port.pollStop(TASK_ID));
+        assertEquals(StopOutcome.CLEAN, port.requestStop(TASK_ID));
+        probe.setObservation(RegionItemProbe.Observation.PRESENT);
+        clock.advance(Duration.ofSeconds(1));
+        assertEquals(AutomationOperationStatus.PAUSED, port.poll(OPERATION_KEY).status());
+        assertEquals(AutomationOperationStatus.PAUSED, port.reconcile(OPERATION_KEY).status());
+        assertEquals(1, probe.regionObservations().size());
+        assertEquals(0, factory.created());
+    }
+
+    @Test
+    void customActiveEngineStopKeepsUnsafeOutcome() {
+        RecordingFactory factory = factory(true, NavigationStatus.NAVIGATING);
+        factory.navigation().setStopOutcome(StopOutcome.UNSAFE);
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                ClientPickupWorkflowPortTest::customConfig,
+                factory,
+                new TestScheduler()
+        );
+        port.start(OPERATION_KEY, Request.custom(customRules(), false));
+
+        assertEquals(StopOutcome.UNSAFE, port.requestStop(TASK_ID));
+        assertEquals(StopOutcome.UNSAFE, port.pollStop(TASK_ID));
+        assertEquals(StopOutcome.UNSAFE, port.requestStop(TASK_ID));
+    }
+
+    @Test
+    void invalidCustomReferenceFailsBeforeObservingOrCreatingEngine() {
+        RecordingProbe probe = new RecordingProbe();
+        RecordingFactory factory = factory(false, NavigationStatus.ARRIVED);
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                ClientPickupWorkflowPortTest::customConfig,
+                factory, new TestScheduler(), probe, new MutableClock(START)
+        );
+        CustomPickupRules rules = new CustomPickupRules(
+                "custom-standby", "missing-corner", "custom-second", List.of("custom-cache"),
+                Duration.ofSeconds(3), ClassificationTiming.AFTER_ROUND
+        );
+
+        AutomationOperationResult result = port.start(
+                OPERATION_KEY, Request.custom(rules, true)
+        );
+
+        assertEquals(AutomationOperationStatus.FAILED, result.status());
+        assertTrue(probe.observations().isEmpty());
+        assertTrue(probe.regionObservations().isEmpty());
+        assertEquals(0, factory.created());
+        assertEquals(AutomationOperationStatus.PAUSED, port.reconcile(OPERATION_KEY).status());
+    }
+
+    @Test
+    void nextCustomPickupStepStartsAfreshAfterPreviousStepStops() {
+        RecordingFactory factory = factory(true, NavigationStatus.ARRIVED);
+        ClientPickupWorkflowPort port = new ClientPickupWorkflowPort(
+                ClientPickupWorkflowPortTest::customConfig, factory, new TestScheduler()
+        );
+        port.start(OPERATION_KEY, Request.custom(customRules(), false));
+        assertEquals(1, factory.navigation().starts());
+        assertEquals(StopOutcome.CLEAN, port.requestStop(TASK_ID));
+
+        CustomPickupRules next = new CustomPickupRules(
+                "custom-second", "custom-second", "custom-first", List.of("custom-cache"),
+                Duration.ofSeconds(7), ClassificationTiming.AFTER_REGION
+        );
+        AutomationOperationResult result = port.start(
+                TASK_ID + ":pickup-next", Request.custom(next, false)
+        );
+
+        assertEquals(AutomationOperationStatus.RUNNING, result.status());
+        assertEquals(2, factory.created());
+        assertEquals(2, factory.navigation().starts());
+        assertEquals(
+                new BlockPosition(33, 70, 32),
+                factory.lastPlan().regionsById().get("custom-pickup-region").standbyPosition()
+        );
+        assertEquals(
+                Duration.ofSeconds(7), factory.lastPlan().orderedRegions().getFirst().idleDelay()
+        );
+        assertEquals(StopOutcome.CLEAN, port.requestStop(TASK_ID));
+    }
+
+    @Test
     void stopHelperRequestsBeforePollingAndPropagatesUnsafe() {
         AtomicBoolean stopRequested = new AtomicBoolean();
         AtomicBoolean stopPolled = new AtomicBoolean();
@@ -370,6 +593,41 @@ class ClientPickupWorkflowPortTest {
         );
     }
 
+    private static CustomPickupRules customRules() {
+        return new CustomPickupRules(
+                "custom-standby", "custom-first", "custom-second", List.of("custom-cache"),
+                Duration.ofSeconds(3), ClassificationTiming.AFTER_ROUND
+        );
+    }
+
+    private static StowlingConfig customConfig() {
+        BlockPosition cachePosition = new BlockPosition(10, 64, 0);
+        return new StowlingConfig(
+                StowlingConfig.CURRENT_SCHEMA_VERSION,
+                List.of(
+                        new NamedCoordinate("custom-standby", "Standby", DIMENSION, STANDBY),
+                        new NamedCoordinate(
+                                "custom-first", "First", DIMENSION, new BlockPosition(-17, 60, -1)
+                        ),
+                        new NamedCoordinate(
+                                "custom-second", "Second", DIMENSION, new BlockPosition(33, 70, 32)
+                        ),
+                        new NamedCoordinate("cache-point", "Cache", DIMENSION, cachePosition)
+                ),
+                List.of(),
+                List.of(new NamedCache(
+                        "custom-cache", "Cache", "cache-point", DIMENSION,
+                        cachePosition, ContainerType.CHEST
+                )),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                config().overflowContainer()
+        );
+    }
+
     private static PickupAutomationEngine engine(
             PickupAutomationPlan plan,
             StaticWorld world,
@@ -438,11 +696,18 @@ class ClientPickupWorkflowPortTest {
 
     private static final class RecordingProbe implements RegionItemProbe {
         private final List<List<String>> observations = new ArrayList<>();
+        private final List<List<PickupRegion>> regionObservations = new ArrayList<>();
         private Observation observation = Observation.EMPTY;
 
         @Override
         public Observation observe(List<String> regionIds) {
             observations.add(List.copyOf(regionIds));
+            return observation;
+        }
+
+        @Override
+        public Observation observeRegions(List<PickupRegion> regions) {
+            regionObservations.add(List.copyOf(regions));
             return observation;
         }
 
@@ -452,6 +717,10 @@ class ClientPickupWorkflowPortTest {
 
         private List<List<String>> observations() {
             return List.copyOf(observations);
+        }
+
+        private List<List<PickupRegion>> regionObservations() {
+            return List.copyOf(regionObservations);
         }
     }
 

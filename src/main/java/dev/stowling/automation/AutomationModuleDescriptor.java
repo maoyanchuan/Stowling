@@ -55,6 +55,12 @@ public record AutomationModuleDescriptor(
             }
             if ("positive-integer".equals(parameter.kind())) {
                 validatePositiveInteger(parameter.key(), value.trim(), errors);
+            } else if ("nonnegative-integer".equals(parameter.kind())) {
+                validateNonnegativeInteger(parameter.key(), value.trim(), errors);
+            }
+            if (!parameter.options().isEmpty() && parameter.options().stream()
+                    .noneMatch(option -> option.value().equals(value.trim()))) {
+                errors.add("invalid option for parameter: " + parameter.key());
             }
         }
         return List.copyOf(errors);
@@ -72,13 +78,21 @@ public record AutomationModuleDescriptor(
             String label,
             String kind,
             boolean required,
-            List<String> aliases
+            List<String> aliases,
+            List<Choice> options
     ) {
         public Parameter {
             key = requireText(key, "parameter key");
             label = requireText(label, "parameter label");
             kind = requireText(kind, "parameter kind");
             aliases = List.copyOf(Objects.requireNonNull(aliases, "aliases"));
+            options = List.copyOf(Objects.requireNonNull(options, "options"));
+            Set<String> optionValues = new HashSet<>();
+            for (Choice option : options) {
+                if (!optionValues.add(option.value())) {
+                    throw new IllegalArgumentException("parameter option is duplicated");
+                }
+            }
             Set<String> names = new HashSet<>();
             names.add(key);
             for (String alias : aliases) {
@@ -97,7 +111,32 @@ public record AutomationModuleDescriptor(
                 String kind,
                 boolean required
         ) {
-            this(key, label, kind, required, List.of());
+            this(key, label, kind, required, List.of(), List.of());
+        }
+
+        public Parameter(
+                String key, String label, String kind, boolean required, List<String> aliases
+        ) {
+            this(key, label, kind, required, aliases, List.of());
+        }
+    }
+
+    public record Choice(String value, String label) {
+        public Choice {
+            value = requireText(value, "option value");
+            label = requireText(label, "option label");
+        }
+    }
+
+    private static void validateNonnegativeInteger(
+            String key, String value, List<String> errors
+    ) {
+        try {
+            if (Long.parseLong(value) < 0) {
+                errors.add(key + " must be a nonnegative integer");
+            }
+        } catch (NumberFormatException exception) {
+            errors.add(key + " must be a nonnegative integer");
         }
     }
 

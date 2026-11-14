@@ -7,8 +7,10 @@ import dev.stowling.domain.PickupRegion;
 import dev.stowling.domain.PickupShape;
 import dev.stowling.domain.SpherePickupShape;
 import dev.stowling.schedule.RegionItemProbe;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -29,32 +31,56 @@ public final class ScheduledRegionItemProbe implements RegionItemProbe {
 
     @Override
     public Observation observe(List<String> regionIds) {
+        List<PickupRegion> configured = config.get().pickupRegions();
+        List<PickupRegion> regions = new ArrayList<>();
+        for (String id : regionIds) {
+            PickupRegion region = configured.stream().filter(value -> value.id().equals(id))
+                    .findFirst().orElse(null);
+            if (region == null) {
+                return Observation.UNOBSERVABLE;
+            }
+            regions.add(region);
+        }
+        return observeRegions(regions);
+    }
+
+    @Override
+    public Observation observeRegions(List<PickupRegion> regions) {
         if (minecraft.level == null || minecraft.player == null
                 || !observer.observeWorld().connected()) {
             return Observation.UNOBSERVABLE;
         }
         ClientLevel level = minecraft.level;
         String dimension = level.dimension().identifier().toString();
-        boolean observable = !regionIds.isEmpty();
-        List<PickupRegion> regions = config.get().pickupRegions();
-        for (String id : regionIds) {
-            PickupRegion region = regions.stream().filter(value -> value.id().equals(id))
-                    .findFirst().orElse(null);
-            if (region == null || !region.dimension().equals(dimension)) {
+        return observeRegions(observer, regions, dimension, level::hasChunk);
+    }
+
+    static Observation observeRegions(
+            WorldObserver observer,
+            List<PickupRegion> regions,
+            String dimension,
+            BiPredicate<Integer, Integer> chunkVisible
+    ) {
+        boolean observable = !regions.isEmpty();
+        for (PickupRegion region : regions) {
+            if (!region.dimension().equals(dimension)) {
                 observable = false;
                 continue;
             }
             if (!observer.observeGroundItems(region).isEmpty()) {
                 return Observation.PRESENT;
             }
-            if (!allChunksVisible(level, region.shape())) {
+            if (!allChunksVisible(region.shape(), chunkVisible)) {
                 observable = false;
             }
         }
         return observable ? Observation.EMPTY : Observation.UNOBSERVABLE;
     }
 
-    private static boolean allChunksVisible(ClientLevel level, PickupShape shape) {
+    private static boolean allChunksVisible(
+            PickupShape shape,
+            BiPredicate<Integer, Integer> chunkVisible
+    ) {
         int minX;
         int maxX;
         int minZ;
@@ -75,7 +101,7 @@ public final class ScheduledRegionItemProbe implements RegionItemProbe {
         // A region may be huge. Stop at the first missing client chunk, without loading it.
         for (int x = minX >> 4; x <= maxX >> 4; x++) {
             for (int z = minZ >> 4; z <= maxZ >> 4; z++) {
-                if (!level.hasChunk(x, z)) {
+                if (!chunkVisible.test(x, z)) {
                     return false;
                 }
             }

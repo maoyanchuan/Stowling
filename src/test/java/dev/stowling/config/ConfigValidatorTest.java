@@ -2,6 +2,7 @@ package dev.stowling.config;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +16,7 @@ import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
 import dev.stowling.domain.NamedCache;
+import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PackingStation;
 import dev.stowling.domain.PackingTrigger;
 import dev.stowling.domain.PickupRegion;
@@ -355,6 +357,226 @@ class ConfigValidatorTest {
 
         assertTrue(exception.getMessage().contains("waitForItems"));
         assertTrue(exception.getMessage().contains("true or false"));
+    }
+
+    @Test
+    void roundTripsIndependentPickupRulesWithoutWorkflowOrSharedRegion() {
+        StowlingConfig config = customPickupConfig(customPickupParameters(Map.of(
+                "idleSeconds", "0",
+                "classificationTiming", "AFTER_REGION",
+                "waitForItems", "true"
+        )), false);
+        ConfigLoader loader = new ConfigLoader();
+        Path output = tempDir.resolve("independent-pickup.json");
+
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(config));
+        loader.write(output, config);
+        StowlingConfig loaded = loader.load(output);
+
+        assertEquals(config, loaded);
+        assertEquals(5, loaded.schemaVersion());
+        assertTrue(loaded.pickupWorkflows().isEmpty());
+        assertTrue(loaded.pickupRegions().isEmpty());
+        Map<String, String> parameters = loaded.automationWorkflows()
+                .getFirst().steps().getFirst().parameters();
+        assertFalse(parameters.containsKey("workflowId"));
+        assertFalse(parameters.containsKey("regionId"));
+        assertEquals("cache", parameters.get("cacheIds"));
+        assertEquals("true", parameters.get("waitForItems"));
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(loaded));
+    }
+
+    @Test
+    void rejectsEveryMissingRequiredIndependentPickupParameter() {
+        for (String key : List.of(
+                "standbyCoordinateId", "firstCornerCoordinateId",
+                "secondCornerCoordinateId", "cacheIds"
+        )) {
+            Map<String, String> parameters = customPickupParameters(Map.of());
+            parameters.remove(key);
+
+            ConfigValidationException exception = assertThrows(
+                    ConfigValidationException.class,
+                    () -> ConfigValidator.requireValid(customPickupConfig(parameters, false))
+            );
+
+            assertTrue(exception.getMessage().contains(key));
+        }
+    }
+
+    @Test
+    void rejectsMixedLegacyAndInvalidIndependentPickupParameters() {
+        List<Map<String, String>> invalid = List.of(
+                Map.of("workflowId", "legacy-pickup"),
+                Map.of("regionId", "legacy-region"),
+                Map.of("idleSeconds", "-1"),
+                Map.of("idleSeconds", "1.5"),
+                Map.of("cacheIds", "cache,cache"),
+                Map.of("cacheIds", "cache,"),
+                Map.of("classificationTiming", "INVALID"),
+                Map.of("waitForItems", "TRUE")
+        );
+        for (Map<String, String> overrides : invalid) {
+            StowlingConfig config = customPickupConfig(customPickupParameters(overrides), false);
+
+            assertThrows(
+                    ConfigValidationException.class, () -> ConfigValidator.requireValid(config)
+            );
+        }
+    }
+
+    @Test
+    void rejectsUnknownCoordinatesAndNonCacheContainersForIndependentPickup() {
+        for (String key : List.of(
+                "standbyCoordinateId", "firstCornerCoordinateId", "secondCornerCoordinateId"
+        )) {
+            StowlingConfig config = customPickupConfig(
+                    customPickupParameters(Map.of(key, "missing-coordinate")), false
+            );
+            assertCustomPickupViolation(config, key, false);
+        }
+        for (String id : List.of("missing-cache", "overflow", "bulk-storage")) {
+            StowlingConfig config = customPickupConfig(
+                    customPickupParameters(Map.of("cacheIds", id)), false
+            );
+            assertCustomPickupViolation(config, "cacheIds", false);
+        }
+    }
+
+    @Test
+    void rejectsDeletingCoordinatesOrCachesReferencedOnlyByIndependentPickup() {
+        StowlingConfig config = customPickupConfig(customPickupParameters(Map.of()), false);
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(config));
+        Map<String, String> references = Map.of(
+                "standbyCoordinateId", "standby",
+                "firstCornerCoordinateId", "corner-one",
+                "secondCornerCoordinateId", "corner-two"
+        );
+        for (Map.Entry<String, String> reference : references.entrySet()) {
+            List<NamedCoordinate> remaining = config.coordinatePoints().stream()
+                    .filter(coordinate -> !coordinate.id().equals(reference.getValue()))
+                    .toList();
+            StowlingConfig deleted = withCustomResources(
+                    config, remaining, config.cacheContainers()
+            );
+            assertCustomPickupViolation(deleted, reference.getKey(), false);
+        }
+        StowlingConfig deletedCache = withCustomResources(
+                config, config.coordinatePoints(), List.of()
+        );
+        assertCustomPickupViolation(deletedCache, "cacheIds", false);
+    }
+
+    @Test
+    void rejectsIndependentPickupCrossDimensionCornersAndCaches() {
+        StowlingConfig config = customPickupConfig(customPickupParameters(Map.of()), false);
+        Map<String, String> references = Map.of(
+                "firstCornerCoordinateId", "corner-one",
+                "secondCornerCoordinateId", "corner-two",
+                "cacheIds", "cache-point"
+        );
+        for (Map.Entry<String, String> reference : references.entrySet()) {
+            List<NamedCoordinate> coordinates = config.coordinatePoints().stream()
+                    .map(coordinate -> coordinate.id().equals(reference.getValue())
+                            ? new NamedCoordinate(coordinate.id(), coordinate.name(),
+                                    "minecraft:the_nether", coordinate.position())
+                            : coordinate)
+                    .toList();
+            List<NamedCache> caches = config.cacheContainers();
+            if (reference.getKey().equals("cacheIds")) {
+                NamedCache cache = caches.getFirst();
+                caches = List.of(new NamedCache(
+                        cache.id(), cache.name(), cache.coordinateId(), "minecraft:the_nether",
+                        cache.position(), cache.type()
+                ));
+            }
+            StowlingConfig crossDimension = withCustomResources(config, coordinates, caches);
+            assertCustomPickupViolation(crossDimension, reference.getKey(), false);
+        }
+    }
+
+    @Test
+    void validatesAndRoundTripsIndependentPickupInInlineInterruption() {
+        StowlingConfig config = customPickupConfig(customPickupParameters(Map.of()), true);
+        ConfigLoader loader = new ConfigLoader();
+        Path output = tempDir.resolve("inline-independent-pickup.json");
+
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(config));
+        loader.write(output, config);
+        assertEquals(config, loader.load(output));
+    }
+
+    @Test
+    void rejectsDeletedAndNonCacheReferencesInInlineIndependentPickup() {
+        StowlingConfig config = customPickupConfig(customPickupParameters(Map.of()), true);
+        List<NamedCoordinate> remaining = config.coordinatePoints().stream()
+                .filter(coordinate -> !coordinate.id().equals("corner-two"))
+                .toList();
+        assertCustomPickupViolation(
+                withCustomResources(config, remaining, config.cacheContainers()),
+                "secondCornerCoordinateId", true
+        );
+        assertCustomPickupViolation(
+                withCustomResources(config, config.coordinatePoints(), List.of()), "cacheIds", true
+        );
+        assertCustomPickupViolation(customPickupConfig(
+                customPickupParameters(Map.of("cacheIds", "bulk-storage")), true
+        ), "cacheIds", true);
+    }
+
+    @Test
+    void rejectsMixedIncompleteAndCrossDimensionInlineIndependentPickup() {
+        for (Map<String, String> parameters : List.of(
+                customPickupParameters(Map.of("workflowId", "legacy")),
+                customPickupParameters(Map.of("regionId", "legacy-region")),
+                Map.of("standbyCoordinateId", "standby")
+        )) {
+            StowlingConfig config = customPickupConfig(parameters, true);
+            assertThrows(
+                    ConfigValidationException.class, () -> ConfigValidator.requireValid(config)
+            );
+        }
+        StowlingConfig config = customPickupConfig(customPickupParameters(Map.of()), true);
+        List<NamedCoordinate> coordinates = config.coordinatePoints().stream()
+                .map(coordinate -> coordinate.id().equals("corner-two")
+                        ? new NamedCoordinate(coordinate.id(), coordinate.name(),
+                                "minecraft:the_nether", coordinate.position())
+                        : coordinate)
+                .toList();
+        assertCustomPickupViolation(
+                withCustomResources(config, coordinates, config.cacheContainers()),
+                "secondCornerCoordinateId", true
+        );
+    }
+
+    @Test
+    void preservesLegacyPickupWorkflowAndRegionValidation() {
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(runPickupAutomationConfig(Map.of())));
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(runPickupAutomationConfig(
+                Map.of("waitForItems", "false")
+        )));
+        AutomationStep missingWorkflow = new AutomationStep(
+                "pickup", AutomationStepType.RUN_PICKUP, Map.of("waitForItems", "true")
+        );
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "legacy", "Legacy", List.of(missingWorkflow)
+        );
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.requireValid(
+                ConfigTestFixtures.configWithAutomation(List.of(workflow))
+        ));
+        StowlingConfig base = ConfigTestFixtures.config(List.of());
+        AutomationStep missingRegion = new AutomationStep(
+                "pickup", AutomationStepType.RUN_PICKUP, Map.of(
+                        "workflowId", base.pickupWorkflows().getFirst().id(),
+                        "regionId", "missing-region"
+                )
+        );
+        ConfigValidationException exception = assertThrows(ConfigValidationException.class,
+                () -> ConfigValidator.requireValid(ConfigTestFixtures.configWithAutomation(List.of(
+                        new AutomationWorkflow("legacy", "Legacy", List.of(missingRegion))
+                )))
+        );
+        assertTrue(exception.getMessage().contains("does not contain region"));
     }
 
     @Test
@@ -731,6 +953,73 @@ class ConfigValidatorTest {
                 workflow.completionIdleDelay(),
                 settings
         );
+    }
+
+    private static Map<String, String> customPickupParameters(Map<String, String> overrides) {
+        Map<String, String> parameters = new HashMap<>(Map.of(
+                "standbyCoordinateId", "standby",
+                "firstCornerCoordinateId", "corner-one",
+                "secondCornerCoordinateId", "corner-two",
+                "cacheIds", "cache"
+        ));
+        parameters.putAll(overrides);
+        return parameters;
+    }
+
+    private static StowlingConfig customPickupConfig(
+            Map<String, String> parameters, boolean inline
+    ) {
+        String dimension = "minecraft:overworld";
+        List<NamedCoordinate> coordinates = List.of(
+                new NamedCoordinate("standby", "Standby", dimension,
+                        new BlockPosition(20, 64, 0)),
+                new NamedCoordinate("corner-one", "Corner one", dimension,
+                        new BlockPosition(8, 70, 4)),
+                new NamedCoordinate("corner-two", "Corner two", dimension,
+                        new BlockPosition(-8, 60, -4)),
+                new NamedCoordinate("cache-point", "Cache point", dimension,
+                        new BlockPosition(8, 64, 0))
+        );
+        NamedCache cache = new NamedCache(
+                "cache", "Cache", "cache-point", dimension, new BlockPosition(8, 64, 0),
+                ContainerType.CHEST
+        );
+        AutomationStep pickup = new AutomationStep("pickup", AutomationStepType.RUN_PICKUP,
+                parameters);
+        TaskSettings settings = inline
+                ? new TaskSettings(TaskPriority.MEDIUM, new TaskTrigger(), false,
+                        new TaskInterruption(InterruptionKind.INLINE, List.of(pickup), null))
+                : taskSettings(new TaskTrigger());
+        AutomationWorkflow workflow = new AutomationWorkflow(
+                "independent-pickup", "Independent pickup",
+                inline ? List.of(waitStep("wait")) : List.of(pickup), settings
+        );
+        return new StowlingConfig(
+                5, coordinates, List.of(), List.of(cache), List.of(), List.of(workflow),
+                List.of(ConfigTestFixtures.route("storage", List.of("minecraft:stone"), 1)),
+                List.of(), List.of(), ConfigTestFixtures.container("overflow", 24)
+        );
+    }
+
+    private static StowlingConfig withCustomResources(
+            StowlingConfig config, List<NamedCoordinate> coordinates, List<NamedCache> caches
+    ) {
+        return new StowlingConfig(
+                config.schemaVersion(), coordinates, config.pickupRegions(), caches,
+                config.pickupWorkflows(), config.automationWorkflows(), config.storageRoutes(),
+                config.packingStations(), config.auditSchedules(), config.overflowContainer()
+        );
+    }
+
+    private static void assertCustomPickupViolation(
+            StowlingConfig config, String key, boolean inline
+    ) {
+        String path = inline
+                ? "automationWorkflows[0].settings.interruption.steps[0].parameters"
+                : "automationWorkflows[0].steps[0].parameters";
+        assertTrue(ConfigValidator.validate(config).stream().anyMatch(violation ->
+                violation.path().equals(path) && violation.message().contains(key)
+        ), "missing direct reference violation for " + key);
     }
 
     private static AutomationStep waitStep(String id) {

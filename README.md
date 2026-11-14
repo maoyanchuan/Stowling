@@ -184,12 +184,22 @@ Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four
 - `AFTER_COMPLETION`: waits for the positive `intervalSeconds` delay after a successful
   run, then queues the task.
 
-The **Run pickup** step has an optional **Wait for items before pickup** condition
-(`waitForItems`, default `false`). Its optional pickup scope (`regionId`) limits execution
-and observation to one region; leaving it empty selects all regions in the chosen workflow.
-While waiting, the step observes client-visible drops once per second without navigating or
-loading chunks. Unobservable regions show a waiting-for-visibility status. This wait belongs
-to the running task and can be safely interrupted; it does not create a periodic child task.
+New **Run pickup** steps define their own rules, without selecting a pickup workflow:
+choose a named standby coordinate, two named corner coordinates, and one or more cache
+containers. The two corners define an inclusive cuboid in any order; all selected resources
+must be in the same dimension. `idleSeconds` (default `2`) ends the round after the region
+has no items for that duration. Classification uses existing storage routes and overflow
+handling; its timing is independently configurable in the step.
+
+The optional **Wait for items before pickup** condition (`waitForItems`, default `false`)
+observes drops inside that cuboid once per second before starting. It never navigates or
+loads chunks while waiting; unobservable regions show a waiting-for-visibility status.
+Waiting belongs to the running task and can be safely interrupted. Each pickup body is
+finite, and repeated execution is controlled by the parent task trigger.
+
+Legacy `workflowId`/`regionId` steps remain readable and runnable, but the new editor no
+longer offers workflow selection. An explicit conversion action opens the independent
+rule editor without silently changing existing task definitions.
 
 Legacy `ITEMS_PRESENT` task triggers remain supported and are shown explicitly as legacy
 settings when editing existing configurations; new tasks use the pickup step condition.

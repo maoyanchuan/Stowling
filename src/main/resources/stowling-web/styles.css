@@ -1511,6 +1511,75 @@ select[aria-invalid="true"],
     border-top: 1px dashed var(--line);
 }
 
+.pickup-step-fields {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+}
+
+.step-fields > .pickup-step-hint,
+.step-fields > .pickup-step-summary,
+.step-fields > .pickup-step-legacy,
+.step-fields > .step-containers-field {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.pickup-step-hint,
+.pickup-step-summary,
+.pickup-step-legacy {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.pickup-step-summary {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.pickup-step-legacy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.8rem;
+}
+
+.pickup-step-legacy p {
+    flex: 1 1 250px;
+}
+
+.step-container-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 0.4rem;
+}
+
+.step-fields .step-container-options .check-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.step-fields input[type="checkbox"] {
+    width: auto;
+    flex: 0 0 auto;
+}
+
+.step-creation-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 0.7rem;
+    margin-bottom: 0.8rem;
+}
+
+.step-creation-options .compact-help {
+    display: block;
+    margin-top: 0.3rem;
+}
+
 .step-fields .editor-field,
 .workflow-meta .editor-field {
     min-width: 0;

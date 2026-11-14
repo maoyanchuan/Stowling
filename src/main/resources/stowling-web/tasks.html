@@ -27,6 +27,28 @@
         </div>
     </header>
 
+    <dialog id="new-task-dialog" class="panel" aria-labelledby="new-task-title">
+        <div class="step-heading">
+            <div>
+                <h3 id="new-task-title">新增任务</h3>
+                <p>选择起点；两种入口均使用自定义任务，不创建旧拾取流程。</p>
+            </div>
+        </div>
+        <div class="step-creation-options">
+            <button id="new-custom-task-button" class="primary" type="button">
+                自定义任务
+                <span class="compact-help">从空白步骤开始，自由组合规则</span>
+            </button>
+            <button id="new-pickup-task-button" class="secondary" type="button">
+                拾取任务
+                <span class="compact-help">预置拾取步骤，直接选择坐标、角点和缓存</span>
+            </button>
+        </div>
+        <div class="action-row">
+            <button id="cancel-new-task-button" class="ghost compact" type="button">取消</button>
+        </div>
+    </dialog>
+
     <main>
         <div id="auth-shell"></div>
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
@@ -36,7 +58,7 @@
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">任务库</p>
-                        <h2 id="library-title">自动拾取与自定义任务</h2>
+                        <h2 id="library-title">自定义任务与拾取规则</h2>
                         <p class="muted section-help">
                             每个任务独立读取、保存和删除。筛选只影响列表，不改变配置。
                         </p>
@@ -57,7 +79,7 @@
                         <label for="task-filter-kind">类型筛选</label>
                         <select id="task-filter-kind">
                             <option value="">全部类型</option>
-                            <option value="PICKUP">自动拾取</option>
+                            <option value="PICKUP">旧拾取任务（兼容）</option>
                             <option value="AUTOMATION">自定义任务</option>
                         </select>
                     </div>
@@ -90,7 +112,6 @@
                         <div class="editor-field">
                             <label for="task-kind">任务类型</label>
                             <select id="task-kind">
-                                <option value="PICKUP">自动拾取</option>
                                 <option value="AUTOMATION">自定义任务</option>
                             </select>
                         </div>
@@ -196,7 +217,7 @@
                              aria-labelledby="pickup-task-title">
                         <div class="step-heading">
                             <div>
-                                <h3 id="pickup-task-title">拾取任务参数</h3>
+                                <h3 id="pickup-task-title">旧拾取任务参数（兼容编辑）</h3>
                                 <p>区域和缓存引用任务页共享资源</p>
                             </div>
                         </div>
@@ -252,7 +273,7 @@
                         <div class="step-heading">
                             <div>
                                 <h3 id="automation-task-title">自动化步骤</h3>
-                                <p>步骤模块和字段完全来自后端模块描述</p>
+                                <p>添加拾取步骤即可直接选择命名坐标、两个范围角点和缓存。</p>
                             </div>
                             <button id="add-task-step-button" class="primary compact"
                                     type="button">添加步骤</button>
@@ -315,7 +336,7 @@
                         <div class="config-column-heading">
                             <div>
                                 <h3 id="cache-title">缓存容器</h3>
-                                <p>供拾取任务选择</p>
+                                <p>供自定义拾取步骤和旧任务选择</p>
                             </div>
                             <button id="add-cache-button"
                                     class="secondary compact" type="button">新增缓存</button>

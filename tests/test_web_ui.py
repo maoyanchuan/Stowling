@@ -244,6 +244,25 @@ def test_task_modules_and_parameters_come_from_descriptors() -> None:
         in TASKS
     assert "function appendParameterAliases(editor, aliases)" in TASKS
     assert "function renderModuleCatalog()" in TASKS
+    assert "Array.isArray(parameter?.options)" in TASKS
+    assert 'definition.kind === "choice"' in TASKS
+    assert 'definition.kind === "containers"' in TASKS
+    assert 'definition.kind === "nonnegative-integer"' in TASKS
+
+
+def test_new_task_entry_prefers_direct_rules_and_keeps_legacy_editing() -> None:
+    html = PAGES["tasks.html"]
+    assert 'id="new-task-dialog"' in html
+    assert 'id="new-custom-task-button"' in html
+    assert 'id="new-pickup-task-button"' in html
+    assert "预置拾取步骤，直接选择坐标、角点和缓存" in html
+    selector = html.split('<select id="task-kind">', 1)[1].split("</select>", 1)[0]
+    assert 'value="AUTOMATION"' in selector
+    assert 'value="PICKUP"' not in selector
+    assert 'state.draft = defaultDefinition("AUTOMATION");' in TASKS
+    assert 'type: "RUN_PICKUP"' in TASKS
+    assert "function renderTaskKindOptions(kind)" in TASKS
+    assert "旧拾取任务（兼容编辑）" in TASKS
 
 
 def test_pickup_and_automation_task_shapes_match_contract() -> None:

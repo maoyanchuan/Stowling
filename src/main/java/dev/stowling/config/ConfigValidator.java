@@ -2,6 +2,7 @@ package dev.stowling.config;
 
 import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationWorkflow;
+import dev.stowling.automation.CustomPickupRules;
 import dev.stowling.domain.AuditSchedule;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.CuboidPickupShape;
@@ -27,7 +28,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 public final class ConfigValidator {
@@ -108,7 +111,8 @@ public final class ConfigValidator {
                 coordinates,
                 containers,
                 config.pickupWorkflows(),
-                config.automationWorkflows()
+                config.automationWorkflows(),
+                config
         );
         validateTaskSettings(
                 violations,
@@ -116,7 +120,8 @@ public final class ConfigValidator {
                 coordinates,
                 containers,
                 config.pickupWorkflows(),
-                config.automationWorkflows()
+                config.automationWorkflows(),
+                config
         );
         return List.copyOf(violations);
     }
@@ -460,7 +465,8 @@ public final class ConfigValidator {
             Map<String, NamedCoordinate> coordinates,
             Map<String, ContainerRef> containers,
             List<PickupWorkflow> pickupWorkflows,
-            List<AutomationWorkflow> workflows
+            List<AutomationWorkflow> workflows,
+            StowlingConfig config
     ) {
         Map<String, PickupWorkflow> pickupsById = new HashMap<>();
         for (PickupWorkflow pickupWorkflow : pickupWorkflows) {
@@ -486,7 +492,8 @@ public final class ConfigValidator {
                         stepPath,
                         coordinates,
                         containers,
-                        pickupsById
+                        pickupsById,
+                        config
                 );
             }
         }
@@ -498,7 +505,8 @@ public final class ConfigValidator {
             Map<String, NamedCoordinate> coordinates,
             Map<String, ContainerRef> containers,
             List<PickupWorkflow> pickups,
-            List<AutomationWorkflow> automations
+            List<AutomationWorkflow> automations,
+            StowlingConfig config
     ) {
         Map<String, PickupWorkflow> pickupsById = new HashMap<>();
         for (PickupWorkflow pickup : pickups) {
@@ -521,7 +529,8 @@ public final class ConfigValidator {
                     regions,
                     coordinates,
                     containers,
-                    pickupsById
+                    pickupsById,
+                    config
             );
         }
         for (int index = 0; index < automations.size(); index++) {
@@ -539,7 +548,8 @@ public final class ConfigValidator {
                     regions,
                     coordinates,
                     containers,
-                    pickupsById
+                    pickupsById,
+                    config
             );
         }
         validateTaskReferences(
@@ -563,7 +573,8 @@ public final class ConfigValidator {
             Map<String, PickupRegion> regions,
             Map<String, NamedCoordinate> coordinates,
             Map<String, ContainerRef> containers,
-            Map<String, PickupWorkflow> pickupsById
+            Map<String, PickupWorkflow> pickupsById,
+            StowlingConfig config
     ) {
         validateTrigger(
                 violations,
@@ -578,7 +589,8 @@ public final class ConfigValidator {
                 path + ".interruption",
                 coordinates,
                 containers,
-                pickupsById
+                pickupsById,
+                config
         );
     }
 
@@ -731,7 +743,8 @@ public final class ConfigValidator {
             String path,
             Map<String, NamedCoordinate> coordinates,
             Map<String, ContainerRef> containers,
-            Map<String, PickupWorkflow> pickupsById
+            Map<String, PickupWorkflow> pickupsById,
+            StowlingConfig config
     ) {
         if (interruption.kind() != InterruptionKind.INLINE
                 && !interruption.steps().isEmpty()) {
@@ -757,7 +770,8 @@ public final class ConfigValidator {
                     path + ".steps",
                     coordinates,
                     containers,
-                    pickupsById
+                    pickupsById,
+                    config
             );
             case TASK_REFERENCE -> {
                 if (interruption.taskId() == null) {
@@ -777,7 +791,8 @@ public final class ConfigValidator {
             String path,
             Map<String, NamedCoordinate> coordinates,
             Map<String, ContainerRef> containers,
-            Map<String, PickupWorkflow> pickupsById
+            Map<String, PickupWorkflow> pickupsById,
+            StowlingConfig config
     ) {
         if (steps.isEmpty()) {
             violations.add(new ConfigViolation(
@@ -798,7 +813,8 @@ public final class ConfigValidator {
                     stepPath,
                     coordinates,
                     containers,
-                    pickupsById
+                    pickupsById,
+                    config
             );
         }
     }
@@ -904,7 +920,8 @@ public final class ConfigValidator {
             String path,
             Map<String, NamedCoordinate> coordinates,
             Map<String, ContainerRef> containers,
-            Map<String, PickupWorkflow> pickupsById
+            Map<String, PickupWorkflow> pickupsById,
+            StowlingConfig config
     ) {
         switch (step.type()) {
             case NAVIGATE -> {
@@ -926,10 +943,15 @@ public final class ConfigValidator {
                         violations,
                         step,
                         path,
-                        Set.of("workflowId"),
-                        Set.of("regionId", "waitForItems")
+                        Set.of(),
+                        Set.of(
+                                "workflowId", "regionId", "waitForItems",
+                                "standbyCoordinateId", "firstCornerCoordinateId",
+                                "secondCornerCoordinateId", "cacheIds", "idleSeconds",
+                                "classificationTiming"
+                        )
                 );
-                validatePickupParameters(violations, step, path, pickupsById);
+                validatePickupParameters(violations, step, path, pickupsById, config);
             }
             case TAKE_ITEMS, PUT_ITEMS -> {
                 requireParameters(
@@ -1071,9 +1093,25 @@ public final class ConfigValidator {
             List<ConfigViolation> violations,
             AutomationStep step,
             String path,
-            Map<String, PickupWorkflow> pickupsById
+            Map<String, PickupWorkflow> pickupsById,
+            StowlingConfig config
     ) {
         validateBooleanParameter(violations, step, path, "waitForItems");
+        try {
+            Optional<CustomPickupRules> rules = CustomPickupRules.fromParameters(
+                    step.parameters()
+            );
+            if (rules.isPresent()) {
+                rules.orElseThrow().plan(new UUID(0L, 0L), config);
+                return;
+            }
+        } catch (IllegalArgumentException exception) {
+            violations.add(new ConfigViolation(path + ".parameters", exception.getMessage()));
+            return;
+        }
+        requireParameters(violations, step, path, Set.of("workflowId"), Set.of(
+                "regionId", "waitForItems"
+        ));
         String workflowId = step.parameter("workflowId");
         if (workflowId == null) {
             return;

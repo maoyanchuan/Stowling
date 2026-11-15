@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.ModuleDefinition;
 import dev.stowling.v2.model.ModuleParameter;
+import dev.stowling.v2.model.TaskModuleLevel;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -46,6 +47,10 @@ class TaskModuleCatalogTest {
         );
         assertEquals("coordinate-point", coordinate.kind());
         assertTrue(coordinate.required());
+        assertEquals(
+                TaskModuleLevel.BASIC,
+                modules.get(ConfigValidator.MOVE_TO_COORDINATE).level()
+        );
 
         ModuleParameter region = moduleParameter(
                 modules.get(ConfigValidator.SCAN_CONTAINERS_IN_REGION),
@@ -89,6 +94,7 @@ class TaskModuleCatalogTest {
         assertEquals("18", threshold.defaultValue());
 
         ModuleDefinition sort = modules.get(ConfigValidator.SORT_CACHE_ITEMS);
+        assertEquals(TaskModuleLevel.COMPOSITE, sort.level());
         ModuleParameter cacheRegion = moduleParameter(
                 sort,
                 ConfigValidator.CACHE_REGION_ID

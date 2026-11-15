@@ -43,8 +43,32 @@
         return {
             id: "",
             name: "新任务",
-            steps: [newStep(modules[0])]
+            steps: [newStep(defaultModule(modules))]
         };
+    }
+
+    /**
+     * @param {Array<object>} modules
+     * @returns {object | undefined}
+     */
+    function defaultModule(modules) {
+        return modules.find((module) => module?.level === "BASIC")
+            || modules[0];
+    }
+
+    /**
+     * @param {object} task
+     * @param {Array<object>} modules
+     * @returns {string}
+     */
+    function taskLevel(task, modules) {
+        if (!Array.isArray(task?.steps) || task.steps.length !== 1) {
+            return "COMPOSITE";
+        }
+        const module = modules.find(
+            (candidate) => candidate.id === task.steps[0].moduleId
+        );
+        return module?.level === "BASIC" ? "BASIC" : "COMPOSITE";
     }
 
     /**
@@ -126,7 +150,9 @@
 
     window.StowlingTaskModel = Object.freeze({
         newStep,
+        defaultModule,
         newTask,
+        taskLevel,
         cacheTask,
         sortTask,
         taskFromModules,

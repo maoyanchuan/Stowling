@@ -3,6 +3,7 @@ package dev.stowling.v2.module;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.ModuleDefinition;
 import dev.stowling.v2.model.ModuleParameter;
+import dev.stowling.v2.model.TaskModuleLevel;
 import java.util.List;
 
 public final class TaskModuleCatalog {
@@ -11,6 +12,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.MOVE_TO_COORDINATE,
                     "移动到坐标",
                     "使用 Baritone 前往一个已保存的坐标点。",
+                    TaskModuleLevel.BASIC,
                     List.of(new ModuleParameter(
                             ConfigValidator.COORDINATE_ID,
                             "目标坐标",
@@ -24,6 +26,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
                     "等待掉落物",
                     "等待坐标搜索半径内出现掉落物。",
+                    TaskModuleLevel.BASIC,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.COORDINATE_ID,
@@ -56,6 +59,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.COLLECT_DROPPED_ITEMS,
                     "拾取掉落物",
                     "前往坐标半径内的掉落物并等待其被拾取。",
+                    TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.COORDINATE_ID,
@@ -88,6 +92,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
                     "收集区域掉落物",
                     "收集指定区域内的掉落物，并记录到当前任务运行中。",
+                    TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.REGION_ID,
@@ -120,6 +125,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                     "扫描区域容器",
                     "扫描指定区域内的容器并生成容器列表。",
+                    TaskModuleLevel.BASIC,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.REGION_ID,
@@ -152,6 +158,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                     "存入区域容器",
                     "使用上一次容器扫描结果存入本次拾取的物品。",
+                    TaskModuleLevel.BASIC,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.SCAN_SOURCE,
@@ -182,6 +189,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.MATCH_CONTAINER_CATEGORIES,
                     "识别容器分类",
                     "读取上一次扫描结果，并按附近展示框中的物品标记箱子的分类。",
+                    TaskModuleLevel.BASIC,
                     List.of(new ModuleParameter(
                             ConfigValidator.SCAN_SOURCE,
                             "扫描结果",
@@ -196,6 +204,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.AUTO_EAT_AT_COORDINATE,
                     "自动进食",
                     "饱食度低于阈值时前往指定坐标，并使用快捷栏或副手中的食物。",
+                    TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.COORDINATE_ID,
@@ -228,6 +237,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.SORT_CACHE_ITEMS,
                     "缓存物品分类入库",
                     "从缓存区域取出有目标分类的物品，并精确存入对应容器。",
+                    TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.CACHE_REGION_ID,
@@ -268,6 +278,7 @@ public final class TaskModuleCatalog {
                     "按分类区入库",
                     "使用分类区自动识别、容器缓存和例外规则，把缓存物品存入"
                             + "对应储存区。",
+                    TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.CACHE_REGION_ID,
@@ -306,6 +317,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
                     "刷新分类容器缓存",
                     "读取分类区识别箱或木桶的物品槽位并保存缓存，不移动样本物品。",
+                    TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.CATEGORY_ZONE_ID,

@@ -95,12 +95,47 @@
             elements.list.append(Stowling.emptyState("尚未创建任务"));
             return;
         }
-        for (const task of state.tasks) {
-            const button = Stowling.element("button", "task-card task-select", task.name);
-            button.type = "button";
-            button.classList.toggle("active", task.id === state.selectedId);
-            button.addEventListener("click", () => selectTask(task));
-            elements.list.append(button);
+        const groups = [
+            ["BASIC", "基础任务"],
+            ["COMPOSITE", "复合任务"]
+        ];
+        for (const [level, label] of groups) {
+            const tasks = state.tasks.filter(
+                (task) => Model.taskLevel(task, state.modules) === level
+            );
+            const group = Stowling.element("section", "task-group");
+            const heading = Stowling.element("div", "task-group-heading");
+            heading.append(
+                Stowling.element("strong", "", label),
+                Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    `${tasks.length} 个`
+                )
+            );
+            group.append(heading);
+            if (tasks.length === 0) {
+                group.append(Stowling.element(
+                    "p",
+                    "muted compact-help",
+                    "暂无任务"
+                ));
+            }
+            for (const task of tasks) {
+                const button = Stowling.element(
+                    "button",
+                    "task-card task-select",
+                    task.name
+                );
+                button.type = "button";
+                button.classList.toggle(
+                    "active",
+                    task.id === state.selectedId
+                );
+                button.addEventListener("click", () => selectTask(task));
+                group.append(button);
+            }
+            elements.list.append(group);
         }
     }
 
@@ -116,29 +151,63 @@
             );
             return;
         }
-        for (const module of state.modules) {
-            const card = Stowling.element("article", "module-card");
-            const parameters = Array.isArray(module.parameters)
-                ? module.parameters
-                : [];
-            const parameterText = parameters.length === 0
-                ? "无需参数"
-                : parameters.map((parameter) => {
-                    const required = parameter.required ? "（必填）" : "";
-                    return `${parameter.label}${required}`;
-                }).join("、");
-            card.append(
-                Stowling.element("code", "", module.id),
-                Stowling.element("strong", "", module.name),
-                Stowling.element("p", "", module.description || ""),
+        const groups = [
+            ["BASIC", "基础模块"],
+            ["COMPOSITE", "复合模块"]
+        ];
+        for (const [level, label] of groups) {
+            const modules = state.modules.filter(
+                (module) => module.level === level
+            );
+            const group = Stowling.element("section", "module-group");
+            const heading = Stowling.element("div", "task-group-heading");
+            heading.append(
+                Stowling.element("strong", "", label),
                 Stowling.element(
-                    "p",
-                    "compact-help",
-                    `参数：${parameterText}`
+                    "span",
+                    "muted compact-help",
+                    `${modules.length} 个`
                 )
             );
-            elements.moduleCatalog.append(card);
+            group.append(heading);
+            for (const module of modules) {
+                group.append(createModuleCard(module));
+            }
+            elements.moduleCatalog.append(group);
         }
+    }
+
+    /**
+     * @param {object} module
+     * @returns {HTMLElement}
+     */
+    function createModuleCard(module) {
+        const card = Stowling.element("article", "module-card");
+        const parameters = Array.isArray(module.parameters)
+            ? module.parameters
+            : [];
+        const parameterText = parameters.length === 0
+            ? "无需参数"
+            : parameters.map((parameter) => {
+                const required = parameter.required ? "（必填）" : "";
+                return `${parameter.label}${required}`;
+            }).join("、");
+        card.append(
+            Stowling.element("code", "", module.id),
+            Stowling.element("strong", "", module.name),
+            Stowling.element(
+                "span",
+                "module-level-tag",
+                module.level === "BASIC" ? "基础" : "复合"
+            ),
+            Stowling.element("p", "", module.description || ""),
+            Stowling.element(
+                "p",
+                "compact-help",
+                `参数：${parameterText}`
+            )
+        );
+        return card;
     }
 
     /**
@@ -163,8 +232,22 @@
     function renderRunControls() {
         const current = state.runTaskId;
         elements.runSelect.replaceChildren(new Option("请选择任务", ""));
-        for (const task of state.tasks) {
-            elements.runSelect.append(new Option(task.name, task.id));
+        const groups = [
+            ["BASIC", "基础任务"],
+            ["COMPOSITE", "复合任务"]
+        ];
+        for (const [level, label] of groups) {
+            const group = document.createElement("optgroup");
+            group.label = label;
+            for (const task of state.tasks.filter(
+                (candidate) => Model.taskLevel(candidate, state.modules)
+                    === level
+            )) {
+                group.append(new Option(task.name, task.id));
+            }
+            if (group.children.length > 0) {
+                elements.runSelect.append(group);
+            }
         }
         const preserved = state.tasks.some((task) => task.id === current)
             ? current
@@ -616,7 +699,9 @@
         markDirty();
     });
     elements.addStep.addEventListener("click", () => {
-        state.draft.steps.push(Model.newStep(state.modules[0]));
+        state.draft.steps.push(Model.newStep(
+            Model.defaultModule(state.modules)
+        ));
         markDirty(true);
     });
     elements.form.addEventListener("submit", (event) => {

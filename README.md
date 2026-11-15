@@ -10,6 +10,9 @@ by Baritone.
   arrival-radius fields.
 - Regions contain a name and two full X/Y/Z corner points.
 - Tasks contain a name and one or more ordered module steps.
+- Module metadata marks each step as `BASIC` or `COMPOSITE`. A saved task with
+  exactly one basic step appears under basic tasks; all other tasks appear under
+  composite tasks.
 - Task modules cover movement, dropped-item collection, region collection,
   container scanning, category identification, cached-item sorting, and
   depositing.
@@ -50,6 +53,9 @@ crafting, and scheduling APIs are intentionally not compatible.
 
 The backend module catalog is available at `GET /v1/task-modules`; the task
 editor builds its controls from that catalog.
+
+The task list, run selector, module catalog, and step module selector are split
+into basic and composite groups without changing existing task configuration.
 
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
 - `WAIT_FOR_DROPPED_ITEMS` waits until a matching dropped item appears in the

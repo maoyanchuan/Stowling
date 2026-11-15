@@ -108,6 +108,8 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "/v1/task-modules" in tasks
     assert "module.parameters" in editor
     assert "parameter.kind" in editor
+    assert "基础模块" in editor
+    assert "复合模块" in editor
     assert "coordinate-point" in editor
     assert "region-point" in editor
     assert "integer" in editor
@@ -119,6 +121,8 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "coordinateId" not in model
     assert "crypto.randomUUID" not in model
     assert "payloadStep" in model
+    assert "defaultModule" in model
+    assert "taskLevel" in model
 
 
 def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
@@ -131,6 +135,9 @@ def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
     assert "state.modules" in tasks
     assert "module.description" in tasks
     assert "parameter.label" in tasks
+    assert "基础任务" in tasks
+    assert "复合任务" in tasks
+    assert "module-group" in tasks
 
 
 def test_task_editor_loads_regions_and_builds_contract_driven_controls() -> None:

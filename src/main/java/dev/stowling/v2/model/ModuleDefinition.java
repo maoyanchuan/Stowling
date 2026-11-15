@@ -7,13 +7,30 @@ public record ModuleDefinition(
         String id,
         String name,
         String description,
+        TaskModuleLevel level,
         List<ModuleParameter> parameters
 ) {
     public ModuleDefinition {
         id = requireText(id, "id");
         name = requireText(name, "name");
         description = Objects.requireNonNull(description, "description").trim();
+        level = Objects.requireNonNull(level, "level");
         parameters = List.copyOf(Objects.requireNonNull(parameters, "parameters"));
+    }
+
+    public ModuleDefinition(
+            String id,
+            String name,
+            String description,
+            List<ModuleParameter> parameters
+    ) {
+        this(
+                id,
+                name,
+                description,
+                TaskModuleLevel.BASIC,
+                parameters
+        );
     }
 
     private static String requireText(String value, String field) {

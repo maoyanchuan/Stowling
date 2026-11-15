@@ -20,7 +20,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>任务管理</h1>
-                <p>组合拾取、容器扫描、存入和移动模块并手动运行</p>
+                <p>分开管理基础任务与多步骤复合任务</p>
             </div>
         </div>
         <div class="connection-state">
@@ -70,7 +70,9 @@
                     <div class="step-heading">
                         <div>
                             <h3>模块步骤</h3>
-                            <p class="muted compact-help">按顺序执行，可添加、修改、删除和排序。</p>
+                            <p class="muted compact-help">
+                                基础模块执行单个动作，复合模块封装完整流程。
+                            </p>
                         </div>
                         <button id="add-step-button" class="secondary compact"
                                 type="button">添加步骤</button>
@@ -96,7 +98,7 @@
                         <p class="eyebrow">模块目录</p>
                         <h2 id="task-module-title">可用模块</h2>
                         <p class="muted section-help">
-                            步骤编辑器中的模块和参数字段由后端模块目录自动生成。
+                            基础模块是单个动作；复合模块会组合导航、交互和状态检查。
                         </p>
                     </div>
                     <span id="task-module-count" class="loopback-tag">--</span>

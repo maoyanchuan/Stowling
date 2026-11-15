@@ -102,8 +102,21 @@
      */
     function moduleSelect(step, modules, changed) {
         const select = document.createElement("select");
-        for (const module of modules) {
-            select.append(new Option(module.name, module.id));
+        const groups = [
+            ["BASIC", "基础模块"],
+            ["COMPOSITE", "复合模块"]
+        ];
+        for (const [level, label] of groups) {
+            const group = document.createElement("optgroup");
+            group.label = label;
+            for (const module of modules.filter(
+                (candidate) => candidate.level === level
+            )) {
+                group.append(new Option(module.name, module.id));
+            }
+            if (group.children.length > 0) {
+                select.append(group);
+            }
         }
         select.value = step.moduleId;
         select.addEventListener("change", () => {

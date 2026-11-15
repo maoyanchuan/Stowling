@@ -1597,6 +1597,45 @@ select[aria-invalid="true"] {
     gap: 0.65rem;
 }
 
+.module-group {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.65rem;
+}
+
+.module-group > .task-group-heading {
+    grid-column: 1 / -1;
+}
+
+.task-group {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.task-group-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    margin: 0.25rem 0 0.1rem;
+}
+
+.task-group-heading strong {
+    font-size: 0.78rem;
+}
+
+.module-level-tag {
+    display: inline-flex;
+    width: fit-content;
+    margin-bottom: 0.45rem;
+    padding: 0.15rem 0.42rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.64rem;
+}
+
 .module-card {
     min-width: 0;
     padding: 0.85rem;

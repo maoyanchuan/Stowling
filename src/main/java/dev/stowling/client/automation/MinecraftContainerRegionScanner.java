@@ -8,6 +8,7 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -20,7 +21,9 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.Vec3;
 
 public final class MinecraftContainerRegionScanner
@@ -81,6 +84,7 @@ public final class MinecraftContainerRegionScanner
         }
         Set<String> types = normalizedTypes(containerTypes);
         List<ContainerTarget> found = new ArrayList<>();
+        Map<BlockPosition, BlockPosition> chestPartners = new HashMap<>();
         try {
             for (long x = minX; x <= maxX; x++) {
                 for (long y = minY; y <= maxY; y++) {
@@ -101,10 +105,22 @@ public final class MinecraftContainerRegionScanner
                                 state.getBlock()
                         ).toString();
                         if (matchesType(id, types)) {
-                            found.add(new ContainerTarget(
+                            ContainerTarget target = new ContainerTarget(
                                     new BlockPosition(blockX, blockY, blockZ),
                                     id
-                            ));
+                            );
+                            found.add(target);
+                            if (isChest(id)
+                                    && state.getValue(ChestBlock.TYPE)
+                                    != ChestType.SINGLE) {
+                                BlockPosition partner = blockPosition(
+                                        ChestBlock.getConnectedBlockPos(
+                                                position,
+                                                state
+                                        )
+                                );
+                                chestPartners.put(target.position(), partner);
+                            }
                         }
                     }
                 }
@@ -114,7 +130,10 @@ public final class MinecraftContainerRegionScanner
                     "扫描区域时发生错误: " + exception.getMessage()
             );
         }
-        List<ContainerTarget> containers = collapseDoubleChestPairs(found);
+        List<ContainerTarget> containers = collapseDoubleChestPairs(
+                found,
+                chestPartners
+        );
         Vec3 playerPosition = player.position();
         containers.sort(Comparator.comparingDouble(target -> distanceSquared(
                 target.position(),
@@ -124,7 +143,8 @@ public final class MinecraftContainerRegionScanner
     }
 
     static List<ContainerTarget> collapseDoubleChestPairs(
-            List<ContainerTarget> containers
+            List<ContainerTarget> containers,
+            Map<BlockPosition, BlockPosition> chestPartners
     ) {
         Map<BlockPosition, ContainerTarget> byPosition = new LinkedHashMap<>();
         for (ContainerTarget container : containers) {
@@ -140,17 +160,10 @@ public final class MinecraftContainerRegionScanner
             if (collapsed.contains(container.position())) {
                 continue;
             }
-            BlockPosition partnerPosition = onlyChestNeighbor(
-                    container,
-                    byPosition
+            BlockPosition partnerPosition = chestPartners.get(
+                    container.position()
             );
             if (partnerPosition == null) {
-                result.add(container);
-                continue;
-            }
-            ContainerTarget partner = byPosition.get(partnerPosition);
-            BlockPosition reciprocal = onlyChestNeighbor(partner, byPosition);
-            if (!container.position().equals(reciprocal)) {
                 result.add(container);
                 continue;
             }
@@ -158,6 +171,14 @@ public final class MinecraftContainerRegionScanner
                     container.position(),
                     partnerPosition
             ) <= 0 ? container.position() : partnerPosition;
+            if (!byPosition.containsKey(representative)) {
+                result.add(container);
+                continue;
+            }
+            if (!container.position().equals(representative)) {
+                collapsed.add(container.position());
+                continue;
+            }
             collapsed.add(container.position());
             collapsed.add(partnerPosition);
             result.add(byPosition.get(representative));
@@ -165,32 +186,12 @@ public final class MinecraftContainerRegionScanner
         return result;
     }
 
-    private static BlockPosition onlyChestNeighbor(
-            ContainerTarget container,
-            Map<BlockPosition, ContainerTarget> byPosition
-    ) {
-        List<BlockPosition> neighbors = new ArrayList<>();
-        BlockPosition position = container.position();
-        for (int deltaX : new int[]{-1, 1}) {
-            BlockPosition neighbor = position.offset(deltaX, 0, 0);
-            if (sameTypeChest(container, byPosition.get(neighbor))) {
-                neighbors.add(neighbor);
-            }
-        }
-        for (int deltaZ : new int[]{-1, 1}) {
-            BlockPosition neighbor = position.offset(0, 0, deltaZ);
-            if (sameTypeChest(container, byPosition.get(neighbor))) {
-                neighbors.add(neighbor);
-            }
-        }
-        return neighbors.size() == 1 ? neighbors.getFirst() : null;
-    }
-
-    private static boolean sameTypeChest(
-            ContainerTarget container,
-            ContainerTarget neighbor
-    ) {
-        return neighbor != null && neighbor.type().equals(container.type());
+    private static BlockPosition blockPosition(BlockPos position) {
+        return new BlockPosition(
+                position.getX(),
+                position.getY(),
+                position.getZ()
+        );
     }
 
     private static boolean isChest(String type) {

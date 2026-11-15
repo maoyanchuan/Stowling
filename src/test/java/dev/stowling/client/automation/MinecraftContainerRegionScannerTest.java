@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class MinecraftContainerRegionScannerTest {
@@ -34,6 +35,16 @@ class MinecraftContainerRegionScannerTest {
                                 barrel,
                                 trappedLeft,
                                 trappedRight
+                        ),
+                        Map.of(
+                                chestLeft.position(),
+                                chestRight.position(),
+                                chestRight.position(),
+                                chestLeft.position(),
+                                trappedLeft.position(),
+                                trappedRight.position(),
+                                trappedRight.position(),
+                                trappedLeft.position()
                         )
                 );
 
@@ -44,17 +55,33 @@ class MinecraftContainerRegionScannerTest {
     }
 
     @Test
-    void leavesConnectedOddShapedChestGroupsUntouched() {
+    void collapsesLargeChestPairsInsideDenseChestWall() {
         ContainerTarget first = target(0, 64, 0, "minecraft:chest");
-        ContainerTarget corner = target(1, 64, 0, "minecraft:chest");
-        ContainerTarget side = target(1, 64, 1, "minecraft:chest");
+        ContainerTarget firstPartner = target(1, 64, 0, "minecraft:chest");
+        ContainerTarget secondPartner = target(0, 64, 1, "minecraft:chest");
+        ContainerTarget second = target(1, 64, 1, "minecraft:chest");
 
         List<ContainerTarget> result =
                 MinecraftContainerRegionScanner.collapseDoubleChestPairs(
-                        List.of(first, corner, side)
+                        List.of(
+                                first,
+                                firstPartner,
+                                secondPartner,
+                                second
+                        ),
+                        Map.of(
+                                first.position(),
+                                firstPartner.position(),
+                                firstPartner.position(),
+                                first.position(),
+                                second.position(),
+                                secondPartner.position(),
+                                secondPartner.position(),
+                                second.position()
+                        )
                 );
 
-        assertEquals(List.of(first, corner, side), result);
+        assertEquals(List.of(first, secondPartner), result);
     }
 
     private static ContainerTarget target(

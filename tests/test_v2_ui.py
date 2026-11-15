@@ -447,6 +447,27 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
         assert f"<title>{label} · Stowling</title>" in html
 
 
+def test_coordinate_navigation_groups_spatial_resources() -> None:
+    common = read("common.js")
+    coordinates = read("coordinates.html")
+    styles = read("styles.css")
+
+    assert 'label: "坐标"' in common
+    assert 'label: "坐标点"' in common
+    assert 'href: "/coordinates.html#coordinate-points"' in common
+    assert 'label: "区域"' in common
+    assert 'href: "/coordinates.html#regions"' in common
+    assert 'label: "分类区"' in common
+    assert 'href: "/category-zones.html"' in common
+    assert 'className = "workspace-nav-group"' in common
+    assert 'className = "workspace-subnav"' in common
+    assert 'window.addEventListener("hashchange", mountNavigation);' in common
+    assert 'id="coordinate-points"' in coordinates
+    assert 'id="regions"' in coordinates
+    assert ".workspace-nav-group" in styles
+    assert ".workspace-subnav" in styles
+
+
 def test_header_and_content_share_responsive_page_width() -> None:
     styles = read("styles.css")
 

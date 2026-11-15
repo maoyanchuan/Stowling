@@ -274,8 +274,9 @@ Pages:
 
 - **Status** shows the current run, trigger status, coordinate count, task count,
   and history.
-- **Coordinates** manages names and X/Y/Z values.
-- **Category zones** manages marker areas, storage areas, and rules.
+- **Coordinates** groups points, regions, and category-zone setup in one
+  submenu. Points and regions manage reusable geometry; category zones manage
+  marker areas, storage areas, and rules.
 - **Tasks** provides cache and category-sorting templates, manual module
   composition, and independent task triggers.
 - **Inventory** displays existing read-only inventory snapshots.

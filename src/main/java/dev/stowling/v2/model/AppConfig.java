@@ -13,7 +13,9 @@ public record AppConfig(
 
     public AppConfig {
         if (schemaVersion != CURRENT_SCHEMA_VERSION) {
-            throw new IllegalArgumentException("unsupported schemaVersion: " + schemaVersion);
+            throw new IllegalArgumentException(
+                    "unsupported schemaVersion: " + schemaVersion
+            );
         }
         coordinates = List.copyOf(Objects.requireNonNull(coordinates, "coordinates"));
         tasks = List.copyOf(Objects.requireNonNull(tasks, "tasks"));
@@ -29,6 +31,11 @@ public record AppConfig(
     }
 
     public static AppConfig empty() {
-        return new AppConfig(CURRENT_SCHEMA_VERSION, List.of(), List.of(), List.of());
+        return new AppConfig(
+                CURRENT_SCHEMA_VERSION,
+                List.of(),
+                List.of(),
+                List.of()
+        );
     }
 }

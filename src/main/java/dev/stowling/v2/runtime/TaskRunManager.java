@@ -1,13 +1,18 @@
 package dev.stowling.v2.runtime;
 
 import dev.stowling.automation.NavigationPort;
-import dev.stowling.automation.NavigationStatus;
-import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.runtime.modules.TaskExecutionContext;
+import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
+import dev.stowling.v2.runtime.modules.TaskModuleResult;
+import dev.stowling.v2.runtime.modules.TaskModuleRuntimeRegistry;
+import dev.stowling.v2.runtime.modules.TaskModuleState;
+import dev.stowling.v2.runtime.modules.TaskRunWorkspace;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -23,26 +28,48 @@ public final class TaskRunManager {
     private static final int HISTORY_LIMIT = 50;
 
     private final NavigationPort navigation;
+    private final TaskModuleRuntimeRegistry registry;
     private final Deque<TaskRunSnapshot> history = new ArrayDeque<>();
     private ActiveRun active;
 
     public TaskRunManager(NavigationPort navigation) {
+        this(navigation, TaskModuleRuntimeRegistry.unavailablePorts(navigation));
+    }
+
+    public TaskRunManager(
+            NavigationPort navigation,
+            TaskModuleRuntimeRegistry registry
+    ) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
+        this.registry = Objects.requireNonNull(registry, "registry");
     }
 
     public synchronized TaskRunSnapshot start(
             TaskDefinition task,
             List<CoordinatePoint> coordinates
     ) {
-        if (active != null && active.snapshot.state() == TaskRunState.RUNNING) {
+        return start(task, coordinates, List.of());
+    }
+
+    public synchronized TaskRunSnapshot start(
+            TaskDefinition task,
+            List<CoordinatePoint> coordinates,
+            List<RegionDefinition> regions
+    ) {
+        Objects.requireNonNull(task, "task");
+        if (busy()) {
             throw new TaskRunBusyException();
         }
-        Map<UUID, CoordinatePoint> targets = new LinkedHashMap<>();
-        for (CoordinatePoint point : coordinates) {
-            targets.put(point.id(), point);
-        }
+        Map<UUID, CoordinatePoint> frozenCoordinates = indexCoordinates(
+                coordinates
+        );
+        Map<UUID, RegionDefinition> frozenRegions = indexRegions(regions);
         for (TaskStep step : task.steps()) {
-            ConfigValidator.requireValidStep(step, targets);
+            ConfigValidator.requireValidStep(
+                    step,
+                    frozenCoordinates,
+                    frozenRegions
+            );
         }
         Instant now = Instant.now();
         TaskRunSnapshot snapshot = new TaskRunSnapshot(
@@ -59,71 +86,53 @@ public final class TaskRunManager {
         active = new ActiveRun(
                 snapshot,
                 List.copyOf(task.steps()),
-                Map.copyOf(targets)
+                Map.copyOf(frozenCoordinates),
+                Map.copyOf(frozenRegions),
+                new TaskRunWorkspace()
         );
         retain(snapshot);
         return snapshot;
     }
 
     public synchronized void tick() {
-        if (active == null
-                || active.snapshot.state() != TaskRunState.RUNNING) {
+        if (!isActive()) {
             return;
         }
         if (active.cancelRequested) {
-            StopOutcome outcome = navigation.requestStop();
-            if (outcome != StopOutcome.PENDING) {
-                finish(TaskRunState.CANCELLED, "任务已取消");
-            } else {
-                update("正在取消任务");
-            }
+            finishCancellation();
             return;
         }
         if (active.snapshot.completedSteps() >= active.steps.size()) {
             finish(TaskRunState.SUCCEEDED, "任务已完成");
             return;
         }
-        TaskStep step = active.steps.get(active.snapshot.completedSteps());
-        UUID coordinateId = UUID.fromString(
-                step.parameters().get(ConfigValidator.COORDINATE_ID)
-        );
-        CoordinatePoint target = active.targets.get(coordinateId);
-        BlockPosition position = new BlockPosition(target.x(), target.y(), target.z());
-        if (target.dimension() != null
-                && !navigation.isInDimension(target.dimension())) {
+        TaskModuleResult result;
+        try {
+            TaskModuleExecutor executor = executor();
+            result = active.executorStarted
+                    ? executor.tick()
+                    : startExecutor(executor);
+        } catch (RuntimeException exception) {
+            requestCancel();
             finish(
                     TaskRunState.FAILED,
-                    "无法前往 " + target.name() + "：维度不匹配"
+                    "模块执行失败: " + safeMessage(exception)
             );
             return;
         }
-        NavigationStatus status;
-        if (!active.navigationStarted) {
-            active.navigationStarted = true;
-            status = navigation.start(position);
-        } else {
-            status = navigation.status(position, target.radius());
-        }
-        switch (status) {
-            case ARRIVED -> {
-                active.navigationStarted = false;
-                int completed = active.snapshot.completedSteps() + 1;
-                update(completed, "已到达 " + target.name());
-                if (completed >= active.steps.size()) {
-                    finish(TaskRunState.SUCCEEDED, "任务已完成");
-                }
-            }
-            case NAVIGATING -> update("正在前往 " + target.name());
-            case FAILED -> finish(TaskRunState.FAILED, "无法前往 " + target.name());
-        }
+        apply(result);
     }
 
     public synchronized void cancel(UUID runId) {
         if (active == null || !active.snapshot.runId().equals(runId)) {
             throw new TaskRunNotFoundException();
         }
+        if (!isActive()) {
+            throw new TaskRunNotFoundException();
+        }
         active.cancelRequested = true;
-        update("正在取消任务");
+        requestCancel();
+        update(active.snapshot.state(), "正在取消任务");
     }
 
     public synchronized Optional<TaskRunSnapshot> status() {
@@ -135,28 +144,94 @@ public final class TaskRunManager {
     }
 
     public synchronized boolean busy() {
-        return active != null && active.snapshot.state() == TaskRunState.RUNNING;
+        return isActive();
     }
 
     public synchronized void cancelAll() {
-        if (active != null && active.snapshot.state() == TaskRunState.RUNNING) {
-            active.cancelRequested = true;
-            navigation.requestStop();
-            finish(TaskRunState.CANCELLED, "任务已取消");
+        if (!isActive()) {
+            return;
+        }
+        active.cancelRequested = true;
+        requestCancel();
+        finish(TaskRunState.CANCELLED, "任务已取消");
+    }
+
+    private TaskModuleResult startExecutor(TaskModuleExecutor executor) {
+        active.executorStarted = true;
+        return executor.start();
+    }
+
+    private TaskModuleExecutor executor() {
+        if (active.executor == null) {
+            TaskStep step = active.steps.get(active.snapshot.completedSteps());
+            TaskExecutionContext context = new TaskExecutionContext(
+                    navigation,
+                    registry.droppedItems(),
+                    registry.containerRegions(),
+                    registry.containerTransfers(),
+                    active.coordinates,
+                    active.regions,
+                    active.workspace
+            );
+            active.executor = registry.create(step, context);
+            active.executorStarted = false;
+        }
+        return active.executor;
+    }
+
+    private void apply(TaskModuleResult result) {
+        switch (result.state()) {
+            case RUNNING -> update(TaskRunState.RUNNING, result.message());
+            case WAITING -> update(TaskRunState.WAITING, result.message());
+            case SUCCEEDED -> completeCurrentStep(result.message());
+            case FAILED -> {
+                requestCancel();
+                finish(TaskRunState.FAILED, result.message());
+            }
         }
     }
 
-    private void update(String message) {
-        update(active.snapshot.completedSteps(), message);
+    private void completeCurrentStep(String message) {
+        active.executor = null;
+        active.executorStarted = false;
+        int completed = active.snapshot.completedSteps() + 1;
+        update(TaskRunState.RUNNING, completed, message);
+        if (completed >= active.steps.size()) {
+            finish(TaskRunState.SUCCEEDED, "任务已完成");
+        }
     }
 
-    private void update(int completedSteps, String message) {
+    private void requestCancel() {
+        if (active.executor != null && !active.executorCancelled) {
+            active.executor.cancel();
+            active.executorCancelled = true;
+        }
+    }
+
+    private void finishCancellation() {
+        requestCancel();
+        StopOutcome outcome = navigation.requestStop();
+        if (outcome == StopOutcome.PENDING) {
+            update(TaskRunState.WAITING, "正在停止导航");
+            return;
+        }
+        String message = outcome == StopOutcome.CLEAN
+                ? "任务已取消"
+                : "任务已取消，但导航停止状态未知";
+        finish(TaskRunState.CANCELLED, message);
+    }
+
+    private void update(TaskRunState state, String message) {
+        update(state, active.snapshot.completedSteps(), message);
+    }
+
+    private void update(TaskRunState state, int completedSteps, String message) {
         TaskRunSnapshot old = active.snapshot;
         active.snapshot = new TaskRunSnapshot(
                 old.runId(),
                 old.taskId(),
                 old.taskName(),
-                old.state(),
+                state,
                 completedSteps,
                 old.totalSteps(),
                 message,
@@ -181,7 +256,6 @@ public final class TaskRunManager {
                 old.startedAt(),
                 Instant.now()
         );
-        active.snapshot = finished;
         replaceRetained(finished);
         active = null;
     }
@@ -210,21 +284,62 @@ public final class TaskRunManager {
         }
     }
 
+    private boolean isActive() {
+        return active != null
+                && (active.snapshot.state() == TaskRunState.RUNNING
+                || active.snapshot.state() == TaskRunState.WAITING);
+    }
+
+    private static Map<UUID, CoordinatePoint> indexCoordinates(
+            List<CoordinatePoint> coordinates
+    ) {
+        Map<UUID, CoordinatePoint> result = new LinkedHashMap<>();
+        for (CoordinatePoint point : coordinates) {
+            result.put(point.id(), point);
+        }
+        return result;
+    }
+
+    private static Map<UUID, RegionDefinition> indexRegions(
+            List<RegionDefinition> regions
+    ) {
+        Map<UUID, RegionDefinition> result = new LinkedHashMap<>();
+        for (RegionDefinition region : regions) {
+            result.put(region.id(), region);
+        }
+        return result;
+    }
+
+    private static String safeMessage(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank()
+                ? exception.getClass().getSimpleName()
+                : message;
+    }
+
     private static final class ActiveRun {
         private TaskRunSnapshot snapshot;
         private final List<TaskStep> steps;
-        private final Map<UUID, CoordinatePoint> targets;
-        private boolean navigationStarted;
+        private final Map<UUID, CoordinatePoint> coordinates;
+        private final Map<UUID, RegionDefinition> regions;
+        private final TaskRunWorkspace workspace;
+        private TaskModuleExecutor executor;
+        private boolean executorStarted;
+        private boolean executorCancelled;
         private boolean cancelRequested;
 
         private ActiveRun(
                 TaskRunSnapshot snapshot,
                 List<TaskStep> steps,
-                Map<UUID, CoordinatePoint> targets
+                Map<UUID, CoordinatePoint> coordinates,
+                Map<UUID, RegionDefinition> regions,
+                TaskRunWorkspace workspace
         ) {
             this.snapshot = snapshot;
             this.steps = steps;
-            this.targets = targets;
+            this.coordinates = coordinates;
+            this.regions = regions;
+            this.workspace = workspace;
         }
     }
 }

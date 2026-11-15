@@ -7,21 +7,71 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.ModuleDefinition;
 import dev.stowling.v2.model.ModuleParameter;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class TaskModuleCatalogTest {
     @Test
-    void exposesOnlyMoveToCoordinateWithItsParameterContract() {
+    void exposesAllSupportedModulesInBuildOrder() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 
-        assertEquals(1, modules.size());
-        ModuleDefinition module = modules.getFirst();
-        assertEquals(ConfigValidator.MOVE_TO_COORDINATE, module.id());
-        assertEquals(1, module.parameters().size());
-        ModuleParameter parameter = module.parameters().getFirst();
-        assertEquals(ConfigValidator.COORDINATE_ID, parameter.key());
-        assertEquals("coordinate-point", parameter.kind());
-        assertTrue(parameter.required());
-        assertTrue(parameter.options().isEmpty());
+        assertEquals(
+                List.of(
+                        ConfigValidator.MOVE_TO_COORDINATE,
+                        ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
+                        ConfigValidator.COLLECT_DROPPED_ITEMS,
+                        ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                        ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
+                ),
+                modules.stream().map(ModuleDefinition::id).toList()
+        );
+    }
+
+    @Test
+    void exposesCoordinateRegionAndDepositParameterContracts() {
+        Map<String, ModuleDefinition> modules = TaskModuleCatalog.modules().stream()
+                .collect(Collectors.toMap(ModuleDefinition::id, Function.identity()));
+
+        ModuleParameter coordinate = moduleParameter(
+                modules.get(ConfigValidator.WAIT_FOR_DROPPED_ITEMS),
+                ConfigValidator.COORDINATE_ID
+        );
+        assertEquals("coordinate-point", coordinate.kind());
+        assertTrue(coordinate.required());
+
+        ModuleParameter region = moduleParameter(
+                modules.get(ConfigValidator.SCAN_CONTAINERS_IN_REGION),
+                ConfigValidator.REGION_ID
+        );
+        assertEquals("region-point", region.kind());
+        assertTrue(region.required());
+
+        ModuleDefinition deposit = modules.get(
+                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
+        );
+        assertEquals(
+                List.of("previous-scan"),
+                moduleParameter(deposit, ConfigValidator.SCAN_SOURCE).options()
+        );
+        assertEquals(
+                List.of("collected-this-run"),
+                moduleParameter(deposit, ConfigValidator.ITEM_SOURCE).options()
+        );
+        assertEquals(
+                List.of("nearest-first"),
+                moduleParameter(deposit, ConfigValidator.FILL_MODE).options()
+        );
+    }
+
+    private static ModuleParameter moduleParameter(
+            ModuleDefinition module,
+            String key
+    ) {
+        return module.parameters().stream()
+                .filter(parameter -> parameter.key().equals(key))
+                .findFirst()
+                .orElseThrow();
     }
 }

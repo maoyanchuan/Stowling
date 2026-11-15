@@ -3,7 +3,10 @@ package dev.stowling.client;
 import baritone.api.BaritoneAPI;
 import dev.stowling.Stowling;
 import dev.stowling.automation.NavigationPort;
+import dev.stowling.client.automation.MinecraftContainerRegionScanner;
+import dev.stowling.client.automation.MinecraftContainerTransferPort;
 import dev.stowling.client.automation.ClientThreadNavigationPort;
+import dev.stowling.client.automation.MinecraftDroppedItemObserver;
 import dev.stowling.client.interaction.BaritoneAutomationNavigation;
 import dev.stowling.client.interaction.MinecraftClientActionScheduler;
 import dev.stowling.client.interaction.MinecraftWorldObserver;
@@ -17,6 +20,8 @@ import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2ControlServiceImpl;
 import dev.stowling.v2.runtime.TaskRunManager;
+import dev.stowling.v2.runtime.modules.StandardTaskModuleFactories;
+import dev.stowling.v2.runtime.modules.TaskModuleRuntimeRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,7 +84,17 @@ public final class StowlingRuntime implements AutoCloseable {
                 navigation,
                 scheduler
         );
-        TaskRunManager taskRuns = new TaskRunManager(navigationPort);
+        TaskModuleRuntimeRegistry moduleRuntime = new TaskModuleRuntimeRegistry(
+                navigationPort,
+                new MinecraftDroppedItemObserver(minecraft, scheduler),
+                new MinecraftContainerRegionScanner(minecraft, scheduler),
+                new MinecraftContainerTransferPort(minecraft, scheduler),
+                StandardTaskModuleFactories.create()
+        );
+        TaskRunManager taskRuns = new TaskRunManager(
+                navigationPort,
+                moduleRuntime
+        );
         V2ControlService service = new V2ControlServiceImpl(
                 configs,
                 taskRuns,

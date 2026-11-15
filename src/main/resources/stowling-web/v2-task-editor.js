@@ -8,10 +8,11 @@
      * @param {object} task
      * @param {Array<object>} modules
      * @param {Array<object>} coordinates
+     * @param {Array<object>} regions
      * @param {() => void} changed
      * @returns {void}
      */
-    function render(host, task, modules, coordinates, changed) {
+    function render(host, task, modules, coordinates, regions, changed) {
         host.replaceChildren();
         task.steps.forEach((step, index) => {
             host.append(createStepCard(
@@ -20,6 +21,7 @@
                 index,
                 modules,
                 coordinates,
+                regions,
                 changed
             ));
         });
@@ -31,10 +33,19 @@
      * @param {number} index
      * @param {Array<object>} modules
      * @param {Array<object>} coordinates
+     * @param {Array<object>} regions
      * @param {() => void} changed
      * @returns {HTMLElement}
      */
-    function createStepCard(task, step, index, modules, coordinates, changed) {
+    function createStepCard(
+        task,
+        step,
+        index,
+        modules,
+        coordinates,
+        regions,
+        changed
+    ) {
         const card = Stowling.element("article", "step-card");
         const heading = Stowling.element("div", "step-card-heading");
         const identity = Stowling.element("div", "step-identity");
@@ -57,7 +68,13 @@
         for (const parameter of module?.parameters || []) {
             parameters.append(field(
                 `${parameter.label}${parameter.required ? " *" : ""}`,
-                parameterControl(step, parameter, coordinates, changed)
+                parameterControl(
+                    step,
+                    parameter,
+                    coordinates,
+                    regions,
+                    changed
+                )
             ));
         }
         card.append(heading, fields, parameters);
@@ -77,8 +94,9 @@
         }
         select.value = step.moduleId;
         select.addEventListener("change", () => {
+            const selected = modules.find((module) => module.id === select.value);
             step.moduleId = select.value;
-            step.parameters = {};
+            step.parameters = defaultParameters(selected);
             changed(true);
         });
         return select;
@@ -88,33 +106,177 @@
      * @param {object} step
      * @param {object} parameter
      * @param {Array<object>} coordinates
+     * @param {Array<object>} regions
      * @param {() => void} changed
      * @returns {HTMLElement}
      */
-    function parameterControl(step, parameter, coordinates, changed) {
+    function parameterControl(
+        step,
+        parameter,
+        coordinates,
+        regions,
+        changed
+    ) {
         if (parameter.kind === "coordinate-point") {
-            const select = document.createElement("select");
-            select.required = parameter.required;
-            select.append(new Option("请选择坐标", ""));
-            for (const coordinate of coordinates) {
-                select.append(new Option(
-                    window.StowlingCoordinateModel.coordinateLabel(coordinate),
-                    coordinate.id
-                ));
-            }
-            select.value = String(step.parameters[parameter.key] || "");
-            select.addEventListener("change", () => {
-                setParameter(step, parameter.key, select.value, changed);
-            });
-            return select;
+            return referenceSelect(
+                step,
+                parameter,
+                "请选择坐标",
+                coordinates,
+                "coordinate",
+                changed
+            );
+        }
+        if (parameter.kind === "region-point") {
+            return referenceSelect(
+                step,
+                parameter,
+                "请选择区域",
+                regions,
+                "region",
+                changed
+            );
+        }
+        if (parameter.kind === "select") {
+            return optionSelect(step, parameter, changed);
+        }
+        if (parameter.kind === "integer") {
+            return integerInput(step, parameter, changed);
         }
         const input = document.createElement("input");
+        input.type = "text";
         input.value = String(step.parameters[parameter.key] || "");
         input.required = parameter.required;
         input.addEventListener("input", () => {
             setParameter(step, parameter.key, input.value, changed);
         });
         return input;
+    }
+
+    /**
+     * @param {object} step
+     * @param {object} parameter
+     * @param {string} prompt
+     * @param {Array<object>} resources
+     * @param {string} type
+     * @param {() => void} changed
+     * @returns {HTMLSelectElement}
+     */
+    function referenceSelect(
+        step,
+        parameter,
+        prompt,
+        resources,
+        type,
+        changed
+    ) {
+        const select = document.createElement("select");
+        select.required = parameter.required;
+        select.append(new Option(prompt, ""));
+        for (const resource of resources) {
+            const label = type === "coordinate"
+                ? window.StowlingCoordinateModel.coordinateLabel(resource)
+                : String(resource.name || "");
+            select.append(new Option(label, resource.id));
+        }
+        select.value = String(step.parameters[parameter.key] || "");
+        select.addEventListener("change", () => {
+            setParameter(step, parameter.key, select.value, changed);
+        });
+        return select;
+    }
+
+    /**
+     * @param {object} step
+     * @param {object} parameter
+     * @param {() => void} changed
+     * @returns {HTMLSelectElement}
+     */
+    function optionSelect(step, parameter, changed) {
+        const select = document.createElement("select");
+        select.required = parameter.required;
+        if (!parameter.required) {
+            select.append(new Option("请选择", ""));
+        }
+        for (const option of parameter.options || []) {
+            select.append(new Option(String(option), String(option)));
+        }
+        select.value = String(
+            step.parameters[parameter.key]
+                ?? defaultValue(parameter)
+                ?? ""
+        );
+        if (select.value && step.parameters[parameter.key] === undefined) {
+            step.parameters[parameter.key] = select.value;
+        }
+        select.addEventListener("change", () => {
+            setParameter(step, parameter.key, select.value, changed);
+        });
+        return select;
+    }
+
+    /**
+     * @param {object} step
+     * @param {object} parameter
+     * @param {() => void} changed
+     * @returns {HTMLInputElement}
+     */
+    function integerInput(step, parameter, changed) {
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = String(parameter.step ?? 1);
+        input.required = parameter.required;
+        if ((parameter.min ?? parameter.minimum) !== undefined) {
+            input.min = String(parameter.min ?? parameter.minimum);
+        }
+        if ((parameter.max ?? parameter.maximum) !== undefined) {
+            input.max = String(parameter.max ?? parameter.maximum);
+        }
+        input.value = String(
+            step.parameters[parameter.key]
+                ?? defaultValue(parameter)
+                ?? ""
+        );
+        input.addEventListener("input", () => {
+            setParameter(step, parameter.key, input.value, changed);
+        });
+        return input;
+    }
+
+    /**
+     * @param {object | undefined} module
+     * @returns {object}
+     */
+    function defaultParameters(module) {
+        const parameters = {};
+        for (const parameter of module?.parameters || []) {
+            const value = defaultValue(parameter);
+            if (value !== null && value !== undefined && value !== "") {
+                parameters[parameter.key] = String(value);
+            }
+        }
+        return parameters;
+    }
+
+    /**
+     * @param {object} parameter
+     * @returns {unknown}
+     */
+    function defaultValue(parameter) {
+        if (parameter.defaultValue !== undefined) {
+            return parameter.defaultValue;
+        }
+        if (parameter.default !== undefined) {
+            return parameter.default;
+        }
+        if (
+            parameter.kind === "select"
+            && Array.isArray(parameter.options)
+            && parameter.options.length === 1
+        ) {
+            return parameter.options[0];
+        }
+        return null;
     }
 
     /**

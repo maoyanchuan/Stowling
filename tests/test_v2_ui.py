@@ -68,6 +68,9 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "module.parameters" in editor
     assert "parameter.kind" in editor
     assert "coordinate-point" in editor
+    assert "region-point" in editor
+    assert "integer" in editor
+    assert "select" in editor
     assert "task.steps.splice" in editor
     assert "index + offset" in editor
     assert "modules[0]" in model
@@ -89,6 +92,60 @@ def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
     assert "parameter.label" in tasks
 
 
+def test_task_editor_loads_regions_and_builds_contract_driven_controls() -> None:
+    tasks = read("tasks.js")
+    editor = read("v2-task-editor.js")
+
+    assert 'Stowling.request("/v1/regions")' in tasks
+    assert "state.regions" in tasks
+    assert "state.regions," in tasks
+    assert "referenceSelect(" in editor
+    assert 'parameter.kind === "region-point"' in editor
+    assert 'parameter.kind === "integer"' in editor
+    assert 'parameter.kind === "select"' in editor
+    assert 'input.type = "number"' in editor
+    assert "parameter.options" in editor
+    assert "parameter.min" in editor
+    assert "parameter.max" in editor
+    assert "defaultParameters(selected)" in editor
+
+
+def test_task_validation_uses_module_parameter_contracts() -> None:
+    tasks = read("tasks.js")
+
+    assert "validateReference(parameter.kind, value)" in tasks
+    assert 'kind === "coordinate-point"' in tasks
+    assert 'kind === "region-point"' in tasks
+    assert "validateInteger(parameter, value)" in tasks
+    assert "selectOptions(parameter).includes(value)" in tasks
+    assert "parameter.required" in tasks
+
+
+def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
+    tasks = read("tasks.js")
+    catalog = (
+        ROOT
+        / "src"
+        / "main"
+        / "java"
+        / "dev"
+        / "stowling"
+        / "v2"
+        / "module"
+        / "TaskModuleCatalog.java"
+    ).read_text(encoding="utf-8")
+    assert "renderModuleCatalog()" in tasks
+    for module_id in (
+        "WAIT_FOR_DROPPED_ITEMS",
+        "COLLECT_DROPPED_ITEMS",
+        "SCAN_CONTAINERS_IN_REGION",
+        "DEPOSIT_ITEMS_TO_CONTAINERS",
+    ):
+        assert module_id in catalog
+        assert module_id not in tasks
+    assert "state.modules.length" in tasks
+
+
 def test_coordinate_choices_only_show_the_saved_name() -> None:
     model = read("coordinate-model.js")
 
@@ -107,7 +164,9 @@ def test_task_ui_supports_save_run_refresh_and_cancel() -> None:
     assert "/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs" in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
-    assert "run.state === \"RUNNING\"" in tasks
+    assert 'run.state === "RUNNING"' in tasks
+    assert 'run.state === "WAITING"' in tasks
+    assert "isActiveRun(run)" in tasks
     assert "run.completedSteps" in tasks
     assert "run.totalSteps" in tasks
 
@@ -153,7 +212,6 @@ def test_retained_pages_hide_internal_ids_and_removed_controls() -> None:
         "任务 ID",
         "步骤 ID",
         "UUID",
-        "容器",
         "触发器",
     ):
         assert removed not in pages

@@ -9,6 +9,7 @@
         tasks: [],
         modules: [],
         coordinates: [],
+        regions: [],
         selectedId: "",
         runTaskId: "",
         draft: null,
@@ -43,10 +44,11 @@
      */
     async function loadAll() {
         try {
-            const [tasks, modules, coordinates, runs] = await Promise.all([
+            const [tasks, modules, coordinates, regions, runs] = await Promise.all([
                 Stowling.request("/v1/tasks"),
                 Stowling.request("/v1/task-modules"),
                 Stowling.request("/v1/coordinates"),
+                Stowling.request("/v1/regions"),
                 Stowling.request("/v1/task-runs")
             ]);
             state.revision = String(tasks?.revision || "");
@@ -56,6 +58,9 @@
             state.modules = Array.isArray(modules?.modules) ? modules.modules : [];
             state.coordinates = Array.isArray(coordinates?.coordinates)
                 ? coordinates.coordinates
+                : [];
+            state.regions = Array.isArray(regions?.regions)
+                ? regions.regions
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             renderTaskList();
@@ -159,7 +164,7 @@
      * @returns {void}
      */
     function updateRunActions() {
-        const busy = state.runs.some((run) => run.state === "RUNNING");
+        const busy = state.runs.some(isActiveRun);
         elements.runSelect.disabled = state.tasks.length === 0 || busy;
         elements.run.disabled = !state.runTaskId || busy;
     }
@@ -204,6 +209,7 @@
             state.draft,
             state.modules,
             state.coordinates,
+            state.regions,
             rerenderEditor
         );
         updateActions();
@@ -254,23 +260,98 @@
                 continue;
             }
             for (const parameter of module.parameters || []) {
-                const value = String(step.parameters[parameter.key] || "");
+                const value = String(
+                    step.parameters[parameter.key] ?? ""
+                ).trim();
                 if (parameter.required && !value) {
                     errors.push(
                         `步骤 ${index + 1} 必须填写“${parameter.label}”`
                     );
-                } else if (
-                    value
-                    && parameter.kind === "coordinate-point"
-                    && !state.coordinates.some((point) => point.id === value)
-                ) {
+                    continue;
+                }
+                if (!value) {
+                    continue;
+                }
+                const exists = validateReference(parameter.kind, value);
+                if (exists === false) {
                     errors.push(
                         `步骤 ${index + 1} 的“${parameter.label}”不存在`
+                    );
+                }
+                if (parameter.kind === "integer") {
+                    const integerError = validateInteger(parameter, value);
+                    if (integerError) {
+                        errors.push(
+                            `步骤 ${index + 1} 的“${parameter.label}”`
+                                + integerError
+                        );
+                    }
+                }
+                if (
+                    parameter.kind === "select"
+                    && !selectOptions(parameter).includes(value)
+                ) {
+                    errors.push(
+                        `步骤 ${index + 1} 的“${parameter.label}”不是有效选项`
                     );
                 }
             }
         }
         return errors;
+    }
+
+    /**
+     * @param {string} kind
+     * @param {string} value
+     * @returns {boolean | null}
+     */
+    function validateReference(kind, value) {
+        if (kind === "coordinate-point") {
+            return state.coordinates.some((point) => point.id === value);
+        }
+        if (kind === "region-point") {
+            return state.regions.some((region) => region.id === value);
+        }
+        return null;
+    }
+
+    /**
+     * @param {object} parameter
+     * @param {string} value
+     * @returns {string}
+     */
+    function validateInteger(parameter, value) {
+        const number = Number(value);
+        if (!Number.isInteger(number)) {
+            return "必须是整数";
+        }
+        const minimum = Number(parameter.min ?? parameter.minimum);
+        if (Number.isFinite(minimum) && number < minimum) {
+            return `不能小于 ${minimum}`;
+        }
+        const maximum = Number(parameter.max ?? parameter.maximum);
+        if (Number.isFinite(maximum) && number > maximum) {
+            return `不能大于 ${maximum}`;
+        }
+        return "";
+    }
+
+    /**
+     * @param {object} parameter
+     * @returns {Array<string>}
+     */
+    function selectOptions(parameter) {
+        return Array.isArray(parameter.options)
+            ? parameter.options.map((option) => String(option))
+            : [];
+    }
+
+    /**
+     * @param {object} run
+     * @returns {boolean}
+     */
+    function isActiveRun(run) {
+        return run.state === "RUNNING" || run.state === "WAITING";
     }
 
     /**
@@ -436,7 +517,7 @@
                 )
             );
             card.append(content);
-            if (run.state === "RUNNING") {
+            if (isActiveRun(run)) {
                 const cancel = Stowling.element(
                     "button",
                     "secondary compact",
@@ -481,6 +562,10 @@
         event.preventDefault();
         void saveTask();
     });
+    elements.runSelect.addEventListener("change", () => {
+        state.runTaskId = elements.runSelect.value;
+        updateRunActions();
+    });
     elements.discard.addEventListener("click", () => {
         const task = state.tasks.find((entry) => entry.id === state.selectedId);
         if (task) {
@@ -491,10 +576,6 @@
             renderEditor();
             renderTaskList();
         }
-    });
-    elements.runSelect.addEventListener("change", () => {
-        state.runTaskId = elements.runSelect.value;
-        updateRunActions();
     });
     elements.run.addEventListener("click", () => void runTask());
     elements.remove.addEventListener("click", () => void deleteTask());

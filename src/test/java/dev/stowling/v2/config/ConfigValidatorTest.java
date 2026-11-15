@@ -200,6 +200,102 @@ class ConfigValidatorTest {
         ));
     }
 
+    @Test
+    void acceptsWaitCollectScanAndDepositChain() {
+        CoordinatePoint point = point("Drop");
+        RegionDefinition region = region("Storage");
+        TaskDefinition task = new TaskDefinition(
+                UUID.randomUUID(),
+                "Collect and store",
+                List.of(
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
+                                Map.of(
+                                        ConfigValidator.COORDINATE_ID,
+                                        point.id().toString(),
+                                        ConfigValidator.TIMEOUT_SECONDS,
+                                        "60"
+                                )
+                        ),
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.COLLECT_DROPPED_ITEMS,
+                                Map.of(
+                                        ConfigValidator.COORDINATE_ID,
+                                        point.id().toString()
+                                )
+                        ),
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                                Map.of(
+                                        ConfigValidator.REGION_ID,
+                                        region.id().toString()
+                                )
+                        ),
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
+                                Map.of(
+                                        ConfigValidator.SCAN_SOURCE,
+                                        "previous-scan",
+                                        ConfigValidator.ITEM_SOURCE,
+                                        "collected-this-run",
+                                        ConfigValidator.FILL_MODE,
+                                        "nearest-first"
+                                )
+                        )
+                )
+        );
+
+        ConfigValidator.requireValid(new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(point),
+                List.of(task),
+                List.of(region)
+        ));
+    }
+
+    @Test
+    void rejectsUnknownRegionReferenceAndInvalidIntegerParameter() {
+        RegionDefinition region = region("Storage");
+        TaskStep missingRegion = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                Map.of(ConfigValidator.REGION_ID, UUID.randomUUID().toString())
+        );
+        TaskStep badVolume = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                Map.of(
+                        ConfigValidator.REGION_ID,
+                        region.id().toString(),
+                        ConfigValidator.MAX_VOLUME,
+                        "0"
+                )
+        );
+
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(),
+                        List.of(task("Missing", missingRegion)),
+                        List.of(region)
+                ))
+        );
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(),
+                        List.of(task("Bad volume", badVolume)),
+                        List.of(region)
+                ))
+        );
+    }
+
     private static AppConfig config(
             List<CoordinatePoint> coordinates,
             List<TaskDefinition> tasks

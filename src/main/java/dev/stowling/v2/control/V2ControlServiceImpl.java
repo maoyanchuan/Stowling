@@ -17,6 +17,7 @@ import dev.stowling.v2.runtime.TaskRunSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -56,8 +57,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
 
     @Override
     public synchronized CoordinateListResponse coordinates() {
-        V2ConfigSnapshot snapshot = configs.read();
-        return coordinateResponse(snapshot);
+        return coordinateResponse(configs.read());
     }
 
     @Override
@@ -70,7 +70,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             CoordinateRequest request
     ) {
         V2ConfigSnapshot current = configs.read();
-        List<CoordinatePoint> coordinates = new ArrayList<>(current.config().coordinates());
+        List<CoordinatePoint> coordinates =
+                new ArrayList<>(current.config().coordinates());
         coordinates.add(new CoordinatePoint(
                 UUID.randomUUID(),
                 request.name(),
@@ -107,9 +108,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.radius()
         );
         List<CoordinatePoint> coordinates = current.config().coordinates().stream()
-                .map(point -> point.id().equals(id)
-                        ? replacement
-                        : point)
+                .map(point -> point.id().equals(id) ? replacement : point)
                 .toList();
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
@@ -128,11 +127,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
         requireCoordinate(current.config(), id);
+        String coordinateId = id.toString();
         List<String> references = current.config().tasks().stream()
                 .filter(task -> task.steps().stream().anyMatch(step ->
-                        id.equals(UUID.fromString(
+                        coordinateId.equals(
                                 step.parameters().get(ConfigValidator.COORDINATE_ID)
-                        ))))
+                        )))
                 .map(TaskDefinition::name)
                 .toList();
         if (!references.isEmpty()) {
@@ -162,7 +162,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
     @Override
     public synchronized RegionListResponse createRegion(RegionRequest request) {
         V2ConfigSnapshot current = configs.read();
-        List<RegionDefinition> regions = new ArrayList<>(current.config().regions());
+        List<RegionDefinition> regions =
+                new ArrayList<>(current.config().regions());
         regions.add(new RegionDefinition(
                 UUID.randomUUID(),
                 request.name(),
@@ -312,7 +313,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
     public synchronized TaskRunSnapshot runTask(UUID id) {
         V2ConfigSnapshot current = configs.read();
         TaskDefinition task = requireTask(current.config(), id);
-        return runs.start(task, current.config().coordinates());
+        return runs.start(
+                task,
+                current.config().coordinates(),
+                current.config().regions()
+        );
     }
 
     @Override
@@ -325,7 +330,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
         runs.cancel(runId);
     }
 
-    private static CoordinateListResponse coordinateResponse(V2ConfigSnapshot snapshot) {
+    private static CoordinateListResponse coordinateResponse(
+            V2ConfigSnapshot snapshot
+    ) {
         return new CoordinateListResponse(
                 snapshot.revision(),
                 snapshot.config().coordinates()
@@ -333,11 +340,17 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     private static TaskListResponse taskResponse(V2ConfigSnapshot snapshot) {
-        return new TaskListResponse(snapshot.revision(), snapshot.config().tasks());
+        return new TaskListResponse(
+                snapshot.revision(),
+                snapshot.config().tasks()
+        );
     }
 
     private static RegionListResponse regionResponse(V2ConfigSnapshot snapshot) {
-        return new RegionListResponse(snapshot.revision(), snapshot.config().regions());
+        return new RegionListResponse(
+                snapshot.revision(),
+                snapshot.config().regions()
+        );
     }
 
     private static void requireRevision(
@@ -356,7 +369,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return config.coordinates().stream()
                 .filter(point -> point.id().equals(id))
                 .findFirst()
-                .orElseThrow(() -> new V2NotFoundException("coordinate not found"));
+                .orElseThrow(() -> new V2NotFoundException(
+                        "coordinate not found"
+                ));
     }
 
     private static TaskDefinition requireTask(AppConfig config, UUID id) {
@@ -392,8 +407,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
         }
         try {
             UUID id = UUID.fromString(value);
-            if (!id.toString().equals(value.toLowerCase(java.util.Locale.ROOT))) {
-                throw new V2ValidationException("step id must be a canonical UUID");
+            if (!id.toString().equals(value.toLowerCase(Locale.ROOT))) {
+                throw new V2ValidationException(
+                        "step id must be a canonical UUID"
+                );
             }
             return id;
         } catch (IllegalArgumentException exception) {

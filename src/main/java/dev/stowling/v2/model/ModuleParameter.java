@@ -8,7 +8,11 @@ public record ModuleParameter(
         String label,
         String kind,
         boolean required,
-        List<String> options
+        List<String> options,
+        Integer min,
+        Integer max,
+        Integer step,
+        String defaultValue
 ) {
     public ModuleParameter {
         key = requireText(key, "key");
@@ -18,7 +22,17 @@ public record ModuleParameter(
     }
 
     public ModuleParameter(String key, String label, String kind, boolean required) {
-        this(key, label, kind, required, List.of());
+        this(key, label, kind, required, List.of(), null, null, null, null);
+    }
+
+    public ModuleParameter(
+            String key,
+            String label,
+            String kind,
+            boolean required,
+            List<String> options
+    ) {
+        this(key, label, kind, required, options, null, null, null, null);
     }
 
     private static String requireText(String value, String field) {

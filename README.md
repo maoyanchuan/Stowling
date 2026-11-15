@@ -1,8 +1,8 @@
 # Stowling
 
-Stowling is a Fabric client mod for Minecraft 26.2. The current version provides
-named coordinate points and manually started, linear movement tasks backed by
-Baritone.
+Stowling is a Fabric client mod for Minecraft 26.2. It provides named
+coordinates, corner-defined regions, and manually started linear tasks backed
+by Baritone.
 
 ## Features
 
@@ -10,15 +10,49 @@ Baritone.
   arrival-radius fields.
 - Regions contain a name and two full X/Y/Z corner points.
 - Tasks contain a name and one or more ordered module steps.
-- The first built-in module is `MOVE_TO_COORDINATE`.
+- Task modules cover movement, waiting for dropped items, collecting dropped
+  items, scanning containers in an area, and depositing collected items.
+- Container scanning and depositing are separate modules. Deposit consumes the
+  previous scan result instead of scanning again.
+- Deposit only moves items recorded as collected by the current task run.
 - One task can run at a time.
 - Coordinate and task IDs are generated internally and are not shown in the UI.
 - Authentication, runtime status, and read-only inventory diagnostics remain
   available in the local Web console.
 
-The previous pickup workflows, dimensions, radius/area ranges, containers,
-storage routes, audits, packing, crafting, and scheduling APIs are intentionally
-not compatible.
+The previous monolithic pickup workflow, storage routes, audits, packing,
+crafting, and scheduling APIs are intentionally not compatible.
+
+## Task modules
+
+The backend module catalog is available at `GET /v1/task-modules`; the task
+editor builds its controls from that catalog.
+
+- `MOVE_TO_COORDINATE` navigates to one coordinate.
+- `WAIT_FOR_DROPPED_ITEMS` waits until a matching dropped item appears in the
+  coordinate radius.
+- `COLLECT_DROPPED_ITEMS` navigates to matching dropped items and waits until
+  they are picked up.
+- `SCAN_CONTAINERS_IN_REGION` records usable containers from the previous scan
+  in the active task run.
+- `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
+  current run into containers from the previous scan.
+
+A typical dropped-item storage task is:
+
+```text
+WAIT_FOR_DROPPED_ITEMS   coordinateId=<drop point>
+COLLECT_DROPPED_ITEMS    coordinateId=<drop point>
+SCAN_CONTAINERS_IN_REGION regionId=<storage area>
+DEPOSIT_ITEMS_TO_CONTAINERS
+    scanSource=previous-scan
+    itemSource=collected-this-run
+    fillMode=nearest-first
+```
+
+Detection and scanning are limited to the player's current dimension and
+loaded chunks. Supported ordinary containers are scanned; nested shulker-box
+contents are not treated as independent containers.
 
 ## Configuration
 
@@ -38,12 +72,11 @@ If the file is missing, invalid, or from an older schema, Stowling creates a
 `.bak` safety copy when possible and replaces it with an empty schema-7 file.
 Old data is never migrated.
 
-Coordinates are interpreted in the player's current dimension when a movement
-task runs unless a coordinate enables an explicit dimension. A disabled
-dimension or radius is returned as `null`; tasks interpret a missing dimension
-as unrestricted and a missing radius as their built-in arrival tolerance. A
-task snapshots its steps and target coordinates when started, so editing saved
-coordinates only affects later runs.
+Coordinates use the player's current dimension unless an explicit dimension is
+enabled. A disabled dimension or radius is returned as `null`; dropped-item
+modules use their built-in search radius when radius is disabled. Tasks
+snapshot their steps, coordinates, regions, and run-local scan results when
+started, so editing saved resources only affects later runs.
 
 ## Web console
 

@@ -25,10 +25,7 @@ class TaskRunManagerTest {
     void runsLinearMovementStepsInOrderAndRejectsOverlap() {
         UUID firstId = UUID.randomUUID();
         UUID secondId = UUID.randomUUID();
-        TaskDefinition task = task(
-                step(firstId),
-                step(secondId)
-        );
+        TaskDefinition task = task(step(firstId), step(secondId));
         RecordingNavigation navigation = new RecordingNavigation(
                 NavigationStatus.ARRIVED,
                 NavigationStatus.ARRIVED
@@ -59,10 +56,9 @@ class TaskRunManagerTest {
     @Test
     void failsTheRunWhenNavigationFails() {
         UUID coordinateId = UUID.randomUUID();
-        RecordingNavigation navigation = new RecordingNavigation(
-                NavigationStatus.FAILED
+        TaskRunManager manager = new TaskRunManager(
+                new RecordingNavigation(NavigationStatus.FAILED)
         );
-        TaskRunManager manager = new TaskRunManager(navigation);
 
         manager.start(task(step(coordinateId)), coordinates(coordinateId));
         manager.tick();
@@ -140,7 +136,7 @@ class TaskRunManagerTest {
     }
 
     @Test
-    void failsBeforeNavigationWhenTheConfiguredDimensionDoesNotMatch() {
+    void failsWhenConfiguredDimensionDoesNotMatch() {
         UUID coordinateId = UUID.randomUUID();
         RecordingNavigation navigation = new RecordingNavigation(
                 NavigationStatus.ARRIVED
@@ -164,7 +160,7 @@ class TaskRunManagerTest {
     }
 
     @Test
-    void passesTheConfiguredRadiusToNavigation() {
+    void passesConfiguredRadiusToNavigation() {
         UUID coordinateId = UUID.randomUUID();
         RecordingNavigation navigation = new RecordingNavigation(
                 NavigationStatus.ARRIVED

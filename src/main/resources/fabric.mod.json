@@ -3,7 +3,7 @@
     "id": "stowling",
     "version": "${version}",
     "name": "Stowling",
-    "description": "Baritone-backed named coordinates and linear movement tasks.",
+    "description": "Baritone-backed coordinates, item pickup, and container tasks.",
     "icon": "assets/stowling/icon.png",
     "authors": [
         "Stowling contributors"

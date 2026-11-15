@@ -33,7 +33,7 @@
     function newTask(modules) {
         return {
             id: "",
-            name: "新移动任务",
+            name: "新任务",
             steps: [newStep(modules[0])]
         };
     }

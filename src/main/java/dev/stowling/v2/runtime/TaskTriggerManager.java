@@ -8,6 +8,7 @@ import dev.stowling.automation.NavigationPort;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskTriggerDefinition;
@@ -68,6 +69,10 @@ final class TaskTriggerManager {
         for (TaskDefinition task : config.tasks()) {
             tasks.put(task.id(), task);
         }
+        Map<UUID, RegionDefinition> regions = new LinkedHashMap<>();
+        for (RegionDefinition region : config.regions()) {
+            regions.put(region.id(), region);
+        }
         Map<UUID, TriggerConfiguration> next = new LinkedHashMap<>();
         for (TaskTriggerDefinition trigger : config.triggers()) {
             TaskDefinition target = tasks.get(trigger.targetTaskId());
@@ -77,10 +82,14 @@ final class TaskTriggerManager {
             CoordinatePoint coordinate = trigger.coordinateId() == null
                     ? null
                     : coordinates.get(trigger.coordinateId());
+            RegionDefinition cacheRegion = trigger.cacheRegionId() == null
+                    ? null
+                    : regions.get(trigger.cacheRegionId());
             next.put(trigger.id(), new TriggerConfiguration(
                     trigger,
                     target,
                     coordinate,
+                    cacheRegion,
                     config
             ));
         }
@@ -108,12 +117,40 @@ final class TaskTriggerManager {
             synchronize(trigger);
         }
         for (TriggerRuntime trigger : triggers.values()) {
+            if (trigger.configuration.trigger.type()
+                    == TaskTriggerType.CACHE_UPDATED) {
+                dispatchCacheEvent(trigger);
+                continue;
+            }
             if ((trigger.state != TaskTriggerState.IDLE
                     && trigger.state != TaskTriggerState.ERROR)
                     || ticks < trigger.nextCheckTick) {
                 continue;
             }
             evaluate(trigger);
+        }
+    }
+
+    void cacheUpdated(UUID regionId) {
+        for (TriggerRuntime runtime : triggers.values()) {
+            TaskTriggerDefinition trigger = runtime.configuration.trigger;
+            if (trigger.type() != TaskTriggerType.CACHE_UPDATED
+                    || !regionId.equals(trigger.cacheRegionId())) {
+                continue;
+            }
+            long readyAt = ticks + trigger.intervalTicks();
+            if (!runtime.cacheEventPending
+                    || readyAt > runtime.cacheEventReadyAtTick) {
+                runtime.cacheEventReadyAtTick = readyAt;
+            }
+            runtime.cacheEventPending = true;
+            if (!runtime.waitingForRun
+                    && runtime.state != TaskTriggerState.COOLDOWN) {
+                runtime.state = TaskTriggerState.IDLE;
+                runtime.message = "缓存区域“"
+                        + runtime.configuration.cacheRegion.name()
+                        + "”有新物品，等待防抖后创建分类任务";
+            }
         }
     }
 
@@ -137,6 +174,11 @@ final class TaskTriggerManager {
     }
 
     private void synchronize(TriggerRuntime runtime) {
+        if (runtime.configuration.trigger.type()
+                == TaskTriggerType.CACHE_UPDATED) {
+            synchronizeCacheEvent(runtime);
+            return;
+        }
         if (!runtime.waitingForRun) {
             if (runtime.state == TaskTriggerState.COOLDOWN
                     && ticks >= runtime.cooldownUntilTick) {
@@ -155,6 +197,64 @@ final class TaskTriggerManager {
         startCooldown(runtime);
     }
 
+    private void synchronizeCacheEvent(TriggerRuntime runtime) {
+        if (runtime.waitingForRun) {
+            if (host.taskPending(runtime.configuration.target.id())) {
+                runtime.state = TaskTriggerState.RUNNING;
+                runtime.message = "分类任务正在排队或执行";
+                return;
+            }
+            runtime.waitingForRun = false;
+            startCooldown(runtime);
+            return;
+        }
+        if (runtime.state == TaskTriggerState.COOLDOWN
+                && ticks >= runtime.cooldownUntilTick) {
+            runtime.state = TaskTriggerState.IDLE;
+            runtime.message = runtime.cacheEventPending
+                    ? "缓存已更新，等待防抖后创建分类任务"
+                    : idleMessage(runtime.configuration.trigger);
+        } else if (runtime.state != TaskTriggerState.COOLDOWN
+                && runtime.cacheEventPending) {
+            runtime.message = "缓存已更新，等待防抖后创建分类任务";
+        }
+    }
+
+    private void dispatchCacheEvent(TriggerRuntime runtime) {
+        if (!runtime.cacheEventPending
+                || runtime.waitingForRun
+                || ticks < runtime.cacheEventReadyAtTick) {
+            return;
+        }
+        if (runtime.state == TaskTriggerState.COOLDOWN
+                && ticks < runtime.cooldownUntilTick) {
+            return;
+        }
+        TaskTriggerDefinition trigger = runtime.configuration.trigger;
+        try {
+            if (host.taskPending(runtime.configuration.target.id())) {
+                runtime.waitingForRun = true;
+                runtime.state = TaskTriggerState.RUNNING;
+                runtime.message = "缓存有新变化，等待当前分类任务完成";
+                return;
+            }
+            host.start(
+                    runtime.configuration.target,
+                    trigger.priority(),
+                    runtime.configuration.config
+            );
+            runtime.cacheEventPending = false;
+            runtime.waitingForRun = true;
+            runtime.state = TaskTriggerState.RUNNING;
+            runtime.message = "缓存有新物品，已加入"
+                    + priorityLabel(trigger.priority())
+                    + "分类任务";
+        } catch (RuntimeException exception) {
+            runtime.state = TaskTriggerState.ERROR;
+            runtime.message = safeMessage(exception);
+        }
+    }
+
     private void evaluate(TriggerRuntime runtime) {
         TaskTriggerDefinition trigger = runtime.configuration.trigger;
         runtime.nextCheckTick = ticks + trigger.intervalTicks();
@@ -162,6 +262,7 @@ final class TaskTriggerManager {
             ConditionResult condition = switch (trigger.type()) {
                 case DROPPED_ITEMS -> droppedItemCondition(runtime);
                 case FOOD_LEVEL_AT_OR_BELOW -> foodLevelCondition(runtime);
+                case CACHE_UPDATED -> ConditionResult.miss();
             };
             if (condition.error() != null) {
                 runtime.state = TaskTriggerState.ERROR;
@@ -244,6 +345,9 @@ final class TaskTriggerManager {
     }
 
     private static String idleMessage(TaskTriggerDefinition trigger) {
+        if (trigger.type() == TaskTriggerType.CACHE_UPDATED) {
+            return "空闲 · 等待缓存区域收到物品";
+        }
         if (trigger.type() == TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW) {
             return "空闲 · 等待饱食度不高于 "
                     + trigger.foodLevelThreshold();
@@ -287,17 +391,20 @@ final class TaskTriggerManager {
         private final TaskTriggerDefinition trigger;
         private final TaskDefinition target;
         private final CoordinatePoint coordinate;
+        private final RegionDefinition cacheRegion;
         private final AppConfig config;
 
         private TriggerConfiguration(
                 TaskTriggerDefinition trigger,
                 TaskDefinition target,
                 CoordinatePoint coordinate,
+                RegionDefinition cacheRegion,
                 AppConfig config
         ) {
             this.trigger = trigger;
             this.target = target;
             this.coordinate = coordinate;
+            this.cacheRegion = cacheRegion;
             this.config = config;
         }
     }
@@ -307,8 +414,10 @@ final class TaskTriggerManager {
         private TaskTriggerState state = TaskTriggerState.IDLE;
         private String message;
         private boolean waitingForRun;
+        private boolean cacheEventPending;
         private long nextCheckTick;
         private long cooldownUntilTick;
+        private long cacheEventReadyAtTick;
 
         private TriggerRuntime(
                 TriggerConfiguration configuration,

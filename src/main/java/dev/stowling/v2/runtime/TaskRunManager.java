@@ -419,12 +419,14 @@ public final class TaskRunManager {
             case SUCCEEDED -> completeCurrentStep(result.message());
             case FAILED -> {
                 requestCancel();
+                publishWorkspaceEvents();
                 finish(TaskRunState.FAILED, result.message());
             }
         }
     }
 
     private void completeCurrentStep(String message) {
+        publishWorkspaceEvents();
         active.executor = null;
         active.executorStarted = false;
         int completed = active.snapshot.completedSteps() + 1;
@@ -462,6 +464,7 @@ public final class TaskRunManager {
                 : outcome == StopOutcome.CLEAN
                         ? "任务已取消"
                         : "任务已取消，但导航停止状态未知";
+        publishWorkspaceEvents();
         finish(
                 preempted ? TaskRunState.PREEMPTED : TaskRunState.CANCELLED,
                 message
@@ -498,6 +501,7 @@ public final class TaskRunManager {
     }
 
     private void finish(TaskRunState state, String message) {
+        publishWorkspaceEvents();
         TaskRunSnapshot old = active.snapshot;
         TaskRunSnapshot finished = new TaskRunSnapshot(
                 old.runId(),
@@ -626,6 +630,17 @@ public final class TaskRunManager {
         return queue.stream().anyMatch(
                 run -> run.prepared.task.id().equals(taskId)
         );
+    }
+
+    private void publishWorkspaceEvents() {
+        if (active == null) {
+            return;
+        }
+        Map<UUID, Integer> updates = active.workspace
+                .consumeCacheUpdates();
+        for (Map.Entry<UUID, Integer> update : updates.entrySet()) {
+            triggers.cacheUpdated(update.getKey());
+        }
     }
 
     private static Map<UUID, CoordinatePoint> indexCoordinates(

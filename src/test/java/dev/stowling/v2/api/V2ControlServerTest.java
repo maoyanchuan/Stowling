@@ -341,6 +341,74 @@ class V2ControlServerTest {
     }
 
     @Test
+    void supportsCacheUpdatedTriggersWithARegionReference()
+            throws Exception {
+        try (Fixture fixture = fixture()) {
+            JsonObject coordinates = object(fixture.send(
+                    "/v1/coordinates",
+                    "POST",
+                    coordinate("Cache", 1, 64, 2),
+                    true
+            ));
+            String coordinateId = coordinates.getAsJsonArray("coordinates")
+                    .get(0)
+                    .getAsJsonObject()
+                    .get("id")
+                    .getAsString();
+            JsonObject regions = object(fixture.send(
+                    "/v1/regions",
+                    "POST",
+                    """
+                            {"name":"Cache area","firstX":0,"firstY":64,
+                            "firstZ":0,"secondX":16,"secondY":72,"secondZ":16}
+                            """,
+                    true
+            ));
+            String regionId = regions.getAsJsonArray("regions")
+                    .get(0)
+                    .getAsJsonObject()
+                    .get("id")
+                    .getAsString();
+            JsonObject tasks = object(fixture.send(
+                    "/v1/tasks",
+                    "POST",
+                    """
+                            {"name":"Sort cache","priority":"NORMAL","steps":[
+                            {"moduleId":"MOVE_TO_COORDINATE","parameters":{
+                            "coordinateId":"%s"}}]}
+                            """.formatted(coordinateId),
+                    true
+            ));
+            String taskId = tasks.getAsJsonArray("tasks")
+                    .get(0)
+                    .getAsJsonObject()
+                    .get("id")
+                    .getAsString();
+
+            HttpResponse<String> created = fixture.send(
+                    "/v1/task-triggers",
+                    "POST",
+                    """
+                            {"name":"Sort after cache update",
+                            "type":"CACHE_UPDATED","targetTaskId":"%s",
+                            "priority":"URGENT","intervalTicks":20,
+                            "cooldownTicks":100,"cacheRegionId":"%s"}
+                            """.formatted(taskId, regionId),
+                    true
+            );
+
+            assertEquals(201, created.statusCode());
+            JsonObject trigger = object(created)
+                    .getAsJsonArray("triggers")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals("CACHE_UPDATED", trigger.get("type").getAsString());
+            assertEquals(regionId, trigger.get("cacheRegionId").getAsString());
+            assertEquals("URGENT", trigger.get("priority").getAsString());
+        }
+    }
+
+    @Test
     void supportsOptionalCoordinateDimensionAndRadius() throws Exception {
         try (Fixture fixture = fixture()) {
             HttpResponse<String> created = fixture.send(

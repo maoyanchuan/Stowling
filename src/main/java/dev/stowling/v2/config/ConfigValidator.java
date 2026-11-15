@@ -113,12 +113,13 @@ public final class ConfigValidator {
                 );
             }
         }
-        validateTriggers(config.triggers(), coordinates, taskIds);
+        validateTriggers(config.triggers(), coordinates, regions, taskIds);
     }
 
     private static void validateTriggers(
             List<TaskTriggerDefinition> triggers,
             Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
             Set<UUID> taskIds
     ) {
         Set<UUID> triggerIds = new HashSet<>();
@@ -137,6 +138,13 @@ public final class ConfigValidator {
                 throw new V2ValidationException(
                         "trigger coordinate does not exist: "
                                 + trigger.coordinateId()
+                );
+            }
+            if (trigger.cacheRegionId() != null
+                    && !regions.containsKey(trigger.cacheRegionId())) {
+                throw new V2ValidationException(
+                        "trigger cache region does not exist: "
+                                + trigger.cacheRegionId()
                 );
             }
         }

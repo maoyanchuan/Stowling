@@ -13,7 +13,8 @@ public record TaskTriggerDefinition(
         int cooldownTicks,
         UUID coordinateId,
         String itemFilter,
-        Integer foodLevelThreshold
+        Integer foodLevelThreshold,
+        UUID cacheRegionId
 ) {
     public static final int DEFAULT_INTERVAL_TICKS = 20;
     public static final int DEFAULT_COOLDOWN_TICKS = 100;
@@ -44,7 +45,9 @@ public record TaskTriggerDefinition(
             );
         }
         if (type == TaskTriggerType.DROPPED_ITEMS) {
-            if (coordinateId == null || foodLevelThreshold != null) {
+            if (coordinateId == null
+                    || foodLevelThreshold != null
+                    || cacheRegionId != null) {
                 throw new IllegalArgumentException(
                         "dropped item triggers require a coordinate"
                 );
@@ -54,9 +57,19 @@ public record TaskTriggerDefinition(
                     || itemFilter != null
                     || foodLevelThreshold == null
                     || foodLevelThreshold < 0
-                    || foodLevelThreshold > 20) {
+                    || foodLevelThreshold > 20
+                    || cacheRegionId != null) {
                 throw new IllegalArgumentException(
                         "food triggers require a threshold from 0 to 20"
+                );
+            }
+        } else if (type == TaskTriggerType.CACHE_UPDATED) {
+            if (cacheRegionId == null
+                    || coordinateId != null
+                    || itemFilter != null
+                    || foodLevelThreshold != null) {
+                throw new IllegalArgumentException(
+                        "cache triggers require a cache region"
                 );
             }
         }
@@ -82,6 +95,7 @@ public record TaskTriggerDefinition(
                 cooldownTicks,
                 coordinateId,
                 itemFilter,
+                null,
                 null
         );
     }
@@ -105,7 +119,32 @@ public record TaskTriggerDefinition(
                 cooldownTicks,
                 null,
                 null,
-                foodLevelThreshold
+                foodLevelThreshold,
+                null
+        );
+    }
+
+    public static TaskTriggerDefinition cacheUpdated(
+            UUID id,
+            String name,
+            UUID targetTaskId,
+            TaskPriority priority,
+            int intervalTicks,
+            int cooldownTicks,
+            UUID cacheRegionId
+    ) {
+        return new TaskTriggerDefinition(
+                id,
+                name,
+                TaskTriggerType.CACHE_UPDATED,
+                targetTaskId,
+                priority,
+                intervalTicks,
+                cooldownTicks,
+                null,
+                null,
+                null,
+                cacheRegionId
         );
     }
 

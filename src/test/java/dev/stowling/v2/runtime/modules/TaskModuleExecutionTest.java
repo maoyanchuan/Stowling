@@ -212,6 +212,10 @@ class TaskModuleExecutionTest {
         );
         assertEquals(TaskModuleState.SUCCEEDED, scan.start().state());
         assertTrue(workspace.containerScan().isPresent());
+        assertEquals(
+                region.id(),
+                workspace.containerScanRegionId().orElseThrow()
+        );
         assertTrue(workspace.containerCategories().isEmpty());
 
         DepositItemsToContainersModule deposit =
@@ -225,6 +229,10 @@ class TaskModuleExecutionTest {
                 transfers.requested.getFirst()
         );
         assertEquals(TaskModuleState.SUCCEEDED, deposit.tick().state());
+        assertEquals(
+                Map.of(region.id(), 3),
+                workspace.consumeCacheUpdates()
+        );
     }
 
     @Test
@@ -346,6 +354,7 @@ class TaskModuleExecutionTest {
                 transfers.requested
         );
         assertTrue(workspace.collectedItems().isEmpty());
+        assertTrue(workspace.consumeCacheUpdates().isEmpty());
     }
 
     @Test

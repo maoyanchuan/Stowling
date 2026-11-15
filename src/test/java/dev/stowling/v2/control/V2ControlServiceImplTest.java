@@ -263,6 +263,7 @@ class V2ControlServiceImplTest {
                         100,
                         point.id(),
                         "minecraft:oak_log",
+                        null,
                         null
                 )
         );
@@ -303,7 +304,8 @@ class V2ControlServiceImplTest {
                         100,
                         null,
                         null,
-                        18
+                        18,
+                        null
                 )
         );
 

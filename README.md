@@ -45,7 +45,7 @@ by Baritone.
 - One task runs at a time. A single queue orders work by `BACKGROUND`, `NORMAL`,
   and `URGENT` priority.
 - Independent task triggers poll conditions without occupying the execution
-  slot. Dropped-item and food-level conditions are supported.
+  slot. Dropped-item, food-level, and cache-update conditions are supported.
 - A trigger submits its selected target task through the normal queue at the
   trigger's configured priority. The queue then orders all pending work by
   priority and request order.
@@ -221,6 +221,27 @@ paths. An empty filter matches every dropped item. Dropped-item triggers use the
 coordinate's configured dimension and radius, falling back to radius 16 when
 radius is disabled.
 
+A cache-update trigger starts only after `DEPOSIT_ITEMS_TO_CONTAINERS` actually
+moves at least one item into the selected cache region:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "Sort cache after deposit",
+  "type": "CACHE_UPDATED",
+  "targetTaskId": "00000000-0000-0000-0000-000000000002",
+  "priority": "NORMAL",
+  "intervalTicks": 40,
+  "cooldownTicks": 100,
+  "cacheRegionId": "00000000-0000-0000-0000-000000000003"
+}
+```
+
+`intervalTicks` is the debounce window for this trigger type. Consecutive
+deposits in the same region therefore create one sort run. If that task is
+already queued or running, the trigger keeps one pending follow-up and schedules
+it after the current run and cooldown finish.
+
 ```text
 trigger condition matches
     -> selected task enters the shared queue
@@ -251,7 +272,8 @@ Use the contents of `config/stowling-api.token` to connect.
 
 Pages:
 
-- **Status** shows the current run, coordinate count, task count, and history.
+- **Status** shows the current run, trigger status, coordinate count, task count,
+  and history.
 - **Coordinates** manages names and X/Y/Z values.
 - **Category zones** manages marker areas, storage areas, and rules.
 - **Tasks** provides cache and category-sorting templates, manual module

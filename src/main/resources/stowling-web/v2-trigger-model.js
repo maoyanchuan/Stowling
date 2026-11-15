@@ -3,7 +3,8 @@
 
     const TYPES = Object.freeze([
         "DROPPED_ITEMS",
-        "FOOD_LEVEL_AT_OR_BELOW"
+        "FOOD_LEVEL_AT_OR_BELOW",
+        "CACHE_UPDATED"
     ]);
 
     /**
@@ -28,6 +29,7 @@
             cooldownTicks: Number(value?.cooldownTicks ?? 100),
             coordinateId: String(value?.coordinateId || ""),
             itemFilter: String(value?.itemFilter || ""),
+            cacheRegionId: String(value?.cacheRegionId || ""),
             foodLevelThreshold: value?.foodLevelThreshold === null
                 || value?.foodLevelThreshold === undefined
                 ? 18
@@ -50,6 +52,7 @@
             cooldownTicks: 100,
             coordinateId: "",
             itemFilter: "",
+            cacheRegionId: "",
             foodLevelThreshold: 18
         };
     }
@@ -60,6 +63,9 @@
      */
     function payloadTrigger(trigger) {
         const droppedItems = trigger.type === "DROPPED_ITEMS";
+        const foodTrigger =
+            trigger.type === "FOOD_LEVEL_AT_OR_BELOW";
+        const cacheTrigger = trigger.type === "CACHE_UPDATED";
         return {
             name: trigger.name.trim(),
             type: trigger.type,
@@ -71,9 +77,12 @@
             itemFilter: droppedItems
                 ? trigger.itemFilter.trim()
                 : null,
-            foodLevelThreshold: droppedItems
-                ? null
-                : Number(trigger.foodLevelThreshold)
+            foodLevelThreshold: foodTrigger
+                ? Number(trigger.foodLevelThreshold)
+                : null,
+            cacheRegionId: cacheTrigger
+                ? trigger.cacheRegionId
+                : null
         };
     }
 
@@ -84,6 +93,9 @@
     function conditionLabel(trigger) {
         if (trigger.type === "FOOD_LEVEL_AT_OR_BELOW") {
             return `饱食度 ≤ ${trigger.foodLevelThreshold}`;
+        }
+        if (trigger.type === "CACHE_UPDATED") {
+            return "缓存区域收到新物品";
         }
         return trigger.itemFilter
             ? `掉落物：${trigger.itemFilter}`

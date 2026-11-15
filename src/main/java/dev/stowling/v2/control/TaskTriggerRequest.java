@@ -13,6 +13,7 @@ public record TaskTriggerRequest(
         int cooldownTicks,
         UUID coordinateId,
         String itemFilter,
-        Integer foodLevelThreshold
+        Integer foodLevelThreshold,
+        UUID cacheRegionId
 ) {
 }

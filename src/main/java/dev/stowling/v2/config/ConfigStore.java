@@ -134,7 +134,8 @@ public final class ConfigStore {
                             "cooldownTicks",
                             "coordinateId",
                             "itemFilter",
-                            "foodLevelThreshold"
+                            "foodLevelThreshold",
+                            "cacheRegionId"
                     ),
                     Set.of(
                             "id",

@@ -14,6 +14,7 @@ import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
@@ -147,6 +148,61 @@ class TaskTriggerManagerTest {
         assertEquals(0, host.startCount);
     }
 
+    @Test
+    void cacheEventTriggerCoalescesChangesWhileTheSortTaskIsRunning() {
+        UUID coordinateId = UUID.randomUUID();
+        UUID regionId = UUID.randomUUID();
+        TaskDefinition task = task(coordinateId);
+        TaskTriggerDefinition trigger = TaskTriggerDefinition.cacheUpdated(
+                UUID.randomUUID(),
+                "Sort cache",
+                task.id(),
+                TaskPriority.NORMAL,
+                1,
+                2,
+                regionId
+        );
+        FakeHost host = new FakeHost();
+        TaskTriggerManager manager = new TaskTriggerManager(
+                new FakeDroppedItems(),
+                new FakeFood(20),
+                new NoopNavigation(),
+                host
+        );
+        manager.refresh(config(
+                task,
+                trigger,
+                List.of(new RegionDefinition(
+                        regionId,
+                        "Cache",
+                        0,
+                        64,
+                        0,
+                        10,
+                        70,
+                        10
+                ))
+        ));
+
+        manager.tick();
+        assertEquals(0, host.startCount);
+
+        manager.cacheUpdated(regionId);
+        manager.tick();
+        assertEquals(1, host.startCount);
+
+        host.pending = true;
+        manager.tick();
+        manager.cacheUpdated(regionId);
+        host.pending = false;
+        manager.tick();
+        for (int tick = 0; tick < 3; tick++) {
+            manager.tick();
+        }
+
+        assertEquals(2, host.startCount);
+    }
+
     private static TaskDefinition task(UUID coordinateId) {
         return new TaskDefinition(
                 UUID.randomUUID(),
@@ -168,6 +224,14 @@ class TaskTriggerManagerTest {
             TaskDefinition task,
             TaskTriggerDefinition trigger
     ) {
+        return config(task, trigger, List.of());
+    }
+
+    private static AppConfig config(
+            TaskDefinition task,
+            TaskTriggerDefinition trigger,
+            List<RegionDefinition> regions
+    ) {
         UUID coordinateId = UUID.fromString(
                 task.steps().getFirst()
                         .parameters()
@@ -185,7 +249,7 @@ class TaskTriggerManagerTest {
                         4
                 )),
                 List.of(task),
-                List.of(),
+                regions,
                 List.of(),
                 List.of(trigger)
         );

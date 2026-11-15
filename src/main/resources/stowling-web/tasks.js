@@ -60,12 +60,15 @@
         triggerTargetTask: document.querySelector("#trigger-target-task"),
         triggerPriority: document.querySelector("#trigger-priority"),
         triggerInterval: document.querySelector("#trigger-interval"),
+        triggerIntervalLabel: document.querySelector("#trigger-interval-label"),
         triggerCooldown: document.querySelector("#trigger-cooldown"),
         triggerCoordinate: document.querySelector("#trigger-coordinate"),
         triggerItemFilter: document.querySelector("#trigger-item-filter"),
         triggerDropFields: document.querySelector("#trigger-drop-fields"),
         triggerFoodFields: document.querySelector("#trigger-food-fields"),
         triggerFoodThreshold: document.querySelector("#trigger-food-threshold"),
+        triggerCacheFields: document.querySelector("#trigger-cache-fields"),
+        triggerCacheRegion: document.querySelector("#trigger-cache-region"),
         triggerErrors: document.querySelector("#trigger-errors"),
         saveTrigger: document.querySelector("#save-trigger-button"),
         discardTrigger: document.querySelector("#discard-trigger-button"),
@@ -311,6 +314,14 @@
                 new Option(coordinate.name, coordinate.id)
             );
         }
+        elements.triggerCacheRegion.replaceChildren(
+            new Option("请选择缓存区域", "")
+        );
+        for (const region of state.regions) {
+            elements.triggerCacheRegion.append(
+                new Option(region.name, region.id)
+            );
+        }
         elements.triggerName.value = draft.name;
         elements.triggerType.value = draft.type;
         elements.triggerTargetTask.value = draft.targetTaskId;
@@ -323,6 +334,7 @@
         );
         elements.triggerCoordinate.value = draft.coordinateId;
         elements.triggerItemFilter.value = draft.itemFilter;
+        elements.triggerCacheRegion.value = draft.cacheRegionId;
         elements.triggerFoodThreshold.value = String(
             draft.foodLevelThreshold
         );
@@ -330,6 +342,12 @@
             draft.type !== "DROPPED_ITEMS";
         elements.triggerFoodFields.hidden =
             draft.type !== "FOOD_LEVEL_AT_OR_BELOW";
+        elements.triggerCacheFields.hidden =
+            draft.type !== "CACHE_UPDATED";
+        elements.triggerIntervalLabel.textContent =
+            draft.type === "CACHE_UPDATED"
+                ? "触发防抖（秒）"
+                : "检测间隔（秒）";
         updateTriggerActions();
     }
 
@@ -380,6 +398,12 @@
                     || trigger.foodLevelThreshold < 0
                     || trigger.foodLevelThreshold > 20)) {
             errors.push("饱食度阈值必须是 0 到 20 的整数");
+        }
+        if (trigger.type === "CACHE_UPDATED"
+                && !state.regions.some(
+                    (region) => region.id === trigger.cacheRegionId
+                )) {
+            errors.push("缓存触发必须选择一个缓存区域");
         }
         return errors;
     }
@@ -1286,6 +1310,11 @@
     });
     elements.triggerCoordinate.addEventListener("change", () => {
         state.triggerDraft.coordinateId = elements.triggerCoordinate.value;
+        markTriggerDirty();
+    });
+    elements.triggerCacheRegion.addEventListener("change", () => {
+        state.triggerDraft.cacheRegionId =
+            elements.triggerCacheRegion.value;
         markTriggerDirty();
     });
     elements.triggerItemFilter.addEventListener("input", () => {

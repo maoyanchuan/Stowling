@@ -499,7 +499,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cooldownTicks(),
                 request.coordinateId(),
                 request.itemFilter(),
-                request.foodLevelThreshold()
+                request.foodLevelThreshold(),
+                request.cacheRegionId()
         );
         List<TaskTriggerDefinition> triggers = new ArrayList<>(
                 current.config().triggers()
@@ -536,7 +537,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cooldownTicks(),
                 request.coordinateId(),
                 request.itemFilter(),
-                request.foodLevelThreshold()
+                request.foodLevelThreshold(),
+                request.cacheRegionId()
         );
         List<TaskTriggerDefinition> triggers = current.config().triggers()
                 .stream()

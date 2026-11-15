@@ -295,6 +295,7 @@ def test_task_page_supports_independent_task_triggers() -> None:
     assert 'id="trigger-priority"' in html
     assert 'id="trigger-coordinate"' in html
     assert 'id="trigger-food-threshold"' in html
+    assert 'id="trigger-cache-region"' in html
     assert 'id="trigger-list"' in html
     assert 'id="trigger-status-list"' in html
     assert 'id="task-watch-enabled"' not in html
@@ -302,6 +303,9 @@ def test_task_page_supports_independent_task_triggers() -> None:
     assert "trigger: task.trigger" not in model
     assert "FOOD_LEVEL_AT_OR_BELOW" in trigger_model
     assert "DROPPED_ITEMS" in trigger_model
+    assert "CACHE_UPDATED" in trigger_model
+    assert "cacheRegionId" in trigger_model
+    assert "触发防抖（秒）" in tasks
     assert "payloadTrigger" in trigger_model
     assert "state.triggerStatuses" in tasks
     assert '"/v1/task-triggers"' in tasks
@@ -385,7 +389,6 @@ def test_retained_pages_hide_internal_ids_and_removed_controls() -> None:
         "任务 ID",
         "步骤 ID",
         "UUID",
-        "触发器",
     ):
         assert removed not in pages
     assert "任务 ID" not in scripts
@@ -409,7 +412,6 @@ def test_legacy_pickup_region_container_and_schedule_entries_are_gone() -> None:
         "/v1/containers",
         "PICKUP",
         "启用调度",
-        "触发器",
     ):
         assert removed not in retained
 

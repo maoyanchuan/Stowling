@@ -5,10 +5,13 @@ import dev.stowling.automation.ContainerScanResult;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 public final class TaskRunWorkspace {
     private final Map<String, Integer> collectedItems = new LinkedHashMap<>();
+    private final Map<UUID, Integer> cacheUpdates = new LinkedHashMap<>();
     private ContainerScanResult containerScan;
+    private UUID containerScanRegionId;
     private ContainerCategoryResult containerCategories;
 
     public synchronized void recordCollected(String itemId, int count) {
@@ -33,12 +36,40 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized void setContainerScan(ContainerScanResult scan) {
+        setContainerScan(null, scan);
+    }
+
+    public synchronized void setContainerScan(
+            UUID regionId,
+            ContainerScanResult scan
+    ) {
+        containerScanRegionId = regionId;
         containerScan = scan;
         containerCategories = null;
     }
 
     public synchronized Optional<ContainerScanResult> containerScan() {
         return Optional.ofNullable(containerScan);
+    }
+
+    public synchronized Optional<UUID> containerScanRegionId() {
+        return Optional.ofNullable(containerScanRegionId);
+    }
+
+    public synchronized void recordCacheUpdate(
+            UUID regionId,
+            int itemCount
+    ) {
+        if (regionId == null || itemCount <= 0) {
+            return;
+        }
+        cacheUpdates.merge(regionId, itemCount, Math::addExact);
+    }
+
+    public synchronized Map<UUID, Integer> consumeCacheUpdates() {
+        Map<UUID, Integer> result = Map.copyOf(cacheUpdates);
+        cacheUpdates.clear();
+        return result;
     }
 
     public synchronized void setContainerCategories(

@@ -30,7 +30,7 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
                 containerTypes,
                 maxVolume
         );
-        context.workspace().setContainerScan(scan);
+        context.workspace().setContainerScan(region.id(), scan);
         return scan.succeeded()
                 ? TaskModuleResult.succeeded(scan.message())
                 : TaskModuleResult.failed(scan.message());

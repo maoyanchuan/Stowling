@@ -47,6 +47,10 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 后台任务可以设置为完成后等待 5 秒自动重新排队。手动运行时可以临时覆盖
 本次优先级，不会修改任务保存的默认优先级。
 
+任务触发器独立于任务配置，不占用执行槽位。当前支持掉落物出现、饱食度低于
+阈值，以及缓存区域实际收到新物品三种条件。触发器命中后，目标任务会按触发器
+指定的优先级加入现有队列。
+
 - `MOVE_TO_COORDINATE`：前往指定坐标。
 - `WAIT_FOR_DROPPED_ITEMS`：等待坐标半径内出现匹配的掉落物。
 - `COLLECT_DROPPED_ITEMS`：前往匹配的掉落物并等待拾取完成。
@@ -137,12 +141,33 @@ REFRESH_CATEGORY_MARKER_CACHE
   "coordinates": [],
   "tasks": [],
   "regions": [],
-  "categoryZones": []
+  "categoryZones": [],
+  "triggers": []
 }
 ```
 
 文件缺失、损坏或来自旧 schema 时，Stowling 会尽可能创建 `.bak` 安全备份，
 然后覆盖为空的新配置。旧数据不会迁移。
+
+缓存触发器只在 `DEPOSIT_ITEMS_TO_CONTAINERS` 实际把物品移入选定缓存区域后
+创建分类任务。示例：
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "存入缓存后分类",
+  "type": "CACHE_UPDATED",
+  "targetTaskId": "00000000-0000-0000-0000-000000000002",
+  "priority": "NORMAL",
+  "intervalTicks": 40,
+  "cooldownTicks": 100,
+  "cacheRegionId": "00000000-0000-0000-0000-000000000003"
+}
+```
+
+这里的 `intervalTicks` 是触发防抖时间。连续多次存入同一缓存区域会合并为一次
+分类运行；如果分类任务已经排队或正在运行，触发器只保留一次补跑，并在当前
+任务和冷却结束后再加入队列。没有新的缓存变化时不会重复创建分类任务。
 
 坐标可以启用显式维度；未启用时任务使用玩家当前所在维度。维度和半径开关关闭时
 接口返回 `null`，掉落物模块使用任务内置的搜索半径。任务启动时会冻结步骤、
@@ -201,9 +226,18 @@ PUT    /v1/tasks/{uuid}
 DELETE /v1/tasks/{uuid}
 POST   /v1/tasks/{uuid}/runs
 
+GET    /v1/task-triggers
+POST   /v1/task-triggers
+GET    /v1/task-triggers/{uuid}
+PUT    /v1/task-triggers/{uuid}
+DELETE /v1/task-triggers/{uuid}
+
 GET    /v1/task-runs
 POST   /v1/task-runs/{uuid}/cancel
 ```
+
+`GET /v1/task-runs` 同时返回 `runs`、`queue` 和 `triggers`。触发器状态包括
+`IDLE`、`RUNNING`、`COOLDOWN` 和 `ERROR`。
 
 修改和删除请求必须携带当前 `revision`。版本过期返回 `409`。删除仍被任务引用的
 坐标返回 `409`，响应中列出引用任务名称。

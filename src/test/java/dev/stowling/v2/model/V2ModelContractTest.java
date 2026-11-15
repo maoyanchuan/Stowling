@@ -43,7 +43,8 @@ class V2ModelContractTest {
                         "cooldownTicks",
                         "coordinateId",
                         "itemFilter",
-                        "foodLevelThreshold"
+                        "foodLevelThreshold",
+                        "cacheRegionId"
                 ),
                 components(TaskTriggerDefinition.class)
         );

@@ -26,6 +26,7 @@ class ConfigValidatorTest {
     @Test
     void validatesTriggerTargetsAndCoordinateReferences() {
         CoordinatePoint point = point("Drops");
+        RegionDefinition cache = region("Cache");
         TaskDefinition task = task("Pickup", step(point.id()));
         TaskTriggerDefinition trigger =
                 TaskTriggerDefinition.droppedItems(
@@ -38,16 +39,45 @@ class ConfigValidatorTest {
                         point.id(),
                         null
                 );
+        TaskTriggerDefinition cacheTrigger =
+                TaskTriggerDefinition.cacheUpdated(
+                        UUID.randomUUID(),
+                        "Sort cache",
+                        task.id(),
+                        TaskPriority.NORMAL,
+                        20,
+                        100,
+                        cache.id()
+                );
         AppConfig valid = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 List.of(point),
                 List.of(task),
+                List.of(cache),
                 List.of(),
-                List.of(),
-                List.of(trigger)
+                List.of(trigger, cacheTrigger)
         );
 
         assertDoesNotThrow(() -> ConfigValidator.requireValid(valid));
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(point),
+                        List.of(task),
+                        List.of(),
+                        List.of(),
+                        List.of(TaskTriggerDefinition.cacheUpdated(
+                                UUID.randomUUID(),
+                                "Missing cache",
+                                task.id(),
+                                TaskPriority.NORMAL,
+                                20,
+                                100,
+                                UUID.randomUUID()
+                        ))
+                ))
+        );
         assertThrows(
                 V2ValidationException.class,
                 () -> ConfigValidator.requireValid(new AppConfig(

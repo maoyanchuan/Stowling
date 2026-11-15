@@ -547,7 +547,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 request.cooldownTicks(),
                                 request.coordinateId(),
                                 request.itemFilter(),
-                                request.foodLevelThreshold()
+                                request.foodLevelThreshold(),
+                                request.cacheRegionId()
                         )
                 ));
             } else if ("DELETE".equals(method)) {
@@ -594,7 +595,8 @@ public final class V2ControlServer implements AutoCloseable {
                 integer(json, "cooldownTicks"),
                 coordinateId == null ? null : uuid(coordinateId),
                 optionalString(json, "itemFilter"),
-                optionalInteger(json, "foodLevelThreshold")
+                optionalInteger(json, "foodLevelThreshold"),
+                optionalUuid(json, "cacheRegionId")
         );
     }
 
@@ -608,7 +610,8 @@ public final class V2ControlServer implements AutoCloseable {
                 "cooldownTicks",
                 "coordinateId",
                 "itemFilter",
-                "foodLevelThreshold"
+                "foodLevelThreshold",
+                "cacheRegionId"
         );
         if (!revision) {
             return fields;
@@ -919,6 +922,11 @@ public final class V2ControlServer implements AutoCloseable {
             return null;
         }
         return integer(json, key);
+    }
+
+    private static UUID optionalUuid(JsonObject json, String key) {
+        String value = optionalString(json, key);
+        return value == null ? null : uuid(value);
     }
 
     private static boolean optionalBoolean(JsonObject json, String key) {

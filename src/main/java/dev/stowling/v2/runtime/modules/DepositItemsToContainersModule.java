@@ -217,6 +217,12 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
             int moved = entry.getValue() - after.getOrDefault(entry.getKey(), 0);
             if (moved > 0) {
                 context.workspace().removeCollected(entry.getKey(), moved);
+                context.workspace().containerScanRegionId().ifPresent(
+                        regionId -> context.workspace().recordCacheUpdate(
+                                regionId,
+                                moved
+                        )
+                );
             }
         }
     }

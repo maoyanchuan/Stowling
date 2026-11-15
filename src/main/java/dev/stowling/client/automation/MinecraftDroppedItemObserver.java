@@ -5,8 +5,11 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -70,16 +73,35 @@ public final class MinecraftDroppedItemObserver
                 .toList();
     }
 
-    private static java.util.Optional<DroppedItem> droppedItem(
+    @Override
+    public Optional<Map<String, Integer>> playerItemCounts() {
+        if (!scheduler.isClientThread()) {
+            return Optional.empty();
+        }
+        LocalPlayer player = minecraft.player;
+        if (player == null || player.isRemoved()) {
+            return Optional.empty();
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
+            if (stack.isEmpty() || stack.getCount() <= 0) {
+                continue;
+            }
+            counts.merge(itemId(stack), stack.getCount(), Math::addExact);
+        }
+        return Optional.of(Map.copyOf(counts));
+    }
+
+    private static Optional<DroppedItem> droppedItem(
             ItemEntity entity
     ) {
         ItemStack stack = entity.getItem();
         if (stack.isEmpty() || stack.getCount() <= 0) {
             return java.util.Optional.empty();
         }
-        return java.util.Optional.of(new DroppedItem(
+        return Optional.of(new DroppedItem(
                 entity.getUUID(),
-                BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
+                itemId(stack),
                 stack.getCount(),
                 new BlockPosition(
                         floor(entity.getX()),
@@ -130,5 +152,9 @@ public final class MinecraftDroppedItemObserver
 
     private static int floor(double value) {
         return (int) Math.floor(value);
+    }
+
+    private static String itemId(ItemStack stack) {
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 }

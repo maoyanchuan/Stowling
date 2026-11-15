@@ -21,6 +21,7 @@ import dev.stowling.v2.model.TaskStep;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -100,6 +101,54 @@ class TaskModuleExecutionTest {
         assertEquals(TaskModuleState.SUCCEEDED, result.state());
         assertEquals(
                 Map.of("minecraft:iron_ingot", 3, "minecraft:gold_ingot", 2),
+                workspace.collectedItems()
+        );
+    }
+
+    @Test
+    void collectModuleRecordsAllStacksPickedUpInTheSameTick() {
+        CoordinatePoint point = point("Drop");
+        MutableDroppedItems dropped = new MutableDroppedItems();
+        dropped.inventory = Optional.of(Map.of());
+        dropped.items.add(drop("minecraft:iron_ingot", 64));
+        dropped.items.add(drop("minecraft:gold_ingot", 64));
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                dropped,
+                new EmptyRegions(),
+                new RecordingTransfers(),
+                point,
+                region("Storage"),
+                workspace
+        );
+        CollectDroppedItemsModule module = new CollectDroppedItemsModule(
+                context,
+                step(
+                        ConfigValidator.COLLECT_DROPPED_ITEMS,
+                        ConfigValidator.COORDINATE_ID,
+                        point.id().toString()
+                )
+        );
+
+        module.start();
+        dropped.items.clear();
+        dropped.inventory = Optional.of(Map.of(
+                "minecraft:iron_ingot",
+                64,
+                "minecraft:gold_ingot",
+                64
+        ));
+        TaskModuleResult result = module.tick();
+        for (int tick = 0;
+                tick < 10 && result.state() != TaskModuleState.SUCCEEDED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                Map.of("minecraft:iron_ingot", 64, "minecraft:gold_ingot", 64),
                 workspace.collectedItems()
         );
     }
@@ -255,10 +304,16 @@ class TaskModuleExecutionTest {
     private static final class MutableDroppedItems
             implements DroppedItemObserverPort {
         private final List<DroppedItem> items = new ArrayList<>();
+        private Optional<Map<String, Integer>> inventory = Optional.empty();
 
         @Override
         public List<DroppedItem> observe(BlockPosition center, int radius) {
             return List.copyOf(items);
+        }
+
+        @Override
+        public Optional<Map<String, Integer>> playerItemCounts() {
+            return inventory;
         }
     }
 

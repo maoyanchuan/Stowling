@@ -9,6 +9,8 @@ import dev.stowling.v2.model.TaskStep;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 final class CollectDroppedItemsModule implements TaskModuleExecutor {
@@ -25,6 +27,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
     private DroppedItem current;
     private boolean navigationStarted;
     private int emptyTicks;
+    private Optional<Map<String, Integer>> previousInventory = Optional.empty();
+    private boolean inventoryTracking;
 
     CollectDroppedItemsModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
@@ -53,6 +57,7 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
         if (!TaskModuleSupport.dimensionMatches(context, coordinate)) {
             return TaskModuleResult.failed("拾取坐标维度不匹配");
         }
+        recordInventoryDelta();
         List<DroppedItem> drops = matches();
         if (current != null) {
             return continueCurrent(drops);
@@ -84,12 +89,18 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                 .findFirst()
                 .orElse(null);
         if (observed == null) {
-            context.workspace().recordCollected(current.itemId(), current.count());
+            if (!inventoryTracking) {
+                context.workspace().recordCollected(
+                        current.itemId(),
+                        current.count()
+                );
+            }
             current = null;
             navigationStarted = false;
             emptyTicks = 0;
             return TaskModuleResult.running("已拾取一组掉落物");
         }
+        current = observed;
         NavigationStatus status;
         if (!navigationStarted) {
             navigationStarted = true;
@@ -113,6 +124,32 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                         itemFilter
                 ))
                 .toList();
+    }
+
+    private void recordInventoryDelta() {
+        Optional<Map<String, Integer>> observed =
+                context.droppedItems().playerItemCounts();
+        if (observed.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> currentInventory = observed.orElseThrow();
+        if (!inventoryTracking) {
+            previousInventory = observed;
+            inventoryTracking = true;
+            return;
+        }
+        Map<String, Integer> previous = previousInventory.orElseThrow();
+        for (Map.Entry<String, Integer> entry : currentInventory.entrySet()) {
+            int added = entry.getValue()
+                    - previous.getOrDefault(entry.getKey(), 0);
+            if (added > 0 && TaskModuleSupport.itemMatches(
+                    entry.getKey(),
+                    itemFilter
+            )) {
+                context.workspace().recordCollected(entry.getKey(), added);
+            }
+        }
+        previousInventory = observed;
     }
 
     private boolean timedOut() {

@@ -32,7 +32,10 @@ public final class BaritoneNavigationService implements NavigationService {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
-        GoalComposite goal = nearContainerGoal(target, radius);
+        GoalComposite goal = nearContainerGoal(
+                target,
+                nearGoalRadius(radius)
+        );
         primaryBaritone().getCustomGoalProcess().setGoalAndPath(goal);
     }
 
@@ -44,6 +47,14 @@ public final class BaritoneNavigationService implements NavigationService {
                 new BlockPos(target.x(), target.y(), target.z()),
                 0.0D
         );
+    }
+
+    @Override
+    public int nearGoalRadius(int requestedRadius) {
+        LocalPlayer player = primaryBaritone().getPlayerContext().player();
+        return player == null
+                ? requestedRadius
+                : nearGoalRadius(requestedRadius, player.blockInteractionRange());
     }
 
     @Override
@@ -75,6 +86,16 @@ public final class BaritoneNavigationService implements NavigationService {
         return new GoalComposite(
                 new GoalTwoBlocks(targetPos),
                 new GoalNear(targetPos, radius)
+        );
+    }
+
+    static int nearGoalRadius(
+            int requestedRadius,
+            double interactionRange
+    ) {
+        return Math.max(
+                requestedRadius,
+                (int) Math.ceil(interactionRange)
         );
     }
 }

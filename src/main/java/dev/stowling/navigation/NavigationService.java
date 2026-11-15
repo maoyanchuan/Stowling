@@ -11,6 +11,10 @@ public interface NavigationService {
         return false;
     }
 
+    default int nearGoalRadius(int requestedRadius) {
+        return requestedRadius;
+    }
+
     void cancel();
 
     boolean isNavigatingOrCalculating();

@@ -91,7 +91,8 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         double deltaY = current.y() - target.y();
         double deltaZ = current.z() - target.z();
         double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-        if (distanceSquared <= arrivalDistanceSquared(radius)) {
+        if (!nearNavigation
+                && distanceSquared <= arrivalDistanceSquared(radius)) {
             return arrive();
         }
         if (!active) {

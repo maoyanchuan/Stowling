@@ -75,6 +75,50 @@ class BaritoneAutomationNavigationTest {
     }
 
     @Test
+    void exactNavigationStillUsesItsConfiguredArrivalRadius() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation =
+                new BaritoneAutomationNavigation(
+                        service,
+                        () -> new WorldObservation(
+                                true,
+                                true,
+                                "minecraft:overworld",
+                                Optional.of(new BlockPosition(7, 64, 5))
+                        )
+                );
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.start(target);
+        NavigationStatus status = navigation.status(target, 4);
+
+        assertEquals(NavigationStatus.ARRIVED, status);
+    }
+
+    @Test
+    void nearNavigationRequiresInteractionRangeInsteadOfRadiusAlone() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation =
+                new BaritoneAutomationNavigation(
+                        service,
+                        () -> new WorldObservation(
+                                true,
+                                true,
+                                "minecraft:overworld",
+                                Optional.of(new BlockPosition(10, 64, 1))
+                        )
+                );
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.startNear(target, 4);
+        NavigationStatus status = navigation.status(target, 4);
+
+        assertEquals(NavigationStatus.NAVIGATING, status);
+    }
+
+    @Test
     void retriesNearNavigationBeforeReportingFailure() {
         RecordingNavigationService service = new RecordingNavigationService();
         service.navigating = true;

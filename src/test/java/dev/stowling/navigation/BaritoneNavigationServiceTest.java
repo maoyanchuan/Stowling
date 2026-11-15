@@ -1,5 +1,6 @@
 package dev.stowling.navigation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,5 +17,11 @@ class BaritoneNavigationServiceTest {
         assertTrue(goal.isInGoal(7, -44, 1));
         assertTrue(goal.isInGoal(8, -40, 1));
         assertFalse(goal.isInGoal(20, -40, 1));
+    }
+
+    @Test
+    void nearGoalUsesGlobalInteractionRangeWithoutShrinkingTaskRadius() {
+        assertEquals(5, BaritoneNavigationService.nearGoalRadius(4, 4.5D));
+        assertEquals(7, BaritoneNavigationService.nearGoalRadius(7, 4.5D));
     }
 }

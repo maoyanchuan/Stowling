@@ -29,8 +29,11 @@ import net.minecraft.world.phys.Vec3;
 public final class MinecraftFoodConsumptionPort
         implements FoodConsumptionPort {
     private static final int EATING_TIMEOUT_TICKS = 100;
+    private static final int EATING_START_RETRIES = 4;
+    private static final int EATING_RETRY_INTERVAL_TICKS = 3;
     private static final Duration CONTAINER_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration TAKING_TIMEOUT = Duration.ofSeconds(8);
+    private static final Duration CLOSING_TIMEOUT = Duration.ofSeconds(2);
     private static final int CONFIRM_POLLS = 2;
 
     private final Minecraft minecraft;
@@ -76,6 +79,9 @@ public final class MinecraftFoodConsumptionPort
         if (active != null) {
             return FoodConsumptionResult.failed("已有进食操作正在进行");
         }
+        if (minecraft.gui.screen() != null) {
+            return FoodConsumptionResult.failed("请先关闭当前界面");
+        }
         LocalPlayer player = minecraft.player;
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         if (player == null || gameMode == null || player.isRemoved()) {
@@ -105,10 +111,13 @@ public final class MinecraftFoodConsumptionPort
         }
         active = new ActiveEating(
                 itemId,
+                slot.index(),
                 slot.hotbar(),
+                slot.hand(),
                 previousSelected,
                 player.getFoodData().getFoodLevel(),
-                itemCount(player, slot)
+                itemCount(player, slot),
+                EATING_RETRY_INTERVAL_TICKS
         );
         return FoodConsumptionResult.pending("正在进食 " + itemId);
     }
@@ -142,7 +151,7 @@ public final class MinecraftFoodConsumptionPort
         if (player.isUsingItem()) {
             return FoodConsumptionResult.pending("正在进食 " + active.itemId);
         }
-        if (active.ticks < 3) {
+        if (active.ticks < 2) {
             return FoodConsumptionResult.pending(
                     "等待进食 " + active.itemId
             );
@@ -151,16 +160,43 @@ public final class MinecraftFoodConsumptionPort
         int countAfter = itemCount(player, active);
         boolean consumed = foodAfter > active.foodLevelBefore
                 || countAfter < active.itemCountBefore;
+        if (consumed) {
+            restoreSelected(
+                    player,
+                    active.previousSelected,
+                    active.hotbar
+            );
+            active = null;
+            return FoodConsumptionResult.succeeded("已完成一次进食");
+        }
+        MultiPlayerGameMode gameMode = minecraft.gameMode;
+        if (canRetryEating(player, gameMode)) {
+            InteractionResult retry = gameMode.useItem(
+                    player,
+                    active.hand
+            );
+            active.useAttempts++;
+            active.nextRetryTick = active.ticks
+                    + EATING_RETRY_INTERVAL_TICKS;
+            if (retry.consumesAction()) {
+                return FoodConsumptionResult.pending(
+                        "重新开始进食 " + active.itemId
+                );
+            }
+        }
         restoreSelected(
                 player,
                 active.previousSelected,
                 active.hotbar
         );
         active = null;
-        if (consumed) {
-            return FoodConsumptionResult.succeeded("已完成一次进食");
-        }
-        return FoodConsumptionResult.failed("食物没有成功消耗");
+        return FoodConsumptionResult.failed(
+                "食物没有成功消耗（饱食度 "
+                        + foodAfter
+                        + "，剩余数量 "
+                        + countAfter
+                        + "）"
+        );
     }
 
     @Override
@@ -227,6 +263,7 @@ public final class MinecraftFoodConsumptionPort
             case WAITING_FOR_ONE -> pollSingleItemPlacement();
             case RETURNING_REMAINDER -> pollRemainderReturn();
             case CONFIRMING -> pollAcquisitionConfirmation();
+            case CLOSING -> pollFoodContainerClosing();
         };
     }
 
@@ -353,12 +390,21 @@ public final class MinecraftFoodConsumptionPort
                 && confirmed
                 && menu.getCarried().isEmpty()) {
             closeContainer();
-            acquiring = null;
-            return FoodConsumptionResult.succeeded(
-                    "已从食物箱取出一个食物"
-            );
+            acquiring.phase = AcquisitionPhase.CLOSING;
+            acquiring.deadline = Instant.now().plus(CLOSING_TIMEOUT);
+            return FoodConsumptionResult.pending("正在关闭食物箱");
         }
         return FoodConsumptionResult.pending("等待服务器确认取食");
+    }
+
+    private FoodConsumptionResult pollFoodContainerClosing() {
+        if (currentContainerScreen() != null) {
+            return FoodConsumptionResult.pending("等待食物箱关闭");
+        }
+        acquiring = null;
+        return FoodConsumptionResult.succeeded(
+                "已从食物箱取出一个食物"
+        );
     }
 
     private FoodConsumptionResult failAcquiring(String message) {
@@ -516,10 +562,23 @@ public final class MinecraftFoodConsumptionPort
     }
 
     private static int itemCount(LocalPlayer player, ActiveEating eating) {
-        int slot = eating.hotbar
-                ? player.getInventory().getSelectedSlot()
-                : Inventory.SLOT_OFFHAND;
-        return player.getInventory().getItem(slot).getCount();
+        return player.getInventory().getItem(eating.slotIndex).getCount();
+    }
+
+    private boolean canRetryEating(
+            LocalPlayer player,
+            MultiPlayerGameMode gameMode
+    ) {
+        if (gameMode == null
+                || minecraft.gui.screen() != null
+                || active.useAttempts >= EATING_START_RETRIES
+                || active.ticks < active.nextRetryTick) {
+            return false;
+        }
+        return itemMatches(
+                player.getInventory().getItem(active.slotIndex),
+                active.itemId
+        );
     }
 
     private static void restoreSelected(
@@ -603,24 +662,34 @@ public final class MinecraftFoodConsumptionPort
 
     private static final class ActiveEating {
         private final String itemId;
+        private final int slotIndex;
         private final boolean hotbar;
+        private final InteractionHand hand;
         private final int previousSelected;
         private final int foodLevelBefore;
         private final int itemCountBefore;
+        private int nextRetryTick;
+        private int useAttempts = 1;
         private int ticks;
 
         private ActiveEating(
                 String itemId,
+                int slotIndex,
                 boolean hotbar,
+                InteractionHand hand,
                 int previousSelected,
                 int foodLevelBefore,
-                int itemCountBefore
+                int itemCountBefore,
+                int nextRetryTick
         ) {
             this.itemId = itemId;
+            this.slotIndex = slotIndex;
             this.hotbar = hotbar;
+            this.hand = hand;
             this.previousSelected = previousSelected;
             this.foodLevelBefore = foodLevelBefore;
             this.itemCountBefore = itemCountBefore;
+            this.nextRetryTick = nextRetryTick;
         }
     }
 
@@ -629,7 +698,8 @@ public final class MinecraftFoodConsumptionPort
         WAITING_FOR_SOURCE,
         WAITING_FOR_ONE,
         RETURNING_REMAINDER,
-        CONFIRMING
+        CONFIRMING,
+        CLOSING
     }
 
     private static final class ActiveAcquiringFood {

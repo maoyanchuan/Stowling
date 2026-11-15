@@ -261,6 +261,27 @@ def test_task_execution_is_separate_from_the_editor() -> None:
     assert "renderRunControls()" in tasks
 
 
+def test_task_priority_queue_and_background_repeat_controls() -> None:
+    html = read("tasks.html")
+    model = read("v2-task-model.js")
+    tasks = read("tasks.js")
+
+    assert 'id="task-priority"' in html
+    assert 'id="task-repeat"' in html
+    assert 'id="run-priority-select"' in html
+    assert 'id="task-queue-list"' in html
+    assert '"BACKGROUND"' in model
+    assert '"NORMAL"' in model
+    assert '"URGENT"' in model
+    assert "repeatWhenIdle" in model
+    assert "priority: task.priority" in model
+    assert "priorityOverride" not in tasks
+    assert 'priority: elements.runPriority.value' in tasks
+    assert "state.queue" in tasks
+    assert "renderQueue()" in tasks
+    assert "被中断任务不会续接" in html
+
+
 def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:
     styles = read("styles.css")
 
@@ -348,6 +369,5 @@ def test_legacy_pickup_region_container_and_schedule_entries_are_gone() -> None:
         "PICKUP",
         "启用调度",
         "触发器",
-        "优先级",
     ):
         assert removed not in retained

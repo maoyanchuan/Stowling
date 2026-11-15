@@ -9,11 +9,19 @@ import java.util.UUID;
 public record TaskDefinition(
         UUID id,
         String name,
+        TaskPriority priority,
+        boolean repeatWhenIdle,
         List<TaskStep> steps
 ) {
     public TaskDefinition {
         id = Objects.requireNonNull(id, "id");
         name = requireName(name);
+        priority = priority == null ? TaskPriority.NORMAL : priority;
+        if (repeatWhenIdle && priority != TaskPriority.BACKGROUND) {
+            throw new IllegalArgumentException(
+                    "only background tasks can repeat when idle"
+            );
+        }
         steps = List.copyOf(Objects.requireNonNull(steps, "steps"));
         if (steps.isEmpty() || steps.size() > 128) {
             throw new IllegalArgumentException("tasks require 1 to 128 steps");
@@ -24,6 +32,23 @@ public record TaskDefinition(
                 throw new IllegalArgumentException("step ids must be unique");
             }
         }
+    }
+
+    public TaskDefinition(
+            UUID id,
+            String name,
+            List<TaskStep> steps
+    ) {
+        this(id, name, TaskPriority.NORMAL, false, steps);
+    }
+
+    public TaskDefinition(
+            UUID id,
+            String name,
+            TaskPriority priority,
+            List<TaskStep> steps
+    ) {
+        this(id, name, priority, false, steps);
     }
 
     private static String requireName(String value) {

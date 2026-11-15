@@ -44,11 +44,12 @@
      */
     function renderRuns(runs) {
         elements.recent.replaceChildren();
-        if (runs.length === 0) {
+        const visible = runs.filter((run) => run.state !== "QUEUED");
+        if (visible.length === 0) {
             elements.recent.append(Stowling.emptyState("当前没有运行记录"));
             return;
         }
-        for (const run of runs.slice(0, 8)) {
+        for (const run of visible.slice(0, 8)) {
             const card = Stowling.element("article", "task-card");
             card.append(
                 Stowling.element("strong", "", String(run.taskName || "任务")),

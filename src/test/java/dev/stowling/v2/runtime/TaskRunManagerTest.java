@@ -11,6 +11,7 @@ import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 class TaskRunManagerTest {
     @Test
-    void runsLinearMovementStepsInOrderAndRejectsOverlap() {
+    void runsLinearMovementStepsInOrderAndCoalescesDuplicateRequests() {
         UUID firstId = UUID.randomUUID();
         UUID secondId = UUID.randomUUID();
         TaskDefinition task = task(step(firstId), step(secondId));
@@ -32,11 +33,15 @@ class TaskRunManagerTest {
         );
         TaskRunManager manager = new TaskRunManager(navigation);
 
-        manager.start(task, coordinates(firstId, secondId));
-        assertThrows(
-                TaskRunBusyException.class,
-                () -> manager.start(task, coordinates(firstId, secondId))
+        TaskRunSnapshot first = manager.start(
+                task,
+                coordinates(firstId, secondId)
         );
+        TaskRunSnapshot duplicate = manager.start(
+                task,
+                coordinates(firstId, secondId)
+        );
+        assertEquals(first.runId(), duplicate.runId());
         for (int tick = 0; tick < 4; tick++) {
             manager.tick();
         }
@@ -51,6 +56,146 @@ class TaskRunManagerTest {
         assertEquals(TaskRunState.SUCCEEDED, manager.runs().getFirst().state());
         assertEquals(2, manager.runs().getFirst().completedSteps());
         assertTrue(manager.status().isEmpty());
+    }
+
+    @Test
+    void higherPriorityPreemptsAndRestartsInterruptedTaskFromFirstStep() {
+        UUID coordinateId = UUID.randomUUID();
+        TaskDefinition background = task(
+                "Classify",
+                TaskPriority.BACKGROUND,
+                false,
+                step(coordinateId)
+        );
+        TaskDefinition urgent = task(
+                "Emergency",
+                TaskPriority.URGENT,
+                false,
+                step(coordinateId)
+        );
+        RecordingNavigation navigation = new RecordingNavigation(
+                NavigationStatus.ARRIVED,
+                NavigationStatus.ARRIVED
+        );
+        TaskRunManager manager = new TaskRunManager(navigation);
+
+        TaskRunSnapshot firstBackground = manager.start(
+                background,
+                coordinates(coordinateId)
+        );
+        manager.tick();
+        TaskRunSnapshot urgentRun = manager.start(
+                urgent,
+                coordinates(coordinateId)
+        );
+        assertEquals(TaskRunState.QUEUED, urgentRun.state());
+
+        for (int tick = 0; tick < 7; tick++) {
+            manager.tick();
+        }
+
+        assertEquals(
+                List.of(
+                        new BlockPosition(0, 64, 0),
+                        new BlockPosition(0, 64, 0),
+                        new BlockPosition(0, 64, 0)
+                ),
+                navigation.positions()
+        );
+        assertEquals(
+                TaskRunState.SUCCEEDED,
+                manager.runs().stream()
+                        .filter(run -> run.runId().equals(urgentRun.runId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .state()
+        );
+        assertEquals(
+                TaskRunState.PREEMPTED,
+                manager.runs().stream()
+                        .filter(run -> run.runId()
+                                .equals(firstBackground.runId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .state()
+        );
+        assertTrue(manager.runs().stream().anyMatch(
+                run -> run.taskId().equals(background.id())
+                        && !run.runId().equals(firstBackground.runId())
+                        && run.state() == TaskRunState.SUCCEEDED
+        ));
+    }
+
+    @Test
+    void lowerPriorityTaskWaitsWithoutInterruptingActiveRun() {
+        UUID coordinateId = UUID.randomUUID();
+        TaskDefinition normal = task(
+                "Normal",
+                TaskPriority.NORMAL,
+                false,
+                step(coordinateId)
+        );
+        TaskDefinition background = task(
+                "Background",
+                TaskPriority.BACKGROUND,
+                false,
+                step(coordinateId)
+        );
+        TaskRunManager manager = new TaskRunManager(
+                new RecordingNavigation(
+                        NavigationStatus.ARRIVED,
+                        NavigationStatus.ARRIVED
+                )
+        );
+
+        manager.start(normal, coordinates(coordinateId));
+        manager.tick();
+        TaskRunSnapshot backgroundRun = manager.start(
+                background,
+                coordinates(coordinateId)
+        );
+
+        assertEquals(TaskRunState.QUEUED, backgroundRun.state());
+        assertEquals(
+                TaskRunState.RUNNING,
+                manager.status().orElseThrow().state()
+        );
+        assertEquals(1, manager.queued().size());
+    }
+
+    @Test
+    void backgroundTaskRequeuesAfterCompletionCooldown() {
+        UUID coordinateId = UUID.randomUUID();
+        TaskDefinition task = task(
+                "Monitor",
+                TaskPriority.BACKGROUND,
+                true,
+                step(coordinateId)
+        );
+        TaskRunManager manager = new TaskRunManager(
+                new RecordingNavigation(NavigationStatus.ARRIVED)
+        );
+
+        TaskRunSnapshot firstRun = manager.start(
+                task,
+                coordinates(coordinateId)
+        );
+        manager.tick();
+        manager.tick();
+
+        assertEquals(
+                TaskRunState.SUCCEEDED,
+                manager.runs().stream()
+                        .filter(run -> run.runId().equals(firstRun.runId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .state()
+        );
+        assertEquals(1, manager.queued().size());
+        for (int tick = 0; tick < 100; tick++) {
+            manager.tick();
+        }
+        assertTrue(manager.status().isPresent());
     }
 
     @Test
@@ -187,6 +332,21 @@ class TaskRunManagerTest {
         return new TaskDefinition(
                 UUID.randomUUID(),
                 "Travel",
+                List.of(steps)
+        );
+    }
+
+    private static TaskDefinition task(
+            String name,
+            TaskPriority priority,
+            boolean repeatWhenIdle,
+            TaskStep... steps
+    ) {
+        return new TaskDefinition(
+                UUID.randomUUID(),
+                name,
+                priority,
+                repeatWhenIdle,
                 List.of(steps)
         );
     }

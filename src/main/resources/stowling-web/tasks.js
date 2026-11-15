@@ -15,7 +15,8 @@
         runTaskId: "",
         draft: null,
         dirty: false,
-        runs: []
+        runs: [],
+        queue: []
     };
 
     const elements = {
@@ -27,6 +28,8 @@
         empty: document.querySelector("#task-empty"),
         form: document.querySelector("#task-form"),
         name: document.querySelector("#task-name"),
+        priority: document.querySelector("#task-priority"),
+        repeat: document.querySelector("#task-repeat"),
         steps: document.querySelector("#task-steps"),
         addStep: document.querySelector("#add-step-button"),
         moduleCatalog: document.querySelector("#task-module-catalog"),
@@ -36,9 +39,11 @@
         save: document.querySelector("#save-task-button"),
         discard: document.querySelector("#discard-task-button"),
         runSelect: document.querySelector("#run-task-select"),
+        runPriority: document.querySelector("#run-priority-select"),
         run: document.querySelector("#run-task-button"),
         remove: document.querySelector("#delete-task-button"),
         runtime: document.querySelector("#runtime-list"),
+        queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button")
     };
 
@@ -77,10 +82,12 @@
                 ? categoryZones.categoryZones
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
+            state.queue = Array.isArray(runs?.queue) ? runs.queue : [];
             renderTaskList();
             renderModuleCatalog();
             renderRunControls();
             renderRuntime();
+            renderQueue();
         } catch (error) {
             Stowling.handleError(error, "读取任务失败");
         }
@@ -124,10 +131,17 @@
             for (const task of tasks) {
                 const button = Stowling.element(
                     "button",
-                    "task-card task-select",
-                    task.name
+                    "task-card task-select"
                 );
                 button.type = "button";
+                button.append(
+                    Stowling.element("strong", "", task.name),
+                    Stowling.element(
+                        "span",
+                        "module-level-tag",
+                        Model.priorityLabel(task.priority)
+                    )
+                );
                 button.classList.toggle(
                     "active",
                     task.id === state.selectedId
@@ -261,9 +275,9 @@
      * @returns {void}
      */
     function updateRunActions() {
-        const busy = state.runs.some(isActiveRun);
-        elements.runSelect.disabled = state.tasks.length === 0 || busy;
-        elements.run.disabled = !state.runTaskId || busy;
+        elements.runSelect.disabled = state.tasks.length === 0;
+        elements.runPriority.disabled = state.tasks.length === 0;
+        elements.run.disabled = !state.runTaskId;
     }
 
     /**
@@ -339,6 +353,9 @@
             return;
         }
         elements.name.value = state.draft.name;
+        elements.priority.value = state.draft.priority;
+        elements.repeat.checked = state.draft.repeatWhenIdle;
+        elements.repeat.disabled = state.draft.priority !== "BACKGROUND";
         elements.revision.textContent = state.selectedId
             ? Stowling.revisionLabel(state.revision)
             : "新任务";
@@ -386,6 +403,12 @@
         }
         if (!String(draft.name || "").trim()) {
             errors.push("任务名称不能为空");
+        }
+        if (!Model.PRIORITIES.includes(draft.priority)) {
+            errors.push("任务优先级无效");
+        }
+        if (draft.repeatWhenIdle && draft.priority !== "BACKGROUND") {
+            errors.push("只有后台任务可以自动重新排队");
         }
         if (draft.steps.length === 0) {
             errors.push("任务至少需要一个步骤");
@@ -494,6 +517,22 @@
      */
     function isActiveRun(run) {
         return run.state === "RUNNING" || run.state === "WAITING";
+    }
+
+    /**
+     * @param {string} state
+     * @returns {string}
+     */
+    function runStateLabel(state) {
+        const labels = {
+            RUNNING: "运行中",
+            WAITING: "等待中",
+            SUCCEEDED: "已完成",
+            FAILED: "失败",
+            PREEMPTED: "已中断",
+            CANCELLED: "已取消"
+        };
+        return labels[state] || String(state || "");
     }
 
     /**
@@ -608,12 +647,22 @@
             return;
         }
         try {
-            await Stowling.request(
+            const response = await Stowling.request(
                 `/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs`,
-                { method: "POST" }
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(elements.runPriority.value
+                        ? { priority: elements.runPriority.value }
+                        : {})
+                }
             );
             await loadRuns();
-            Stowling.showToast("任务已开始运行");
+            Stowling.showToast(
+                response?.state === "QUEUED"
+                    ? "任务已加入调度队列"
+                    : "任务已开始运行"
+            );
         } catch (error) {
             Stowling.handleError(error, "运行任务失败");
         }
@@ -626,7 +675,11 @@
         try {
             const response = await Stowling.request("/v1/task-runs");
             state.runs = Array.isArray(response?.runs) ? response.runs : [];
+            state.queue = Array.isArray(response?.queue)
+                ? response.queue
+                : [];
             renderRuntime();
+            renderQueue();
             updateRunActions();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
@@ -638,19 +691,26 @@
      */
     function renderRuntime() {
         elements.runtime.replaceChildren();
-        if (state.runs.length === 0) {
+        const runs = state.runs.filter((run) => run.state !== "QUEUED");
+        if (runs.length === 0) {
             elements.runtime.append(Stowling.emptyState("当前没有运行记录"));
             return;
         }
-        for (const run of state.runs) {
+        for (const run of runs) {
             const card = Stowling.element("article", "task-card");
             const content = Stowling.element("div");
             content.append(
-                Stowling.element("strong", "", run.taskName),
+                Stowling.element(
+                    "strong",
+                    "",
+                    `${run.taskName} · ${Model.priorityLabel(run.priority)}`
+                ),
                 Stowling.element(
                     "p",
                     "muted compact-help",
-                    `${run.state} · ${run.completedSteps}/${run.totalSteps} · ${run.message}`
+                    `${runStateLabel(run.state)} · `
+                        + `${run.completedSteps}/${run.totalSteps} · `
+                        + run.message
                 ),
                 Stowling.element(
                     "span",
@@ -676,6 +736,51 @@
     }
 
     /**
+     * @returns {void}
+     */
+    function renderQueue() {
+        elements.queueList.replaceChildren();
+        if (state.queue.length === 0) {
+            elements.queueList.append(
+                Stowling.emptyState("当前没有等待任务")
+            );
+            return;
+        }
+        state.queue.forEach((run, index) => {
+            const card = Stowling.element("article", "task-card");
+            const content = Stowling.element("div");
+            content.append(
+                Stowling.element(
+                    "strong",
+                    "",
+                    `${index + 1}. ${run.taskName}`
+                ),
+                Stowling.element(
+                    "span",
+                    "module-level-tag",
+                    Model.priorityLabel(run.priority)
+                ),
+                Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    run.message || "排队等待"
+                )
+            );
+            const cancel = Stowling.element(
+                "button",
+                "secondary compact",
+                "取消排队"
+            );
+            cancel.type = "button";
+            cancel.addEventListener("click", () => {
+                void cancelRun(run.runId);
+            });
+            card.append(content, cancel);
+            elements.queueList.append(card);
+        });
+    }
+
+    /**
      * @param {string} runId
      * @returns {Promise<void>}
      */
@@ -696,6 +801,17 @@
     elements.newSortTask.addEventListener("click", startSortTask);
     elements.name.addEventListener("input", () => {
         state.draft.name = elements.name.value;
+        markDirty();
+    });
+    elements.priority.addEventListener("change", () => {
+        state.draft.priority = elements.priority.value;
+        if (state.draft.priority !== "BACKGROUND") {
+            state.draft.repeatWhenIdle = false;
+        }
+        markDirty(true);
+    });
+    elements.repeat.addEventListener("change", () => {
+        state.draft.repeatWhenIdle = elements.repeat.checked;
         markDirty();
     });
     elements.addStep.addEventListener("click", () => {

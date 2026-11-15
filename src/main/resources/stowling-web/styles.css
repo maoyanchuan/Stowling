@@ -728,6 +728,31 @@ section[id] {
     gap: 0.55rem;
 }
 
+.task-scheduling-fields {
+    grid-template-columns: minmax(150px, 0.45fr) minmax(220px, 1fr);
+    align-items: end;
+    margin-top: 0.65rem;
+}
+
+.checkbox-field {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.42);
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 650;
+}
+
+.checkbox-field input {
+    width: auto;
+    margin: 0;
+}
+
 .editor-field {
     min-width: 0;
 }
@@ -1440,7 +1465,10 @@ select[aria-invalid="true"] {
 
 .task-launch-grid {
     display: grid;
-    grid-template-columns: minmax(200px, 1fr) auto;
+    grid-template-columns:
+        minmax(190px, 1fr)
+        minmax(150px, 0.5fr)
+        auto;
     align-items: end;
     gap: 0.65rem;
 }
@@ -1688,7 +1716,8 @@ select[aria-invalid="true"] {
     }
 
     .task-launch-grid,
-    .resource-summary {
+    .resource-summary,
+    .task-scheduling-fields {
         grid-template-columns: 1fr;
     }
 

@@ -67,6 +67,24 @@
                         <label for="task-name">任务名称</label>
                         <input id="task-name" maxlength="80" required>
                     </div>
+                    <div class="editor-fields task-scheduling-fields">
+                        <div class="editor-field">
+                            <label for="task-priority">默认优先级</label>
+                            <select id="task-priority">
+                                <option value="BACKGROUND">后台</option>
+                                <option value="NORMAL">普通</option>
+                                <option value="URGENT">紧急</option>
+                            </select>
+                        </div>
+                        <label class="checkbox-field" for="task-repeat">
+                            <input id="task-repeat" type="checkbox">
+                            <span>完成后自动重新排队</span>
+                        </label>
+                    </div>
+                    <p class="muted compact-help">
+                        只有后台任务可以自动重排。重排前等待 5 秒；
+                        普通和紧急任务只在被抢占时从头重新排队。
+                    </p>
                     <div class="step-heading">
                         <div>
                             <h3>模块步骤</h3>
@@ -125,15 +143,39 @@
                             <option value="">请选择任务</option>
                         </select>
                     </div>
+                    <div class="editor-field">
+                        <label for="run-priority-select">本次优先级</label>
+                        <select id="run-priority-select">
+                            <option value="">使用任务默认值</option>
+                            <option value="BACKGROUND">后台</option>
+                            <option value="NORMAL">普通</option>
+                            <option value="URGENT">紧急</option>
+                        </select>
+                    </div>
                     <button id="run-task-button" class="primary compact"
                             type="button">运行所选任务</button>
                 </div>
             </section>
 
+            <section class="panel wide" aria-labelledby="queue-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">等待队列</p>
+                        <h2 id="queue-title">等待任务</h2>
+                        <p class="muted section-help">
+                            高优先级任务会中断当前任务；被中断任务不会续接，
+                            结束排队后从第一步重新运行。
+                        </p>
+                    </div>
+                </div>
+                <div id="task-queue-list" class="card-list"
+                     aria-live="polite"></div>
+            </section>
+
             <section class="panel wide" aria-labelledby="runtime-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">手动执行</p>
+                        <p class="eyebrow">调度与执行</p>
                         <h2 id="runtime-title">运行状态</h2>
                     </div>
                     <button id="refresh-runs-button" class="secondary compact"

@@ -29,7 +29,7 @@ import dev.stowling.v2.control.TaskStepRequest;
 import dev.stowling.v2.control.TaskUpdateRequest;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2NotFoundException;
-import dev.stowling.v2.runtime.TaskRunBusyException;
+import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.runtime.TaskRunNotFoundException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -177,8 +177,6 @@ public final class V2ControlServer implements AutoCloseable {
             );
         } catch (V2RevisionConflictException exception) {
             sendErrorQuietly(exchange, 409, "revision_conflict", exception.getMessage());
-        } catch (TaskRunBusyException exception) {
-            sendErrorQuietly(exchange, 409, "task_run_busy", exception.getMessage());
         } catch (TaskRunNotFoundException exception) {
             sendErrorQuietly(exchange, 404, "not_found", exception.getMessage());
         } catch (CoordinateInUseException exception) {
@@ -269,7 +267,11 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.tasks());
             } else if ("POST".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(json, Set.of("name", "steps"));
+                requireFieldsAny(
+                        json,
+                        Set.of("name", "priority", "repeatWhenIdle", "steps"),
+                        Set.of("name", "steps")
+                );
                 sendJson(exchange, 201, service.createTask(taskRequest(json)));
             } else {
                 throw methodNotAllowed("GET, POST");
@@ -427,9 +429,15 @@ public final class V2ControlServer implements AutoCloseable {
             String suffix = path.substring("/v1/tasks/".length());
             if (suffix.endsWith("/runs")) {
                 requireMethod(method, "POST");
-                requireEmpty(body);
                 UUID id = uuid(suffix.substring(0, suffix.length() - 5));
-                sendJson(exchange, 202, service.runTask(id));
+                JsonObject json = body.isBlank()
+                        ? new JsonObject()
+                        : object(body);
+                requireFieldsAny(json, Set.of("priority"), Set.of());
+                sendJson(exchange, 202, service.runTask(
+                        id,
+                        optionalPriority(json, "priority")
+                ));
                 return;
             }
             UUID id = uuid(suffix);
@@ -438,11 +446,23 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.task(id));
             } else if ("PUT".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(json, Set.of("revision", "name", "steps"));
+                requireFieldsAny(
+                        json,
+                        Set.of(
+                                "revision",
+                                "name",
+                                "priority",
+                                "repeatWhenIdle",
+                                "steps"
+                        ),
+                        Set.of("revision", "name", "steps")
+                );
                 sendJson(exchange, 200, service.updateTask(id,
                         new TaskUpdateRequest(
                                 string(json, "revision"),
                                 string(json, "name"),
+                                optionalPriority(json, "priority"),
+                                optionalBoolean(json, "repeatWhenIdle"),
                                 steps(json)
                         )));
             } else if ("DELETE".equals(method)) {
@@ -467,7 +487,12 @@ public final class V2ControlServer implements AutoCloseable {
     }
 
     private static TaskRequest taskRequest(JsonObject json) {
-        return new TaskRequest(string(json, "name"), steps(json));
+        return new TaskRequest(
+                string(json, "name"),
+                optionalPriority(json, "priority"),
+                optionalBoolean(json, "repeatWhenIdle"),
+                steps(json)
+        );
     }
 
     private static RegionRequest regionRequest(JsonObject json) {
@@ -758,6 +783,37 @@ public final class V2ControlServer implements AutoCloseable {
             return null;
         }
         return integer(json, key);
+    }
+
+    private static boolean optionalBoolean(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || value.isJsonNull()) {
+            return false;
+        }
+        if (!value.isJsonPrimitive()
+                || !value.getAsJsonPrimitive().isBoolean()) {
+            throw invalid(key + " must be a boolean");
+        }
+        return value.getAsBoolean();
+    }
+
+    private static TaskPriority optionalPriority(
+            JsonObject json,
+            String key
+    ) {
+        String value = optionalString(json, key);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return TaskPriority.valueOf(
+                    value.trim().toUpperCase(Locale.ROOT)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw invalid(
+                    key + " must be BACKGROUND, NORMAL, or URGENT"
+            );
+        }
     }
 
     private static void requireFields(JsonObject json, Set<String> required) {

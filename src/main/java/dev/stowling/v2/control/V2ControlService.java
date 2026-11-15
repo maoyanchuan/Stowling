@@ -5,6 +5,7 @@ import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
 import java.util.List;
 import java.util.UUID;
@@ -65,6 +66,8 @@ public interface V2ControlService {
     TaskListResponse deleteTask(UUID id, RevisionRequest request);
 
     TaskRunSnapshot runTask(UUID id);
+
+    TaskRunSnapshot runTask(UUID id, TaskPriority priorityOverride);
 
     RunListResponse taskRuns();
 

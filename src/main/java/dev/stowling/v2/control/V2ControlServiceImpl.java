@@ -17,6 +17,7 @@ import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.module.TaskModuleCatalog;
 import dev.stowling.v2.runtime.TaskRunManager;
@@ -370,6 +371,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         TaskDefinition task = new TaskDefinition(
                 UUID.randomUUID(),
                 request.name(),
+                request.priority(),
+                request.repeatWhenIdle(),
                 steps(request.steps())
         );
         ConfigValidator.requireValid(new AppConfig(
@@ -402,6 +405,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         TaskDefinition updatedTask = new TaskDefinition(
                 existing.id(),
                 request.name(),
+                request.priority(),
+                request.repeatWhenIdle(),
                 steps(request.steps())
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
@@ -439,19 +444,28 @@ public final class V2ControlServiceImpl implements V2ControlService {
 
     @Override
     public synchronized TaskRunSnapshot runTask(UUID id) {
+        return runTask(id, null);
+    }
+
+    @Override
+    public synchronized TaskRunSnapshot runTask(
+            UUID id,
+            TaskPriority priorityOverride
+    ) {
         V2ConfigSnapshot current = configs.read();
         TaskDefinition task = requireTask(current.config(), id);
         return runs.start(
                 task,
                 current.config().coordinates(),
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                priorityOverride
         );
     }
 
     @Override
     public RunListResponse taskRuns() {
-        return new RunListResponse(runs.runs());
+        return new RunListResponse(runs.runs(), runs.queued());
     }
 
     @Override

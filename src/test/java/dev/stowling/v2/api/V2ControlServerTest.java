@@ -140,6 +140,8 @@ class V2ControlServerTest {
                     .getAsJsonObject();
             String taskId = task.get("id").getAsString();
             assertEquals(2, task.getAsJsonArray("steps").size());
+            assertEquals("NORMAL", task.get("priority").getAsString());
+            assertEquals(false, task.get("repeatWhenIdle").getAsBoolean());
             assertEquals(2, object(fixture.send(
                     "/v1/tasks/" + taskId,
                     "GET",
@@ -212,6 +214,49 @@ class V2ControlServerTest {
                             true
                     ).statusCode()
             );
+        }
+    }
+
+    @Test
+    void supportsTaskSchedulingFieldsAndRunPriorityOverride() throws Exception {
+        try (Fixture fixture = fixture()) {
+            JsonObject coordinates = object(fixture.send(
+                    "/v1/coordinates",
+                    "POST",
+                    coordinate("Home", 1, 64, 2),
+                    true
+            ));
+            String coordinateId = coordinates.getAsJsonArray("coordinates")
+                    .get(0)
+                    .getAsJsonObject()
+                    .get("id")
+                    .getAsString();
+            String body = """
+                    {"name":"Classify","priority":"BACKGROUND",
+                    "repeatWhenIdle":true,"steps":[
+                    {"moduleId":"MOVE_TO_COORDINATE","parameters":{
+                    "coordinateId":"%s"}}]}
+                    """.formatted(coordinateId);
+            JsonObject taskList = object(fixture.send(
+                    "/v1/tasks",
+                    "POST",
+                    body,
+                    true
+            ));
+            JsonObject task = taskList.getAsJsonArray("tasks")
+                    .get(0)
+                    .getAsJsonObject();
+
+            assertEquals("BACKGROUND", task.get("priority").getAsString());
+            assertTrue(task.get("repeatWhenIdle").getAsBoolean());
+            JsonObject run = object(fixture.send(
+                    "/v1/tasks/" + task.get("id").getAsString() + "/runs",
+                    "POST",
+                    "{\"priority\":\"URGENT\"}",
+                    true
+            ));
+            assertEquals("URGENT", run.get("priority").getAsString());
+            assertEquals("RUNNING", run.get("state").getAsString());
         }
     }
 

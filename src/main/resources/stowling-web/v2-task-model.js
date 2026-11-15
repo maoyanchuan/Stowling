@@ -9,6 +9,11 @@
     const SORT_TASK_MODULES = Object.freeze([
         "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"
     ]);
+    const PRIORITIES = Object.freeze([
+        "BACKGROUND",
+        "NORMAL",
+        "URGENT"
+    ]);
 
     /**
      * @param {object} value
@@ -29,6 +34,10 @@
         return {
             id: String(value?.id || ""),
             name: String(value?.name || "").trim(),
+            priority: PRIORITIES.includes(value?.priority)
+                ? value.priority
+                : "NORMAL",
+            repeatWhenIdle: Boolean(value?.repeatWhenIdle),
             steps: Array.isArray(value?.steps)
                 ? value.steps.map(normalizeStep)
                 : []
@@ -43,6 +52,8 @@
         return {
             id: "",
             name: "新任务",
+            priority: "NORMAL",
+            repeatWhenIdle: false,
             steps: [newStep(defaultModule(modules))]
         };
     }
@@ -87,6 +98,8 @@
         return {
             id: "",
             name,
+            priority: "NORMAL",
+            repeatWhenIdle: false,
             steps: selected.map(newStep)
         };
     }
@@ -108,11 +121,16 @@
      * @returns {object | null}
      */
     function sortTask(modules) {
-        return taskFromModules(
+        const task = taskFromModules(
             modules,
             "缓存物品分类入库",
             SORT_TASK_MODULES
         );
+        if (task) {
+            task.priority = "BACKGROUND";
+            task.repeatWhenIdle = true;
+        }
+        return task;
     }
 
     /**
@@ -144,8 +162,27 @@
     function payloadTask(task) {
         return {
             name: task.name.trim(),
+            priority: task.priority,
+            repeatWhenIdle: Boolean(
+                task.priority === "BACKGROUND"
+                && task.repeatWhenIdle
+            ),
             steps: task.steps.map(payloadStep)
         };
+    }
+
+    /**
+     * @param {string} priority
+     * @returns {string}
+     */
+    function priorityLabel(priority) {
+        if (priority === "BACKGROUND") {
+            return "后台";
+        }
+        if (priority === "URGENT") {
+            return "紧急";
+        }
+        return "普通";
     }
 
     window.StowlingTaskModel = Object.freeze({
@@ -157,6 +194,8 @@
         sortTask,
         taskFromModules,
         normalizeTask,
-        payloadTask
+        payloadTask,
+        priorityLabel,
+        PRIORITIES
     });
 })();

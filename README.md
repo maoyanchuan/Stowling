@@ -9,7 +9,8 @@ by Baritone.
 - Coordinate entries contain a name and X/Y/Z, with optional dimension and
   arrival-radius fields.
 - Regions contain a name and two full X/Y/Z corner points.
-- Tasks contain a name and one or more ordered module steps.
+- Tasks contain a name, priority, optional background repeat mode, and one or
+  more ordered module steps.
 - Module metadata marks each step as `BASIC` or `COMPOSITE`. A saved task with
   exactly one basic step appears under basic tasks; all other tasks appear under
   composite tasks.
@@ -41,7 +42,11 @@ by Baritone.
   prefers a container with an exact category match.
 - Items without a category or without target capacity remain in, or are
   returned to, the cache.
-- One task can run at a time.
+- One task runs at a time. A single queue orders work by `BACKGROUND`, `NORMAL`,
+  and `URGENT` priority.
+- A strictly higher-priority request preempts the active task. The interrupted
+  run is discarded, requeued, and starts again from step one when its turn
+  returns.
 - Coordinate and task IDs are generated internally and are not shown in the UI.
 - Authentication, runtime status, and read-only inventory diagnostics remain
   available in the local Web console.
@@ -56,6 +61,9 @@ editor builds its controls from that catalog.
 
 The task list, run selector, module catalog, and step module selector are split
 into basic and composite groups without changing existing task configuration.
+
+Background tasks can automatically requeue five seconds after completion.
+Manual runs may override the saved priority for that run only.
 
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
 - `WAIT_FOR_DROPPED_ITEMS` waits until a matching dropped item appears in the

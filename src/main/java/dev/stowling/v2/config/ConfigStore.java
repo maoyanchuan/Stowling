@@ -88,7 +88,17 @@ public final class ConfigStore {
             }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
-                requireExactFields(taskObject, Set.of("id", "name", "steps"));
+                requireFields(
+                        taskObject,
+                        Set.of(
+                                "id",
+                                "name",
+                                "priority",
+                                "repeatWhenIdle",
+                                "steps"
+                        ),
+                        Set.of("id", "name", "steps")
+                );
                 for (JsonElement step : requireArray(taskObject.get("steps"), "steps")) {
                     JsonObject stepObject = requireObject(step, "step");
                     requireExactFields(

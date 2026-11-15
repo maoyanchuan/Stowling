@@ -19,7 +19,13 @@ class V2ModelContractTest {
     @Test
     void taskAndStepKeepOnlyTheV2Fields() {
         assertEquals(
-                List.of("id", "name", "steps"),
+                List.of(
+                        "id",
+                        "name",
+                        "priority",
+                        "repeatWhenIdle",
+                        "steps"
+                ),
                 components(TaskDefinition.class)
         );
         assertEquals(
@@ -81,6 +87,8 @@ class V2ModelContractTest {
         assertEquals(null, point.radius());
         assertEquals(stepId, step.id());
         assertEquals("Travel", task.name());
+        assertEquals(TaskPriority.NORMAL, task.priority());
+        assertEquals(false, task.repeatWhenIdle());
     }
 
     private static List<String> components(Class<?> type) {

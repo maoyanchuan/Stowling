@@ -12,6 +12,7 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.runtime.TaskRunManager;
 import java.nio.file.Path;
 import java.util.List;
@@ -192,6 +193,46 @@ class V2ControlServiceImplTest {
                 new RevisionRequest(updated.revision())
         );
         assertEquals(List.of(), deleted.regions());
+    }
+
+    @Test
+    void storesTaskPriorityAndBackgroundRepeatMode() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Home");
+        TaskListResponse created = service.createTask(new TaskRequest(
+                "Classify",
+                TaskPriority.BACKGROUND,
+                true,
+                List.of(new TaskStepRequest(
+                        null,
+                        ConfigValidator.MOVE_TO_COORDINATE,
+                        Map.of(ConfigValidator.COORDINATE_ID, point.id().toString())
+                ))
+        ));
+        var task = created.tasks().getFirst();
+
+        assertEquals(TaskPriority.BACKGROUND, task.priority());
+        assertEquals(true, task.repeatWhenIdle());
+
+        TaskListResponse updated = service.updateTask(
+                task.id(),
+                new TaskUpdateRequest(
+                        created.revision(),
+                        "Classify",
+                        TaskPriority.NORMAL,
+                        false,
+                        List.of(new TaskStepRequest(
+                                null,
+                                ConfigValidator.MOVE_TO_COORDINATE,
+                                Map.of(
+                                        ConfigValidator.COORDINATE_ID,
+                                        point.id().toString()
+                                )
+                        ))
+                )
+        );
+        assertEquals(TaskPriority.NORMAL, updated.tasks().getFirst().priority());
+        assertEquals(false, updated.tasks().getFirst().repeatWhenIdle());
     }
 
     private V2ControlService service() {

@@ -103,6 +103,42 @@ class ConfigStoreTest {
     }
 
     @Test
+    void keepsTasksThatPredatePriorityAndRepeatFields() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 7,
+                    "coordinates": [{
+                        "id": "00000000-0000-0000-0000-000000000001",
+                        "name": "Home",
+                        "x": 0,
+                        "y": 64,
+                        "z": 0
+                    }],
+                    "tasks": [{
+                        "id": "00000000-0000-0000-0000-000000000002",
+                        "name": "Travel",
+                        "steps": [{
+                            "id": "00000000-0000-0000-0000-000000000003",
+                            "moduleId": "MOVE_TO_COORDINATE",
+                            "parameters": {
+                                "coordinateId":
+                                    "00000000-0000-0000-0000-000000000001"
+                            }
+                        }]
+                    }]
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        var task = store.loadOrReset().config().tasks().getFirst();
+
+        assertEquals(dev.stowling.v2.model.TaskPriority.NORMAL, task.priority());
+        assertEquals(false, task.repeatWhenIdle());
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
+    }
+
+    @Test
     void keepsCategoryBindingsThatPredateIgnoredSupportBlocks() throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """

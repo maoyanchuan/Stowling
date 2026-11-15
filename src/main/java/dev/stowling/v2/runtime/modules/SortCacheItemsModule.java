@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 final class SortCacheItemsModule implements TaskModuleExecutor {
-    private static final int CONTAINER_NAVIGATION_RADIUS = 3;
+    private static final int CONTAINER_NAVIGATION_RADIUS = 4;
 
     private final TaskExecutionContext context;
     private final RegionDefinition cacheRegion;

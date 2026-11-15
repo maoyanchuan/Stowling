@@ -10,6 +10,7 @@
         modules: [],
         coordinates: [],
         selectedId: "",
+        runTaskId: "",
         draft: null,
         dirty: false,
         runs: []
@@ -28,6 +29,7 @@
         revision: document.querySelector("#task-revision"),
         save: document.querySelector("#save-task-button"),
         discard: document.querySelector("#discard-task-button"),
+        runSelect: document.querySelector("#run-task-select"),
         run: document.querySelector("#run-task-button"),
         remove: document.querySelector("#delete-task-button"),
         runtime: document.querySelector("#runtime-list"),
@@ -55,6 +57,7 @@
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             renderTaskList();
+            renderRunControls();
             renderRuntime();
         } catch (error) {
             Stowling.handleError(error, "读取任务失败");
@@ -93,6 +96,32 @@
         state.dirty = false;
         renderEditor();
         renderTaskList();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderRunControls() {
+        const current = state.runTaskId;
+        elements.runSelect.replaceChildren(new Option("请选择任务", ""));
+        for (const task of state.tasks) {
+            elements.runSelect.append(new Option(task.name, task.id));
+        }
+        const preserved = state.tasks.some((task) => task.id === current)
+            ? current
+            : state.tasks[0]?.id || "";
+        state.runTaskId = preserved;
+        elements.runSelect.value = preserved;
+        updateRunActions();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateRunActions() {
+        const busy = state.runs.some((run) => run.state === "RUNNING");
+        elements.runSelect.disabled = state.tasks.length === 0 || busy;
+        elements.run.disabled = !state.runTaskId || busy;
     }
 
     /**
@@ -220,7 +249,6 @@
         }
         elements.save.disabled = !state.dirty || errors.length > 0;
         elements.discard.disabled = !state.dirty;
-        elements.run.disabled = !state.selectedId || state.dirty;
         elements.remove.disabled = !state.selectedId;
     }
 
@@ -261,8 +289,12 @@
             state.selectedId = saved?.id || "";
             state.draft = saved ? Model.normalizeTask(saved) : null;
             state.dirty = false;
+            if (!state.tasks.some((task) => task.id === state.runTaskId)) {
+                state.runTaskId = saved?.id || "";
+            }
             renderEditor();
             renderTaskList();
+            renderRunControls();
             Stowling.showToast("任务已保存");
         } catch (error) {
             Stowling.handleError(error, "保存任务失败");
@@ -293,8 +325,12 @@
             state.selectedId = "";
             state.draft = null;
             state.dirty = false;
+            if (!state.tasks.some((task) => task.id === state.runTaskId)) {
+                state.runTaskId = state.tasks[0]?.id || "";
+            }
             renderTaskList();
             renderEditor();
+            renderRunControls();
             Stowling.showToast("任务已删除");
         } catch (error) {
             Stowling.handleError(error, "删除任务失败");
@@ -305,12 +341,12 @@
      * @returns {Promise<void>}
      */
     async function runTask() {
-        if (!state.selectedId || state.dirty) {
+        if (!state.runTaskId) {
             return;
         }
         try {
             await Stowling.request(
-                `/v1/tasks/${encodeURIComponent(state.selectedId)}/runs`,
+                `/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs`,
                 { method: "POST" }
             );
             await loadRuns();
@@ -328,6 +364,7 @@
             const response = await Stowling.request("/v1/task-runs");
             state.runs = Array.isArray(response?.runs) ? response.runs : [];
             renderRuntime();
+            updateRunActions();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
         }
@@ -414,6 +451,10 @@
             renderEditor();
             renderTaskList();
         }
+    });
+    elements.runSelect.addEventListener("change", () => {
+        state.runTaskId = elements.runSelect.value;
+        updateRunActions();
     });
     elements.run.addEventListener("click", () => void runTask());
     elements.remove.addEventListener("click", () => void deleteTask());

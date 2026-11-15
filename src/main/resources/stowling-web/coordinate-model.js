@@ -43,7 +43,7 @@
      * @returns {string}
      */
     function coordinateLabel(value) {
-        return `${value.name} · ${value.x}, ${value.y}, ${value.z}`;
+        return String(value?.name || "");
     }
 
     window.StowlingCoordinateModel = Object.freeze({

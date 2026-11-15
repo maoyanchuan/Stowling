@@ -76,13 +76,34 @@
                                 type="submit">保存任务</button>
                         <button id="discard-task-button" class="secondary compact"
                                 type="button">放弃修改</button>
-                        <button id="run-task-button" class="secondary compact"
-                                type="button">立即运行</button>
                         <button id="delete-task-button"
                                 class="ghost compact danger-action"
                                 type="button">删除任务</button>
                     </div>
                 </form>
+            </section>
+
+            <section id="task-run-panel" class="panel wide"
+                     aria-labelledby="task-run-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">执行</p>
+                        <h2 id="task-run-title">运行任务</h2>
+                        <p class="muted section-help">
+                            选择已保存的任务并运行，不会使用编辑器中未保存的修改。
+                        </p>
+                    </div>
+                </div>
+                <div class="task-launch-grid">
+                    <div class="editor-field">
+                        <label for="run-task-select">已保存任务</label>
+                        <select id="run-task-select">
+                            <option value="">请选择任务</option>
+                        </select>
+                    </div>
+                    <button id="run-task-button" class="primary compact"
+                            type="button">运行所选任务</button>
+                </div>
             </section>
 
             <section class="panel wide" aria-labelledby="runtime-title">

@@ -43,17 +43,38 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "payloadStep" in model
 
 
+def test_coordinate_choices_only_show_the_saved_name() -> None:
+    model = read("coordinate-model.js")
+
+    assert 'return String(value?.name || "");' in model
+    assert "value.x" not in model
+    assert "value.y" not in model
+    assert "value.z" not in model
+
+
 def test_task_ui_supports_save_run_refresh_and_cancel() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
-    for text in ("保存任务", "立即运行", "刷新状态", "取消任务"):
+    for text in ("保存任务", "运行所选任务", "刷新状态", "取消任务"):
         assert text in html or text in tasks
-    assert "/v1/tasks/${encodeURIComponent(state.selectedId)}/runs" in tasks
+    assert "/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs" in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
     assert "run.state === \"RUNNING\"" in tasks
     assert "run.completedSteps" in tasks
     assert "run.totalSteps" in tasks
+
+
+def test_task_execution_is_separate_from_the_editor() -> None:
+    html = read("tasks.html")
+    tasks = read("tasks.js")
+    editor = html.split('id="task-form"', 1)[1].split("</form>", 1)[0]
+
+    assert 'id="run-task-button"' not in editor
+    assert 'id="task-run-panel"' in html
+    assert 'id="run-task-select"' in html
+    assert "state.runTaskId" in tasks
+    assert "renderRunControls()" in tasks
 
 
 def test_dashboard_uses_new_resource_endpoints_only() -> None:

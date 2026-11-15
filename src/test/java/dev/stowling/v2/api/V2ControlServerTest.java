@@ -261,7 +261,7 @@ class V2ControlServerTest {
     }
 
     @Test
-    void supportsDroppedItemWatchesAndReturnsIdleWatchStatus()
+    void supportsIndependentTaskTriggersAndReturnsIdleStatus()
             throws Exception {
         try (Fixture fixture = fixture()) {
             JsonObject coordinates = object(fixture.send(
@@ -276,14 +276,10 @@ class V2ControlServerTest {
                     .get("id")
                     .getAsString();
             String body = """
-                    {"name":"Pickup","priority":"BACKGROUND",
-                    "repeatWhenIdle":false,
-                    "trigger":{"type":"DROPPED_ITEMS",
-                    "coordinateId":"%s","itemFilter":"minecraft:oak_log",
-                    "intervalTicks":20,"cooldownTicks":100},
-                    "steps":[{"moduleId":"COLLECT_DROPPED_ITEMS",
+                    {"name":"Pickup","priority":"NORMAL",
+                    "steps":[{"moduleId":"MOVE_TO_COORDINATE",
                     "parameters":{"coordinateId":"%s"}}]}
-                    """.formatted(coordinateId, coordinateId);
+                    """.formatted(coordinateId);
 
             HttpResponse<String> created = fixture.send(
                     "/v1/tasks",
@@ -292,25 +288,45 @@ class V2ControlServerTest {
                     true
             );
             assertEquals(201, created.statusCode());
-            JsonObject trigger = object(created)
+            String taskId = object(created)
                     .getAsJsonArray("tasks")
                     .get(0)
                     .getAsJsonObject()
-                    .getAsJsonObject("trigger");
+                    .get("id")
+                    .getAsString();
+            String triggerBody = """
+                    {"name":"Pickup drops","type":"DROPPED_ITEMS",
+                    "targetTaskId":"%s","priority":"NORMAL",
+                    "intervalTicks":20,"cooldownTicks":100,
+                    "coordinateId":"%s",
+                    "itemFilter":"minecraft:oak_log"}
+                    """.formatted(taskId, coordinateId);
+            HttpResponse<String> triggerCreated = fixture.send(
+                    "/v1/task-triggers",
+                    "POST",
+                    triggerBody,
+                    true
+            );
+            assertEquals(201, triggerCreated.statusCode());
+            JsonObject trigger = object(triggerCreated)
+                    .getAsJsonArray("triggers")
+                    .get(0)
+                    .getAsJsonObject();
             assertEquals("DROPPED_ITEMS", trigger.get("type").getAsString());
             assertEquals(20, trigger.get("intervalTicks").getAsInt());
+            assertEquals("NORMAL", trigger.get("priority").getAsString());
 
-            JsonObject watches = object(fixture.send(
+            JsonObject runs = object(fixture.send(
                     "/v1/task-runs",
                     "GET",
                     null,
                     true
-            )).getAsJsonObject();
-            JsonObject watch = watches.getAsJsonArray("watches")
+            ));
+            JsonObject status = runs.getAsJsonArray("triggers")
                     .get(0)
                     .getAsJsonObject();
-            assertEquals("IDLE", watch.get("state").getAsString());
-            assertEquals("Drops", watch.get("coordinateName").getAsString());
+            assertEquals("IDLE", status.get("state").getAsString());
+            assertEquals("Pickup", status.get("targetTaskName").getAsString());
         }
     }
 

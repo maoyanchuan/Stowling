@@ -3,21 +3,26 @@
 
     const Stowling = window.Stowling;
     const Model = window.StowlingTaskModel;
+    const TriggerModel = window.StowlingTriggerModel;
     const Editor = window.StowlingTaskEditor;
     const state = {
         revision: "",
         tasks: [],
+        triggers: [],
+        triggerStatuses: [],
         modules: [],
         coordinates: [],
         regions: [],
         categoryZones: [],
         selectedId: "",
+        selectedTriggerId: "",
         runTaskId: "",
         draft: null,
+        triggerDraft: null,
         dirty: false,
+        triggerDirty: false,
         runs: [],
         queue: [],
-        watches: [],
         query: ""
     };
 
@@ -25,7 +30,6 @@
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
         newSortTask: document.querySelector("#new-sort-task-button"),
-        newWatchTask: document.querySelector("#new-watch-task-button"),
         search: document.querySelector("#task-search"),
         taskCount: document.querySelector("#task-list-count"),
         settingsLabel: document.querySelector("#task-settings-label"),
@@ -36,12 +40,6 @@
         name: document.querySelector("#task-name"),
         priority: document.querySelector("#task-priority"),
         repeat: document.querySelector("#task-repeat"),
-        watchEnabled: document.querySelector("#task-watch-enabled"),
-        watchFields: document.querySelector("#task-watch-fields"),
-        watchCoordinate: document.querySelector("#task-watch-coordinate"),
-        watchFilter: document.querySelector("#task-watch-filter"),
-        watchInterval: document.querySelector("#task-watch-interval"),
-        watchCooldown: document.querySelector("#task-watch-cooldown"),
         steps: document.querySelector("#task-steps"),
         addStep: document.querySelector("#add-step-button"),
         moduleCatalog: document.querySelector("#task-module-catalog"),
@@ -54,8 +52,25 @@
         runPriority: document.querySelector("#run-priority-select"),
         run: document.querySelector("#run-task-button"),
         remove: document.querySelector("#delete-task-button"),
+        newTrigger: document.querySelector("#new-trigger-button"),
+        triggerList: document.querySelector("#trigger-list"),
+        triggerForm: document.querySelector("#trigger-form"),
+        triggerName: document.querySelector("#trigger-name"),
+        triggerType: document.querySelector("#trigger-type"),
+        triggerTargetTask: document.querySelector("#trigger-target-task"),
+        triggerPriority: document.querySelector("#trigger-priority"),
+        triggerInterval: document.querySelector("#trigger-interval"),
+        triggerCooldown: document.querySelector("#trigger-cooldown"),
+        triggerCoordinate: document.querySelector("#trigger-coordinate"),
+        triggerItemFilter: document.querySelector("#trigger-item-filter"),
+        triggerDropFields: document.querySelector("#trigger-drop-fields"),
+        triggerFoodFields: document.querySelector("#trigger-food-fields"),
+        triggerFoodThreshold: document.querySelector("#trigger-food-threshold"),
+        triggerErrors: document.querySelector("#trigger-errors"),
+        saveTrigger: document.querySelector("#save-trigger-button"),
+        discardTrigger: document.querySelector("#discard-trigger-button"),
+        deleteTrigger: document.querySelector("#delete-trigger-button"),
         runtime: document.querySelector("#runtime-list"),
-        watchList: document.querySelector("#task-watch-list"),
         queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button")
     };
@@ -67,6 +82,7 @@
         try {
             const [
                 tasks,
+                triggers,
                 modules,
                 coordinates,
                 regions,
@@ -74,6 +90,7 @@
                 runs
             ] = await Promise.all([
                 Stowling.request("/v1/tasks"),
+                Stowling.request("/v1/task-triggers"),
                 Stowling.request("/v1/task-modules"),
                 Stowling.request("/v1/coordinates"),
                 Stowling.request("/v1/regions"),
@@ -83,6 +100,9 @@
             state.revision = String(tasks?.revision || "");
             state.tasks = Array.isArray(tasks?.tasks)
                 ? tasks.tasks.map(Model.normalizeTask)
+                : [];
+            state.triggers = Array.isArray(triggers?.triggers)
+                ? triggers.triggers.map(TriggerModel.normalizeTrigger)
                 : [];
             state.modules = Array.isArray(modules?.modules) ? modules.modules : [];
             state.coordinates = Array.isArray(coordinates?.coordinates)
@@ -96,17 +116,18 @@
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             state.queue = Array.isArray(runs?.queue) ? runs.queue : [];
-            state.watches = Array.isArray(runs?.watches)
-                ? runs.watches
+            state.triggerStatuses = Array.isArray(runs?.triggers)
+                ? runs.triggers
                 : [];
             renderTaskList();
+            renderTriggerList();
+            renderTriggerEditor();
             renderModuleCatalog();
             renderRunControls();
             if (!state.draft && state.tasks.length > 0) {
                 selectTask(state.tasks[0]);
             }
             renderRuntime();
-            renderWatches();
             renderQueue();
         } catch (error) {
             Stowling.handleError(error, "读取任务失败");
@@ -172,13 +193,6 @@
                         Model.priorityLabel(task.priority)
                     )
                 );
-                if (task.trigger) {
-                    button.append(Stowling.element(
-                        "span",
-                        "module-level-tag",
-                        "监听"
-                    ));
-                }
                 button.classList.toggle(
                     "active",
                     task.id === state.selectedId
@@ -188,6 +202,328 @@
             }
             elements.list.append(group);
         }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderTriggerList() {
+        elements.triggerList.replaceChildren();
+        if (state.triggers.length === 0) {
+            elements.triggerList.append(
+                Stowling.emptyState("尚未创建任务触发器")
+            );
+            return;
+        }
+        for (const trigger of state.triggers) {
+            const status = state.triggerStatuses.find(
+                (entry) => entry.triggerId === trigger.id
+            );
+            const target = state.tasks.find(
+                (task) => task.id === trigger.targetTaskId
+            );
+            const button = Stowling.element(
+                "button",
+                "task-card task-select trigger-select"
+            );
+            button.type = "button";
+            button.classList.toggle(
+                "active",
+                trigger.id === state.selectedTriggerId
+            );
+            const identity = Stowling.element("div", "task-select-identity");
+            identity.append(
+                Stowling.element("strong", "", trigger.name),
+                Stowling.element(
+                    "span",
+                    "compact-help",
+                    TriggerModel.conditionLabel(trigger)
+                ),
+                Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    `→ ${target?.name || "目标任务不存在"} · `
+                        + Model.priorityLabel(trigger.priority)
+                )
+            );
+            if (status?.message) {
+                identity.append(Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    status.message
+                ));
+            }
+            button.append(
+                identity,
+                Stowling.element(
+                    "span",
+                    "module-level-tag trigger-state-tag",
+                    triggerStateLabel(status?.state)
+                )
+            );
+            button.addEventListener("click", () => selectTrigger(trigger));
+            elements.triggerList.append(button);
+        }
+    }
+
+    /**
+     * @param {object} trigger
+     * @returns {void}
+     */
+    function selectTrigger(trigger) {
+        if (state.triggerDirty
+                && !window.confirm("当前触发器有未保存修改，继续将放弃这些修改。")) {
+            return;
+        }
+        state.selectedTriggerId = trigger.id;
+        state.triggerDraft = TriggerModel.normalizeTrigger(trigger);
+        state.triggerDirty = false;
+        renderTriggerList();
+        renderTriggerEditor();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function startNewTrigger() {
+        if (state.triggerDirty
+                && !window.confirm("当前触发器有未保存修改，继续将放弃这些修改。")) {
+            return;
+        }
+        state.selectedTriggerId = "";
+        state.triggerDraft = TriggerModel.newTrigger(
+            state.selectedId || state.tasks[0]?.id
+        );
+        state.triggerDirty = true;
+        renderTriggerList();
+        renderTriggerEditor();
+        elements.triggerName.focus();
+        elements.triggerName.select();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderTriggerEditor() {
+        const draft = state.triggerDraft;
+        elements.triggerForm.hidden = !draft;
+        if (!draft) {
+            return;
+        }
+        elements.triggerTargetTask.replaceChildren(
+            new Option("请选择目标任务", "")
+        );
+        for (const task of state.tasks) {
+            elements.triggerTargetTask.append(
+                new Option(task.name, task.id)
+            );
+        }
+        elements.triggerCoordinate.replaceChildren(
+            new Option("请选择检测坐标", "")
+        );
+        for (const coordinate of state.coordinates) {
+            elements.triggerCoordinate.append(
+                new Option(coordinate.name, coordinate.id)
+            );
+        }
+        elements.triggerName.value = draft.name;
+        elements.triggerType.value = draft.type;
+        elements.triggerTargetTask.value = draft.targetTaskId;
+        elements.triggerPriority.value = draft.priority;
+        elements.triggerInterval.value = String(
+            Math.max(0.05, draft.intervalTicks / 20)
+        );
+        elements.triggerCooldown.value = String(
+            Math.max(0, draft.cooldownTicks / 20)
+        );
+        elements.triggerCoordinate.value = draft.coordinateId;
+        elements.triggerItemFilter.value = draft.itemFilter;
+        elements.triggerFoodThreshold.value = String(
+            draft.foodLevelThreshold
+        );
+        elements.triggerDropFields.hidden =
+            draft.type !== "DROPPED_ITEMS";
+        elements.triggerFoodFields.hidden =
+            draft.type !== "FOOD_LEVEL_AT_OR_BELOW";
+        updateTriggerActions();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function markTriggerDirty() {
+        state.triggerDirty = true;
+        updateTriggerActions();
+    }
+
+    /**
+     * @returns {Array<string>}
+     */
+    function triggerValidationErrors() {
+        const trigger = state.triggerDraft;
+        if (!trigger) {
+            return ["尚未选择触发器"];
+        }
+        const errors = [];
+        if (!String(trigger.name || "").trim()) {
+            errors.push("触发器名称不能为空");
+        }
+        if (!TriggerModel.TYPES.includes(trigger.type)) {
+            errors.push("触发条件无效");
+        }
+        if (!state.tasks.some((task) => task.id === trigger.targetTaskId)) {
+            errors.push("必须选择一个存在的目标任务");
+        }
+        if (!Number.isInteger(trigger.intervalTicks)
+                || trigger.intervalTicks < 1
+                || trigger.intervalTicks > 1200) {
+            errors.push("检测间隔必须在 0.05 到 60 秒之间");
+        }
+        if (!Number.isInteger(trigger.cooldownTicks)
+                || trigger.cooldownTicks < 0
+                || trigger.cooldownTicks > 72000) {
+            errors.push("完成冷却必须在 0 到 3600 秒之间");
+        }
+        if (trigger.type === "DROPPED_ITEMS"
+                && !state.coordinates.some(
+                    (point) => point.id === trigger.coordinateId
+                )) {
+            errors.push("掉落物触发必须选择一个检测坐标");
+        }
+        if (trigger.type === "FOOD_LEVEL_AT_OR_BELOW"
+                && (!Number.isInteger(trigger.foodLevelThreshold)
+                    || trigger.foodLevelThreshold < 0
+                    || trigger.foodLevelThreshold > 20)) {
+            errors.push("饱食度阈值必须是 0 到 20 的整数");
+        }
+        return errors;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateTriggerActions() {
+        const errors = triggerValidationErrors();
+        elements.triggerErrors.replaceChildren();
+        if (state.triggerDirty && errors.length > 0) {
+            elements.triggerErrors.append(
+                Stowling.element("strong", "", "请修正以下问题：")
+            );
+            for (const error of errors) {
+                elements.triggerErrors.append(
+                    Stowling.element("p", "", error)
+                );
+            }
+        }
+        elements.saveTrigger.disabled =
+            !state.triggerDirty || errors.length > 0;
+        elements.discardTrigger.disabled = !state.triggerDirty;
+        elements.deleteTrigger.disabled = !state.selectedTriggerId;
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function saveTrigger() {
+        const errors = triggerValidationErrors();
+        if (errors.length > 0) {
+            updateTriggerActions();
+            return;
+        }
+        const payload = TriggerModel.payloadTrigger(state.triggerDraft);
+        try {
+            let response;
+            if (state.selectedTriggerId) {
+                response = await Stowling.request(
+                    `/v1/task-triggers/${encodeURIComponent(
+                        state.selectedTriggerId
+                    )}`,
+                    {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            revision: state.revision,
+                            ...payload
+                        })
+                    }
+                );
+            } else {
+                response = await Stowling.request("/v1/task-triggers", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+            }
+            state.revision = String(response?.revision || state.revision);
+            state.triggers = response.triggers.map(
+                TriggerModel.normalizeTrigger
+            );
+            const saved = state.triggers.find(
+                (trigger) => trigger.name === payload.name
+            );
+            state.selectedTriggerId = saved?.id || "";
+            state.triggerDraft = saved
+                ? TriggerModel.normalizeTrigger(saved)
+                : null;
+            state.triggerDirty = false;
+            renderTriggerList();
+            renderTriggerEditor();
+            await loadRuns();
+            Stowling.showToast("任务触发器已保存");
+        } catch (error) {
+            Stowling.handleError(error, "保存任务触发器失败");
+        }
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function deleteTrigger() {
+        if (!state.selectedTriggerId) {
+            return;
+        }
+        if (!window.confirm(`删除触发器“${state.triggerDraft.name}”？`)) {
+            return;
+        }
+        try {
+            const response = await Stowling.request(
+                `/v1/task-triggers/${encodeURIComponent(
+                    state.selectedTriggerId
+                )}`,
+                {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ revision: state.revision })
+                }
+            );
+            state.revision = String(response?.revision || state.revision);
+            state.triggers = response.triggers.map(
+                TriggerModel.normalizeTrigger
+            );
+            state.selectedTriggerId = "";
+            state.triggerDraft = null;
+            state.triggerDirty = false;
+            renderTriggerList();
+            renderTriggerEditor();
+            await loadRuns();
+            Stowling.showToast("任务触发器已删除");
+        } catch (error) {
+            Stowling.handleError(error, "删除任务触发器失败");
+        }
+    }
+
+    /**
+     * @param {string} triggerState
+     * @returns {string}
+     */
+    function triggerStateLabel(triggerState) {
+        const labels = {
+            IDLE: "空闲",
+            RUNNING: "已入队",
+            COOLDOWN: "冷却中",
+            ERROR: "异常"
+        };
+        return labels[triggerState] || "未加载";
     }
 
     /**
@@ -343,13 +679,6 @@
     }
 
     /**
-     * @returns {void}
-     */
-    function startWatchTask() {
-        startTaskTemplate("watch");
-    }
-
-    /**
      * @param {string} template
      * @returns {void}
      */
@@ -388,9 +717,6 @@
         if (template === "sort") {
             return Model.sortTask(state.modules);
         }
-        if (template === "watch") {
-            return Model.watchTask(state.modules);
-        }
         return Model.newTask(state.modules);
     }
 
@@ -408,9 +734,7 @@
         elements.priority.value = state.draft.priority;
         updateSettingsLabel();
         elements.repeat.checked = state.draft.repeatWhenIdle;
-        elements.repeat.disabled = state.draft.priority !== "BACKGROUND"
-            || Boolean(state.draft.trigger);
-        renderWatchControls();
+        elements.repeat.disabled = state.draft.priority !== "BACKGROUND";
         elements.revision.textContent = state.selectedId
             ? Stowling.revisionLabel(state.revision)
             : "新任务";
@@ -430,41 +754,11 @@
      * @returns {void}
      */
     function updateSettingsLabel() {
-        const behavior = state.draft.trigger
-            ? " · 掉落物监听"
-            : state.draft.repeatWhenIdle
-                ? " · 自动重排"
-                : " · 执行一次";
+        const behavior = state.draft.repeatWhenIdle
+            ? " · 自动重排"
+            : " · 执行一次";
         elements.settingsLabel.textContent =
             Model.priorityLabel(state.draft.priority) + behavior;
-    }
-
-    /**
-     * @returns {void}
-     */
-    function renderWatchControls() {
-        const trigger = state.draft.trigger;
-        elements.watchEnabled.checked = Boolean(trigger);
-        elements.watchFields.hidden = !trigger;
-        elements.watchCoordinate.replaceChildren(
-            new Option("请选择坐标", "")
-        );
-        for (const coordinate of state.coordinates) {
-            elements.watchCoordinate.append(
-                new Option(coordinate.name, coordinate.id)
-            );
-        }
-        if (!trigger) {
-            return;
-        }
-        elements.watchCoordinate.value = trigger.coordinateId;
-        elements.watchFilter.value = trigger.itemFilter;
-        elements.watchInterval.value = String(
-            Math.max(0.05, trigger.intervalTicks / 20)
-        );
-        elements.watchCooldown.value = String(
-            Math.max(0, trigger.cooldownTicks / 20)
-        );
     }
 
     /**
@@ -518,28 +812,6 @@
         }
         if (draft.repeatWhenIdle && draft.priority !== "BACKGROUND") {
             errors.push("只有后台任务可以自动重新排队");
-        }
-        if (draft.trigger) {
-            if (draft.repeatWhenIdle) {
-                errors.push("掉落物监听任务不能同时启用自动重排");
-            }
-            if (!draft.trigger.coordinateId) {
-                errors.push("掉落物监听必须选择监测坐标");
-            } else if (!state.coordinates.some(
-                (point) => point.id === draft.trigger.coordinateId
-            )) {
-                errors.push("掉落物监听的监测坐标不存在");
-            }
-            if (!Number.isInteger(draft.trigger.intervalTicks)
-                    || draft.trigger.intervalTicks < 1
-                    || draft.trigger.intervalTicks > 1200) {
-                errors.push("检测间隔必须在 0.05 到 60 秒之间");
-            }
-            if (!Number.isInteger(draft.trigger.cooldownTicks)
-                    || draft.trigger.cooldownTicks < 0
-                    || draft.trigger.cooldownTicks > 72000) {
-                errors.push("监听冷却必须在 0 到 3600 秒之间");
-            }
         }
         if (draft.steps.length === 0) {
             errors.push("任务至少需要一个步骤");
@@ -727,6 +999,8 @@
             }
             renderEditor();
             renderTaskList();
+            renderTriggerList();
+            renderTriggerEditor();
             renderRunControls();
             Stowling.showToast("任务已保存");
         } catch (error) {
@@ -762,6 +1036,8 @@
                 state.runTaskId = state.tasks[0]?.id || "";
             }
             renderTaskList();
+            renderTriggerList();
+            renderTriggerEditor();
             renderEditor();
             renderRunControls();
             Stowling.showToast("任务已删除");
@@ -809,69 +1085,16 @@
             state.queue = Array.isArray(response?.queue)
                 ? response.queue
                 : [];
-            state.watches = Array.isArray(response?.watches)
-                ? response.watches
+            state.triggerStatuses = Array.isArray(response?.triggers)
+                ? response.triggers
                 : [];
-            renderWatches();
+            renderTriggerList();
             renderRuntime();
             renderQueue();
             updateRunActions();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
         }
-    }
-
-    /**
-     * @returns {void}
-     */
-    function renderWatches() {
-        elements.watchList.replaceChildren();
-        if (state.watches.length === 0) {
-            elements.watchList.append(
-                Stowling.emptyState("当前没有掉落物监听任务")
-            );
-            return;
-        }
-        for (const watch of state.watches) {
-            const card = Stowling.element("article", "task-card");
-            const content = Stowling.element("div");
-            const filter = watch.itemFilter
-                ? ` · ${watch.itemFilter}`
-                : " · 全部物品";
-            content.append(
-                Stowling.element(
-                    "strong",
-                    "",
-                    watch.taskName
-                ),
-                Stowling.element(
-                    "span",
-                    "module-level-tag",
-                    watchStateLabel(watch.state)
-                ),
-                Stowling.element(
-                    "p",
-                    "muted compact-help",
-                    `${watch.coordinateName}${filter} · ${watch.message}`
-                )
-            );
-            card.append(content);
-            elements.watchList.append(card);
-        }
-    }
-
-    /**
-     * @param {string} watchState
-     * @returns {string}
-     */
-    function watchStateLabel(watchState) {
-        const labels = {
-            IDLE: "空闲监听",
-            RUNNING: "触发执行中",
-            COOLDOWN: "冷却中",
-            ERROR: "监听异常"
-        };
-        return labels[watchState] || String(watchState || "");
     }
 
     /**
@@ -991,7 +1214,6 @@
     elements.newTask.addEventListener("click", startNewTask);
     elements.newCacheTask.addEventListener("click", startCacheTask);
     elements.newSortTask.addEventListener("click", startSortTask);
-    elements.newWatchTask.addEventListener("click", startWatchTask);
     elements.name.addEventListener("input", () => {
         state.draft.name = elements.name.value;
         markDirty();
@@ -1008,61 +1230,49 @@
         updateSettingsLabel();
         markDirty();
     });
-    elements.watchEnabled.addEventListener("change", () => {
-        if (elements.watchEnabled.checked) {
-            const collectStep = state.draft.steps.find(
-                (step) => step.moduleId === "COLLECT_DROPPED_ITEMS"
-            );
-            state.draft.trigger = {
-                type: "DROPPED_ITEMS",
-                coordinateId: String(
-                    collectStep?.parameters?.coordinateId || ""
-                ),
-                itemFilter: "",
-                intervalTicks: 20,
-                cooldownTicks: 100
-            };
-            state.draft.priority = "BACKGROUND";
-            state.draft.repeatWhenIdle = false;
-        } else {
-            state.draft.trigger = null;
-        }
-        markDirty(true);
+    elements.newTrigger.addEventListener("click", startNewTrigger);
+    elements.triggerName.addEventListener("input", () => {
+        state.triggerDraft.name = elements.triggerName.value;
+        markTriggerDirty();
     });
-    elements.watchCoordinate.addEventListener("change", () => {
-        if (!state.draft.trigger) {
-            return;
-        }
-        state.draft.trigger.coordinateId = elements.watchCoordinate.value;
-        for (const step of state.draft.steps) {
-            if (step.moduleId === "COLLECT_DROPPED_ITEMS"
-                    && !step.parameters.coordinateId) {
-                step.parameters.coordinateId = elements.watchCoordinate.value;
-            }
-        }
-        markDirty(true);
+    elements.triggerType.addEventListener("change", () => {
+        state.triggerDraft.type = elements.triggerType.value;
+        renderTriggerEditor();
+        markTriggerDirty();
     });
-    elements.watchFilter.addEventListener("input", () => {
-        if (state.draft.trigger) {
-            state.draft.trigger.itemFilter = elements.watchFilter.value;
-            markDirty();
-        }
+    elements.triggerTargetTask.addEventListener("change", () => {
+        state.triggerDraft.targetTaskId = elements.triggerTargetTask.value;
+        markTriggerDirty();
     });
-    elements.watchInterval.addEventListener("input", () => {
-        if (state.draft.trigger) {
-            state.draft.trigger.intervalTicks = Math.round(
-                Number(elements.watchInterval.value) * 20
-            );
-            markDirty();
-        }
+    elements.triggerPriority.addEventListener("change", () => {
+        state.triggerDraft.priority = elements.triggerPriority.value;
+        markTriggerDirty();
     });
-    elements.watchCooldown.addEventListener("input", () => {
-        if (state.draft.trigger) {
-            state.draft.trigger.cooldownTicks = Math.round(
-                Number(elements.watchCooldown.value) * 20
-            );
-            markDirty();
-        }
+    elements.triggerInterval.addEventListener("input", () => {
+        state.triggerDraft.intervalTicks = Math.round(
+            Number(elements.triggerInterval.value) * 20
+        );
+        markTriggerDirty();
+    });
+    elements.triggerCooldown.addEventListener("input", () => {
+        state.triggerDraft.cooldownTicks = Math.round(
+            Number(elements.triggerCooldown.value) * 20
+        );
+        markTriggerDirty();
+    });
+    elements.triggerCoordinate.addEventListener("change", () => {
+        state.triggerDraft.coordinateId = elements.triggerCoordinate.value;
+        markTriggerDirty();
+    });
+    elements.triggerItemFilter.addEventListener("input", () => {
+        state.triggerDraft.itemFilter = elements.triggerItemFilter.value;
+        markTriggerDirty();
+    });
+    elements.triggerFoodThreshold.addEventListener("input", () => {
+        state.triggerDraft.foodLevelThreshold = Number(
+            elements.triggerFoodThreshold.value
+        );
+        markTriggerDirty();
     });
     elements.addStep.addEventListener("click", () => {
         state.draft.steps.push(Model.newStep(
@@ -1073,6 +1283,10 @@
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
         void saveTask();
+    });
+    elements.triggerForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void saveTrigger();
     });
     elements.runSelect.addEventListener("change", () => {
         state.runTaskId = elements.runSelect.value;
@@ -1091,6 +1305,22 @@
     });
     elements.run.addEventListener("click", () => void runTask());
     elements.remove.addEventListener("click", () => void deleteTask());
+    elements.discardTrigger.addEventListener("click", () => {
+        const trigger = state.triggers.find(
+            (entry) => entry.id === state.selectedTriggerId
+        );
+        if (trigger) {
+            selectTrigger(trigger);
+        } else {
+            state.triggerDraft = null;
+            state.triggerDirty = false;
+            renderTriggerList();
+            renderTriggerEditor();
+        }
+    });
+    elements.deleteTrigger.addEventListener("click", () => {
+        void deleteTrigger();
+    });
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
     Stowling.onConnected(() => loadAll());
     window.setInterval(() => {

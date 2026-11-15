@@ -11,6 +11,7 @@
     <script src="/common.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
     <script src="/v2-task-model.js" defer></script>
+    <script src="/v2-trigger-model.js" defer></script>
     <script src="/v2-task-editor.js" defer></script>
     <script src="/tasks.js" defer></script>
 </head>
@@ -51,8 +52,6 @@
                                     type="button">缓存任务</button>
                             <button id="new-sort-task-button" class="secondary compact"
                                     type="button">分类任务</button>
-                            <button id="new-watch-task-button" class="secondary compact"
-                                    type="button">掉落物监听</button>
                         </div>
                     </div>
                     <label class="search-field" for="task-search">
@@ -96,6 +95,109 @@
                         </div>
                     </section>
 
+                    <section id="task-trigger-panel" class="panel"
+                             aria-labelledby="task-trigger-title">
+                        <div class="panel-heading">
+                            <div>
+                                <p class="eyebrow">后台条件</p>
+                                <h2 id="task-trigger-title">任务触发器</h2>
+                                <p class="muted section-help">
+                                    触发器空闲时不占执行位；条件命中后，把选定任务
+                                    按指定优先级加入现有队列。
+                                </p>
+                            </div>
+                            <button id="new-trigger-button"
+                                    class="secondary compact"
+                                    type="button">新建触发器</button>
+                        </div>
+                        <div class="trigger-workbench">
+                            <div id="trigger-list" class="editor-list"
+                                 aria-live="polite"></div>
+                            <form id="trigger-form" class="trigger-form"
+                                  hidden novalidate>
+                                <div class="editor-fields">
+                                    <div class="editor-field">
+                                        <label for="trigger-name">触发器名称</label>
+                                        <input id="trigger-name" maxlength="80"
+                                               required>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="trigger-type">触发条件</label>
+                                        <select id="trigger-type">
+                                            <option value="DROPPED_ITEMS">
+                                                坐标范围内出现掉落物
+                                            </option>
+                                            <option value="FOOD_LEVEL_AT_OR_BELOW">
+                                                饱食度不高于设定值
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="trigger-target-task">目标任务</label>
+                                        <select id="trigger-target-task"></select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="trigger-priority">入队优先级</label>
+                                        <select id="trigger-priority">
+                                            <option value="BACKGROUND">后台</option>
+                                            <option value="NORMAL">普通</option>
+                                            <option value="URGENT">紧急</option>
+                                        </select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="trigger-interval">检测间隔（秒）</label>
+                                        <input id="trigger-interval" type="number"
+                                               min="0.05" max="60" step="0.05">
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="trigger-cooldown">完成冷却（秒）</label>
+                                        <input id="trigger-cooldown" type="number"
+                                               min="0" max="3600" step="0.05">
+                                    </div>
+                                </div>
+                                <div id="trigger-drop-fields"
+                                     class="editor-fields trigger-condition-fields">
+                                    <div class="editor-field">
+                                        <label for="trigger-coordinate">检测坐标</label>
+                                        <select id="trigger-coordinate"></select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="trigger-item-filter">
+                                            物品过滤（可选）
+                                        </label>
+                                        <input id="trigger-item-filter"
+                                               placeholder="留空表示全部物品">
+                                    </div>
+                                </div>
+                                <div id="trigger-food-fields"
+                                     class="editor-fields trigger-condition-fields"
+                                     hidden>
+                                    <div class="editor-field">
+                                        <label for="trigger-food-threshold">
+                                            饱食度不高于
+                                        </label>
+                                        <input id="trigger-food-threshold"
+                                               type="number" min="0" max="20"
+                                               step="1">
+                                    </div>
+                                </div>
+                                <div id="trigger-errors" class="config-errors"
+                                     role="alert"></div>
+                                <div class="action-row">
+                                    <button id="save-trigger-button"
+                                            class="primary compact"
+                                            type="submit">保存触发器</button>
+                                    <button id="discard-trigger-button"
+                                            class="secondary compact"
+                                            type="button">放弃修改</button>
+                                    <button id="delete-trigger-button"
+                                            class="ghost compact danger-action"
+                                            type="button">删除触发器</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+
                     <section class="panel task-editor-panel" aria-labelledby="task-editor-title">
                         <div class="panel-heading">
                             <div>
@@ -135,37 +237,10 @@
                                         <input id="task-repeat" type="checkbox">
                                         <span>完成后自动重新排队</span>
                                     </label>
-                                    <label class="checkbox-field" for="task-watch-enabled">
-                                        <input id="task-watch-enabled" type="checkbox">
-                                        <span>掉落物监听</span>
-                                    </label>
-                                </div>
-                                <div id="task-watch-fields"
-                                     class="editor-fields task-watch-fields" hidden>
-                                    <div class="editor-field">
-                                        <label for="task-watch-coordinate">监测坐标</label>
-                                        <select id="task-watch-coordinate"></select>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="task-watch-filter">物品过滤（可选）</label>
-                                        <input id="task-watch-filter"
-                                               placeholder="留空表示全部物品">
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="task-watch-interval">检测间隔（秒）</label>
-                                        <input id="task-watch-interval" type="number"
-                                               min="0.05" max="60" step="0.05">
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="task-watch-cooldown">完成后冷却（秒）</label>
-                                        <input id="task-watch-cooldown" type="number"
-                                               min="0" max="3600" step="0.05">
-                                    </div>
                                 </div>
                                 <p class="muted compact-help">
                                     只有后台任务可以自动重排。重排前等待 5 秒；
                                     普通和紧急任务只在被抢占时从头重新排队。
-                                    监听任务空闲时不占执行位，触发时以紧急优先级运行。
                                 </p>
                             </details>
                             <div class="step-heading">
@@ -192,22 +267,6 @@
                         </form>
                     </section>
                     <div class="task-monitor">
-                        <section class="panel watch-panel"
-                                 aria-labelledby="task-watch-title">
-                            <div class="panel-heading">
-                                <div>
-                                    <p class="eyebrow">事件触发</p>
-                                    <h2 id="task-watch-title">后台监听</h2>
-                                    <p class="muted section-help queue-help">
-                                        空闲监听不占用任务执行位；发现掉落物后自动提交
-                                        紧急拾取任务。
-                                    </p>
-                                </div>
-                            </div>
-                            <div id="task-watch-list" class="card-list"
-                                 aria-live="polite"></div>
-                        </section>
-
                         <section class="panel" aria-labelledby="queue-title">
                             <div class="panel-heading">
                                 <div>

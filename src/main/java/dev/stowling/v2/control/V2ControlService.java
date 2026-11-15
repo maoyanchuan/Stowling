@@ -6,6 +6,7 @@ import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
 import java.util.List;
 import java.util.UUID;
@@ -64,6 +65,22 @@ public interface V2ControlService {
     TaskListResponse updateTask(UUID id, TaskUpdateRequest request);
 
     TaskListResponse deleteTask(UUID id, RevisionRequest request);
+
+    TaskTriggerListResponse taskTriggers();
+
+    TaskTriggerDefinition taskTrigger(UUID id);
+
+    TaskTriggerListResponse createTaskTrigger(TaskTriggerRequest request);
+
+    TaskTriggerListResponse updateTaskTrigger(
+            UUID id,
+            TaskTriggerUpdateRequest request
+    );
+
+    TaskTriggerListResponse deleteTaskTrigger(
+            UUID id,
+            RevisionRequest request
+    );
 
     TaskRunSnapshot runTask(UUID id);
 

@@ -44,11 +44,13 @@ by Baritone.
   returned to, the cache.
 - One task runs at a time. A single queue orders work by `BACKGROUND`, `NORMAL`,
   and `URGENT` priority.
-- A task can watch a coordinate radius for dropped items. While no matching
-  drop exists, the task is idle and does not occupy the execution slot.
-- A matching drop submits the task as an `URGENT` run through the normal queue,
-  so it preempts ordinary work. After the run, the watch waits for its configured
-  cooldown before returning to idle monitoring.
+- Independent task triggers poll conditions without occupying the execution
+  slot. Dropped-item and food-level conditions are supported.
+- A trigger submits its selected target task through the normal queue at the
+  trigger's configured priority. The queue then orders all pending work by
+  priority and request order.
+- After a triggered run completes, the trigger waits for its configured cooldown
+  before returning to idle monitoring.
 - A strictly higher-priority request preempts the active task. The interrupted
   run is discarded, requeued, and starts again from step one when its turn
   returns.
@@ -70,8 +72,8 @@ into basic and composite groups without changing existing task configuration.
 Background tasks can automatically requeue five seconds after completion.
 Manual runs may override the saved priority for that run only.
 
-Dropped-item watches are configured independently from automatic requeue.
-Idle monitoring creates no run records and does not block another task.
+Task triggers are configured independently from tasks and automatic requeue.
+Idle triggers create no run records and do not block another task.
 
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
 - `WAIT_FOR_DROPPED_ITEMS` waits until a matching dropped item appears in the
@@ -178,40 +180,54 @@ format:
   "coordinates": [],
   "tasks": [],
   "regions": [],
-  "categoryZones": []
+  "categoryZones": [],
+  "triggers": []
 }
 ```
 
-A watched task stores its trigger next to its linear steps:
+Triggers are stored independently from tasks and select a target task:
 
 ```json
 {
-  "name": "Drops to cache",
-  "priority": "BACKGROUND",
-  "repeatWhenIdle": false,
-  "trigger": {
-    "type": "DROPPED_ITEMS",
-    "coordinateId": "00000000-0000-0000-0000-000000000001",
-    "itemFilter": "minecraft:oak_log,minecraft:birch_log",
-    "intervalTicks": 20,
-    "cooldownTicks": 100
-  },
-  "steps": [
-    {
-      "id": "00000000-0000-0000-0000-000000000002",
-      "moduleId": "COLLECT_DROPPED_ITEMS",
-      "parameters": {
-        "coordinateId": "00000000-0000-0000-0000-000000000001"
-      }
-    }
-  ]
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "Low hunger",
+  "type": "FOOD_LEVEL_AT_OR_BELOW",
+  "targetTaskId": "00000000-0000-0000-0000-000000000002",
+  "priority": "NORMAL",
+  "intervalTicks": 20,
+  "cooldownTicks": 100,
+  "foodLevelThreshold": 18
+}
+```
+
+A dropped-item trigger uses a coordinate instead:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "Pickup drops",
+  "type": "DROPPED_ITEMS",
+  "targetTaskId": "00000000-0000-0000-0000-000000000002",
+  "priority": "NORMAL",
+  "intervalTicks": 20,
+  "cooldownTicks": 100,
+  "coordinateId": "00000000-0000-0000-0000-000000000001",
+  "itemFilter": "minecraft:oak_log,minecraft:birch_log"
 }
 ```
 
 The item filter is optional and accepts comma-separated full item IDs or item
-paths. An empty filter matches every dropped item. Watches use the coordinate's
-configured dimension and radius, falling back to radius 16 when radius is
-disabled.
+paths. An empty filter matches every dropped item. Dropped-item triggers use the
+coordinate's configured dimension and radius, falling back to radius 16 when
+radius is disabled.
+
+```text
+trigger condition matches
+    -> selected task enters the shared queue
+    -> queue orders it by trigger priority
+    -> task runs
+    -> trigger cooldown
+```
 
 If the file is missing, invalid, or from an older schema, Stowling creates a
 `.bak` safety copy when possible and replaces it with an empty schema-7 file.
@@ -238,8 +254,8 @@ Pages:
 - **Status** shows the current run, coordinate count, task count, and history.
 - **Coordinates** manages names and X/Y/Z values.
 - **Category zones** manages marker areas, storage areas, and rules.
-- **Tasks** provides cache and category-sorting templates or manual module
-  composition.
+- **Tasks** provides cache and category-sorting templates, manual module
+  composition, and independent task triggers.
 - **Inventory** displays existing read-only inventory snapshots.
 
 ## HTTP API
@@ -277,16 +293,22 @@ PUT    /v1/tasks/{uuid}
 DELETE /v1/tasks/{uuid}
 POST   /v1/tasks/{uuid}/runs
 
+GET    /v1/task-triggers
+POST   /v1/task-triggers
+GET    /v1/task-triggers/{uuid}
+PUT    /v1/task-triggers/{uuid}
+DELETE /v1/task-triggers/{uuid}
+
 GET    /v1/task-runs
 POST   /v1/task-runs/{uuid}/cancel
 ```
 
-`GET /v1/task-runs` returns `runs`, `queue`, and `watches`. Watch states are
+`GET /v1/task-runs` returns `runs`, `queue`, and `triggers`. Trigger states are
 `IDLE`, `RUNNING`, `COOLDOWN`, and `ERROR`.
 
 Updates and deletes include the current `revision`. A stale revision returns
-`409`. Deleting a coordinate referenced by any task returns `409` with the
-referencing task names.
+`409`. Deleting a coordinate referenced by a task or trigger returns `409`.
+Deleting a task targeted by a trigger also returns `409`.
 
 ## Development
 

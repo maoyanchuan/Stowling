@@ -282,28 +282,32 @@ def test_task_priority_queue_and_background_repeat_controls() -> None:
     assert "被中断任务不会续接" in html
 
 
-def test_task_editor_supports_dropped_item_watch_tasks() -> None:
+def test_task_page_supports_independent_task_triggers() -> None:
     html = read("tasks.html")
     model = read("v2-task-model.js")
+    trigger_model = read("v2-trigger-model.js")
     tasks = read("tasks.js")
     styles = read("styles.css")
 
-    assert 'id="new-watch-task-button"' in html
-    assert 'id="task-watch-enabled"' in html
-    assert 'id="task-watch-coordinate"' in html
-    assert 'id="task-watch-interval"' in html
-    assert 'id="task-watch-cooldown"' in html
-    assert 'id="task-watch-list"' in html
-    assert "function watchTask" in model
-    assert '"COLLECT_DROPPED_ITEMS"' in model
-    assert '"SCAN_CONTAINERS_IN_REGION"' in model
-    assert '"DEPOSIT_ITEMS_TO_CONTAINERS"' in model
-    assert "trigger: task.trigger" in model
-    assert "function renderWatches" in tasks
-    assert "watchStateLabel" in tasks
-    assert "state.watches" in tasks
-    assert ".task-monitor .watch-panel" in styles
-    assert "空闲监听不占用任务执行位" in html
+    assert '<script src="/v2-trigger-model.js" defer></script>' in html
+    assert 'id="new-trigger-button"' in html
+    assert 'id="trigger-target-task"' in html
+    assert 'id="trigger-priority"' in html
+    assert 'id="trigger-coordinate"' in html
+    assert 'id="trigger-food-threshold"' in html
+    assert 'id="trigger-list"' in html
+    assert 'id="task-watch-enabled"' not in html
+    assert "watchTask" not in model
+    assert "trigger: task.trigger" not in model
+    assert "FOOD_LEVEL_AT_OR_BELOW" in trigger_model
+    assert "DROPPED_ITEMS" in trigger_model
+    assert "payloadTrigger" in trigger_model
+    assert "state.triggerStatuses" in tasks
+    assert '"/v1/task-triggers"' in tasks
+    assert "function renderTriggerList" in tasks
+    assert "function renderTriggerEditor" in tasks
+    assert ".trigger-workbench" in styles
+    assert "按指定优先级加入现有队列" in html
 
 
 def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:

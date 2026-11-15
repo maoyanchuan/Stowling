@@ -139,7 +139,7 @@ class ConfigStoreTest {
     }
 
     @Test
-    void storesDroppedItemTriggerConfiguration() throws Exception {
+    void storesIndependentTaskTriggerConfiguration() throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
                 {
@@ -157,14 +157,6 @@ class ConfigStoreTest {
                         "name": "Pickup",
                         "priority": "BACKGROUND",
                         "repeatWhenIdle": false,
-                        "trigger": {
-                            "type": "DROPPED_ITEMS",
-                            "coordinateId":
-                                "00000000-0000-0000-0000-000000000001",
-                            "itemFilter": "minecraft:oak_log",
-                            "intervalTicks": 20,
-                            "cooldownTicks": 100
-                        },
                         "steps": [{
                             "id": "00000000-0000-0000-0000-000000000003",
                             "moduleId": "COLLECT_DROPPED_ITEMS",
@@ -173,20 +165,32 @@ class ConfigStoreTest {
                                     "00000000-0000-0000-0000-000000000001"
                             }
                         }]
+                    }],
+                    "triggers": [{
+                        "id": "00000000-0000-0000-0000-000000000004",
+                        "name": "Pickup drops",
+                        "type": "DROPPED_ITEMS",
+                        "targetTaskId":
+                            "00000000-0000-0000-0000-000000000002",
+                        "priority": "NORMAL",
+                        "intervalTicks": 20,
+                        "cooldownTicks": 100,
+                        "coordinateId":
+                            "00000000-0000-0000-0000-000000000001",
+                        "itemFilter": "minecraft:oak_log"
                     }]
                 }
                 """);
         ConfigStore store = new ConfigStore(path);
 
-        var trigger = store.loadOrReset().config().tasks()
-                .getFirst()
-                .trigger();
+        var trigger = store.loadOrReset().config().triggers().getFirst();
 
         assertEquals(
                 "minecraft:oak_log",
                 trigger.itemFilter()
         );
         assertEquals(20, trigger.intervalTicks());
+        assertEquals("Pickup drops", trigger.name());
     }
 
     @Test

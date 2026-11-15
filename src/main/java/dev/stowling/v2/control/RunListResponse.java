@@ -1,18 +1,18 @@
 package dev.stowling.v2.control;
 
 import dev.stowling.v2.runtime.TaskRunSnapshot;
-import dev.stowling.v2.runtime.TaskWatchSnapshot;
+import dev.stowling.v2.runtime.TaskTriggerSnapshot;
 import java.util.List;
 
 public record RunListResponse(
         List<TaskRunSnapshot> runs,
         List<TaskRunSnapshot> queue,
-        List<TaskWatchSnapshot> watches
+        List<TaskTriggerSnapshot> triggers
 ) {
     public RunListResponse {
         runs = List.copyOf(runs);
         queue = List.copyOf(queue);
-        watches = List.copyOf(watches);
+        triggers = List.copyOf(triggers);
     }
 
     public RunListResponse(List<TaskRunSnapshot> runs) {

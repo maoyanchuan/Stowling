@@ -14,6 +14,7 @@ import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskTriggerDefinition;
+import dev.stowling.v2.model.TaskTriggerType;
 import dev.stowling.v2.runtime.TaskRunManager;
 import java.nio.file.Path;
 import java.util.List;
@@ -237,34 +238,42 @@ class V2ControlServiceImplTest {
     }
 
     @Test
-    void storesDroppedItemWatchAndExposesItsIdleStatus() {
+    void storesIndependentDroppedItemTriggerAndExposesItsIdleStatus() {
         V2ControlService service = service();
         CoordinatePoint point = createPoint(service, "Drops");
-        TaskListResponse created = service.createTask(new TaskRequest(
-                "Pickup watch",
-                TaskPriority.BACKGROUND,
-                false,
+        CoordinatePoint taskPoint = createPoint(service, "Task target");
+        TaskListResponse tasks = service.createTask(new TaskRequest(
+                "Pickup",
                 List.of(new TaskStepRequest(
                         null,
-                        ConfigValidator.COLLECT_DROPPED_ITEMS,
-                        Map.of(ConfigValidator.COORDINATE_ID, point.id().toString())
-                )),
-                TaskTriggerDefinition.droppedItems(
+                        ConfigValidator.MOVE_TO_COORDINATE,
+                        Map.of(
+                                ConfigValidator.COORDINATE_ID,
+                                taskPoint.id().toString()
+                        )
+                ))
+        ));
+        TaskTriggerListResponse created = service.createTaskTrigger(
+                new TaskTriggerRequest(
+                        "Pickup trigger",
+                        TaskTriggerType.DROPPED_ITEMS,
+                        tasks.tasks().getFirst().id(),
+                        TaskPriority.NORMAL,
+                        20,
+                        100,
                         point.id(),
                         "minecraft:oak_log",
-                        20,
-                        100
+                        null
                 )
-        ));
-
-        assertEquals(
-                "minecraft:oak_log",
-                created.tasks().getFirst().trigger().itemFilter()
         );
-        assertEquals(1, service.taskRuns().watches().size());
+
+        TaskTriggerDefinition trigger = created.triggers().getFirst();
+        assertEquals("minecraft:oak_log", trigger.itemFilter());
+        assertEquals(TaskPriority.NORMAL, trigger.priority());
+        assertEquals(1, service.taskRuns().triggers().size());
         assertEquals(
                 "IDLE",
-                service.taskRuns().watches().getFirst().state().name()
+                service.taskRuns().triggers().getFirst().state().name()
         );
         CoordinateInUseException exception = assertThrows(
                 CoordinateInUseException.class,
@@ -273,7 +282,40 @@ class V2ControlServiceImplTest {
                         new RevisionRequest(created.revision())
                 )
         );
-        assertEquals(List.of("Pickup watch"), exception.taskNames());
+        assertEquals(List.of("Pickup trigger"), exception.taskNames());
+    }
+
+    @Test
+    void blocksDeletingTaskReferencedByATrigger() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Home");
+        TaskListResponse tasks = service.createTask(task(
+                "Eat",
+                point.id().toString()
+        ));
+        TaskTriggerListResponse triggers = service.createTaskTrigger(
+                new TaskTriggerRequest(
+                        "Hunger",
+                        TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW,
+                        tasks.tasks().getFirst().id(),
+                        TaskPriority.NORMAL,
+                        20,
+                        100,
+                        null,
+                        null,
+                        18
+                )
+        );
+
+        TaskInUseException exception = assertThrows(
+                TaskInUseException.class,
+                () -> service.deleteTask(
+                        tasks.tasks().getFirst().id(),
+                        new RevisionRequest(triggers.revision())
+                )
+        );
+
+        assertEquals(List.of("Hunger"), exception.triggerNames());
     }
 
     private V2ControlService service() {

@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.FoodConsumptionPort;
+import dev.stowling.automation.FoodConsumptionResult;
+import dev.stowling.automation.FoodStatus;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
@@ -21,29 +24,45 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-class TaskWatchManagerTest {
+class TaskTriggerManagerTest {
     @Test
-    void staysIdleUntilMatchingDroppedItemsAppearThenCoolsDown() {
+    void droppedItemTriggerQueuesTheSelectedTaskAtItsPriority() {
         UUID coordinateId = UUID.randomUUID();
-        TaskDefinition task = watchedTask(coordinateId, "");
+        TaskDefinition task = task(coordinateId);
+        TaskTriggerDefinition trigger = TaskTriggerDefinition.droppedItems(
+                UUID.randomUUID(),
+                "Pickup drops",
+                task.id(),
+                TaskPriority.NORMAL,
+                1,
+                2,
+                coordinateId,
+                "minecraft:oak_log"
+        );
         FakeDroppedItems droppedItems = new FakeDroppedItems();
         FakeHost host = new FakeHost();
-        TaskWatchManager manager = new TaskWatchManager(
+        TaskTriggerManager manager = new TaskTriggerManager(
                 droppedItems,
+                new FakeFood(20),
                 new NoopNavigation(),
                 host
         );
-        manager.refresh(config(task));
+        manager.refresh(config(task, trigger));
 
         manager.tick();
         assertEquals(0, host.startCount);
-        assertEquals(TaskWatchState.IDLE, manager.snapshots().getFirst().state());
+        assertEquals(
+                TaskTriggerState.IDLE,
+                manager.snapshots().getFirst().state()
+        );
 
-        droppedItems.items = List.of(droppedItem("minecraft:diamond"));
+        droppedItems.items = List.of(droppedItem("minecraft:oak_log"));
         manager.tick();
         assertEquals(1, host.startCount);
+        assertEquals(TaskPriority.NORMAL, host.priority);
+        assertEquals(task.id(), host.taskId);
         assertEquals(
-                TaskWatchState.RUNNING,
+                TaskTriggerState.RUNNING,
                 manager.snapshots().getFirst().state()
         );
 
@@ -53,20 +72,61 @@ class TaskWatchManagerTest {
         droppedItems.items = List.of();
         manager.tick();
         assertEquals(
-                TaskWatchState.COOLDOWN,
+                TaskTriggerState.COOLDOWN,
                 manager.snapshots().getFirst().state()
         );
-
-        for (int tick = 0; tick < 100; tick++) {
-            manager.tick();
-        }
-        assertEquals(TaskWatchState.IDLE, manager.snapshots().getFirst().state());
     }
 
     @Test
-    void appliesTheDroppedItemFilter() {
+    void foodTriggerFiresAtOrBelowTheConfiguredLevel() {
         UUID coordinateId = UUID.randomUUID();
-        TaskDefinition task = watchedTask(
+        TaskDefinition task = task(coordinateId);
+        TaskTriggerDefinition trigger =
+                TaskTriggerDefinition.foodLevelAtOrBelow(
+                        UUID.randomUUID(),
+                        "Eat food",
+                        task.id(),
+                        TaskPriority.NORMAL,
+                        1,
+                        0,
+                        18
+                );
+        FakeHost host = new FakeHost();
+        TaskTriggerManager manager = new TaskTriggerManager(
+                new FakeDroppedItems(),
+                new FakeFood(19),
+                new NoopNavigation(),
+                host
+        );
+        manager.refresh(config(task, trigger));
+
+        manager.tick();
+        assertEquals(0, host.startCount);
+
+        manager = new TaskTriggerManager(
+                new FakeDroppedItems(),
+                new FakeFood(18),
+                new NoopNavigation(),
+                host
+        );
+        manager.refresh(config(task, trigger));
+        manager.tick();
+
+        assertEquals(1, host.startCount);
+        assertEquals(TaskPriority.NORMAL, host.priority);
+    }
+
+    @Test
+    void droppedItemFilterPreventsUnrelatedTasksFromStarting() {
+        UUID coordinateId = UUID.randomUUID();
+        TaskDefinition task = task(coordinateId);
+        TaskTriggerDefinition trigger = TaskTriggerDefinition.droppedItems(
+                UUID.randomUUID(),
+                "Oak only",
+                task.id(),
+                TaskPriority.URGENT,
+                1,
+                0,
                 coordinateId,
                 "minecraft:oak_log"
         );
@@ -74,25 +134,23 @@ class TaskWatchManagerTest {
                 droppedItem("minecraft:birch_log")
         ));
         FakeHost host = new FakeHost();
-        TaskWatchManager manager = new TaskWatchManager(
+        TaskTriggerManager manager = new TaskTriggerManager(
                 droppedItems,
+                new FakeFood(20),
                 new NoopNavigation(),
                 host
         );
-        manager.refresh(config(task));
+        manager.refresh(config(task, trigger));
 
         manager.tick();
 
         assertEquals(0, host.startCount);
     }
 
-    private static TaskDefinition watchedTask(
-            UUID coordinateId,
-            String itemFilter
-    ) {
+    private static TaskDefinition task(UUID coordinateId) {
         return new TaskDefinition(
                 UUID.randomUUID(),
-                "Drop watch",
+                "Pickup",
                 TaskPriority.BACKGROUND,
                 false,
                 List.of(new TaskStep(
@@ -102,18 +160,19 @@ class TaskWatchManagerTest {
                                 ConfigValidator.COORDINATE_ID,
                                 coordinateId.toString()
                         )
-                )),
-                TaskTriggerDefinition.droppedItems(
-                        coordinateId,
-                        itemFilter,
-                        1,
-                        2
-                )
+                ))
         );
     }
 
-    private static AppConfig config(TaskDefinition task) {
-        UUID coordinateId = task.trigger().coordinateId();
+    private static AppConfig config(
+            TaskDefinition task,
+            TaskTriggerDefinition trigger
+    ) {
+        UUID coordinateId = UUID.fromString(
+                task.steps().getFirst()
+                        .parameters()
+                        .get(ConfigValidator.COORDINATE_ID)
+        );
         return new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 List.of(new CoordinatePoint(
@@ -127,7 +186,8 @@ class TaskWatchManagerTest {
                 )),
                 List.of(task),
                 List.of(),
-                List.of()
+                List.of(),
+                List.of(trigger)
         );
     }
 
@@ -167,22 +227,54 @@ class TaskWatchManagerTest {
         }
     }
 
-    private static final class FakeHost implements TaskWatchManager.Host {
+    private static final class FakeFood implements FoodConsumptionPort {
+        private FoodStatus status;
+
+        private FakeFood(int foodLevel) {
+            this.status = new FoodStatus(true, foodLevel, 0.0F);
+        }
+
+        @Override
+        public FoodStatus observe() {
+            return status;
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId) {
+            return FoodConsumptionResult.failed("unused");
+        }
+
+        @Override
+        public FoodConsumptionResult pollEating() {
+            return FoodConsumptionResult.failed("unused");
+        }
+
+        @Override
+        public void cancelEating() {
+        }
+    }
+
+    private static final class FakeHost implements TaskTriggerManager.Host {
         private int startCount;
         private boolean pending;
+        private UUID taskId;
+        private TaskPriority priority;
 
         @Override
         public TaskRunSnapshot start(
                 TaskDefinition task,
+                TaskPriority runPriority,
                 AppConfig config
         ) {
             startCount++;
+            taskId = task.id();
+            priority = runPriority;
             Instant now = Instant.now();
             return new TaskRunSnapshot(
                     UUID.randomUUID(),
                     task.id(),
                     task.name(),
-                    TaskPriority.URGENT,
+                    runPriority,
                     false,
                     TaskRunState.RUNNING,
                     0,
@@ -194,7 +286,7 @@ class TaskWatchManagerTest {
         }
 
         @Override
-        public boolean taskPending(UUID taskId) {
+        public boolean taskPending(UUID ignoredTaskId) {
             return pending;
         }
     }

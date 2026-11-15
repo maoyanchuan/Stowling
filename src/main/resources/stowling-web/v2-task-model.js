@@ -9,11 +9,6 @@
     const SORT_TASK_MODULES = Object.freeze([
         "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"
     ]);
-    const WATCH_TASK_MODULES = Object.freeze([
-        "COLLECT_DROPPED_ITEMS",
-        "SCAN_CONTAINERS_IN_REGION",
-        "DEPOSIT_ITEMS_TO_CONTAINERS"
-    ]);
     const PRIORITIES = Object.freeze([
         "BACKGROUND",
         "NORMAL",
@@ -32,23 +27,6 @@
     }
 
     /**
-     * @param {object | null | undefined} value
-     * @returns {object | null}
-     */
-    function normalizeTrigger(value) {
-        if (!value || typeof value !== "object") {
-            return null;
-        }
-        return {
-            type: String(value.type || "DROPPED_ITEMS"),
-            coordinateId: String(value.coordinateId || ""),
-            itemFilter: String(value.itemFilter || ""),
-            intervalTicks: Number(value.intervalTicks || 20),
-            cooldownTicks: Number(value.cooldownTicks ?? 100)
-        };
-    }
-
-    /**
      * @param {object} value
      * @returns {object}
      */
@@ -62,8 +40,7 @@
             repeatWhenIdle: Boolean(value?.repeatWhenIdle),
             steps: Array.isArray(value?.steps)
                 ? value.steps.map(normalizeStep)
-                : [],
-            trigger: normalizeTrigger(value?.trigger)
+                : []
         };
     }
 
@@ -77,8 +54,7 @@
             name: "新任务",
             priority: "NORMAL",
             repeatWhenIdle: false,
-            steps: [newStep(defaultModule(modules))],
-            trigger: null
+            steps: [newStep(defaultModule(modules))]
         };
     }
 
@@ -124,8 +100,7 @@
             name,
             priority: "NORMAL",
             repeatWhenIdle: false,
-            steps: selected.map(newStep),
-            trigger: null
+            steps: selected.map(newStep)
         };
     }
 
@@ -154,29 +129,6 @@
         if (task) {
             task.priority = "BACKGROUND";
             task.repeatWhenIdle = true;
-        }
-        return task;
-    }
-
-    /**
-     * @param {Array<object>} modules
-     * @returns {object | null}
-     */
-    function watchTask(modules) {
-        const task = taskFromModules(
-            modules,
-            "掉落物监听入缓存",
-            WATCH_TASK_MODULES
-        );
-        if (task) {
-            task.priority = "BACKGROUND";
-            task.trigger = {
-                type: "DROPPED_ITEMS",
-                coordinateId: "",
-                itemFilter: "",
-                intervalTicks: 20,
-                cooldownTicks: 100
-            };
         }
         return task;
     }
@@ -214,18 +166,8 @@
             repeatWhenIdle: Boolean(
                 task.priority === "BACKGROUND"
                 && task.repeatWhenIdle
-                && !task.trigger
             ),
-            steps: task.steps.map(payloadStep),
-            trigger: task.trigger
-                ? {
-                    type: "DROPPED_ITEMS",
-                    coordinateId: task.trigger.coordinateId,
-                    itemFilter: task.trigger.itemFilter.trim(),
-                    intervalTicks: Number(task.trigger.intervalTicks),
-                    cooldownTicks: Number(task.trigger.cooldownTicks)
-                }
-                : null
+            steps: task.steps.map(payloadStep)
         };
     }
 
@@ -250,7 +192,6 @@
         taskLevel,
         cacheTask,
         sortTask,
-        watchTask,
         taskFromModules,
         normalizeTask,
         payloadTask,

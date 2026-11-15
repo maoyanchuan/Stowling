@@ -79,6 +79,12 @@ public final class ConfigValidator {
                         .toList(),
                 "category zone"
         );
+        requireUniqueNames(
+                config.triggers().stream()
+                        .map(TaskTriggerDefinition::name)
+                        .toList(),
+                "task trigger"
+        );
         Map<UUID, CoordinatePoint> coordinates = new LinkedHashMap<>();
         for (CoordinatePoint point : config.coordinates()) {
             if (coordinates.putIfAbsent(point.id(), point) != null) {
@@ -98,7 +104,6 @@ public final class ConfigValidator {
             if (!taskIds.add(task.id())) {
                 throw new V2ValidationException("duplicate task id");
             }
-            requireValidTrigger(task.trigger(), coordinates);
             for (TaskStep step : task.steps()) {
                 requireValidStep(
                         step,
@@ -108,20 +113,32 @@ public final class ConfigValidator {
                 );
             }
         }
+        validateTriggers(config.triggers(), coordinates, taskIds);
     }
 
-    private static void requireValidTrigger(
-            TaskTriggerDefinition trigger,
-            Map<UUID, CoordinatePoint> coordinates
+    private static void validateTriggers(
+            List<TaskTriggerDefinition> triggers,
+            Map<UUID, CoordinatePoint> coordinates,
+            Set<UUID> taskIds
     ) {
-        if (trigger == null) {
-            return;
-        }
-        if (!coordinates.containsKey(trigger.coordinateId())) {
-            throw new V2ValidationException(
-                    "trigger coordinate does not exist: "
-                            + trigger.coordinateId()
-            );
+        Set<UUID> triggerIds = new HashSet<>();
+        for (TaskTriggerDefinition trigger : triggers) {
+            if (!triggerIds.add(trigger.id())) {
+                throw new V2ValidationException("duplicate task trigger id");
+            }
+            if (!taskIds.contains(trigger.targetTaskId())) {
+                throw new V2ValidationException(
+                        "target task does not exist: "
+                                + trigger.targetTaskId()
+                );
+            }
+            if (trigger.coordinateId() != null
+                    && !coordinates.containsKey(trigger.coordinateId())) {
+                throw new V2ValidationException(
+                        "trigger coordinate does not exist: "
+                                + trigger.coordinateId()
+                );
+            }
         }
     }
 

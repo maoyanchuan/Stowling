@@ -1,6 +1,6 @@
 package dev.stowling.v2.runtime;
 
-public enum TaskWatchState {
+public enum TaskTriggerState {
     IDLE,
     RUNNING,
     COOLDOWN,

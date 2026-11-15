@@ -1,16 +1,19 @@
 package dev.stowling.v2.model;
 
-import java.util.LinkedHashSet;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 public record TaskTriggerDefinition(
+        UUID id,
+        String name,
         TaskTriggerType type,
+        UUID targetTaskId,
+        TaskPriority priority,
+        int intervalTicks,
+        int cooldownTicks,
         UUID coordinateId,
         String itemFilter,
-        int intervalTicks,
-        int cooldownTicks
+        Integer foodLevelThreshold
 ) {
     public static final int DEFAULT_INTERVAL_TICKS = 20;
     public static final int DEFAULT_COOLDOWN_TICKS = 100;
@@ -19,8 +22,14 @@ public record TaskTriggerDefinition(
     private static final int MAX_ITEM_FILTER_LENGTH = 2_048;
 
     public TaskTriggerDefinition {
+        id = Objects.requireNonNull(id, "id");
+        name = requireName(name);
         type = Objects.requireNonNull(type, "type");
-        coordinateId = Objects.requireNonNull(coordinateId, "coordinateId");
+        targetTaskId = Objects.requireNonNull(
+                targetTaskId,
+                "targetTaskId"
+        );
+        priority = priority == null ? TaskPriority.NORMAL : priority;
         itemFilter = normalizeItemFilter(itemFilter);
         if (intervalTicks < 1 || intervalTicks > MAX_INTERVAL_TICKS) {
             throw new IllegalArgumentException(
@@ -34,47 +43,98 @@ public record TaskTriggerDefinition(
                             + MAX_COOLDOWN_TICKS
             );
         }
+        if (type == TaskTriggerType.DROPPED_ITEMS) {
+            if (coordinateId == null || foodLevelThreshold != null) {
+                throw new IllegalArgumentException(
+                        "dropped item triggers require a coordinate"
+                );
+            }
+        } else if (type == TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW) {
+            if (coordinateId != null
+                    || itemFilter != null
+                    || foodLevelThreshold == null
+                    || foodLevelThreshold < 0
+                    || foodLevelThreshold > 20) {
+                throw new IllegalArgumentException(
+                        "food triggers require a threshold from 0 to 20"
+                );
+            }
+        }
     }
 
     public static TaskTriggerDefinition droppedItems(
-            UUID coordinateId,
-            String itemFilter,
+            UUID id,
+            String name,
+            UUID targetTaskId,
+            TaskPriority priority,
             int intervalTicks,
-            int cooldownTicks
+            int cooldownTicks,
+            UUID coordinateId,
+            String itemFilter
     ) {
         return new TaskTriggerDefinition(
+                id,
+                name,
                 TaskTriggerType.DROPPED_ITEMS,
+                targetTaskId,
+                priority,
+                intervalTicks,
+                cooldownTicks,
                 coordinateId,
                 itemFilter,
-                intervalTicks,
-                cooldownTicks
+                null
         );
     }
 
-    public Set<String> itemIds() {
-        if (itemFilter == null) {
-            return Set.of();
-        }
-        Set<String> result = new LinkedHashSet<>();
-        for (String part : itemFilter.split(",")) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                result.add(trimmed);
-            }
-        }
-        return Set.copyOf(result);
+    public static TaskTriggerDefinition foodLevelAtOrBelow(
+            UUID id,
+            String name,
+            UUID targetTaskId,
+            TaskPriority priority,
+            int intervalTicks,
+            int cooldownTicks,
+            int foodLevelThreshold
+    ) {
+        return new TaskTriggerDefinition(
+                id,
+                name,
+                TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW,
+                targetTaskId,
+                priority,
+                intervalTicks,
+                cooldownTicks,
+                null,
+                null,
+                foodLevelThreshold
+        );
     }
 
     public boolean matches(String itemId) {
-        Set<String> filter = itemIds();
-        if (filter.isEmpty()) {
+        if (itemFilter == null) {
             return true;
         }
         int separator = itemId.indexOf(':');
         String path = separator < 0
                 ? itemId
                 : itemId.substring(separator + 1);
-        return filter.contains(itemId) || filter.contains(path);
+        for (String part : itemFilter.split(",")) {
+            String candidate = part.trim();
+            if (candidate.equals(itemId) || candidate.equals(path)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String requireName(String value) {
+        Objects.requireNonNull(value, "name");
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 80) {
+            throw new IllegalArgumentException(
+                    "name must contain 1 to 80 characters"
+            );
+        }
+        return trimmed;
     }
 
     private static String normalizeItemFilter(String value) {

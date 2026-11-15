@@ -19,6 +19,7 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.module.TaskModuleCatalog;
 import dev.stowling.v2.runtime.TaskRunManager;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
@@ -45,7 +46,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         this.configs = Objects.requireNonNull(configs, "configs");
         this.runs = Objects.requireNonNull(runs, "runs");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
-        runs.refreshWatches(configs.read().config());
+        runs.refreshTriggers(configs.read().config());
     }
 
     @Override
@@ -97,10 +98,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 coordinates,
                 current.config().tasks(),
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
-        runs.refreshWatches(saved.config());
+        runs.refreshTriggers(saved.config());
         return coordinateResponse(saved);
     }
 
@@ -129,10 +131,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 coordinates,
                 current.config().tasks(),
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
-        runs.refreshWatches(saved.config());
+        runs.refreshTriggers(saved.config());
         return coordinateResponse(saved);
     }
 
@@ -145,10 +148,19 @@ public final class V2ControlServiceImpl implements V2ControlService {
         requireRevision(current, request.revision());
         requireCoordinate(current.config(), id);
         String coordinateId = id.toString();
-        List<String> references = current.config().tasks().stream()
+        List<String> references = new ArrayList<>();
+        references.addAll(current.config().tasks().stream()
                 .filter(task -> referencesCoordinate(task, coordinateId))
                 .map(TaskDefinition::name)
-                .toList();
+                .toList());
+        references.addAll(current.config().triggers().stream()
+                .filter(trigger -> coordinateId.equals(
+                        trigger.coordinateId() == null
+                                ? null
+                                : trigger.coordinateId().toString()
+                ))
+                .map(TaskTriggerDefinition::name)
+                .toList());
         if (!references.isEmpty()) {
             throw new CoordinateInUseException(references);
         }
@@ -159,10 +171,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .toList(),
                 current.config().tasks(),
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
-        runs.refreshWatches(saved.config());
+        runs.refreshTriggers(saved.config());
         return coordinateResponse(saved);
     }
 
@@ -196,7 +209,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().coordinates(),
                 current.config().tasks(),
                 regions,
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         )));
     }
 
@@ -227,7 +241,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().coordinates(),
                 current.config().tasks(),
                 regions,
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         )));
     }
 
@@ -246,7 +261,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions().stream()
                         .filter(region -> !region.id().equals(id))
                         .toList(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         )));
     }
 
@@ -285,7 +301,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().coordinates(),
                         current.config().tasks(),
                         current.config().regions(),
-                        zones
+                        zones,
+                        current.config().triggers()
                 )
         ));
     }
@@ -318,7 +335,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().coordinates(),
                         current.config().tasks(),
                         current.config().regions(),
-                        zones
+                        zones,
+                        current.config().triggers()
                 )
         ));
     }
@@ -354,7 +372,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().regions(),
                         current.config().categoryZones().stream()
                                 .filter(zone -> !zone.id().equals(id))
-                                .toList()
+                                .toList(),
+                        current.config().triggers()
                 )
         ));
     }
@@ -377,16 +396,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps()),
-                request.trigger()
+                steps(request.steps())
         );
-        ConfigValidator.requireValid(new AppConfig(
-                AppConfig.CURRENT_SCHEMA_VERSION,
-                current.config().coordinates(),
-                List.of(task),
-                current.config().regions(),
-                current.config().categoryZones()
-        ));
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.add(task);
         AppConfig updated = new AppConfig(
@@ -394,10 +405,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().coordinates(),
                 tasks,
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
-        runs.refreshWatches(saved.config());
+        runs.refreshTriggers(saved.config());
         return taskResponse(saved);
     }
 
@@ -414,8 +426,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps()),
-                request.trigger()
+                steps(request.steps())
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
                 .map(task -> task.id().equals(id) ? updatedTask : task)
@@ -425,10 +436,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().coordinates(),
                 tasks,
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
-        runs.refreshWatches(saved.config());
+        runs.refreshTriggers(saved.config());
         return taskResponse(saved);
     }
 
@@ -440,6 +452,13 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
         requireTask(current.config(), id);
+        List<String> triggerNames = current.config().triggers().stream()
+                .filter(trigger -> trigger.targetTaskId().equals(id))
+                .map(TaskTriggerDefinition::name)
+                .toList();
+        if (!triggerNames.isEmpty()) {
+            throw new TaskInUseException(triggerNames);
+        }
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
@@ -447,11 +466,118 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .filter(task -> !task.id().equals(id))
                         .toList(),
                 current.config().regions(),
-                current.config().categoryZones()
+                current.config().categoryZones(),
+                current.config().triggers()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
-        runs.refreshWatches(saved.config());
+        runs.refreshTriggers(saved.config());
         return taskResponse(saved);
+    }
+
+    @Override
+    public synchronized TaskTriggerListResponse taskTriggers() {
+        return taskTriggerResponse(configs.read());
+    }
+
+    @Override
+    public synchronized TaskTriggerDefinition taskTrigger(UUID id) {
+        return requireTaskTrigger(configs.read().config(), id);
+    }
+
+    @Override
+    public synchronized TaskTriggerListResponse createTaskTrigger(
+            TaskTriggerRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        TaskTriggerDefinition trigger = new TaskTriggerDefinition(
+                UUID.randomUUID(),
+                request.name(),
+                request.type(),
+                request.targetTaskId(),
+                request.priority(),
+                request.intervalTicks(),
+                request.cooldownTicks(),
+                request.coordinateId(),
+                request.itemFilter(),
+                request.foodLevelThreshold()
+        );
+        List<TaskTriggerDefinition> triggers = new ArrayList<>(
+                current.config().triggers()
+        );
+        triggers.add(trigger);
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                triggers
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return taskTriggerResponse(saved);
+    }
+
+    @Override
+    public synchronized TaskTriggerListResponse updateTaskTrigger(
+            UUID id,
+            TaskTriggerUpdateRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireTaskTrigger(current.config(), id);
+        TaskTriggerDefinition replacement = new TaskTriggerDefinition(
+                id,
+                request.name(),
+                request.type(),
+                request.targetTaskId(),
+                request.priority(),
+                request.intervalTicks(),
+                request.cooldownTicks(),
+                request.coordinateId(),
+                request.itemFilter(),
+                request.foodLevelThreshold()
+        );
+        List<TaskTriggerDefinition> triggers = current.config().triggers()
+                .stream()
+                .map(trigger -> trigger.id().equals(id)
+                        ? replacement
+                        : trigger)
+                .toList();
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                triggers
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return taskTriggerResponse(saved);
+    }
+
+    @Override
+    public synchronized TaskTriggerListResponse deleteTaskTrigger(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireTaskTrigger(current.config(), id);
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                current.config().triggers().stream()
+                        .filter(trigger -> !trigger.id().equals(id))
+                        .toList()
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return taskTriggerResponse(saved);
     }
 
     @Override
@@ -480,7 +606,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return new RunListResponse(
                 runs.runs(),
                 runs.queued(),
-                runs.watches()
+                runs.triggerStatuses()
         );
     }
 
@@ -509,16 +635,19 @@ public final class V2ControlServiceImpl implements V2ControlService {
             TaskDefinition task,
             String coordinateId
     ) {
-        if (task.trigger() != null
-                && task.trigger().coordinateId().toString().equals(
-                coordinateId
-        )) {
-            return true;
-        }
         return task.steps().stream().anyMatch(step ->
                 coordinateId.equals(
                         step.parameters().get(ConfigValidator.COORDINATE_ID)
                 )
+        );
+    }
+
+    private static TaskTriggerListResponse taskTriggerResponse(
+            V2ConfigSnapshot snapshot
+    ) {
+        return new TaskTriggerListResponse(
+                snapshot.revision(),
+                snapshot.config().triggers()
         );
     }
 
@@ -564,6 +693,18 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .filter(task -> task.id().equals(id))
                 .findFirst()
                 .orElseThrow(() -> new V2NotFoundException("task not found"));
+    }
+
+    private static TaskTriggerDefinition requireTaskTrigger(
+            AppConfig config,
+            UUID id
+    ) {
+        return config.triggers().stream()
+                .filter(trigger -> trigger.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new V2NotFoundException(
+                        "task trigger not found"
+                ));
     }
 
     private static RegionDefinition requireRegion(AppConfig config, UUID id) {

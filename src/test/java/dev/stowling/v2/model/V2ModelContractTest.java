@@ -24,8 +24,7 @@ class V2ModelContractTest {
                         "name",
                         "priority",
                         "repeatWhenIdle",
-                        "steps",
-                        "trigger"
+                        "steps"
                 ),
                 components(TaskDefinition.class)
         );
@@ -35,11 +34,16 @@ class V2ModelContractTest {
         );
         assertEquals(
                 List.of(
+                        "id",
+                        "name",
                         "type",
+                        "targetTaskId",
+                        "priority",
+                        "intervalTicks",
+                        "cooldownTicks",
                         "coordinateId",
                         "itemFilter",
-                        "intervalTicks",
-                        "cooldownTicks"
+                        "foodLevelThreshold"
                 ),
                 components(TaskTriggerDefinition.class)
         );
@@ -100,7 +104,6 @@ class V2ModelContractTest {
         assertEquals("Travel", task.name());
         assertEquals(TaskPriority.NORMAL, task.priority());
         assertEquals(false, task.repeatWhenIdle());
-        assertEquals(null, task.trigger());
     }
 
     private static List<String> components(Class<?> type) {

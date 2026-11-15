@@ -1,6 +1,7 @@
 package dev.stowling.v2.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.domain.BlockPosition;
@@ -13,13 +14,62 @@ import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
+    @Test
+    void validatesTriggerTargetsAndCoordinateReferences() {
+        CoordinatePoint point = point("Drops");
+        TaskDefinition task = task("Pickup", step(point.id()));
+        TaskTriggerDefinition trigger =
+                TaskTriggerDefinition.droppedItems(
+                        UUID.randomUUID(),
+                        "Drops",
+                        task.id(),
+                        TaskPriority.NORMAL,
+                        20,
+                        100,
+                        point.id(),
+                        null
+                );
+        AppConfig valid = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(point),
+                List.of(task),
+                List.of(),
+                List.of(),
+                List.of(trigger)
+        );
+
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(valid));
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(point),
+                        List.of(task),
+                        List.of(),
+                        List.of(),
+                        List.of(TaskTriggerDefinition.droppedItems(
+                                UUID.randomUUID(),
+                                "Missing coordinate",
+                                task.id(),
+                                TaskPriority.NORMAL,
+                                20,
+                                100,
+                                UUID.randomUUID(),
+                                null
+                        ))
+                ))
+        );
+    }
+
     @Test
     void trimsCoordinateNamesAndRejectsInvalidLengths() {
         CoordinatePoint point = new CoordinatePoint(

@@ -26,11 +26,13 @@ import dev.stowling.v2.control.RegionRequest;
 import dev.stowling.v2.control.RegionUpdateRequest;
 import dev.stowling.v2.control.TaskRequest;
 import dev.stowling.v2.control.TaskStepRequest;
+import dev.stowling.v2.control.TaskInUseException;
+import dev.stowling.v2.control.TaskTriggerRequest;
+import dev.stowling.v2.control.TaskTriggerUpdateRequest;
 import dev.stowling.v2.control.TaskUpdateRequest;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2NotFoundException;
 import dev.stowling.v2.model.TaskPriority;
-import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.model.TaskTriggerType;
 import dev.stowling.v2.runtime.TaskRunNotFoundException;
 import java.io.ByteArrayOutputStream;
@@ -187,6 +189,12 @@ public final class V2ControlServer implements AutoCloseable {
                     exception.getMessage(),
                     exception.taskNames()
             )));
+        } catch (TaskInUseException exception) {
+            sendJsonQuietly(exchange, 409, new ErrorResponse(new ErrorBody(
+                    "task_in_use",
+                    exception.getMessage(),
+                    exception.triggerNames()
+            )));
         } catch (V2NotFoundException exception) {
             sendErrorQuietly(exchange, 404, "not_found", exception.getMessage());
         } catch (IllegalArgumentException exception) {
@@ -239,6 +247,23 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, service.taskRuns());
             return;
         }
+        if ("/v1/task-triggers".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.taskTriggers());
+            } else if ("POST".equals(method)) {
+                sendJson(
+                        exchange,
+                        201,
+                        service.createTaskTrigger(
+                                taskTriggerRequest(object(body))
+                        )
+                );
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
         if ("/v1/coordinates".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);
@@ -275,8 +300,7 @@ public final class V2ControlServer implements AutoCloseable {
                                 "name",
                                 "priority",
                                 "repeatWhenIdle",
-                                "steps",
-                                "trigger"
+                                "steps"
                         ),
                         Set.of("name", "steps")
                 );
@@ -461,8 +485,7 @@ public final class V2ControlServer implements AutoCloseable {
                                 "name",
                                 "priority",
                                 "repeatWhenIdle",
-                                "steps",
-                                "trigger"
+                                "steps"
                         ),
                         Set.of("revision", "name", "steps")
                 );
@@ -472,8 +495,7 @@ public final class V2ControlServer implements AutoCloseable {
                                 string(json, "name"),
                                 optionalPriority(json, "priority"),
                                 optionalBoolean(json, "repeatWhenIdle"),
-                                steps(json),
-                                optionalTrigger(json)
+                                steps(json)
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteTask(id, revision(body)));
@@ -493,6 +515,51 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, Map.of("cancelled", true));
             return;
         }
+        if (path.startsWith("/v1/task-triggers/")) {
+            UUID id = pathUuid(path, "/v1/task-triggers/");
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.taskTrigger(id));
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFieldsAny(
+                        json,
+                        triggerFields(true),
+                        Set.of(
+                                "revision",
+                                "name",
+                                "type",
+                                "targetTaskId",
+                                "intervalTicks",
+                                "cooldownTicks"
+                        )
+                );
+                TaskTriggerRequest request = taskTriggerRequest(json);
+                sendJson(exchange, 200, service.updateTaskTrigger(
+                        id,
+                        new TaskTriggerUpdateRequest(
+                                string(json, "revision"),
+                                request.name(),
+                                request.type(),
+                                request.targetTaskId(),
+                                request.priority(),
+                                request.intervalTicks(),
+                                request.cooldownTicks(),
+                                request.coordinateId(),
+                                request.itemFilter(),
+                                request.foodLevelThreshold()
+                        )
+                ));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteTaskTrigger(
+                        id,
+                        revision(body)
+                ));
+            } else {
+                throw methodNotAllowed("GET, PUT, DELETE");
+            }
+            return;
+        }
         throw new RequestFailure(404, "not_found", "Route not found");
     }
 
@@ -501,50 +568,67 @@ public final class V2ControlServer implements AutoCloseable {
                 string(json, "name"),
                 optionalPriority(json, "priority"),
                 optionalBoolean(json, "repeatWhenIdle"),
-                steps(json),
-                optionalTrigger(json)
+                steps(json)
         );
     }
 
-    private static TaskTriggerDefinition optionalTrigger(JsonObject json) {
-        JsonElement value = json.get("trigger");
-        if (value == null || value.isJsonNull()) {
-            return null;
-        }
-        JsonObject trigger = object(value, "trigger");
+    private static TaskTriggerRequest taskTriggerRequest(JsonObject json) {
         requireFieldsAny(
-                trigger,
+                json,
+                triggerFields(false),
                 Set.of(
+                        "name",
                         "type",
-                        "coordinateId",
-                        "itemFilter",
-                        "intervalTicks",
-                        "cooldownTicks"
-                ),
-                Set.of(
-                        "type",
-                        "coordinateId",
+                        "targetTaskId",
                         "intervalTicks",
                         "cooldownTicks"
                 )
         );
-        TaskTriggerType type;
+        String coordinateId = optionalString(json, "coordinateId");
+        return new TaskTriggerRequest(
+                string(json, "name"),
+                triggerType(json),
+                uuid(string(json, "targetTaskId")),
+                optionalPriority(json, "priority"),
+                integer(json, "intervalTicks"),
+                integer(json, "cooldownTicks"),
+                coordinateId == null ? null : uuid(coordinateId),
+                optionalString(json, "itemFilter"),
+                optionalInteger(json, "foodLevelThreshold")
+        );
+    }
+
+    private static Set<String> triggerFields(boolean revision) {
+        Set<String> fields = Set.of(
+                "name",
+                "type",
+                "targetTaskId",
+                "priority",
+                "intervalTicks",
+                "cooldownTicks",
+                "coordinateId",
+                "itemFilter",
+                "foodLevelThreshold"
+        );
+        if (!revision) {
+            return fields;
+        }
+        Set<String> withRevision = new java.util.HashSet<>(fields);
+        withRevision.add("revision");
+        return Set.copyOf(withRevision);
+    }
+
+    private static TaskTriggerType triggerType(JsonObject json) {
         try {
-            type = TaskTriggerType.valueOf(
-                    string(trigger, "type").trim().toUpperCase(Locale.ROOT)
+            return TaskTriggerType.valueOf(
+                    string(json, "type").trim().toUpperCase(Locale.ROOT)
             );
         } catch (IllegalArgumentException exception) {
-            throw invalid("unsupported trigger type");
+            throw invalid(
+                    "type must be DROPPED_ITEMS or "
+                            + "FOOD_LEVEL_AT_OR_BELOW"
+            );
         }
-        if (type != TaskTriggerType.DROPPED_ITEMS) {
-            throw invalid("unsupported trigger type");
-        }
-        return TaskTriggerDefinition.droppedItems(
-                uuid(string(trigger, "coordinateId")),
-                optionalString(trigger, "itemFilter"),
-                integer(trigger, "intervalTicks"),
-                integer(trigger, "cooldownTicks")
-        );
     }
 
     private static RegionRequest regionRequest(JsonObject json) {

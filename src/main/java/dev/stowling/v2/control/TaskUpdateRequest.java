@@ -1,7 +1,6 @@
 package dev.stowling.v2.control;
 
 import dev.stowling.v2.model.TaskPriority;
-import dev.stowling.v2.model.TaskTriggerDefinition;
 import java.util.List;
 
 public record TaskUpdateRequest(
@@ -9,8 +8,7 @@ public record TaskUpdateRequest(
         String name,
         TaskPriority priority,
         boolean repeatWhenIdle,
-        List<TaskStepRequest> steps,
-        TaskTriggerDefinition trigger
+        List<TaskStepRequest> steps
 ) {
     public TaskUpdateRequest {
         steps = List.copyOf(steps);
@@ -26,25 +24,7 @@ public record TaskUpdateRequest(
                 name,
                 TaskPriority.NORMAL,
                 false,
-                steps,
-                null
-        );
-    }
-
-    public TaskUpdateRequest(
-            String revision,
-            String name,
-            TaskPriority priority,
-            boolean repeatWhenIdle,
-            List<TaskStepRequest> steps
-    ) {
-        this(
-                revision,
-                name,
-                priority,
-                repeatWhenIdle,
-                steps,
-                null
+                steps
         );
     }
 }

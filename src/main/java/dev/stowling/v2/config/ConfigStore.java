@@ -75,7 +75,8 @@ public final class ConfigStore {
                             "coordinates",
                             "tasks",
                             "regions",
-                            "categoryZones"
+                            "categoryZones",
+                            "triggers"
                     ),
                     Set.of("schemaVersion", "coordinates", "tasks")
             );
@@ -85,6 +86,9 @@ public final class ConfigStore {
             }
             if (root.has("categoryZones")) {
                 requireCategoryZoneObjects(root.get("categoryZones"));
+            }
+            if (root.has("triggers")) {
+                requireTaskTriggerObjects(root.get("triggers"));
             }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
@@ -100,7 +104,6 @@ public final class ConfigStore {
                         ),
                         Set.of("id", "name", "steps")
                 );
-                requireTaskTrigger(taskObject.get("trigger"));
                 for (JsonElement step : requireArray(taskObject.get("steps"), "steps")) {
                     JsonObject stepObject = requireObject(step, "step");
                     requireExactFields(
@@ -116,27 +119,34 @@ public final class ConfigStore {
         }
     }
 
-    private static void requireTaskTrigger(JsonElement value) {
-        if (value == null || value.isJsonNull()) {
-            return;
+    private static void requireTaskTriggerObjects(JsonElement value) {
+        for (JsonElement item : requireArray(value, "triggers")) {
+            JsonObject trigger = requireObject(item, "task trigger");
+            requireFields(
+                    trigger,
+                    Set.of(
+                            "id",
+                            "name",
+                            "type",
+                            "targetTaskId",
+                            "priority",
+                            "intervalTicks",
+                            "cooldownTicks",
+                            "coordinateId",
+                            "itemFilter",
+                            "foodLevelThreshold"
+                    ),
+                    Set.of(
+                            "id",
+                            "name",
+                            "type",
+                            "targetTaskId",
+                            "priority",
+                            "intervalTicks",
+                            "cooldownTicks"
+                    )
+            );
         }
-        JsonObject trigger = requireObject(value, "trigger");
-        requireFields(
-                trigger,
-                Set.of(
-                        "type",
-                        "coordinateId",
-                        "itemFilter",
-                        "intervalTicks",
-                        "cooldownTicks"
-                ),
-                Set.of(
-                        "type",
-                        "coordinateId",
-                        "intervalTicks",
-                        "cooldownTicks"
-                )
-        );
     }
 
     private static void requireCoordinateObjects(JsonElement value) {

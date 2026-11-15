@@ -2524,10 +2524,6 @@ body[data-page="tasks"] .task-sidebar {
     gap: 0.5rem;
 }
 
-#new-watch-task-button {
-    grid-column: 1 / -1;
-}
-
 .task-sidebar .search-field {
     width: 100%;
 }
@@ -2674,14 +2670,6 @@ body[data-page="tasks"] .task-sidebar {
     margin: 0.8rem 0;
 }
 
-.task-watch-fields {
-    margin: 0.8rem 0;
-}
-
-.task-watch-fields[hidden] {
-    display: none;
-}
-
 .task-main .step-heading {
     margin-top: 1rem;
     padding-top: 0;
@@ -2750,8 +2738,28 @@ body[data-page="tasks"] .task-sidebar {
     gap: 1rem;
 }
 
-.task-monitor .watch-panel {
-    grid-column: 1 / -1;
+.trigger-workbench {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+    align-items: start;
+    gap: 1rem;
+}
+
+.trigger-form {
+    min-width: 0;
+}
+
+.trigger-condition-fields {
+    margin-top: 0.8rem;
+}
+
+.trigger-condition-fields[hidden] {
+    display: none;
+}
+
+.trigger-state-tag {
+    flex-shrink: 0;
+    padding: 0.18rem 0.4rem;
 }
 
 .task-monitor .queue-help {
@@ -2854,6 +2862,10 @@ button:active:not(:disabled) {
     }
 
     .task-monitor {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .trigger-workbench {
         grid-template-columns: minmax(0, 1fr);
     }
 }

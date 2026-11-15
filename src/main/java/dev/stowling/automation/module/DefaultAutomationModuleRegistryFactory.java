@@ -78,6 +78,13 @@ public final class DefaultAutomationModuleRegistryFactory {
         ));
         registry.register(new WaitAutomationModule(clock));
         registry.register(new RunPickupAutomationModule(pickups));
+        registry.register(new PickupToContainerAutomationModule(
+                pickups,
+                transfers,
+                inventory,
+                navigation,
+                configSupplier
+        ));
         registry.register(new TakeItemsAutomationModule(transfers, configSupplier));
         registry.register(new PutItemsAutomationModule(transfers, configSupplier));
         registry.register(new TransferItemsAutomationModule(transfers, configSupplier));

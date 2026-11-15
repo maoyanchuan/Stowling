@@ -219,6 +219,36 @@ class StrictRequestParserModularActionsTest {
     }
 
     @Test
+    void acceptsPickupToContainerAsAStrictCompositeAction() throws Exception {
+        Map<String, String> parameters = Map.of(
+                "coordinateId", "drops",
+                "destinationCoordinateId", "chest",
+                "containerType", "CHEST",
+                "idleSeconds", "2",
+                "waitForItems", "false"
+        );
+        assertAccepted(AutomationStepType.PICKUP_TO_CONTAINER, parameters);
+        assertRejected(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                Map.of("coordinateId", "drops")
+        );
+        assertRejected(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "waitForItems", "TRUE")
+        );
+        assertRejected(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "containerType", "FURNACE")
+        );
+        for (String idleSeconds : List.of("-1", "1.5", "invalid")) {
+            assertRejected(
+                    AutomationStepType.PICKUP_TO_CONTAINER,
+                    with(parameters, "idleSeconds", idleSeconds)
+            );
+        }
+    }
+
+    @Test
     void appliesModularParameterRulesToInlineInterruptionSteps() throws Exception {
         for (AutomationStepType type : List.of(
                 AutomationStepType.RUN_PICKUP, AutomationStepType.TAKE_ITEMS,

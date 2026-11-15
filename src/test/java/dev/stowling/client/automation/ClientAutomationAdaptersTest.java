@@ -104,7 +104,7 @@ class ClientAutomationAdaptersTest {
         Set<AutomationStepType> types = new HashSet<>();
         descriptors.forEach(descriptor -> types.add(descriptor.type()));
 
-        assertEquals(10, descriptors.size());
+        assertEquals(11, descriptors.size());
         assertEquals(Set.of(AutomationStepType.values()), types);
     }
 

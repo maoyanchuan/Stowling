@@ -6,6 +6,7 @@ import dev.stowling.automation.AutomationStep;
 import dev.stowling.automation.AutomationStepType;
 import dev.stowling.automation.AutomationWorkflow;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.CoordinateType;
 import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.schedule.InterruptionKind;
 import dev.stowling.schedule.TaskInterruption;
@@ -186,6 +187,71 @@ class ModularActionConfigValidationTest {
     }
 
     @Test
+    void acceptsPickupToContainerWithRangeAndPointOptions() {
+        Map<String, String> parameters = pickupToContainerParameters();
+        assertValidInBothLocations(AutomationStepType.PICKUP_TO_CONTAINER, parameters);
+        for (String containerType : List.of(
+                "CHEST", "TRAPPED_CHEST", "BARREL", "SHULKER_BOX", "HOPPER", "OTHER"
+        )) {
+            assertValidInBothLocations(
+                    AutomationStepType.PICKUP_TO_CONTAINER,
+                    with(parameters, "containerType", containerType)
+            );
+        }
+        assertValidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "idleSeconds", "0")
+        );
+        assertValidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "waitForItems", "true")
+        );
+    }
+
+    @Test
+    void rejectsPickupToContainerTypeDimensionAndOptionErrors() {
+        Map<String, String> parameters = pickupToContainerParameters();
+        assertInvalidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "coordinateId", "source"),
+                ".coordinateId",
+                "pickup range"
+        );
+        assertInvalidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "destinationCoordinateId", "range"),
+                ".destinationCoordinateId",
+                "POINT"
+        );
+        assertInvalidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "destinationCoordinateId", "nether"),
+                "",
+                "share one dimension"
+        );
+        assertInvalidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "containerType", "FURNACE"),
+                ".containerType",
+                "supported"
+        );
+        assertInvalidInBothLocations(
+                AutomationStepType.PICKUP_TO_CONTAINER,
+                with(parameters, "waitForItems", "TRUE"),
+                ".waitForItems",
+                "true or false"
+        );
+        for (String idleSeconds : List.of("-1", "1.5", "invalid")) {
+            assertInvalidInBothLocations(
+                    AutomationStepType.PICKUP_TO_CONTAINER,
+                    with(parameters, "idleSeconds", idleSeconds),
+                    ".idleSeconds",
+                    "nonnegative integer"
+            );
+        }
+    }
+
+    @Test
     void preservesLegacyContainersWithoutRequiringNewCoordinateFields() {
         for (AutomationStepType type : List.of(
                 AutomationStepType.TAKE_ITEMS, AutomationStepType.PUT_ITEMS
@@ -298,6 +364,7 @@ class ModularActionConfigValidationTest {
         coordinates.add(coordinate("box", OVERWORLD, 20));
         coordinates.add(coordinate("output", OVERWORLD, 30));
         coordinates.add(coordinate("fallback", OVERWORLD, 40));
+        coordinates.add(rangeCoordinate("range", OVERWORLD, 50));
         coordinates.add(coordinate("nether", NETHER, 0));
         return new StowlingConfig(
                 StowlingConfig.CURRENT_SCHEMA_VERSION,
@@ -309,6 +376,28 @@ class ModularActionConfigValidationTest {
 
     private static NamedCoordinate coordinate(String id, String dimension, int x) {
         return new NamedCoordinate(id, id + "-name", dimension, new BlockPosition(x, 64, 0));
+    }
+
+    private static NamedCoordinate rangeCoordinate(String id, String dimension, int x) {
+        return new NamedCoordinate(
+                id,
+                id + "-name",
+                dimension,
+                new BlockPosition(x, 64, 0),
+                CoordinateType.SPHERE,
+                8,
+                null
+        );
+    }
+
+    private static Map<String, String> pickupToContainerParameters() {
+        return Map.of(
+                "coordinateId", "range",
+                "destinationCoordinateId", "destination",
+                "containerType", "CHEST",
+                "idleSeconds", "2",
+                "waitForItems", "false"
+        );
     }
 
     private static Map<String, String> parametersFor(AutomationStepType type) {

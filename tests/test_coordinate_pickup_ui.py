@@ -47,6 +47,16 @@ def test_coordinate_options_are_name_only_and_range_filterable() -> None:
     assert "new Option(`保留原值 · ${retainedLabel}`, value)" in select
 
 
+def test_point_only_options_keep_ranges_visible_but_disabled() -> None:
+    options = task_function("coordinateOptions")
+    assert "if (pointOnly && isRangeCoordinate(point))" in options
+    assert "范围（需改为单点）" in options
+    assert "return [String(point.id), coordinateLabel(point)];" in options
+
+    point_options = task_function("pointCoordinateOptions")
+    assert "coordinateOptions(false, false, true)" in point_options
+
+
 def test_typed_coordinate_helpers_treat_missing_type_as_point() -> None:
     types = TASKS.split("const RANGE_COORDINATE_TYPES =", 1)[1].split("]);", 1)[0]
     for value in ("SPHERE", "CUBE", "AREA"):
@@ -62,7 +72,7 @@ def test_typed_coordinate_helpers_treat_missing_type_as_point() -> None:
 
 def test_new_pickup_task_has_no_task_level_radius_or_region() -> None:
     creation = task_function("createNewDefinition")
-    assert 'type: "RUN_PICKUP"' in creation
+    assert 'type: "PICKUP_TO_CONTAINER"' in creation
     assert 'coordinateId: ""' in creation
     assert 'idleSeconds: "2"' in creation
     assert 'waitForItems: "false"' in creation

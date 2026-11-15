@@ -14,20 +14,22 @@ def task_function(name: str) -> str:
     return TASKS[start:end] if end != -1 else TASKS[start:]
 
 
-def test_new_pickup_task_is_one_pure_named_range_step() -> None:
+def test_new_pickup_task_is_one_pickup_to_container_step() -> None:
     creation = task_function("createNewDefinition")
     assert 'state.draft = defaultDefinition("AUTOMATION");' in creation
     assert 'defaultDefinition("PICKUP")' not in creation
-    assert creation.count('type: "RUN_PICKUP"') == 1
+    assert creation.count('type: "PICKUP_TO_CONTAINER"') == 1
     assert 'coordinateId: ""' in creation
+    assert 'destinationCoordinateId: ""' in creation
+    assert 'containerType: "CHEST"' in creation
     assert 'idleSeconds: "2"' in creation
     assert 'waitForItems: "false"' in creation
     assert "radius:" not in creation
     assert "regionId:" not in creation
     assert "NAVIGATE" not in creation
     assert "WAIT" not in creation
-    assert "新拾取任务" in creation
-    assert "只预置一个命名范围拾取步骤" in TASKS_HTML
+    assert "新拾取并存入任务" in creation
+    assert "只设置掉落物范围和箱体位置" in TASKS_HTML
 
 
 def test_task_page_removes_shared_resource_and_base_coordinate_editors() -> None:
@@ -106,6 +108,25 @@ def test_pickup_summary_uses_names_and_coordinate_page_help_only() -> None:
     assert "无需重新选择" in coordinate_help
     assert "pickupRegionHelp" not in TASKS
     assert "选择坐标、角点和缓存" not in TASKS_HTML
+
+
+def test_pickup_to_container_uses_range_and_point_roles() -> None:
+    controls = task_function("parameterControl")
+    assert 'definition.kind === "point-coordinate"' in controls
+    assert "pointCoordinateOptions()" in controls
+    assert "请选择箱体坐标" in controls
+
+    summary = task_function("renderPickupToContainerSummary")
+    assert "step.parameters.destinationCoordinateId" in summary
+    assert "isRangeCoordinate(pickup)" in summary
+    assert 'coordinateType(destination) !== "POINT"' in summary
+    assert "pickup.dimension !== destination.dimension" in summary
+    assert "只存入本轮拾取新增的物品" not in summary
+
+    validation = task_function("validatePickupToContainerStep")
+    assert "pickup && !isRangeCoordinate(pickup)" in validation
+    assert 'coordinateType(destination) !== "POINT"' in validation
+    assert "pickup.dimension !== destination.dimension" in validation
 
 
 def test_pickup_summary_describes_saved_geometry_and_auto_refresh() -> None:

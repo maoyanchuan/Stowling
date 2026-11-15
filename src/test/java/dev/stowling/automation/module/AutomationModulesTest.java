@@ -450,7 +450,7 @@ class AutomationModulesTest {
     }
 
     @Test
-    void factoryRegistersAllNineModulesWithChineseMetadata() {
+    void factoryRegistersAllModulesWithChineseMetadata() {
         CoordinateResolver coordinates = coordinateId ->
                 Optional.of(new BlockPosition(0, 64, 0));
         InventoryQueryPort inventory = () ->

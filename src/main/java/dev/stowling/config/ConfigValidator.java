@@ -6,6 +6,7 @@ import dev.stowling.automation.CustomPickupRules;
 import dev.stowling.domain.AuditSchedule;
 import dev.stowling.automation.module.TaskContainerParameters;
 import dev.stowling.domain.ContainerRef;
+import dev.stowling.domain.CoordinateType;
 import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.NamedCoordinate;
@@ -1011,6 +1012,35 @@ public final class ConfigValidator {
                 );
                 validatePickupParameters(violations, step, path, pickupsById, config);
             }
+            case PICKUP_TO_CONTAINER -> {
+                requireParameters(
+                        violations,
+                        step,
+                        path,
+                        Set.of("coordinateId", "destinationCoordinateId"),
+                        Set.of("containerType", "idleSeconds", "waitForItems")
+                );
+                validateCoordinateParameter(
+                        violations,
+                        step,
+                        path,
+                        coordinates,
+                        "coordinateId"
+                );
+                validateCoordinateParameter(
+                        violations,
+                        step,
+                        path,
+                        coordinates,
+                        "destinationCoordinateId"
+                );
+                validatePickupToContainerParameters(
+                        violations,
+                        step,
+                        path,
+                        coordinates
+                );
+            }
             case TAKE_ITEMS, PUT_ITEMS -> {
                 requireParameters(violations, step, path, Set.of("itemId", "count"),
                         Set.of("containerId", "coordinateId", "containerType"));
@@ -1271,6 +1301,50 @@ public final class ConfigValidator {
         }
     }
 
+    private static void validatePickupToContainerParameters(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            Map<String, NamedCoordinate> coordinates
+    ) {
+        NamedCoordinate pickup = coordinates.get(step.parameter("coordinateId"));
+        NamedCoordinate destination = coordinates.get(
+                step.parameter("destinationCoordinateId")
+        );
+        if (pickup != null && pickup.type() == CoordinateType.POINT) {
+            violations.add(new ConfigViolation(
+                    path + ".parameters.coordinateId",
+                    "pickup range must be SPHERE, CUBE, or AREA"
+            ));
+        }
+        if (destination != null && destination.type() != CoordinateType.POINT) {
+            violations.add(new ConfigViolation(
+                    path + ".parameters.destinationCoordinateId",
+                    "destination must be a POINT coordinate"
+            ));
+        }
+        if (pickup != null && destination != null
+                && !pickup.dimension().equals(destination.dimension())) {
+            violations.add(new ConfigViolation(
+                    path + ".parameters",
+                    "pickup and destination must share one dimension"
+            ));
+        }
+        validateBooleanParameter(violations, step, path, "waitForItems");
+        validateNonnegativeNumber(violations, step, path, "idleSeconds");
+        String type = step.parameter("containerType");
+        if (type != null) {
+            try {
+                TaskContainerParameters.parseContainerType("containerType", type);
+            } catch (IllegalArgumentException exception) {
+                violations.add(new ConfigViolation(
+                        path + ".parameters.containerType",
+                        exception.getMessage()
+                ));
+            }
+        }
+    }
+
     private static void validateBooleanParameter(
             List<ConfigViolation> violations,
             AutomationStep step,
@@ -1309,6 +1383,28 @@ public final class ConfigValidator {
             violations.add(new ConfigViolation(
                     path + ".parameters." + key,
                     "must be a positive integer"
+            ));
+        }
+    }
+
+    private static void validateNonnegativeNumber(
+            List<ConfigViolation> violations,
+            AutomationStep step,
+            String path,
+            String key
+    ) {
+        String value = step.parameter(key);
+        if (value == null) {
+            return;
+        }
+        try {
+            if (Long.parseLong(value) < 0) {
+                throw new NumberFormatException("negative");
+            }
+        } catch (NumberFormatException exception) {
+            violations.add(new ConfigViolation(
+                    path + ".parameters." + key,
+                    "must be a nonnegative integer"
             ));
         }
     }

@@ -77,7 +77,8 @@ item-route conflicts.
 
 The overflow container remains mandatory for legacy storage routing. Unmatched items in
 that routing flow go there rather than being discarded. Pure `RUN_PICKUP` steps do not
-implicitly route or store collected items.
+implicitly route or store collected items. The `PICKUP_TO_CONTAINER` preset runs one
+pickup round and deposits only the inventory gained during that round.
 
 ## Web console
 
@@ -175,14 +176,17 @@ before expecting a newly built version to take effect.
 
 ### Task builder
 
-Open `http://127.0.0.1:8765/tasks.html` to compose reusable tasks from ten robot modules:
+Open `http://127.0.0.1:8765/tasks.html` to compose reusable tasks from eleven robot modules:
 
 - `NAVIGATE`: move to a saved named point using `coordinateId`.
 - `WAIT`: wait for the configured `seconds`.
-- `RUN_PICKUP`: select a saved `coordinateId` with `radius`, or a saved `regionId`;
-  configure `idleSeconds` and `waitForItems` for either target.
+- `RUN_PICKUP`: select a saved named range with `coordinateId`; configure
+  `idleSeconds` and `waitForItems`.
   Point-only coordinates are shown as disabled pickup choices with guidance to change
   them to a radius or area.
+- `PICKUP_TO_CONTAINER`: select a saved pickup range and a point coordinate for the
+  destination container. It picks one round, travels only when something was collected,
+  and deposits only the collected inventory delta.
 - `TAKE_ITEMS`: take `itemId`/`count` from `coordinateId`, with an optional `containerType`.
 - `PUT_ITEMS`: put `itemId`/`count` into `coordinateId`, with an optional `containerType`.
 - `TRANSFER_ITEMS`: move `itemId`/`count` between `sourceCoordinateId` and
@@ -199,9 +203,10 @@ points for the source, placed packing box, output, and fallback locations, with 
 occupancy completion thresholds.
 
 Pure pickup does not implicitly move to a standby point, store items in caches, classify
-items, or pack boxes. Compose movement, waiting, container operations, and packing as
-separate steps. The task page selects saved regions and coordinates; it has no shared
-cache, standby-point, or corner editor.
+items, or pack boxes. Use `PICKUP_TO_CONTAINER` for the common drop-to-chest flow, or
+compose movement, waiting, container operations, and packing as separate steps. The task
+page selects saved regions and coordinates; it has no shared cache, standby-point, or
+corner editor.
 
 The crafting module is intentionally conservative in this release. Ordinary clients do
 not expose a stable server-confirmed crafting transaction, so the scheduled run stops with
@@ -243,7 +248,13 @@ Each definition has a priority (`LOW`, `MEDIUM`, `HIGH`). The editor offers four
 - `AFTER_COMPLETION`: waits for the positive `intervalSeconds` delay after a successful
   run, then queues the task.
 
-New **Run pickup** steps select a named radius range or area using `coordinateId`.
+New **Pickup and deposit** tasks preset one `PICKUP_TO_CONTAINER` step. It requires only a
+saved drop range plus a point coordinate for the container, with optional container type,
+`idleSeconds` (default `2`), and `waitForItems` (default `false`). Existing inventory is
+preserved: only item counts above the pre-pickup baseline are transferred. If the range
+yields nothing, the task finishes without navigating to the container.
+
+Pure **Run pickup** steps select a named radius range or area using `coordinateId`.
 The step no longer edits radius, shape, coordinates, or regions. Configure those in
 **Coordinates and ranges**. Every run resolves the current saved geometry, so changes take
 effect on the next run; unsaved drafts do not appear in task options.
@@ -254,9 +265,9 @@ position anchors are retained; conflicting radii get distinct named resources ra
 silently changing another task's range. Legacy regions needed by old workflows are retained.
 Startup writes the upgraded configuration atomically with a backup.
 
-The step supports `idleSeconds` (default `2`) and `waitForItems` (default `false`).
-The round ends after the target has no items for the configured duration. Pickup only
-collects items; later movement, wait, storage, transfer, or packing must be explicit steps.
+Both pickup steps support `waitForItems`; pure pickup also uses the round's `idleSeconds`
+to decide when the target has no items for long enough. Pickup alone only collects items;
+later movement, wait, storage, transfer, or packing must be explicit steps.
 
 The optional **Wait for items before pickup** condition observes client-visible drops in
 the selected sphere or cuboid once per second before starting. It never patrols or loads

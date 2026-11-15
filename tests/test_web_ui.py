@@ -258,13 +258,13 @@ def test_new_task_entry_prefers_direct_rules_and_keeps_legacy_editing() -> None:
     assert 'id="new-task-dialog"' in html
     assert 'id="new-custom-task-button"' in html
     assert 'id="new-pickup-task-button"' in html
-    assert "只预置一个命名范围拾取步骤" in html
+    assert "只设置掉落物范围和箱体位置" in html
     assert "选择坐标、角点和缓存" not in html
     selector = html.split('<select id="task-kind">', 1)[1].split("</select>", 1)[0]
     assert 'value="AUTOMATION"' in selector
     assert 'value="PICKUP"' not in selector
     assert 'state.draft = defaultDefinition("AUTOMATION");' in TASKS
-    assert 'type: "RUN_PICKUP"' in TASKS
+    assert 'type: "PICKUP_TO_CONTAINER"' in TASKS
     assert 'waitForItems: "false"' in TASKS
     assert "function renderTaskKindOptions(kind)" in TASKS
     assert "旧拾取任务（兼容编辑）" in TASKS

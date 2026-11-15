@@ -742,6 +742,16 @@ final class StrictRequestParser {
                             || "false".equals(waitForItems),
                     "parameters.waitForItems must be true or false");
         }
+        if (type == AutomationStepType.PICKUP_TO_CONTAINER) {
+            String waitForItems = result.get("waitForItems");
+            require(waitForItems == null || "true".equals(waitForItems)
+                            || "false".equals(waitForItems),
+                    "parameters.waitForItems must be true or false");
+            requireNonnegativeInteger(
+                    result.get("idleSeconds"),
+                    "parameters.idleSeconds"
+            );
+        }
         validateContainerParameterMode(type, result);
         return Map.copyOf(result);
     }
@@ -793,6 +803,8 @@ final class StrictRequestParser {
             case NAVIGATE -> Set.of("coordinateId");
             case WAIT -> Set.of("seconds");
             case RUN_PICKUP -> Set.of();
+            case PICKUP_TO_CONTAINER ->
+                    Set.of("coordinateId", "destinationCoordinateId");
             case TAKE_ITEMS, PUT_ITEMS, TRANSFER_ITEMS -> Set.of("itemId", "count");
             case PACK_ITEMS -> Set.of(
                     "sourceCoordinateId", "boxCoordinateId", "outputCoordinateId",
@@ -811,6 +823,9 @@ final class StrictRequestParser {
                     "standbyCoordinateId",
                     "firstCornerCoordinateId", "secondCornerCoordinateId", "cacheIds",
                     "idleSeconds", "classificationTiming"
+            );
+            case PICKUP_TO_CONTAINER -> Set.of(
+                    "containerType", "idleSeconds", "waitForItems"
             );
             case TAKE_ITEMS, PUT_ITEMS -> Set.of("coordinateId", "containerType", "containerId");
             case TRANSFER_ITEMS -> Set.of(
@@ -833,6 +848,20 @@ final class StrictRequestParser {
     private static void requirePositiveInteger(String value, String fieldName)
             throws IOException {
         require(value.matches("[1-9][0-9]*"), fieldName + " must be a positive integer");
+        try {
+            Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new IOException(fieldName + " is outside the long range", exception);
+        }
+    }
+
+    private static void requireNonnegativeInteger(String value, String fieldName)
+            throws IOException {
+        if (value == null) {
+            return;
+        }
+        require(value.matches("[0-9]+"),
+                fieldName + " must be a nonnegative integer");
         try {
             Long.parseLong(value);
         } catch (NumberFormatException exception) {

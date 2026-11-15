@@ -677,12 +677,14 @@
         state.revision = "";
         state.draft = defaultDefinition("AUTOMATION");
         if (pickup) {
-            state.draft.name = "新拾取任务";
+            state.draft.name = "新拾取并存入任务";
             state.draft.steps.push({
                 id: "step-1",
-                type: "RUN_PICKUP",
+                type: "PICKUP_TO_CONTAINER",
                 parameters: {
                     coordinateId: "",
+                    destinationCoordinateId: "",
+                    containerType: "CHEST",
                     idleSeconds: "2",
                     waitForItems: "false"
                 }
@@ -971,6 +973,24 @@
                 parameters.append(summary);
             }
         }
+        if (step.type === "PICKUP_TO_CONTAINER") {
+            parameters.classList.add("pickup-step-fields");
+            parameters.append(Stowling.element(
+                "p",
+                "muted compact-help pickup-step-hint",
+                "先检测掉落物范围；没有物品时直接结束。"
+                    + "有物品时拾取一轮，再前往目标容器。"
+            ));
+            parameters.append(Stowling.element(
+                "p",
+                "muted compact-help pickup-step-hint",
+                "只存入本轮拾取新增的物品，不会存入背包中原有物品。"
+            ));
+            const summary = Stowling.element("div", "pickup-step-summary");
+            summary.setAttribute("aria-live", "polite");
+            renderPickupToContainerSummary(summary, step);
+            parameters.append(summary);
+        }
         if (legacyContainer) {
             parameters.append(legacyContainerNotice(step));
         }
@@ -1088,15 +1108,28 @@
         const value = parameterValue(step, definition);
         if (definition.kind === "coordinate") {
             const coordinate = coordinateFor(value);
-            const rangeOnly = step.type === "RUN_PICKUP";
+            const rangeOnly = step.type === "RUN_PICKUP"
+                || step.type === "PICKUP_TO_CONTAINER"
+                    && definition.key === "coordinateId";
             return referenceSelect(
-                coordinateOptions(rangeOnly, rangeOnly),
+                coordinateOptions(rangeOnly, rangeOnly, false),
                 value,
                 definition,
                 (next) => setStepParameter(step, definition, next),
                 rangeOnly
                     ? "请选择命名范围"
                     : "请选择命名坐标",
+                coordinate ? coordinateLabel(coordinate) : ""
+            );
+        }
+        if (definition.kind === "point-coordinate") {
+            const coordinate = coordinateFor(value);
+            return referenceSelect(
+                pointCoordinateOptions(),
+                value,
+                definition,
+                (next) => setStepParameter(step, definition, next),
+                "请选择箱体坐标",
                 coordinate ? coordinateLabel(coordinate) : ""
             );
         }
@@ -1227,14 +1260,26 @@
     /**
      * @param {boolean} rangeOnly
      * @param {boolean} showIneligible
+     * @param {boolean} pointOnly
      * @returns {Array<Array<string | boolean>>}
      */
-    function coordinateOptions(rangeOnly = false, showIneligible = false) {
+    function coordinateOptions(
+        rangeOnly = false,
+        showIneligible = false,
+        pointOnly = false
+    ) {
         return (state.resources.coordinatePoints || [])
             .filter((point) => {
                 return !rangeOnly || showIneligible || isRangeCoordinate(point);
             })
             .map((point) => {
+                if (pointOnly && isRangeCoordinate(point)) {
+                    return [
+                        String(point.id),
+                        `${coordinateLabel(point)} · 范围（需改为单点）`,
+                        true
+                    ];
+                }
                 if (rangeOnly && !isRangeCoordinate(point)) {
                     return [
                         String(point.id),
@@ -1244,6 +1289,13 @@
                 }
                 return [String(point.id), coordinateLabel(point)];
             });
+    }
+
+    /**
+     * @returns {Array<Array<string | boolean>>}
+     */
+    function pointCoordinateOptions() {
+        return coordinateOptions(false, false, true);
     }
 
     /**
@@ -1687,7 +1739,11 @@
             const index = steps.indexOf(step);
             const summary = target.children[index]?.querySelector(".pickup-step-summary");
             if (summary) {
-                renderPickupStepSummary(summary, step);
+                if (step.type === "PICKUP_TO_CONTAINER") {
+                    renderPickupToContainerSummary(summary, step);
+                } else {
+                    renderPickupStepSummary(summary, step);
+                }
             }
         }
     }
@@ -1741,6 +1797,66 @@
         for (const note of pickupConversionNotes.get(step) || []) {
             target.append(Stowling.element("p", "compact-help", `转换时：${note}`));
         }
+    }
+
+    /**
+     * @param {HTMLElement} target
+     * @param {object} step
+     * @returns {void}
+     */
+    function renderPickupToContainerSummary(target, step) {
+        target.replaceChildren();
+        const pickupId = String(step.parameters.coordinateId || "");
+        const destinationId = String(
+            step.parameters.destinationCoordinateId || ""
+        );
+        const pickup = coordinateFor(pickupId);
+        const destination = coordinateFor(destinationId);
+        if (!pickupId || !destinationId) {
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                "请选择掉落物范围和箱体位置"
+            ));
+        } else if (!pickup || !destination) {
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                "引用的坐标不存在；请重新选择"
+            ));
+        } else if (!isRangeCoordinate(pickup)) {
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                "掉落物范围必须是 SPHERE、CUBE 或 AREA"
+            ));
+        } else if (coordinateType(destination) !== "POINT") {
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                "箱体位置必须是单点坐标"
+            ));
+        } else if (pickup.dimension !== destination.dimension) {
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                "掉落物范围和箱体位置必须位于同一维度"
+            ));
+        } else {
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                `拾取：${coordinateLabel(pickup)} · `
+                    + coordinateGeometrySummary(pickup)
+            ));
+            target.append(Stowling.element(
+                "p",
+                "compact-help",
+                `存入：${coordinateLabel(destination)} · `
+                    + Stowling.containerTypeLabel(step.parameters.containerType)
+            ));
+        }
+        target.append(pickupCoordinateHelp());
     }
 
     /**
@@ -1807,7 +1923,9 @@
         if (definition.defaultValue) {
             return definition.defaultValue;
         }
-        if (step.type === "RUN_PICKUP" && definition.kind === "nonnegative-integer") {
+        if ((step.type === "RUN_PICKUP"
+                || step.type === "PICKUP_TO_CONTAINER")
+                && definition.kind === "nonnegative-integer") {
             return "2";
         }
         return "";
@@ -1843,7 +1961,8 @@
             step.parameters[definition.key] = value;
         }
         markDirty();
-        if (step.type === "RUN_PICKUP") {
+        if (step.type === "RUN_PICKUP"
+                || step.type === "PICKUP_TO_CONTAINER") {
             refreshPickupStepSummary(step);
         }
     }
@@ -2111,6 +2230,10 @@
                         && !coordinateFor(value)) {
                     addError(errors, `${label}的“${parameter.label}”引用的坐标不存在`);
                 }
+                if (value && parameter.kind === "point-coordinate"
+                        && !coordinateFor(value)) {
+                    addError(errors, `${label}的“${parameter.label}”引用的坐标不存在`);
+                }
                 if (value && parameter.kind === "pickup-region"
                         && !savedPickupRegions().some((region) => {
                             return String(region.id || "") === value;
@@ -2141,7 +2264,36 @@
                     );
                 }
             }
+            if (step.type === "PICKUP_TO_CONTAINER") {
+                validatePickupToContainerStep(errors, label, step);
+            }
         });
+    }
+
+    /**
+     * @param {Array<string>} errors
+     * @param {string} label
+     * @param {object} step
+     * @returns {void}
+     */
+    function validatePickupToContainerStep(errors, label, step) {
+        const pickup = coordinateFor(step.parameters.coordinateId);
+        const destination = coordinateFor(
+            step.parameters.destinationCoordinateId
+        );
+        if (pickup && !isRangeCoordinate(pickup)) {
+            addError(
+                errors,
+                `${label}的掉落物范围必须选择 SPHERE、CUBE 或 AREA`
+            );
+        }
+        if (destination && coordinateType(destination) !== "POINT") {
+            addError(errors, `${label}的存入位置必须选择单点坐标`);
+        }
+        if (pickup && destination
+                && pickup.dimension !== destination.dimension) {
+            addError(errors, `${label}的掉落物范围与存入位置必须位于同一维度`);
+        }
     }
 
     /**

@@ -6,16 +6,17 @@ import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.CategoryRule;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryRuleResult;
+import dev.stowling.v2.category.CategoryMarker;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,7 +91,7 @@ public final class MinecraftCategoryZoneResolver
                         "分类区 " + zone.name() + " 的识别区体积过大"
                 );
             }
-            List<String> markerBlockIds = markerBlockIds(
+            List<CategoryMarker> markers = markers(
                     level,
                     binding.markerArea()
             );
@@ -104,7 +105,7 @@ public final class MinecraftCategoryZoneResolver
             }
             CategoryRule rule = rules.require(binding.ruleId());
             CategoryRuleResult resolved = rule.resolve(
-                    markerBlockIds,
+                    markers,
                     storageScan.containers()
             );
             if (!resolved.succeeded()) {
@@ -139,11 +140,11 @@ public final class MinecraftCategoryZoneResolver
         }
     }
 
-    private static List<String> markerBlockIds(
+    private static List<CategoryMarker> markers(
             ClientLevel level,
             AreaBounds area
     ) {
-        Set<String> result = new LinkedHashSet<>();
+        List<CategoryMarker> result = new ArrayList<>();
         for (long x = area.minX(); x <= area.maxX(); x++) {
             for (long y = area.minY(); y <= area.maxY(); y++) {
                 for (long z = area.minZ(); z <= area.maxZ(); z++) {
@@ -156,9 +157,16 @@ public final class MinecraftCategoryZoneResolver
                             || level.getBlockState(position).isAir()) {
                         continue;
                     }
-                    result.add(BuiltInRegistries.BLOCK.getKey(
-                            level.getBlockState(position).getBlock()
-                    ).toString());
+                    result.add(new CategoryMarker(
+                            new BlockPosition(
+                                    position.getX(),
+                                    position.getY(),
+                                    position.getZ()
+                            ),
+                            BuiltInRegistries.BLOCK.getKey(
+                                    level.getBlockState(position).getBlock()
+                            ).toString()
+                    ));
                 }
             }
         }

@@ -11,35 +11,48 @@ import org.junit.jupiter.api.Test;
 
 class DirectBlockIdCategoryRuleTest {
     @Test
-    void mapsEachMarkerBlockIdToTheConfiguredStorageContainers() {
+    void mapsEachMarkerBlockToTheContainerInItsColumn() {
         DirectBlockIdCategoryRule rule =
                 new DirectBlockIdCategoryRule();
-        ContainerTarget chest = new ContainerTarget(
-                new BlockPosition(7, -34, 6),
+        ContainerTarget logChest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        ContainerTarget plankChest = new ContainerTarget(
+                new BlockPosition(8, -40, 1),
                 "minecraft:chest"
         );
 
         CategoryRuleResult result = rule.resolve(
-                List.of("minecraft:iron_block", "minecraft:gold_block"),
-                List.of(chest)
+                List.of(
+                        new CategoryMarker(
+                                new BlockPosition(7, -40, 2),
+                                "minecraft:oak_log"
+                        ),
+                        new CategoryMarker(
+                                new BlockPosition(8, -40, 2),
+                                "minecraft:oak_planks"
+                        )
+                ),
+                List.of(logChest, plankChest)
         );
 
         assertTrue(result.succeeded());
         assertEquals(
-                List.of(chest),
-                result.categories().get("minecraft:iron_block")
+                List.of(logChest),
+                result.categories().get("minecraft:oak_log")
         );
         assertEquals(
-                List.of(chest),
-                result.categories().get("minecraft:gold_block")
+                List.of(plankChest),
+                result.categories().get("minecraft:oak_planks")
         );
         assertTrue(rule.matchesItem(
-                "minecraft:iron_block",
-                "minecraft:iron_block"
+                "minecraft:oak_planks",
+                "minecraft:oak_planks"
         ));
         assertFalse(rule.matchesItem(
-                "minecraft:iron_block",
-                "minecraft:iron_ingot"
+                "minecraft:oak_planks",
+                "minecraft:oak_log"
         ));
     }
 }

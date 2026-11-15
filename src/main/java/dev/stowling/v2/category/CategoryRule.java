@@ -11,7 +11,7 @@ public interface CategoryRule {
     }
 
     CategoryRuleResult resolve(
-            List<String> markerBlockIds,
+            List<CategoryMarker> markers,
             List<ContainerTarget> storageContainers
     );
 

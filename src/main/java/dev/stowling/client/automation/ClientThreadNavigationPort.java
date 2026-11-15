@@ -30,11 +30,22 @@ public final class ClientThreadNavigationPort implements NavigationPort {
 
     @Override
     public NavigationStatus status(BlockPosition target) {
+        return status(target, null);
+    }
+
+    @Override
+    public NavigationStatus status(BlockPosition target, Integer radius) {
         Objects.requireNonNull(target, "target");
         if (!scheduler.isClientThread()) {
             return NavigationStatus.FAILED;
         }
-        return delegate.status(target);
+        return delegate.status(target, radius);
+    }
+
+    @Override
+    public boolean isInDimension(String dimension) {
+        Objects.requireNonNull(dimension, "dimension");
+        return scheduler.isClientThread() && delegate.isInDimension(dimension);
     }
 
     @Override

@@ -15,13 +15,17 @@ def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     assert "坐标管理" in html
     for field in ("名称", "X", "Y", "Z"):
         assert field in html
-    for removed in ("维度", "半径", "区域", "第二角点", "容器"):
+    for removed in ("区域", "第二角点", "容器"):
         assert removed not in html
+    assert "new-coordinate-use-dimension" in html
+    assert "new-coordinate-use-radius" in html
     assert "/v1/coordinates/${encodeURIComponent(coordinate.id)}" in javascript
     assert "coordinate.name" in javascript
     assert "coordinate.x" in javascript
     assert "coordinate.y" in javascript
     assert "coordinate.z" in javascript
+    assert "dimension: values.useDimension.checked" in javascript
+    assert "radius: values.useRadius.checked" in javascript
 
 
 def test_coordinate_cards_collapse_to_the_saved_name() -> None:
@@ -60,6 +64,7 @@ def test_coordinate_choices_only_show_the_saved_name() -> None:
     assert "value.x" not in model
     assert "value.y" not in model
     assert "value.z" not in model
+    assert "rawRadius === null" in model
 
 
 def test_task_ui_supports_save_run_refresh_and_cancel() -> None:
@@ -116,7 +121,6 @@ def test_retained_pages_hide_internal_ids_and_removed_controls() -> None:
         "任务 ID",
         "步骤 ID",
         "UUID",
-        "半径",
         "角点",
         "区域",
         "容器",

@@ -16,12 +16,20 @@
      * @returns {object}
      */
     function normalizeCoordinate(value) {
+        const rawRadius = value?.radius;
+        const radius = rawRadius === null
+            || rawRadius === undefined
+            || rawRadius === ""
+            ? null
+            : Number(rawRadius);
         return {
             id: String(value?.id || ""),
             name: String(value?.name || "").trim(),
             x: coordinateNumber(value?.x),
             y: coordinateNumber(value?.y, 64),
-            z: coordinateNumber(value?.z)
+            z: coordinateNumber(value?.z),
+            dimension: String(value?.dimension || "").trim(),
+            radius: Number.isInteger(radius) ? radius : null
         };
     }
 

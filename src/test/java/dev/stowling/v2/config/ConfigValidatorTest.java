@@ -41,6 +41,46 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void validatesOptionalDimensionAndRadius() {
+        CoordinatePoint point = new CoordinatePoint(
+                UUID.randomUUID(),
+                "Home",
+                0,
+                64,
+                0,
+                " minecraft:overworld ",
+                5
+        );
+
+        assertEquals("minecraft:overworld", point.dimension());
+        assertEquals(5, point.radius());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new CoordinatePoint(
+                        UUID.randomUUID(),
+                        "Home",
+                        0,
+                        64,
+                        0,
+                        "overworld",
+                        5
+                )
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new CoordinatePoint(
+                        UUID.randomUUID(),
+                        "Home",
+                        0,
+                        64,
+                        0,
+                        "minecraft:overworld",
+                        129
+                )
+        );
+    }
+
+    @Test
     void rejectsCoordinateNamesThatDifferOnlyByCaseAndWhitespace() {
         AppConfig config = config(
                 List.of(

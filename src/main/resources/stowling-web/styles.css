@@ -1294,6 +1294,23 @@ select[aria-invalid="true"] {
     transform: rotate(225deg);
 }
 
+.coordinate-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 1.75rem;
+    cursor: pointer;
+}
+
+.coordinate-switch input {
+    width: auto;
+    flex: 0 0 auto;
+}
+
+.coordinate-optional-field input[hidden] {
+    display: none;
+}
+
 .coordinate-row > .editor-field {
     min-width: 0;
 }

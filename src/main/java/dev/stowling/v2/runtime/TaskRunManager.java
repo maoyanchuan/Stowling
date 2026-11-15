@@ -89,12 +89,20 @@ public final class TaskRunManager {
         );
         CoordinatePoint target = active.targets.get(coordinateId);
         BlockPosition position = new BlockPosition(target.x(), target.y(), target.z());
+        if (target.dimension() != null
+                && !navigation.isInDimension(target.dimension())) {
+            finish(
+                    TaskRunState.FAILED,
+                    "无法前往 " + target.name() + "：维度不匹配"
+            );
+            return;
+        }
         NavigationStatus status;
         if (!active.navigationStarted) {
             active.navigationStarted = true;
             status = navigation.start(position);
         } else {
-            status = navigation.status(position);
+            status = navigation.status(position, target.radius());
         }
         switch (status) {
             case ARRIVED -> {

@@ -75,7 +75,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.x(),
                 request.y(),
-                request.z()
+                request.z(),
+                request.dimension(),
+                request.radius()
         ));
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
@@ -98,7 +100,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.x(),
                 request.y(),
-                request.z()
+                request.z(),
+                request.dimension(),
+                request.radius()
         );
         List<CoordinatePoint> coordinates = current.config().coordinates().stream()
                 .map(point -> point.id().equals(id)

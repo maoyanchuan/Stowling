@@ -15,6 +15,10 @@
         x: document.querySelector("#new-coordinate-x"),
         y: document.querySelector("#new-coordinate-y"),
         z: document.querySelector("#new-coordinate-z"),
+        useDimension: document.querySelector("#new-coordinate-use-dimension"),
+        dimension: document.querySelector("#new-coordinate-dimension"),
+        useRadius: document.querySelector("#new-coordinate-use-radius"),
+        radius: document.querySelector("#new-coordinate-radius"),
         list: document.querySelector("#coordinate-list"),
         errors: document.querySelector("#coordinate-errors"),
         status: document.querySelector("#coordinate-status"),
@@ -81,18 +85,39 @@
         const x = input("number", coordinate.x);
         const y = input("number", coordinate.y);
         const z = input("number", coordinate.z);
+        const useDimension = checkbox(Boolean(coordinate.dimension));
+        const dimension = input(
+            "text",
+            coordinate.dimension || "minecraft:overworld",
+            256
+        );
+        const useRadius = checkbox(coordinate.radius !== null);
+        const radius = input("number", coordinate.radius ?? 3);
+        radius.min = "0";
+        radius.max = "128";
         fields.append(
             field("名称", name),
             field("X", x),
             field("Y", y),
-            field("Z", z)
+            field("Z", z),
+            optionalField("指定维度", useDimension, dimension),
+            optionalField("指定半径", useRadius, radius)
         );
 
         const actions = Stowling.element("div", "action-row");
         const save = Stowling.element("button", "primary compact", "保存");
         save.type = "button";
         save.addEventListener("click", () => {
-            void saveCoordinate(coordinate, { name: name.value, x, y, z });
+            void saveCoordinate(coordinate, {
+                name: name.value,
+                x,
+                y,
+                z,
+                useDimension,
+                dimension,
+                useRadius,
+                radius
+            });
         });
         const remove = Stowling.element(
             "button",
@@ -125,7 +150,13 @@
                         name: values.name.trim(),
                         x: Number(values.x.value),
                         y: Number(values.y.value),
-                        z: Number(values.z.value)
+                        z: Number(values.z.value),
+                        dimension: values.useDimension.checked
+                            ? values.dimension.value.trim()
+                            : null,
+                        radius: values.useRadius.checked
+                            ? Number(values.radius.value)
+                            : null
                     })
                 }
             );
@@ -174,7 +205,13 @@
                     name: elements.name.value.trim(),
                     x: Number(elements.x.value),
                     y: Number(elements.y.value),
-                    z: Number(elements.z.value)
+                    z: Number(elements.z.value),
+                    dimension: elements.useDimension.checked
+                        ? elements.dimension.value.trim()
+                        : null,
+                    radius: elements.useRadius.checked
+                        ? Number(elements.radius.value)
+                        : null
                 })
             });
             applyResponse(response);
@@ -182,6 +219,10 @@
             elements.x.value = "0";
             elements.y.value = "64";
             elements.z.value = "0";
+            elements.dimension.value = "minecraft:overworld";
+            elements.radius.value = "3";
+            syncOptionalField(elements.useDimension, elements.dimension);
+            syncOptionalField(elements.useRadius, elements.radius);
             elements.name.focus();
             clearErrors();
             Stowling.showToast("坐标已添加");
@@ -206,6 +247,52 @@
             control.maxLength = maxLength;
         }
         return control;
+    }
+
+    /**
+     * @param {boolean} checked
+     * @returns {HTMLInputElement}
+     */
+    function checkbox(checked) {
+        const control = document.createElement("input");
+        control.type = "checkbox";
+        control.checked = checked;
+        return control;
+    }
+
+    /**
+     * @param {string} label
+     * @param {HTMLInputElement} toggle
+     * @param {HTMLInputElement} control
+     * @returns {HTMLElement}
+     */
+    function optionalField(label, toggle, control) {
+        const wrapper = Stowling.element(
+            "div",
+            "editor-field coordinate-optional-field"
+        );
+        const switchLabel = Stowling.element(
+            "label",
+            "coordinate-switch"
+        );
+        switchLabel.append(toggle, Stowling.element("span", "", label));
+        wrapper.append(switchLabel, control);
+        syncOptionalField(toggle, control);
+        toggle.addEventListener("change", () => {
+            syncOptionalField(toggle, control);
+        });
+        return wrapper;
+    }
+
+    /**
+     * @param {HTMLInputElement} toggle
+     * @param {HTMLInputElement} control
+     * @returns {void}
+     */
+    function syncOptionalField(toggle, control) {
+        control.disabled = !toggle.checked;
+        control.hidden = !toggle.checked;
+        control.required = toggle.checked;
     }
 
     /**
@@ -245,10 +332,18 @@
     }
 
     elements.add.addEventListener("click", () => elements.name.focus());
+    elements.useDimension.addEventListener("change", () => {
+        syncOptionalField(elements.useDimension, elements.dimension);
+    });
+    elements.useRadius.addEventListener("change", () => {
+        syncOptionalField(elements.useRadius, elements.radius);
+    });
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
         void createCoordinate();
     });
+    syncOptionalField(elements.useDimension, elements.dimension);
+    syncOptionalField(elements.useRadius, elements.radius);
     Stowling.onConnected(() => loadCoordinates());
     Stowling.mountPage("coordinates");
 })();

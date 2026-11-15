@@ -13,6 +13,7 @@ final class V2Json {
                             new JsonPrimitive(value.toString())
             )
             .disableHtmlEscaping()
+            .serializeNulls()
             .create();
 
     private V2Json() {

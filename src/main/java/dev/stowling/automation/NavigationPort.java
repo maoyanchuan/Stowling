@@ -8,6 +8,14 @@ public interface NavigationPort {
 
     NavigationStatus status(BlockPosition target);
 
+    default NavigationStatus status(BlockPosition target, Integer radius) {
+        return status(target);
+    }
+
+    default boolean isInDimension(String dimension) {
+        return true;
+    }
+
     void cancel();
 
     default StopOutcome requestStop() {

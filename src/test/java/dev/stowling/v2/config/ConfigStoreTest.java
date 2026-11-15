@@ -77,6 +77,31 @@ class ConfigStoreTest {
     }
 
     @Test
+    void keepsCoordinatesThatPredateOptionalFields() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 7,
+                    "coordinates": [{
+                        "id": "00000000-0000-0000-0000-000000000001",
+                        "name": "Home",
+                        "x": 0,
+                        "y": 64,
+                        "z": 0
+                    }],
+                    "tasks": []
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        CoordinatePoint point = store.loadOrReset().config().coordinates().getFirst();
+
+        assertEquals(null, point.dimension());
+        assertEquals(null, point.radius());
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
+    }
+
+    @Test
     void resetsSchemaSevenThatContainsLegacyFields() throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """

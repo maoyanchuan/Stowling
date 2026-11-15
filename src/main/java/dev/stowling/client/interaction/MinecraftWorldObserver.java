@@ -31,6 +31,7 @@ public final class MinecraftWorldObserver implements WorldObserver {
         return new WorldObservation(
                 true,
                 player.isAlive(),
+                level.dimension().identifier().toString(),
                 Optional.of(new BlockPosition(
                         player.blockPosition().getX(),
                         player.blockPosition().getY(),

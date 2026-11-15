@@ -38,7 +38,7 @@
                         <p class="eyebrow">共享资源</p>
                         <h2 id="coordinate-title">坐标点</h2>
                         <p class="muted section-help">
-                            每个坐标只有名称和 X/Y/Z。
+                            坐标按名称和 X/Y/Z 保存，可按需附带维度和到达半径。
                         </p>
                     </div>
                     <button id="add-coordinate-button" class="primary compact"
@@ -61,6 +61,27 @@
                     <div class="editor-field">
                         <label for="new-coordinate-z">Z</label>
                         <input id="new-coordinate-z" type="number" step="1" value="0" required>
+                    </div>
+                    <div class="editor-field coordinate-optional-field">
+                        <label class="coordinate-switch"
+                               for="new-coordinate-use-dimension">
+                            <input id="new-coordinate-use-dimension" type="checkbox">
+                            <span>指定维度</span>
+                        </label>
+                        <input id="new-coordinate-dimension"
+                               value="minecraft:overworld"
+                               placeholder="minecraft:overworld"
+                               disabled hidden>
+                    </div>
+                    <div class="editor-field coordinate-optional-field">
+                        <label class="coordinate-switch"
+                               for="new-coordinate-use-radius">
+                            <input id="new-coordinate-use-radius" type="checkbox">
+                            <span>指定半径</span>
+                        </label>
+                        <input id="new-coordinate-radius" type="number"
+                               min="0" max="128" step="1" value="3"
+                               disabled hidden>
                     </div>
                     <button class="secondary compact" type="submit">保存新坐标</button>
                 </form>

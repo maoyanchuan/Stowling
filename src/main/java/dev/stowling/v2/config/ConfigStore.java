@@ -69,13 +69,7 @@ public final class ConfigStore {
             }
             JsonObject root = parsed.getAsJsonObject();
             requireExactFields(root, Set.of("schemaVersion", "coordinates", "tasks"));
-            requireObjectArray(root.get("coordinates"), "coordinate", Set.of(
-                    "id",
-                    "name",
-                    "x",
-                    "y",
-                    "z"
-            ));
+            requireCoordinateObjects(root.get("coordinates"));
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
                 requireExactFields(taskObject, Set.of("id", "name", "steps"));
@@ -94,13 +88,25 @@ public final class ConfigStore {
         }
     }
 
-    private static void requireObjectArray(
-            JsonElement value,
-            String itemName,
-            Set<String> fields
-    ) {
-        for (JsonElement item : requireArray(value, itemName + "s")) {
-            requireExactFields(requireObject(item, itemName), fields);
+    private static void requireCoordinateObjects(JsonElement value) {
+        Set<String> required = Set.of("id", "name", "x", "y", "z");
+        Set<String> allowed = Set.of(
+                "id",
+                "name",
+                "x",
+                "y",
+                "z",
+                "dimension",
+                "radius"
+        );
+        for (JsonElement item : requireArray(value, "coordinates")) {
+            JsonObject coordinate = requireObject(item, "coordinate");
+            if (!allowed.containsAll(coordinate.keySet())
+                    || !coordinate.keySet().containsAll(required)) {
+                throw new V2ValidationException(
+                        "configuration fields do not match schema"
+                );
+            }
         }
     }
 

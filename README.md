@@ -6,7 +6,8 @@ Baritone.
 
 ## Features
 
-- Coordinate entries contain only a name and X/Y/Z.
+- Coordinate entries contain a name and X/Y/Z, with optional dimension and
+  arrival-radius fields.
 - Tasks contain a name and one or more ordered module steps.
 - The first built-in module is `MOVE_TO_COORDINATE`.
 - One task can run at a time.
@@ -36,8 +37,11 @@ If the file is missing, invalid, or from an older schema, Stowling creates a
 Old data is never migrated.
 
 Coordinates are interpreted in the player's current dimension when a movement
-task runs. A task snapshots its steps and target coordinates when started, so
-editing saved coordinates only affects later runs.
+task runs unless a coordinate enables an explicit dimension. A disabled
+dimension or radius is returned as `null`; tasks interpret a missing dimension
+as unrestricted and a missing radius as their built-in arrival tolerance. A
+task snapshots its steps and target coordinates when started, so editing saved
+coordinates only affects later runs.
 
 ## Web console
 

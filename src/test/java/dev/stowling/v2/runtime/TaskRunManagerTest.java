@@ -139,6 +139,54 @@ class TaskRunManagerTest {
         );
     }
 
+    @Test
+    void failsBeforeNavigationWhenTheConfiguredDimensionDoesNotMatch() {
+        UUID coordinateId = UUID.randomUUID();
+        RecordingNavigation navigation = new RecordingNavigation(
+                NavigationStatus.ARRIVED
+        ).rejectingDimensions();
+        TaskRunManager manager = new TaskRunManager(navigation);
+        CoordinatePoint target = new CoordinatePoint(
+                coordinateId,
+                "Nether",
+                0,
+                64,
+                0,
+                "minecraft:the_nether",
+                null
+        );
+
+        manager.start(task(step(coordinateId)), List.of(target));
+        manager.tick();
+
+        assertEquals(TaskRunState.FAILED, manager.runs().getFirst().state());
+        assertTrue(navigation.positions().isEmpty());
+    }
+
+    @Test
+    void passesTheConfiguredRadiusToNavigation() {
+        UUID coordinateId = UUID.randomUUID();
+        RecordingNavigation navigation = new RecordingNavigation(
+                NavigationStatus.ARRIVED
+        );
+        TaskRunManager manager = new TaskRunManager(navigation);
+        CoordinatePoint target = new CoordinatePoint(
+                coordinateId,
+                "Nearby",
+                0,
+                64,
+                0,
+                null,
+                7
+        );
+
+        manager.start(task(step(coordinateId)), List.of(target));
+        manager.tick();
+        manager.tick();
+
+        assertEquals(List.of(7), navigation.radii());
+    }
+
     private static TaskDefinition task(TaskStep... steps) {
         return new TaskDefinition(
                 UUID.randomUUID(),
@@ -175,7 +223,9 @@ class TaskRunManagerTest {
     private static final class RecordingNavigation implements NavigationPort {
         private final Deque<NavigationStatus> statuses;
         private final List<BlockPosition> positions = new ArrayList<>();
+        private final List<Integer> radii = new ArrayList<>();
         private boolean active;
+        private boolean dimensionsAllowed = true;
 
         private RecordingNavigation(NavigationStatus... statuses) {
             this.statuses = new ArrayDeque<>(List.of(statuses));
@@ -190,14 +240,25 @@ class TaskRunManagerTest {
 
         @Override
         public NavigationStatus status(BlockPosition target) {
+            return status(target, null);
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target, Integer radius) {
             if (!active || statuses.isEmpty()) {
                 return NavigationStatus.FAILED;
             }
+            radii.add(radius);
             NavigationStatus status = statuses.removeFirst();
             if (status != NavigationStatus.NAVIGATING) {
                 active = false;
             }
             return status;
+        }
+
+        @Override
+        public boolean isInDimension(String dimension) {
+            return dimensionsAllowed;
         }
 
         @Override
@@ -213,6 +274,15 @@ class TaskRunManagerTest {
 
         private List<BlockPosition> positions() {
             return List.copyOf(positions);
+        }
+
+        private List<Integer> radii() {
+            return List.copyOf(radii);
+        }
+
+        private RecordingNavigation rejectingDimensions() {
+            dimensionsAllowed = false;
+            return this;
         }
     }
 }

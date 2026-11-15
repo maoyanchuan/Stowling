@@ -43,6 +43,11 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public NavigationStatus status(BlockPosition target) {
+        return status(target, null);
+    }
+
+    @Override
+    public NavigationStatus status(BlockPosition target, Integer radius) {
         Objects.requireNonNull(target, "target");
         WorldObservation world = worldObserver.observeWorld();
         if (!world.connected() || !world.alive() || world.playerPosition().isEmpty()) {
@@ -53,7 +58,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         double deltaY = current.y() - target.y();
         double deltaZ = current.z() - target.z();
         double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-        if (distanceSquared <= ARRIVAL_DISTANCE_SQUARED) {
+        if (distanceSquared <= arrivalDistanceSquared(radius)) {
             if (active) {
                 active = false;
                 navigationService.cancel();
@@ -75,6 +80,20 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         return NavigationStatus.NAVIGATING;
+    }
+
+    @Override
+    public boolean isInDimension(String dimension) {
+        Objects.requireNonNull(dimension, "dimension");
+        WorldObservation world = worldObserver.observeWorld();
+        return world.connected() && dimension.equals(world.dimension());
+    }
+
+    private static double arrivalDistanceSquared(Integer radius) {
+        if (radius == null) {
+            return ARRIVAL_DISTANCE_SQUARED;
+        }
+        return (double) radius * radius;
     }
 
     @Override

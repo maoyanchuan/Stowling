@@ -11,7 +11,7 @@ class V2ModelContractTest {
     @Test
     void coordinateContainsOnlyHiddenIdNameAndXyz() {
         assertEquals(
-                List.of("id", "name", "x", "y", "z"),
+                List.of("id", "name", "x", "y", "z", "dimension", "radius"),
                 components(CoordinatePoint.class)
         );
     }
@@ -48,6 +48,8 @@ class V2ModelContractTest {
 
         assertEquals(coordinateId, point.id());
         assertEquals("Home", point.name());
+        assertEquals(null, point.dimension());
+        assertEquals(null, point.radius());
         assertEquals(stepId, step.id());
         assertEquals("Travel", task.name());
     }

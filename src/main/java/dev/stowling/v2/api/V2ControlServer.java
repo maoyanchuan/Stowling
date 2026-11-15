@@ -233,12 +233,18 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.coordinates());
             } else if ("POST".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(json, Set.of("name", "x", "y", "z"));
+                requireFieldsAny(
+                        json,
+                        Set.of("name", "x", "y", "z", "dimension", "radius"),
+                        Set.of("name", "x", "y", "z")
+                );
                 sendJson(exchange, 201, service.createCoordinate(new CoordinateRequest(
                         string(json, "name"),
                         integer(json, "x"),
                         integer(json, "y"),
-                        integer(json, "z")
+                        integer(json, "z"),
+                        optionalString(json, "dimension"),
+                        optionalInteger(json, "radius")
                 )));
             } else {
                 throw methodNotAllowed("GET, POST");
@@ -265,14 +271,28 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.coordinate(id));
             } else if ("PUT".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(json, Set.of("revision", "name", "x", "y", "z"));
+                requireFieldsAny(
+                        json,
+                        Set.of(
+                                "revision",
+                                "name",
+                                "x",
+                                "y",
+                                "z",
+                                "dimension",
+                                "radius"
+                        ),
+                        Set.of("revision", "name", "x", "y", "z")
+                );
                 sendJson(exchange, 200, service.updateCoordinate(id,
                         new CoordinateUpdateRequest(
                                 string(json, "revision"),
                                 string(json, "name"),
                                 integer(json, "x"),
                                 integer(json, "y"),
-                                integer(json, "z")
+                                integer(json, "z"),
+                                optionalString(json, "dimension"),
+                                optionalInteger(json, "radius")
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteCoordinate(
@@ -477,6 +497,14 @@ public final class V2ControlServer implements AutoCloseable {
             throw invalid(key + " must be a 32-bit integer");
         }
         return (int) number;
+    }
+
+    private static Integer optionalInteger(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        return integer(json, key);
     }
 
     private static void requireFields(JsonObject json, Set<String> required) {

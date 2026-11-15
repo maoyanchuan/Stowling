@@ -216,6 +216,48 @@ class V2ControlServerTest {
     }
 
     @Test
+    void supportsOptionalCoordinateDimensionAndRadius() throws Exception {
+        try (Fixture fixture = fixture()) {
+            HttpResponse<String> created = fixture.send(
+                    "/v1/coordinates",
+                    "POST",
+                    """
+                            {"name":"Home","x":1,"y":64,"z":2,
+                            "dimension":"minecraft:overworld","radius":4}
+                            """,
+                    true
+            );
+            assertEquals(201, created.statusCode());
+            JsonObject coordinate = object(created)
+                    .getAsJsonArray("coordinates")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals(
+                    "minecraft:overworld",
+                    coordinate.get("dimension").getAsString()
+            );
+            assertEquals(4, coordinate.get("radius").getAsInt());
+
+            String id = coordinate.get("id").getAsString();
+            HttpResponse<String> disabled = fixture.send(
+                    "/v1/coordinates/" + id,
+                    "PUT",
+                    """
+                            {"revision":"%s","name":"Home","x":1,"y":64,"z":2,
+                            "dimension":null,"radius":null}
+                            """.formatted(object(created).get("revision").getAsString()),
+                    true
+            );
+            JsonObject updated = object(disabled)
+                    .getAsJsonArray("coordinates")
+                    .get(0)
+                    .getAsJsonObject();
+            assertTrue(updated.get("dimension").isJsonNull());
+            assertTrue(updated.get("radius").isJsonNull());
+        }
+    }
+
+    @Test
     void rejectsUnknownModulesParametersAndCoordinates() throws Exception {
         try (Fixture fixture = fixture()) {
             JsonObject created = object(fixture.send(

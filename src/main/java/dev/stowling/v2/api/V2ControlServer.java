@@ -256,7 +256,7 @@ public final class V2ControlServer implements AutoCloseable {
                         exchange,
                         201,
                         service.createTaskTrigger(
-                                taskTriggerRequest(object(body))
+                                taskTriggerRequest(object(body), false)
                         )
                 );
             } else {
@@ -522,19 +522,7 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.taskTrigger(id));
             } else if ("PUT".equals(method)) {
                 JsonObject json = object(body);
-                requireFieldsAny(
-                        json,
-                        triggerFields(true),
-                        Set.of(
-                                "revision",
-                                "name",
-                                "type",
-                                "targetTaskId",
-                                "intervalTicks",
-                                "cooldownTicks"
-                        )
-                );
-                TaskTriggerRequest request = taskTriggerRequest(json);
+                TaskTriggerRequest request = taskTriggerRequest(json, true);
                 sendJson(exchange, 200, service.updateTaskTrigger(
                         id,
                         new TaskTriggerUpdateRequest(
@@ -573,17 +561,14 @@ public final class V2ControlServer implements AutoCloseable {
         );
     }
 
-    private static TaskTriggerRequest taskTriggerRequest(JsonObject json) {
+    private static TaskTriggerRequest taskTriggerRequest(
+            JsonObject json,
+            boolean revision
+    ) {
         requireFieldsAny(
                 json,
-                triggerFields(false),
-                Set.of(
-                        "name",
-                        "type",
-                        "targetTaskId",
-                        "intervalTicks",
-                        "cooldownTicks"
-                )
+                triggerFields(revision),
+                triggerRequiredFields(revision)
         );
         String coordinateId = optionalString(json, "coordinateId");
         return new TaskTriggerRequest(
@@ -621,6 +606,25 @@ public final class V2ControlServer implements AutoCloseable {
         return Set.copyOf(withRevision);
     }
 
+    private static Set<String> triggerRequiredFields(boolean revision) {
+        return revision
+                ? Set.of(
+                        "revision",
+                        "name",
+                        "type",
+                        "targetTaskId",
+                        "intervalTicks",
+                        "cooldownTicks"
+                )
+                : Set.of(
+                        "name",
+                        "type",
+                        "targetTaskId",
+                        "intervalTicks",
+                        "cooldownTicks"
+                );
+    }
+
     private static TaskTriggerType triggerType(JsonObject json) {
         try {
             return TaskTriggerType.valueOf(
@@ -628,8 +632,8 @@ public final class V2ControlServer implements AutoCloseable {
             );
         } catch (IllegalArgumentException exception) {
             throw invalid(
-                    "type must be DROPPED_ITEMS or "
-                            + "FOOD_LEVEL_AT_OR_BELOW"
+                    "type must be DROPPED_ITEMS, "
+                            + "FOOD_LEVEL_AT_OR_BELOW, or CACHE_UPDATED"
             );
         }
     }

@@ -398,13 +398,40 @@ class V2ControlServerTest {
             );
 
             assertEquals(201, created.statusCode());
-            JsonObject trigger = object(created)
+            JsonObject createdBody = object(created);
+            JsonObject trigger = createdBody
                     .getAsJsonArray("triggers")
                     .get(0)
                     .getAsJsonObject();
             assertEquals("CACHE_UPDATED", trigger.get("type").getAsString());
             assertEquals(regionId, trigger.get("cacheRegionId").getAsString());
             assertEquals("URGENT", trigger.get("priority").getAsString());
+
+            String triggerId = trigger.get("id").getAsString();
+            HttpResponse<String> updated = fixture.send(
+                    "/v1/task-triggers/" + triggerId,
+                    "PUT",
+                    """
+                            {"revision":"%s","name":"Sort cache again",
+                            "type":"CACHE_UPDATED","targetTaskId":"%s",
+                            "priority":"NORMAL","intervalTicks":40,
+                            "cooldownTicks":100,"cacheRegionId":"%s"}
+                            """.formatted(
+                                    createdBody.get("revision").getAsString(),
+                                    taskId,
+                                    regionId
+                            ),
+                    true
+            );
+            assertEquals(200, updated.statusCode());
+            JsonObject updatedTrigger = object(updated)
+                    .getAsJsonArray("triggers")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals(
+                    "Sort cache again",
+                    updatedTrigger.get("name").getAsString()
+            );
         }
     }
 

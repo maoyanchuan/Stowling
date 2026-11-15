@@ -713,7 +713,7 @@ class TaskModuleExecutionTest {
                 Map.of()
         ));
         TaskExecutionContext context = context(
-                new ArrivedNavigation(),
+                new BrittleAfterArrivalNavigation(cache.position()),
                 new MutableDroppedItems(),
                 new FixedRegions(ContainerScanResult.success(List.of(cache))),
                 new NoCategories(),
@@ -1553,6 +1553,46 @@ class TaskModuleExecutionTest {
         @Override
         public NavigationStatus status(BlockPosition target, Integer radius) {
             return NavigationStatus.ARRIVED;
+        }
+
+        @Override
+        public void cancel() {
+        }
+    }
+
+    private static final class BrittleAfterArrivalNavigation
+            implements NavigationPort {
+        private final BlockPosition cachePosition;
+
+        private BrittleAfterArrivalNavigation(BlockPosition cachePosition) {
+            this.cachePosition = cachePosition;
+        }
+
+        @Override
+        public NavigationStatus start(BlockPosition target) {
+            throw new AssertionError("exact navigation must not be used");
+        }
+
+        @Override
+        public NavigationStatus startNear(BlockPosition target, int radius) {
+            return target.equals(cachePosition)
+                    ? NavigationStatus.NAVIGATING
+                    : NavigationStatus.ARRIVED;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target) {
+            return target.equals(cachePosition)
+                    ? NavigationStatus.ARRIVED
+                    : NavigationStatus.FAILED;
+        }
+
+        @Override
+        public NavigationStatus status(
+                BlockPosition target,
+                Integer radius
+        ) {
+            return status(target);
         }
 
         @Override

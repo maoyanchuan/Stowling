@@ -122,6 +122,11 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         if (!carried.isEmpty()) {
             return tickDistribution();
         }
+        if (withdrawalActive) {
+            return handleWithdrawal(
+                    context.containerWithdrawals().pollWithdrawal()
+            );
+        }
         if (cacheIndex >= cacheTargets.size()) {
             return TaskModuleResult.succeeded("缓存中的可分类物品已处理");
         }
@@ -133,17 +138,13 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         if (navigation != NavigationStatus.ARRIVED) {
             return navigationResult(navigation, "正在前往缓存容器");
         }
-        ContainerWithdrawalResult result;
-        if (!withdrawalActive) {
-            withdrawalActive = true;
-            result = context.containerWithdrawals().startWithdrawal(
-                    activeCache,
-                    categoryItemIds
-            );
-        } else {
-            result = context.containerWithdrawals().pollWithdrawal();
-        }
-        return handleWithdrawal(result);
+        withdrawalActive = true;
+        return handleWithdrawal(
+                context.containerWithdrawals().startWithdrawal(
+                        activeCache,
+                        categoryItemIds
+                )
+        );
     }
 
     @Override
@@ -368,6 +369,11 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
                 );
             }
         }
+        if (depositActive) {
+            return handleDeposit(
+                    context.containerTransfers().pollDeposit()
+            );
+        }
         NavigationStatus navigation = navigateToStorage();
         if (navigation == NavigationStatus.FAILED) {
             return skipUnreachableStorage();
@@ -375,22 +381,18 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         if (navigation != NavigationStatus.ARRIVED) {
             return navigationResult(navigation, "正在前往分类容器");
         }
-        ContainerTransferResult result;
-        Map<String, Integer> request = requestFor(activeStorage);
-        if (!depositActive) {
-            depositActive = true;
-            activeRequest = request;
-            result = context.containerTransfers().startDeposit(
-                    activeStorage,
-                    request
-            );
-        } else {
-            result = context.containerTransfers().pollDeposit();
-        }
-        return handleDeposit(result);
+        depositActive = true;
+        activeRequest = requestFor(activeStorage);
+        return handleDeposit(
+                context.containerTransfers().startDeposit(
+                        activeStorage,
+                        activeRequest
+                )
+        );
     }
 
     private TaskModuleResult skipUnreachableCache() {
+        context.containerWithdrawals().cancelWithdrawal();
         finishCurrentCache();
         return cacheIndex >= cacheTargets.size()
                 ? TaskModuleResult.succeeded(
@@ -402,6 +404,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     }
 
     private TaskModuleResult skipUnreachableStorage() {
+        context.containerTransfers().cancelDeposit();
         Stowling.LOGGER.warn(
                 "Category target container unreachable at {}",
                 activeStorage == null ? "unknown" : activeStorage.position()
@@ -496,6 +499,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     }
 
     private void beginReturnToCache(String reason) {
+        context.containerTransfers().cancelDeposit();
         returning = true;
         returnReason = reason;
         activeStorage = null;
@@ -510,19 +514,22 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             finishCurrentCache();
             return TaskModuleResult.failed(returnReason);
         }
-        NavigationStatus navigation = navigateToCache();
-        if (navigation != NavigationStatus.ARRIVED) {
-            return navigationResult(navigation, "正在返回缓存容器");
-        }
         ContainerTransferResult result;
-        if (!depositActive) {
+        if (depositActive) {
+            result = context.containerTransfers().pollDeposit();
+        } else {
+            NavigationStatus navigation = navigateToCache();
+            if (navigation != NavigationStatus.ARRIVED) {
+                return navigationResult(
+                        navigation,
+                        "正在返回缓存容器"
+                );
+            }
             depositActive = true;
             result = context.containerTransfers().startDeposit(
                     activeCache,
                     Map.copyOf(carried)
             );
-        } else {
-            result = context.containerTransfers().pollDeposit();
         }
         if (result.state() == ContainerTransferState.PENDING) {
             return TaskModuleResult.waiting(result.message());

@@ -1198,6 +1198,10 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/v2-task-model.js", js)
                 ),
                 Map.entry(
+                        "/v2-trigger-model.js",
+                        read("stowling-web/v2-trigger-model.js", js)
+                ),
+                Map.entry(
                         "/v2-task-editor.js",
                         read("stowling-web/v2-task-editor.js", js)
                 ),

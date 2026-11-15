@@ -46,6 +46,16 @@ class V2ControlServerTest {
                             .firstValue("X-Content-Type-Options")
                             .orElse("")
             );
+            HttpResponse<String> triggerModel = fixture.send(
+                    "/v2-trigger-model.js",
+                    "GET",
+                    null,
+                    false
+            );
+            assertEquals(200, triggerModel.statusCode());
+            assertTrue(triggerModel.body().contains(
+                    "window.StowlingTriggerModel"
+            ));
 
             HttpResponse<String> unauthorized = fixture.send(
                     "/v1/status",

@@ -34,11 +34,26 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public NavigationStatus start(BlockPosition target) {
         Objects.requireNonNull(target, "target");
+        prepareNavigation();
+        navigationService.navigateTo(target);
+        return NavigationStatus.NAVIGATING;
+    }
+
+    @Override
+    public NavigationStatus startNear(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        prepareNavigation();
+        navigationService.navigateToNear(target, radius);
+        return NavigationStatus.NAVIGATING;
+    }
+
+    private void prepareNavigation() {
         active = true;
         pathObserved = false;
         missingPathTicks = 0;
-        navigationService.navigateTo(target);
-        return NavigationStatus.NAVIGATING;
     }
 
     @Override

@@ -6,6 +6,13 @@ import dev.stowling.schedule.StopOutcome;
 public interface NavigationPort {
     NavigationStatus start(BlockPosition target);
 
+    default NavigationStatus startNear(BlockPosition target, int radius) {
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        return start(target);
+    }
+
     NavigationStatus status(BlockPosition target);
 
     default NavigationStatus status(BlockPosition target, Integer radius) {

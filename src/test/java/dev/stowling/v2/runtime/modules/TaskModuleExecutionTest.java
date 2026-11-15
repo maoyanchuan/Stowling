@@ -437,8 +437,9 @@ class TaskModuleExecutionTest {
                 Map.of()
         ));
         RegionDefinition cacheRegion = region("Cache");
+        RecordingNearNavigation navigation = new RecordingNearNavigation();
         TaskExecutionContext context = context(
-                new ArrivedNavigation(),
+                navigation,
                 new MutableDroppedItems(),
                 new FixedRegions(ContainerScanResult.success(List.of(cache))),
                 new NoCategories(),
@@ -479,6 +480,102 @@ class TaskModuleExecutionTest {
                         Map.of("minecraft:iron_ingot", 2),
                         Map.of("minecraft:gold_ingot", 1)
                 ),
+                transfers.requested
+        );
+        assertEquals(
+                List.of(
+                        cache.position(),
+                        ironTarget.position(),
+                        goldTarget.position()
+                ),
+                navigation.started
+        );
+        assertTrue(navigation.radii.stream().allMatch(radius -> radius == 2));
+    }
+
+    @Test
+    void sortCacheModuleSkipsUnreachableStorageContainer() {
+        ContainerTarget unreachable = target(0);
+        ContainerTarget reachable = target(1);
+        ContainerTarget cache = target(2);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(ContainerScanResult.success(List.of(
+                unreachable,
+                reachable
+        )));
+        workspace.setContainerCategories(ContainerCategoryResult.success(
+                List.of(
+                        new ContainerCategory(
+                                unreachable,
+                                "minecraft:iron_ingot"
+                        ),
+                        new ContainerCategory(
+                                reachable,
+                                "minecraft:iron_ingot"
+                        )
+                )
+        ));
+        RecordingWithdrawals withdrawals = new RecordingWithdrawals();
+        withdrawals.results.add(ContainerWithdrawalResult.succeeded(
+                "withdrawn",
+                Map.of("minecraft:iron_ingot", 1),
+                false
+        ));
+        RecordingTransfers transfers = new RecordingTransfers();
+        transfers.results.add(ContainerTransferResult.pending(
+                "depositing iron",
+                Map.of()
+        ));
+        transfers.pollResults.add(ContainerTransferResult.succeeded(
+                "stored iron",
+                Map.of()
+        ));
+        RegionDefinition cacheRegion = region("Cache");
+        RecordingNearNavigation navigation =
+                new RecordingNearNavigation(unreachable.position());
+        TaskExecutionContext context = context(
+                navigation,
+                new MutableDroppedItems(),
+                new FixedRegions(ContainerScanResult.success(List.of(cache))),
+                new NoCategories(),
+                transfers,
+                withdrawals,
+                point("Drop"),
+                cacheRegion,
+                workspace
+        );
+        SortCacheItemsModule module = new SortCacheItemsModule(
+                context,
+                new TaskStep(
+                        UUID.randomUUID(),
+                        ConfigValidator.SORT_CACHE_ITEMS,
+                        Map.of(
+                                ConfigValidator.CACHE_REGION_ID,
+                                cacheRegion.id().toString(),
+                                ConfigValidator.SCAN_SOURCE,
+                                "previous-scan"
+                        )
+                )
+        );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 20 && result.state() != TaskModuleState.SUCCEEDED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                List.of(
+                        cache.position(),
+                        unreachable.position(),
+                        reachable.position()
+                ),
+                navigation.started
+        );
+        assertEquals(
+                List.of(Map.of("minecraft:iron_ingot", 1)),
                 transfers.requested
         );
     }
@@ -974,6 +1071,48 @@ class TaskModuleExecutionTest {
         @Override
         public StopOutcome requestStop() {
             return StopOutcome.CLEAN;
+        }
+    }
+
+    private static final class RecordingNearNavigation implements NavigationPort {
+        private final List<BlockPosition> started = new ArrayList<>();
+        private final List<Integer> radii = new ArrayList<>();
+        private final BlockPosition unreachable;
+
+        private RecordingNearNavigation() {
+            this(null);
+        }
+
+        private RecordingNearNavigation(BlockPosition unreachable) {
+            this.unreachable = unreachable;
+        }
+
+        @Override
+        public NavigationStatus start(BlockPosition target) {
+            throw new AssertionError("exact navigation must not be used");
+        }
+
+        @Override
+        public NavigationStatus startNear(BlockPosition target, int radius) {
+            started.add(target);
+            radii.add(radius);
+            return target.equals(unreachable)
+                    ? NavigationStatus.FAILED
+                    : NavigationStatus.NAVIGATING;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target) {
+            return NavigationStatus.ARRIVED;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target, Integer radius) {
+            return NavigationStatus.ARRIVED;
+        }
+
+        @Override
+        public void cancel() {
         }
     }
 }

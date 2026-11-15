@@ -21,6 +21,8 @@ import java.util.Map;
 import java.util.Set;
 
 final class SortCacheItemsModule implements TaskModuleExecutor {
+    private static final int CONTAINER_NAVIGATION_RADIUS = 2;
+
     private final TaskExecutionContext context;
     private final RegionDefinition cacheRegion;
     private final Set<String> containerTypes;
@@ -110,6 +112,9 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         }
         activeCache = cacheTargets.get(cacheIndex);
         NavigationStatus navigation = navigateToCache();
+        if (navigation == NavigationStatus.FAILED) {
+            return skipUnreachableCache();
+        }
         if (navigation != NavigationStatus.ARRIVED) {
             return navigationResult(navigation, "正在前往缓存容器");
         }
@@ -262,17 +267,29 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     private NavigationStatus navigateToCache() {
         if (!cacheNavigationStarted) {
             cacheNavigationStarted = true;
-            return context.navigation().start(activeCache.position());
+            return context.navigation().startNear(
+                    activeCache.position(),
+                    CONTAINER_NAVIGATION_RADIUS
+            );
         }
-        return context.navigation().status(activeCache.position(), 2);
+        return context.navigation().status(
+                activeCache.position(),
+                CONTAINER_NAVIGATION_RADIUS
+        );
     }
 
     private NavigationStatus navigateToStorage() {
         if (!storageNavigationStarted) {
             storageNavigationStarted = true;
-            return context.navigation().start(activeStorage.position());
+            return context.navigation().startNear(
+                    activeStorage.position(),
+                    CONTAINER_NAVIGATION_RADIUS
+            );
         }
-        return context.navigation().status(activeStorage.position(), 2);
+        return context.navigation().status(
+                activeStorage.position(),
+                CONTAINER_NAVIGATION_RADIUS
+        );
     }
 
     private TaskModuleResult handleWithdrawal(
@@ -317,6 +334,9 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             }
         }
         NavigationStatus navigation = navigateToStorage();
+        if (navigation == NavigationStatus.FAILED) {
+            return skipUnreachableStorage();
+        }
         if (navigation != NavigationStatus.ARRIVED) {
             return navigationResult(navigation, "正在前往分类容器");
         }
@@ -333,6 +353,32 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             result = context.containerTransfers().pollDeposit();
         }
         return handleDeposit(result);
+    }
+
+    private TaskModuleResult skipUnreachableCache() {
+        finishCurrentCache();
+        return cacheIndex >= cacheTargets.size()
+                ? TaskModuleResult.succeeded(
+                        "缓存中的可分类物品已处理"
+                )
+                : TaskModuleResult.running(
+                        "缓存容器不可达，尝试下一个"
+                );
+    }
+
+    private TaskModuleResult skipUnreachableStorage() {
+        storageIndex++;
+        activeStorage = null;
+        storageNavigationStarted = false;
+        depositActive = false;
+        activeRequest = Map.of();
+        if (!selectStorageTarget()) {
+            beginReturnToCache("目标分类容器不可用或空间不足");
+            return TaskModuleResult.waiting(
+                    "目标分类容器不可用或空间不足，正在退回缓存"
+            );
+        }
+        return tickDistribution();
     }
 
     private boolean selectStorageTarget() {

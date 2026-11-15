@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 final class DepositItemsToContainersModule implements TaskModuleExecutor {
+    private static final int CONTAINER_NAVIGATION_RADIUS = 2;
+
     private final TaskExecutionContext context;
     private final Map<String, Integer> remaining;
     private final List<StorageTarget> targets;
@@ -73,11 +75,14 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
         NavigationStatus status;
         if (!navigationStarted) {
             navigationStarted = true;
-            status = context.navigation().start(activeTarget.target().position());
+            status = context.navigation().startNear(
+                    activeTarget.target().position(),
+                    CONTAINER_NAVIGATION_RADIUS
+            );
         } else {
             status = context.navigation().status(
                     activeTarget.target().position(),
-                    2
+                    CONTAINER_NAVIGATION_RADIUS
             );
         }
         return switch (status) {

@@ -102,8 +102,15 @@ public final class MinecraftFoodConsumptionPort
                 ));
             }
         }
+        boolean useKeyWasDown = minecraft.options.keyUse.isDown();
+        if (!useKeyWasDown) {
+            minecraft.options.keyUse.setDown(true);
+        }
         InteractionResult result = gameMode.useItem(player, slot.hand());
         if (!result.consumesAction()) {
+            if (!useKeyWasDown) {
+                minecraft.options.keyUse.setDown(false);
+            }
             restoreSelected(player, previousSelected, slot.hotbar());
             return FoodConsumptionResult.failed(
                     "无法使用指定食物: " + itemId
@@ -117,7 +124,8 @@ public final class MinecraftFoodConsumptionPort
                 previousSelected,
                 player.getFoodData().getFoodLevel(),
                 itemCount(player, slot),
-                EATING_RETRY_INTERVAL_TICKS
+                EATING_RETRY_INTERVAL_TICKS,
+                !useKeyWasDown
         );
         return FoodConsumptionResult.pending("正在进食 " + itemId);
     }
@@ -134,12 +142,14 @@ public final class MinecraftFoodConsumptionPort
         }
         LocalPlayer player = minecraft.player;
         if (player == null || player.isRemoved()) {
+            releaseUseKey();
             active = null;
             return FoodConsumptionResult.failed("进食时玩家不可用");
         }
         active.ticks++;
         if (active.ticks >= EATING_TIMEOUT_TICKS) {
             player.stopUsingItem();
+            releaseUseKey();
             restoreSelected(
                     player,
                     active.previousSelected,
@@ -161,6 +171,7 @@ public final class MinecraftFoodConsumptionPort
         boolean consumed = foodAfter > active.foodLevelBefore
                 || countAfter < active.itemCountBefore;
         if (consumed) {
+            releaseUseKey();
             restoreSelected(
                     player,
                     active.previousSelected,
@@ -184,6 +195,7 @@ public final class MinecraftFoodConsumptionPort
                 );
             }
         }
+        releaseUseKey();
         restoreSelected(
                 player,
                 active.previousSelected,
@@ -205,13 +217,14 @@ public final class MinecraftFoodConsumptionPort
             LocalPlayer player = minecraft.player;
             if (player != null) {
                 player.stopUsingItem();
-                if (active != null) {
-                    restoreSelected(
-                            player,
-                            active.previousSelected,
-                            active.hotbar
-                    );
-                }
+            }
+            releaseUseKey();
+            if (player != null && active != null) {
+                restoreSelected(
+                        player,
+                        active.previousSelected,
+                        active.hotbar
+                );
             }
         }
         active = null;
@@ -581,6 +594,13 @@ public final class MinecraftFoodConsumptionPort
         );
     }
 
+    private void releaseUseKey() {
+        if (active != null && active.releaseUseKey) {
+            minecraft.options.keyUse.setDown(false);
+            active.releaseUseKey = false;
+        }
+    }
+
     private static void restoreSelected(
             LocalPlayer player,
             int previousSelected,
@@ -670,6 +690,7 @@ public final class MinecraftFoodConsumptionPort
         private final int itemCountBefore;
         private int nextRetryTick;
         private int useAttempts = 1;
+        private boolean releaseUseKey;
         private int ticks;
 
         private ActiveEating(
@@ -680,7 +701,8 @@ public final class MinecraftFoodConsumptionPort
                 int previousSelected,
                 int foodLevelBefore,
                 int itemCountBefore,
-                int nextRetryTick
+                int nextRetryTick,
+                boolean releaseUseKey
         ) {
             this.itemId = itemId;
             this.slotIndex = slotIndex;
@@ -690,6 +712,7 @@ public final class MinecraftFoodConsumptionPort
             this.foodLevelBefore = foodLevelBefore;
             this.itemCountBefore = itemCountBefore;
             this.nextRetryTick = nextRetryTick;
+            this.releaseUseKey = releaseUseKey;
         }
     }
 

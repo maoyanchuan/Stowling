@@ -540,8 +540,9 @@
      */
     function renderModuleCatalog() {
         elements.moduleCatalog.replaceChildren();
-        elements.moduleCount.textContent = `${state.modules.length} 个`;
-        if (state.modules.length === 0) {
+        const visibleModules = Model.visibleModules(state.modules);
+        elements.moduleCount.textContent = `${visibleModules.length} 个`;
+        if (visibleModules.length === 0) {
             elements.moduleCatalog.append(
                 Stowling.emptyState("当前没有可用模块")
             );
@@ -552,7 +553,7 @@
             ["COMPOSITE", "复合模块"]
         ];
         for (const [level, label] of groups) {
-            const modules = state.modules.filter(
+            const modules = visibleModules.filter(
                 (module) => module.level === level
             );
             const group = Stowling.element("section", "module-group");
@@ -888,6 +889,21 @@
         }
         if (kind === "category-zone-point") {
             return state.categoryZones.some((zone) => zone.id === value);
+        }
+        if (kind === "area-reference") {
+            const separator = value.indexOf(":");
+            if (separator <= 0) {
+                return false;
+            }
+            const type = value.slice(0, separator);
+            const id = value.slice(separator + 1);
+            if (type === "coordinate") {
+                return state.coordinates.some((point) => point.id === id);
+            }
+            if (type === "region") {
+                return state.regions.some((region) => region.id === id);
+            }
+            return false;
         }
         return null;
     }

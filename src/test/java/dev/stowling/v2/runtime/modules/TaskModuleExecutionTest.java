@@ -98,8 +98,8 @@ class TaskModuleExecutionTest {
                 context,
                 step(
                         ConfigValidator.COLLECT_DROPPED_ITEMS,
-                        ConfigValidator.COORDINATE_ID,
-                        point.id().toString()
+                        ConfigValidator.AREA_REFERENCE,
+                        "coordinate:" + point.id()
                 )
         );
 
@@ -377,13 +377,13 @@ class TaskModuleExecutionTest {
                 source,
                 workspace
         );
-        CollectDroppedItemsInRegionModule module =
-                new CollectDroppedItemsInRegionModule(
+        CollectDroppedItemsModule module =
+                new CollectDroppedItemsModule(
                         context,
                         step(
-                                ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
-                                ConfigValidator.REGION_ID,
-                                source.id().toString()
+                                ConfigValidator.COLLECT_DROPPED_ITEMS,
+                                ConfigValidator.AREA_REFERENCE,
+                                "region:" + source.id()
                         )
                 );
 

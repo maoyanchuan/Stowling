@@ -112,6 +112,7 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "复合模块" in editor
     assert "coordinate-point" in editor
     assert "region-point" in editor
+    assert "area-reference" in editor
     assert "integer" in editor
     assert "select" in editor
     assert "task.steps.splice" in editor
@@ -123,6 +124,7 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "payloadStep" in model
     assert "defaultModule" in model
     assert "taskLevel" in model
+    assert "visibleModules" in model
 
 
 def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
@@ -206,6 +208,7 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
     ):
         assert module_id in catalog
         assert module_id not in tasks
+    assert "deprecated" in catalog
     assert "state.modules.length" in tasks
 
 
@@ -218,10 +221,22 @@ def test_task_page_offers_cache_and_sorting_templates() -> None:
     assert 'id="new-sort-task-button"' in html
     assert "CACHE_TASK_MODULES" in model
     assert "SORT_TASK_MODULES" in model
-    assert '"COLLECT_DROPPED_ITEMS_IN_REGION"' in model
+    assert '"COLLECT_DROPPED_ITEMS"' in model
     assert '"SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"' in model
+    assert "task.repeatWhenIdle = false" in model
     assert "Model.cacheTask(state.modules)" in tasks
     assert "Model.sortTask(state.modules)" in tasks
+
+
+def test_task_modules_hide_deprecated_entries_from_new_tasks() -> None:
+    model = read("v2-task-model.js")
+    editor = read("v2-task-editor.js")
+    tasks = read("tasks.js")
+
+    assert "module?.deprecated" in model
+    assert "module.deprecated" in editor
+    assert "旧任务兼容模块" in editor
+    assert "Model.visibleModules(state.modules)" in tasks
 
 
 def test_coordinate_choices_only_show_the_saved_name() -> None:

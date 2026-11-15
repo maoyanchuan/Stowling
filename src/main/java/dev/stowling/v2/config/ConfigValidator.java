@@ -49,6 +49,8 @@ public final class ConfigValidator {
     public static final String REGION_ID = "regionId";
     public static final String CACHE_REGION_ID = "cacheRegionId";
     public static final String CATEGORY_ZONE_ID = "categoryZoneId";
+    public static final String AREA_REFERENCE = "area";
+    public static final String AREA_REFERENCE_SEPARATOR = ":";
     public static final String ITEM_FILTER = "itemFilter";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
     public static final String CONTAINER_TYPES = "containerTypes";
@@ -178,12 +180,16 @@ public final class ConfigValidator {
                     Set.of(COORDINATE_ID),
                     Set.of(COORDINATE_ID)
             );
-            case WAIT_FOR_DROPPED_ITEMS,
-                    COLLECT_DROPPED_ITEMS -> requireCoordinateStep(
+            case WAIT_FOR_DROPPED_ITEMS -> requireCoordinateStep(
                     step,
                     coordinates,
                     Set.of(COORDINATE_ID, ITEM_FILTER, TIMEOUT_SECONDS),
                     Set.of(COORDINATE_ID)
+            );
+            case COLLECT_DROPPED_ITEMS -> requireCollectStep(
+                    step,
+                    coordinates,
+                    regions
             );
             case COLLECT_DROPPED_ITEMS_IN_REGION ->
                     requireRegionCollectStep(step, regions);
@@ -258,6 +264,58 @@ public final class ConfigValidator {
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
     }
 
+    private static void requireCollectStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        if (step.parameters().containsKey(AREA_REFERENCE)) {
+            requireParameters(
+                    step,
+                    Set.of(AREA_REFERENCE, ITEM_FILTER, TIMEOUT_SECONDS),
+                    Set.of(AREA_REFERENCE)
+            );
+            requireAreaReference(step, coordinates, regions);
+        } else {
+            requireCoordinateStep(
+                    step,
+                    coordinates,
+                    Set.of(COORDINATE_ID, ITEM_FILTER, TIMEOUT_SECONDS),
+                    Set.of(COORDINATE_ID)
+            );
+        }
+        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+    }
+
+    private static void requireAreaReference(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        String value = step.parameters().get(AREA_REFERENCE);
+        int separator = value.indexOf(AREA_REFERENCE_SEPARATOR);
+        if (separator <= 0 || separator == value.length() - 1) {
+            throw new V2ValidationException(
+                    AREA_REFERENCE + " must reference a coordinate or region"
+            );
+        }
+        String type = value.substring(0, separator);
+        UUID id = requireUuid(
+                value.substring(separator + 1),
+                AREA_REFERENCE
+        );
+        boolean valid = switch (type) {
+            case "coordinate" -> coordinates.containsKey(id);
+            case "region" -> regions.containsKey(id);
+            default -> false;
+        };
+        if (!valid) {
+            throw new V2ValidationException(
+                    AREA_REFERENCE + " resource does not exist: " + value
+            );
+        }
+    }
+
     private static void requireAutoEatStep(
             TaskStep step,
             Map<UUID, CoordinatePoint> coordinates
@@ -290,6 +348,9 @@ public final class ConfigValidator {
     }
 
     private static void requireDepositStep(TaskStep step) {
+        if (step.parameters().isEmpty()) {
+            return;
+        }
         requireParameters(
                 step,
                 Set.of(SCAN_SOURCE, ITEM_SOURCE, FILL_MODE),

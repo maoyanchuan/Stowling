@@ -352,6 +352,67 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void acceptsUnifiedAreaCollectionAndParameterlessDeposit() {
+        CoordinatePoint point = point("Drop");
+        RegionDefinition region = region("Storage");
+        TaskDefinition task = new TaskDefinition(
+                UUID.randomUUID(),
+                "Simplified cache task",
+                List.of(
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.COLLECT_DROPPED_ITEMS,
+                                Map.of(
+                                        ConfigValidator.AREA_REFERENCE,
+                                        "coordinate:" + point.id()
+                                )
+                        ),
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                                Map.of(
+                                        ConfigValidator.REGION_ID,
+                                        region.id().toString()
+                                )
+                        ),
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
+                                Map.of()
+                        )
+                )
+        );
+
+        ConfigValidator.requireValid(new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(point),
+                List.of(task),
+                List.of(region)
+        ));
+    }
+
+    @Test
+    void rejectsUnknownAreaReference() {
+        TaskStep step = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.COLLECT_DROPPED_ITEMS,
+                Map.of(
+                        ConfigValidator.AREA_REFERENCE,
+                        "region:" + UUID.randomUUID()
+                )
+        );
+
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValidStep(
+                        step,
+                        Map.of(),
+                        Map.of()
+                )
+        );
+    }
+
+    @Test
     void validatesContainerCategoryModuleContract() {
         TaskStep valid = new TaskStep(
                 UUID.randomUUID(),

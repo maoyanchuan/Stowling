@@ -8,7 +8,8 @@ public record ModuleDefinition(
         String name,
         String description,
         TaskModuleLevel level,
-        List<ModuleParameter> parameters
+        List<ModuleParameter> parameters,
+        boolean deprecated
 ) {
     public ModuleDefinition {
         id = requireText(id, "id");
@@ -29,7 +30,25 @@ public record ModuleDefinition(
                 name,
                 description,
                 TaskModuleLevel.BASIC,
-                parameters
+                parameters,
+                false
+        );
+    }
+
+    public ModuleDefinition(
+            String id,
+            String name,
+            String description,
+            TaskModuleLevel level,
+            List<ModuleParameter> parameters
+    ) {
+        this(
+                id,
+                name,
+                description,
+                level,
+                parameters,
+                false
         );
     }
 

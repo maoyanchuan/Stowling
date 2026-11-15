@@ -75,52 +75,52 @@ Manual runs may override the saved priority for that run only.
 Task triggers are configured independently from tasks and automatic requeue.
 Idle triggers create no run records and do not block another task.
 
+New tasks expose seven modules. Older modules remain readable for existing
+configurations but are hidden from the module catalog when creating a step.
+
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
-- `WAIT_FOR_DROPPED_ITEMS` waits until a matching dropped item appears in the
-  coordinate radius.
-- `COLLECT_DROPPED_ITEMS` navigates to matching dropped items and waits until
-  they are picked up.
-- `COLLECT_DROPPED_ITEMS_IN_REGION` collects matching drops from a region.
+- `COLLECT_DROPPED_ITEMS` collects matching drops from either a coordinate
+  radius or a saved region.
 - `SCAN_CONTAINERS_IN_REGION` records usable containers from the previous scan
   in the active task run.
-- `MATCH_CONTAINER_CATEGORIES` reads nearby item frames and builds a run-local
-  category mapping for the scanned containers.
 - `AUTO_EAT_AT_COORDINATE` skips immediately when food is sufficient; otherwise
   it navigates to the configured food chest, takes one food at a time, and eats
   until the threshold is met.
-- `SORT_CACHE_ITEMS` withdraws categorized items from a cache region, deposits
-  exact category matches, and returns leftovers to the cache.
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
   stores cached items whose IDs exactly match the recognized item IDs.
 - `REFRESH_CATEGORY_MARKER_CACHE` opens the category marker chests or barrels,
   reads their slots without moving items, and updates the persistent cache.
 - `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
-  current run into containers from the previous scan.
+  current run into containers from the previous scan. This module has no
+  configurable parameters.
+
+`WAIT_FOR_DROPPED_ITEMS`, `COLLECT_DROPPED_ITEMS_IN_REGION`,
+`MATCH_CONTAINER_CATEGORIES`, and `SORT_CACHE_ITEMS` are deprecated compatibility
+modules for existing tasks. The dropped-item trigger replaces the wait module;
+the category-zone module replaces the two old category modules.
 
 The coarse cache task is:
 
 ```text
-COLLECT_DROPPED_ITEMS_IN_REGION
-    regionId=<drop area>
+COLLECT_DROPPED_ITEMS
+    area=region:<drop area>
 SCAN_CONTAINERS_IN_REGION
     regionId=<cache area>
 DEPOSIT_ITEMS_TO_CONTAINERS
-    scanSource=previous-scan
-    itemSource=collected-this-run
-    fillMode=nearest-first
+    no parameters
 ```
 
 The fine category-sorting task is:
 
 ```text
-SCAN_CONTAINERS_IN_REGION
-    regionId=<target storage area>
-MATCH_CONTAINER_CATEGORIES
-    scanSource=previous-scan
 SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
     cacheRegionId=<cache area>
     categoryZoneId=<category zone>
 ```
+
+Use `area=coordinate:<coordinate>` instead when the collection range should use
+a saved coordinate radius. The category template creates a one-shot `NORMAL`
+task; the cache-update trigger decides when it runs.
 
 When a category zone uses `MARKER_CONTAINER_CONTENTS`, run the following module
 before sorting whenever the sample items in the marker container change:

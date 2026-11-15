@@ -21,18 +21,22 @@ class TaskModuleCatalogTest {
         assertEquals(
                 List.of(
                         ConfigValidator.MOVE_TO_COORDINATE,
-                        ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
                         ConfigValidator.COLLECT_DROPPED_ITEMS,
-                        ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
-                        ConfigValidator.MATCH_CONTAINER_CATEGORIES,
+                        ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                         ConfigValidator.AUTO_EAT_AT_COORDINATE,
-                        ConfigValidator.SORT_CACHE_ITEMS,
                         ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                         ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
-                        ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
+                        ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
+                        ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
+                        ConfigValidator.MATCH_CONTAINER_CATEGORIES,
+                        ConfigValidator.SORT_CACHE_ITEMS
                 ),
                 modules.stream().map(ModuleDefinition::id).toList()
+        );
+        assertEquals(
+                7,
+                modules.stream().filter(module -> !module.deprecated()).count()
         );
     }
 
@@ -42,11 +46,14 @@ class TaskModuleCatalogTest {
                 .collect(Collectors.toMap(ModuleDefinition::id, Function.identity()));
 
         ModuleParameter coordinate = moduleParameter(
-                modules.get(ConfigValidator.WAIT_FOR_DROPPED_ITEMS),
-                ConfigValidator.COORDINATE_ID
+                modules.get(ConfigValidator.COLLECT_DROPPED_ITEMS),
+                ConfigValidator.AREA_REFERENCE
         );
-        assertEquals("coordinate-point", coordinate.kind());
+        assertEquals("area-reference", coordinate.kind());
         assertTrue(coordinate.required());
+        assertTrue(
+                modules.get(ConfigValidator.WAIT_FOR_DROPPED_ITEMS).deprecated()
+        );
         assertEquals(
                 TaskModuleLevel.BASIC,
                 modules.get(ConfigValidator.MOVE_TO_COORDINATE).level()
@@ -69,6 +76,7 @@ class TaskModuleCatalogTest {
         ModuleDefinition category = modules.get(
                 ConfigValidator.MATCH_CONTAINER_CATEGORIES
         );
+        assertTrue(category.deprecated());
         assertEquals(
                 List.of("previous-scan"),
                 moduleParameter(
@@ -95,6 +103,7 @@ class TaskModuleCatalogTest {
 
         ModuleDefinition sort = modules.get(ConfigValidator.SORT_CACHE_ITEMS);
         assertEquals(TaskModuleLevel.COMPOSITE, sort.level());
+        assertTrue(sort.deprecated());
         ModuleParameter cacheRegion = moduleParameter(
                 sort,
                 ConfigValidator.CACHE_REGION_ID
@@ -129,18 +138,7 @@ class TaskModuleCatalogTest {
         ModuleDefinition deposit = modules.get(
                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
         );
-        assertEquals(
-                List.of("previous-scan"),
-                moduleParameter(deposit, ConfigValidator.SCAN_SOURCE).options()
-        );
-        assertEquals(
-                List.of("collected-this-run"),
-                moduleParameter(deposit, ConfigValidator.ITEM_SOURCE).options()
-        );
-        assertEquals(
-                List.of("nearest-first"),
-                moduleParameter(deposit, ConfigValidator.FILL_MODE).options()
-        );
+        assertTrue(deposit.parameters().isEmpty());
     }
 
     private static ModuleParameter moduleParameter(

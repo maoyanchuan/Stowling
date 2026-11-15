@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.stowling.automation.NavigationPort;
@@ -103,6 +104,45 @@ class V2ControlServerTest {
                 );
                 assertEquals(404, response.statusCode(), path);
             }
+        }
+    }
+
+    @Test
+    void exposesSevenActiveTaskModulesAndLegacyCompatibility()
+            throws Exception {
+        try (Fixture fixture = fixture()) {
+            JsonArray modules = object(fixture.send(
+                    "/v1/task-modules",
+                    "GET",
+                    null,
+                    true
+            )).getAsJsonArray("modules");
+            int active = 0;
+            boolean unifiedCollect = false;
+            boolean waitDeprecated = false;
+            for (JsonElement element : modules) {
+                JsonObject module = element.getAsJsonObject();
+                boolean deprecated = module.get("deprecated").getAsBoolean();
+                if (!deprecated) {
+                    active++;
+                }
+                String id = module.get("id").getAsString();
+                if ("COLLECT_DROPPED_ITEMS".equals(id)) {
+                    unifiedCollect = module.getAsJsonArray("parameters")
+                            .get(0)
+                            .getAsJsonObject()
+                            .get("kind")
+                            .getAsString()
+                            .equals("area-reference");
+                }
+                if ("WAIT_FOR_DROPPED_ITEMS".equals(id)) {
+                    waitDeprecated = deprecated;
+                }
+            }
+
+            assertEquals(7, active);
+            assertTrue(unifiedCollect);
+            assertTrue(waitDeprecated);
         }
     }
 

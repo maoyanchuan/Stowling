@@ -51,20 +51,21 @@ public final class TaskModuleCatalog {
                                     1,
                                     null
                             )
-                    )
+                    ),
+                    true
             );
 
     private static final ModuleDefinition COLLECT_DROPPED_ITEMS =
             new ModuleDefinition(
                     ConfigValidator.COLLECT_DROPPED_ITEMS,
-                    "拾取掉落物",
-                    "前往坐标半径内的掉落物并等待其被拾取。",
+                    "收集掉落物",
+                    "在坐标半径或指定区域内拾取掉落物。",
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
-                                    ConfigValidator.COORDINATE_ID,
-                                    "拾取坐标",
-                                    "coordinate-point",
+                                    ConfigValidator.AREA_REFERENCE,
+                                    "收集范围",
+                                    "area-reference",
                                     true
                             ),
                             new ModuleParameter(
@@ -117,7 +118,8 @@ public final class TaskModuleCatalog {
                                     1,
                                     null
                             )
-                    )
+                    ),
+                    true
             );
 
     private static final ModuleDefinition SCAN_CONTAINERS_IN_REGION =
@@ -157,31 +159,9 @@ public final class TaskModuleCatalog {
             new ModuleDefinition(
                     ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                     "存入区域容器",
-                    "使用上一次容器扫描结果存入本次拾取的物品。",
+                    "把当前任务拾取的物品存入上一次扫描到的容器。",
                     TaskModuleLevel.BASIC,
-                    List.of(
-                            new ModuleParameter(
-                                    ConfigValidator.SCAN_SOURCE,
-                                    "扫描结果",
-                                    "select",
-                                    true,
-                                    List.of("previous-scan")
-                            ),
-                            new ModuleParameter(
-                                    ConfigValidator.ITEM_SOURCE,
-                                    "物品来源",
-                                    "select",
-                                    true,
-                                    List.of("collected-this-run")
-                            ),
-                            new ModuleParameter(
-                                    ConfigValidator.FILL_MODE,
-                                    "容器顺序",
-                                    "select",
-                                    true,
-                                    List.of("nearest-first")
-                            )
-                    )
+                    List.of()
             );
 
     private static final ModuleDefinition MATCH_CONTAINER_CATEGORIES =
@@ -196,7 +176,8 @@ public final class TaskModuleCatalog {
                             "select",
                             true,
                             List.of("previous-scan")
-                    ))
+                    )),
+                    true
             );
 
     private static final ModuleDefinition AUTO_EAT_AT_COORDINATE =
@@ -269,7 +250,8 @@ public final class TaskModuleCatalog {
                                     1,
                                     null
                             )
-                    )
+                    ),
+                    true
             );
 
     private static final ModuleDefinition SORT_CACHE_ITEMS_BY_CATEGORY_ZONE =
@@ -342,16 +324,16 @@ public final class TaskModuleCatalog {
     private static final List<ModuleDefinition> MODULES =
             List.of(
                     MOVE_TO_COORDINATE,
-                    WAIT_FOR_DROPPED_ITEMS,
                     COLLECT_DROPPED_ITEMS,
-                    COLLECT_DROPPED_ITEMS_IN_REGION,
                     SCAN_CONTAINERS_IN_REGION,
-                    MATCH_CONTAINER_CATEGORIES,
+                    DEPOSIT_ITEMS_TO_CONTAINERS,
                     AUTO_EAT_AT_COORDINATE,
-                    SORT_CACHE_ITEMS,
                     SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     REFRESH_CATEGORY_MARKER_CACHE,
-                    DEPOSIT_ITEMS_TO_CONTAINERS
+                    WAIT_FOR_DROPPED_ITEMS,
+                    COLLECT_DROPPED_ITEMS_IN_REGION,
+                    MATCH_CONTAINER_CATEGORIES,
+                    SORT_CACHE_ITEMS
             );
 
     private TaskModuleCatalog() {

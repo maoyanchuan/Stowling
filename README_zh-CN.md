@@ -51,47 +51,46 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 阈值，以及缓存区域实际收到新物品三种条件。触发器命中后，目标任务会按触发器
 指定的优先级加入现有队列。
 
+新建任务只显示 7 个模块。旧模块仍可读取和运行，但不会出现在新步骤的模块选择器
+中，避免继续创建重复工作流。
+
 - `MOVE_TO_COORDINATE`：前往指定坐标。
-- `WAIT_FOR_DROPPED_ITEMS`：等待坐标半径内出现匹配的掉落物。
-- `COLLECT_DROPPED_ITEMS`：前往匹配的掉落物并等待拾取完成。
-- `COLLECT_DROPPED_ITEMS_IN_REGION`：收集指定区域内的全部匹配掉落物。
+- `COLLECT_DROPPED_ITEMS`：从坐标半径或保存的区域收集匹配掉落物。
 - `SCAN_CONTAINERS_IN_REGION`：扫描区域容器，并把结果记录到当前任务运行中。
-- `MATCH_CONTAINER_CATEGORIES`：读取附近展示框中的物品，为已扫描容器生成
-  本次运行专用的分类映射。
 - `AUTO_EAT_AT_COORDINATE`：饱食度足够时直接跳过；不足时前往食物箱，每次
   取出一个食物并吃完，直到达到阈值。
-- `SORT_CACHE_ITEMS`：从缓存区域取出有目标分类的物品，按展示框分类精确存入
-  目标容器；未匹配、目标已满或取出失败的物品会留在或退回缓存。
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE`：解析自动展示物标记，把物品 ID 相同的
   缓存物品存入绑定储存区。
 - `REFRESH_CATEGORY_MARKER_CACHE`：打开分类标记箱子或木桶，只读取槽位、
   不移动物品，并更新持久缓存。
 - `DEPOSIT_ITEMS_TO_CONTAINERS`：只把本次运行拾取的物品存入上次扫描到的容器。
+  该模块不再需要配置参数。
+
+`WAIT_FOR_DROPPED_ITEMS`、`COLLECT_DROPPED_ITEMS_IN_REGION`、
+`MATCH_CONTAINER_CATEGORIES` 和 `SORT_CACHE_ITEMS` 仅作为旧任务兼容模块保留。
+掉落物监听器代替等待模块，分类区入库代替原来的两段分类模块。
 
 粗分类任务“掉落物入缓存”：
 
 ```text
-COLLECT_DROPPED_ITEMS_IN_REGION
-    regionId=<掉落物区域>
+COLLECT_DROPPED_ITEMS
+    area=region:<掉落物区域>
 SCAN_CONTAINERS_IN_REGION
     regionId=<缓存区域>
 DEPOSIT_ITEMS_TO_CONTAINERS
-    scanSource=previous-scan
-    itemSource=collected-this-run
-    fillMode=nearest-first
+    无需参数
 ```
 
 细分类任务“缓存物品分类入库”：
 
 ```text
-SCAN_CONTAINERS_IN_REGION
-    regionId=<目标存储区域>
-MATCH_CONTAINER_CATEGORIES
-    scanSource=previous-scan
 SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
     cacheRegionId=<缓存区域>
     categoryZoneId=<分类区>
 ```
+
+收集范围也可以写为 `area=coordinate:<坐标>`，使用该坐标保存的半径。
+分类模板现在是普通优先级的一次性任务，由缓存更新触发器决定何时运行。
 
 分类区使用 `MARKER_CONTAINER_CONTENTS` 时，在分类入库前按需要加入：
 

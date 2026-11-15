@@ -60,11 +60,20 @@
 
     /**
      * @param {Array<object>} modules
+     * @returns {Array<object>}
+     */
+    function visibleModules(modules) {
+        return modules.filter((module) => !module?.deprecated);
+    }
+
+    /**
+     * @param {Array<object>} modules
      * @returns {object | undefined}
      */
     function defaultModule(modules) {
-        return modules.find((module) => module?.level === "BASIC")
-            || modules[0];
+        const visible = visibleModules(modules);
+        return visible.find((module) => module?.level === "BASIC")
+            || visible[0];
     }
 
     /**
@@ -127,8 +136,8 @@
             SORT_TASK_MODULES
         );
         if (task) {
-            task.priority = "BACKGROUND";
-            task.repeatWhenIdle = true;
+            task.priority = "NORMAL";
+            task.repeatWhenIdle = false;
         }
         return task;
     }
@@ -187,6 +196,7 @@
 
     window.StowlingTaskModel = Object.freeze({
         newStep,
+        visibleModules,
         defaultModule,
         newTask,
         taskLevel,

@@ -64,7 +64,13 @@
         const module = modules.find((candidate) => candidate.id === step.moduleId);
         identity.append(
             Stowling.element("strong", "", module?.name || step.moduleId),
-            Stowling.element("span", "muted compact-help", "选择模块并填写所需参数")
+            Stowling.element(
+                "span",
+                "muted compact-help",
+                module?.deprecated
+                    ? "旧任务兼容模块，建议改用“收集掉落物”"
+                    : "选择模块并填写所需参数"
+            )
         );
         const actions = Stowling.element("div", "move-buttons");
         actions.append(
@@ -106,6 +112,9 @@
      */
     function moduleSelect(step, modules, changed) {
         const select = document.createElement("select");
+        const selectable = modules.filter(
+            (module) => !module.deprecated || module.id === step.moduleId
+        );
         const groups = [
             ["BASIC", "基础模块"],
             ["COMPOSITE", "复合模块"]
@@ -113,8 +122,9 @@
         for (const [level, label] of groups) {
             const group = document.createElement("optgroup");
             group.label = label;
-            for (const module of modules.filter(
+            for (const module of selectable.filter(
                 (candidate) => candidate.level === level
+                    && (!candidate.deprecated || candidate.id === step.moduleId)
             )) {
                 group.append(new Option(module.name, module.id));
             }
@@ -179,6 +189,15 @@
                 changed
             );
         }
+        if (parameter.kind === "area-reference") {
+            return areaReferenceSelect(
+                step,
+                parameter,
+                coordinates,
+                regions,
+                changed
+            );
+        }
         if (parameter.kind === "select") {
             return optionSelect(step, parameter, changed);
         }
@@ -193,6 +212,49 @@
             setParameter(step, parameter.key, input.value, changed);
         });
         return input;
+    }
+
+    /**
+     * @param {object} step
+     * @param {object} parameter
+     * @param {Array<object>} coordinates
+     * @param {Array<object>} regions
+     * @param {() => void} changed
+     * @returns {HTMLSelectElement}
+     */
+    function areaReferenceSelect(
+        step,
+        parameter,
+        coordinates,
+        regions,
+        changed
+    ) {
+        const select = document.createElement("select");
+        select.required = parameter.required;
+        select.append(new Option("请选择坐标或区域", ""));
+        for (const coordinate of coordinates) {
+            select.append(new Option(
+                `坐标 · ${window.StowlingCoordinateModel.coordinateLabel(coordinate)}`,
+                `coordinate:${coordinate.id}`
+            ));
+        }
+        for (const region of regions) {
+            select.append(new Option(
+                `区域 · ${String(region.name || "")}`,
+                `region:${region.id}`
+            ));
+        }
+        let value = String(step.parameters[parameter.key] || "");
+        if (!value && step.parameters.coordinateId) {
+            value = `coordinate:${step.parameters.coordinateId}`;
+            delete step.parameters.coordinateId;
+            step.parameters[parameter.key] = value;
+        }
+        select.value = value;
+        select.addEventListener("change", () => {
+            setParameter(step, parameter.key, select.value, changed);
+        });
+        return select;
     }
 
     /**

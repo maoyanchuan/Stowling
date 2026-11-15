@@ -1264,6 +1264,36 @@ select[aria-invalid="true"] {
     border-left: 4px solid rgba(38, 112, 75, 0.48);
 }
 
+.coordinate-point-summary {
+    margin-bottom: 0;
+    cursor: pointer;
+    list-style: none;
+}
+
+.coordinate-point-summary::-webkit-details-marker {
+    display: none;
+}
+
+.coordinate-point-summary::after {
+    flex: 0 0 auto;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-right: 0.25rem;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    content: "";
+    transform: rotate(45deg);
+    transition: transform 160ms ease;
+}
+
+.coordinate-point-editor[open] > .coordinate-point-summary {
+    margin-bottom: 0.7rem;
+}
+
+.coordinate-point-editor[open] > .coordinate-point-summary::after {
+    transform: rotate(225deg);
+}
+
 .coordinate-row > .editor-field {
     min-width: 0;
 }

@@ -24,6 +24,16 @@ def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     assert "coordinate.z" in javascript
 
 
+def test_coordinate_cards_collapse_to_the_saved_name() -> None:
+    javascript = read("coordinates.js")
+    styles = read("styles.css")
+
+    assert 'Stowling.element(\n            "details"' in javascript
+    assert 'Stowling.element(\n            "summary"' in javascript
+    assert ".coordinate-point-editor[open]" in styles
+    assert ".coordinate-point-summary" in styles
+
+
 def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     html = read("tasks.html")
     model = read("v2-task-model.js")

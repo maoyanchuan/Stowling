@@ -65,8 +65,14 @@
      * @returns {HTMLElement}
      */
     function createCard(coordinate) {
-        const card = Stowling.element("article", "editor-card coordinate-point-editor");
-        const heading = Stowling.element("div", "editor-card-heading");
+        const card = Stowling.element(
+            "details",
+            "editor-card coordinate-point-editor"
+        );
+        const heading = Stowling.element(
+            "summary",
+            "editor-card-heading coordinate-point-summary"
+        );
         heading.append(Stowling.element("strong", "", coordinate.name));
         card.append(heading);
 

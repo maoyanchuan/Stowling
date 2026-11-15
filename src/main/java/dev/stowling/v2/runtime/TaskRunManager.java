@@ -168,6 +168,7 @@ public final class TaskRunManager {
                     navigation,
                     registry.droppedItems(),
                     registry.containerRegions(),
+                    registry.containerCategories(),
                     registry.containerTransfers(),
                     active.coordinates,
                     active.regions,

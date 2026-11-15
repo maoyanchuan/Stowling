@@ -28,6 +28,10 @@ public final class StandardTaskModuleFactories {
                         ScanContainersInRegionModule::new
                 ),
                 factory(
+                        ConfigValidator.MATCH_CONTAINER_CATEGORIES,
+                        MatchContainerCategoriesModule::new
+                ),
+                factory(
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                         DepositItemsToContainersModule::new
                 )

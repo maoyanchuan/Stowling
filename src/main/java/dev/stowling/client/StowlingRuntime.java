@@ -3,6 +3,7 @@ package dev.stowling.client;
 import baritone.api.BaritoneAPI;
 import dev.stowling.Stowling;
 import dev.stowling.automation.NavigationPort;
+import dev.stowling.client.automation.MinecraftContainerCategoryResolver;
 import dev.stowling.client.automation.MinecraftContainerRegionScanner;
 import dev.stowling.client.automation.MinecraftContainerTransferPort;
 import dev.stowling.client.automation.ClientThreadNavigationPort;
@@ -88,6 +89,7 @@ public final class StowlingRuntime implements AutoCloseable {
                 navigationPort,
                 new MinecraftDroppedItemObserver(minecraft, scheduler),
                 new MinecraftContainerRegionScanner(minecraft, scheduler),
+                new MinecraftContainerCategoryResolver(minecraft, scheduler),
                 new MinecraftContainerTransferPort(minecraft, scheduler),
                 StandardTaskModuleFactories.create()
         );

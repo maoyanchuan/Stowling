@@ -8,8 +8,11 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import net.minecraft.client.Minecraft;
@@ -29,6 +32,10 @@ public final class MinecraftContainerRegionScanner
             "minecraft:shulker_box",
             "minecraft:hopper"
     );
+    private static final Comparator<BlockPosition> POSITION_ORDER =
+            Comparator.comparingInt(BlockPosition::x)
+                    .thenComparingInt(BlockPosition::y)
+                    .thenComparingInt(BlockPosition::z);
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
@@ -107,12 +114,88 @@ public final class MinecraftContainerRegionScanner
                     "扫描区域时发生错误: " + exception.getMessage()
             );
         }
+        List<ContainerTarget> containers = collapseDoubleChestPairs(found);
         Vec3 playerPosition = player.position();
-        found.sort(Comparator.comparingDouble(target -> distanceSquared(
+        containers.sort(Comparator.comparingDouble(target -> distanceSquared(
                 target.position(),
                 playerPosition
         )));
-        return ContainerScanResult.success(List.copyOf(found));
+        return ContainerScanResult.success(List.copyOf(containers));
+    }
+
+    static List<ContainerTarget> collapseDoubleChestPairs(
+            List<ContainerTarget> containers
+    ) {
+        Map<BlockPosition, ContainerTarget> byPosition = new LinkedHashMap<>();
+        for (ContainerTarget container : containers) {
+            byPosition.put(container.position(), container);
+        }
+        Set<BlockPosition> collapsed = new HashSet<>();
+        List<ContainerTarget> result = new ArrayList<>();
+        for (ContainerTarget container : containers) {
+            if (!isChest(container.type())) {
+                result.add(container);
+                continue;
+            }
+            if (collapsed.contains(container.position())) {
+                continue;
+            }
+            BlockPosition partnerPosition = onlyChestNeighbor(
+                    container,
+                    byPosition
+            );
+            if (partnerPosition == null) {
+                result.add(container);
+                continue;
+            }
+            ContainerTarget partner = byPosition.get(partnerPosition);
+            BlockPosition reciprocal = onlyChestNeighbor(partner, byPosition);
+            if (!container.position().equals(reciprocal)) {
+                result.add(container);
+                continue;
+            }
+            BlockPosition representative = POSITION_ORDER.compare(
+                    container.position(),
+                    partnerPosition
+            ) <= 0 ? container.position() : partnerPosition;
+            collapsed.add(container.position());
+            collapsed.add(partnerPosition);
+            result.add(byPosition.get(representative));
+        }
+        return result;
+    }
+
+    private static BlockPosition onlyChestNeighbor(
+            ContainerTarget container,
+            Map<BlockPosition, ContainerTarget> byPosition
+    ) {
+        List<BlockPosition> neighbors = new ArrayList<>();
+        BlockPosition position = container.position();
+        for (int deltaX : new int[]{-1, 1}) {
+            BlockPosition neighbor = position.offset(deltaX, 0, 0);
+            if (sameTypeChest(container, byPosition.get(neighbor))) {
+                neighbors.add(neighbor);
+            }
+        }
+        for (int deltaZ : new int[]{-1, 1}) {
+            BlockPosition neighbor = position.offset(0, 0, deltaZ);
+            if (sameTypeChest(container, byPosition.get(neighbor))) {
+                neighbors.add(neighbor);
+            }
+        }
+        return neighbors.size() == 1 ? neighbors.getFirst() : null;
+    }
+
+    private static boolean sameTypeChest(
+            ContainerTarget container,
+            ContainerTarget neighbor
+    ) {
+        return neighbor != null && neighbor.type().equals(container.type());
+    }
+
+    private static boolean isChest(String type) {
+        return "minecraft:chest".equals(type)
+                || "minecraft:trapped_chest".equals(type);
     }
 
     private static long volume(

@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerCategoryPort;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.DroppedItemObserverPort;
@@ -14,6 +15,7 @@ public record TaskExecutionContext(
         NavigationPort navigation,
         DroppedItemObserverPort droppedItems,
         ContainerRegionPort containerRegions,
+        ContainerCategoryPort containerCategories,
         ContainerTransferPort containerTransfers,
         Map<UUID, CoordinatePoint> coordinates,
         Map<UUID, RegionDefinition> regions,
@@ -25,6 +27,10 @@ public record TaskExecutionContext(
         containerRegions = Objects.requireNonNull(
                 containerRegions,
                 "containerRegions"
+        );
+        containerCategories = Objects.requireNonNull(
+                containerCategories,
+                "containerCategories"
         );
         containerTransfers = Objects.requireNonNull(
                 containerTransfers,

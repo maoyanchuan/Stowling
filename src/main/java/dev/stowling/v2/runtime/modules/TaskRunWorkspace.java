@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerScanResult;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -8,6 +9,7 @@ import java.util.Optional;
 public final class TaskRunWorkspace {
     private final Map<String, Integer> collectedItems = new LinkedHashMap<>();
     private ContainerScanResult containerScan;
+    private ContainerCategoryResult containerCategories;
 
     public synchronized void recordCollected(String itemId, int count) {
         if (count <= 0) {
@@ -32,9 +34,20 @@ public final class TaskRunWorkspace {
 
     public synchronized void setContainerScan(ContainerScanResult scan) {
         containerScan = scan;
+        containerCategories = null;
     }
 
     public synchronized Optional<ContainerScanResult> containerScan() {
         return Optional.ofNullable(containerScan);
+    }
+
+    public synchronized void setContainerCategories(
+            ContainerCategoryResult categories
+    ) {
+        containerCategories = categories;
+    }
+
+    public synchronized Optional<ContainerCategoryResult> containerCategories() {
+        return Optional.ofNullable(containerCategories);
     }
 }

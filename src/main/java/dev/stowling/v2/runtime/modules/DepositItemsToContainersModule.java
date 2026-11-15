@@ -1,11 +1,14 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerCategory;
+import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.v2.model.TaskStep;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,10 +16,11 @@ import java.util.Map;
 final class DepositItemsToContainersModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final Map<String, Integer> remaining;
-    private final List<ContainerTarget> targets;
+    private final List<StorageTarget> targets;
     private final String unavailableMessage;
     private int targetIndex;
-    private ContainerTarget activeTarget;
+    private StorageTarget activeTarget;
+    private Map<String, Integer> activeRequest = Map.of();
     private boolean navigationStarted;
     private boolean transferActive;
 
@@ -30,7 +34,10 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
         );
         ContainerScanResult scan = context.workspace().containerScan()
                 .orElse(null);
-        this.targets = scan == null ? List.of() : scan.containers();
+        Map<ContainerTarget, String> categories = categories();
+        this.targets = scan == null
+                ? List.of()
+                : buildTargets(scan.containers(), categories, remaining);
         this.unavailableMessage = scan == null
                 ? "缺少上一次容器扫描结果"
                 : scan.succeeded() ? "" : scan.message();
@@ -58,21 +65,20 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
         if (transferActive) {
             return pollTransfer();
         }
-        if (activeTarget == null) {
-            if (targetIndex >= targets.size()) {
-                return TaskModuleResult.failed(
-                        "所有已扫描容器均无足够空间"
-                );
-            }
-            activeTarget = targets.get(targetIndex);
-            navigationStarted = false;
+        if (activeTarget == null && !selectNextTarget()) {
+            return TaskModuleResult.failed(
+                    "所有已扫描容器均无足够空间"
+            );
         }
         NavigationStatus status;
         if (!navigationStarted) {
             navigationStarted = true;
-            status = context.navigation().start(activeTarget.position());
+            status = context.navigation().start(activeTarget.target().position());
         } else {
-            status = context.navigation().status(activeTarget.position(), 2);
+            status = context.navigation().status(
+                    activeTarget.target().position(),
+                    2
+            );
         }
         return switch (status) {
             case ARRIVED -> startTransfer();
@@ -93,7 +99,7 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
     private TaskModuleResult startTransfer() {
         transferActive = true;
         ContainerTransferResult result = context.containerTransfers()
-                .startDeposit(activeTarget, remaining);
+                .startDeposit(activeTarget.target(), activeRequest);
         return handleTransferResult(result);
     }
 
@@ -125,10 +131,75 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
         );
     }
 
+    private boolean selectNextTarget() {
+        while (targetIndex < targets.size()) {
+            StorageTarget candidate = targets.get(targetIndex);
+            Map<String, Integer> request = requestFor(candidate);
+            if (!request.isEmpty()) {
+                activeTarget = candidate;
+                activeRequest = request;
+                navigationStarted = false;
+                return true;
+            }
+            targetIndex++;
+        }
+        return false;
+    }
+
+    private Map<String, Integer> requestFor(StorageTarget target) {
+        if (!target.exactCategory()) {
+            return Map.copyOf(remaining);
+        }
+        int count = remaining.getOrDefault(target.categoryItemId(), 0);
+        return count <= 0
+                ? Map.of()
+                : Map.of(target.categoryItemId(), count);
+    }
+
     private void moveToNextTarget() {
         targetIndex++;
         activeTarget = null;
+        activeRequest = Map.of();
         navigationStarted = false;
+    }
+
+    private Map<ContainerTarget, String> categories() {
+        Map<ContainerTarget, String> result = new LinkedHashMap<>();
+        ContainerCategoryResult categoryResult = context.workspace()
+                .containerCategories()
+                .orElse(null);
+        if (categoryResult == null || !categoryResult.succeeded()) {
+            return result;
+        }
+        for (ContainerCategory category : categoryResult.categories()) {
+            result.put(category.container(), category.itemId());
+        }
+        return result;
+    }
+
+    private static List<StorageTarget> buildTargets(
+            List<ContainerTarget> containers,
+            Map<ContainerTarget, String> categories,
+            Map<String, Integer> remaining
+    ) {
+        List<StorageTarget> exact = new ArrayList<>();
+        List<StorageTarget> unclassified = new ArrayList<>();
+        List<StorageTarget> fallback = new ArrayList<>();
+        for (ContainerTarget container : containers) {
+            String category = categories.get(container);
+            if (category == null) {
+                unclassified.add(new StorageTarget(container, "", false));
+            } else if (remaining.containsKey(category)) {
+                exact.add(new StorageTarget(container, category, true));
+            } else {
+                fallback.add(new StorageTarget(container, category, false));
+            }
+        }
+        List<StorageTarget> result = new ArrayList<>();
+        result.addAll(exact);
+        result.addAll(unclassified);
+        result.addAll(fallback);
+        return List.copyOf(result);
     }
 
     private void recordTransferred(
@@ -143,5 +214,12 @@ final class DepositItemsToContainersModule implements TaskModuleExecutor {
                 context.workspace().removeCollected(entry.getKey(), moved);
             }
         }
+    }
+
+    private record StorageTarget(
+            ContainerTarget target,
+            String categoryItemId,
+            boolean exactCategory
+    ) {
     }
 }

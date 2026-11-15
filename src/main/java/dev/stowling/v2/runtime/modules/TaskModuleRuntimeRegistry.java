@@ -1,5 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerCategoryPort;
+import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTransferPort;
@@ -17,6 +19,7 @@ public final class TaskModuleRuntimeRegistry {
     private final NavigationPort navigation;
     private final DroppedItemObserverPort droppedItems;
     private final ContainerRegionPort containerRegions;
+    private final ContainerCategoryPort containerCategories;
     private final ContainerTransferPort containerTransfers;
     private final Map<String, TaskModuleRuntimeFactory> factories;
 
@@ -24,6 +27,7 @@ public final class TaskModuleRuntimeRegistry {
             NavigationPort navigation,
             DroppedItemObserverPort droppedItems,
             ContainerRegionPort containerRegions,
+            ContainerCategoryPort containerCategories,
             ContainerTransferPort containerTransfers,
             List<TaskModuleRuntimeFactory> factories
     ) {
@@ -32,6 +36,10 @@ public final class TaskModuleRuntimeRegistry {
         this.containerRegions = Objects.requireNonNull(
                 containerRegions,
                 "containerRegions"
+        );
+        this.containerCategories = Objects.requireNonNull(
+                containerCategories,
+                "containerCategories"
         );
         this.containerTransfers = Objects.requireNonNull(
                 containerTransfers,
@@ -60,6 +68,8 @@ public final class TaskModuleRuntimeRegistry {
         };
         ContainerRegionPort containerRegions = (region, types, maxVolume) ->
                 ContainerScanResult.failure("区域扫描组件不可用");
+        ContainerCategoryPort containerCategories = containers ->
+                ContainerCategoryResult.failure("容器分类组件不可用");
         ContainerTransferPort transfers = new ContainerTransferPort() {
             @Override
             public ContainerTransferResult startDeposit(
@@ -88,6 +98,7 @@ public final class TaskModuleRuntimeRegistry {
                 navigation,
                 droppedItems,
                 containerRegions,
+                containerCategories,
                 transfers,
                 StandardTaskModuleFactories.create()
         );
@@ -103,6 +114,10 @@ public final class TaskModuleRuntimeRegistry {
 
     public ContainerRegionPort containerRegions() {
         return containerRegions;
+    }
+
+    public ContainerCategoryPort containerCategories() {
+        return containerCategories;
     }
 
     public ContainerTransferPort containerTransfers() {

@@ -20,6 +20,8 @@ public final class ConfigValidator {
             "COLLECT_DROPPED_ITEMS";
     public static final String SCAN_CONTAINERS_IN_REGION =
             "SCAN_CONTAINERS_IN_REGION";
+    public static final String MATCH_CONTAINER_CATEGORIES =
+            "MATCH_CONTAINER_CATEGORIES";
     public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
             "DEPOSIT_ITEMS_TO_CONTAINERS";
     public static final String COORDINATE_ID = "coordinateId";
@@ -98,6 +100,7 @@ public final class ConfigValidator {
                     Set.of(COORDINATE_ID)
             );
             case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, regions);
+            case MATCH_CONTAINER_CATEGORIES -> requireCategoryStep(step);
             case DEPOSIT_ITEMS_TO_CONTAINERS -> requireDepositStep(step);
             default -> throw new V2ValidationException(
                     "unknown task module: " + step.moduleId()
@@ -152,6 +155,15 @@ public final class ConfigValidator {
         requireChoice(step, SCAN_SOURCE, "previous-scan");
         requireChoice(step, ITEM_SOURCE, "collected-this-run");
         requireChoice(step, FILL_MODE, "nearest-first");
+    }
+
+    private static void requireCategoryStep(TaskStep step) {
+        requireParameters(
+                step,
+                Set.of(SCAN_SOURCE),
+                Set.of(SCAN_SOURCE)
+        );
+        requireChoice(step, SCAN_SOURCE, "previous-scan");
     }
 
     private static void requireParameters(

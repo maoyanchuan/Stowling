@@ -8,8 +8,11 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 - 坐标条目保存名称和 X/Y/Z，并可选填写维度和到达半径。
 - 区域条目保存名称以及两个完整 X/Y/Z 角点。
 - 任务只保存名称和有序模块步骤。
-- 内置模块支持移动、等待掉落物、拾取掉落物、扫描区域容器和存入拾取物。
-- 容器扫描和存入是两个独立模块；存入模块直接使用上一次扫描结果，不再重复扫描。
+- 内置模块支持移动、等待掉落物、拾取掉落物、扫描区域容器、识别容器分类和
+  存入拾取物。
+- 容器扫描、分类识别和存入是三个独立模块；分类和存入都使用上一次扫描结果。
+- 分类模块识别容器附近的物品展示框或荧光物品展示框，并使用展示物的注册 ID
+  作为分类。存入时优先选择分类完全相同的容器。
 - 存入模块默认只移动当前任务实际拾取并记录下来的物品。
 - 同一时间只运行一个任务。
 - 坐标、任务和步骤 ID 由系统内部生成，界面不显示。
@@ -26,6 +29,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 - `WAIT_FOR_DROPPED_ITEMS`：等待坐标半径内出现匹配的掉落物。
 - `COLLECT_DROPPED_ITEMS`：前往匹配的掉落物并等待拾取完成。
 - `SCAN_CONTAINERS_IN_REGION`：扫描区域容器，并把结果记录到当前任务运行中。
+- `MATCH_CONTAINER_CATEGORIES`：读取附近展示框中的物品，为已扫描容器生成
+  本次运行专用的分类映射。
 - `DEPOSIT_ITEMS_TO_CONTAINERS`：只把本次运行拾取的物品存入上次扫描到的容器。
 
 一个完整的掉落物入箱任务示例：
@@ -34,6 +39,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 WAIT_FOR_DROPPED_ITEMS     coordinateId=<掉落点>
 COLLECT_DROPPED_ITEMS      coordinateId=<掉落点>
 SCAN_CONTAINERS_IN_REGION  regionId=<存储区域>
+MATCH_CONTAINER_CATEGORIES
+    scanSource=previous-scan
 DEPOSIT_ITEMS_TO_CONTAINERS
     scanSource=previous-scan
     itemSource=collected-this-run
@@ -41,7 +48,9 @@ DEPOSIT_ITEMS_TO_CONTAINERS
 ```
 
 检测和扫描只覆盖玩家当前维度内已经加载的区块。扫描支持普通容器，不把潜影盒
-内部的物品当作独立容器。
+内部的物品当作独立容器。双联箱子只记录一个代表位置。分类只按物品注册 ID
+匹配，因此同一注册 ID 但名称或组件不同的展示物暂时不能区分。分类结果只在
+当前任务运行中有效，不会写入配置。
 
 ## 配置
 

@@ -23,6 +23,7 @@ class TaskModuleCatalogTest {
                         ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
                         ConfigValidator.COLLECT_DROPPED_ITEMS,
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                        ConfigValidator.MATCH_CONTAINER_CATEGORIES,
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
                 ),
                 modules.stream().map(ModuleDefinition::id).toList()
@@ -47,6 +48,17 @@ class TaskModuleCatalogTest {
         );
         assertEquals("region-point", region.kind());
         assertTrue(region.required());
+
+        ModuleDefinition category = modules.get(
+                ConfigValidator.MATCH_CONTAINER_CATEGORIES
+        );
+        assertEquals(
+                List.of("previous-scan"),
+                moduleParameter(
+                        category,
+                        ConfigValidator.SCAN_SOURCE
+                ).options()
+        );
 
         ModuleDefinition deposit = modules.get(
                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS

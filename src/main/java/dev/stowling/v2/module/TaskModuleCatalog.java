@@ -145,12 +145,27 @@ public final class TaskModuleCatalog {
                     )
             );
 
+    private static final ModuleDefinition MATCH_CONTAINER_CATEGORIES =
+            new ModuleDefinition(
+                    ConfigValidator.MATCH_CONTAINER_CATEGORIES,
+                    "识别容器分类",
+                    "读取上一次扫描结果，并按附近展示框中的物品标记箱子的分类。",
+                    List.of(new ModuleParameter(
+                            ConfigValidator.SCAN_SOURCE,
+                            "扫描结果",
+                            "select",
+                            true,
+                            List.of("previous-scan")
+                    ))
+            );
+
     private static final List<ModuleDefinition> MODULES =
             List.of(
                     MOVE_TO_COORDINATE,
                     WAIT_FOR_DROPPED_ITEMS,
                     COLLECT_DROPPED_ITEMS,
                     SCAN_CONTAINERS_IN_REGION,
+                    MATCH_CONTAINER_CATEGORIES,
                     DEPOSIT_ITEMS_TO_CONTAINERS
             );
 

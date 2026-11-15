@@ -25,6 +25,8 @@
         name: document.querySelector("#task-name"),
         steps: document.querySelector("#task-steps"),
         addStep: document.querySelector("#add-step-button"),
+        moduleCatalog: document.querySelector("#task-module-catalog"),
+        moduleCount: document.querySelector("#task-module-count"),
         errors: document.querySelector("#task-errors"),
         revision: document.querySelector("#task-revision"),
         save: document.querySelector("#save-task-button"),
@@ -57,6 +59,7 @@
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             renderTaskList();
+            renderModuleCatalog();
             renderRunControls();
             renderRuntime();
         } catch (error) {
@@ -79,6 +82,43 @@
             button.classList.toggle("active", task.id === state.selectedId);
             button.addEventListener("click", () => selectTask(task));
             elements.list.append(button);
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderModuleCatalog() {
+        elements.moduleCatalog.replaceChildren();
+        elements.moduleCount.textContent = `${state.modules.length} 个`;
+        if (state.modules.length === 0) {
+            elements.moduleCatalog.append(
+                Stowling.emptyState("当前没有可用模块")
+            );
+            return;
+        }
+        for (const module of state.modules) {
+            const card = Stowling.element("article", "module-card");
+            const parameters = Array.isArray(module.parameters)
+                ? module.parameters
+                : [];
+            const parameterText = parameters.length === 0
+                ? "无需参数"
+                : parameters.map((parameter) => {
+                    const required = parameter.required ? "（必填）" : "";
+                    return `${parameter.label}${required}`;
+                }).join("、");
+            card.append(
+                Stowling.element("code", "", module.id),
+                Stowling.element("strong", "", module.name),
+                Stowling.element("p", "", module.description || ""),
+                Stowling.element(
+                    "p",
+                    "compact-help",
+                    `参数：${parameterText}`
+                )
+            );
+            elements.moduleCatalog.append(card);
         }
     }
 

@@ -77,6 +77,18 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "payloadStep" in model
 
 
+def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
+    html = read("tasks.html")
+    tasks = read("tasks.js")
+
+    assert 'id="task-module-panel"' in html
+    assert 'id="task-module-catalog"' in html
+    assert "renderModuleCatalog()" in tasks
+    assert "state.modules" in tasks
+    assert "module.description" in tasks
+    assert "parameter.label" in tasks
+
+
 def test_coordinate_choices_only_show_the_saved_name() -> None:
     model = read("coordinate-model.js")
 

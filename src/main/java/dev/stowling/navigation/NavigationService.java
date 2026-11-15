@@ -7,10 +7,6 @@ public interface NavigationService {
 
     void navigateToNear(BlockPosition target, int radius);
 
-    default boolean navigateToNextNear() {
-        return false;
-    }
-
     void cancel();
 
     boolean isNavigatingOrCalculating();

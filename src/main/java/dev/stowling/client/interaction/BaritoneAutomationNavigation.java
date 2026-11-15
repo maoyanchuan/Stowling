@@ -16,7 +16,6 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private final NavigationService navigationService;
     private final WorldObserver worldObserver;
     private boolean active;
-    private boolean nearSearchActive;
     private boolean pathObserved;
     private int missingPathTicks;
     private boolean stopRequested;
@@ -35,7 +34,6 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public NavigationStatus start(BlockPosition target) {
         Objects.requireNonNull(target, "target");
-        nearSearchActive = false;
         prepareNavigation();
         navigationService.navigateTo(target);
         return NavigationStatus.NAVIGATING;
@@ -47,7 +45,6 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
-        nearSearchActive = true;
         prepareNavigation();
         navigationService.navigateToNear(target, radius);
         return NavigationStatus.NAVIGATING;
@@ -93,7 +90,9 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         missingPathTicks++;
         if (pathObserved || missingPathTicks >= PATH_STARTUP_GRACE_TICKS) {
-            return retryNearbyOrFail();
+            active = false;
+            navigationService.cancel();
+            return NavigationStatus.FAILED;
         }
         return NavigationStatus.NAVIGATING;
     }
@@ -120,7 +119,6 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         pathObserved = false;
         missingPathTicks = 0;
-        nearSearchActive = false;
     }
 
     @Override
@@ -140,16 +138,5 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         stopRequested = false;
         return StopOutcome.CLEAN;
-    }
-
-    private NavigationStatus retryNearbyOrFail() {
-        if (nearSearchActive && navigationService.navigateToNextNear()) {
-            prepareNavigation();
-            return NavigationStatus.NAVIGATING;
-        }
-        active = false;
-        nearSearchActive = false;
-        navigationService.cancel();
-        return NavigationStatus.FAILED;
     }
 }

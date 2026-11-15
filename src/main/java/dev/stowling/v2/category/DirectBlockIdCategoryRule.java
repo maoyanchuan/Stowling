@@ -122,6 +122,11 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
         return CategoryRuleResult.success(immutable);
     }
 
+    @Override
+    public boolean accepts(CategoryMarker marker) {
+        return marker.source() != CategoryMarkerSource.CONTAINER_CONTENTS;
+    }
+
     private static void addCategory(
             Map<String, List<ContainerTarget>> categories,
             String itemId,

@@ -27,6 +27,7 @@ class TaskModuleCatalogTest {
                         ConfigValidator.MATCH_CONTAINER_CATEGORIES,
                         ConfigValidator.SORT_CACHE_ITEMS,
                         ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
+                        ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
                 ),
                 modules.stream().map(ModuleDefinition::id).toList()
@@ -91,6 +92,16 @@ class TaskModuleCatalogTest {
         );
         assertEquals("category-zone-point", zone.kind());
         assertTrue(zone.required());
+
+        ModuleDefinition refresh = modules.get(
+                ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE
+        );
+        ModuleParameter refreshZone = moduleParameter(
+                refresh,
+                ConfigValidator.CATEGORY_ZONE_ID
+        );
+        assertEquals("category-zone-point", refreshZone.kind());
+        assertTrue(refreshZone.required());
 
         ModuleDefinition deposit = modules.get(
                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS

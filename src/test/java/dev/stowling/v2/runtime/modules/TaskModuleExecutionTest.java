@@ -3,9 +3,12 @@ package dev.stowling.v2.runtime.modules;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.CategoryMarkerCachePort;
 import dev.stowling.automation.ContainerCategory;
 import dev.stowling.automation.ContainerCategoryPort;
 import dev.stowling.automation.ContainerCategoryResult;
+import dev.stowling.automation.ContainerInspectionPort;
+import dev.stowling.automation.ContainerInspectionResult;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
@@ -21,6 +24,7 @@ import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.CategoryBindingDefinition;
@@ -751,6 +755,73 @@ class TaskModuleExecutionTest {
         );
     }
 
+    @Test
+    void refreshCategoryMarkerCacheStoresInspectedContainerItems() {
+        RegionDefinition cacheRegion = region("Cache");
+        CoordinatePoint point = point("Drop");
+        CategoryBindingDefinition binding = new CategoryBindingDefinition(
+                UUID.randomUUID(),
+                new AreaBounds(7, -34, 7, 7, -34, 7),
+                new AreaBounds(7, -34, 5, 7, -34, 5),
+                ContainerContentsCategoryRule.ID
+        );
+        CategoryZoneDefinition zone = new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                "A",
+                List.of(binding)
+        );
+        ContainerTarget marker = new ContainerTarget(
+                new BlockPosition(7, -34, 7),
+                "minecraft:barrel"
+        );
+        RecordingInspection inspections = new RecordingInspection(Set.of(
+                "minecraft:oak_log",
+                "minecraft:oak_planks"
+        ));
+        RecordingCategoryMarkerCache cache =
+                new RecordingCategoryMarkerCache();
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new FixedRegions(ContainerScanResult.success(
+                        List.of(marker)
+                )),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                new NoCategoryZones(),
+                Map.of(zone.id(), zone),
+                point,
+                cacheRegion,
+                new TaskRunWorkspace(),
+                inspections,
+                cache
+        );
+        RefreshCategoryMarkerCacheModule module =
+                new RefreshCategoryMarkerCacheModule(
+                        context,
+                        step(
+                                ConfigValidator
+                                        .REFRESH_CATEGORY_MARKER_CACHE,
+                                ConfigValidator.CATEGORY_ZONE_ID,
+                                zone.id().toString()
+                        )
+                );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 10 && result.state() == TaskModuleState.WAITING;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                Set.of("minecraft:oak_log", "minecraft:oak_planks"),
+                cache.saved.get(binding.id()).get(marker.position())
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             DroppedItemObserverPort dropped,
@@ -840,6 +911,38 @@ class TaskModuleExecutionTest {
                 categories,
                 transfers,
                 withdrawals,
+                categoryZonesPort,
+                Map.of(point.id(), point),
+                Map.of(region.id(), region),
+                categoryZones,
+                workspace
+        );
+    }
+
+    private static TaskExecutionContext context(
+            NavigationPort navigation,
+            DroppedItemObserverPort dropped,
+            ContainerRegionPort regions,
+            ContainerCategoryPort categories,
+            ContainerTransferPort transfers,
+            ContainerWithdrawalPort withdrawals,
+            CategoryZonePort categoryZonesPort,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            CoordinatePoint point,
+            RegionDefinition region,
+            TaskRunWorkspace workspace,
+            ContainerInspectionPort inspections,
+            CategoryMarkerCachePort cache
+    ) {
+        return new TaskExecutionContext(
+                navigation,
+                dropped,
+                regions,
+                categories,
+                transfers,
+                withdrawals,
+                inspections,
+                cache,
                 categoryZonesPort,
                 Map.of(point.id(), point),
                 Map.of(region.id(), region),
@@ -1045,6 +1148,56 @@ class TaskModuleExecutionTest {
 
         @Override
         public void cancelWithdrawal() {
+        }
+    }
+
+    private static final class RecordingInspection
+            implements ContainerInspectionPort {
+        private final Set<String> itemIds;
+        private boolean started;
+
+        private RecordingInspection(Set<String> itemIds) {
+            this.itemIds = Set.copyOf(itemIds);
+        }
+
+        @Override
+        public ContainerInspectionResult startInspection(
+                ContainerTarget target
+        ) {
+            started = true;
+            return ContainerInspectionResult.pending("opening");
+        }
+
+        @Override
+        public ContainerInspectionResult pollInspection() {
+            if (!started) {
+                return ContainerInspectionResult.failed("not started");
+            }
+            return ContainerInspectionResult.success("read", itemIds);
+        }
+
+        @Override
+        public void cancelInspection() {
+            started = false;
+        }
+    }
+
+    private static final class RecordingCategoryMarkerCache
+            implements CategoryMarkerCachePort {
+        private Map<UUID, Map<BlockPosition, Set<String>>> saved = Map.of();
+
+        @Override
+        public Optional<Map<BlockPosition, Set<String>>> contents(
+                UUID bindingId
+        ) {
+            return Optional.ofNullable(saved.get(bindingId));
+        }
+
+        @Override
+        public void replaceBindings(
+                Map<UUID, Map<BlockPosition, Set<String>>> contents
+        ) {
+            saved = Map.copyOf(contents);
         }
     }
 

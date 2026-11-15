@@ -35,6 +35,8 @@ public final class ConfigValidator {
     public static final String SORT_CACHE_ITEMS = "SORT_CACHE_ITEMS";
     public static final String SORT_CACHE_ITEMS_BY_CATEGORY_ZONE =
             "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE";
+    public static final String REFRESH_CATEGORY_MARKER_CACHE =
+            "REFRESH_CATEGORY_MARKER_CACHE";
     public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
             "DEPOSIT_ITEMS_TO_CONTAINERS";
     public static final String COORDINATE_ID = "coordinateId";
@@ -147,6 +149,8 @@ public final class ConfigValidator {
                             regions,
                             categoryZones
                     );
+            case REFRESH_CATEGORY_MARKER_CACHE ->
+                    requireRefreshMarkerCacheStep(step, categoryZones);
             case DEPOSIT_ITEMS_TO_CONTAINERS -> requireDepositStep(step);
             default -> throw new V2ValidationException(
                     "unknown task module: " + step.moduleId()
@@ -287,6 +291,27 @@ public final class ConfigValidator {
                         "cache region must not overlap category zone " + zone.name()
                 );
             }
+        }
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static void requireRefreshMarkerCacheStep(
+            TaskStep step,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        requireParameters(
+                step,
+                Set.of(CATEGORY_ZONE_ID, MAX_VOLUME),
+                Set.of(CATEGORY_ZONE_ID)
+        );
+        UUID zoneId = requireUuid(
+                step.parameters().get(CATEGORY_ZONE_ID),
+                CATEGORY_ZONE_ID
+        );
+        if (!categoryZones.containsKey(zoneId)) {
+            throw new V2ValidationException(
+                    "category zone does not exist: " + zoneId
+            );
         }
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
     }

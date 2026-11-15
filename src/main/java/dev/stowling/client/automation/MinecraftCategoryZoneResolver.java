@@ -35,6 +35,12 @@ import net.minecraft.world.phys.AABB;
 
 public final class MinecraftCategoryZoneResolver
         implements CategoryZonePort {
+    private static final Set<String> MARKER_CONTAINER_TYPES = Set.of(
+            "minecraft:chest",
+            "minecraft:trapped_chest",
+            "minecraft:barrel"
+    );
+
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
     private final ContainerRegionPort containerRegions;
@@ -61,6 +67,16 @@ public final class MinecraftCategoryZoneResolver
             Set<String> containerTypes,
             int maxVolume
     ) {
+        return resolve(zone, containerTypes, maxVolume, Map.of());
+    }
+
+    @Override
+    public CategoryZoneResult resolve(
+            CategoryZoneDefinition zone,
+            Set<String> containerTypes,
+            int maxVolume,
+            Map<BlockPosition, Set<String>> markerContainerContents
+    ) {
         Objects.requireNonNull(zone, "zone");
         if (!scheduler.isClientThread()) {
             return CategoryZoneResult.failure("分类区解析必须在客户端线程执行");
@@ -74,7 +90,8 @@ public final class MinecraftCategoryZoneResolver
                     level,
                     zone,
                     containerTypes,
-                    maxVolume
+                    maxVolume,
+                    markerContainerContents
             );
         } catch (RuntimeException exception) {
             return CategoryZoneResult.failure(
@@ -87,7 +104,8 @@ public final class MinecraftCategoryZoneResolver
             ClientLevel level,
             CategoryZoneDefinition zone,
             Set<String> containerTypes,
-            int maxVolume
+            int maxVolume,
+            Map<BlockPosition, Set<String>> markerContainerContents
     ) {
         Map<String, List<ContainerTarget>> categories =
                 new LinkedHashMap<>();
@@ -101,7 +119,8 @@ public final class MinecraftCategoryZoneResolver
             List<CategoryMarker> markers = markers(
                     level,
                     binding.markerArea(),
-                    Set.copyOf(binding.ignoredMarkerBlockIds())
+                    Set.copyOf(binding.ignoredMarkerBlockIds()),
+                    markerContainerContents
             );
             ContainerScanResult storageScan = containerRegions.scan(
                     asRegion(binding),
@@ -112,8 +131,11 @@ public final class MinecraftCategoryZoneResolver
                 return CategoryZoneResult.failure(storageScan.message());
             }
             CategoryRule rule = rules.require(binding.ruleId());
+            List<CategoryMarker> acceptedMarkers = markers.stream()
+                    .filter(rule::accepts)
+                    .toList();
             CategoryRuleResult resolved = rule.resolve(
-                    markers,
+                    acceptedMarkers,
                     storageScan.containers(),
                     binding.containerOverrides()
             );
@@ -152,7 +174,8 @@ public final class MinecraftCategoryZoneResolver
     private static List<CategoryMarker> markers(
             ClientLevel level,
             AreaBounds area,
-            Set<String> ignoredBlockIds
+            Set<String> ignoredBlockIds,
+            Map<BlockPosition, Set<String>> markerContainerContents
     ) {
         List<CategoryMarker> result = new ArrayList<>();
         for (long x = area.minX(); x <= area.maxX(); x++) {
@@ -170,6 +193,7 @@ public final class MinecraftCategoryZoneResolver
                             level,
                             position,
                             ignoredBlockIds,
+                            markerContainerContents,
                             result
                     );
                 }
@@ -183,10 +207,28 @@ public final class MinecraftCategoryZoneResolver
             ClientLevel level,
             BlockPos position,
             Set<String> ignoredBlockIds,
+            Map<BlockPosition, Set<String>> markerContainerContents,
             List<CategoryMarker> result
     ) {
         BlockState state = level.getBlockState(position);
         if (state.isAir()) {
+            return;
+        }
+        String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock())
+                .toString();
+        BlockPosition markerPosition = blockPosition(position);
+        if (MARKER_CONTAINER_TYPES.contains(blockId)
+                && markerContainerContents.containsKey(markerPosition)) {
+            int slot = 0;
+            for (String itemId
+                    : markerContainerContents.get(markerPosition)) {
+                result.add(new CategoryMarker(
+                        markerPosition,
+                        itemId,
+                        CategoryMarkerSource.CONTAINER_CONTENTS,
+                        slot++
+                ));
+            }
             return;
         }
         if (level.getBlockEntity(position) instanceof ShelfBlockEntity shelf) {
@@ -202,8 +244,6 @@ public final class MinecraftCategoryZoneResolver
             }
             return;
         }
-        String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock())
-                .toString();
         if (ignoredBlockIds.contains(blockId)) {
             return;
         }
@@ -262,15 +302,19 @@ public final class MinecraftCategoryZoneResolver
             return;
         }
         result.add(new CategoryMarker(
-                new BlockPosition(
-                        position.getX(),
-                        position.getY(),
-                        position.getZ()
-                ),
+                blockPosition(position),
                 BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
                 source,
                 slotIndex
         ));
+    }
+
+    private static BlockPosition blockPosition(BlockPos position) {
+        return new BlockPosition(
+                position.getX(),
+                position.getY(),
+                position.getZ()
+        );
     }
 
     private static boolean contains(AreaBounds area, BlockPos position) {

@@ -5,6 +5,7 @@ import dev.stowling.Stowling;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.client.automation.MinecraftContainerCategoryResolver;
 import dev.stowling.client.automation.MinecraftCategoryZoneResolver;
+import dev.stowling.client.automation.MinecraftContainerInspectionPort;
 import dev.stowling.client.automation.MinecraftContainerRegionScanner;
 import dev.stowling.client.automation.MinecraftContainerTransferPort;
 import dev.stowling.client.automation.MinecraftContainerWithdrawalPort;
@@ -19,6 +20,7 @@ import dev.stowling.persistence.SqliteInventoryRepository;
 import dev.stowling.persistence.StoredInventorySnapshot;
 import dev.stowling.persistence.StowlingDatabase;
 import dev.stowling.v2.api.V2ControlServer;
+import dev.stowling.v2.cache.CategoryMarkerCacheStore;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.control.V2ControlService;
@@ -90,6 +92,10 @@ public final class StowlingRuntime implements AutoCloseable {
         );
         MinecraftContainerRegionScanner containerScanner =
                 new MinecraftContainerRegionScanner(minecraft, scheduler);
+        CategoryMarkerCacheStore categoryMarkerCache =
+                new CategoryMarkerCacheStore(configDirectory.resolve(
+                        "stowling-category-marker-cache.json"
+                ));
         TaskModuleRuntimeRegistry moduleRuntime = new TaskModuleRuntimeRegistry(
                 navigationPort,
                 new MinecraftDroppedItemObserver(minecraft, scheduler),
@@ -97,6 +103,8 @@ public final class StowlingRuntime implements AutoCloseable {
                 new MinecraftContainerCategoryResolver(minecraft, scheduler),
                 new MinecraftContainerTransferPort(minecraft, scheduler),
                 new MinecraftContainerWithdrawalPort(minecraft, scheduler),
+                new MinecraftContainerInspectionPort(minecraft, scheduler),
+                categoryMarkerCache,
                 new MinecraftCategoryZoneResolver(
                         minecraft,
                         scheduler,

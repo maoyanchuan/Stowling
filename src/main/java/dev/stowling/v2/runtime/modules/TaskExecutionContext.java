@@ -1,5 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.CategoryMarkerCachePort;
+import dev.stowling.automation.ContainerInspectionPort;
 import dev.stowling.automation.ContainerCategoryPort;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerTransferPort;
@@ -21,6 +23,8 @@ public record TaskExecutionContext(
         ContainerCategoryPort containerCategories,
         ContainerTransferPort containerTransfers,
         ContainerWithdrawalPort containerWithdrawals,
+        ContainerInspectionPort containerInspections,
+        CategoryMarkerCachePort categoryMarkerCache,
         CategoryZonePort categoryZonesPort,
         Map<UUID, CoordinatePoint> coordinates,
         Map<UUID, RegionDefinition> regions,
@@ -46,6 +50,14 @@ public record TaskExecutionContext(
                 containerWithdrawals,
                 "containerWithdrawals"
         );
+        containerInspections = Objects.requireNonNull(
+                containerInspections,
+                "containerInspections"
+        );
+        categoryMarkerCache = Objects.requireNonNull(
+                categoryMarkerCache,
+                "categoryMarkerCache"
+        );
         categoryZonesPort = Objects.requireNonNull(
                 categoryZonesPort,
                 "categoryZonesPort"
@@ -56,5 +68,35 @@ public record TaskExecutionContext(
                 Objects.requireNonNull(categoryZones, "categoryZones")
         );
         workspace = Objects.requireNonNull(workspace, "workspace");
+    }
+
+    public TaskExecutionContext(
+            NavigationPort navigation,
+            DroppedItemObserverPort droppedItems,
+            ContainerRegionPort containerRegions,
+            ContainerCategoryPort containerCategories,
+            ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
+            CategoryZonePort categoryZonesPort,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            TaskRunWorkspace workspace
+    ) {
+        this(
+                navigation,
+                droppedItems,
+                containerRegions,
+                containerCategories,
+                containerTransfers,
+                containerWithdrawals,
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                categoryZonesPort,
+                coordinates,
+                regions,
+                categoryZones,
+                workspace
+        );
     }
 }

@@ -448,6 +448,14 @@ class V2ControlServerTest {
                             .get("id")
                             .getAsString()
             );
+            assertEquals(
+                    "MARKER_CONTAINER_CONTENTS",
+                    object(rules).getAsJsonArray("rules")
+                            .get(1)
+                            .getAsJsonObject()
+                            .get("id")
+                            .getAsString()
+            );
 
             String revision = createdBody.get("revision").getAsString();
             HttpResponse<String> updated = fixture.send(

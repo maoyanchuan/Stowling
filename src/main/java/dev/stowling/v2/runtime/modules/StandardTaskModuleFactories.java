@@ -44,6 +44,10 @@ public final class StandardTaskModuleFactories {
                         SortCacheItemsByCategoryZoneModule::new
                 ),
                 factory(
+                        ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
+                        RefreshCategoryMarkerCacheModule::new
+                ),
+                factory(
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                         DepositItemsToContainersModule::new
                 )

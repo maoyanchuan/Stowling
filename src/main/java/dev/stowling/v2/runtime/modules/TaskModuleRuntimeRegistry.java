@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.CategoryMarkerCachePort;
 import dev.stowling.automation.ContainerCategoryPort;
 import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerRegionPort;
@@ -7,6 +8,7 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerInspectionPort;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
 import dev.stowling.automation.CategoryZonePort;
@@ -30,6 +32,8 @@ public final class TaskModuleRuntimeRegistry {
     private final ContainerCategoryPort containerCategories;
     private final ContainerTransferPort containerTransfers;
     private final ContainerWithdrawalPort containerWithdrawals;
+    private final ContainerInspectionPort containerInspections;
+    private final CategoryMarkerCachePort categoryMarkerCache;
     private final CategoryZonePort categoryZones;
     private final Map<String, TaskModuleRuntimeFactory> factories;
 
@@ -40,6 +44,8 @@ public final class TaskModuleRuntimeRegistry {
             ContainerCategoryPort containerCategories,
             ContainerTransferPort containerTransfers,
             ContainerWithdrawalPort containerWithdrawals,
+            ContainerInspectionPort containerInspections,
+            CategoryMarkerCachePort categoryMarkerCache,
             CategoryZonePort categoryZones,
             List<TaskModuleRuntimeFactory> factories
     ) {
@@ -61,6 +67,14 @@ public final class TaskModuleRuntimeRegistry {
                 containerWithdrawals,
                 "containerWithdrawals"
         );
+        this.containerInspections = Objects.requireNonNull(
+                containerInspections,
+                "containerInspections"
+        );
+        this.categoryMarkerCache = Objects.requireNonNull(
+                categoryMarkerCache,
+                "categoryMarkerCache"
+        );
         this.categoryZones = Objects.requireNonNull(
                 categoryZones,
                 "categoryZones"
@@ -78,6 +92,30 @@ public final class TaskModuleRuntimeRegistry {
             }
         }
         this.factories = Map.copyOf(byId);
+    }
+
+    public TaskModuleRuntimeRegistry(
+            NavigationPort navigation,
+            DroppedItemObserverPort droppedItems,
+            ContainerRegionPort containerRegions,
+            ContainerCategoryPort containerCategories,
+            ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
+            CategoryZonePort categoryZones,
+            List<TaskModuleRuntimeFactory> factories
+    ) {
+        this(
+                navigation,
+                droppedItems,
+                containerRegions,
+                containerCategories,
+                containerTransfers,
+                containerWithdrawals,
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                categoryZones,
+                factories
+        );
     }
 
     public static TaskModuleRuntimeRegistry unavailablePorts(
@@ -162,6 +200,8 @@ public final class TaskModuleRuntimeRegistry {
                 containerCategories,
                 transfers,
                 withdrawals,
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
                 categoryZones,
                 StandardTaskModuleFactories.create()
         );
@@ -189,6 +229,14 @@ public final class TaskModuleRuntimeRegistry {
 
     public ContainerWithdrawalPort containerWithdrawals() {
         return containerWithdrawals;
+    }
+
+    public ContainerInspectionPort containerInspections() {
+        return containerInspections;
+    }
+
+    public CategoryMarkerCachePort categoryMarkerCache() {
+        return categoryMarkerCache;
     }
 
     public CategoryZonePort categoryZones() {

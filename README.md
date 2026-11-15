@@ -25,6 +25,9 @@ by Baritone.
 - Per-container exceptions can append extra accepted item IDs or replace the
   automatic category entirely. Replacement rules bypass display ambiguity for
   that container.
+- The `MARKER_CONTAINER_CONTENTS` rule reads item IDs from marker chests or
+  barrels through a user-refreshed cache, allowing a double chest to define up
+  to 54 distinct accepted item types.
 - The coarse stage stores all collected drops in cache containers. The fine
   stage withdraws only items that have target categories and deposits them
   into exact category matches.
@@ -60,6 +63,8 @@ editor builds its controls from that catalog.
   exact category matches, and returns leftovers to the cache.
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
   stores cached items whose IDs exactly match the recognized item IDs.
+- `REFRESH_CATEGORY_MARKER_CACHE` opens the category marker chests or barrels,
+  reads their slots without moving items, and updates the persistent cache.
 - `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
   current run into containers from the previous scan.
 
@@ -87,6 +92,18 @@ SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
     cacheRegionId=<cache area>
     categoryZoneId=<category zone>
 ```
+
+When a category zone uses `MARKER_CONTAINER_CONTENTS`, run the following module
+before sorting whenever the sample items in the marker container change:
+
+```text
+REFRESH_CATEGORY_MARKER_CACHE
+    categoryZoneId=<category zone>
+```
+
+The cache is stored in `config/stowling-category-marker-cache.json`. Sorting
+never refreshes it automatically; a missing cache fails with a prompt to run the
+refresh module.
 
 Example category-zone A binding:
 

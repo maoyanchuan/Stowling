@@ -24,5 +24,9 @@ public interface CategoryRule {
         return resolve(markers, storageContainers);
     }
 
+    default boolean accepts(CategoryMarker marker) {
+        return true;
+    }
+
     boolean matchesItem(String categoryId, String itemId);
 }

@@ -375,6 +375,35 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void validatesCategoryMarkerCacheRefreshContract() {
+        CategoryZoneDefinition zone = categoryZone("A");
+        TaskStep step = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
+                Map.of(
+                        ConfigValidator.CATEGORY_ZONE_ID,
+                        zone.id().toString()
+                )
+        );
+
+        ConfigValidator.requireValidStep(
+                step,
+                Map.of(),
+                Map.of(),
+                Map.of(zone.id(), zone)
+        );
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValidStep(
+                        step,
+                        Map.of(),
+                        Map.of(),
+                        Map.of()
+                )
+        );
+    }
+
+    @Test
     void rejectsUnknownRegionReferenceAndInvalidIntegerParameter() {
         RegionDefinition region = region("Storage");
         TaskStep missingRegion = new TaskStep(

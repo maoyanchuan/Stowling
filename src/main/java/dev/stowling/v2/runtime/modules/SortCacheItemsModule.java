@@ -10,7 +10,10 @@ import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.ContainerWithdrawalResult;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.NavigationStatus;
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
+import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.TaskStep;
@@ -198,10 +201,30 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             Set<String> containerTypes,
             int maxVolume
     ) {
+        Map<BlockPosition, Set<String>> markerContents =
+                new LinkedHashMap<>();
+        for (CategoryBindingDefinition binding : zone.bindings()) {
+            if (!ContainerContentsCategoryRule.ID.equals(
+                    binding.ruleId()
+            )) {
+                continue;
+            }
+            Map<BlockPosition, Set<String>> cached =
+                    context.categoryMarkerCache()
+                            .contents(binding.id())
+                            .orElse(null);
+            if (cached == null) {
+                return CategorySetup.failure(
+                        "缺少分类容器缓存，请先运行“刷新分类容器缓存”"
+                );
+            }
+            markerContents.putAll(cached);
+        }
         CategoryZoneResult result = context.categoryZonesPort().resolve(
                 zone,
                 containerTypes,
-                maxVolume
+                maxVolume,
+                markerContents
         );
         if (!result.succeeded()) {
             return CategorySetup.failure(result.message());

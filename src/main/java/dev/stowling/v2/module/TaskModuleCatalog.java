@@ -234,7 +234,8 @@ public final class TaskModuleCatalog {
             new ModuleDefinition(
                     ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     "按分类区入库",
-                    "读取分类区方块 ID，并将同 ID 缓存物品存入绑定的储存区。",
+                    "使用分类区自动识别、容器缓存和例外规则，把缓存物品存入"
+                            + "对应储存区。",
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.CACHE_REGION_ID,
@@ -268,6 +269,32 @@ public final class TaskModuleCatalog {
                     )
             );
 
+    private static final ModuleDefinition REFRESH_CATEGORY_MARKER_CACHE =
+            new ModuleDefinition(
+                    ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
+                    "刷新分类容器缓存",
+                    "读取分类区识别箱或木桶的物品槽位并保存缓存，不移动样本物品。",
+                    List.of(
+                            new ModuleParameter(
+                                    ConfigValidator.CATEGORY_ZONE_ID,
+                                    "分类区",
+                                    "category-zone-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.MAX_VOLUME,
+                                    "最大扫描体积",
+                                    "integer",
+                                    false,
+                                    List.of(),
+                                    1,
+                                    1_048_576,
+                                    1,
+                                    null
+                            )
+                    )
+            );
+
     private static final List<ModuleDefinition> MODULES =
             List.of(
                     MOVE_TO_COORDINATE,
@@ -278,6 +305,7 @@ public final class TaskModuleCatalog {
                     MATCH_CONTAINER_CATEGORIES,
                     SORT_CACHE_ITEMS,
                     SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
+                    REFRESH_CATEGORY_MARKER_CACHE,
                     DEPOSIT_ITEMS_TO_CONTAINERS
             );
 

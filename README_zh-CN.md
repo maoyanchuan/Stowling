@@ -19,6 +19,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
   多个不同物品时会直接报错，不会静默选错箱子。
 - 单个储存容器可以配置追加或替换例外。追加规则保留自动分类并增加物品，
   替换规则忽略该容器的自动分类，也用于解决支撑方块与分类物相同的问题。
+- `MARKER_CONTAINER_CONTENTS` 规则从识别区的箱子或木桶读取物品缓存；
+  双联箱最多可为同一储存箱定义 54 种不同的接收物品。
 - 分类模块使用展示物的注册 ID 作为分类。细分类不会把未识别物品塞入其他分类
   容器。
 - 存入模块默认只移动当前任务实际拾取并记录下来的物品。
@@ -44,6 +46,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
   目标容器；未匹配、目标已满或取出失败的物品会留在或退回缓存。
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE`：解析自动展示物标记，把物品 ID 相同的
   缓存物品存入绑定储存区。
+- `REFRESH_CATEGORY_MARKER_CACHE`：打开分类标记箱子或木桶，只读取槽位、
+  不移动物品，并更新持久缓存。
 - `DEPOSIT_ITEMS_TO_CONTAINERS`：只把本次运行拾取的物品存入上次扫描到的容器。
 
 粗分类任务“掉落物入缓存”：
@@ -70,6 +74,17 @@ SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
     cacheRegionId=<缓存区域>
     categoryZoneId=<分类区>
 ```
+
+分类区使用 `MARKER_CONTAINER_CONTENTS` 时，在分类入库前按需要加入：
+
+```text
+REFRESH_CATEGORY_MARKER_CACHE
+    categoryZoneId=<分类区>
+```
+
+只有该模块运行后才会更新分类样本缓存。缓存保存在
+`config/stowling-category-marker-cache.json`；分类排序不会自动刷新，缺少
+缓存时会提示先运行刷新模块。
 
 分类区 A 的手工绑定示例：
 

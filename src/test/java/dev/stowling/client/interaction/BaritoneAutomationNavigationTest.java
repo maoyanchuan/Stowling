@@ -52,6 +52,29 @@ class BaritoneAutomationNavigationTest {
     }
 
     @Test
+    void exactNavigationDoesNotStopAtBlockInteractionRange() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.withinInteractionRange = true;
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation =
+                new BaritoneAutomationNavigation(
+                        service,
+                        () -> new WorldObservation(
+                                true,
+                                true,
+                                "minecraft:overworld",
+                                Optional.of(new BlockPosition(7, 64, 5))
+                        )
+                );
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.start(target);
+        NavigationStatus status = navigation.status(target, 1);
+
+        assertEquals(NavigationStatus.NAVIGATING, status);
+    }
+
+    @Test
     void retriesNearNavigationBeforeReportingFailure() {
         RecordingNavigationService service = new RecordingNavigationService();
         service.navigating = true;

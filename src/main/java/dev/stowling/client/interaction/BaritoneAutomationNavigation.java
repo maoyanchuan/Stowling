@@ -82,7 +82,8 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (!world.connected() || !world.alive() || world.playerPosition().isEmpty()) {
             return NavigationStatus.FAILED;
         }
-        if (navigationService.isWithinInteractionRange(target)) {
+        if (nearNavigation
+                && navigationService.isWithinInteractionRange(target)) {
             return arrive();
         }
         BlockPosition current = world.playerPosition().orElseThrow();

@@ -8,6 +8,7 @@
         observed: document.querySelector("#status-observed"),
         coordinateCount: document.querySelector("#coordinate-count"),
         taskCount: document.querySelector("#task-count"),
+        triggerStatus: document.querySelector("#dashboard-trigger-status"),
         recent: document.querySelector("#recent-tasks"),
         errors: document.querySelector("#dashboard-errors")
     };
@@ -32,10 +33,63 @@
                     : 0);
             elements.taskCount.textContent =
                 String(Array.isArray(tasks?.tasks) ? tasks.tasks.length : 0);
+            renderTriggerStatuses(
+                Array.isArray(runs?.triggers) ? runs.triggers : []
+            );
             renderRuns(Array.isArray(runs?.runs) ? runs.runs : []);
         } catch (error) {
             Stowling.handleError(error, "刷新状态失败");
         }
+    }
+
+    /**
+     * @param {Array<object>} triggers
+     * @returns {void}
+     */
+    function renderTriggerStatuses(triggers) {
+        elements.triggerStatus.replaceChildren();
+        if (triggers.length === 0) {
+            elements.triggerStatus.append(
+                Stowling.emptyState("当前没有后台触发器")
+            );
+            return;
+        }
+        for (const trigger of triggers) {
+            const card = Stowling.element("article", "task-card");
+            card.append(
+                Stowling.element(
+                    "strong",
+                    "",
+                    String(trigger.triggerName || "触发器")
+                ),
+                Stowling.element(
+                    "span",
+                    "module-level-tag",
+                    triggerStateLabel(trigger.state)
+                ),
+                Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    `${trigger.targetTaskName || "目标任务"} · `
+                        + `${trigger.message || ""}`
+                )
+            );
+            elements.triggerStatus.append(card);
+        }
+    }
+
+    /**
+     * @param {string} state
+     * @returns {string}
+     */
+    function triggerStateLabel(state) {
+        const labels = {
+            IDLE: "空闲",
+            RUNNING: "已入队",
+            COOLDOWN: "冷却中",
+            ERROR: "异常"
+        };
+        return labels[state] || String(state || "未知");
     }
 
     /**

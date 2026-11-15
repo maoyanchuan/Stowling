@@ -296,6 +296,7 @@ def test_task_page_supports_independent_task_triggers() -> None:
     assert 'id="trigger-coordinate"' in html
     assert 'id="trigger-food-threshold"' in html
     assert 'id="trigger-list"' in html
+    assert 'id="trigger-status-list"' in html
     assert 'id="task-watch-enabled"' not in html
     assert "watchTask" not in model
     assert "trigger: task.trigger" not in model
@@ -306,8 +307,19 @@ def test_task_page_supports_independent_task_triggers() -> None:
     assert '"/v1/task-triggers"' in tasks
     assert "function renderTriggerList" in tasks
     assert "function renderTriggerEditor" in tasks
+    assert "function renderTriggerStatuses" in tasks
     assert ".trigger-workbench" in styles
     assert "按指定优先级加入现有队列" in html
+
+
+def test_dashboard_has_an_independent_trigger_status_panel() -> None:
+    html = read("index.html")
+    dashboard = read("dashboard.js")
+
+    assert 'id="dashboard-trigger-status"' in html
+    assert "触发器状态" in html
+    assert "renderTriggerStatuses" in dashboard
+    assert "runs.triggers" in dashboard
 
 
 def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:

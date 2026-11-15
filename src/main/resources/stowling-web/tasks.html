@@ -267,6 +267,22 @@
                         </form>
                     </section>
                     <div class="task-monitor">
+                        <section class="panel trigger-status-panel"
+                                 aria-labelledby="trigger-status-title">
+                            <div class="panel-heading">
+                                <div>
+                                    <p class="eyebrow">后台条件</p>
+                                    <h2 id="trigger-status-title">触发器状态</h2>
+                                    <p class="muted section-help queue-help">
+                                        独立显示每个触发器的当前状态，即使没有运行任务
+                                        或等待队列也会持续更新。
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="trigger-status-list" class="card-list"
+                                 aria-live="polite"></div>
+                        </section>
+
                         <section class="panel" aria-labelledby="queue-title">
                             <div class="panel-heading">
                                 <div>

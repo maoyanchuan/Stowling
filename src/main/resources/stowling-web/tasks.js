@@ -70,6 +70,7 @@
         saveTrigger: document.querySelector("#save-trigger-button"),
         discardTrigger: document.querySelector("#discard-trigger-button"),
         deleteTrigger: document.querySelector("#delete-trigger-button"),
+        triggerStatusList: document.querySelector("#trigger-status-list"),
         runtime: document.querySelector("#runtime-list"),
         queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button")
@@ -127,6 +128,7 @@
             if (!state.draft && state.tasks.length > 0) {
                 selectTask(state.tasks[0]);
             }
+            renderTriggerStatuses();
             renderRuntime();
             renderQueue();
         } catch (error) {
@@ -216,9 +218,6 @@
             return;
         }
         for (const trigger of state.triggers) {
-            const status = state.triggerStatuses.find(
-                (entry) => entry.triggerId === trigger.id
-            );
             const target = state.tasks.find(
                 (task) => task.id === trigger.targetTaskId
             );
@@ -246,21 +245,7 @@
                         + Model.priorityLabel(trigger.priority)
                 )
             );
-            if (status?.message) {
-                identity.append(Stowling.element(
-                    "span",
-                    "muted compact-help",
-                    status.message
-                ));
-            }
-            button.append(
-                identity,
-                Stowling.element(
-                    "span",
-                    "module-level-tag trigger-state-tag",
-                    triggerStateLabel(status?.state)
-                )
-            );
+            button.append(identity);
             button.addEventListener("click", () => selectTrigger(trigger));
             elements.triggerList.append(button);
         }
@@ -1089,11 +1074,50 @@
                 ? response.triggers
                 : [];
             renderTriggerList();
+            renderTriggerStatuses();
             renderRuntime();
             renderQueue();
             updateRunActions();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderTriggerStatuses() {
+        elements.triggerStatusList.replaceChildren();
+        if (state.triggerStatuses.length === 0) {
+            elements.triggerStatusList.append(
+                Stowling.emptyState("当前没有后台触发器")
+            );
+            return;
+        }
+        for (const status of state.triggerStatuses) {
+            const card = Stowling.element("article", "task-card");
+            const content = Stowling.element("div");
+            content.append(
+                Stowling.element("strong", "", status.triggerName),
+                Stowling.element(
+                    "span",
+                    "module-level-tag trigger-state-tag",
+                    triggerStateLabel(status.state)
+                ),
+                Stowling.element(
+                    "p",
+                    "muted compact-help",
+                    `目标：${status.targetTaskName} · `
+                        + `${Model.priorityLabel(status.priority)}队列`
+                ),
+                Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    status.message || ""
+                )
+            );
+            card.append(content);
+            elements.triggerStatusList.append(card);
         }
     }
 

@@ -2766,6 +2766,10 @@ body[data-page="tasks"] .task-sidebar {
     font-size: 0.74rem;
 }
 
+.task-monitor .trigger-status-panel {
+    grid-column: 1 / -1;
+}
+
 .module-library-heading {
     padding: 0.25rem 0;
 }

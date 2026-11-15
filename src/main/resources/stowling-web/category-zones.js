@@ -196,14 +196,134 @@
             field("自动识别规则", rule),
             field("忽略支撑方块（每行一个）", ignored)
         );
-        card.append(marker.root, storage.root, recognition);
+        const overrideHeading = Stowling.element(
+            "div",
+            "resource-section-heading"
+        );
+        overrideHeading.append(Stowling.element(
+            "div",
+            "",
+            "容器例外规则"
+        ));
+        const overrideHelp = Stowling.element(
+            "p",
+            "muted compact-help",
+            "追加物品会保留自动分类；替换物品会忽略该箱子的自动分类。"
+        );
+        overrideHeading.append(overrideHelp);
+        const overrides = Stowling.element(
+            "div",
+            "category-override-list"
+        );
+        const overrideReaders = [];
+
+        /**
+         * @param {object} value
+         * @returns {void}
+         */
+        function addOverrideReader(value) {
+            let reader;
+            reader = appendContainerOverride(overrides, value, () => {
+                const index = overrideReaders.indexOf(reader);
+                if (index >= 0) {
+                    overrideReaders.splice(index, 1);
+                }
+            });
+            overrideReaders.push(reader);
+        }
+        const addOverride = Stowling.element(
+            "button",
+            "secondary compact",
+            "添加例外箱子"
+        );
+        addOverride.type = "button";
+        addOverride.addEventListener("click", () => {
+            addOverrideReader(Model.normalizeContainerOverride({
+                storageX: binding.storageFirstX,
+                storageY: binding.storageFirstY,
+                storageZ: binding.storageFirstZ
+            }));
+        });
+        for (const override of binding.containerOverrides) {
+            addOverrideReader(override);
+        }
+        const overrideActions = Stowling.element(
+            "div",
+            "category-binding-actions"
+        );
+        overrideActions.append(addOverride);
+        card.append(
+            marker.root,
+            storage.root,
+            recognition,
+            overrideHeading,
+            overrides,
+            overrideActions
+        );
         host.append(card);
         return () => ({
             ...marker.read(),
             ...storage.read(),
             ruleId: rule.value,
-            ignoredMarkerBlockIds: parseBlockIds(ignored.value)
+            ignoredMarkerBlockIds: parseBlockIds(ignored.value),
+            containerOverrides: overrideReaders.map((reader) => reader.read())
         });
+    }
+
+    /**
+     * @param {HTMLElement} host
+     * @param {object} override
+     * @param {() => void} onRemove
+     * @returns {object}
+     */
+    function appendContainerOverride(host, override, onRemove) {
+        const card = Stowling.element("article", "category-override-card");
+        const mode = document.createElement("select");
+        mode.append(
+            new Option("追加允许物品", "ADD"),
+            new Option("替换自动分类", "REPLACE")
+        );
+        mode.value = override.mode;
+        const itemIds = document.createElement("textarea");
+        itemIds.rows = 2;
+        itemIds.required = true;
+        itemIds.placeholder = "minecraft:oak_planks";
+        itemIds.value = override.itemIds.join("\n");
+        const x = numberInput(override.storageX);
+        const y = numberInput(override.storageY);
+        const z = numberInput(override.storageZ);
+        Stowling.bindCoordinateInputs(x, y, z);
+        const position = Stowling.element("div", "coordinate-axis-row");
+        position.append(field("X", x), field("Y", y), field("Z", z));
+        const remove = Stowling.element(
+            "button",
+            "ghost compact danger-action",
+            "移除例外"
+        );
+        remove.type = "button";
+        remove.addEventListener("click", () => {
+            card.remove();
+            onRemove();
+        });
+        const footer = Stowling.element("div", "category-binding-actions");
+        footer.append(remove);
+        card.append(
+            field("例外箱子坐标", position),
+            field("处理方式", mode),
+            field("物品 ID（每行一个）", itemIds),
+            footer
+        );
+        host.append(card);
+        return {
+            root: card,
+            read: () => ({
+                storageX: Number(x.value),
+                storageY: Number(y.value),
+                storageZ: Number(z.value),
+                mode: mode.value,
+                itemIds: parseBlockIds(itemIds.value)
+            })
+        };
     }
 
     /**

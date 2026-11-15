@@ -16,11 +16,15 @@ public record CategoryBindingRequest(
         int storageSecondY,
         int storageSecondZ,
         String ruleId,
-        List<String> ignoredMarkerBlockIds
+        List<String> ignoredMarkerBlockIds,
+        List<CategoryContainerOverrideRequest> containerOverrides
 ) {
     public CategoryBindingRequest {
         ignoredMarkerBlockIds = ignoredMarkerBlockIds == null
                 ? List.of()
                 : List.copyOf(ignoredMarkerBlockIds);
+        containerOverrides = containerOverrides == null
+                ? List.of()
+                : List.copyOf(containerOverrides);
     }
 }

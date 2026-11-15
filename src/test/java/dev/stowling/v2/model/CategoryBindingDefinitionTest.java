@@ -2,6 +2,7 @@ package dev.stowling.v2.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.stowling.domain.BlockPosition;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,26 @@ class CategoryBindingDefinitionTest {
         assertEquals(
                 List.of("minecraft:stone_bricks", "minecraft:glass"),
                 binding.ignoredMarkerBlockIds()
+        );
+    }
+
+    @Test
+    void normalizesContainerOverrideItemIds() {
+        CategoryContainerOverrideDefinition override =
+                new CategoryContainerOverrideDefinition(
+                        UUID.randomUUID(),
+                        new BlockPosition(8, -40, 1),
+                        CategoryContainerOverrideMode.REPLACE,
+                        List.of(
+                                " Minecraft:Quartz_Block ",
+                                "minecraft:quartz_slab",
+                                "minecraft:quartz_block"
+                        )
+                );
+
+        assertEquals(
+                List.of("minecraft:quartz_block", "minecraft:quartz_slab"),
+                override.itemIds()
         );
     }
 }

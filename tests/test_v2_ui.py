@@ -283,9 +283,14 @@ def test_category_zone_page_uses_automatic_display_bindings() -> None:
     assert "储存区" in javascript
     assert "自动读取展示框、展示架和摆放方块" in javascript
     assert "忽略支撑方块" in javascript
+    assert "容器例外规则" in javascript
+    assert "追加允许物品" in javascript
+    assert "替换自动分类" in javascript
     assert "markerFirstX" in model
     assert "storageSecondZ" in model
     assert "ignoredMarkerBlockIds" in model
+    assert "containerOverrides" in model
+    assert "normalizeContainerOverride" in model
     assert 'Stowling.request("/v1/category-zones")' in javascript
     assert 'Stowling.request("/v1/category-rules")' in javascript
     assert 'id="new-category-zone-form"' in html

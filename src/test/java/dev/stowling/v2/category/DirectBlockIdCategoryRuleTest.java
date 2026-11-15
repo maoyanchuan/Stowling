@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class DirectBlockIdCategoryRuleTest {
@@ -121,5 +124,86 @@ class DirectBlockIdCategoryRuleTest {
 
         assertFalse(result.succeeded());
         assertTrue(result.message().contains("同一列出现多个物品"));
+    }
+
+    @Test
+    void appendsItemsToAnAutomaticallyClassifiedContainer() {
+        DirectBlockIdCategoryRule rule =
+                new DirectBlockIdCategoryRule();
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        CategoryRuleResult result = rule.resolve(
+                List.of(new CategoryMarker(
+                        new BlockPosition(7, -40, 2),
+                        "minecraft:oak_log"
+                )),
+                List.of(chest),
+                List.of(new CategoryContainerOverrideDefinition(
+                        UUID.randomUUID(),
+                        chest.position(),
+                        CategoryContainerOverrideMode.ADD,
+                        List.of("minecraft:oak_planks")
+                ))
+        );
+
+        assertTrue(result.succeeded());
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:oak_log")
+        );
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:oak_planks")
+        );
+    }
+
+    @Test
+    void replacesAmbiguousAutomaticCategoriesForOneContainer() {
+        DirectBlockIdCategoryRule rule =
+                new DirectBlockIdCategoryRule();
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        BlockPosition markerColumn = new BlockPosition(7, -39, 2);
+        CategoryRuleResult result = rule.resolve(
+                List.of(
+                        new CategoryMarker(
+                                markerColumn,
+                                "minecraft:torch",
+                                CategoryMarkerSource.PLACED_ITEM,
+                                -1
+                        ),
+                        new CategoryMarker(
+                                markerColumn,
+                                "minecraft:quartz_block",
+                                CategoryMarkerSource.ITEM_FRAME,
+                                -1
+                        )
+                ),
+                List.of(chest),
+                List.of(new CategoryContainerOverrideDefinition(
+                        UUID.randomUUID(),
+                        chest.position(),
+                        CategoryContainerOverrideMode.REPLACE,
+                        List.of(
+                                "minecraft:quartz_block",
+                                "minecraft:quartz_slab"
+                        )
+                ))
+        );
+
+        assertTrue(result.succeeded());
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:quartz_block")
+        );
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:quartz_slab")
+        );
+        assertFalse(result.categories().containsKey("minecraft:torch"));
     }
 }

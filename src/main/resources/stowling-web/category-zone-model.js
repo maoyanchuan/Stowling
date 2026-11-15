@@ -26,6 +26,28 @@
                 ? value.ignoredMarkerBlockIds
                     .map((blockId) => String(blockId).trim())
                     .filter(Boolean)
+                : [],
+            containerOverrides: Array.isArray(value?.containerOverrides)
+                ? value.containerOverrides.map(normalizeContainerOverride)
+                : []
+        };
+    }
+
+    /**
+     * @param {object} value
+     * @returns {object}
+     */
+    function normalizeContainerOverride(value) {
+        const position = value?.storagePosition || {};
+        return {
+            storageX: Number(position.x ?? value?.storageX ?? 0),
+            storageY: Number(position.y ?? value?.storageY ?? 64),
+            storageZ: Number(position.z ?? value?.storageZ ?? 0),
+            mode: String(value?.mode || "ADD"),
+            itemIds: Array.isArray(value?.itemIds)
+                ? value.itemIds
+                    .map((itemId) => String(itemId).trim())
+                    .filter(Boolean)
                 : []
         };
     }
@@ -71,13 +93,23 @@
                 storageSecondY: Number(binding.storageSecondY),
                 storageSecondZ: Number(binding.storageSecondZ),
                 ruleId: String(binding.ruleId),
-                ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds
+                ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
+                containerOverrides: binding.containerOverrides.map(
+                    (override) => ({
+                        storageX: Number(override.storageX),
+                        storageY: Number(override.storageY),
+                        storageZ: Number(override.storageZ),
+                        mode: String(override.mode),
+                        itemIds: override.itemIds
+                    })
+                )
             }))
         };
     }
 
     window.StowlingCategoryZoneModel = Object.freeze({
         normalizeBinding,
+        normalizeContainerOverride,
         normalizeCategoryZones,
         payload
     });

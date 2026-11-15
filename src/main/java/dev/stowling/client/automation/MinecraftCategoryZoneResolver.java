@@ -114,7 +114,8 @@ public final class MinecraftCategoryZoneResolver
             CategoryRule rule = rules.require(binding.ruleId());
             CategoryRuleResult resolved = rule.resolve(
                     markers,
-                    storageScan.containers()
+                    storageScan.containers(),
+                    binding.containerOverrides()
             );
             if (!resolved.succeeded()) {
                 return CategoryZoneResult.failure(resolved.message());

@@ -22,6 +22,9 @@ by Baritone.
   blocks through their placement item.
 - Each storage column must resolve to exactly one item ID. Configured support
   block IDs are ignored, and conflicting displays fail with a clear error.
+- Per-container exceptions can append extra accepted item IDs or replace the
+  automatic category entirely. Replacement rules bypass display ambiguity for
+  that container.
 - The coarse stage stores all collected drops in cache containers. The fine
   stage withdraws only items that have target categories and deposits them
   into exact category matches.
@@ -92,12 +95,19 @@ marker area:  7 -34 7 through 18 -34 7
 storage area: 7 -34 6 through 18 -34 5
 rule:         automatic display item
 ignored:      minecraft:stone_bricks
+exception:    8 -34 5, ADD, minecraft:oak_planks
 ```
 
 Add one binding per row or storage group. The marker area may be several blocks
 high or wide and may mix placed blocks, supported displays, item frames, and
 shelves. List shared support or background block IDs in the ignored list.
 Every storage column must contain only one distinct displayed item ID.
+
+Container exceptions target one storage position. `ADD` keeps the automatic
+category and adds the listed item IDs. `REPLACE` ignores that container's
+automatic category and accepts only the listed IDs. This is useful for a chest
+that stores a small related group or for a column where the support material
+is also the displayed category.
 
 Detection and scanning are limited to the player's current dimension and
 loaded chunks. Supported ordinary containers are scanned; nested shulker-box

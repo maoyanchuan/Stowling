@@ -2,12 +2,15 @@ package dev.stowling.v2.category;
 
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public final class DirectBlockIdCategoryRule implements CategoryRule {
     public static final String ID = "DIRECT_BLOCK_ID";
@@ -26,12 +29,23 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
             List<CategoryMarker> markers,
             List<ContainerTarget> storageContainers
     ) {
+        return resolve(markers, storageContainers, List.of());
+    }
+
+    @Override
+    public CategoryRuleResult resolve(
+            List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers,
+            List<CategoryContainerOverrideDefinition> overrides
+    ) {
         if (storageContainers.isEmpty()) {
             return CategoryRuleResult.failure("储存区没有可用容器");
         }
-        if (markers.isEmpty()) {
-            return CategoryRuleResult.failure("分类物识别区没有可识别展示物");
-        }
+        Set<BlockPosition> replacedPositions = overrides.stream()
+                .filter(override ->
+                        override.mode() == CategoryContainerOverrideMode.REPLACE)
+                .map(CategoryContainerOverrideDefinition::storagePosition)
+                .collect(Collectors.toUnmodifiableSet());
         PairingAxis axis = pairingAxis(storageContainers);
         Map<String, List<ContainerTarget>> categories =
                 new LinkedHashMap<>();
@@ -43,7 +57,7 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
                             axis,
                             marker.position(),
                             container.position()
-                    ))
+                    ) && !replacedPositions.contains(container.position()))
                     .toList();
             if (matching.isEmpty()) {
                 continue;
@@ -75,9 +89,30 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
                 );
             }
         }
+        for (CategoryContainerOverrideDefinition override : overrides) {
+            List<ContainerTarget> matching = storageContainers.stream()
+                    .filter(container -> container.position().equals(
+                            override.storagePosition()
+                    ))
+                    .toList();
+            if (matching.isEmpty()) {
+                return CategoryRuleResult.failure(
+                        "容器例外规则没有匹配到储存区容器 "
+                                + override.storagePosition()
+                );
+            }
+            for (ContainerTarget container : matching) {
+                if (override.mode() == CategoryContainerOverrideMode.REPLACE) {
+                    removeContainer(categories, container);
+                }
+                for (String itemId : override.itemIds()) {
+                    addCategory(categories, itemId, container);
+                }
+            }
+        }
         if (categories.isEmpty()) {
             return CategoryRuleResult.failure(
-                    "分类物识别区没有与储存区列对应的展示物"
+                    "没有可分配给储存区容器的分类物品"
             );
         }
         Map<String, List<ContainerTarget>> immutable = new LinkedHashMap<>();
@@ -85,6 +120,30 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
                 immutable.put(categoryId, List.copyOf(containers))
         );
         return CategoryRuleResult.success(immutable);
+    }
+
+    private static void addCategory(
+            Map<String, List<ContainerTarget>> categories,
+            String itemId,
+            ContainerTarget container
+    ) {
+        List<ContainerTarget> containers = categories.computeIfAbsent(
+                itemId,
+                ignored -> new ArrayList<>()
+        );
+        if (!containers.contains(container)) {
+            containers.add(container);
+        }
+    }
+
+    private static void removeContainer(
+            Map<String, List<ContainerTarget>> categories,
+            ContainerTarget container
+    ) {
+        for (List<ContainerTarget> containers : categories.values()) {
+            containers.removeIf(container::equals);
+        }
+        categories.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     @Override

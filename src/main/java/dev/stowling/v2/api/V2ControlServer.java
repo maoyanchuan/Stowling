@@ -16,6 +16,7 @@ import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.control.CoordinateInUseException;
 import dev.stowling.v2.control.CategoryBindingRequest;
+import dev.stowling.v2.control.CategoryContainerOverrideRequest;
 import dev.stowling.v2.control.CategoryZoneRequest;
 import dev.stowling.v2.control.CategoryZoneUpdateRequest;
 import dev.stowling.v2.control.CoordinateRequest;
@@ -510,7 +511,8 @@ public final class V2ControlServer implements AutoCloseable {
                             "storageSecondY",
                             "storageSecondZ",
                             "ruleId",
-                            "ignoredMarkerBlockIds"
+                            "ignoredMarkerBlockIds",
+                            "containerOverrides"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -542,7 +544,38 @@ public final class V2ControlServer implements AutoCloseable {
                     integer(binding, "storageSecondY"),
                     integer(binding, "storageSecondZ"),
                     string(binding, "ruleId"),
-                    stringArray(binding, "ignoredMarkerBlockIds")
+                    stringArray(binding, "ignoredMarkerBlockIds"),
+                    containerOverrideRequests(binding)
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<CategoryContainerOverrideRequest>
+            containerOverrideRequests(JsonObject binding) {
+        JsonElement value = binding.get("containerOverrides");
+        if (value == null || value.isJsonNull()) {
+            return List.of();
+        }
+        if (!value.isJsonArray()) {
+            throw invalid("containerOverrides must be an array");
+        }
+        List<CategoryContainerOverrideRequest> result = new ArrayList<>();
+        for (JsonElement item : value.getAsJsonArray()) {
+            JsonObject override = jsonObject(item, "container override");
+            requireFields(override, Set.of(
+                    "storageX",
+                    "storageY",
+                    "storageZ",
+                    "mode",
+                    "itemIds"
+            ));
+            result.add(new CategoryContainerOverrideRequest(
+                    integer(override, "storageX"),
+                    integer(override, "storageY"),
+                    integer(override, "storageZ"),
+                    string(override, "mode"),
+                    stringArray(override, "itemIds")
             ));
         }
         return List.copyOf(result);

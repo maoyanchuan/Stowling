@@ -1,6 +1,7 @@
 package dev.stowling.v2.category;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import java.util.List;
 
 public interface CategoryRule {
@@ -14,6 +15,14 @@ public interface CategoryRule {
             List<CategoryMarker> markers,
             List<ContainerTarget> storageContainers
     );
+
+    default CategoryRuleResult resolve(
+            List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers,
+            List<CategoryContainerOverrideDefinition> overrides
+    ) {
+        return resolve(markers, storageContainers);
+    }
 
     boolean matchesItem(String categoryId, String itemId);
 }

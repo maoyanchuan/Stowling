@@ -597,6 +597,21 @@ section[id] {
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
 }
 
+.category-override-list {
+    display: grid;
+    gap: 0.75rem;
+    grid-column: 1 / -1;
+}
+
+.category-override-card {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.28);
+}
+
 .config-heading {
     align-items: center;
 }
@@ -1207,6 +1222,7 @@ select[aria-invalid="true"] {
     .editor-card,
     .inventory-card,
     .category-binding-card,
+    .category-override-card,
     .category-zone-binding-list .category-binding-section,
     #new-category-zone-form {
         background: rgba(255, 255, 255, 0.035);

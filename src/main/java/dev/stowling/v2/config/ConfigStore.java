@@ -159,12 +159,58 @@ public final class ConfigStore {
                                 "markerArea",
                                 "storageArea",
                                 "ruleId",
-                                "ignoredMarkerBlockIds"
+                                "ignoredMarkerBlockIds",
+                                "containerOverrides"
                         ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );
                 requireArea(binding.get("markerArea"), "markerArea");
                 requireArea(binding.get("storageArea"), "storageArea");
+                requireContainerOverrides(binding.get("containerOverrides"));
+            }
+        }
+    }
+
+    private static void requireContainerOverrides(JsonElement value) {
+        if (value == null || value.isJsonNull()) {
+            return;
+        }
+        for (JsonElement item
+                : requireArray(value, "containerOverrides")) {
+            JsonObject override = requireObject(
+                    item,
+                    "container override"
+            );
+            requireExactFields(
+                    override,
+                    Set.of(
+                            "id",
+                            "storagePosition",
+                            "mode",
+                            "itemIds"
+                    )
+            );
+            requireExactFields(
+                    requireObject(
+                            override.get("storagePosition"),
+                            "storagePosition"
+                    ),
+                    Set.of("x", "y", "z")
+            );
+            requireStringArray(override.get("itemIds"), "itemIds");
+        }
+    }
+
+    private static void requireStringArray(
+            JsonElement value,
+            String name
+    ) {
+        for (JsonElement item : requireArray(value, name)) {
+            if (!item.isJsonPrimitive()
+                    || !item.getAsJsonPrimitive().isString()) {
+                throw new V2ValidationException(
+                        name + " must contain strings"
+                );
             }
         }
     }

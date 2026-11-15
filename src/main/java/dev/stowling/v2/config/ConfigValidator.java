@@ -1,9 +1,11 @@
 package dev.stowling.v2.config;
 
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
@@ -295,6 +297,7 @@ public final class ConfigValidator {
         CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
         Map<UUID, CategoryZoneDefinition> result = new LinkedHashMap<>();
         Set<UUID> bindingIds = new HashSet<>();
+        Set<UUID> overrideIds = new HashSet<>();
         List<AreaBounds> storageAreas = new ArrayList<>();
         for (CategoryZoneDefinition zone : categoryZones) {
             if (result.putIfAbsent(zone.id(), zone) != null) {
@@ -319,6 +322,28 @@ public final class ConfigValidator {
                     );
                 }
                 storageAreas.add(binding.storageArea());
+                Set<BlockPosition> overridePositions = new HashSet<>();
+                for (CategoryContainerOverrideDefinition override
+                        : binding.containerOverrides()) {
+                    if (!overrideIds.add(override.id())) {
+                        throw new V2ValidationException(
+                                "duplicate container override id"
+                        );
+                    }
+                    if (!contains(
+                            binding.storageArea(),
+                            override.storagePosition()
+                    )) {
+                        throw new V2ValidationException(
+                                "container override must be inside storage area"
+                        );
+                    }
+                    if (!overridePositions.add(override.storagePosition())) {
+                        throw new V2ValidationException(
+                                "duplicate container override position"
+                        );
+                    }
+                }
             }
         }
         return Map.copyOf(result);
@@ -342,6 +367,18 @@ public final class ConfigValidator {
                 && first.maxY() >= second.minY()
                 && first.minZ() <= second.maxZ()
                 && first.maxZ() >= second.minZ();
+    }
+
+    private static boolean contains(
+            AreaBounds area,
+            BlockPosition position
+    ) {
+        return position.x() >= area.minX()
+                && position.x() <= area.maxX()
+                && position.y() >= area.minY()
+                && position.y() <= area.maxY()
+                && position.z() >= area.minZ()
+                && position.z() <= area.maxZ();
     }
 
     private static void requireRegion(

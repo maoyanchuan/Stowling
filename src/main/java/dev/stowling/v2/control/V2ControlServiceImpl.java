@@ -7,9 +7,12 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2ConfigSnapshot;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
@@ -561,8 +564,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
         for (int index = 0; index < requested.size(); index++) {
             CategoryBindingRequest binding = requested.get(index);
             categoryRules.require(binding.ruleId());
-            UUID id = index < existing.size()
-                    ? existing.get(index).id()
+            CategoryBindingDefinition existingBinding =
+                    index < existing.size() ? existing.get(index) : null;
+            UUID id = existingBinding != null
+                    ? existingBinding.id()
                     : UUID.randomUUID();
             result.add(new CategoryBindingDefinition(
                     id,
@@ -583,10 +588,62 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             binding.storageSecondZ()
                     ),
                     binding.ruleId(),
-                    binding.ignoredMarkerBlockIds()
+                    binding.ignoredMarkerBlockIds(),
+                    containerOverrides(
+                            binding.containerOverrides(),
+                            existingBinding
+                    )
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static List<CategoryContainerOverrideDefinition> containerOverrides(
+            List<CategoryContainerOverrideRequest> requested,
+            CategoryBindingDefinition existing
+    ) {
+        List<CategoryContainerOverrideDefinition> existingOverrides =
+                existing == null
+                        ? List.of()
+                        : existing.containerOverrides();
+        List<CategoryContainerOverrideDefinition> result =
+                new ArrayList<>();
+        for (int index = 0; index < requested.size(); index++) {
+            CategoryContainerOverrideRequest override = requested.get(index);
+            if (override.itemIds().isEmpty()) {
+                throw new V2ValidationException(
+                        "container override requires at least one item id"
+                );
+            }
+            UUID id = index < existingOverrides.size()
+                    ? existingOverrides.get(index).id()
+                    : UUID.randomUUID();
+            result.add(new CategoryContainerOverrideDefinition(
+                    id,
+                    new BlockPosition(
+                            override.storageX(),
+                            override.storageY(),
+                            override.storageZ()
+                    ),
+                    parseOverrideMode(override.mode()),
+                    override.itemIds()
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static CategoryContainerOverrideMode parseOverrideMode(
+            String value
+    ) {
+        try {
+            return CategoryContainerOverrideMode.valueOf(
+                    value.trim().toUpperCase(Locale.ROOT)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException(
+                    "container override mode is not supported"
+            );
+        }
     }
 
     private static UUID stepId(String value) {

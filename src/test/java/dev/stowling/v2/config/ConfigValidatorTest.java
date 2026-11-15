@@ -3,9 +3,12 @@ package dev.stowling.v2.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
+import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
@@ -407,6 +410,39 @@ class ConfigValidatorTest {
                         List.of(task("Bad volume", badVolume)),
                         List.of(region)
                 ))
+        );
+    }
+
+    @Test
+    void rejectsContainerOverridesOutsideTheStorageArea() {
+        CategoryBindingDefinition binding = new CategoryBindingDefinition(
+                UUID.randomUUID(),
+                new AreaBounds(7, -34, 7, 18, -34, 7),
+                new AreaBounds(7, -34, 5, 18, -34, 6),
+                "DIRECT_BLOCK_ID",
+                List.of(),
+                List.of(new CategoryContainerOverrideDefinition(
+                        UUID.randomUUID(),
+                        new BlockPosition(8, -34, 1),
+                        CategoryContainerOverrideMode.ADD,
+                        List.of("minecraft:oak_planks")
+                ))
+        );
+        AppConfig config = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new CategoryZoneDefinition(
+                        UUID.randomUUID(),
+                        "A",
+                        List.of(binding)
+                ))
+        );
+
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(config)
         );
     }
 

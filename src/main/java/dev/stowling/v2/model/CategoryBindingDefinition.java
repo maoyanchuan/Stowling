@@ -10,7 +10,8 @@ public record CategoryBindingDefinition(
         AreaBounds markerArea,
         AreaBounds storageArea,
         String ruleId,
-        List<String> ignoredMarkerBlockIds
+        List<String> ignoredMarkerBlockIds,
+        List<CategoryContainerOverrideDefinition> containerOverrides
 ) {
     public CategoryBindingDefinition {
         id = Objects.requireNonNull(id, "id");
@@ -18,6 +19,26 @@ public record CategoryBindingDefinition(
         storageArea = Objects.requireNonNull(storageArea, "storageArea");
         ruleId = requireText(ruleId, "ruleId");
         ignoredMarkerBlockIds = normalizeBlockIds(ignoredMarkerBlockIds);
+        containerOverrides = containerOverrides == null
+                ? List.of()
+                : List.copyOf(containerOverrides);
+    }
+
+    public CategoryBindingDefinition(
+            UUID id,
+            AreaBounds markerArea,
+            AreaBounds storageArea,
+            String ruleId,
+            List<String> ignoredMarkerBlockIds
+    ) {
+        this(
+                id,
+                markerArea,
+                storageArea,
+                ruleId,
+                ignoredMarkerBlockIds,
+                List.of()
+        );
     }
 
     public CategoryBindingDefinition(
@@ -26,7 +47,7 @@ public record CategoryBindingDefinition(
             AreaBounds storageArea,
             String ruleId
     ) {
-        this(id, markerArea, storageArea, ruleId, List.of());
+        this(id, markerArea, storageArea, ruleId, List.of(), List.of());
     }
 
     private static String requireText(String value, String field) {

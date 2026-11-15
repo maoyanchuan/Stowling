@@ -422,6 +422,16 @@ class V2ControlServerTest {
                             .get(0)
                             .getAsString()
             );
+            JsonObject override = binding.getAsJsonArray("containerOverrides")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals("ADD", override.get("mode").getAsString());
+            assertEquals(
+                    "minecraft:oak_planks",
+                    override.getAsJsonArray("itemIds")
+                            .get(0)
+                            .getAsString()
+            );
 
             HttpResponse<String> rules = fixture.send(
                     "/v1/category-rules",
@@ -450,7 +460,11 @@ class V2ControlServerTest {
                             "storageFirstX":4,"storageFirstY":5,"storageFirstZ":6,
                             "storageSecondX":4,"storageSecondY":5,"storageSecondZ":6,
                             "ruleId":"DIRECT_BLOCK_ID",
-                            "ignoredMarkerBlockIds":["minecraft:glass"]}]}
+                            "ignoredMarkerBlockIds":["minecraft:glass"],
+                            "containerOverrides":[{
+                            "storageX":4,"storageY":5,"storageZ":6,
+                            "mode":"REPLACE",
+                            "itemIds":["minecraft:quartz_block"]}]}]}
                             """.formatted(revision),
                     true
             );
@@ -512,7 +526,11 @@ class V2ControlServerTest {
                 "storageFirstX":7,"storageFirstY":-34,"storageFirstZ":5,
                 "storageSecondX":18,"storageSecondY":-34,"storageSecondZ":6,
                 "ruleId":"DIRECT_BLOCK_ID",
-                "ignoredMarkerBlockIds":["minecraft:stone_bricks"]}]}
+                "ignoredMarkerBlockIds":["minecraft:stone_bricks"],
+                "containerOverrides":[{
+                "storageX":8,"storageY":-34,"storageZ":5,
+                "mode":"ADD",
+                "itemIds":["minecraft:oak_planks"]}]}]}
                 """.formatted(name);
     }
 

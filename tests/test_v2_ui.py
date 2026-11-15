@@ -371,3 +371,40 @@ def test_legacy_pickup_region_container_and_schedule_entries_are_gone() -> None:
         "触发器",
     ):
         assert removed not in retained
+
+
+def test_pages_share_console_heading_with_contextual_subtitles() -> None:
+    pages = (
+        ("index.html", "状态概览"),
+        ("coordinates.html", "坐标管理"),
+        ("tasks.html", "任务管理"),
+        ("category-zones.html", "分类区管理"),
+        ("storage.html", "库存查询"),
+    )
+    for name, label in pages:
+        html = read(name)
+        header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+        assert "<h1>Stowling 控制台</h1>" in header
+        assert f"<p>{label} · " in header
+        assert f"<title>{label} · Stowling</title>" in html
+
+
+def test_header_and_content_share_responsive_page_width() -> None:
+    styles = read("styles.css")
+
+    assert "--page-max-width: 1420px;" in styles
+    assert "--page-gutter: 1rem;" in styles
+    assert (
+        ".topbar,\nmain {\n"
+        "    width: min(var(--page-max-width), calc(100% - 2 * var(--page-gutter)));\n"
+        "    margin: 0 auto;\n}"
+    ) in styles
+    assert (
+        "@media (max-width: 760px) {\n"
+        "    :root {\n"
+        "        --page-gutter: 0.5rem;\n"
+        "    }"
+    ) in styles
+    for page in ("dashboard", "coordinates", "tasks", "category-zones", "storage"):
+        assert f'body[data-page="{page}"] main' not in styles
+        assert f'main[data-page="{page}"]' not in styles

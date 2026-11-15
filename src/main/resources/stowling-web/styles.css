@@ -13,6 +13,8 @@
     --danger: #a13d37;
     --shadow: 0 18px 50px rgba(32, 56, 40, 0.1);
     --radius: 18px;
+    --page-max-width: 1420px;
+    --page-gutter: 1rem;
     font-family: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
     color: var(--text);
     background: var(--bg);
@@ -80,12 +82,16 @@ code {
     background: rgba(38, 112, 75, 0.09);
 }
 
+.topbar,
+main {
+    width: min(var(--page-max-width), calc(100% - 2 * var(--page-gutter)));
+    margin: 0 auto;
+}
+
 .topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: min(1180px, calc(100% - 2rem));
-    margin: 0 auto;
     padding: 1.4rem 0 1rem;
 }
 
@@ -164,8 +170,6 @@ h2 {
 }
 
 main {
-    width: min(1180px, calc(100% - 2rem));
-    margin: 0 auto;
     padding-bottom: 4rem;
 }
 
@@ -1118,9 +1122,8 @@ select[aria-invalid="true"] {
 }
 
 @media (max-width: 760px) {
-    .topbar,
-    main {
-        width: min(100% - 1rem, 1180px);
+    :root {
+        --page-gutter: 0.5rem;
     }
 
     .brand p {
@@ -2089,17 +2092,6 @@ body[data-page="tasks"] .panel {
 
     .resource-list-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (min-width: 1180px) {
-    body[data-page="tasks"] main,
-    body[data-page="coordinates"] main {
-        width: min(1420px, calc(100% - 2rem));
-    }
-
-    body[data-page="tasks"] .workspace {
-        grid-template-columns: 280px minmax(0, 1fr);
     }
 }
 

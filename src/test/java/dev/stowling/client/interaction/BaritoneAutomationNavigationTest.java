@@ -7,6 +7,7 @@ import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.WorldObservation;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class BaritoneAutomationNavigationTest {
@@ -28,11 +29,37 @@ class BaritoneAutomationNavigationTest {
         assertNull(service.exactTarget);
     }
 
+    @Test
+    void retriesAnotherNearbyStandBeforeFailing() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.nextNearbyAvailable = true;
+        BaritoneAutomationNavigation navigation =
+                new BaritoneAutomationNavigation(
+                        service,
+                        () -> new WorldObservation(
+                                true,
+                                true,
+                                "minecraft:overworld",
+                                Optional.of(new BlockPosition(100, 64, 100))
+                        )
+                );
+        BlockPosition target = new BlockPosition(7, -40, 1);
+
+        navigation.startNear(target, 4);
+        NavigationStatus status = navigation.status(target, 4);
+
+        assertEquals(NavigationStatus.NAVIGATING, status);
+        assertEquals(1, service.nextNearbyCalls);
+        assertEquals(NavigationStatus.FAILED, navigation.status(target, 4));
+    }
+
     private static final class RecordingNavigationService
             implements NavigationService {
         private BlockPosition exactTarget;
         private BlockPosition nearTarget;
         private int nearRadius;
+        private int nextNearbyCalls;
+        private boolean nextNearbyAvailable;
 
         @Override
         public void navigateTo(BlockPosition target) {
@@ -43,6 +70,14 @@ class BaritoneAutomationNavigationTest {
         public void navigateToNear(BlockPosition target, int radius) {
             nearTarget = target;
             nearRadius = radius;
+        }
+
+        @Override
+        public boolean navigateToNextNear() {
+            nextNearbyCalls++;
+            boolean available = nextNearbyAvailable;
+            nextNearbyAvailable = false;
+            return available;
         }
 
         @Override

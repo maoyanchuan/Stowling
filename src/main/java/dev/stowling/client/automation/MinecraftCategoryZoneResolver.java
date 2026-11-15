@@ -11,6 +11,7 @@ import dev.stowling.v2.category.CategoryRule;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryRuleResult;
 import dev.stowling.v2.category.CategoryMarker;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -25,6 +26,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.ShelfBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.entity.EntityTypeTest;
+import net.minecraft.world.phys.AABB;
 
 public final class MinecraftCategoryZoneResolver
         implements CategoryZonePort {
@@ -93,7 +100,8 @@ public final class MinecraftCategoryZoneResolver
             }
             List<CategoryMarker> markers = markers(
                     level,
-                    binding.markerArea()
+                    binding.markerArea(),
+                    Set.copyOf(binding.ignoredMarkerBlockIds())
             );
             ContainerScanResult storageScan = containerRegions.scan(
                     asRegion(binding),
@@ -142,7 +150,8 @@ public final class MinecraftCategoryZoneResolver
 
     private static List<CategoryMarker> markers(
             ClientLevel level,
-            AreaBounds area
+            AreaBounds area,
+            Set<String> ignoredBlockIds
     ) {
         List<CategoryMarker> result = new ArrayList<>();
         for (long x = area.minX(); x <= area.maxX(); x++) {
@@ -153,24 +162,123 @@ public final class MinecraftCategoryZoneResolver
                             (int) y,
                             (int) z
                     );
-                    if (!level.isLoaded(position)
-                            || level.getBlockState(position).isAir()) {
+                    if (!level.isLoaded(position)) {
                         continue;
                     }
-                    result.add(new CategoryMarker(
-                            new BlockPosition(
-                                    position.getX(),
-                                    position.getY(),
-                                    position.getZ()
-                            ),
-                            BuiltInRegistries.BLOCK.getKey(
-                                    level.getBlockState(position).getBlock()
-                            ).toString()
-                    ));
+                    appendBlockMarkers(
+                            level,
+                            position,
+                            ignoredBlockIds,
+                            result
+                    );
                 }
             }
         }
+        appendItemFrameMarkers(level, area, result);
         return List.copyOf(result);
+    }
+
+    private static void appendBlockMarkers(
+            ClientLevel level,
+            BlockPos position,
+            Set<String> ignoredBlockIds,
+            List<CategoryMarker> result
+    ) {
+        BlockState state = level.getBlockState(position);
+        if (state.isAir()) {
+            return;
+        }
+        if (level.getBlockEntity(position) instanceof ShelfBlockEntity shelf) {
+            List<ItemStack> items = shelf.getItems();
+            for (int slot = 0; slot < items.size(); slot++) {
+                appendItemMarker(
+                        result,
+                        position,
+                        items.get(slot),
+                        CategoryMarkerSource.SHELF,
+                        slot
+                );
+            }
+            return;
+        }
+        String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock())
+                .toString();
+        if (ignoredBlockIds.contains(blockId)) {
+            return;
+        }
+        appendItemMarker(
+                result,
+                position,
+                state.getCloneItemStack(level, position, false),
+                CategoryMarkerSource.PLACED_ITEM,
+                -1
+        );
+    }
+
+    private static void appendItemFrameMarkers(
+            ClientLevel level,
+            AreaBounds area,
+            List<CategoryMarker> result
+    ) {
+        AABB searchArea = new AABB(
+                area.minX(),
+                area.minY(),
+                area.minZ(),
+                area.maxX() + 1.0,
+                area.maxY() + 1.0,
+                area.maxZ() + 1.0
+        );
+        List<ItemFrame> frames = level.getEntities(
+                EntityTypeTest.forClass(ItemFrame.class),
+                searchArea,
+                frame -> frame.isAlive()
+                        && !frame.isRemoved()
+                        && !frame.getItem().isEmpty()
+        );
+        for (ItemFrame frame : frames) {
+            BlockPos position = frame.blockPosition();
+            if (!contains(area, position)) {
+                continue;
+            }
+            appendItemMarker(
+                    result,
+                    position,
+                    frame.getItem(),
+                    CategoryMarkerSource.ITEM_FRAME,
+                    -1
+            );
+        }
+    }
+
+    private static void appendItemMarker(
+            List<CategoryMarker> result,
+            BlockPos position,
+            ItemStack stack,
+            CategoryMarkerSource source,
+            int slotIndex
+    ) {
+        if (stack.isEmpty()) {
+            return;
+        }
+        result.add(new CategoryMarker(
+                new BlockPosition(
+                        position.getX(),
+                        position.getY(),
+                        position.getZ()
+                ),
+                BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
+                source,
+                slotIndex
+        ));
+    }
+
+    private static boolean contains(AreaBounds area, BlockPos position) {
+        return position.getX() >= area.minX()
+                && position.getX() <= area.maxX()
+                && position.getY() >= area.minY()
+                && position.getY() <= area.maxY()
+                && position.getZ() >= area.minZ()
+                && position.getZ() <= area.maxZ();
     }
 
     private static RegionDefinition asRegion(

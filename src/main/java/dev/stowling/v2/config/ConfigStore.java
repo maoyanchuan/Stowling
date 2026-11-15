@@ -152,8 +152,15 @@ public final class ConfigStore {
                         bindingValue,
                         "category binding"
                 );
-                requireExactFields(
+                requireFields(
                         binding,
+                        Set.of(
+                                "id",
+                                "markerArea",
+                                "storageArea",
+                                "ruleId",
+                                "ignoredMarkerBlockIds"
+                        ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );
                 requireArea(binding.get("markerArea"), "markerArea");

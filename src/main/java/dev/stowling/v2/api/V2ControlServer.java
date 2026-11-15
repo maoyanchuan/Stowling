@@ -494,21 +494,40 @@ public final class V2ControlServer implements AutoCloseable {
         List<CategoryBindingRequest> result = new ArrayList<>();
         for (JsonElement value : array(json, "bindings")) {
             JsonObject binding = jsonObject(value, "binding");
-            requireFields(binding, Set.of(
-                    "markerFirstX",
-                    "markerFirstY",
-                    "markerFirstZ",
-                    "markerSecondX",
-                    "markerSecondY",
-                    "markerSecondZ",
-                    "storageFirstX",
-                    "storageFirstY",
-                    "storageFirstZ",
-                    "storageSecondX",
-                    "storageSecondY",
-                    "storageSecondZ",
-                    "ruleId"
-            ));
+            requireFieldsAny(
+                    binding,
+                    Set.of(
+                            "markerFirstX",
+                            "markerFirstY",
+                            "markerFirstZ",
+                            "markerSecondX",
+                            "markerSecondY",
+                            "markerSecondZ",
+                            "storageFirstX",
+                            "storageFirstY",
+                            "storageFirstZ",
+                            "storageSecondX",
+                            "storageSecondY",
+                            "storageSecondZ",
+                            "ruleId",
+                            "ignoredMarkerBlockIds"
+                    ),
+                    Set.of(
+                            "markerFirstX",
+                            "markerFirstY",
+                            "markerFirstZ",
+                            "markerSecondX",
+                            "markerSecondY",
+                            "markerSecondZ",
+                            "storageFirstX",
+                            "storageFirstY",
+                            "storageFirstZ",
+                            "storageSecondX",
+                            "storageSecondY",
+                            "storageSecondZ",
+                            "ruleId"
+                    )
+            );
             result.add(new CategoryBindingRequest(
                     integer(binding, "markerFirstX"),
                     integer(binding, "markerFirstY"),
@@ -522,7 +541,8 @@ public final class V2ControlServer implements AutoCloseable {
                     integer(binding, "storageSecondX"),
                     integer(binding, "storageSecondY"),
                     integer(binding, "storageSecondZ"),
-                    string(binding, "ruleId")
+                    string(binding, "ruleId"),
+                    stringArray(binding, "ignoredMarkerBlockIds")
             ));
         }
         return List.copyOf(result);
@@ -639,6 +659,29 @@ public final class V2ControlServer implements AutoCloseable {
             throw invalid(key + " must be an array");
         }
         return value.getAsJsonArray();
+    }
+
+    private static List<String> stringArray(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || value.isJsonNull()) {
+            return List.of();
+        }
+        if (!value.isJsonArray()) {
+            throw invalid(key + " must be an array");
+        }
+        List<String> result = new ArrayList<>();
+        for (JsonElement item : value.getAsJsonArray()) {
+            if (!item.isJsonPrimitive()
+                    || !item.getAsJsonPrimitive().isString()) {
+                throw invalid(key + " must contain strings");
+            }
+            String text = item.getAsString().trim();
+            if (text.isEmpty()) {
+                throw invalid(key + " must not contain blank values");
+            }
+            result.add(text);
+        }
+        return List.copyOf(result);
     }
 
     private static String string(JsonObject json, String key) {

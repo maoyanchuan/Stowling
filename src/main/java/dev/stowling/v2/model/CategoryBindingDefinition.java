@@ -1,5 +1,7 @@
 package dev.stowling.v2.model;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -7,13 +9,24 @@ public record CategoryBindingDefinition(
         UUID id,
         AreaBounds markerArea,
         AreaBounds storageArea,
-        String ruleId
+        String ruleId,
+        List<String> ignoredMarkerBlockIds
 ) {
     public CategoryBindingDefinition {
         id = Objects.requireNonNull(id, "id");
         markerArea = Objects.requireNonNull(markerArea, "markerArea");
         storageArea = Objects.requireNonNull(storageArea, "storageArea");
         ruleId = requireText(ruleId, "ruleId");
+        ignoredMarkerBlockIds = normalizeBlockIds(ignoredMarkerBlockIds);
+    }
+
+    public CategoryBindingDefinition(
+            UUID id,
+            AreaBounds markerArea,
+            AreaBounds storageArea,
+            String ruleId
+    ) {
+        this(id, markerArea, storageArea, ruleId, List.of());
     }
 
     private static String requireText(String value, String field) {
@@ -23,5 +36,16 @@ public record CategoryBindingDefinition(
             throw new IllegalArgumentException(field + " must not be blank");
         }
         return trimmed;
+    }
+
+    private static List<String> normalizeBlockIds(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+                .map(value -> requireText(value, "ignored block id")
+                        .toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
     }
 }

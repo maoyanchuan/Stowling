@@ -153,7 +153,7 @@
             Stowling.element(
                 "p",
                 "muted compact-help",
-                "同一列的分类方块决定该列箱子的物品类型。"
+                "自动读取展示框、展示架和摆放方块，每列只识别一个物品。"
             )
         );
         wrapper.append(text);
@@ -184,14 +184,39 @@
             rule.append(new Option(definition.name, definition.id));
         }
         rule.value = binding.ruleId;
-        const ruleField = field("识别规则", rule);
-        card.append(marker.root, storage.root, ruleField);
+        const ignored = document.createElement("textarea");
+        ignored.rows = 2;
+        ignored.placeholder = "minecraft:stone_bricks";
+        ignored.value = binding.ignoredMarkerBlockIds.join("\n");
+        const recognition = Stowling.element(
+            "div",
+            "category-recognition-fields"
+        );
+        recognition.append(
+            field("自动识别规则", rule),
+            field("忽略支撑方块（每行一个）", ignored)
+        );
+        card.append(marker.root, storage.root, recognition);
         host.append(card);
         return () => ({
             ...marker.read(),
             ...storage.read(),
-            ruleId: rule.value
+            ruleId: rule.value,
+            ignoredMarkerBlockIds: parseBlockIds(ignored.value)
         });
+    }
+
+    /**
+     * @param {string} value
+     * @returns {string[]}
+     */
+    function parseBlockIds(value) {
+        return [...new Set(
+            value
+                .split(/[\s,]+/)
+                .map((blockId) => blockId.trim())
+                .filter(Boolean)
+        )];
     }
 
     /**

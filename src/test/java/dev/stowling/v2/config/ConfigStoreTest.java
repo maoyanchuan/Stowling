@@ -103,6 +103,43 @@ class ConfigStoreTest {
     }
 
     @Test
+    void keepsCategoryBindingsThatPredateIgnoredSupportBlocks() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 7,
+                    "coordinates": [],
+                    "tasks": [],
+                    "categoryZones": [{
+                        "id": "00000000-0000-0000-0000-000000000002",
+                        "name": "A",
+                        "bindings": [{
+                            "id": "00000000-0000-0000-0000-000000000003",
+                            "markerArea": {
+                                "firstX": 7, "firstY": -34, "firstZ": 7,
+                                "secondX": 18, "secondY": -34, "secondZ": 7
+                            },
+                            "storageArea": {
+                                "firstX": 7, "firstY": -34, "firstZ": 5,
+                                "secondX": 18, "secondY": -34, "secondZ": 6
+                            },
+                            "ruleId": "DIRECT_BLOCK_ID"
+                        }]
+                    }]
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        assertTrue(store.loadOrReset().config().categoryZones()
+                .getFirst()
+                .bindings()
+                .getFirst()
+                .ignoredMarkerBlockIds()
+                .isEmpty());
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
+    }
+
+    @Test
     void resetsSchemaSevenThatContainsLegacyFields() throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """

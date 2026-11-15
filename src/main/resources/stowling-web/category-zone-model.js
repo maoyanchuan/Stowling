@@ -21,7 +21,12 @@
             storageSecondX: Number(storage.secondX ?? 0),
             storageSecondY: Number(storage.secondY ?? 64),
             storageSecondZ: Number(storage.secondZ ?? 0),
-            ruleId: String(value?.ruleId || "DIRECT_BLOCK_ID")
+            ruleId: String(value?.ruleId || "DIRECT_BLOCK_ID"),
+            ignoredMarkerBlockIds: Array.isArray(value?.ignoredMarkerBlockIds)
+                ? value.ignoredMarkerBlockIds
+                    .map((blockId) => String(blockId).trim())
+                    .filter(Boolean)
+                : []
         };
     }
 
@@ -65,7 +70,8 @@
                 storageSecondX: Number(binding.storageSecondX),
                 storageSecondY: Number(binding.storageSecondY),
                 storageSecondZ: Number(binding.storageSecondZ),
-                ruleId: String(binding.ruleId)
+                ruleId: String(binding.ruleId),
+                ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds
             }))
         };
     }

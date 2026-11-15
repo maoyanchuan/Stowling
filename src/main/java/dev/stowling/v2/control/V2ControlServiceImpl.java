@@ -582,7 +582,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             binding.storageSecondY(),
                             binding.storageSecondZ()
                     ),
-                    binding.ruleId()
+                    binding.ruleId(),
+                    binding.ignoredMarkerBlockIds()
             ));
         }
         return List.copyOf(result);

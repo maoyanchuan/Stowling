@@ -590,6 +590,13 @@ section[id] {
     width: min(100%, 360px);
 }
 
+.category-recognition-fields {
+    display: grid;
+    gap: 12px;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+
 .config-heading {
     align-items: center;
 }
@@ -1144,6 +1151,10 @@ select[aria-invalid="true"] {
 
     .category-zone-binding-list .category-binding-card,
     .category-zone-binding-list .category-binding-section {
+        grid-template-columns: 1fr;
+    }
+
+    .category-recognition-fields {
         grid-template-columns: 1fr;
     }
 }

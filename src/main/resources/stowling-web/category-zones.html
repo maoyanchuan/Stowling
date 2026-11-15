@@ -18,7 +18,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>分类区管理</h1>
-                <p>手动绑定分类方块区与储存容器区</p>
+                <p>自动识别展示物品并绑定储存容器区</p>
             </div>
         </div>
         <div class="connection-state">
@@ -38,8 +38,8 @@
                         <p class="eyebrow">仓库分类</p>
                         <h2 id="category-zone-title">分类区</h2>
                         <p class="muted section-help">
-                            分类方块与同一列储存容器对应，方块 ID 与待存物品 ID
-                            精确比较。
+                            展示框、展示架和摆放方块会自动转换为物品 ID，
+                            再与同一列储存容器精确匹配。
                         </p>
                     </div>
                     <button id="add-category-zone-button"
@@ -66,7 +66,7 @@
                         <div>
                             <h3>识别区 → 储存区</h3>
                             <p class="muted compact-help">
-                                同一列的分类方块决定该列箱子的物品类型。
+                                识别区可包含支撑方块；请把统一底座填入忽略列表。
                             </p>
                         </div>
                     </div>

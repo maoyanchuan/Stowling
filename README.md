@@ -17,14 +17,17 @@ by Baritone.
   cache, then categorized distribution from that cache.
 - Category zones are manually configured as ordered marker-area to
   storage-area bindings.
-- The first rule reads non-air block IDs in the marker area and requires an
-  exact match with the stored item ID.
+- Category markers use one automatic display-item recognizer: item frames are
+  read from entities, shelves from block-entity slots, and ordinary display
+  blocks through their placement item.
+- Each storage column must resolve to exactly one item ID. Configured support
+  block IDs are ignored, and conflicting displays fail with a clear error.
 - The coarse stage stores all collected drops in cache containers. The fine
   stage withdraws only items that have target categories and deposits them
   into exact category matches.
-- Category identification reads nearby item frames or glow item frames and
-  uses the displayed item registry ID as the category. Deposit prefers a
-  container with an exact category match.
+- Category identification reads item frames, shelves, and placed display
+  blocks and uses the displayed item registry ID as the category. Deposit
+  prefers a container with an exact category match.
 - Items without a category or without target capacity remain in, or are
   returned to, the cache.
 - One task can run at a time.
@@ -52,8 +55,8 @@ editor builds its controls from that catalog.
   category mapping for the scanned containers.
 - `SORT_CACHE_ITEMS` withdraws categorized items from a cache region, deposits
   exact category matches, and returns leftovers to the cache.
-- `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves manual category zones and stores
-  cached items whose IDs exactly match the marker block IDs.
+- `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
+  stores cached items whose IDs exactly match the recognized item IDs.
 - `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
   current run into containers from the previous scan.
 
@@ -87,12 +90,14 @@ Example category-zone A binding:
 ```text
 marker area:  7 -34 7 through 18 -34 7
 storage area: 7 -34 6 through 18 -34 5
-rule:         exact block ID
+rule:         automatic display item
+ignored:      minecraft:stone_bricks
 ```
 
-Add one binding per row or storage group. Multiple different marker block IDs in
-one area may map to the same storage area. Keep structural blocks outside the
-marker area because every non-air block ID is treated as a category.
+Add one binding per row or storage group. The marker area may be several blocks
+high or wide and may mix placed blocks, supported displays, item frames, and
+shelves. List shared support or background block IDs in the ignored list.
+Every storage column must contain only one distinct displayed item ID.
 
 Detection and scanning are limited to the player's current dimension and
 loaded chunks. Supported ordinary containers are scanned; nested shulker-box

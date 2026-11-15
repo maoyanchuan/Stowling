@@ -416,6 +416,12 @@ class V2ControlServerTest {
                             .get("firstX")
                             .getAsInt()
             );
+            assertEquals(
+                    "minecraft:stone_bricks",
+                    binding.getAsJsonArray("ignoredMarkerBlockIds")
+                            .get(0)
+                            .getAsString()
+            );
 
             HttpResponse<String> rules = fixture.send(
                     "/v1/category-rules",
@@ -443,7 +449,8 @@ class V2ControlServerTest {
                             "markerSecondX":1,"markerSecondY":2,"markerSecondZ":3,
                             "storageFirstX":4,"storageFirstY":5,"storageFirstZ":6,
                             "storageSecondX":4,"storageSecondY":5,"storageSecondZ":6,
-                            "ruleId":"DIRECT_BLOCK_ID"}]}
+                            "ruleId":"DIRECT_BLOCK_ID",
+                            "ignoredMarkerBlockIds":["minecraft:glass"]}]}
                             """.formatted(revision),
                     true
             );
@@ -504,7 +511,8 @@ class V2ControlServerTest {
                 "markerSecondX":18,"markerSecondY":-34,"markerSecondZ":7,
                 "storageFirstX":7,"storageFirstY":-34,"storageFirstZ":5,
                 "storageSecondX":18,"storageSecondY":-34,"storageSecondZ":6,
-                "ruleId":"DIRECT_BLOCK_ID"}]}
+                "ruleId":"DIRECT_BLOCK_ID",
+                "ignoredMarkerBlockIds":["minecraft:stone_bricks"]}]}
                 """.formatted(name);
     }
 

@@ -1,5 +1,7 @@
 package dev.stowling.v2.control;
 
+import java.util.List;
+
 public record CategoryBindingRequest(
         int markerFirstX,
         int markerFirstY,
@@ -13,6 +15,12 @@ public record CategoryBindingRequest(
         int storageSecondX,
         int storageSecondY,
         int storageSecondZ,
-        String ruleId
+        String ruleId,
+        List<String> ignoredMarkerBlockIds
 ) {
+    public CategoryBindingRequest {
+        ignoredMarkerBlockIds = ignoredMarkerBlockIds == null
+                ? List.of()
+                : List.copyOf(ignoredMarkerBlockIds);
+    }
 }

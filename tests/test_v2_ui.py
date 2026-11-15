@@ -48,6 +48,29 @@ def test_region_editor_accepts_two_three_dimensional_corners() -> None:
     assert "normalizeRegions" in model
 
 
+def test_coordinate_inputs_hide_spinners_and_expand_pasted_triples() -> None:
+    common = read("common.js")
+    coordinates = read("coordinates.js")
+    category_zones = read("category-zones.js")
+    styles = read("styles.css")
+
+    assert "function parseCoordinateTriple(value)" in common
+    assert "function bindCoordinateInputs(...inputs)" in common
+    assert "matches.length !== 3" in common
+    assert "event.preventDefault()" in common
+    assert 'input[type="number"]::-webkit-inner-spin-button' in styles
+    assert "appearance: textfield" in styles
+    assert "Stowling.bindCoordinateInputs(x, y, z)" in coordinates
+    assert (
+        "Stowling.bindCoordinateInputs(\n"
+        "        elements.regionFirstX,\n"
+        "        elements.regionFirstY,\n"
+        "        elements.regionFirstZ\n"
+        "    );"
+    ) in coordinates
+    assert "Stowling.bindCoordinateInputs(x, y, z)" in category_zones
+
+
 def test_coordinate_page_uses_progressive_creation_layout() -> None:
     html = read("coordinates.html")
     javascript = read("coordinates.js")

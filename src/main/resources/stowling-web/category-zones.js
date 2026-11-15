@@ -239,6 +239,7 @@
         const x = numberInput(binding[`${prefix}X`]);
         const y = numberInput(binding[`${prefix}Y`]);
         const z = numberInput(binding[`${prefix}Z`]);
+        Stowling.bindCoordinateInputs(x, y, z);
         row.append(field("X", x), field("Y", y), field("Z", z));
         root.append(row);
         return {

@@ -136,6 +136,7 @@
         const x = input("number", coordinate.x);
         const y = input("number", coordinate.y);
         const z = input("number", coordinate.z);
+        Stowling.bindCoordinateInputs(x, y, z);
         const useDimension = checkbox(Boolean(coordinate.dimension));
         const dimension = input(
             "text",
@@ -208,6 +209,8 @@
         const secondX = input("number", region.secondX);
         const secondY = input("number", region.secondY);
         const secondZ = input("number", region.secondZ);
+        Stowling.bindCoordinateInputs(firstX, firstY, firstZ);
+        Stowling.bindCoordinateInputs(secondX, secondY, secondZ);
         fields.append(
             field("区域名称", name),
             field("角点1 X", firstX),
@@ -584,6 +587,21 @@
         event.preventDefault();
         void createRegion();
     });
+    Stowling.bindCoordinateInputs(
+        elements.x,
+        elements.y,
+        elements.z
+    );
+    Stowling.bindCoordinateInputs(
+        elements.regionFirstX,
+        elements.regionFirstY,
+        elements.regionFirstZ
+    );
+    Stowling.bindCoordinateInputs(
+        elements.regionSecondX,
+        elements.regionSecondY,
+        elements.regionSecondZ
+    );
     syncOptionalField(elements.useDimension, elements.dimension);
     syncOptionalField(elements.useRadius, elements.radius);
     Stowling.onConnected(() => loadResources());

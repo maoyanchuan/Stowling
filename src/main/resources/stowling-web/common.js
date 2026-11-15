@@ -446,8 +446,56 @@
         return `配置版本：${raw.slice(0, 12) || "--"}`;
     }
 
+    /**
+     * @param {string} value
+     * @returns {number[] | null}
+     */
+    function parseCoordinateTriple(value) {
+        const matches = String(value ?? "").match(
+            /[+-]?(?:\d+(?:\.\d+)?|\.\d+)/g
+        ) || [];
+        if (matches.length !== 3) {
+            return null;
+        }
+        const values = matches.map(Number);
+        return values.every(Number.isInteger) ? values : null;
+    }
+
+    /**
+     * @param {...HTMLInputElement} inputs
+     * @returns {void}
+     */
+    function bindCoordinateInputs(...inputs) {
+        if (inputs.length !== 3 || inputs.some((input) => !input)) {
+            return;
+        }
+        if (inputs.some((input) => input.dataset.coordinateTriple === "true")) {
+            return;
+        }
+        for (const input of inputs) {
+            input.dataset.coordinateTriple = "true";
+            input.addEventListener("paste", (event) => {
+                const values = parseCoordinateTriple(
+                    event.clipboardData?.getData("text") || ""
+                );
+                if (!values) {
+                    return;
+                }
+                event.preventDefault();
+                inputs.forEach((control, index) => {
+                    control.value = String(values[index]);
+                    control.dispatchEvent(new Event("input", { bubbles: true }));
+                    control.dispatchEvent(new Event("change", { bubbles: true }));
+                });
+                inputs[0].focus();
+                inputs[0].select();
+            });
+        }
+    }
+
     window.Stowling = Object.freeze({
         ApiError,
+        bindCoordinateInputs,
         clearAuthentication,
         clone,
         dimensionLabel,
@@ -458,6 +506,7 @@
         isConnected,
         mountPage,
         onConnected,
+        parseCoordinateTriple,
         request,
         revisionLabel,
         showToast,

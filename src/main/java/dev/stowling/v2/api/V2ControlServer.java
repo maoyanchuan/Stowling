@@ -30,6 +30,8 @@ import dev.stowling.v2.control.TaskUpdateRequest;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2NotFoundException;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskTriggerDefinition;
+import dev.stowling.v2.model.TaskTriggerType;
 import dev.stowling.v2.runtime.TaskRunNotFoundException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -269,7 +271,13 @@ public final class V2ControlServer implements AutoCloseable {
                 JsonObject json = object(body);
                 requireFieldsAny(
                         json,
-                        Set.of("name", "priority", "repeatWhenIdle", "steps"),
+                        Set.of(
+                                "name",
+                                "priority",
+                                "repeatWhenIdle",
+                                "steps",
+                                "trigger"
+                        ),
                         Set.of("name", "steps")
                 );
                 sendJson(exchange, 201, service.createTask(taskRequest(json)));
@@ -453,7 +461,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "name",
                                 "priority",
                                 "repeatWhenIdle",
-                                "steps"
+                                "steps",
+                                "trigger"
                         ),
                         Set.of("revision", "name", "steps")
                 );
@@ -463,7 +472,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 string(json, "name"),
                                 optionalPriority(json, "priority"),
                                 optionalBoolean(json, "repeatWhenIdle"),
-                                steps(json)
+                                steps(json),
+                                optionalTrigger(json)
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteTask(id, revision(body)));
@@ -491,7 +501,49 @@ public final class V2ControlServer implements AutoCloseable {
                 string(json, "name"),
                 optionalPriority(json, "priority"),
                 optionalBoolean(json, "repeatWhenIdle"),
-                steps(json)
+                steps(json),
+                optionalTrigger(json)
+        );
+    }
+
+    private static TaskTriggerDefinition optionalTrigger(JsonObject json) {
+        JsonElement value = json.get("trigger");
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        JsonObject trigger = object(value, "trigger");
+        requireFieldsAny(
+                trigger,
+                Set.of(
+                        "type",
+                        "coordinateId",
+                        "itemFilter",
+                        "intervalTicks",
+                        "cooldownTicks"
+                ),
+                Set.of(
+                        "type",
+                        "coordinateId",
+                        "intervalTicks",
+                        "cooldownTicks"
+                )
+        );
+        TaskTriggerType type;
+        try {
+            type = TaskTriggerType.valueOf(
+                    string(trigger, "type").trim().toUpperCase(Locale.ROOT)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw invalid("unsupported trigger type");
+        }
+        if (type != TaskTriggerType.DROPPED_ITEMS) {
+            throw invalid("unsupported trigger type");
+        }
+        return TaskTriggerDefinition.droppedItems(
+                uuid(string(trigger, "coordinateId")),
+                optionalString(trigger, "itemFilter"),
+                integer(trigger, "intervalTicks"),
+                integer(trigger, "cooldownTicks")
         );
     }
 

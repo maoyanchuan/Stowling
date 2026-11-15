@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
@@ -33,6 +34,7 @@ public final class TaskRunManager {
 
     private final NavigationPort navigation;
     private final TaskModuleRuntimeRegistry registry;
+    private final TaskWatchManager watches;
     private final Deque<TaskRunSnapshot> history = new ArrayDeque<>();
     private final List<QueuedRun> queue = new ArrayList<>();
     private ActiveRun active;
@@ -49,6 +51,31 @@ public final class TaskRunManager {
     ) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
         this.registry = Objects.requireNonNull(registry, "registry");
+        this.watches = new TaskWatchManager(
+                registry.droppedItems(),
+                navigation,
+                new TaskWatchManager.Host() {
+                    @Override
+                    public TaskRunSnapshot start(
+                            TaskDefinition task,
+                            AppConfig config
+                    ) {
+                        return TaskRunManager.this.start(
+                                task,
+                                config.coordinates(),
+                                config.regions(),
+                                config.categoryZones(),
+                                TaskPriority.URGENT,
+                                true
+                        );
+                    }
+
+                    @Override
+                    public boolean taskPending(UUID taskId) {
+                        return isTaskPending(taskId);
+                    }
+                }
+        );
     }
 
     public synchronized TaskRunSnapshot start(
@@ -82,12 +109,31 @@ public final class TaskRunManager {
             List<CategoryZoneDefinition> categoryZones,
             TaskPriority priorityOverride
     ) {
+        return start(
+                task,
+                coordinates,
+                regions,
+                categoryZones,
+                priorityOverride,
+                false
+        );
+    }
+
+    private TaskRunSnapshot start(
+            TaskDefinition task,
+            List<CoordinatePoint> coordinates,
+            List<RegionDefinition> regions,
+            List<CategoryZoneDefinition> categoryZones,
+            TaskPriority priorityOverride,
+            boolean triggeredExecution
+    ) {
         PreparedRun prepared = prepare(
                 task,
                 coordinates,
                 regions,
                 categoryZones,
-                priorityOverride
+                priorityOverride,
+                triggeredExecution
         );
         if (active != null && active.prepared.task.id().equals(task.id())) {
             return active.snapshot;
@@ -122,6 +168,7 @@ public final class TaskRunManager {
 
     public synchronized void tick() {
         ticks++;
+        watches.tick();
         if (active != null) {
             if (active.cancelRequested) {
                 finishCancellation();
@@ -216,6 +263,14 @@ public final class TaskRunManager {
                 .toList();
     }
 
+    public synchronized void refreshWatches(AppConfig config) {
+        watches.refresh(config);
+    }
+
+    public synchronized List<TaskWatchSnapshot> watches() {
+        return watches.snapshots();
+    }
+
     public synchronized boolean busy() {
         return isActive();
     }
@@ -245,7 +300,8 @@ public final class TaskRunManager {
             List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
-            TaskPriority priorityOverride
+            TaskPriority priorityOverride,
+            boolean triggeredExecution
     ) {
         Objects.requireNonNull(task, "task");
         Map<UUID, CoordinatePoint> frozenCoordinates = indexCoordinates(
@@ -265,7 +321,8 @@ public final class TaskRunManager {
         TaskPriority priority = priorityOverride == null
                 ? task.priority()
                 : priorityOverride;
-        boolean repeating = priority == TaskPriority.BACKGROUND
+        boolean repeating = !triggeredExecution
+                && priority == TaskPriority.BACKGROUND
                 && task.repeatWhenIdle();
         return new PreparedRun(
                 task,
@@ -274,7 +331,8 @@ public final class TaskRunManager {
                 Map.copyOf(frozenRegions),
                 Map.copyOf(frozenCategoryZones),
                 priority,
-                repeating
+                repeating,
+                !triggeredExecution
         );
     }
 
@@ -398,16 +456,21 @@ public final class TaskRunManager {
                 .map(run -> run.prepared.task.name())
                 .findFirst()
                 .orElse("更高优先级任务");
-        String message = preempted
-                ? "被“" + interruptedBy + "”中断，将从开始处重新排队"
-                : outcome == StopOutcome.CLEAN
-                        ? "任务已取消"
-                        : "任务已取消，但导航停止状态未知";
+        String message;
+        if (preempted && interrupted.requeueOnPreemption) {
+            message = "被“" + interruptedBy + "”中断，将从开始处重新排队";
+        } else if (preempted) {
+            message = "被“" + interruptedBy + "”中断，监听任务将重新检测";
+        } else if (outcome == StopOutcome.CLEAN) {
+            message = "任务已取消";
+        } else {
+            message = "任务已取消，但导航停止状态未知";
+        }
         finish(
                 preempted ? TaskRunState.PREEMPTED : TaskRunState.CANCELLED,
                 message
         );
-        if (preempted) {
+        if (preempted && interrupted.requeueOnPreemption) {
             enqueuePrepared(interrupted, 0, "被中断，等待从头重新运行");
         }
     }
@@ -560,6 +623,15 @@ public final class TaskRunManager {
                 || active.snapshot.state() == TaskRunState.WAITING);
     }
 
+    private boolean isTaskPending(UUID taskId) {
+        if (active != null && active.prepared.task.id().equals(taskId)) {
+            return true;
+        }
+        return queue.stream().anyMatch(
+                run -> run.prepared.task.id().equals(taskId)
+        );
+    }
+
     private static Map<UUID, CoordinatePoint> indexCoordinates(
             List<CoordinatePoint> coordinates
     ) {
@@ -604,7 +676,8 @@ public final class TaskRunManager {
             Map<UUID, RegionDefinition> regions,
             Map<UUID, CategoryZoneDefinition> categoryZones,
             TaskPriority priority,
-            boolean repeating
+            boolean repeating,
+            boolean requeueOnPreemption
     ) {
     }
 

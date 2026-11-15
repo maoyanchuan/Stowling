@@ -95,10 +95,12 @@ public final class ConfigStore {
                                 "name",
                                 "priority",
                                 "repeatWhenIdle",
-                                "steps"
+                                "steps",
+                                "trigger"
                         ),
                         Set.of("id", "name", "steps")
                 );
+                requireTaskTrigger(taskObject.get("trigger"));
                 for (JsonElement step : requireArray(taskObject.get("steps"), "steps")) {
                     JsonObject stepObject = requireObject(step, "step");
                     requireExactFields(
@@ -112,6 +114,29 @@ public final class ConfigStore {
         } catch (JsonParseException exception) {
             throw new V2ValidationException("configuration cannot be read");
         }
+    }
+
+    private static void requireTaskTrigger(JsonElement value) {
+        if (value == null || value.isJsonNull()) {
+            return;
+        }
+        JsonObject trigger = requireObject(value, "trigger");
+        requireFields(
+                trigger,
+                Set.of(
+                        "type",
+                        "coordinateId",
+                        "itemFilter",
+                        "intervalTicks",
+                        "cooldownTicks"
+                ),
+                Set.of(
+                        "type",
+                        "coordinateId",
+                        "intervalTicks",
+                        "cooldownTicks"
+                )
+        );
     }
 
     private static void requireCoordinateObjects(JsonElement value) {

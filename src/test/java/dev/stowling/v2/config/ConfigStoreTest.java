@@ -139,6 +139,57 @@ class ConfigStoreTest {
     }
 
     @Test
+    void storesDroppedItemTriggerConfiguration() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 7,
+                    "coordinates": [{
+                        "id": "00000000-0000-0000-0000-000000000001",
+                        "name": "Drops",
+                        "x": 0,
+                        "y": 64,
+                        "z": 0,
+                        "radius": 8
+                    }],
+                    "tasks": [{
+                        "id": "00000000-0000-0000-0000-000000000002",
+                        "name": "Pickup",
+                        "priority": "BACKGROUND",
+                        "repeatWhenIdle": false,
+                        "trigger": {
+                            "type": "DROPPED_ITEMS",
+                            "coordinateId":
+                                "00000000-0000-0000-0000-000000000001",
+                            "itemFilter": "minecraft:oak_log",
+                            "intervalTicks": 20,
+                            "cooldownTicks": 100
+                        },
+                        "steps": [{
+                            "id": "00000000-0000-0000-0000-000000000003",
+                            "moduleId": "COLLECT_DROPPED_ITEMS",
+                            "parameters": {
+                                "coordinateId":
+                                    "00000000-0000-0000-0000-000000000001"
+                            }
+                        }]
+                    }]
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        var trigger = store.loadOrReset().config().tasks()
+                .getFirst()
+                .trigger();
+
+        assertEquals(
+                "minecraft:oak_log",
+                trigger.itemFilter()
+        );
+        assertEquals(20, trigger.intervalTicks());
+    }
+
+    @Test
     void keepsCategoryBindingsThatPredateIgnoredSupportBlocks() throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """

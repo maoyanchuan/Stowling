@@ -2524,6 +2524,10 @@ body[data-page="tasks"] .task-sidebar {
     gap: 0.5rem;
 }
 
+#new-watch-task-button {
+    grid-column: 1 / -1;
+}
+
 .task-sidebar .search-field {
     width: 100%;
 }
@@ -2670,6 +2674,14 @@ body[data-page="tasks"] .task-sidebar {
     margin: 0.8rem 0;
 }
 
+.task-watch-fields {
+    margin: 0.8rem 0;
+}
+
+.task-watch-fields[hidden] {
+    display: none;
+}
+
 .task-main .step-heading {
     margin-top: 1rem;
     padding-top: 0;
@@ -2736,6 +2748,10 @@ body[data-page="tasks"] .task-sidebar {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
     gap: 1rem;
+}
+
+.task-monitor .watch-panel {
+    grid-column: 1 / -1;
 }
 
 .task-monitor .queue-help {

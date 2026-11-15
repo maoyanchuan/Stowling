@@ -11,7 +11,8 @@ public record TaskDefinition(
         String name,
         TaskPriority priority,
         boolean repeatWhenIdle,
-        List<TaskStep> steps
+        List<TaskStep> steps,
+        TaskTriggerDefinition trigger
 ) {
     public TaskDefinition {
         id = Objects.requireNonNull(id, "id");
@@ -20,6 +21,11 @@ public record TaskDefinition(
         if (repeatWhenIdle && priority != TaskPriority.BACKGROUND) {
             throw new IllegalArgumentException(
                     "only background tasks can repeat when idle"
+            );
+        }
+        if (repeatWhenIdle && trigger != null) {
+            throw new IllegalArgumentException(
+                    "triggered tasks cannot repeat when idle"
             );
         }
         steps = List.copyOf(Objects.requireNonNull(steps, "steps"));
@@ -32,6 +38,16 @@ public record TaskDefinition(
                 throw new IllegalArgumentException("step ids must be unique");
             }
         }
+    }
+
+    public TaskDefinition(
+            UUID id,
+            String name,
+            TaskPriority priority,
+            boolean repeatWhenIdle,
+            List<TaskStep> steps
+    ) {
+        this(id, name, priority, repeatWhenIdle, steps, null);
     }
 
     public TaskDefinition(

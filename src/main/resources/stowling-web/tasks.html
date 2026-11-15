@@ -51,6 +51,8 @@
                                     type="button">缓存任务</button>
                             <button id="new-sort-task-button" class="secondary compact"
                                     type="button">分类任务</button>
+                            <button id="new-watch-task-button" class="secondary compact"
+                                    type="button">掉落物监听</button>
                         </div>
                     </div>
                     <label class="search-field" for="task-search">
@@ -133,10 +135,37 @@
                                         <input id="task-repeat" type="checkbox">
                                         <span>完成后自动重新排队</span>
                                     </label>
+                                    <label class="checkbox-field" for="task-watch-enabled">
+                                        <input id="task-watch-enabled" type="checkbox">
+                                        <span>掉落物监听</span>
+                                    </label>
+                                </div>
+                                <div id="task-watch-fields"
+                                     class="editor-fields task-watch-fields" hidden>
+                                    <div class="editor-field">
+                                        <label for="task-watch-coordinate">监测坐标</label>
+                                        <select id="task-watch-coordinate"></select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="task-watch-filter">物品过滤（可选）</label>
+                                        <input id="task-watch-filter"
+                                               placeholder="留空表示全部物品">
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="task-watch-interval">检测间隔（秒）</label>
+                                        <input id="task-watch-interval" type="number"
+                                               min="0.05" max="60" step="0.05">
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="task-watch-cooldown">完成后冷却（秒）</label>
+                                        <input id="task-watch-cooldown" type="number"
+                                               min="0" max="3600" step="0.05">
+                                    </div>
                                 </div>
                                 <p class="muted compact-help">
                                     只有后台任务可以自动重排。重排前等待 5 秒；
                                     普通和紧急任务只在被抢占时从头重新排队。
+                                    监听任务空闲时不占执行位，触发时以紧急优先级运行。
                                 </p>
                             </details>
                             <div class="step-heading">
@@ -163,6 +192,22 @@
                         </form>
                     </section>
                     <div class="task-monitor">
+                        <section class="panel watch-panel"
+                                 aria-labelledby="task-watch-title">
+                            <div class="panel-heading">
+                                <div>
+                                    <p class="eyebrow">事件触发</p>
+                                    <h2 id="task-watch-title">后台监听</h2>
+                                    <p class="muted section-help queue-help">
+                                        空闲监听不占用任务执行位；发现掉落物后自动提交
+                                        紧急拾取任务。
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="task-watch-list" class="card-list"
+                                 aria-live="polite"></div>
+                        </section>
+
                         <section class="panel" aria-labelledby="queue-title">
                             <div class="panel-heading">
                                 <div>

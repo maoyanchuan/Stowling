@@ -11,6 +11,7 @@ import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -97,6 +98,7 @@ public final class ConfigValidator {
             if (!taskIds.add(task.id())) {
                 throw new V2ValidationException("duplicate task id");
             }
+            requireValidTrigger(task.trigger(), coordinates);
             for (TaskStep step : task.steps()) {
                 requireValidStep(
                         step,
@@ -105,6 +107,21 @@ public final class ConfigValidator {
                         categoryZones
                 );
             }
+        }
+    }
+
+    private static void requireValidTrigger(
+            TaskTriggerDefinition trigger,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        if (trigger == null) {
+            return;
+        }
+        if (!coordinates.containsKey(trigger.coordinateId())) {
+            throw new V2ValidationException(
+                    "trigger coordinate does not exist: "
+                            + trigger.coordinateId()
+            );
         }
     }
 

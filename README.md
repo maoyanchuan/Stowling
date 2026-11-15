@@ -44,6 +44,11 @@ by Baritone.
   returned to, the cache.
 - One task runs at a time. A single queue orders work by `BACKGROUND`, `NORMAL`,
   and `URGENT` priority.
+- A task can watch a coordinate radius for dropped items. While no matching
+  drop exists, the task is idle and does not occupy the execution slot.
+- A matching drop submits the task as an `URGENT` run through the normal queue,
+  so it preempts ordinary work. After the run, the watch waits for its configured
+  cooldown before returning to idle monitoring.
 - A strictly higher-priority request preempts the active task. The interrupted
   run is discarded, requeued, and starts again from step one when its turn
   returns.
@@ -64,6 +69,9 @@ into basic and composite groups without changing existing task configuration.
 
 Background tasks can automatically requeue five seconds after completion.
 Manual runs may override the saved priority for that run only.
+
+Dropped-item watches are configured independently from automatic requeue.
+Idle monitoring creates no run records and does not block another task.
 
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
 - `WAIT_FOR_DROPPED_ITEMS` waits until a matching dropped item appears in the
@@ -174,6 +182,37 @@ format:
 }
 ```
 
+A watched task stores its trigger next to its linear steps:
+
+```json
+{
+  "name": "Drops to cache",
+  "priority": "BACKGROUND",
+  "repeatWhenIdle": false,
+  "trigger": {
+    "type": "DROPPED_ITEMS",
+    "coordinateId": "00000000-0000-0000-0000-000000000001",
+    "itemFilter": "minecraft:oak_log,minecraft:birch_log",
+    "intervalTicks": 20,
+    "cooldownTicks": 100
+  },
+  "steps": [
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "moduleId": "COLLECT_DROPPED_ITEMS",
+      "parameters": {
+        "coordinateId": "00000000-0000-0000-0000-000000000001"
+      }
+    }
+  ]
+}
+```
+
+The item filter is optional and accepts comma-separated full item IDs or item
+paths. An empty filter matches every dropped item. Watches use the coordinate's
+configured dimension and radius, falling back to radius 16 when radius is
+disabled.
+
 If the file is missing, invalid, or from an older schema, Stowling creates a
 `.bak` safety copy when possible and replaces it with an empty schema-7 file.
 Old data is never migrated.
@@ -241,6 +280,9 @@ POST   /v1/tasks/{uuid}/runs
 GET    /v1/task-runs
 POST   /v1/task-runs/{uuid}/cancel
 ```
+
+`GET /v1/task-runs` returns `runs`, `queue`, and `watches`. Watch states are
+`IDLE`, `RUNNING`, `COOLDOWN`, and `ERROR`.
 
 Updates and deletes include the current `revision`. A stale revision returns
 `409`. Deleting a coordinate referenced by any task returns `409` with the

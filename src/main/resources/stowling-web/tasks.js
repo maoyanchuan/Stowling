@@ -17,6 +17,7 @@
         dirty: false,
         runs: [],
         queue: [],
+        watches: [],
         query: ""
     };
 
@@ -24,6 +25,7 @@
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
         newSortTask: document.querySelector("#new-sort-task-button"),
+        newWatchTask: document.querySelector("#new-watch-task-button"),
         search: document.querySelector("#task-search"),
         taskCount: document.querySelector("#task-list-count"),
         settingsLabel: document.querySelector("#task-settings-label"),
@@ -34,6 +36,12 @@
         name: document.querySelector("#task-name"),
         priority: document.querySelector("#task-priority"),
         repeat: document.querySelector("#task-repeat"),
+        watchEnabled: document.querySelector("#task-watch-enabled"),
+        watchFields: document.querySelector("#task-watch-fields"),
+        watchCoordinate: document.querySelector("#task-watch-coordinate"),
+        watchFilter: document.querySelector("#task-watch-filter"),
+        watchInterval: document.querySelector("#task-watch-interval"),
+        watchCooldown: document.querySelector("#task-watch-cooldown"),
         steps: document.querySelector("#task-steps"),
         addStep: document.querySelector("#add-step-button"),
         moduleCatalog: document.querySelector("#task-module-catalog"),
@@ -47,6 +55,7 @@
         run: document.querySelector("#run-task-button"),
         remove: document.querySelector("#delete-task-button"),
         runtime: document.querySelector("#runtime-list"),
+        watchList: document.querySelector("#task-watch-list"),
         queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button")
     };
@@ -87,6 +96,9 @@
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             state.queue = Array.isArray(runs?.queue) ? runs.queue : [];
+            state.watches = Array.isArray(runs?.watches)
+                ? runs.watches
+                : [];
             renderTaskList();
             renderModuleCatalog();
             renderRunControls();
@@ -94,6 +106,7 @@
                 selectTask(state.tasks[0]);
             }
             renderRuntime();
+            renderWatches();
             renderQueue();
         } catch (error) {
             Stowling.handleError(error, "读取任务失败");
@@ -159,6 +172,13 @@
                         Model.priorityLabel(task.priority)
                     )
                 );
+                if (task.trigger) {
+                    button.append(Stowling.element(
+                        "span",
+                        "module-level-tag",
+                        "监听"
+                    ));
+                }
                 button.classList.toggle(
                     "active",
                     task.id === state.selectedId
@@ -323,6 +343,13 @@
     }
 
     /**
+     * @returns {void}
+     */
+    function startWatchTask() {
+        startTaskTemplate("watch");
+    }
+
+    /**
      * @param {string} template
      * @returns {void}
      */
@@ -361,6 +388,9 @@
         if (template === "sort") {
             return Model.sortTask(state.modules);
         }
+        if (template === "watch") {
+            return Model.watchTask(state.modules);
+        }
         return Model.newTask(state.modules);
     }
 
@@ -378,7 +408,9 @@
         elements.priority.value = state.draft.priority;
         updateSettingsLabel();
         elements.repeat.checked = state.draft.repeatWhenIdle;
-        elements.repeat.disabled = state.draft.priority !== "BACKGROUND";
+        elements.repeat.disabled = state.draft.priority !== "BACKGROUND"
+            || Boolean(state.draft.trigger);
+        renderWatchControls();
         elements.revision.textContent = state.selectedId
             ? Stowling.revisionLabel(state.revision)
             : "新任务";
@@ -398,8 +430,41 @@
      * @returns {void}
      */
     function updateSettingsLabel() {
-        elements.settingsLabel.textContent = Model.priorityLabel(state.draft.priority)
-            + (state.draft.repeatWhenIdle ? " · 自动重排" : " · 执行一次");
+        const behavior = state.draft.trigger
+            ? " · 掉落物监听"
+            : state.draft.repeatWhenIdle
+                ? " · 自动重排"
+                : " · 执行一次";
+        elements.settingsLabel.textContent =
+            Model.priorityLabel(state.draft.priority) + behavior;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderWatchControls() {
+        const trigger = state.draft.trigger;
+        elements.watchEnabled.checked = Boolean(trigger);
+        elements.watchFields.hidden = !trigger;
+        elements.watchCoordinate.replaceChildren(
+            new Option("请选择坐标", "")
+        );
+        for (const coordinate of state.coordinates) {
+            elements.watchCoordinate.append(
+                new Option(coordinate.name, coordinate.id)
+            );
+        }
+        if (!trigger) {
+            return;
+        }
+        elements.watchCoordinate.value = trigger.coordinateId;
+        elements.watchFilter.value = trigger.itemFilter;
+        elements.watchInterval.value = String(
+            Math.max(0.05, trigger.intervalTicks / 20)
+        );
+        elements.watchCooldown.value = String(
+            Math.max(0, trigger.cooldownTicks / 20)
+        );
     }
 
     /**
@@ -453,6 +518,28 @@
         }
         if (draft.repeatWhenIdle && draft.priority !== "BACKGROUND") {
             errors.push("只有后台任务可以自动重新排队");
+        }
+        if (draft.trigger) {
+            if (draft.repeatWhenIdle) {
+                errors.push("掉落物监听任务不能同时启用自动重排");
+            }
+            if (!draft.trigger.coordinateId) {
+                errors.push("掉落物监听必须选择监测坐标");
+            } else if (!state.coordinates.some(
+                (point) => point.id === draft.trigger.coordinateId
+            )) {
+                errors.push("掉落物监听的监测坐标不存在");
+            }
+            if (!Number.isInteger(draft.trigger.intervalTicks)
+                    || draft.trigger.intervalTicks < 1
+                    || draft.trigger.intervalTicks > 1200) {
+                errors.push("检测间隔必须在 0.05 到 60 秒之间");
+            }
+            if (!Number.isInteger(draft.trigger.cooldownTicks)
+                    || draft.trigger.cooldownTicks < 0
+                    || draft.trigger.cooldownTicks > 72000) {
+                errors.push("监听冷却必须在 0 到 3600 秒之间");
+            }
         }
         if (draft.steps.length === 0) {
             errors.push("任务至少需要一个步骤");
@@ -722,12 +809,69 @@
             state.queue = Array.isArray(response?.queue)
                 ? response.queue
                 : [];
+            state.watches = Array.isArray(response?.watches)
+                ? response.watches
+                : [];
+            renderWatches();
             renderRuntime();
             renderQueue();
             updateRunActions();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
         }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderWatches() {
+        elements.watchList.replaceChildren();
+        if (state.watches.length === 0) {
+            elements.watchList.append(
+                Stowling.emptyState("当前没有掉落物监听任务")
+            );
+            return;
+        }
+        for (const watch of state.watches) {
+            const card = Stowling.element("article", "task-card");
+            const content = Stowling.element("div");
+            const filter = watch.itemFilter
+                ? ` · ${watch.itemFilter}`
+                : " · 全部物品";
+            content.append(
+                Stowling.element(
+                    "strong",
+                    "",
+                    watch.taskName
+                ),
+                Stowling.element(
+                    "span",
+                    "module-level-tag",
+                    watchStateLabel(watch.state)
+                ),
+                Stowling.element(
+                    "p",
+                    "muted compact-help",
+                    `${watch.coordinateName}${filter} · ${watch.message}`
+                )
+            );
+            card.append(content);
+            elements.watchList.append(card);
+        }
+    }
+
+    /**
+     * @param {string} watchState
+     * @returns {string}
+     */
+    function watchStateLabel(watchState) {
+        const labels = {
+            IDLE: "空闲监听",
+            RUNNING: "触发执行中",
+            COOLDOWN: "冷却中",
+            ERROR: "监听异常"
+        };
+        return labels[watchState] || String(watchState || "");
     }
 
     /**
@@ -847,6 +991,7 @@
     elements.newTask.addEventListener("click", startNewTask);
     elements.newCacheTask.addEventListener("click", startCacheTask);
     elements.newSortTask.addEventListener("click", startSortTask);
+    elements.newWatchTask.addEventListener("click", startWatchTask);
     elements.name.addEventListener("input", () => {
         state.draft.name = elements.name.value;
         markDirty();
@@ -862,6 +1007,62 @@
         state.draft.repeatWhenIdle = elements.repeat.checked;
         updateSettingsLabel();
         markDirty();
+    });
+    elements.watchEnabled.addEventListener("change", () => {
+        if (elements.watchEnabled.checked) {
+            const collectStep = state.draft.steps.find(
+                (step) => step.moduleId === "COLLECT_DROPPED_ITEMS"
+            );
+            state.draft.trigger = {
+                type: "DROPPED_ITEMS",
+                coordinateId: String(
+                    collectStep?.parameters?.coordinateId || ""
+                ),
+                itemFilter: "",
+                intervalTicks: 20,
+                cooldownTicks: 100
+            };
+            state.draft.priority = "BACKGROUND";
+            state.draft.repeatWhenIdle = false;
+        } else {
+            state.draft.trigger = null;
+        }
+        markDirty(true);
+    });
+    elements.watchCoordinate.addEventListener("change", () => {
+        if (!state.draft.trigger) {
+            return;
+        }
+        state.draft.trigger.coordinateId = elements.watchCoordinate.value;
+        for (const step of state.draft.steps) {
+            if (step.moduleId === "COLLECT_DROPPED_ITEMS"
+                    && !step.parameters.coordinateId) {
+                step.parameters.coordinateId = elements.watchCoordinate.value;
+            }
+        }
+        markDirty(true);
+    });
+    elements.watchFilter.addEventListener("input", () => {
+        if (state.draft.trigger) {
+            state.draft.trigger.itemFilter = elements.watchFilter.value;
+            markDirty();
+        }
+    });
+    elements.watchInterval.addEventListener("input", () => {
+        if (state.draft.trigger) {
+            state.draft.trigger.intervalTicks = Math.round(
+                Number(elements.watchInterval.value) * 20
+            );
+            markDirty();
+        }
+    });
+    elements.watchCooldown.addEventListener("input", () => {
+        if (state.draft.trigger) {
+            state.draft.trigger.cooldownTicks = Math.round(
+                Number(elements.watchCooldown.value) * 20
+            );
+            markDirty();
+        }
     });
     elements.addStep.addEventListener("click", () => {
         state.draft.steps.push(Model.newStep(

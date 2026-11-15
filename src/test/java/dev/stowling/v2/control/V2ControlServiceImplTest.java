@@ -13,6 +13,7 @@ import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.runtime.TaskRunManager;
 import java.nio.file.Path;
 import java.util.List;
@@ -233,6 +234,46 @@ class V2ControlServiceImplTest {
         );
         assertEquals(TaskPriority.NORMAL, updated.tasks().getFirst().priority());
         assertEquals(false, updated.tasks().getFirst().repeatWhenIdle());
+    }
+
+    @Test
+    void storesDroppedItemWatchAndExposesItsIdleStatus() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Drops");
+        TaskListResponse created = service.createTask(new TaskRequest(
+                "Pickup watch",
+                TaskPriority.BACKGROUND,
+                false,
+                List.of(new TaskStepRequest(
+                        null,
+                        ConfigValidator.COLLECT_DROPPED_ITEMS,
+                        Map.of(ConfigValidator.COORDINATE_ID, point.id().toString())
+                )),
+                TaskTriggerDefinition.droppedItems(
+                        point.id(),
+                        "minecraft:oak_log",
+                        20,
+                        100
+                )
+        ));
+
+        assertEquals(
+                "minecraft:oak_log",
+                created.tasks().getFirst().trigger().itemFilter()
+        );
+        assertEquals(1, service.taskRuns().watches().size());
+        assertEquals(
+                "IDLE",
+                service.taskRuns().watches().getFirst().state().name()
+        );
+        CoordinateInUseException exception = assertThrows(
+                CoordinateInUseException.class,
+                () -> service.deleteCoordinate(
+                        point.id(),
+                        new RevisionRequest(created.revision())
+                )
+        );
+        assertEquals(List.of("Pickup watch"), exception.taskNames());
     }
 
     private V2ControlService service() {

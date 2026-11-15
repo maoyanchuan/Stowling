@@ -282,6 +282,30 @@ def test_task_priority_queue_and_background_repeat_controls() -> None:
     assert "被中断任务不会续接" in html
 
 
+def test_task_editor_supports_dropped_item_watch_tasks() -> None:
+    html = read("tasks.html")
+    model = read("v2-task-model.js")
+    tasks = read("tasks.js")
+    styles = read("styles.css")
+
+    assert 'id="new-watch-task-button"' in html
+    assert 'id="task-watch-enabled"' in html
+    assert 'id="task-watch-coordinate"' in html
+    assert 'id="task-watch-interval"' in html
+    assert 'id="task-watch-cooldown"' in html
+    assert 'id="task-watch-list"' in html
+    assert "function watchTask" in model
+    assert '"COLLECT_DROPPED_ITEMS"' in model
+    assert '"SCAN_CONTAINERS_IN_REGION"' in model
+    assert '"DEPOSIT_ITEMS_TO_CONTAINERS"' in model
+    assert "trigger: task.trigger" in model
+    assert "function renderWatches" in tasks
+    assert "watchStateLabel" in tasks
+    assert "state.watches" in tasks
+    assert ".task-monitor .watch-panel" in styles
+    assert "空闲监听不占用任务执行位" in html
+
+
 def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:
     styles = read("styles.css")
 

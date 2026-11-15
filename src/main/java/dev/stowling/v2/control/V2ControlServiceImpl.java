@@ -45,6 +45,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         this.configs = Objects.requireNonNull(configs, "configs");
         this.runs = Objects.requireNonNull(runs, "runs");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
+        runs.refreshWatches(configs.read().config());
     }
 
     @Override
@@ -98,7 +99,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones()
         );
-        return coordinateResponse(configs.save(current.revision(), updated));
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshWatches(saved.config());
+        return coordinateResponse(saved);
     }
 
     @Override
@@ -128,7 +131,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones()
         );
-        return coordinateResponse(configs.save(current.revision(), updated));
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshWatches(saved.config());
+        return coordinateResponse(saved);
     }
 
     @Override
@@ -141,10 +146,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         requireCoordinate(current.config(), id);
         String coordinateId = id.toString();
         List<String> references = current.config().tasks().stream()
-                .filter(task -> task.steps().stream().anyMatch(step ->
-                        coordinateId.equals(
-                                step.parameters().get(ConfigValidator.COORDINATE_ID)
-                        )))
+                .filter(task -> referencesCoordinate(task, coordinateId))
                 .map(TaskDefinition::name)
                 .toList();
         if (!references.isEmpty()) {
@@ -159,7 +161,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones()
         );
-        return coordinateResponse(configs.save(current.revision(), updated));
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshWatches(saved.config());
+        return coordinateResponse(saved);
     }
 
     @Override
@@ -373,7 +377,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps())
+                steps(request.steps()),
+                request.trigger()
         );
         ConfigValidator.requireValid(new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
@@ -391,7 +396,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones()
         );
-        return taskResponse(configs.save(current.revision(), updated));
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshWatches(saved.config());
+        return taskResponse(saved);
     }
 
     @Override
@@ -407,7 +414,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps())
+                steps(request.steps()),
+                request.trigger()
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
                 .map(task -> task.id().equals(id) ? updatedTask : task)
@@ -419,7 +427,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones()
         );
-        return taskResponse(configs.save(current.revision(), updated));
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshWatches(saved.config());
+        return taskResponse(saved);
     }
 
     @Override
@@ -439,7 +449,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones()
         );
-        return taskResponse(configs.save(current.revision(), updated));
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshWatches(saved.config());
+        return taskResponse(saved);
     }
 
     @Override
@@ -465,7 +477,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
 
     @Override
     public RunListResponse taskRuns() {
-        return new RunListResponse(runs.runs(), runs.queued());
+        return new RunListResponse(
+                runs.runs(),
+                runs.queued(),
+                runs.watches()
+        );
     }
 
     @Override
@@ -486,6 +502,23 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return new TaskListResponse(
                 snapshot.revision(),
                 snapshot.config().tasks()
+        );
+    }
+
+    private static boolean referencesCoordinate(
+            TaskDefinition task,
+            String coordinateId
+    ) {
+        if (task.trigger() != null
+                && task.trigger().coordinateId().toString().equals(
+                coordinateId
+        )) {
+            return true;
+        }
+        return task.steps().stream().anyMatch(step ->
+                coordinateId.equals(
+                        step.parameters().get(ConfigValidator.COORDINATE_ID)
+                )
         );
     }
 

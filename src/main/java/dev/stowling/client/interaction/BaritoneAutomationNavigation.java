@@ -68,17 +68,16 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (!world.connected() || !world.alive() || world.playerPosition().isEmpty()) {
             return NavigationStatus.FAILED;
         }
+        if (navigationService.isWithinInteractionRange(target)) {
+            return arrive();
+        }
         BlockPosition current = world.playerPosition().orElseThrow();
         double deltaX = current.x() - target.x();
         double deltaY = current.y() - target.y();
         double deltaZ = current.z() - target.z();
         double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
         if (distanceSquared <= arrivalDistanceSquared(radius)) {
-            if (active) {
-                active = false;
-                navigationService.cancel();
-            }
-            return NavigationStatus.ARRIVED;
+            return arrive();
         }
         if (!active) {
             return NavigationStatus.FAILED;
@@ -95,6 +94,14 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         return NavigationStatus.NAVIGATING;
+    }
+
+    private NavigationStatus arrive() {
+        if (active) {
+            active = false;
+            navigationService.cancel();
+        }
+        return NavigationStatus.ARRIVED;
     }
 
     @Override

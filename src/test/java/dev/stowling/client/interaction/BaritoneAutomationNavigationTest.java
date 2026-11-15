@@ -28,11 +28,34 @@ class BaritoneAutomationNavigationTest {
         assertNull(service.exactTarget);
     }
 
+    @Test
+    void arrivesImmediatelyWhenTheTargetIsWithinInteractionRange() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.withinInteractionRange = true;
+        BaritoneAutomationNavigation navigation =
+                new BaritoneAutomationNavigation(
+                        service,
+                        () -> new WorldObservation(
+                                true,
+                                true,
+                                "minecraft:overworld",
+                                Optional.of(new BlockPosition(100, 64, 100))
+                        )
+                );
+        BlockPosition target = new BlockPosition(7, 67, 1);
+
+        navigation.startNear(target, 4);
+        NavigationStatus status = navigation.status(target, 4);
+
+        assertEquals(NavigationStatus.ARRIVED, status);
+    }
+
     private static final class RecordingNavigationService
             implements NavigationService {
         private BlockPosition exactTarget;
         private BlockPosition nearTarget;
         private int nearRadius;
+        private boolean withinInteractionRange;
 
         @Override
         public void navigateTo(BlockPosition target) {
@@ -43,6 +66,11 @@ class BaritoneAutomationNavigationTest {
         public void navigateToNear(BlockPosition target, int radius) {
             nearTarget = target;
             nearRadius = radius;
+        }
+
+        @Override
+        public boolean isWithinInteractionRange(BlockPosition target) {
+            return withinInteractionRange;
         }
 
         @Override

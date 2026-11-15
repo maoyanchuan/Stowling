@@ -7,6 +7,10 @@ public interface NavigationService {
 
     void navigateToNear(BlockPosition target, int radius);
 
+    default boolean isWithinInteractionRange(BlockPosition target) {
+        return false;
+    }
+
     void cancel();
 
     boolean isNavigatingOrCalculating();

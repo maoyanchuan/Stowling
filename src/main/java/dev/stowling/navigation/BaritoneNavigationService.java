@@ -4,9 +4,12 @@ import baritone.api.IBaritone;
 import baritone.api.IBaritoneProvider;
 import baritone.api.behavior.IPathingBehavior;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalComposite;
 import baritone.api.pathing.goals.GoalNear;
+import baritone.api.pathing.goals.GoalTwoBlocks;
 import dev.stowling.domain.BlockPosition;
 import java.util.Objects;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 
 public final class BaritoneNavigationService implements NavigationService {
@@ -29,11 +32,18 @@ public final class BaritoneNavigationService implements NavigationService {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
-        GoalNear goal = new GoalNear(
-                new BlockPos(target.x(), target.y(), target.z()),
-                radius
-        );
+        GoalComposite goal = nearContainerGoal(target, radius);
         primaryBaritone().getCustomGoalProcess().setGoalAndPath(goal);
+    }
+
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target) {
+        Objects.requireNonNull(target, "target");
+        LocalPlayer player = primaryBaritone().getPlayerContext().player();
+        return player != null && player.isWithinBlockInteractionRange(
+                new BlockPos(target.x(), target.y(), target.z()),
+                0.0D
+        );
     }
 
     @Override
@@ -51,5 +61,20 @@ public final class BaritoneNavigationService implements NavigationService {
 
     private IBaritone primaryBaritone() {
         return provider.getPrimaryBaritone();
+    }
+
+    static GoalComposite nearContainerGoal(
+            BlockPosition target,
+            int radius
+    ) {
+        BlockPos targetPos = new BlockPos(
+                target.x(),
+                target.y(),
+                target.z()
+        );
+        return new GoalComposite(
+                new GoalTwoBlocks(targetPos),
+                new GoalNear(targetPos, radius)
+        );
     }
 }

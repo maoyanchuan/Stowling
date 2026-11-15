@@ -1739,14 +1739,114 @@ body[data-page="tasks"] .panel {
 }
 
 .coordinate-create-form {
-    margin-bottom: 1rem;
-    padding: 0.8rem;
+    display: grid;
+    gap: 0.9rem;
+    margin: 0;
+    padding: 1rem;
     border: 1px solid var(--line);
     border-radius: 14px;
+    background: rgba(255, 255, 255, 0.4);
 }
 
-.coordinate-create-form button {
-    align-self: end;
+.coordinate-create-form[hidden] {
+    display: none;
+}
+
+.resource-create-grid,
+.resource-list-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.coordinate-create-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.coordinate-create-heading h3 {
+    margin: 0 0 0.25rem;
+    font-size: 0.98rem;
+}
+
+.coordinate-create-heading p:last-child {
+    margin: 0;
+}
+
+.coordinate-create-fields {
+    display: grid;
+    grid-template-columns:
+        minmax(190px, 1.6fr)
+        repeat(3, minmax(86px, 0.55fr));
+    gap: 0.7rem;
+}
+
+.coordinate-create-fields > .coordinate-optional-field {
+    grid-column: span 2;
+}
+
+.coordinate-optional-field {
+    padding: 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.42);
+}
+
+.coordinate-optional-field .coordinate-switch {
+    width: 100%;
+    justify-content: space-between;
+    margin: 0;
+}
+
+.coordinate-optional-field input:not([type="checkbox"]) {
+    margin-top: 0.55rem;
+}
+
+.region-create-fields {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.9fr) repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.75rem;
+}
+
+.region-corner-group {
+    min-width: 0;
+    margin: 0;
+    padding: 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.region-corner-group legend {
+    padding: 0 0.3rem;
+    color: var(--muted);
+    font-size: 0.73rem;
+    font-weight: 700;
+}
+
+.coordinate-axis-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.coordinate-create-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+}
+
+.resource-list-section {
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.24);
 }
 
 .resource-section-heading {
@@ -1764,9 +1864,107 @@ body[data-page="tasks"] .panel {
     font-size: 0.9rem;
 }
 
+.resource-list-section .resource-section-heading {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+@media (min-width: 780px) {
+    body[data-page="tasks"] .workspace {
+        grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    body[data-page="tasks"] .workspace-nav {
+        grid-column: 1 / -1;
+    }
+
+    body[data-page="tasks"] .task-sidebar {
+        position: sticky;
+        top: 1rem;
+        grid-column: 1;
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+    }
+
+    body[data-page="tasks"] .task-editor-panel {
+        grid-column: 2;
+    }
+
+    body[data-page="tasks"] .wide {
+        grid-column: 1 / -1;
+    }
+
+    .resource-list-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1180px) {
+    body[data-page="tasks"] main,
+    body[data-page="coordinates"] main {
+        width: min(1420px, calc(100% - 2rem));
+    }
+
+    body[data-page="tasks"] .workspace {
+        grid-template-columns: 280px minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .coordinate-create-fields {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .coordinate-name-field {
+        grid-column: 1 / -1;
+    }
+
+    .coordinate-create-fields > .coordinate-optional-field {
+        grid-column: 1 / -1;
+    }
+
+    .region-create-fields {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 779px) {
+    body[data-page="tasks"] .workspace {
+        grid-template-columns: 1fr;
+    }
+
+    body[data-page="tasks"] .task-sidebar,
+    body[data-page="tasks"] .task-editor-panel,
+    body[data-page="tasks"] .wide {
+        grid-column: 1;
+    }
+
+    .resource-list-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .coordinate-create-fields,
+    .coordinate-axis-row {
+        grid-template-columns: 1fr;
+    }
+
+    .coordinate-name-field,
+    .coordinate-create-fields > .coordinate-optional-field {
+        grid-column: 1;
+    }
+
+    .coordinate-create-heading {
+        flex-direction: column;
+    }
+}
+
 @media (min-width: 980px) {
     body[data-page="tasks"] .workspace {
-        grid-template-columns: minmax(220px, 0.75fr) minmax(520px, 1.8fr);
+        grid-template-columns: 280px minmax(0, 1fr);
     }
 
     body[data-page="tasks"] .wide {

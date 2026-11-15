@@ -13,6 +13,8 @@
     const elements = {
         add: document.querySelector("#add-coordinate-button"),
         addRegion: document.querySelector("#add-region-button"),
+        cancel: document.querySelector("#cancel-coordinate-button"),
+        cancelRegion: document.querySelector("#cancel-region-button"),
         form: document.querySelector("#new-coordinate-form"),
         regionForm: document.querySelector("#new-region-form"),
         name: document.querySelector("#new-coordinate-name"),
@@ -391,7 +393,8 @@
             elements.radius.value = "3";
             syncOptionalField(elements.useDimension, elements.dimension);
             syncOptionalField(elements.useRadius, elements.radius);
-            elements.name.focus();
+            elements.form.hidden = true;
+            elements.add.focus();
             clearErrors();
             Stowling.showToast("坐标已添加");
         } catch (error) {
@@ -425,7 +428,8 @@
             elements.regionSecondX.value = "0";
             elements.regionSecondY.value = "64";
             elements.regionSecondZ.value = "0";
-            elements.regionName.focus();
+            elements.regionForm.hidden = true;
+            elements.addRegion.focus();
             clearErrors();
             Stowling.showToast("区域已添加");
         } catch (error) {
@@ -439,6 +443,7 @@
     function showCoordinateForm() {
         elements.form.hidden = false;
         elements.regionForm.hidden = true;
+        clearErrors();
         elements.name.focus();
     }
 
@@ -448,7 +453,17 @@
     function showRegionForm() {
         elements.form.hidden = true;
         elements.regionForm.hidden = false;
+        clearErrors();
         elements.regionName.focus();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function hideCreateForms() {
+        elements.form.hidden = true;
+        elements.regionForm.hidden = true;
+        clearErrors();
     }
 
     /**
@@ -553,6 +568,8 @@
 
     elements.add.addEventListener("click", showCoordinateForm);
     elements.addRegion.addEventListener("click", showRegionForm);
+    elements.cancel.addEventListener("click", hideCreateForms);
+    elements.cancelRegion.addEventListener("click", hideCreateForms);
     elements.useDimension.addEventListener("change", () => {
         syncOptionalField(elements.useDimension, elements.dimension);
     });

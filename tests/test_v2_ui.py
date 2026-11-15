@@ -48,6 +48,24 @@ def test_region_editor_accepts_two_three_dimensional_corners() -> None:
     assert "normalizeRegions" in model
 
 
+def test_coordinate_page_uses_progressive_creation_layout() -> None:
+    html = read("coordinates.html")
+    javascript = read("coordinates.js")
+    styles = read("styles.css")
+
+    assert 'class="resource-create-grid"' in html
+    assert 'class="resource-list-grid"' in html
+    assert 'id="new-coordinate-form"' in html
+    assert 'id="new-region-form"' in html
+    assert 'class="coordinate-create-form" hidden' in html
+    assert 'id="cancel-coordinate-button"' in html
+    assert 'id="cancel-region-button"' in html
+    assert "hideCreateForms" in javascript
+    assert ".coordinate-create-fields" in styles
+    assert ".region-corner-group" in styles
+    assert ".resource-list-grid" in styles
+
+
 def test_coordinate_cards_collapse_to_the_saved_name() -> None:
     javascript = read("coordinates.js")
     styles = read("styles.css")
@@ -181,6 +199,16 @@ def test_task_execution_is_separate_from_the_editor() -> None:
     assert 'id="run-task-select"' in html
     assert "state.runTaskId" in tasks
     assert "renderRunControls()" in tasks
+
+
+def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:
+    styles = read("styles.css")
+
+    assert 'body[data-page="tasks"] .workspace' in styles
+    assert "grid-template-columns: 280px minmax(0, 1fr)" in styles
+    assert 'body[data-page="tasks"] .task-sidebar' in styles
+    assert 'body[data-page="tasks"] .task-editor-panel' in styles
+    assert "position: sticky" in styles
 
 
 def test_dashboard_uses_new_resource_endpoints_only() -> None:

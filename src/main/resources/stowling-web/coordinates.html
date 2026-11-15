@@ -51,103 +51,173 @@
                     </div>
                 </div>
 
-                <form id="new-coordinate-form" class="editor-fields coordinate-create-form">
-                    <div class="editor-field">
-                        <label for="new-coordinate-name">名称</label>
-                        <input id="new-coordinate-name" maxlength="80" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-coordinate-x">X</label>
-                        <input id="new-coordinate-x" type="number" step="1" value="0" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-coordinate-y">Y</label>
-                        <input id="new-coordinate-y" type="number" step="1" value="64" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-coordinate-z">Z</label>
-                        <input id="new-coordinate-z" type="number" step="1" value="0" required>
-                    </div>
-                    <div class="editor-field coordinate-optional-field">
-                        <label class="coordinate-switch"
-                               for="new-coordinate-use-dimension">
-                            <input id="new-coordinate-use-dimension" type="checkbox">
-                            <span>指定维度</span>
-                        </label>
-                        <input id="new-coordinate-dimension"
-                               value="minecraft:overworld"
-                               placeholder="minecraft:overworld"
-                               disabled hidden>
-                    </div>
-                    <div class="editor-field coordinate-optional-field">
-                        <label class="coordinate-switch"
-                               for="new-coordinate-use-radius">
-                            <input id="new-coordinate-use-radius" type="checkbox">
-                            <span>指定半径</span>
-                        </label>
-                        <input id="new-coordinate-radius" type="number"
-                               min="0" max="128" step="1" value="3"
-                               disabled hidden>
-                    </div>
-                    <button class="secondary compact" type="submit">保存新坐标</button>
-                </form>
+                <div class="resource-create-grid">
+                    <form id="new-coordinate-form"
+                          class="coordinate-create-form" hidden>
+                        <div class="coordinate-create-heading">
+                            <div>
+                                <p class="eyebrow">新增资源</p>
+                                <h3>添加坐标</h3>
+                                <p class="compact-help">
+                                    名称与 X/Y/Z 必填，维度和半径可按需开启。
+                                </p>
+                            </div>
+                            <button id="cancel-coordinate-button"
+                                    class="ghost compact" type="button">关闭</button>
+                        </div>
+                        <div class="coordinate-create-fields">
+                            <div class="editor-field coordinate-name-field">
+                                <label for="new-coordinate-name">名称</label>
+                                <input id="new-coordinate-name"
+                                       maxlength="80" required>
+                            </div>
+                            <div class="editor-field">
+                                <label for="new-coordinate-x">X</label>
+                                <input id="new-coordinate-x" type="number"
+                                       step="1" value="0" required>
+                            </div>
+                            <div class="editor-field">
+                                <label for="new-coordinate-y">Y</label>
+                                <input id="new-coordinate-y" type="number"
+                                       step="1" value="64" required>
+                            </div>
+                            <div class="editor-field">
+                                <label for="new-coordinate-z">Z</label>
+                                <input id="new-coordinate-z" type="number"
+                                       step="1" value="0" required>
+                            </div>
+                            <div class="editor-field coordinate-optional-field">
+                                <label class="coordinate-switch"
+                                       for="new-coordinate-use-dimension">
+                                    <input id="new-coordinate-use-dimension"
+                                           type="checkbox">
+                                    <span>指定维度</span>
+                                </label>
+                                <input id="new-coordinate-dimension"
+                                       value="minecraft:overworld"
+                                       placeholder="minecraft:overworld"
+                                       disabled hidden>
+                            </div>
+                            <div class="editor-field coordinate-optional-field">
+                                <label class="coordinate-switch"
+                                       for="new-coordinate-use-radius">
+                                    <input id="new-coordinate-use-radius"
+                                           type="checkbox">
+                                    <span>指定半径</span>
+                                </label>
+                                <input id="new-coordinate-radius" type="number"
+                                       min="0" max="128" step="1" value="3"
+                                       disabled hidden>
+                            </div>
+                        </div>
+                        <div class="coordinate-create-actions">
+                            <button class="primary compact"
+                                    type="submit">保存坐标</button>
+                        </div>
+                    </form>
 
-                <form id="new-region-form"
-                      class="editor-fields coordinate-create-form" hidden>
-                    <div class="editor-field">
-                        <label for="new-region-name">区域名称</label>
-                        <input id="new-region-name" maxlength="80" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-region-first-x">角点1 X</label>
-                        <input id="new-region-first-x" type="number"
-                               step="1" value="0" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-region-first-y">角点1 Y</label>
-                        <input id="new-region-first-y" type="number"
-                               step="1" value="64" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-region-first-z">角点1 Z</label>
-                        <input id="new-region-first-z" type="number"
-                               step="1" value="0" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-region-second-x">角点2 X</label>
-                        <input id="new-region-second-x" type="number"
-                               step="1" value="0" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-region-second-y">角点2 Y</label>
-                        <input id="new-region-second-y" type="number"
-                               step="1" value="64" required>
-                    </div>
-                    <div class="editor-field">
-                        <label for="new-region-second-z">角点2 Z</label>
-                        <input id="new-region-second-z" type="number"
-                               step="1" value="0" required>
-                    </div>
-                    <button class="secondary compact" type="submit">保存新区域</button>
-                </form>
-
-                <div class="resource-section-heading">
-                    <div>
-                        <h3>坐标点</h3>
-                        <p class="muted compact-help">可被任务引用的单点坐标。</p>
-                    </div>
+                    <form id="new-region-form"
+                          class="coordinate-create-form" hidden>
+                        <div class="coordinate-create-heading">
+                            <div>
+                                <p class="eyebrow">新增资源</p>
+                                <h3>添加区域</h3>
+                                <p class="compact-help">
+                                    输入两个三维角点，区域会包含两个端点。
+                                </p>
+                            </div>
+                            <button id="cancel-region-button"
+                                    class="ghost compact" type="button">关闭</button>
+                        </div>
+                        <div class="region-create-fields">
+                            <div class="editor-field">
+                                <label for="new-region-name">区域名称</label>
+                                <input id="new-region-name"
+                                       maxlength="80" required>
+                            </div>
+                            <fieldset class="region-corner-group">
+                                <legend>角点 1</legend>
+                                <div class="coordinate-axis-row">
+                                    <div class="editor-field">
+                                        <label for="new-region-first-x">X</label>
+                                        <input id="new-region-first-x"
+                                               type="number" step="1"
+                                               value="0" required>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="new-region-first-y">Y</label>
+                                        <input id="new-region-first-y"
+                                               type="number" step="1"
+                                               value="64" required>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="new-region-first-z">Z</label>
+                                        <input id="new-region-first-z"
+                                               type="number" step="1"
+                                               value="0" required>
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <fieldset class="region-corner-group">
+                                <legend>角点 2</legend>
+                                <div class="coordinate-axis-row">
+                                    <div class="editor-field">
+                                        <label for="new-region-second-x">X</label>
+                                        <input id="new-region-second-x"
+                                               type="number" step="1"
+                                               value="0" required>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="new-region-second-y">Y</label>
+                                        <input id="new-region-second-y"
+                                               type="number" step="1"
+                                               value="64" required>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="new-region-second-z">Z</label>
+                                        <input id="new-region-second-z"
+                                               type="number" step="1"
+                                               value="0" required>
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div class="coordinate-create-actions">
+                            <button class="primary compact"
+                                    type="submit">保存区域</button>
+                        </div>
+                    </form>
                 </div>
-                <div id="coordinate-list" class="editor-list" aria-live="polite"></div>
 
-                <div class="resource-section-heading">
-                    <div>
-                        <h3>区域</h3>
-                        <p class="muted compact-help">
-                            由两个三维角点定义的共享长方体区域。
-                        </p>
-                    </div>
+                <div class="resource-list-grid">
+                    <section class="resource-list-section"
+                             aria-labelledby="coordinate-list-title">
+                        <div class="resource-section-heading">
+                            <div>
+                                <h3 id="coordinate-list-title">坐标点</h3>
+                                <p class="muted compact-help">
+                                    可被任务引用的单点坐标。
+                                </p>
+                            </div>
+                        </div>
+                        <div id="coordinate-list" class="editor-list"
+                             aria-live="polite"></div>
+                    </section>
+
+                    <section class="resource-list-section"
+                             aria-labelledby="region-list-title">
+                        <div class="resource-section-heading">
+                            <div>
+                                <h3 id="region-list-title">区域</h3>
+                                <p class="muted compact-help">
+                                    由两个三维角点定义的共享长方体区域。
+                                </p>
+                            </div>
+                        </div>
+                        <div id="region-list" class="editor-list"
+                             aria-live="polite"></div>
+                    </section>
                 </div>
-                <div id="region-list" class="editor-list" aria-live="polite"></div>
                 <div id="coordinate-errors" class="config-errors" role="alert"></div>
                 <div class="coordinate-footer">
                     <span id="coordinate-status">尚未读取坐标</span>

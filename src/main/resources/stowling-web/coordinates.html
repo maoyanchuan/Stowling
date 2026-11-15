@@ -37,7 +37,7 @@
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">共享资源</p>
-                        <h2 id="coordinate-title">坐标点</h2>
+                        <h2 id="coordinate-title">坐标与区域</h2>
                         <p class="muted section-help">
                             坐标按名称和 X/Y/Z 保存，可按需附带维度和到达半径。
                         </p>
@@ -189,12 +189,21 @@
                     </form>
                 </div>
 
+                <div class="resource-toolbar">
+                    <label class="search-field" for="resource-search">
+                        <span>查找资源</span>
+                        <input id="resource-search" type="search"
+                               placeholder="搜索名称或坐标" autocomplete="off">
+                    </label>
+                    <span class="compact-help">点击名称展开编辑 · 支持粘贴三维坐标</span>
+                </div>
                 <div class="resource-list-grid">
                     <section class="resource-list-section"
                              aria-labelledby="coordinate-list-title">
                         <div class="resource-section-heading">
                             <div>
-                                <h3 id="coordinate-list-title">坐标点</h3>
+                                <h3 id="coordinate-list-title">坐标点 <span id="coordinate-list-count"
+                                    class="count-label">0</span></h3>
                                 <p class="muted compact-help">
                                     可被任务引用的单点坐标。
                                 </p>
@@ -208,7 +217,8 @@
                              aria-labelledby="region-list-title">
                         <div class="resource-section-heading">
                             <div>
-                                <h3 id="region-list-title">区域</h3>
+                                <h3 id="region-list-title">区域 <span id="region-list-count"
+                                    class="count-label">0</span></h3>
                                 <p class="muted compact-help">
                                     由两个三维角点定义的共享长方体区域。
                                 </p>

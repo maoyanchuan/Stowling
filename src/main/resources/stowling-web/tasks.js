@@ -16,13 +16,17 @@
         draft: null,
         dirty: false,
         runs: [],
-        queue: []
+        queue: [],
+        query: ""
     };
 
     const elements = {
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
         newSortTask: document.querySelector("#new-sort-task-button"),
+        search: document.querySelector("#task-search"),
+        taskCount: document.querySelector("#task-list-count"),
+        settingsLabel: document.querySelector("#task-settings-label"),
         list: document.querySelector("#task-list"),
         listMessage: document.querySelector("#task-list-message"),
         empty: document.querySelector("#task-empty"),
@@ -86,6 +90,9 @@
             renderTaskList();
             renderModuleCatalog();
             renderRunControls();
+            if (!state.draft && state.tasks.length > 0) {
+                selectTask(state.tasks[0]);
+            }
             renderRuntime();
             renderQueue();
         } catch (error) {
@@ -98,6 +105,14 @@
      */
     function renderTaskList() {
         elements.list.replaceChildren();
+        elements.taskCount.textContent = String(state.tasks.length);
+        const matches = state.tasks.filter(
+            (task) => task.name.toLocaleLowerCase().includes(state.query)
+        );
+        if (matches.length === 0 && state.tasks.length > 0) {
+            elements.list.append(Stowling.emptyState("没有匹配的任务"));
+            return;
+        }
         if (state.tasks.length === 0) {
             elements.list.append(Stowling.emptyState("尚未创建任务"));
             return;
@@ -107,9 +122,12 @@
             ["COMPOSITE", "复合任务"]
         ];
         for (const [level, label] of groups) {
-            const tasks = state.tasks.filter(
+            const tasks = matches.filter(
                 (task) => Model.taskLevel(task, state.modules) === level
             );
+            if (tasks.length === 0) {
+                continue;
+            }
             const group = Stowling.element("section", "task-group");
             const heading = Stowling.element("div", "task-group-heading");
             heading.append(
@@ -121,21 +139,20 @@
                 )
             );
             group.append(heading);
-            if (tasks.length === 0) {
-                group.append(Stowling.element(
-                    "p",
-                    "muted compact-help",
-                    "暂无任务"
-                ));
-            }
             for (const task of tasks) {
                 const button = Stowling.element(
                     "button",
                     "task-card task-select"
                 );
                 button.type = "button";
-                button.append(
+                const identity = Stowling.element("div", "task-select-identity");
+                identity.append(
                     Stowling.element("strong", "", task.name),
+                    Stowling.element("span", "compact-help", `${task.steps.length} 个步骤`)
+                );
+                button.setAttribute("aria-pressed", String(task.id === state.selectedId));
+                button.append(
+                    identity,
                     Stowling.element(
                         "span",
                         "module-level-tag",
@@ -196,7 +213,14 @@
      * @returns {HTMLElement}
      */
     function createModuleCard(module) {
-        const card = Stowling.element("article", "module-card");
+        const card = Stowling.element("details", "module-card");
+        const summary = Stowling.element("summary", "");
+        summary.append(
+            Stowling.element("strong", "", module.name),
+            Stowling.element(
+                "span", "module-level-tag", module.level === "BASIC" ? "基础" : "复合"
+            )
+        );
         const parameters = Array.isArray(module.parameters)
             ? module.parameters
             : [];
@@ -207,13 +231,7 @@
                 return `${parameter.label}${required}`;
             }).join("、");
         card.append(
-            Stowling.element("code", "", module.id),
-            Stowling.element("strong", "", module.name),
-            Stowling.element(
-                "span",
-                "module-level-tag",
-                module.level === "BASIC" ? "基础" : "复合"
-            ),
+            summary,
             Stowling.element("p", "", module.description || ""),
             Stowling.element(
                 "p",
@@ -234,10 +252,13 @@
             return;
         }
         state.selectedId = task.id;
+        state.runTaskId = task.id;
         state.draft = Model.normalizeTask(task);
         state.dirty = false;
         renderEditor();
         renderTaskList();
+        renderRunControls();
+        animateEditor();
     }
 
     /**
@@ -326,6 +347,7 @@
         renderTaskList();
         elements.name.focus();
         elements.name.select();
+        animateEditor();
     }
 
     /**
@@ -354,6 +376,7 @@
         }
         elements.name.value = state.draft.name;
         elements.priority.value = state.draft.priority;
+        updateSettingsLabel();
         elements.repeat.checked = state.draft.repeatWhenIdle;
         elements.repeat.disabled = state.draft.priority !== "BACKGROUND";
         elements.revision.textContent = state.selectedId
@@ -369,6 +392,27 @@
             rerenderEditor
         );
         updateActions();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateSettingsLabel() {
+        elements.settingsLabel.textContent = Model.priorityLabel(state.draft.priority)
+            + (state.draft.repeatWhenIdle ? " · 自动重排" : " · 执行一次");
+    }
+
+    /**
+     * @returns {void}
+     */
+    function animateEditor() {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            return;
+        }
+        elements.form.animate(
+            [{ opacity: 0.5, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+            { duration: 180, easing: "ease-out" }
+        );
     }
 
     /**
@@ -796,6 +840,10 @@
         }
     }
 
+    elements.search.addEventListener("input", () => {
+        state.query = elements.search.value.trim().toLocaleLowerCase();
+        renderTaskList();
+    });
     elements.newTask.addEventListener("click", startNewTask);
     elements.newCacheTask.addEventListener("click", startCacheTask);
     elements.newSortTask.addEventListener("click", startSortTask);
@@ -812,6 +860,7 @@
     });
     elements.repeat.addEventListener("change", () => {
         state.draft.repeatWhenIdle = elements.repeat.checked;
+        updateSettingsLabel();
         markDirty();
     });
     elements.addStep.addEventListener("click", () => {

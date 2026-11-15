@@ -286,9 +286,10 @@ def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:
     styles = read("styles.css")
 
     assert 'body[data-page="tasks"] .workspace' in styles
+    assert ".task-workbench" in styles
     assert "grid-template-columns: 280px minmax(0, 1fr)" in styles
     assert 'body[data-page="tasks"] .task-sidebar' in styles
-    assert 'body[data-page="tasks"] .task-editor-panel' in styles
+    assert ".task-main" in styles
     assert "position: sticky" in styles
 
 
@@ -408,3 +409,90 @@ def test_header_and_content_share_responsive_page_width() -> None:
     for page in ("dashboard", "coordinates", "tasks", "category-zones", "storage"):
         assert f'body[data-page="{page}"] main' not in styles
         assert f'main[data-page="{page}"]' not in styles
+
+
+def test_coordinate_editors_group_xyz_and_separate_optional_settings() -> None:
+    javascript = read("coordinates.js")
+    html = read("coordinates.html")
+
+    assert 'axisGroup("位置", x, y, z)' in javascript
+    assert 'axisGroup("角点 1", firstX, firstY, firstZ)' in javascript
+    assert 'axisGroup("角点 2", secondX, secondY, secondZ)' in javascript
+    assert 'Stowling.element("details", "resource-options")' in javascript
+    assert "options.open = useDimension.checked || useRadius.checked" in javascript
+    assert "resourceIdentity(" in javascript
+    assert 'id="coordinate-list-count"' in html
+    assert 'id="region-list-count"' in html
+
+
+def test_coordinate_search_filters_without_discarding_unsaved_fields() -> None:
+    javascript = read("coordinates.js")
+    html = read("coordinates.html")
+    search = javascript.split('elements.search.addEventListener("input"', 1)[1]
+    search = search.split("});", 1)[0]
+
+    assert 'id="resource-search"' in html
+    assert "filterResourceList(elements.list)" in search
+    assert "filterResourceList(elements.regionList)" in search
+    assert "replaceChildren" not in search
+    assert "renderCoordinates" not in search
+    assert "renderRegions" not in search
+    assert "card.hidden = !card.dataset.searchText" in javascript
+
+
+def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
+    javascript = read("category-zones.js")
+
+    assert 'Stowling.element("details", "category-binding-card")' in javascript
+    assert "function appendBinding(host, binding, expanded = false)" in javascript
+    assert "card.open = expanded" in javascript
+    assert 'Stowling.element("details", "category-binding-settings")' in javascript
+    assert "ranges.append(marker.root, storage.root)" in javascript
+    assert "settingsBody.append(recognition, overrideHeading, overrides, overrideActions)" in (
+        javascript
+    )
+    assert "containerOverrides: overrideReaders.map((reader) => reader.read())" in javascript
+    assert "bindingDescription(binding)" in javascript
+
+
+def test_task_workbench_keeps_execution_with_editor_and_folds_module_reference() -> None:
+    html = read("tasks.html")
+    workbench = html.split('<div class="task-workbench">', 1)[1]
+    workbench = workbench.split('<details id="task-module-panel"', 1)[0]
+
+    for name in ("task-sidebar", "task-main", "task-monitor", "task-editor-panel"):
+        assert name in workbench
+    assert 'id="task-run-panel"' in workbench
+    assert 'id="task-search"' in workbench
+    assert '<details class="task-settings">' in html
+    module_heading = html.split('<details id="task-module-panel"', 1)[1].split(">", 1)[0]
+    assert "open" not in module_heading
+    assert "从一个任务开始" in html
+
+
+def test_task_selection_aligns_saved_run_target_without_using_the_draft() -> None:
+    javascript = read("tasks.js")
+    selection = javascript.split("function selectTask(task)", 1)[1]
+    selection = selection.split("function renderRunControls", 1)[0]
+
+    assert "state.runTaskId = task.id" in selection
+    assert "renderRunControls()" in selection
+    assert "!state.draft && state.tasks.length > 0" in javascript
+    assert "task.name.toLocaleLowerCase().includes(state.query)" in javascript
+    assert "task.steps.length" in javascript
+    assert 'button.setAttribute("aria-pressed"' in javascript
+
+
+def test_lightweight_animations_respect_reduced_motion_and_hidden_content() -> None:
+    styles = read("styles.css")
+    javascript = read("tasks.js")
+
+    assert "@keyframes ui-reveal" in styles
+    assert "::details-content" in styles
+    assert "@media (prefers-reduced-motion: reduce)" in styles
+    assert "animation: none !important" in styles
+    assert 'window.matchMedia("(prefers-reduced-motion: reduce)").matches' in javascript
+    assert "elements.form.animate(" in javascript
+    assert ".task-welcome[hidden]" in styles
+    assert ".coordinate-point-editor[hidden]" in styles
+    assert ".search-empty[hidden]" in styles

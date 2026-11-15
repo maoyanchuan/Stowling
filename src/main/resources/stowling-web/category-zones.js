@@ -79,7 +79,14 @@
             "summary",
             "editor-card-heading coordinate-point-summary"
         );
-        summary.append(Stowling.element("strong", "", zone.name));
+        const identity = Stowling.element("div", "resource-summary-text");
+        identity.append(
+            Stowling.element("strong", "", zone.name),
+            Stowling.element(
+                "span", "resource-summary-meta", `${zone.bindings.length} 组范围绑定`
+            )
+        );
+        summary.append(identity);
         card.append(summary);
 
         const body = Stowling.element("div", "category-zone-editor");
@@ -104,7 +111,8 @@
         addBinding.addEventListener("click", () => {
             readers.push(appendBinding(
                 bindingsHost,
-                Model.normalizeBinding({})
+                Model.normalizeBinding({}),
+                true
             ));
         });
         const addBindingRow = Stowling.element(
@@ -138,7 +146,8 @@
             void deleteZone(zone);
         });
         actions.append(save, remove);
-        card.append(body, actions);
+        body.append(actions);
+        card.append(body);
         return card;
     }
 
@@ -173,10 +182,21 @@
     /**
      * @param {HTMLElement} host
      * @param {object} binding
+     * @param {boolean} [expanded]
      * @returns {() => object}
      */
-    function appendBinding(host, binding) {
-        const card = Stowling.element("article", "category-binding-card");
+    function appendBinding(host, binding, expanded = false) {
+        const card = Stowling.element("details", "category-binding-card");
+        card.open = expanded;
+        const summary = Stowling.element("summary", "category-binding-summary");
+        const identity = Stowling.element("div", "resource-summary-text");
+        const number = String(host.children.length + 1).padStart(2, "0");
+        identity.append(
+            Stowling.element("strong", "", `范围 ${number} · 识别区 → 储存区`),
+            Stowling.element("span", "resource-summary-meta", bindingDescription(binding))
+        );
+        summary.append(identity);
+        const body = Stowling.element("div", "category-binding-body");
         const marker = cornerFields("分类物识别区", "marker", binding);
         const storage = cornerFields("储存区", "storage", binding);
         const rule = document.createElement("select");
@@ -252,14 +272,17 @@
             "category-binding-actions"
         );
         overrideActions.append(addOverride);
-        card.append(
-            marker.root,
-            storage.root,
-            recognition,
-            overrideHeading,
-            overrides,
-            overrideActions
+        const ranges = Stowling.element("div", "category-range-pair");
+        ranges.append(marker.root, storage.root);
+        const settings = Stowling.element("details", "category-binding-settings");
+        const settingsBody = Stowling.element("div", "category-settings-body");
+        settingsBody.append(recognition, overrideHeading, overrides, overrideActions);
+        settings.append(
+            Stowling.element("summary", "", "识别规则与容器例外"),
+            settingsBody
         );
+        body.append(ranges, settings);
+        card.append(summary, body);
         host.append(card);
         return () => ({
             ...marker.read(),
@@ -268,6 +291,19 @@
             ignoredMarkerBlockIds: parseBlockIds(ignored.value),
             containerOverrides: overrideReaders.map((reader) => reader.read())
         });
+    }
+
+    /**
+     * @param {object} binding
+     * @returns {string}
+     */
+    function bindingDescription(binding) {
+        const marker = `${binding.markerFirstX}, ${binding.markerFirstY}, `
+            + `${binding.markerFirstZ}`;
+        const storage = `${binding.storageFirstX}, ${binding.storageFirstY}, `
+            + `${binding.storageFirstZ}`;
+        const exceptions = binding.containerOverrides.length;
+        return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`;
     }
 
     /**
@@ -417,6 +453,9 @@
      */
     function field(label, control) {
         const wrapper = Stowling.element("div", "editor-field");
+        if (control.matches("input, select, textarea")) {
+            control.setAttribute("aria-label", label);
+        }
         wrapper.append(Stowling.element("label", "", label), control);
         return wrapper;
     }
@@ -504,7 +543,8 @@
         newBindingReaders.length = 0;
         newBindingReaders.push(appendBinding(
             elements.bindings,
-            Model.normalizeBinding({})
+            Model.normalizeBinding({}),
+            true
         ));
         clearErrors();
         elements.name.focus();
@@ -539,7 +579,8 @@
     elements.addBinding.addEventListener("click", () => {
         newBindingReaders.push(appendBinding(
             elements.bindings,
-            Model.normalizeBinding({})
+            Model.normalizeBinding({}),
+            true
         ));
     });
     elements.form.addEventListener("submit", (event) => {

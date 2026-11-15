@@ -64,7 +64,7 @@
         const module = modules.find((candidate) => candidate.id === step.moduleId);
         identity.append(
             Stowling.element("strong", "", module?.name || step.moduleId),
-            Stowling.element("span", "muted compact-help", `步骤 ${index + 1}`)
+            Stowling.element("span", "muted compact-help", "选择模块并填写所需参数")
         );
         const actions = Stowling.element("div", "move-buttons");
         actions.append(
@@ -72,7 +72,11 @@
             moveButton("↓", task, index, 1, changed),
             deleteButton(task, index, changed)
         );
-        heading.append(identity, actions);
+        heading.append(
+            Stowling.element("span", "step-number", String(index + 1).padStart(2, "0")),
+            identity,
+            actions
+        );
 
         const fields = Stowling.element("div", "editor-fields");
         fields.append(field("模块", moduleSelect(step, modules, changed)));

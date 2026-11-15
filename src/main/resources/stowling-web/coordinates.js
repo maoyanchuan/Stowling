@@ -7,7 +7,8 @@
     const state = {
         revision: "",
         coordinates: [],
-        regions: []
+        regions: [],
+        query: ""
     };
 
     const elements = {
@@ -32,6 +33,9 @@
         regionSecondX: document.querySelector("#new-region-second-x"),
         regionSecondY: document.querySelector("#new-region-second-y"),
         regionSecondZ: document.querySelector("#new-region-second-z"),
+        search: document.querySelector("#resource-search"),
+        coordinateCount: document.querySelector("#coordinate-list-count"),
+        regionCount: document.querySelector("#region-list-count"),
         list: document.querySelector("#coordinate-list"),
         regionList: document.querySelector("#region-list"),
         errors: document.querySelector("#coordinate-errors"),
@@ -80,6 +84,7 @@
      */
     function renderCoordinates() {
         elements.list.replaceChildren();
+        elements.coordinateCount.textContent = String(state.coordinates.length);
         if (state.coordinates.length === 0) {
             elements.list.append(Stowling.emptyState("尚未添加坐标"));
             return;
@@ -87,6 +92,10 @@
         for (const coordinate of state.coordinates) {
             elements.list.append(createCard(coordinate));
         }
+        const empty = Stowling.emptyState("没有匹配的坐标");
+        empty.classList.add("search-empty");
+        elements.list.append(empty);
+        filterResourceList(elements.list);
     }
 
     /**
@@ -106,6 +115,7 @@
      */
     function renderRegions() {
         elements.regionList.replaceChildren();
+        elements.regionCount.textContent = String(state.regions.length);
         if (state.regions.length === 0) {
             elements.regionList.append(Stowling.emptyState("尚未添加区域"));
             return;
@@ -113,6 +123,10 @@
         for (const region of state.regions) {
             elements.regionList.append(createRegionCard(region));
         }
+        const empty = Stowling.emptyState("没有匹配的区域");
+        empty.classList.add("search-empty");
+        elements.regionList.append(empty);
+        filterResourceList(elements.regionList);
     }
 
     /**
@@ -128,10 +142,15 @@
             "summary",
             "editor-card-heading coordinate-point-summary"
         );
-        heading.append(Stowling.element("strong", "", coordinate.name));
+        heading.append(resourceIdentity(
+            coordinate.name,
+            positionLabel(coordinate.x, coordinate.y, coordinate.z)
+        ));
+        card.dataset.searchText = `${coordinate.name} ${coordinate.x} `
+            + `${coordinate.y} ${coordinate.z}`;
         card.append(heading);
 
-        const fields = Stowling.element("div", "editor-fields");
+        const fields = Stowling.element("div", "resource-editor-body");
         const name = input("text", coordinate.name, 80);
         const x = input("number", coordinate.x);
         const y = input("number", coordinate.y);
@@ -147,14 +166,18 @@
         const radius = input("number", coordinate.radius ?? 3);
         radius.min = "0";
         radius.max = "128";
-        fields.append(
-            field("名称", name),
-            field("X", x),
-            field("Y", y),
-            field("Z", z),
+        const options = Stowling.element("details", "resource-options");
+        options.open = useDimension.checked || useRadius.checked;
+        const optionFields = Stowling.element("div", "resource-option-fields");
+        optionFields.append(
             optionalField("指定维度", useDimension, dimension),
             optionalField("指定半径", useRadius, radius)
         );
+        options.append(
+            Stowling.element("summary", "", "更多选项 · 维度与到达半径"),
+            optionFields
+        );
+        fields.append(field("名称", name), axisGroup("位置", x, y, z), options);
 
         const actions = Stowling.element("div", "action-row");
         const save = Stowling.element("button", "primary compact", "保存");
@@ -181,7 +204,8 @@
             void deleteCoordinate(coordinate);
         });
         actions.append(save, remove);
-        card.append(fields, actions);
+        fields.append(actions);
+        card.append(fields);
         return card;
     }
 
@@ -198,10 +222,16 @@
             "summary",
             "editor-card-heading coordinate-point-summary"
         );
-        heading.append(Stowling.element("strong", "", region.name));
+        heading.append(resourceIdentity(
+            region.name,
+            `${positionLabel(region.firstX, region.firstY, region.firstZ)} → `
+                + positionLabel(region.secondX, region.secondY, region.secondZ)
+        ));
+        card.dataset.searchText = `${region.name} ${region.firstX} ${region.firstY} `
+            + `${region.firstZ} ${region.secondX} ${region.secondY} ${region.secondZ}`;
         card.append(heading);
 
-        const fields = Stowling.element("div", "editor-fields");
+        const fields = Stowling.element("div", "resource-editor-body");
         const name = input("text", region.name, 80);
         const firstX = input("number", region.firstX);
         const firstY = input("number", region.firstY);
@@ -211,15 +241,12 @@
         const secondZ = input("number", region.secondZ);
         Stowling.bindCoordinateInputs(firstX, firstY, firstZ);
         Stowling.bindCoordinateInputs(secondX, secondY, secondZ);
-        fields.append(
-            field("区域名称", name),
-            field("角点1 X", firstX),
-            field("角点1 Y", firstY),
-            field("角点1 Z", firstZ),
-            field("角点2 X", secondX),
-            field("角点2 Y", secondY),
-            field("角点2 Z", secondZ)
+        const corners = Stowling.element("div", "resource-corners");
+        corners.append(
+            axisGroup("角点 1", firstX, firstY, firstZ),
+            axisGroup("角点 2", secondX, secondY, secondZ)
         );
+        fields.append(field("区域名称", name), corners);
 
         const actions = Stowling.element("div", "action-row");
         const save = Stowling.element("button", "primary compact", "保存");
@@ -245,8 +272,64 @@
             void deleteRegion(region);
         });
         actions.append(save, remove);
-        card.append(fields, actions);
+        fields.append(actions);
+        card.append(fields);
         return card;
+    }
+
+    /**
+     * @param {HTMLElement} host
+     * @returns {void}
+     */
+    function filterResourceList(host) {
+        let visible = 0;
+        for (const card of host.querySelectorAll(".coordinate-point-editor")) {
+            card.hidden = !card.dataset.searchText.toLocaleLowerCase().includes(state.query);
+            visible += card.hidden ? 0 : 1;
+        }
+        const empty = host.querySelector(".search-empty");
+        if (empty) {
+            empty.hidden = visible > 0;
+        }
+    }
+
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {string}
+     */
+    function positionLabel(x, y, z) {
+        return `${x}, ${y}, ${z}`;
+    }
+
+    /**
+     * @param {string} name
+     * @param {string} description
+     * @returns {HTMLElement}
+     */
+    function resourceIdentity(name, description) {
+        const identity = Stowling.element("div", "resource-summary-text");
+        identity.append(
+            Stowling.element("strong", "", name),
+            Stowling.element("span", "resource-summary-meta", description)
+        );
+        return identity;
+    }
+
+    /**
+     * @param {string} label
+     * @param {HTMLInputElement} x
+     * @param {HTMLInputElement} y
+     * @param {HTMLInputElement} z
+     * @returns {HTMLElement}
+     */
+    function axisGroup(label, x, y, z) {
+        const group = Stowling.element("fieldset", "resource-axis-group");
+        const row = Stowling.element("div", "coordinate-axis-row");
+        row.append(field("X", x), field("Y", y), field("Z", z));
+        group.append(Stowling.element("legend", "", label), row);
+        return group;
     }
 
     /**
@@ -540,6 +623,7 @@
      */
     function field(label, control) {
         const wrapper = Stowling.element("div", "editor-field");
+        control.setAttribute("aria-label", label);
         wrapper.append(Stowling.element("label", "", label), control);
         return wrapper;
     }
@@ -569,6 +653,11 @@
         elements.errors.replaceChildren();
     }
 
+    elements.search.addEventListener("input", () => {
+        state.query = elements.search.value.trim().toLocaleLowerCase();
+        filterResourceList(elements.list);
+        filterResourceList(elements.regionList);
+    });
     elements.add.addEventListener("click", showCoordinateForm);
     elements.addRegion.addEventListener("click", showRegionForm);
     elements.cancel.addEventListener("click", hideCreateForms);

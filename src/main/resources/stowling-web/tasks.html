@@ -34,155 +34,176 @@
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
-            <section class="panel task-sidebar" aria-labelledby="task-list-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">任务定义</p>
-                        <h2 id="task-list-title">任务列表</h2>
-                    </div>
-                    <div class="action-row">
-                        <button id="new-task-button" class="secondary compact"
-                                type="button">空任务</button>
-                        <button id="new-cache-task-button" class="primary compact"
-                                type="button">缓存任务</button>
-                        <button id="new-sort-task-button" class="secondary compact"
-                                type="button">分类任务</button>
-                    </div>
-                </div>
-                <p id="task-list-message" class="field-message" role="status"></p>
-                <div id="task-list" class="editor-list"></div>
-            </section>
-
-            <section class="panel task-editor-panel" aria-labelledby="task-editor-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">线性模块</p>
-                        <h2 id="task-editor-title">任务编辑器</h2>
-                    </div>
-                    <span id="task-revision" class="loopback-tag">新任务</span>
-                </div>
-                <div id="task-empty" class="empty-state">选择任务或新建任务</div>
-                <form id="task-form" hidden novalidate>
-                    <div class="editor-field">
-                        <label for="task-name">任务名称</label>
-                        <input id="task-name" maxlength="80" required>
-                    </div>
-                    <div class="editor-fields task-scheduling-fields">
-                        <div class="editor-field">
-                            <label for="task-priority">默认优先级</label>
-                            <select id="task-priority">
-                                <option value="BACKGROUND">后台</option>
-                                <option value="NORMAL">普通</option>
-                                <option value="URGENT">紧急</option>
-                            </select>
-                        </div>
-                        <label class="checkbox-field" for="task-repeat">
-                            <input id="task-repeat" type="checkbox">
-                            <span>完成后自动重新排队</span>
-                        </label>
-                    </div>
-                    <p class="muted compact-help">
-                        只有后台任务可以自动重排。重排前等待 5 秒；
-                        普通和紧急任务只在被抢占时从头重新排队。
-                    </p>
-                    <div class="step-heading">
+            <div class="task-workbench">
+                <section class="panel task-sidebar" aria-labelledby="task-list-title">
+                    <div class="panel-heading">
                         <div>
-                            <h3>模块步骤</h3>
-                            <p class="muted compact-help">
-                                基础模块执行单个动作，复合模块封装完整流程。
-                            </p>
+                            <p class="eyebrow">我的任务</p>
+                            <h2 id="task-list-title">任务列表</h2>
                         </div>
-                        <button id="add-step-button" class="secondary compact"
-                                type="button">添加步骤</button>
+                        <span id="task-list-count" class="count-label">0</span>
                     </div>
-                    <div id="task-steps" class="step-list"></div>
-                    <div id="task-errors" class="config-errors" role="alert"></div>
-                    <div class="action-row">
-                        <button id="save-task-button" class="primary compact"
-                                type="submit">保存任务</button>
-                        <button id="discard-task-button" class="secondary compact"
-                                type="button">放弃修改</button>
-                        <button id="delete-task-button"
-                                class="ghost compact danger-action"
-                                type="button">删除任务</button>
+                    <div class="task-create-actions">
+                        <button id="new-task-button" class="primary"
+                                type="button">＋ 新建任务</button>
+                        <div class="task-template-actions">
+                            <button id="new-cache-task-button" class="secondary compact"
+                                    type="button">缓存任务</button>
+                            <button id="new-sort-task-button" class="secondary compact"
+                                    type="button">分类任务</button>
+                        </div>
                     </div>
-                </form>
-            </section>
+                    <label class="search-field" for="task-search">
+                        <span class="visually-hidden">搜索任务</span>
+                        <input id="task-search" type="search" placeholder="搜索任务名称"
+                               autocomplete="off">
+                    </label>
+                    <p id="task-list-message" class="field-message" role="status"></p>
+                    <div id="task-list" class="editor-list"></div>
+                </section>
+                <div class="task-main">
+                    <section id="task-run-panel" class="panel"
+                             aria-labelledby="task-run-title">
+                        <div class="panel-heading">
+                            <div>
+                                <p class="eyebrow">执行</p>
+                                <h2 id="task-run-title">运行任务</h2>
+                                <p class="muted section-help">
+                                    选择已保存的任务并运行，不会使用编辑器中未保存的修改。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="task-launch-grid">
+                            <div class="editor-field">
+                                <label for="run-task-select">已保存任务</label>
+                                <select id="run-task-select">
+                                    <option value="">请选择任务</option>
+                                </select>
+                            </div>
+                            <div class="editor-field">
+                                <label for="run-priority-select">本次优先级</label>
+                                <select id="run-priority-select">
+                                    <option value="">使用任务默认值</option>
+                                    <option value="BACKGROUND">后台</option>
+                                    <option value="NORMAL">普通</option>
+                                    <option value="URGENT">紧急</option>
+                                </select>
+                            </div>
+                            <button id="run-task-button" class="primary compact"
+                                    type="button">运行所选任务</button>
+                        </div>
+                    </section>
 
-            <section id="task-module-panel" class="panel wide"
-                     aria-labelledby="task-module-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">模块目录</p>
-                        <h2 id="task-module-title">可用模块</h2>
-                        <p class="muted section-help">
-                            基础模块是单个动作；复合模块会组合导航、交互和状态检查。
-                        </p>
+                    <section class="panel task-editor-panel" aria-labelledby="task-editor-title">
+                        <div class="panel-heading">
+                            <div>
+                                <p class="eyebrow">编排步骤</p>
+                                <h2 id="task-editor-title">任务编辑器</h2>
+                            </div>
+                            <span id="task-revision" class="loopback-tag">新任务</span>
+                        </div>
+                        <div id="task-empty" class="task-welcome">
+                            <span class="welcome-symbol" aria-hidden="true">＋</span>
+                            <h3>从一个任务开始</h3>
+                            <p class="muted">选择左侧任务继续编辑，或新建一个任务。</p>
+                            <ol class="task-guide">
+                                <li>命名任务</li>
+                                <li>组合步骤</li>
+                                <li>保存并运行</li>
+                            </ol>
+                        </div>
+                        <form id="task-form" hidden novalidate>
+                            <div class="editor-field">
+                                <label for="task-name">任务名称</label>
+                                <input id="task-name" maxlength="80" required>
+                            </div>
+                            <details class="task-settings">
+                                <summary>调度设置 <span
+                                    id="task-settings-label">优先级与自动重排</span></summary>
+                                <div class="editor-fields task-scheduling-fields">
+                                    <div class="editor-field">
+                                        <label for="task-priority">默认优先级</label>
+                                        <select id="task-priority">
+                                            <option value="BACKGROUND">后台</option>
+                                            <option value="NORMAL">普通</option>
+                                            <option value="URGENT">紧急</option>
+                                        </select>
+                                    </div>
+                                    <label class="checkbox-field" for="task-repeat">
+                                        <input id="task-repeat" type="checkbox">
+                                        <span>完成后自动重新排队</span>
+                                    </label>
+                                </div>
+                                <p class="muted compact-help">
+                                    只有后台任务可以自动重排。重排前等待 5 秒；
+                                    普通和紧急任务只在被抢占时从头重新排队。
+                                </p>
+                            </details>
+                            <div class="step-heading">
+                                <div>
+                                    <h3>模块步骤</h3>
+                                    <p class="muted compact-help">
+                                        基础模块执行单个动作，复合模块封装完整流程。
+                                    </p>
+                                </div>
+                                <button id="add-step-button" class="secondary compact"
+                                        type="button">添加步骤</button>
+                            </div>
+                            <div id="task-steps" class="step-list"></div>
+                            <div id="task-errors" class="config-errors" role="alert"></div>
+                            <div class="action-row task-save-actions">
+                                <button id="save-task-button" class="primary compact"
+                                        type="submit">保存任务</button>
+                                <button id="discard-task-button" class="secondary compact"
+                                        type="button">放弃修改</button>
+                                <button id="delete-task-button"
+                                        class="ghost compact danger-action"
+                                        type="button">删除任务</button>
+                            </div>
+                        </form>
+                    </section>
+                    <div class="task-monitor">
+                        <section class="panel" aria-labelledby="queue-title">
+                            <div class="panel-heading">
+                                <div>
+                                    <p class="eyebrow">等待队列</p>
+                                    <h2 id="queue-title">等待任务</h2>
+                                    <p class="muted section-help queue-help">
+                                        高优先级任务会中断当前任务；被中断任务不会续接，
+                                        结束排队后从第一步重新运行。
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="task-queue-list" class="card-list"
+                                 aria-live="polite"></div>
+                        </section>
+
+                        <section class="panel" aria-labelledby="runtime-title">
+                            <div class="panel-heading">
+                                <div>
+                                    <p class="eyebrow">调度与执行</p>
+                                    <h2 id="runtime-title">运行状态</h2>
+                                </div>
+                                <button id="refresh-runs-button" class="secondary compact"
+                                        type="button">刷新状态</button>
+                            </div>
+                            <div id="runtime-list" class="card-list" aria-live="polite"></div>
+                        </section>
                     </div>
-                    <span id="task-module-count" class="loopback-tag">--</span>
                 </div>
+            </div>
+
+            <details id="task-module-panel" class="panel module-library">
+                <summary class="module-library-heading">
+                    <div>
+                        <h2 id="task-module-title">模块参考</h2>
+                        <p class="compact-help">需要了解模块用途时再展开，不影响任务编辑。</p>
+                    </div>
+                    <span id="task-module-count" class="count-label">--</span>
+                </summary>
                 <div id="task-module-catalog" class="module-catalog"
                      aria-live="polite"></div>
-            </section>
-
-            <section id="task-run-panel" class="panel wide"
-                     aria-labelledby="task-run-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">执行</p>
-                        <h2 id="task-run-title">运行任务</h2>
-                        <p class="muted section-help">
-                            选择已保存的任务并运行，不会使用编辑器中未保存的修改。
-                        </p>
-                    </div>
-                </div>
-                <div class="task-launch-grid">
-                    <div class="editor-field">
-                        <label for="run-task-select">已保存任务</label>
-                        <select id="run-task-select">
-                            <option value="">请选择任务</option>
-                        </select>
-                    </div>
-                    <div class="editor-field">
-                        <label for="run-priority-select">本次优先级</label>
-                        <select id="run-priority-select">
-                            <option value="">使用任务默认值</option>
-                            <option value="BACKGROUND">后台</option>
-                            <option value="NORMAL">普通</option>
-                            <option value="URGENT">紧急</option>
-                        </select>
-                    </div>
-                    <button id="run-task-button" class="primary compact"
-                            type="button">运行所选任务</button>
-                </div>
-            </section>
-
-            <section class="panel wide" aria-labelledby="queue-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">等待队列</p>
-                        <h2 id="queue-title">等待任务</h2>
-                        <p class="muted section-help">
-                            高优先级任务会中断当前任务；被中断任务不会续接，
-                            结束排队后从第一步重新运行。
-                        </p>
-                    </div>
-                </div>
-                <div id="task-queue-list" class="card-list"
-                     aria-live="polite"></div>
-            </section>
-
-            <section class="panel wide" aria-labelledby="runtime-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">调度与执行</p>
-                        <h2 id="runtime-title">运行状态</h2>
-                    </div>
-                    <button id="refresh-runs-button" class="secondary compact"
-                            type="button">刷新状态</button>
-                </div>
-                <div id="runtime-list" class="card-list" aria-live="polite"></div>
-            </section>
+            </details>
         </div>
     </main>
 

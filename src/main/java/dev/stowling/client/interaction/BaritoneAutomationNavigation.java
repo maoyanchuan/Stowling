@@ -1,5 +1,6 @@
 package dev.stowling.client.interaction;
 
+import dev.stowling.Stowling;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.WorldObservation;
@@ -12,12 +13,18 @@ import java.util.Objects;
 public final class BaritoneAutomationNavigation implements NavigationPort {
     private static final double ARRIVAL_DISTANCE_SQUARED = 6.25D;
     private static final int PATH_STARTUP_GRACE_TICKS = 20;
+    private static final int NEAR_PATH_RETRIES = 2;
+    private static final int NEAR_RETRY_DELAY_TICKS = 20;
 
     private final NavigationService navigationService;
     private final WorldObserver worldObserver;
     private boolean active;
+    private boolean nearNavigation;
     private boolean pathObserved;
     private int missingPathTicks;
+    private int nearPathRetries;
+    private int nearRadius;
+    private int retryDelayTicks;
     private boolean stopRequested;
 
     public BaritoneAutomationNavigation(
@@ -34,6 +41,9 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public NavigationStatus start(BlockPosition target) {
         Objects.requireNonNull(target, "target");
+        nearNavigation = false;
+        nearPathRetries = 0;
+        retryDelayTicks = 0;
         prepareNavigation();
         navigationService.navigateTo(target);
         return NavigationStatus.NAVIGATING;
@@ -45,6 +55,10 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
+        nearNavigation = true;
+        nearPathRetries = 0;
+        nearRadius = radius;
+        retryDelayTicks = 0;
         prepareNavigation();
         navigationService.navigateToNear(target, radius);
         return NavigationStatus.NAVIGATING;
@@ -82,6 +96,16 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (!active) {
             return NavigationStatus.FAILED;
         }
+        if (retryDelayTicks > 0) {
+            retryDelayTicks--;
+            if (retryDelayTicks == 0) {
+                navigationService.navigateToNear(
+                        target,
+                        radius == null ? nearRadius : radius
+                );
+            }
+            return NavigationStatus.NAVIGATING;
+        }
         if (navigationService.isNavigatingOrCalculating()) {
             pathObserved = true;
             missingPathTicks = 0;
@@ -89,9 +113,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         missingPathTicks++;
         if (pathObserved || missingPathTicks >= PATH_STARTUP_GRACE_TICKS) {
-            active = false;
-            navigationService.cancel();
-            return NavigationStatus.FAILED;
+            return retryNearOrFail(target, radius);
         }
         return NavigationStatus.NAVIGATING;
     }
@@ -101,6 +123,9 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             active = false;
             navigationService.cancel();
         }
+        nearNavigation = false;
+        nearPathRetries = 0;
+        retryDelayTicks = 0;
         return NavigationStatus.ARRIVED;
     }
 
@@ -126,6 +151,9 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         pathObserved = false;
         missingPathTicks = 0;
+        nearNavigation = false;
+        nearPathRetries = 0;
+        retryDelayTicks = 0;
     }
 
     @Override
@@ -145,5 +173,29 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         stopRequested = false;
         return StopOutcome.CLEAN;
+    }
+
+    private NavigationStatus retryNearOrFail(
+            BlockPosition target,
+            Integer radius
+    ) {
+        if (nearNavigation && nearPathRetries < NEAR_PATH_RETRIES) {
+            nearPathRetries++;
+            Stowling.LOGGER.warn(
+                    "Near navigation failed; retrying {} of {} for {}",
+                    nearPathRetries,
+                    NEAR_PATH_RETRIES,
+                    target
+            );
+            prepareNavigation();
+            retryDelayTicks = NEAR_RETRY_DELAY_TICKS;
+            return NavigationStatus.NAVIGATING;
+        }
+        active = false;
+        nearNavigation = false;
+        nearPathRetries = 0;
+        retryDelayTicks = 0;
+        navigationService.cancel();
+        return NavigationStatus.FAILED;
     }
 }

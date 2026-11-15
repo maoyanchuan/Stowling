@@ -19,18 +19,19 @@ public final class RunPickupAutomationModule implements AutomationModule {
             new AutomationModuleDescriptor(
                     AutomationStepType.RUN_PICKUP,
                     "运行拾取",
-                    "选择带范围的命名坐标执行纯区域拾取；"
+                    "选择一个已保存的命名范围执行纯区域拾取；"
+                            + "半径和角点始终从坐标与范围配置解析。"
                             + "可等待范围内出现客户端可见物品。移动和存放由其他步骤负责。",
                     List.of(
                             new Parameter(
                                     "coordinateId",
-                                    "拾取坐标",
+                                    "拾取范围",
                                     "coordinate",
                                     false
                             ),
                             new Parameter(
                                     "radius",
-                                    "拾取半径（格）",
+                                    "拾取半径（旧配置）",
                                     "positive-integer",
                                     false
                             ),

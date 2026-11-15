@@ -18,6 +18,7 @@ import dev.stowling.domain.CompletionMode;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
 import dev.stowling.domain.CoordinateType;
+import dev.stowling.domain.CuboidPickupShape;
 import dev.stowling.domain.NamedCache;
 import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.domain.PickupRegion;
@@ -116,6 +117,78 @@ class CoordinatePickupRulesTest {
         assertEquals("minecraft:the_nether", plannedRegion(rules, updatedConfig).dimension());
         assertEquals(5, first.radius());
         assertEquals(11, second.radius());
+    }
+
+    @Test
+    void resolvesUpdatedAreaCornersAndCenterOnEveryPlan() {
+        Map<String, String> parameters = Map.of("coordinateId", "area-1");
+        CustomPickupRules rules = CustomPickupRules.fromParameters(parameters)
+                .orElseThrow();
+        StowlingConfig firstConfig = config(
+                new NamedCoordinate(
+                        "area-1",
+                        "First area",
+                        DIMENSION,
+                        new BlockPosition(10, 70, 10),
+                        CoordinateType.AREA,
+                        null,
+                        new BlockPosition(-2, 40, -6)
+                ),
+                parameters
+        );
+        StowlingConfig updatedConfig = config(
+                new NamedCoordinate(
+                        "area-1",
+                        "Updated area",
+                        DIMENSION,
+                        new BlockPosition(30, 90, 20),
+                        CoordinateType.AREA,
+                        null,
+                        new BlockPosition(12, 30, 2)
+                ),
+                parameters
+        );
+
+        PickupRegion firstRegion = plannedRegion(rules, firstConfig);
+        PickupRegion updatedRegion = plannedRegion(rules, updatedConfig);
+        CuboidPickupShape first = (CuboidPickupShape) firstRegion.shape();
+        CuboidPickupShape updated = (CuboidPickupShape) updatedRegion.shape();
+
+        assertEquals(new BlockPosition(-2, 40, -6), first.firstCorner());
+        assertEquals(new BlockPosition(10, 70, 10), first.secondCorner());
+        assertEquals(new BlockPosition(12, 30, 2), updated.firstCorner());
+        assertEquals(new BlockPosition(30, 90, 20), updated.secondCorner());
+        assertEquals(new BlockPosition(4, 55, 2), firstRegion.standbyPosition());
+        assertEquals(new BlockPosition(21, 60, 11), updatedRegion.standbyPosition());
+        assertTrue(updated.contains(30, 90, 20));
+        assertFalse(updated.contains(31, 90, 20));
+    }
+
+    @Test
+    void resolvesCubeRadiusFromSavedCoordinateWithoutTaskGeometry() {
+        Map<String, String> parameters = Map.of("coordinateId", "cube-1");
+        CustomPickupRules rules = CustomPickupRules.fromParameters(parameters)
+                .orElseThrow();
+        StowlingConfig config = config(
+                new NamedCoordinate(
+                        "cube-1",
+                        "Saved cube",
+                        DIMENSION,
+                        new BlockPosition(4, 65, -3),
+                        CoordinateType.CUBE,
+                        3,
+                        null
+                ),
+                parameters
+        );
+
+        PickupRegion region = plannedRegion(rules, config);
+        CuboidPickupShape shape = (CuboidPickupShape) region.shape();
+
+        assertEquals(0, rules.radius());
+        assertEquals(new BlockPosition(1, 62, -6), shape.firstCorner());
+        assertEquals(new BlockPosition(7, 68, 0), shape.secondCorner());
+        assertEquals(new BlockPosition(4, 65, -3), region.standbyPosition());
     }
 
     @Test
@@ -310,7 +383,6 @@ class CoordinatePickupRulesTest {
         RunPickupAutomationModule module = new RunPickupAutomationModule(pickup);
         Map<String, String> parameters = Map.of(
                 "coordinateId", "point-1",
-                "radius", "12",
                 "idleSeconds", "3",
                 "waitForItems", "true"
         );
@@ -330,7 +402,7 @@ class CoordinatePickupRulesTest {
                 ),
                 pickup.requests.getFirst()
         );
-        assertEquals(12, pickup.requests.getFirst()
+        assertEquals(0, pickup.requests.getFirst()
                 .customRules().orElseThrow().radius());
         assertEquals(Duration.ofSeconds(3), pickup.requests.getFirst()
                 .customRules().orElseThrow().idleDelay());
@@ -355,12 +427,13 @@ class CoordinatePickupRulesTest {
                 .filter(parameter -> parameter.key().equals("radius"))
                 .findFirst()
                 .orElseThrow();
-        assertEquals("拾取坐标", coordinate.label());
+        assertEquals("拾取范围", coordinate.label());
         assertEquals("coordinate", coordinate.kind());
-        assertEquals("拾取半径（格）", radius.label());
+        assertEquals("拾取半径（旧配置）", radius.label());
         assertEquals("positive-integer", radius.kind());
-        assertTrue(module.descriptor().description().contains("命名坐标"));
+        assertTrue(module.descriptor().description().contains("命名范围"));
         assertTrue(module.descriptor().description().contains("范围"));
+        assertTrue(module.descriptor().description().contains("坐标与范围"));
     }
 
     private static SpherePickupShape plannedShape(

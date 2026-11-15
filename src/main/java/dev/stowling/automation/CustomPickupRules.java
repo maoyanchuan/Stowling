@@ -26,7 +26,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/** Per-step pickup rules; their resolved region is never added to shared resources. */
+/**
+ * Per-step pickup rules. New tasks select one named coordinate and resolve its
+ * current geometry on every plan, so they never duplicate radius or corners.
+ */
 public record CustomPickupRules(
         String standbyCoordinateId,
         String firstCornerCoordinateId,
@@ -277,38 +280,14 @@ public record CustomPickupRules(
             return purePlan(taskId, region);
         }
         if (selectedCoordinateId != null) {
-            NamedCoordinate coordinate = coordinate(
-                    config,
-                    selectedCoordinateId,
-                    "coordinateId"
-            );
-            PickupShape shape;
-            if (radius > 0) {
-                if (coordinate.type() != CoordinateType.POINT) {
-                    throw new IllegalArgumentException(
-                            "radius is only valid for legacy POINT coordinate pickups"
-                    );
-                }
-                shape = new SpherePickupShape(
-                        coordinate.id(),
-                        coordinate.position(),
-                        radius
-                );
-            } else {
-                shape = coordinate.pickupShape();
-            }
-            PickupRegion region = new PickupRegion(
-                    COORDINATE_REGION_ID,
-                    "命名坐标拾取",
-                    coordinate.dimension(),
-                    coordinate.id(),
-                    coordinate.position(),
-                    shape
-            );
-            return purePlan(taskId, region);
+            return purePlan(taskId, namedCoordinateRegion(config));
         }
         NamedCoordinate standby = coordinate(config, standbyCoordinateId, "standbyCoordinateId");
-        NamedCoordinate first = coordinate(config, firstCornerCoordinateId, "firstCornerCoordinateId");
+        NamedCoordinate first = coordinate(
+                config,
+                firstCornerCoordinateId,
+                "firstCornerCoordinateId"
+        );
         NamedCoordinate second = coordinate(
                 config, secondCornerCoordinateId, "secondCornerCoordinateId"
         );
@@ -373,6 +352,38 @@ public record CustomPickupRules(
                 Duration.ofSeconds(8),
                 Duration.ofMinutes(5),
                 true
+        );
+    }
+
+    private PickupRegion namedCoordinateRegion(StowlingConfig config) {
+        NamedCoordinate coordinate = coordinate(
+                config,
+                selectedCoordinateId,
+                "coordinateId"
+        );
+        PickupShape shape = radius > 0
+                ? legacyPointRadiusShape(coordinate)
+                : coordinate.pickupShape();
+        return new PickupRegion(
+                COORDINATE_REGION_ID,
+                "命名范围拾取",
+                coordinate.dimension(),
+                coordinate.id(),
+                coordinate.anchorPosition(),
+                shape
+        );
+    }
+
+    private PickupShape legacyPointRadiusShape(NamedCoordinate coordinate) {
+        if (coordinate.type() != CoordinateType.POINT) {
+            throw new IllegalArgumentException(
+                    "radius is only valid for legacy POINT coordinate pickups"
+            );
+        }
+        return new SpherePickupShape(
+                coordinate.id(),
+                coordinate.position(),
+                radius
         );
     }
 

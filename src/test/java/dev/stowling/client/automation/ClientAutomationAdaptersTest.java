@@ -30,6 +30,7 @@ import dev.stowling.config.StowlingConfig;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.domain.ContainerRef;
 import dev.stowling.domain.ContainerType;
+import dev.stowling.domain.CoordinateType;
 import dev.stowling.domain.NamedCoordinate;
 import dev.stowling.inventory.InventoryFreshness;
 import dev.stowling.inventory.InventoryItem;
@@ -64,9 +65,12 @@ class ClientAutomationAdaptersTest {
     void coordinateResolverReadsTheCurrentConfig() {
         NamedCoordinate coordinate = new NamedCoordinate(
                 "mine",
-                "Mine",
+                "Mine area",
                 "minecraft:overworld",
-                new BlockPosition(12, 64, -4)
+                new BlockPosition(12, 64, -4),
+                CoordinateType.AREA,
+                null,
+                new BlockPosition(4, 68, 2)
         );
         StowlingConfig config = config(List.of(coordinate));
         ConfigCoordinateResolver resolver = new ConfigCoordinateResolver(
@@ -74,7 +78,7 @@ class ClientAutomationAdaptersTest {
         );
 
         assertEquals(
-                Optional.of(new BlockPosition(12, 64, -4)),
+                Optional.of(new BlockPosition(8, 66, -1)),
                 resolver.resolve("mine")
         );
         assertTrue(resolver.resolve("missing").isEmpty());

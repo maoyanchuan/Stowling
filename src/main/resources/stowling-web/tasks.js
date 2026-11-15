@@ -110,7 +110,9 @@
         draft: null,
         dirty: false,
         invalidFields: new Set(),
-        loadingDetail: false
+        loadingDetail: false,
+        resourcesRefreshing: false,
+        lastResourceRefreshAt: 0
     };
 
     /**
@@ -303,6 +305,7 @@
             loadRuntimeTasks()
         ]);
         state.resources = Resources.getSnapshot();
+        state.lastResourceRefreshAt = Date.now();
         for (const result of results) {
             if (result.status === "rejected") {
                 Stowling.handleError(result.reason, "读取任务页面失败");
@@ -1689,7 +1692,8 @@
             target.append(Stowling.element(
                 "p",
                 "compact-help",
-                `拾取范围：${coordinateLabel(coordinate)}`
+                `拾取范围：${coordinateLabel(coordinate)} · `
+                    + coordinateGeometrySummary(coordinate)
             ));
         } else if (!coordinateId) {
             target.append(Stowling.element(
@@ -1734,9 +1738,37 @@
         link.href = "/coordinates.html";
         help.append(
             link,
-            document.createTextNode(" 配置；修改半径或角点后请重新选择目标。")
+            document.createTextNode(
+                " 配置；保存后的半径或角点会在下次运行时自动生效，无需重新选择。"
+            )
         );
         return help;
+    }
+
+    /**
+     * @param {object} point
+     * @returns {string}
+     */
+    function coordinateGeometrySummary(point) {
+        const position = coordinatePosition(point.position);
+        const center = position
+            ? `中心 ${position.x}, ${position.y}, ${position.z}`
+            : "中心未配置";
+        if (coordinateType(point) === "SPHERE") {
+            return `球半径 ${Number(point.radius).toLocaleString("zh-CN")}，${center}`;
+        }
+        if (coordinateType(point) === "CUBE") {
+            return `立方体半径 ${Number(point.radius).toLocaleString("zh-CN")}，`
+                + center;
+        }
+        if (coordinateType(point) === "AREA") {
+            const second = coordinatePosition(point.secondCorner);
+            return position && second
+                ? `角点 ${position.x}, ${position.y}, ${position.z}`
+                    + ` → ${second.x}, ${second.y}, ${second.z}`
+                : "角点未完整配置";
+        }
+        return "单点坐标";
     }
 
     /**
@@ -2434,6 +2466,43 @@
     }
 
     /**
+     * @param {boolean} reportErrors
+     * @returns {Promise<void>}
+     */
+    async function refreshResources(reportErrors = false) {
+        if (state.resourcesRefreshing) {
+            return;
+        }
+        state.resourcesRefreshing = true;
+        try {
+            await Resources.load();
+            state.resources = Resources.getSnapshot();
+            state.lastResourceRefreshAt = Date.now();
+        } catch (error) {
+            if (reportErrors) {
+                Stowling.handleError(error, "刷新坐标与范围失败");
+            }
+        } finally {
+            state.resourcesRefreshing = false;
+        }
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function refreshTasksAndResources() {
+        const results = await Promise.allSettled([
+            loadDefinitions(),
+            refreshResources(true)
+        ]);
+        for (const result of results) {
+            if (result.status === "rejected") {
+                Stowling.handleError(result.reason, "刷新任务与坐标失败");
+            }
+        }
+    }
+
+    /**
      * @param {Array<object>} tasks
      * @returns {void}
      */
@@ -2599,9 +2668,7 @@
     }
 
     elements.refreshTasks.addEventListener("click", () => {
-        loadDefinitions().catch((error) => {
-            Stowling.handleError(error, "刷新任务列表失败");
-        });
+        void refreshTasksAndResources();
     });
     elements.addTask.addEventListener("click", startNewDefinition);
     elements.newCustomTask.addEventListener("click", () => createNewDefinition(false));
@@ -2729,14 +2796,24 @@
     window.setInterval(() => {
         if (document.visibilityState === "visible" && Stowling.isConnected()) {
             void refreshLiveState(false);
+            if (Date.now() - state.lastResourceRefreshAt >= 15000) {
+                void refreshResources(false);
+            }
         }
     }, 5000);
+
+    document.addEventListener?.("visibilitychange", () => {
+        if (document.visibilityState === "visible" && Stowling.isConnected()) {
+            void refreshResources(true);
+        }
+    });
 
     Resources.onChanged(async () => {
         const next = Resources.getSnapshot();
         const changed = next.revision !== state.resources.revision
             || next.pickupRevision !== state.resources.pickupRevision;
         state.resources = next;
+        state.lastResourceRefreshAt = Date.now();
         if (!changed) {
             return;
         }

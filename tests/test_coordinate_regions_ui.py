@@ -42,16 +42,16 @@ def test_coordinate_page_mounts_only_the_integrated_editor() -> None:
 def test_coordinate_editor_builds_range_controls_in_each_card() -> None:
     card = js_function(COORDINATES, "createPointCard")
     assert "pointTypeSelect(point)" in card
-    assert "radiusShapeSelect(point)" in card
+    assert "pointCategorySelect(point)" in card
     assert "radiusEditor(point, index)" in card
     assert "secondCornerEditor(point, index)" in card
     assert "positionLegend(point.type)" in card
+    assert "coordinate-category-" in COORDINATES
     assert "coordinate-type-" in COORDINATES
-    assert "coordinate-radius-shape-" in COORDINATES
     assert "coordinate-second-" in COORDINATES
-    assert "坐标点" in COORDINATES
-    assert "立方体" in COORDINATES
-    assert "球" in COORDINATES
+    assert "仅坐标点" in COORDINATES
+    assert "立方体半径" in COORDINATES
+    assert "球半径" in COORDINATES
     assert "区域第一角点" in COORDINATES
 
 

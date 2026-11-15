@@ -101,9 +101,29 @@ def test_pickup_summary_uses_names_and_coordinate_page_help_only() -> None:
     coordinate_help = task_function("pickupCoordinateHelp")
     assert 'link.href = "/coordinates.html";' in coordinate_help
     assert "名称与范围参数统一在" in coordinate_help
-    assert "修改半径或角点后请重新选择目标" in coordinate_help
+    assert "保存后的半径或角点会在下次运行时自动生效" in coordinate_help
+    assert "无需重新选择" in coordinate_help
     assert "pickupRegionHelp" not in TASKS
     assert "选择坐标、角点和缓存" not in TASKS_HTML
+
+
+def test_pickup_summary_describes_saved_geometry_and_auto_refresh() -> None:
+    geometry = task_function("coordinateGeometrySummary")
+    assert "球半径" in geometry
+    assert "立方体半径" in geometry
+    assert "角点" in geometry
+
+    refresh = task_function("refreshResources")
+    assert "Resources.load()" in refresh
+    assert "state.resources = Resources.getSnapshot()" in refresh
+    assert "state.lastResourceRefreshAt = Date.now()" in refresh
+
+    combined = task_function("refreshTasksAndResources")
+    assert "loadDefinitions()" in combined
+    assert "refreshResources(true)" in combined
+
+    assert 'document.addEventListener?.("visibilitychange"' in TASKS
+    assert 'type="button">刷新任务与坐标</button>' in TASKS_HTML
 
 
 def test_legacy_pickup_detection_keeps_old_geometry_until_confirmation() -> None:

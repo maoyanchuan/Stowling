@@ -132,7 +132,7 @@
             elements.list.append(createPointCard(point, index));
         });
         if (state.draft.coordinatePoints.length === 0) {
-            elements.list.append(Stowling.emptyState("尚未创建命名坐标"));
+            elements.list.append(Stowling.emptyState("尚未添加坐标或范围"));
         }
         updateSaveState();
     }
@@ -156,7 +156,7 @@
         const title = Stowling.element(
             "strong",
             "",
-            String(point.name || point.id || "未命名坐标")
+            String(point.name || point.id || "未命名坐标或范围")
         );
         const titleRow = Stowling.element("div", "editor-card-title");
         titleRow.append(dragHandle, title);
@@ -171,22 +171,22 @@
         const fields = Stowling.element("div", "editor-fields");
         const idInput = textInput(
             `coordinate-id-${index}`,
-            "坐标 ID",
+            "条目 ID",
             String(point.id || ""),
             () => {}
         );
         idInput.readOnly = true;
-        idInput.title = "坐标 ID 创建后不可修改";
+        idInput.title = "条目 ID 创建后不可修改";
         idInput.setAttribute("aria-readonly", "true");
         idInput.pattern = "[a-z0-9][a-z0-9._-]{0,63}";
-        const idField = field("坐标 ID", idInput);
+        const idField = field("条目 ID", idInput);
         const nameInput = textInput(
             `coordinate-name-${index}`,
             "显示名称",
             String(point.name || ""),
             (value) => {
                 point.name = value;
-                title.textContent = value || point.id || "未命名坐标";
+                title.textContent = value || point.id || "未命名坐标或范围";
                 markDirty();
             }
         );
@@ -195,10 +195,10 @@
             idField,
             field("显示名称", nameInput),
             field("维度", dimensionSelect(point, index)),
-            field("范围类型", pointTypeSelect(point))
+            field("类型", pointCategorySelect(point))
         );
-        if (RADIUS_TYPES.includes(normalizePointType(point.type))) {
-            fields.append(field("半径形状", radiusShapeSelect(point)));
+        if (normalizePointType(point.type) !== "AREA") {
+            fields.append(field("坐标选项", pointTypeSelect(point)));
         }
 
         const position = Stowling.element("fieldset", "position-editor");
@@ -235,11 +235,11 @@
     function pointTypeSelect(point) {
         const select = document.createElement("select");
         select.id = `coordinate-type-${state.draft.coordinatePoints.indexOf(point)}`;
-        select.setAttribute("aria-label", "范围类型");
+        select.setAttribute("aria-label", "坐标选项");
         const options = [
-            ["POINT", "坐标点"],
-            ["RADIUS", "半径（立方体/球）"],
-            ["AREA", "区域"]
+            ["POINT", "仅坐标点"],
+            ["SPHERE", "球半径"],
+            ["CUBE", "立方体半径"]
         ];
         for (const [value, label] of options) {
             const option = document.createElement("option");
@@ -247,7 +247,7 @@
             option.textContent = label;
             select.append(option);
         }
-        select.value = typeCategory(point.type);
+        select.value = normalizePointType(point.type);
         select.addEventListener("change", () => {
             changePointType(point, select.value);
         });
@@ -258,14 +258,14 @@
      * @param {object} point
      * @returns {HTMLSelectElement}
      */
-    function radiusShapeSelect(point) {
+    function pointCategorySelect(point) {
         const select = document.createElement("select");
         const index = state.draft.coordinatePoints.indexOf(point);
-        select.id = `coordinate-radius-shape-${index}`;
-        select.setAttribute("aria-label", "半径形状");
+        select.id = `coordinate-category-${index}`;
+        select.setAttribute("aria-label", "类型");
         const options = [
-            ["CUBE", "立方体"],
-            ["SPHERE", "球"]
+            ["COORDINATE", "坐标"],
+            ["AREA", "区域"]
         ];
         for (const [value, label] of options) {
             const option = document.createElement("option");
@@ -273,9 +273,11 @@
             option.textContent = label;
             select.append(option);
         }
-        select.value = normalizePointType(point.type);
+        select.value = normalizePointType(point.type) === "AREA"
+            ? "AREA"
+            : "COORDINATE";
         select.addEventListener("change", () => {
-            changeRadiusShape(point, select.value);
+            changePointCategory(point, select.value);
         });
         return select;
     }
@@ -344,15 +346,6 @@
 
     /**
      * @param {unknown} type
-     * @returns {"POINT" | "RADIUS" | "AREA"}
-     */
-    function typeCategory(type) {
-        const normalized = normalizePointType(type);
-        return RADIUS_TYPES.includes(normalized) ? "RADIUS" : normalized;
-    }
-
-    /**
-     * @param {unknown} type
      * @returns {string}
      */
     function positionLegend(type) {
@@ -360,7 +353,7 @@
         if (normalized === "AREA") {
             return "区域第一角点";
         }
-        return RADIUS_TYPES.includes(normalized) ? "范围中心" : "坐标点";
+        return RADIUS_TYPES.includes(normalized) ? "范围中心" : "坐标";
     }
 
     /**
@@ -369,24 +362,23 @@
      * @returns {void}
      */
     function changePointType(point, requestedType) {
-        const category = String(requestedType || "").toUpperCase();
-        if (category === "RADIUS") {
-            const current = normalizePointType(point.type);
-            applyPointType(point, RADIUS_TYPES.includes(current) ? current : "CUBE");
-        } else {
-            applyPointType(point, category);
-        }
+        applyPointType(point, requestedType);
         markDirty(true);
     }
 
     /**
      * @param {object} point
-     * @param {unknown} requestedShape
+     * @param {unknown} requestedCategory
      * @returns {void}
      */
-    function changeRadiusShape(point, requestedShape) {
-        const shape = String(requestedShape || "").toUpperCase();
-        applyPointType(point, RADIUS_TYPES.includes(shape) ? shape : "CUBE");
+    function changePointCategory(point, requestedCategory) {
+        const category = String(requestedCategory || "").toUpperCase();
+        if (category === "AREA") {
+            applyPointType(point, "AREA");
+        } else {
+            const current = normalizePointType(point.type);
+            applyPointType(point, current === "AREA" ? "POINT" : current);
+        }
         markDirty(true);
     }
 
@@ -679,7 +671,7 @@
         const id = nextPointId();
         state.draft.coordinatePoints.push({
             id,
-            name: "新命名坐标",
+            name: "新坐标或范围",
             dimension: DIMENSIONS[0],
             position: { x: 0, y: 64, z: 0 },
             type: "POINT",

@@ -96,11 +96,12 @@ def test_pickup_validation_requires_existing_range_reference() -> None:
     assert "使用已保存区域时不能设置半径" not in validation
 
 
-def test_pickup_summary_does_not_render_geometry() -> None:
+def test_pickup_summary_renders_saved_geometry_without_task_fields() -> None:
     summary = task_function("renderPickupStepSummary")
     assert "拾取范围：${coordinateLabel(coordinate)}" in summary
+    assert "coordinateGeometrySummary(coordinate)" in summary
     assert "pickupCoordinateHelp()" in summary
-    assert "radius" not in summary
+    assert "step.parameters.radius" not in summary
     assert "regionId" not in summary
     assert "dimension" not in summary
     assert "position" not in summary
@@ -109,7 +110,8 @@ def test_pickup_summary_does_not_render_geometry() -> None:
     help_text = task_function("pickupCoordinateHelp")
     assert 'link.href = "/coordinates.html";' in help_text
     assert 'Stowling.element("a", "", "坐标与范围")' in help_text
-    assert "修改半径或角点后请重新选择目标" in help_text
+    assert "保存后的半径或角点会在下次运行时自动生效" in help_text
+    assert "无需重新选择" in help_text
 
 
 def test_legacy_range_inputs_require_explicit_conversion_not_point_fallback() -> None:

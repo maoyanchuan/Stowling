@@ -185,8 +185,8 @@ const source = original.replace(
     '    Stowling.mountPage("coordinates");',
     `
     window.ui = {
-        state, renderSnapshot, changePointType, changeRadiusShape, validateDraft,
-        toRequestPoint, saveCoordinates
+        state, renderSnapshot, changePointType, changePointCategory,
+        validateDraft, toRequestPoint, saveCoordinates
     };
     Stowling.mountPage("coordinates");
 `
@@ -275,15 +275,18 @@ def test_coordinate_page_configures_ranges_without_legacy_region_module() -> Non
     assert "坐标与范围" in html
     assert "coordinate-regions.js" not in html
     assert "coordinate-region-form" not in html
+    assert "coordinate-category-" in script
     assert "coordinate-type-" in script
-    assert "coordinate-radius-shape-" in script
     assert "coordinate-radius-" in script
     assert "coordinate-second-" in script
-    assert '["POINT", "坐标点"]' in script
-    assert '["RADIUS", "半径（立方体/球）"]' in script
+    assert '["COORDINATE", "坐标"]' in script
     assert '["AREA", "区域"]' in script
-    assert '["CUBE", "立方体"]' in script
-    assert '["SPHERE", "球"]' in script
+    assert '["POINT", "仅坐标点"]' in script
+    assert '["SPHERE", "球半径"]' in script
+    assert '["CUBE", "立方体半径"]' in script
+    assert "添加坐标" in html
+    assert "保存后的" in html
+    assert "自动生效" in html
     assert "idInput.readOnly = true;" in script
     assert "point.radius = 8;" in script
     assert "立方体范围（XYZ 中心 ± 半径）" in script
@@ -330,15 +333,16 @@ def test_type_switches_keep_center_and_clear_inapplicable_fields() -> None:
         """
         const point = ui.state.draft.coordinatePoints[0];
         const originalPosition = JSON.parse(JSON.stringify(point.position));
-        ui.changePointType(point, "RADIUS");
+        ui.changePointCategory(point, "COORDINATE");
+        ui.changePointType(point, "CUBE");
         const cube = JSON.parse(JSON.stringify(point));
         point.radius = 17;
-        ui.changeRadiusShape(point, "SPHERE");
+        ui.changePointType(point, "SPHERE");
         const sphere = JSON.parse(JSON.stringify(point));
-        ui.changePointType(point, "AREA");
+        ui.changePointCategory(point, "AREA");
         const area = JSON.parse(JSON.stringify(point));
         point.secondCorner = { x: -5, y: 20, z: 9 };
-        ui.changePointType(point, "POINT");
+        ui.changePointCategory(point, "COORDINATE");
         return {
             originalPosition,
             cube,
@@ -402,10 +406,11 @@ def test_validation_rejects_bad_radius_and_second_corner() -> None:
     result = run_ui(
         """
         const point = ui.state.draft.coordinatePoints[0];
-        ui.changePointType(point, "AREA");
+        ui.changePointCategory(point, "AREA");
         point.secondCorner.x = "bad";
         const areaErrors = ui.validateDraft();
-        ui.changePointType(point, "RADIUS");
+        ui.changePointCategory(point, "COORDINATE");
+        ui.changePointType(point, "CUBE");
         point.radius = 0;
         const radiusErrors = ui.validateDraft();
         point.radius = 129;

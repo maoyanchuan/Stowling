@@ -3,6 +3,7 @@ package dev.stowling.client.automation;
 import dev.stowling.automation.CoordinateResolver;
 import dev.stowling.config.StowlingConfig;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.domain.NamedCoordinate;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -19,7 +20,7 @@ public final class ConfigCoordinateResolver implements CoordinateResolver {
         Objects.requireNonNull(coordinateId, "coordinateId");
         return config.get().coordinatePoints().stream()
                 .filter(coordinate -> coordinate.id().equals(coordinateId))
-                .map(coordinate -> coordinate.position())
+                .map(NamedCoordinate::anchorPosition)
                 .findFirst();
     }
 }

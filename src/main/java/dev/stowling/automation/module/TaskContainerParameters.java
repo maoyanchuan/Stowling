@@ -83,7 +83,7 @@ public final class TaskContainerParameters {
         return new ContainerRef(
                 coordinate.id(),
                 coordinate.dimension(),
-                coordinate.position(),
+                coordinate.anchorPosition(),
                 Objects.requireNonNull(type, "type")
         );
     }

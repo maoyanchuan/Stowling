@@ -59,6 +59,7 @@ class NamedCoordinateTest {
         assertTrue(shape.contains(0, 70, 0));
         assertEquals(new BlockPosition(10, 80, -4), area.position());
         assertEquals(new BlockPosition(-2, 60, 8), area.secondCorner());
+        assertEquals(new BlockPosition(4, 70, 2), area.anchorPosition());
     }
 
     @Test

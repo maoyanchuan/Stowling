@@ -99,22 +99,23 @@ action. Configuration writes are validated and atomic, with the previous file re
 
 ### Coordinates and ranges
 
-Open `http://127.0.0.1:8765/coordinates.html` to add, delete, rename, or reorder named points
-and edit their dimensions and X/Y/Z values. Coordinate IDs are immutable after creation.
-Each entry has a type configured in this library:
+Open `http://127.0.0.1:8765/coordinates.html` and choose **Add coordinate** to create,
+delete, rename, or reorder entries and edit their dimensions and X/Y/Z values. Entry IDs are
+immutable after creation. Each entry first chooses **Coordinate** or **Area**:
 
-- **Point** (`POINT`): one XYZ position for navigation or container references.
-- **Radius**: select **Cube** (`CUBE`) or **Sphere** (`SPHERE`) and a radius from 1 to 128.
-  The XYZ position is the center. A cube extends by the radius on each axis; a sphere uses
-  distance from the center.
-- **Area** (`AREA`): enter two XYZ corners in the same dimension. Corner order does not matter;
-  bounds are normalized when resolving the range, while the first position remains its anchor.
+- **Coordinate**: select **Point only** (`POINT`), **Sphere radius** (`SPHERE`), or
+  **Cube radius** (`CUBE`). Radius ranges use 1–128 blocks and XYZ is the center. A cube
+  extends by the radius on each axis, while a sphere uses distance from the center.
+- **Area** (`AREA`): enter first and second XYZ corners in the same dimension. No radius is
+  shown. Corner order does not matter and bounds are normalized. Navigation and container
+  steps anchor an area at the center of the two corners.
 
 The existing `position` field is retained, with `type`, an optional numeric `radius`, and an
 optional `secondCorner` added to coordinate entries. Save the definition before selecting it
 in a task. **Run pickup** accepts radius ranges and areas and only stores `coordinateId`,
-not a separate radius or region. Its selector and summary show the resource name only.
-On an already open task page, **Refresh status and resources** reloads saved coordinates
+not a separate radius or region. Updating the saved radius or corners applies automatically
+on the next run, so the task does not need to reselect the same ID.
+On an already open task page, **Refresh tasks and coordinates** reloads saved coordinates
 without discarding unsaved task edits. Automatic status refresh does not reload resources.
 There is no separate pickup-region panel.
 

@@ -61,6 +61,17 @@ public record NamedCoordinate(
         };
     }
 
+    public BlockPosition anchorPosition() {
+        if (type != CoordinateType.AREA) {
+            return position;
+        }
+        return new BlockPosition(
+                midpoint(position.x(), secondCorner.x()),
+                midpoint(position.y(), secondCorner.y()),
+                midpoint(position.z(), secondCorner.z())
+        );
+    }
+
     private CuboidPickupShape cubeShape() {
         int extent = radius;
         BlockPosition minimum = new BlockPosition(
@@ -88,6 +99,10 @@ public record NamedCoordinate(
                 Math.max(position.z(), secondCorner.z())
         );
         return new CuboidPickupShape(id, null, minimum, maximum);
+    }
+
+    private static int midpoint(int first, int second) {
+        return (int) (((long) first + second) / 2L);
     }
 
     private static void requireAbsent(

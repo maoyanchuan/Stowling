@@ -63,7 +63,9 @@ Build the remapped mod:
 .\gradlew.bat build
 ```
 
-The output jar is written under `build/libs/`.
+The output jar is written under `build/libs/`. Only the main JAR whose filename does not
+contain `-sources` belongs in the game's `mods` directory. The sources JAR is for inspection
+and debugging and must not be installed.
 
 ## Configuration
 
@@ -179,6 +181,8 @@ Open `http://127.0.0.1:8765/tasks.html` to compose reusable tasks from ten robot
 - `WAIT`: wait for the configured `seconds`.
 - `RUN_PICKUP`: select a saved `coordinateId` with `radius`, or a saved `regionId`;
   configure `idleSeconds` and `waitForItems` for either target.
+  Point-only coordinates are shown as disabled pickup choices with guidance to change
+  them to a radius or area.
 - `TAKE_ITEMS`: take `itemId`/`count` from `coordinateId`, with an optional `containerType`.
 - `PUT_ITEMS`: put `itemId`/`count` into `coordinateId`, with an optional `containerType`.
 - `TRANSFER_ITEMS`: move `itemId`/`count` between `sourceCoordinateId` and

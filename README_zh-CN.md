@@ -59,7 +59,8 @@ pytest
 .\gradlew.bat build
 ```
 
-输出 jar 位于 `build/libs/`。
+输出 jar 位于 `build/libs/`。游戏实例的 `mods` 目录只能安装文件名不带 `-sources` 的
+主 JAR；源码 JAR 仅供查看和调试，不能作为模组安装。
 
 ## 配置
 
@@ -94,6 +95,7 @@ http://127.0.0.1:8765/
 - `WAIT`：等待 `seconds` 指定的秒数。
 - `RUN_PICKUP`：通过 `coordinateId` 选择已保存范围，半径与几何形状在坐标库配置；
   支持 `idleSeconds` 与 `waitForItems`。
+  仅坐标点不能作为拾取范围；任务下拉框会把它显示为不可选项并提示改为半径或区域。
 - `TAKE_ITEMS`：从 `coordinateId` 取出 `itemId`/`count`，可选填 `containerType`。
 - `PUT_ITEMS`：向 `coordinateId` 放入 `itemId`/`count`，可选填 `containerType`。
 - `TRANSFER_ITEMS`：按 `itemId`/`count` 在 `sourceCoordinateId` 与 `destinationCoordinateId`

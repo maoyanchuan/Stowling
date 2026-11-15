@@ -17,7 +17,10 @@ def task_function(name: str) -> str:
 def test_coordinate_options_are_name_only_and_range_filterable() -> None:
     options = task_function("coordinateOptions")
     assert "state.resources.coordinatePoints" in options
-    assert ".filter((point) => !rangeOnly || isRangeCoordinate(point))" in options
+    assert "showIneligible" in options
+    assert "rangeOnly && !isRangeCoordinate(point)" in options
+    assert "单点（需改为半径或区域）" in options
+    assert "true" in options
     assert "coordinateLabel(point)" in options
     assert "position" not in options
     assert "dimension" not in options
@@ -35,7 +38,7 @@ def test_coordinate_options_are_name_only_and_range_filterable() -> None:
     assert 'fallback = "未命名坐标"' in name
 
     controls = task_function("parameterControl")
-    assert "coordinateOptions(step.type === \"RUN_PICKUP\")" in controls
+    assert "coordinateOptions(rangeOnly, rangeOnly)" in controls
     assert "请选择命名范围" in controls
     assert "coordinate ? coordinateLabel(coordinate) : \"\"" in controls
 

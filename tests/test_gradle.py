@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BUILD_GRADLE = ROOT / "build.gradle"
 
 
 def _gradle_command() -> list[str]:
@@ -31,3 +32,9 @@ def test_java_tests_and_quality_checks() -> None:
         part for part in (result.stdout, result.stderr) if part is not None
     )
     assert result.returncode == 0, output or "Gradle produced no captured output"
+
+
+def test_sources_jar_is_not_loadable_as_a_fabric_mod() -> None:
+    build = BUILD_GRADLE.read_text(encoding="utf-8")
+    assert "tasks.named('sourcesJar')" in build
+    assert "exclude 'fabric.mod.json'" in build

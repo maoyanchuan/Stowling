@@ -956,7 +956,8 @@
                     "p",
                     "muted compact-help pickup-step-hint",
                     "只选择坐标与范围页面中已保存的命名范围；"
-                        + "半径、立方体和区域角点都在坐标与范围页面配置。"
+                        + "单点会显示但不可选；半径、立方体和区域角点都在坐标与范围"
+                        + "页面配置。"
                 ));
                 parameters.append(Stowling.element(
                     "p",
@@ -1087,12 +1088,13 @@
         const value = parameterValue(step, definition);
         if (definition.kind === "coordinate") {
             const coordinate = coordinateFor(value);
+            const rangeOnly = step.type === "RUN_PICKUP";
             return referenceSelect(
-                coordinateOptions(step.type === "RUN_PICKUP"),
+                coordinateOptions(rangeOnly, rangeOnly),
                 value,
                 definition,
                 (next) => setStepParameter(step, definition, next),
-                step.type === "RUN_PICKUP"
+                rangeOnly
                     ? "请选择命名范围"
                     : "请选择命名坐标",
                 coordinate ? coordinateLabel(coordinate) : ""
@@ -1183,7 +1185,7 @@
     }
 
     /**
-     * @param {Array<Array<string>>} options
+     * @param {Array<Array<string | boolean>>} options
      * @param {string} value
      * @param {object} definition
      * @param {(value: string) => void} onChange
@@ -1212,8 +1214,10 @@
             const retainedLabel = fallbackLabel || value;
             select.append(new Option(`保留原值 · ${retainedLabel}`, value));
         }
-        for (const [optionValue, optionLabel] of options) {
-            select.append(new Option(optionLabel, optionValue));
+        for (const [optionValue, optionLabel, disabled = false] of options) {
+            const option = new Option(optionLabel, optionValue);
+            option.disabled = Boolean(disabled);
+            select.append(option);
         }
         select.value = value;
         select.addEventListener("change", () => onChange(select.value));
@@ -1222,15 +1226,24 @@
 
     /**
      * @param {boolean} rangeOnly
-     * @returns {Array<Array<string>>}
+     * @param {boolean} showIneligible
+     * @returns {Array<Array<string | boolean>>}
      */
-    function coordinateOptions(rangeOnly = false) {
+    function coordinateOptions(rangeOnly = false, showIneligible = false) {
         return (state.resources.coordinatePoints || [])
-            .filter((point) => !rangeOnly || isRangeCoordinate(point))
-            .map((point) => [
-                String(point.id),
-                coordinateLabel(point)
-            ]);
+            .filter((point) => {
+                return !rangeOnly || showIneligible || isRangeCoordinate(point);
+            })
+            .map((point) => {
+                if (rangeOnly && !isRangeCoordinate(point)) {
+                    return [
+                        String(point.id),
+                        `${coordinateLabel(point)} · 单点（需改为半径或区域）`,
+                        true
+                    ];
+                }
+                return [String(point.id), coordinateLabel(point)];
+            });
     }
 
     /**
@@ -1696,10 +1709,15 @@
                     + coordinateGeometrySummary(coordinate)
             ));
         } else if (!coordinateId) {
+            const points = state.resources.coordinatePoints || [];
+            const ranges = points.filter(isRangeCoordinate);
             target.append(Stowling.element(
                 "p",
                 "compact-help",
-                "尚未选择已保存的命名范围"
+                ranges.length === 0 && points.length > 0
+                    ? `尚未选择范围。已读取 ${points.length} 个单点坐标，`
+                        + "请在“坐标与范围”把类型改为球半径、立方体半径或区域。"
+                    : "尚未选择已保存的命名范围"
             ));
         } else if (!coordinate) {
             target.append(Stowling.element(

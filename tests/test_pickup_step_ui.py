@@ -75,7 +75,7 @@ def test_run_pickup_only_exposes_target_idle_and_wait_parameters() -> None:
     assert "regionId" not in visible
 
     controls = task_function("parameterControl")
-    assert "coordinateOptions(step.type === \"RUN_PICKUP\")" in controls
+    assert "coordinateOptions(rangeOnly, rangeOnly)" in controls
     assert "input.max" not in controls
     assert "pickupTargetSourceControl" not in TASKS
     assert "setPickupTargetMode" not in TASKS
@@ -85,7 +85,8 @@ def test_run_pickup_only_exposes_target_idle_and_wait_parameters() -> None:
 def test_pickup_summary_uses_names_and_coordinate_page_help_only() -> None:
     card = task_function("createStepCard")
     assert "只选择坐标与范围页面中已保存的命名范围" in card
-    assert "半径、立方体和区域角点都在坐标与范围页面配置" in card
+    assert "单点会显示但不可选" in card
+    assert "半径、立方体和区域角点都在坐标与范围" in card
     assert "pickupTargetSourceControl" not in card
 
     summary = task_function("renderPickupStepSummary")

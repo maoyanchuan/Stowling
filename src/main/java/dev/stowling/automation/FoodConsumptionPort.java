@@ -9,6 +9,20 @@ public interface FoodConsumptionPort {
 
     void cancelEating();
 
+    default FoodConsumptionResult startAcquiringFood(
+            ContainerTarget target,
+            String itemId
+    ) {
+        return FoodConsumptionResult.failed("食物获取组件不可用");
+    }
+
+    default FoodConsumptionResult pollAcquiringFood() {
+        return FoodConsumptionResult.failed("食物获取组件不可用");
+    }
+
+    default void cancelAcquiringFood() {
+    }
+
     FoodConsumptionPort UNAVAILABLE = new FoodConsumptionPort() {
         @Override
         public FoodStatus observe() {
@@ -27,6 +41,19 @@ public interface FoodConsumptionPort {
 
         @Override
         public void cancelEating() {
+        }
+
+        @Override
+        public FoodConsumptionResult startAcquiringFood(
+                ContainerTarget target,
+                String itemId
+        ) {
+            return FoodConsumptionResult.failed("食物获取组件不可用");
+        }
+
+        @Override
+        public FoodConsumptionResult pollAcquiringFood() {
+            return FoodConsumptionResult.failed("食物获取组件不可用");
         }
     };
 }

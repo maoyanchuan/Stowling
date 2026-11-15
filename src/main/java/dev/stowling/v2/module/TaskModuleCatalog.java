@@ -203,12 +203,12 @@ public final class TaskModuleCatalog {
             new ModuleDefinition(
                     ConfigValidator.AUTO_EAT_AT_COORDINATE,
                     "自动进食",
-                    "饱食度低于阈值时前往指定坐标，并使用快捷栏或副手中的食物。",
+                    "饱食度低于阈值时前往食物箱，每次取出一个食物并吃完。",
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
                                     ConfigValidator.COORDINATE_ID,
-                                    "进食坐标",
+                                    "食物箱子坐标",
                                     "coordinate-point",
                                     true
                             ),

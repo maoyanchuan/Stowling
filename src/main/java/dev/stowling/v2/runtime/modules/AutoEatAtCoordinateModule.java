@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.automation.FoodStatus;
@@ -19,6 +20,8 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
     private final String foodItemId;
     private final int foodLevelThreshold;
     private boolean navigationStarted;
+    private boolean acquiringActive;
+    private boolean foodReadyToEat;
     private boolean eatingActive;
 
     AutoEatAtCoordinateModule(
@@ -57,6 +60,10 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
             return TaskModuleResult.failed("无法读取当前饱食度");
         }
         if (food.foodLevel() >= foodLevelThreshold) {
+            if (acquiringActive) {
+                context.foodConsumption().cancelAcquiringFood();
+                acquiringActive = false;
+            }
             if (eatingActive) {
                 context.foodConsumption().cancelEating();
                 eatingActive = false;
@@ -69,38 +76,77 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
             );
         }
         if (!TaskModuleSupport.dimensionMatches(context, coordinate)) {
-            return TaskModuleResult.failed("进食坐标维度不匹配");
+            return TaskModuleResult.failed("食物箱坐标维度不匹配");
         }
         NavigationStatus navigation = navigate();
         if (navigation == NavigationStatus.FAILED) {
             return TaskModuleResult.failed(
-                    "无法前往进食坐标 " + coordinate.name()
+                    "无法前往食物箱 " + coordinate.name()
             );
         }
         if (navigation != NavigationStatus.ARRIVED) {
             return TaskModuleResult.waiting(
-                    "正在前往进食坐标 " + coordinate.name()
+                    "正在前往食物箱 " + coordinate.name()
             );
         }
-        FoodConsumptionResult result;
-        if (!eatingActive) {
-            eatingActive = true;
-            result = context.foodConsumption().startEating(foodItemId);
-        } else {
-            result = context.foodConsumption().pollEating();
+        if (acquiringActive) {
+            FoodConsumptionResult result =
+                    context.foodConsumption().pollAcquiringFood();
+            if (result.state() == ContainerTransferState.PENDING) {
+                return TaskModuleResult.waiting(result.message());
+            }
+            acquiringActive = false;
+            if (result.state() == ContainerTransferState.FAILED) {
+                return TaskModuleResult.failed(result.message());
+            }
+            foodReadyToEat = true;
+            return TaskModuleResult.running(
+                    "已从食物箱取出一个食物，正在进食"
+            );
         }
+        if (eatingActive) {
+            FoodConsumptionResult result =
+                    context.foodConsumption().pollEating();
+            if (result.state() == ContainerTransferState.PENDING) {
+                return TaskModuleResult.waiting(result.message());
+            }
+            eatingActive = false;
+            if (result.state() == ContainerTransferState.FAILED) {
+                return TaskModuleResult.failed(result.message());
+            }
+            return TaskModuleResult.running(
+                    "已完成一次进食，正在检查饱食度"
+            );
+        }
+        if (foodReadyToEat) {
+            foodReadyToEat = false;
+            eatingActive = true;
+            FoodConsumptionResult result =
+                    context.foodConsumption().startEating(foodItemId);
+            return handleEatingResult(result);
+        }
+        acquiringActive = true;
+        FoodConsumptionResult result = context.foodConsumption()
+                .startAcquiringFood(
+                        new ContainerTarget(position, "food-container"),
+                        foodItemId
+                );
         if (result.state() == ContainerTransferState.PENDING) {
             return TaskModuleResult.waiting(result.message());
         }
-        eatingActive = false;
+        acquiringActive = false;
         if (result.state() == ContainerTransferState.FAILED) {
             return TaskModuleResult.failed(result.message());
         }
-        return TaskModuleResult.running("已完成一次进食，正在检查饱食度");
+        foodReadyToEat = true;
+        return TaskModuleResult.running(
+                "已从食物箱取出一个食物，正在进食"
+        );
     }
 
     @Override
     public void cancel() {
+        context.foodConsumption().cancelAcquiringFood();
         context.foodConsumption().cancelEating();
         context.navigation().cancel();
     }
@@ -114,5 +160,20 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
             );
         }
         return context.navigation().status(position, arrivalRadius);
+    }
+
+    private TaskModuleResult handleEatingResult(
+            FoodConsumptionResult result
+    ) {
+        if (result.state() == ContainerTransferState.PENDING) {
+            return TaskModuleResult.waiting(result.message());
+        }
+        eatingActive = false;
+        if (result.state() == ContainerTransferState.FAILED) {
+            return TaskModuleResult.failed(result.message());
+        }
+        return TaskModuleResult.running(
+                "已完成一次进食，正在检查饱食度"
+        );
     }
 }

@@ -16,8 +16,8 @@ by Baritone.
 - Task modules cover movement, dropped-item collection, region collection,
   container scanning, category identification, cached-item sorting, and
   depositing.
-- `AUTO_EAT_AT_COORDINATE` checks hunger, moves to a configured eating
-  coordinate, and consumes the selected food from the hotbar or offhand.
+- `AUTO_EAT_AT_COORDINATE` checks hunger, moves to a configured food chest,
+  takes one selected food, and eats until the threshold is met.
 - The recommended workflow uses two independent tasks: drops to a physical
   cache, then categorized distribution from that cache.
 - Category zones are manually configured as ordered marker-area to
@@ -68,7 +68,8 @@ into basic and composite groups without changing existing task configuration.
 - `MATCH_CONTAINER_CATEGORIES` reads nearby item frames and builds a run-local
   category mapping for the scanned containers.
 - `AUTO_EAT_AT_COORDINATE` skips immediately when food is sufficient; otherwise
-  it navigates to the configured coordinate and eats until the threshold is met.
+  it navigates to the configured food chest, takes one food at a time, and eats
+  until the threshold is met.
 - `SORT_CACHE_ITEMS` withdraws categorized items from a cache region, deposits
   exact category matches, and returns leftovers to the cache.
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
@@ -115,9 +116,10 @@ The cache is stored in `config/stowling-category-marker-cache.json`. Sorting
 never refreshes it automatically; a missing cache fails with a prompt to run the
 refresh module.
 
-The auto-eat module uses `minecraft:bread`-style item IDs. The requested food
-must already be in the hotbar or offhand. Its optional threshold defaults to 18
-and means "eat while food level is below this value".
+The auto-eat module uses `minecraft:bread`-style item IDs and a coordinate for
+the food chest. When food is low, it opens that chest, moves exactly one food to
+the hotbar or offhand, closes the chest, and eats. It repeats until the food
+level reaches the threshold. The optional threshold defaults to 18.
 
 Example category-zone A binding:
 

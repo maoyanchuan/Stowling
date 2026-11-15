@@ -1,27 +1,42 @@
 package dev.stowling.client.automation;
 
+import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.automation.FoodStatus;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public final class MinecraftFoodConsumptionPort
         implements FoodConsumptionPort {
     private static final int EATING_TIMEOUT_TICKS = 100;
+    private static final Duration CONTAINER_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration TAKING_TIMEOUT = Duration.ofSeconds(8);
+    private static final int CONFIRM_POLLS = 2;
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
     private ActiveEating active;
+    private ActiveAcquiringFood acquiring;
 
     public MinecraftFoodConsumptionPort(
             Minecraft minecraft,
@@ -54,6 +69,9 @@ public final class MinecraftFoodConsumptionPort
             return FoodConsumptionResult.failed(
                     "自动进食必须在客户端线程执行"
             );
+        }
+        if (acquiring != null) {
+            return FoodConsumptionResult.failed("正在从食物箱取出食物");
         }
         if (active != null) {
             return FoodConsumptionResult.failed("已有进食操作正在进行");
@@ -163,6 +181,209 @@ public final class MinecraftFoodConsumptionPort
         active = null;
     }
 
+    @Override
+    public FoodConsumptionResult startAcquiringFood(
+            ContainerTarget target,
+            String itemId
+    ) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(itemId, "itemId");
+        String checkedItemId = itemId.trim();
+        if (checkedItemId.isEmpty()) {
+            return FoodConsumptionResult.failed("食物 ID 不能为空");
+        }
+        if (!scheduler.isClientThread()) {
+            return FoodConsumptionResult.failed(
+                    "从食物箱取食必须在客户端线程执行"
+            );
+        }
+        if (active != null) {
+            return FoodConsumptionResult.failed("已有进食操作正在进行");
+        }
+        if (acquiring != null) {
+            return FoodConsumptionResult.failed("已有食物取出操作正在进行");
+        }
+        acquiring = new ActiveAcquiringFood(target, checkedItemId);
+        acquiring.deadline = Instant.now().plus(CONTAINER_TIMEOUT);
+        return FoodConsumptionResult.pending("正在打开食物箱");
+    }
+
+    @Override
+    public FoodConsumptionResult pollAcquiringFood() {
+        if (!scheduler.isClientThread()) {
+            return FoodConsumptionResult.failed(
+                    "从食物箱取食必须在客户端线程执行"
+            );
+        }
+        if (acquiring == null) {
+            return FoodConsumptionResult.failed("当前没有食物取出操作");
+        }
+        if (Instant.now().isAfter(acquiring.deadline)) {
+            return failAcquiring("从食物箱取出食物超时");
+        }
+        return switch (acquiring.phase) {
+            case OPENING -> pollOpeningFoodContainer();
+            case WAITING_FOR_SOURCE -> pollSourcePickup();
+            case WAITING_FOR_ONE -> pollSingleItemPlacement();
+            case RETURNING_REMAINDER -> pollRemainderReturn();
+            case CONFIRMING -> pollAcquisitionConfirmation();
+        };
+    }
+
+    @Override
+    public void cancelAcquiringFood() {
+        if (scheduler.isClientThread()) {
+            returnCarriedToSource();
+            closeContainer();
+        }
+        acquiring = null;
+    }
+
+    private FoodConsumptionResult pollOpeningFoodContainer() {
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        if (screen == null) {
+            if (!acquiring.openSent) {
+                openBlock(acquiring.target);
+                acquiring.openSent = true;
+                acquiring.deadline = Instant.now().plus(CONTAINER_TIMEOUT);
+            }
+            return FoodConsumptionResult.pending("等待食物箱界面");
+        }
+        if (!acquiring.openSent) {
+            closeContainer();
+            return FoodConsumptionResult.pending("正在关闭当前界面");
+        }
+        AbstractContainerMenu menu = screen.getMenu();
+        if (playerSlots(menu).isEmpty()
+                || containerSlots(menu).isEmpty()) {
+            return FoodConsumptionResult.pending("等待食物箱槽位加载");
+        }
+        int sourceSlot = findFoodSource(menu, acquiring.itemId);
+        if (sourceSlot < 0) {
+            return failAcquiring("食物箱中没有指定食物: "
+                    + acquiring.itemId);
+        }
+        ItemStack source = menu.getSlot(sourceSlot).getItem();
+        int destinationSlot = findFoodDestination(menu, source);
+        if (destinationSlot < 0) {
+            return failAcquiring("快捷栏或副手没有空间存放食物");
+        }
+        acquiring.sourceSlot = sourceSlot;
+        acquiring.destinationSlot = destinationSlot;
+        acquiring.playerBefore = playerItemCount(menu, acquiring.itemId);
+        acquiring.containerBefore = containerItemCount(
+                menu,
+                acquiring.itemId
+        );
+        click(menu, sourceSlot, 0, ContainerInput.PICKUP);
+        acquiring.phase = AcquisitionPhase.WAITING_FOR_SOURCE;
+        acquiring.deadline = Instant.now().plus(TAKING_TIMEOUT);
+        return FoodConsumptionResult.pending("正在从食物箱取出一个食物");
+    }
+
+    private FoodConsumptionResult pollSourcePickup() {
+        AbstractContainerScreen<?> screen = requireContainerScreen();
+        if (screen == null) {
+            return failAcquiring("食物箱在取出食物前关闭");
+        }
+        AbstractContainerMenu menu = screen.getMenu();
+        ItemStack carried = menu.getCarried();
+        if (carried.isEmpty()) {
+            return FoodConsumptionResult.pending("等待食物进入手持槽");
+        }
+        if (!itemMatches(carried, acquiring.itemId)) {
+            return failAcquiring("食物箱取出的物品与目标食物不匹配");
+        }
+        acquiring.pickedCount = carried.getCount();
+        click(
+                menu,
+                acquiring.destinationSlot,
+                1,
+                ContainerInput.PICKUP
+        );
+        acquiring.phase = AcquisitionPhase.WAITING_FOR_ONE;
+        return FoodConsumptionResult.pending("正在放入一个食物");
+    }
+
+    private FoodConsumptionResult pollSingleItemPlacement() {
+        AbstractContainerScreen<?> screen = requireContainerScreen();
+        if (screen == null) {
+            return failAcquiring("食物箱在放入食物前关闭");
+        }
+        AbstractContainerMenu menu = screen.getMenu();
+        ItemStack carried = menu.getCarried();
+        if (carried.isEmpty()) {
+            acquiring.phase = AcquisitionPhase.CONFIRMING;
+            acquiring.confirmationPolls = 0;
+            return FoodConsumptionResult.pending("等待服务器确认取食");
+        }
+        if (carried.getCount() >= acquiring.pickedCount) {
+            return FoodConsumptionResult.pending("等待食物放入快捷栏");
+        }
+        click(menu, acquiring.sourceSlot, 0, ContainerInput.PICKUP);
+        acquiring.phase = AcquisitionPhase.RETURNING_REMAINDER;
+        return FoodConsumptionResult.pending("正在放回剩余食物");
+    }
+
+    private FoodConsumptionResult pollRemainderReturn() {
+        AbstractContainerScreen<?> screen = requireContainerScreen();
+        if (screen == null) {
+            return failAcquiring("食物箱在放回剩余食物前关闭");
+        }
+        if (!screen.getMenu().getCarried().isEmpty()) {
+            return FoodConsumptionResult.pending("等待剩余食物放回箱子");
+        }
+        acquiring.phase = AcquisitionPhase.CONFIRMING;
+        acquiring.confirmationPolls = 0;
+        return FoodConsumptionResult.pending("等待服务器确认取食");
+    }
+
+    private FoodConsumptionResult pollAcquisitionConfirmation() {
+        AbstractContainerScreen<?> screen = requireContainerScreen();
+        if (screen == null) {
+            return failAcquiring("食物箱在确认取食前关闭");
+        }
+        AbstractContainerMenu menu = screen.getMenu();
+        acquiring.confirmationPolls++;
+        int playerAfter = playerItemCount(menu, acquiring.itemId);
+        int containerAfter = containerItemCount(menu, acquiring.itemId);
+        boolean confirmed = playerAfter == acquiring.playerBefore + 1
+                && containerAfter == acquiring.containerBefore - 1;
+        if (acquiring.confirmationPolls >= CONFIRM_POLLS
+                && confirmed
+                && menu.getCarried().isEmpty()) {
+            closeContainer();
+            acquiring = null;
+            return FoodConsumptionResult.succeeded(
+                    "已从食物箱取出一个食物"
+            );
+        }
+        return FoodConsumptionResult.pending("等待服务器确认取食");
+    }
+
+    private FoodConsumptionResult failAcquiring(String message) {
+        returnCarriedToSource();
+        closeContainer();
+        acquiring = null;
+        return FoodConsumptionResult.failed(message);
+    }
+
+    private void returnCarriedToSource() {
+        if (acquiring == null || acquiring.sourceSlot < 0) {
+            return;
+        }
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        if (screen == null || screen.getMenu().getCarried().isEmpty()) {
+            return;
+        }
+        click(
+                screen.getMenu(),
+                acquiring.sourceSlot,
+                0,
+                ContainerInput.PICKUP
+        );
+    }
+
     private static FoodSlot findFoodSlot(
             Inventory inventory,
             String itemId
@@ -187,6 +408,99 @@ public final class MinecraftFoodConsumptionPort
             );
         }
         return null;
+    }
+
+    private static int findFoodSource(
+            AbstractContainerMenu menu,
+            String itemId
+    ) {
+        for (int slotIndex : containerSlots(menu)) {
+            ItemStack stack = menu.getSlot(slotIndex).getItem();
+            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+                return slotIndex;
+            }
+        }
+        return -1;
+    }
+
+    private static int findFoodDestination(
+            AbstractContainerMenu menu,
+            ItemStack food
+    ) {
+        int stackingSlot = -1;
+        int emptySlot = -1;
+        for (int slotIndex : playerSlots(menu)) {
+            Slot slot = menu.getSlot(slotIndex);
+            if (!slot.mayPlace(food)) {
+                continue;
+            }
+            int containerSlot = slot.getContainerSlot();
+            boolean quickAccess = containerSlot >= 0 && containerSlot < 9
+                    || containerSlot == Inventory.SLOT_OFFHAND;
+            if (!quickAccess) {
+                continue;
+            }
+            ItemStack current = slot.getItem();
+            if (current.isEmpty() && emptySlot < 0) {
+                emptySlot = slotIndex;
+            } else if (ItemStack.isSameItemSameComponents(current, food)
+                    && current.getCount() < slot.getMaxStackSize(food)
+                    && stackingSlot < 0) {
+                stackingSlot = slotIndex;
+            }
+        }
+        return stackingSlot >= 0 ? stackingSlot : emptySlot;
+    }
+
+    private static java.util.List<Integer> playerSlots(
+            AbstractContainerMenu menu
+    ) {
+        return menu.slots.stream()
+                .filter(slot -> slot.container instanceof Inventory)
+                .map(menu.slots::indexOf)
+                .toList();
+    }
+
+    private static java.util.List<Integer> containerSlots(
+            AbstractContainerMenu menu
+    ) {
+        return menu.slots.stream()
+                .filter(slot -> !(slot.container instanceof Inventory))
+                .map(menu.slots::indexOf)
+                .toList();
+    }
+
+    private static int playerItemCount(
+            AbstractContainerMenu menu,
+            String itemId
+    ) {
+        return itemCount(menu, playerSlots(menu), itemId);
+    }
+
+    private static int containerItemCount(
+            AbstractContainerMenu menu,
+            String itemId
+    ) {
+        return itemCount(menu, containerSlots(menu), itemId);
+    }
+
+    private static int itemCount(
+            AbstractContainerMenu menu,
+            java.util.List<Integer> slots,
+            String itemId
+    ) {
+        int count = 0;
+        for (int slotIndex : slots) {
+            ItemStack stack = menu.getSlot(slotIndex).getItem();
+            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+                count = Math.addExact(count, stack.getCount());
+            }
+        }
+        return count;
+    }
+
+    private static String itemId(ItemStack stack) {
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
     private static boolean itemMatches(ItemStack stack, String itemId) {
@@ -224,6 +538,62 @@ public final class MinecraftFoodConsumptionPort
         }
     }
 
+    private void openBlock(ContainerTarget target) {
+        LocalPlayer player = minecraft.player;
+        MultiPlayerGameMode gameMode = minecraft.gameMode;
+        if (player == null || gameMode == null) {
+            return;
+        }
+        BlockPos position = new BlockPos(
+                target.position().x(),
+                target.position().y(),
+                target.position().z()
+        );
+        BlockHitResult hit = new BlockHitResult(
+                Vec3.atCenterOf(position),
+                Direction.UP,
+                position,
+                false
+        );
+        gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+    }
+
+    private void click(
+            AbstractContainerMenu menu,
+            int slot,
+            int button,
+            ContainerInput input
+    ) {
+        LocalPlayer player = minecraft.player;
+        MultiPlayerGameMode gameMode = minecraft.gameMode;
+        if (player != null && gameMode != null) {
+            gameMode.handleContainerInput(
+                    menu.containerId,
+                    slot,
+                    button,
+                    input,
+                    player
+            );
+        }
+    }
+
+    private void closeContainer() {
+        LocalPlayer player = minecraft.player;
+        if (player != null) {
+            player.closeContainer();
+        }
+    }
+
+    private AbstractContainerScreen<?> currentContainerScreen() {
+        return minecraft.gui.screen() instanceof AbstractContainerScreen<?> screen
+                ? screen
+                : null;
+    }
+
+    private AbstractContainerScreen<?> requireContainerScreen() {
+        return currentContainerScreen();
+    }
+
     private record FoodSlot(
             int index,
             boolean hotbar,
@@ -251,6 +621,36 @@ public final class MinecraftFoodConsumptionPort
             this.previousSelected = previousSelected;
             this.foodLevelBefore = foodLevelBefore;
             this.itemCountBefore = itemCountBefore;
+        }
+    }
+
+    private enum AcquisitionPhase {
+        OPENING,
+        WAITING_FOR_SOURCE,
+        WAITING_FOR_ONE,
+        RETURNING_REMAINDER,
+        CONFIRMING
+    }
+
+    private static final class ActiveAcquiringFood {
+        private final ContainerTarget target;
+        private final String itemId;
+        private AcquisitionPhase phase = AcquisitionPhase.OPENING;
+        private Instant deadline;
+        private boolean openSent;
+        private int sourceSlot = -1;
+        private int destinationSlot = -1;
+        private int playerBefore;
+        private int containerBefore;
+        private int pickedCount;
+        private int confirmationPolls;
+
+        private ActiveAcquiringFood(
+                ContainerTarget target,
+                String itemId
+        ) {
+            this.target = target;
+            this.itemId = itemId;
         }
     }
 }

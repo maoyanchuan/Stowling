@@ -854,6 +854,8 @@ class TaskModuleExecutionTest {
 
         assertEquals(TaskModuleState.SUCCEEDED, result.state());
         assertTrue(food.requested.isEmpty());
+        assertTrue(food.acquired.isEmpty());
+        assertTrue(food.events.isEmpty());
     }
 
     @Test
@@ -894,6 +896,76 @@ class TaskModuleExecutionTest {
         assertEquals(
                 List.of("minecraft:cooked_beef"),
                 food.requested
+        );
+        assertEquals(
+                List.of(new BlockPosition(0, 64, 0)),
+                food.acquired.stream()
+                        .map(ContainerTarget::position)
+                        .toList()
+        );
+        assertEquals(
+                List.of(
+                        "acquire:minecraft:cooked_beef",
+                        "acquired:minecraft:cooked_beef",
+                        "eat:minecraft:cooked_beef",
+                        "eaten:minecraft:cooked_beef"
+                ),
+                food.events
+        );
+    }
+
+    @Test
+    void autoEatFetchesAnotherFoodWhenOneItemIsNotEnough() {
+        CoordinatePoint point = point("Eating");
+        RecordingFood food = new RecordingFood(10, 2, 18);
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new EmptyRegions(),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                new NoCategoryZones(),
+                Map.of(),
+                point,
+                region("Storage"),
+                new TaskRunWorkspace(),
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                food
+        );
+        AutoEatAtCoordinateModule module = new AutoEatAtCoordinateModule(
+                context,
+                autoEatStep(point, "minecraft:bread", "18")
+        );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 20
+                        && result.state() != TaskModuleState.SUCCEEDED
+                        && result.state() != TaskModuleState.FAILED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(2, food.acquired.size());
+        assertEquals(
+                List.of("minecraft:bread", "minecraft:bread"),
+                food.requested
+        );
+        assertEquals(
+                List.of(
+                        "acquire:minecraft:bread",
+                        "acquired:minecraft:bread",
+                        "eat:minecraft:bread",
+                        "eaten:minecraft:bread",
+                        "acquire:minecraft:bread",
+                        "acquired:minecraft:bread",
+                        "eat:minecraft:bread",
+                        "eaten:minecraft:bread"
+                ),
+                food.events
         );
     }
 
@@ -1331,14 +1403,19 @@ class TaskModuleExecutionTest {
 
     private static final class RecordingFood
             implements FoodConsumptionPort {
-        private final int foodAfterEating;
+        private final int[] foodAfterMeals;
+        private final List<ContainerTarget> acquired = new ArrayList<>();
+        private final List<String> events = new ArrayList<>();
         private final List<String> requested = new ArrayList<>();
         private int foodLevel;
         private boolean eating;
+        private boolean acquiring;
+        private int meals;
+        private String acquiringItemId;
 
-        private RecordingFood(int foodLevel, int foodAfterEating) {
+        private RecordingFood(int foodLevel, int... foodAfterMeals) {
             this.foodLevel = foodLevel;
-            this.foodAfterEating = foodAfterEating;
+            this.foodAfterMeals = foodAfterMeals;
         }
 
         @Override
@@ -1347,8 +1424,36 @@ class TaskModuleExecutionTest {
         }
 
         @Override
+        public FoodConsumptionResult startAcquiringFood(
+                ContainerTarget target,
+                String itemId
+        ) {
+            events.add("acquire:" + itemId);
+            acquired.add(target);
+            acquiring = true;
+            acquiringItemId = itemId;
+            return FoodConsumptionResult.pending("acquiring");
+        }
+
+        @Override
+        public FoodConsumptionResult pollAcquiringFood() {
+            if (!acquiring) {
+                return FoodConsumptionResult.failed("not acquiring");
+            }
+            acquiring = false;
+            events.add("acquired:" + acquiringItemId);
+            return FoodConsumptionResult.succeeded("acquired");
+        }
+
+        @Override
+        public void cancelAcquiringFood() {
+            acquiring = false;
+        }
+
+        @Override
         public FoodConsumptionResult startEating(String itemId) {
             requested.add(itemId);
+            events.add("eat:" + itemId);
             eating = true;
             return FoodConsumptionResult.pending("eating");
         }
@@ -1359,13 +1464,22 @@ class TaskModuleExecutionTest {
                 return FoodConsumptionResult.failed("not eating");
             }
             eating = false;
-            foodLevel = foodAfterEating;
+            foodLevel = foodAfterMeals[Math.min(
+                    meals,
+                    foodAfterMeals.length - 1
+            )];
+            meals++;
+            events.add("eaten:" + activeItemId());
             return FoodConsumptionResult.succeeded("eaten");
         }
 
         @Override
         public void cancelEating() {
             eating = false;
+        }
+
+        private String activeItemId() {
+            return requested.get(requested.size() - 1);
         }
     }
 

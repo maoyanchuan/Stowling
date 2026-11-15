@@ -8,6 +8,7 @@ import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -25,6 +26,7 @@ public record TaskExecutionContext(
         ContainerWithdrawalPort containerWithdrawals,
         ContainerInspectionPort containerInspections,
         CategoryMarkerCachePort categoryMarkerCache,
+        FoodConsumptionPort foodConsumption,
         CategoryZonePort categoryZonesPort,
         Map<UUID, CoordinatePoint> coordinates,
         Map<UUID, RegionDefinition> regions,
@@ -57,6 +59,10 @@ public record TaskExecutionContext(
         categoryMarkerCache = Objects.requireNonNull(
                 categoryMarkerCache,
                 "categoryMarkerCache"
+        );
+        foodConsumption = Objects.requireNonNull(
+                foodConsumption,
+                "foodConsumption"
         );
         categoryZonesPort = Objects.requireNonNull(
                 categoryZonesPort,
@@ -92,6 +98,40 @@ public record TaskExecutionContext(
                 containerWithdrawals,
                 ContainerInspectionPort.UNAVAILABLE,
                 CategoryMarkerCachePort.UNAVAILABLE,
+                FoodConsumptionPort.UNAVAILABLE,
+                categoryZonesPort,
+                coordinates,
+                regions,
+                categoryZones,
+                workspace
+        );
+    }
+
+    public TaskExecutionContext(
+            NavigationPort navigation,
+            DroppedItemObserverPort droppedItems,
+            ContainerRegionPort containerRegions,
+            ContainerCategoryPort containerCategories,
+            ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
+            ContainerInspectionPort containerInspections,
+            CategoryMarkerCachePort categoryMarkerCache,
+            CategoryZonePort categoryZonesPort,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            TaskRunWorkspace workspace
+    ) {
+        this(
+                navigation,
+                droppedItems,
+                containerRegions,
+                containerCategories,
+                containerTransfers,
+                containerWithdrawals,
+                containerInspections,
+                categoryMarkerCache,
+                FoodConsumptionPort.UNAVAILABLE,
                 categoryZonesPort,
                 coordinates,
                 regions,

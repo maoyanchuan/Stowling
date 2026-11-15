@@ -187,6 +187,7 @@ public final class TaskRunManager {
                     registry.containerWithdrawals(),
                     registry.containerInspections(),
                     registry.categoryMarkerCache(),
+                    registry.foodConsumption(),
                     registry.categoryZones(),
                     active.coordinates,
                     active.regions,

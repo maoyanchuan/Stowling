@@ -25,6 +25,7 @@ class TaskModuleCatalogTest {
                         ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                         ConfigValidator.MATCH_CONTAINER_CATEGORIES,
+                        ConfigValidator.AUTO_EAT_AT_COORDINATE,
                         ConfigValidator.SORT_CACHE_ITEMS,
                         ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                         ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
@@ -70,6 +71,22 @@ class TaskModuleCatalogTest {
                         ConfigValidator.SCAN_SOURCE
                 ).options()
         );
+
+        ModuleDefinition autoEat = modules.get(
+                ConfigValidator.AUTO_EAT_AT_COORDINATE
+        );
+        ModuleParameter eatCoordinate = moduleParameter(
+                autoEat,
+                ConfigValidator.COORDINATE_ID
+        );
+        assertEquals("coordinate-point", eatCoordinate.kind());
+        assertTrue(eatCoordinate.required());
+        ModuleParameter threshold = moduleParameter(
+                autoEat,
+                ConfigValidator.FOOD_LEVEL_THRESHOLD
+        );
+        assertEquals("integer", threshold.kind());
+        assertEquals("18", threshold.defaultValue());
 
         ModuleDefinition sort = modules.get(ConfigValidator.SORT_CACHE_ITEMS);
         ModuleParameter cacheRegion = moduleParameter(

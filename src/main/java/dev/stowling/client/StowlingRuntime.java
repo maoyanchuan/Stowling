@@ -11,6 +11,7 @@ import dev.stowling.client.automation.MinecraftContainerTransferPort;
 import dev.stowling.client.automation.MinecraftContainerWithdrawalPort;
 import dev.stowling.client.automation.ClientThreadNavigationPort;
 import dev.stowling.client.automation.MinecraftDroppedItemObserver;
+import dev.stowling.client.automation.MinecraftFoodConsumptionPort;
 import dev.stowling.client.interaction.BaritoneAutomationNavigation;
 import dev.stowling.client.interaction.MinecraftClientActionScheduler;
 import dev.stowling.client.interaction.MinecraftWorldObserver;
@@ -105,6 +106,7 @@ public final class StowlingRuntime implements AutoCloseable {
                 new MinecraftContainerWithdrawalPort(minecraft, scheduler),
                 new MinecraftContainerInspectionPort(minecraft, scheduler),
                 categoryMarkerCache,
+                new MinecraftFoodConsumptionPort(minecraft, scheduler),
                 new MinecraftCategoryZoneResolver(
                         minecraft,
                         scheduler,

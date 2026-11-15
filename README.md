@@ -13,6 +13,8 @@ by Baritone.
 - Task modules cover movement, dropped-item collection, region collection,
   container scanning, category identification, cached-item sorting, and
   depositing.
+- `AUTO_EAT_AT_COORDINATE` checks hunger, moves to a configured eating
+  coordinate, and consumes the selected food from the hotbar or offhand.
 - The recommended workflow uses two independent tasks: drops to a physical
   cache, then categorized distribution from that cache.
 - Category zones are manually configured as ordered marker-area to
@@ -59,6 +61,8 @@ editor builds its controls from that catalog.
   in the active task run.
 - `MATCH_CONTAINER_CATEGORIES` reads nearby item frames and builds a run-local
   category mapping for the scanned containers.
+- `AUTO_EAT_AT_COORDINATE` skips immediately when food is sufficient; otherwise
+  it navigates to the configured coordinate and eats until the threshold is met.
 - `SORT_CACHE_ITEMS` withdraws categorized items from a cache region, deposits
   exact category matches, and returns leftovers to the cache.
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
@@ -104,6 +108,10 @@ REFRESH_CATEGORY_MARKER_CACHE
 The cache is stored in `config/stowling-category-marker-cache.json`. Sorting
 never refreshes it automatically; a missing cache fails with a prompt to run the
 refresh module.
+
+The auto-eat module uses `minecraft:bread`-style item IDs. The requested food
+must already be in the hotbar or offhand. Its optional threshold defaults to 18
+and means "eat while food level is below this value".
 
 Example category-zone A binding:
 

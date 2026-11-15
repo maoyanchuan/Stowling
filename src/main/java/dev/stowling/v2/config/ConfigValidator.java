@@ -28,6 +28,8 @@ public final class ConfigValidator {
             "COLLECT_DROPPED_ITEMS";
     public static final String COLLECT_DROPPED_ITEMS_IN_REGION =
             "COLLECT_DROPPED_ITEMS_IN_REGION";
+    public static final String AUTO_EAT_AT_COORDINATE =
+            "AUTO_EAT_AT_COORDINATE";
     public static final String SCAN_CONTAINERS_IN_REGION =
             "SCAN_CONTAINERS_IN_REGION";
     public static final String MATCH_CONTAINER_CATEGORIES =
@@ -40,6 +42,9 @@ public final class ConfigValidator {
     public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
             "DEPOSIT_ITEMS_TO_CONTAINERS";
     public static final String COORDINATE_ID = "coordinateId";
+    public static final String FOOD_ITEM_ID = "foodItemId";
+    public static final String FOOD_LEVEL_THRESHOLD =
+            "foodLevelThreshold";
     public static final String REGION_ID = "regionId";
     public static final String CACHE_REGION_ID = "cacheRegionId";
     public static final String CATEGORY_ZONE_ID = "categoryZoneId";
@@ -140,6 +145,8 @@ public final class ConfigValidator {
             );
             case COLLECT_DROPPED_ITEMS_IN_REGION ->
                     requireRegionCollectStep(step, regions);
+            case AUTO_EAT_AT_COORDINATE ->
+                    requireAutoEatStep(step, coordinates);
             case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, regions);
             case MATCH_CONTAINER_CATEGORIES -> requireCategoryStep(step);
             case SORT_CACHE_ITEMS -> requireCacheSortStep(step, regions);
@@ -207,6 +214,37 @@ public final class ConfigValidator {
         );
         requireRegion(step, regions, REGION_ID);
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+    }
+
+    private static void requireAutoEatStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        requireParameters(
+                step,
+                Set.of(
+                        COORDINATE_ID,
+                        FOOD_ITEM_ID,
+                        FOOD_LEVEL_THRESHOLD
+                ),
+                Set.of(COORDINATE_ID, FOOD_ITEM_ID)
+        );
+        UUID coordinateId = requireUuid(
+                step.parameters().get(COORDINATE_ID),
+                COORDINATE_ID
+        );
+        if (!coordinates.containsKey(coordinateId)) {
+            throw new V2ValidationException(
+                    "coordinate does not exist: " + coordinateId
+            );
+        }
+        String foodItemId = step.parameters().get(FOOD_ITEM_ID).trim();
+        if (!foodItemId.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) {
+            throw new V2ValidationException(
+                    FOOD_ITEM_ID + " must be a resource location"
+            );
+        }
+        requireOptionalInteger(step, FOOD_LEVEL_THRESHOLD, 1, 20);
     }
 
     private static void requireDepositStep(TaskStep step) {

@@ -20,6 +20,9 @@ import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.FoodConsumptionPort;
+import dev.stowling.automation.FoodConsumptionResult;
+import dev.stowling.automation.FoodStatus;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
@@ -822,6 +825,78 @@ class TaskModuleExecutionTest {
         );
     }
 
+    @Test
+    void autoEatSkipsNavigationWhenFoodLevelIsSufficient() {
+        CoordinatePoint point = point("Eating");
+        RecordingFood food = new RecordingFood(20, 18);
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new EmptyRegions(),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                new NoCategoryZones(),
+                Map.of(),
+                point,
+                region("Storage"),
+                new TaskRunWorkspace(),
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                food
+        );
+        AutoEatAtCoordinateModule module = new AutoEatAtCoordinateModule(
+                context,
+                autoEatStep(point, "minecraft:bread", "18")
+        );
+
+        TaskModuleResult result = module.start();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertTrue(food.requested.isEmpty());
+    }
+
+    @Test
+    void autoEatNavigatesAndConsumesFoodBelowThreshold() {
+        CoordinatePoint point = point("Eating");
+        RecordingFood food = new RecordingFood(10, 18);
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new EmptyRegions(),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                new NoCategoryZones(),
+                Map.of(),
+                point,
+                region("Storage"),
+                new TaskRunWorkspace(),
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                food
+        );
+        AutoEatAtCoordinateModule module = new AutoEatAtCoordinateModule(
+                context,
+                autoEatStep(point, "minecraft:cooked_beef", "18")
+        );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 10
+                        && result.state() != TaskModuleState.SUCCEEDED
+                        && result.state() != TaskModuleState.FAILED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                List.of("minecraft:cooked_beef"),
+                food.requested
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             DroppedItemObserverPort dropped,
@@ -948,6 +1023,59 @@ class TaskModuleExecutionTest {
                 Map.of(region.id(), region),
                 categoryZones,
                 workspace
+        );
+    }
+
+    private static TaskExecutionContext context(
+            NavigationPort navigation,
+            DroppedItemObserverPort dropped,
+            ContainerRegionPort regions,
+            ContainerCategoryPort categories,
+            ContainerTransferPort transfers,
+            ContainerWithdrawalPort withdrawals,
+            CategoryZonePort categoryZonesPort,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            CoordinatePoint point,
+            RegionDefinition region,
+            TaskRunWorkspace workspace,
+            ContainerInspectionPort inspections,
+            CategoryMarkerCachePort cache,
+            FoodConsumptionPort food
+    ) {
+        return new TaskExecutionContext(
+                navigation,
+                dropped,
+                regions,
+                categories,
+                transfers,
+                withdrawals,
+                inspections,
+                cache,
+                food,
+                categoryZonesPort,
+                Map.of(point.id(), point),
+                Map.of(region.id(), region),
+                categoryZones,
+                workspace
+        );
+    }
+
+    private static TaskStep autoEatStep(
+            CoordinatePoint point,
+            String foodItemId,
+            String threshold
+    ) {
+        return new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.AUTO_EAT_AT_COORDINATE,
+                Map.of(
+                        ConfigValidator.COORDINATE_ID,
+                        point.id().toString(),
+                        ConfigValidator.FOOD_ITEM_ID,
+                        foodItemId,
+                        ConfigValidator.FOOD_LEVEL_THRESHOLD,
+                        threshold
+                )
         );
     }
 
@@ -1198,6 +1326,46 @@ class TaskModuleExecutionTest {
                 Map<UUID, Map<BlockPosition, Set<String>>> contents
         ) {
             saved = Map.copyOf(contents);
+        }
+    }
+
+    private static final class RecordingFood
+            implements FoodConsumptionPort {
+        private final int foodAfterEating;
+        private final List<String> requested = new ArrayList<>();
+        private int foodLevel;
+        private boolean eating;
+
+        private RecordingFood(int foodLevel, int foodAfterEating) {
+            this.foodLevel = foodLevel;
+            this.foodAfterEating = foodAfterEating;
+        }
+
+        @Override
+        public FoodStatus observe() {
+            return new FoodStatus(true, foodLevel, 0.0F);
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId) {
+            requested.add(itemId);
+            eating = true;
+            return FoodConsumptionResult.pending("eating");
+        }
+
+        @Override
+        public FoodConsumptionResult pollEating() {
+            if (!eating) {
+                return FoodConsumptionResult.failed("not eating");
+            }
+            eating = false;
+            foodLevel = foodAfterEating;
+            return FoodConsumptionResult.succeeded("eaten");
+        }
+
+        @Override
+        public void cancelEating() {
+            eating = false;
         }
     }
 

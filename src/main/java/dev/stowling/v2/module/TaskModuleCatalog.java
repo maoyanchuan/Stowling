@@ -191,6 +191,38 @@ public final class TaskModuleCatalog {
                     ))
             );
 
+    private static final ModuleDefinition AUTO_EAT_AT_COORDINATE =
+            new ModuleDefinition(
+                    ConfigValidator.AUTO_EAT_AT_COORDINATE,
+                    "自动进食",
+                    "饱食度低于阈值时前往指定坐标，并使用快捷栏或副手中的食物。",
+                    List.of(
+                            new ModuleParameter(
+                                    ConfigValidator.COORDINATE_ID,
+                                    "进食坐标",
+                                    "coordinate-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.FOOD_ITEM_ID,
+                                    "食物 ID",
+                                    "text",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.FOOD_LEVEL_THRESHOLD,
+                                    "饱食度低于此值时进食",
+                                    "integer",
+                                    false,
+                                    List.of(),
+                                    1,
+                                    20,
+                                    1,
+                                    "18"
+                            )
+                    )
+            );
+
     private static final ModuleDefinition SORT_CACHE_ITEMS =
             new ModuleDefinition(
                     ConfigValidator.SORT_CACHE_ITEMS,
@@ -303,6 +335,7 @@ public final class TaskModuleCatalog {
                     COLLECT_DROPPED_ITEMS_IN_REGION,
                     SCAN_CONTAINERS_IN_REGION,
                     MATCH_CONTAINER_CATEGORIES,
+                    AUTO_EAT_AT_COORDINATE,
                     SORT_CACHE_ITEMS,
                     SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     REFRESH_CATEGORY_MARKER_CACHE,

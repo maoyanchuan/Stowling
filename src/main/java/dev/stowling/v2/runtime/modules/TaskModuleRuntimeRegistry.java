@@ -15,6 +15,7 @@ import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.RegionDefinition;
@@ -34,6 +35,7 @@ public final class TaskModuleRuntimeRegistry {
     private final ContainerWithdrawalPort containerWithdrawals;
     private final ContainerInspectionPort containerInspections;
     private final CategoryMarkerCachePort categoryMarkerCache;
+    private final FoodConsumptionPort foodConsumption;
     private final CategoryZonePort categoryZones;
     private final Map<String, TaskModuleRuntimeFactory> factories;
 
@@ -46,6 +48,7 @@ public final class TaskModuleRuntimeRegistry {
             ContainerWithdrawalPort containerWithdrawals,
             ContainerInspectionPort containerInspections,
             CategoryMarkerCachePort categoryMarkerCache,
+            FoodConsumptionPort foodConsumption,
             CategoryZonePort categoryZones,
             List<TaskModuleRuntimeFactory> factories
     ) {
@@ -74,6 +77,10 @@ public final class TaskModuleRuntimeRegistry {
         this.categoryMarkerCache = Objects.requireNonNull(
                 categoryMarkerCache,
                 "categoryMarkerCache"
+        );
+        this.foodConsumption = Objects.requireNonNull(
+                foodConsumption,
+                "foodConsumption"
         );
         this.categoryZones = Objects.requireNonNull(
                 categoryZones,
@@ -113,6 +120,7 @@ public final class TaskModuleRuntimeRegistry {
                 containerWithdrawals,
                 ContainerInspectionPort.UNAVAILABLE,
                 CategoryMarkerCachePort.UNAVAILABLE,
+                FoodConsumptionPort.UNAVAILABLE,
                 categoryZones,
                 factories
         );
@@ -202,6 +210,7 @@ public final class TaskModuleRuntimeRegistry {
                 withdrawals,
                 ContainerInspectionPort.UNAVAILABLE,
                 CategoryMarkerCachePort.UNAVAILABLE,
+                FoodConsumptionPort.UNAVAILABLE,
                 categoryZones,
                 StandardTaskModuleFactories.create()
         );
@@ -237,6 +246,10 @@ public final class TaskModuleRuntimeRegistry {
 
     public CategoryMarkerCachePort categoryMarkerCache() {
         return categoryMarkerCache;
+    }
+
+    public FoodConsumptionPort foodConsumption() {
+        return foodConsumption;
     }
 
     public CategoryZonePort categoryZones() {

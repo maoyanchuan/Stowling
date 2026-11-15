@@ -36,6 +36,10 @@ public final class StandardTaskModuleFactories {
                         MatchContainerCategoriesModule::new
                 ),
                 factory(
+                        ConfigValidator.AUTO_EAT_AT_COORDINATE,
+                        AutoEatAtCoordinateModule::new
+                ),
+                factory(
                         ConfigValidator.SORT_CACHE_ITEMS,
                         SortCacheItemsModule::new
                 ),

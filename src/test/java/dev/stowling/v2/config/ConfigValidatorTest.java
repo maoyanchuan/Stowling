@@ -404,6 +404,45 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void validatesAutoEatCoordinateFoodAndThreshold() {
+        CoordinatePoint point = point("Eating");
+        TaskStep valid = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.AUTO_EAT_AT_COORDINATE,
+                Map.of(
+                        ConfigValidator.COORDINATE_ID,
+                        point.id().toString(),
+                        ConfigValidator.FOOD_ITEM_ID,
+                        "minecraft:bread",
+                        ConfigValidator.FOOD_LEVEL_THRESHOLD,
+                        "17"
+                )
+        );
+
+        ConfigValidator.requireValidStep(
+                valid,
+                Map.of(point.id(), point)
+        );
+        TaskStep missingCoordinate = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.AUTO_EAT_AT_COORDINATE,
+                Map.of(
+                        ConfigValidator.COORDINATE_ID,
+                        UUID.randomUUID().toString(),
+                        ConfigValidator.FOOD_ITEM_ID,
+                        "minecraft:bread"
+                )
+        );
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValidStep(
+                        missingCoordinate,
+                        Map.of(point.id(), point)
+                )
+        );
+    }
+
+    @Test
     void rejectsUnknownRegionReferenceAndInvalidIntegerParameter() {
         RegionDefinition region = region("Storage");
         TaskStep missingRegion = new TaskStep(

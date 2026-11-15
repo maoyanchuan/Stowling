@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 final class DepositItemsToContainersModule implements TaskModuleExecutor {
-    private static final int CONTAINER_NAVIGATION_RADIUS = 2;
+    private static final int CONTAINER_NAVIGATION_RADIUS = 3;
 
     private final TaskExecutionContext context;
     private final Map<String, Integer> remaining;

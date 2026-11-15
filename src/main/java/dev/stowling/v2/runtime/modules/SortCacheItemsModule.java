@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.Stowling;
 import dev.stowling.automation.ContainerCategory;
 import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerScanResult;
@@ -21,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 final class SortCacheItemsModule implements TaskModuleExecutor {
-    private static final int CONTAINER_NAVIGATION_RADIUS = 2;
+    private static final int CONTAINER_NAVIGATION_RADIUS = 3;
 
     private final TaskExecutionContext context;
     private final RegionDefinition cacheRegion;
@@ -83,6 +84,17 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         this.targetContainers = setup.targetContainers();
         this.cacheTargets = setup.cacheTargets();
         this.setupError = setup.error();
+        Stowling.LOGGER.info(
+                "Category sort setup loaded {} categories, {} target containers, "
+                        + "{} cache containers",
+                categoryItemIds.size(),
+                targetContainers.size(),
+                cacheTargets.size()
+        );
+        Stowling.LOGGER.info(
+                "Category sort container mapping: {}",
+                acceptedItemsByContainer
+        );
     }
 
     @Override
@@ -367,15 +379,22 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     }
 
     private TaskModuleResult skipUnreachableStorage() {
+        Stowling.LOGGER.warn(
+                "Category target container unreachable at {}",
+                activeStorage == null ? "unknown" : activeStorage.position()
+        );
         storageIndex++;
         activeStorage = null;
         storageNavigationStarted = false;
         depositActive = false;
         activeRequest = Map.of();
         if (!selectStorageTarget()) {
-            beginReturnToCache("目标分类容器不可用或空间不足");
+            beginReturnToCache(
+                    "分类容器均不可达或无法接收物品"
+                            + "，携带物品: " + carried.keySet()
+            );
             return TaskModuleResult.waiting(
-                    "目标分类容器不可用或空间不足，正在退回缓存"
+                    returnReason + "，正在退回缓存"
             );
         }
         return tickDistribution();
@@ -414,6 +433,13 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     ) {
         if (result.state() == ContainerTransferState.PENDING) {
             return TaskModuleResult.waiting(result.message());
+        }
+        if (result.state() == ContainerTransferState.FAILED) {
+            Stowling.LOGGER.warn(
+                    "Category deposit to {} failed: {}",
+                    activeStorage == null ? "unknown" : activeStorage.position(),
+                    result.message()
+            );
         }
         depositActive = false;
         for (String itemId : activeRequest.keySet()) {

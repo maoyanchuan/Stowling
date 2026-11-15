@@ -490,7 +490,7 @@ class TaskModuleExecutionTest {
                 ),
                 navigation.started
         );
-        assertTrue(navigation.radii.stream().allMatch(radius -> radius == 2));
+        assertTrue(navigation.radii.stream().allMatch(radius -> radius == 3));
     }
 
     @Test

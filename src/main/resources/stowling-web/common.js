@@ -10,6 +10,11 @@
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "坐标管理" },
+        {
+            page: "category-zones",
+            href: "/category-zones.html",
+            label: "分类区管理"
+        },
         { page: "tasks", href: "/tasks.html", label: "任务管理" },
         { page: "storage", href: "/storage.html", label: "库存查询" }
     ]);

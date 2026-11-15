@@ -98,6 +98,7 @@ class ConfigStoreTest {
 
         assertEquals(null, point.dimension());
         assertEquals(null, point.radius());
+        assertTrue(store.loadOrReset().config().categoryZones().isEmpty());
         assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
     }
 

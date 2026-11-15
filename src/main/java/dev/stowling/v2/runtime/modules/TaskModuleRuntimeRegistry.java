@@ -9,6 +9,8 @@ import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.CategoryZonePort;
+import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
@@ -28,6 +30,7 @@ public final class TaskModuleRuntimeRegistry {
     private final ContainerCategoryPort containerCategories;
     private final ContainerTransferPort containerTransfers;
     private final ContainerWithdrawalPort containerWithdrawals;
+    private final CategoryZonePort categoryZones;
     private final Map<String, TaskModuleRuntimeFactory> factories;
 
     public TaskModuleRuntimeRegistry(
@@ -37,6 +40,7 @@ public final class TaskModuleRuntimeRegistry {
             ContainerCategoryPort containerCategories,
             ContainerTransferPort containerTransfers,
             ContainerWithdrawalPort containerWithdrawals,
+            CategoryZonePort categoryZones,
             List<TaskModuleRuntimeFactory> factories
     ) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
@@ -56,6 +60,10 @@ public final class TaskModuleRuntimeRegistry {
         this.containerWithdrawals = Objects.requireNonNull(
                 containerWithdrawals,
                 "containerWithdrawals"
+        );
+        this.categoryZones = Objects.requireNonNull(
+                categoryZones,
+                "categoryZones"
         );
         Map<String, TaskModuleRuntimeFactory> byId = new LinkedHashMap<>();
         for (TaskModuleRuntimeFactory factory : factories) {
@@ -145,6 +153,8 @@ public final class TaskModuleRuntimeRegistry {
             public void cancelWithdrawal() {
             }
         };
+        CategoryZonePort categoryZones = (zone, types, maxVolume) ->
+                CategoryZoneResult.failure("分类区解析组件不可用");
         return new TaskModuleRuntimeRegistry(
                 navigation,
                 droppedItems,
@@ -152,6 +162,7 @@ public final class TaskModuleRuntimeRegistry {
                 containerCategories,
                 transfers,
                 withdrawals,
+                categoryZones,
                 StandardTaskModuleFactories.create()
         );
     }
@@ -178,6 +189,10 @@ public final class TaskModuleRuntimeRegistry {
 
     public ContainerWithdrawalPort containerWithdrawals() {
         return containerWithdrawals;
+    }
+
+    public CategoryZonePort categoryZones() {
+        return categoryZones;
     }
 
     public TaskModuleExecutor create(

@@ -1,12 +1,18 @@
 package dev.stowling.v2.config;
 
+import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -25,11 +31,14 @@ public final class ConfigValidator {
     public static final String MATCH_CONTAINER_CATEGORIES =
             "MATCH_CONTAINER_CATEGORIES";
     public static final String SORT_CACHE_ITEMS = "SORT_CACHE_ITEMS";
+    public static final String SORT_CACHE_ITEMS_BY_CATEGORY_ZONE =
+            "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE";
     public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
             "DEPOSIT_ITEMS_TO_CONTAINERS";
     public static final String COORDINATE_ID = "coordinateId";
     public static final String REGION_ID = "regionId";
     public static final String CACHE_REGION_ID = "cacheRegionId";
+    public static final String CATEGORY_ZONE_ID = "categoryZoneId";
     public static final String ITEM_FILTER = "itemFilter";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
     public static final String CONTAINER_TYPES = "containerTypes";
@@ -54,6 +63,12 @@ public final class ConfigValidator {
                 config.regions().stream().map(RegionDefinition::name).toList(),
                 "region"
         );
+        requireUniqueNames(
+                config.categoryZones().stream()
+                        .map(CategoryZoneDefinition::name)
+                        .toList(),
+                "category zone"
+        );
         Map<UUID, CoordinatePoint> coordinates = new LinkedHashMap<>();
         for (CoordinatePoint point : config.coordinates()) {
             if (coordinates.putIfAbsent(point.id(), point) != null) {
@@ -66,13 +81,20 @@ public final class ConfigValidator {
                 throw new V2ValidationException("duplicate region id");
             }
         }
+        Map<UUID, CategoryZoneDefinition> categoryZones =
+                validateCategoryZones(config.categoryZones());
         Set<UUID> taskIds = new HashSet<>();
         for (TaskDefinition task : config.tasks()) {
             if (!taskIds.add(task.id())) {
                 throw new V2ValidationException("duplicate task id");
             }
             for (TaskStep step : task.steps()) {
-                requireValidStep(step, coordinates, regions);
+                requireValidStep(
+                        step,
+                        coordinates,
+                        regions,
+                        categoryZones
+                );
             }
         }
     }
@@ -88,6 +110,15 @@ public final class ConfigValidator {
             TaskStep step,
             Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions
+    ) {
+        requireValidStep(step, coordinates, regions, Map.of());
+    }
+
+    public static void requireValidStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones
     ) {
         switch (step.moduleId()) {
             case MOVE_TO_COORDINATE -> requireCoordinateStep(
@@ -108,6 +139,12 @@ public final class ConfigValidator {
             case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, regions);
             case MATCH_CONTAINER_CATEGORIES -> requireCategoryStep(step);
             case SORT_CACHE_ITEMS -> requireCacheSortStep(step, regions);
+            case SORT_CACHE_ITEMS_BY_CATEGORY_ZONE ->
+                    requireCategoryZoneSortStep(
+                            step,
+                            regions,
+                            categoryZones
+                    );
             case DEPOSIT_ITEMS_TO_CONTAINERS -> requireDepositStep(step);
             default -> throw new V2ValidationException(
                     "unknown task module: " + step.moduleId()
@@ -203,6 +240,108 @@ public final class ConfigValidator {
         requireRegion(step, regions, CACHE_REGION_ID);
         requireChoice(step, SCAN_SOURCE, "previous-scan");
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static void requireCategoryZoneSortStep(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        requireParameters(
+                step,
+                Set.of(
+                        CACHE_REGION_ID,
+                        CATEGORY_ZONE_ID,
+                        CONTAINER_TYPES,
+                        MAX_VOLUME
+                ),
+                Set.of(CACHE_REGION_ID, CATEGORY_ZONE_ID)
+        );
+        UUID cacheId = requireUuid(
+                step.parameters().get(CACHE_REGION_ID),
+                CACHE_REGION_ID
+        );
+        RegionDefinition cacheRegion = regions.get(cacheId);
+        if (cacheRegion == null) {
+            throw new V2ValidationException(
+                    "region does not exist: " + cacheId
+            );
+        }
+        UUID zoneId = requireUuid(
+                step.parameters().get(CATEGORY_ZONE_ID),
+                CATEGORY_ZONE_ID
+        );
+        CategoryZoneDefinition zone = categoryZones.get(zoneId);
+        if (zone == null) {
+            throw new V2ValidationException(
+                    "category zone does not exist: " + zoneId
+            );
+        }
+        AreaBounds cache = bounds(cacheRegion);
+        for (CategoryBindingDefinition binding : zone.bindings()) {
+            if (areasOverlap(cache, binding.markerArea())
+                    || areasOverlap(cache, binding.storageArea())) {
+                throw new V2ValidationException(
+                        "cache region must not overlap category zone " + zone.name()
+                );
+            }
+        }
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static Map<UUID, CategoryZoneDefinition> validateCategoryZones(
+            List<CategoryZoneDefinition> categoryZones
+    ) {
+        CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
+        Map<UUID, CategoryZoneDefinition> result = new LinkedHashMap<>();
+        Set<UUID> bindingIds = new HashSet<>();
+        List<AreaBounds> storageAreas = new ArrayList<>();
+        for (CategoryZoneDefinition zone : categoryZones) {
+            if (result.putIfAbsent(zone.id(), zone) != null) {
+                throw new V2ValidationException("duplicate category zone id");
+            }
+            for (CategoryBindingDefinition binding : zone.bindings()) {
+                if (!bindingIds.add(binding.id())) {
+                    throw new V2ValidationException(
+                            "duplicate category binding id"
+                    );
+                }
+                rules.require(binding.ruleId());
+                if (binding.markerArea().equals(binding.storageArea())) {
+                    throw new V2ValidationException(
+                            "category marker and storage areas must differ"
+                    );
+                }
+                if (storageAreas.stream().anyMatch(area ->
+                        areasOverlap(area, binding.storageArea()))) {
+                    throw new V2ValidationException(
+                            "category storage areas must not overlap"
+                    );
+                }
+                storageAreas.add(binding.storageArea());
+            }
+        }
+        return Map.copyOf(result);
+    }
+
+    private static AreaBounds bounds(RegionDefinition region) {
+        return new AreaBounds(
+                region.firstX(),
+                region.firstY(),
+                region.firstZ(),
+                region.secondX(),
+                region.secondY(),
+                region.secondZ()
+        );
+    }
+
+    private static boolean areasOverlap(AreaBounds first, AreaBounds second) {
+        return first.minX() <= second.maxX()
+                && first.maxX() >= second.minX()
+                && first.minY() <= second.maxY()
+                && first.maxY() >= second.minY()
+                && first.minZ() <= second.maxZ()
+                && first.maxZ() >= second.minZ();
     }
 
     private static void requireRegion(

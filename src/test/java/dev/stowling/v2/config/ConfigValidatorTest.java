@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
@@ -337,6 +340,38 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void validatesCategoryZoneSortContracts() {
+        RegionDefinition cache = region("Cache");
+        CategoryZoneDefinition zone = categoryZone("A");
+        TaskStep step = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
+                Map.of(
+                        ConfigValidator.CACHE_REGION_ID,
+                        cache.id().toString(),
+                        ConfigValidator.CATEGORY_ZONE_ID,
+                        zone.id().toString()
+                )
+        );
+
+        ConfigValidator.requireValidStep(
+                step,
+                Map.of(),
+                Map.of(cache.id(), cache),
+                Map.of(zone.id(), zone)
+        );
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValidStep(
+                        step,
+                        Map.of(),
+                        Map.of(cache.id(), cache),
+                        Map.of()
+                )
+        );
+    }
+
+    @Test
     void rejectsUnknownRegionReferenceAndInvalidIntegerParameter() {
         RegionDefinition region = region("Storage");
         TaskStep missingRegion = new TaskStep(
@@ -412,6 +447,19 @@ class ConfigValidatorTest {
                 UUID.randomUUID(),
                 ConfigValidator.MOVE_TO_COORDINATE,
                 Map.of(ConfigValidator.COORDINATE_ID, coordinateId.toString())
+        );
+    }
+
+    private static CategoryZoneDefinition categoryZone(String name) {
+        return new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                name,
+                List.of(new CategoryBindingDefinition(
+                        UUID.randomUUID(),
+                        new AreaBounds(7, -34, 7, 18, -34, 7),
+                        new AreaBounds(7, -34, 5, 18, -34, 6),
+                        "DIRECT_BLOCK_ID"
+                ))
         );
     }
 }

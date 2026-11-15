@@ -9,10 +9,19 @@
      * @param {Array<object>} modules
      * @param {Array<object>} coordinates
      * @param {Array<object>} regions
+     * @param {Array<object>} categoryZones
      * @param {() => void} changed
      * @returns {void}
      */
-    function render(host, task, modules, coordinates, regions, changed) {
+    function render(
+        host,
+        task,
+        modules,
+        coordinates,
+        regions,
+        categoryZones,
+        changed
+    ) {
         host.replaceChildren();
         task.steps.forEach((step, index) => {
             host.append(createStepCard(
@@ -22,6 +31,7 @@
                 modules,
                 coordinates,
                 regions,
+                categoryZones,
                 changed
             ));
         });
@@ -34,6 +44,7 @@
      * @param {Array<object>} modules
      * @param {Array<object>} coordinates
      * @param {Array<object>} regions
+     * @param {Array<object>} categoryZones
      * @param {() => void} changed
      * @returns {HTMLElement}
      */
@@ -44,6 +55,7 @@
         modules,
         coordinates,
         regions,
+        categoryZones,
         changed
     ) {
         const card = Stowling.element("article", "step-card");
@@ -73,6 +85,7 @@
                     parameter,
                     coordinates,
                     regions,
+                    categoryZones,
                     changed
                 )
             ));
@@ -107,6 +120,7 @@
      * @param {object} parameter
      * @param {Array<object>} coordinates
      * @param {Array<object>} regions
+     * @param {Array<object>} categoryZones
      * @param {() => void} changed
      * @returns {HTMLElement}
      */
@@ -115,6 +129,7 @@
         parameter,
         coordinates,
         regions,
+        categoryZones,
         changed
     ) {
         if (parameter.kind === "coordinate-point") {
@@ -134,6 +149,16 @@
                 "请选择区域",
                 regions,
                 "region",
+                changed
+            );
+        }
+        if (parameter.kind === "category-zone-point") {
+            return referenceSelect(
+                step,
+                parameter,
+                "请选择分类区",
+                categoryZones,
+                "category-zone",
                 changed
             );
         }

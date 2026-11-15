@@ -230,6 +230,44 @@ public final class TaskModuleCatalog {
                     )
             );
 
+    private static final ModuleDefinition SORT_CACHE_ITEMS_BY_CATEGORY_ZONE =
+            new ModuleDefinition(
+                    ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
+                    "按分类区入库",
+                    "读取分类区方块 ID，并将同 ID 缓存物品存入绑定的储存区。",
+                    List.of(
+                            new ModuleParameter(
+                                    ConfigValidator.CACHE_REGION_ID,
+                                    "缓存区域",
+                                    "region-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.CATEGORY_ZONE_ID,
+                                    "分类区",
+                                    "category-zone-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.CONTAINER_TYPES,
+                                    "容器类型（逗号分隔）",
+                                    "text",
+                                    false
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.MAX_VOLUME,
+                                    "最大扫描体积",
+                                    "integer",
+                                    false,
+                                    List.of(),
+                                    1,
+                                    1_048_576,
+                                    1,
+                                    null
+                            )
+                    )
+            );
+
     private static final List<ModuleDefinition> MODULES =
             List.of(
                     MOVE_TO_COORDINATE,
@@ -239,6 +277,7 @@ public final class TaskModuleCatalog {
                     SCAN_CONTAINERS_IN_REGION,
                     MATCH_CONTAINER_CATEGORIES,
                     SORT_CACHE_ITEMS,
+                    SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     DEPOSIT_ITEMS_TO_CONTAINERS
             );
 

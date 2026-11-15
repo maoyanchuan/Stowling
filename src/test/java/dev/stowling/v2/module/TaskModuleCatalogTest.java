@@ -26,6 +26,7 @@ class TaskModuleCatalogTest {
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                         ConfigValidator.MATCH_CONTAINER_CATEGORIES,
                         ConfigValidator.SORT_CACHE_ITEMS,
+                        ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
                 ),
                 modules.stream().map(ModuleDefinition::id).toList()
@@ -80,6 +81,16 @@ class TaskModuleCatalogTest {
                 List.of("previous-scan"),
                 moduleParameter(sort, ConfigValidator.SCAN_SOURCE).options()
         );
+
+        ModuleDefinition zoneSort = modules.get(
+                ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
+        );
+        ModuleParameter zone = moduleParameter(
+                zoneSort,
+                ConfigValidator.CATEGORY_ZONE_ID
+        );
+        assertEquals("category-zone-point", zone.kind());
+        assertTrue(zone.required());
 
         ModuleDefinition deposit = modules.get(
                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS

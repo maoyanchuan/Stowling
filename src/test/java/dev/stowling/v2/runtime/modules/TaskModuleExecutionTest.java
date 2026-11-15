@@ -13,6 +13,8 @@ import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.CategoryZonePort;
+import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
@@ -21,6 +23,9 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskStep;
 import java.util.ArrayList;
@@ -559,6 +564,96 @@ class TaskModuleExecutionTest {
         );
     }
 
+    @Test
+    void categoryZoneSortUsesBlockIdExactMapping() {
+        RegionDefinition cacheRegion = region("Cache");
+        ContainerTarget storage = target(0);
+        ContainerTarget cache = target(1);
+        CategoryZoneDefinition zone = new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                "A",
+                List.of(new CategoryBindingDefinition(
+                        UUID.randomUUID(),
+                        new AreaBounds(7, -34, 7, 18, -34, 7),
+                        new AreaBounds(7, -34, 5, 18, -34, 6),
+                        "DIRECT_BLOCK_ID"
+                ))
+        );
+        RecordingWithdrawals withdrawals = new RecordingWithdrawals();
+        withdrawals.results.add(ContainerWithdrawalResult.succeeded(
+                "withdrawn",
+                Map.of(
+                        "minecraft:iron_block",
+                        2,
+                        "minecraft:gold_block",
+                        1
+                ),
+                false
+        ));
+        RecordingTransfers transfers = new RecordingTransfers();
+        transfers.results.add(ContainerTransferResult.pending(
+                "depositing",
+                Map.of()
+        ));
+        transfers.pollResults.add(ContainerTransferResult.succeeded(
+                "stored",
+                Map.of()
+        ));
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new FixedRegions(ContainerScanResult.success(List.of(cache))),
+                new NoCategories(),
+                transfers,
+                withdrawals,
+                (ignored, types, maxVolume) -> CategoryZoneResult.success(
+                        Map.of(
+                                "minecraft:iron_block",
+                                List.of(storage),
+                                "minecraft:gold_block",
+                                List.of(storage)
+                        )
+                ),
+                Map.of(zone.id(), zone),
+                point("Drop"),
+                cacheRegion,
+                new TaskRunWorkspace()
+        );
+        SortCacheItemsByCategoryZoneModule module =
+                new SortCacheItemsByCategoryZoneModule(
+                        context,
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator
+                                        .SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
+                                Map.of(
+                                        ConfigValidator.CACHE_REGION_ID,
+                                        cacheRegion.id().toString(),
+                                        ConfigValidator.CATEGORY_ZONE_ID,
+                                        zone.id().toString()
+                                )
+                        )
+                );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 30 && result.state() != TaskModuleState.SUCCEEDED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                Map.of(
+                        "minecraft:iron_block",
+                        2,
+                        "minecraft:gold_block",
+                        1
+                ),
+                transfers.requested.getFirst()
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             DroppedItemObserverPort dropped,
@@ -613,6 +708,34 @@ class TaskModuleExecutionTest {
             RegionDefinition region,
             TaskRunWorkspace workspace
     ) {
+        return context(
+                navigation,
+                dropped,
+                regions,
+                categories,
+                transfers,
+                withdrawals,
+                new NoCategoryZones(),
+                Map.of(),
+                point,
+                region,
+                workspace
+        );
+    }
+
+    private static TaskExecutionContext context(
+            NavigationPort navigation,
+            DroppedItemObserverPort dropped,
+            ContainerRegionPort regions,
+            ContainerCategoryPort categories,
+            ContainerTransferPort transfers,
+            ContainerWithdrawalPort withdrawals,
+            CategoryZonePort categoryZonesPort,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            CoordinatePoint point,
+            RegionDefinition region,
+            TaskRunWorkspace workspace
+    ) {
         return new TaskExecutionContext(
                 navigation,
                 dropped,
@@ -620,8 +743,10 @@ class TaskModuleExecutionTest {
                 categories,
                 transfers,
                 withdrawals,
+                categoryZonesPort,
                 Map.of(point.id(), point),
                 Map.of(region.id(), region),
+                categoryZones,
                 workspace
         );
     }
@@ -786,6 +911,18 @@ class TaskModuleExecutionTest {
 
         @Override
         public void cancelWithdrawal() {
+        }
+    }
+
+    private static final class NoCategoryZones
+            implements CategoryZonePort {
+        @Override
+        public CategoryZoneResult resolve(
+                CategoryZoneDefinition zone,
+                Set<String> containerTypes,
+                int maxVolume
+        ) {
+            return CategoryZoneResult.failure("category zones unavailable");
         }
     }
 

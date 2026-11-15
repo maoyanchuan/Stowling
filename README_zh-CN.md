@@ -12,6 +12,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
   识别容器分类、缓存分类入库和存入拾取物。
 - 推荐把处理流程拆成“掉落物入缓存”和“缓存物品分类入库”两个可独立运行任务。
 - 粗分类使用物理缓存容器；细分类从缓存取出有目标分类的物品并精确存入。
+- 分类区由多个手工绑定组成，每个绑定包含“分类物识别区 → 储存区”。
+- 首版分类规则读取识别区内的非空气方块 ID，并要求它和待存物品 ID 完全相同。
 - 分类模块识别容器附近的物品展示框或荧光物品展示框，并使用展示物的注册 ID
   作为分类。细分类不会把未识别物品塞入其他分类容器。
 - 存入模块默认只移动当前任务实际拾取并记录下来的物品。
@@ -35,6 +37,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
   本次运行专用的分类映射。
 - `SORT_CACHE_ITEMS`：从缓存区域取出有目标分类的物品，按展示框分类精确存入
   目标容器；未匹配、目标已满或取出失败的物品会留在或退回缓存。
+- `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE`：解析手工分类区，把分类方块 ID 相同的
+  缓存物品存入绑定储存区。
 - `DEPOSIT_ITEMS_TO_CONTAINERS`：只把本次运行拾取的物品存入上次扫描到的容器。
 
 粗分类任务“掉落物入缓存”：
@@ -57,10 +61,21 @@ SCAN_CONTAINERS_IN_REGION
     regionId=<目标存储区域>
 MATCH_CONTAINER_CATEGORIES
     scanSource=previous-scan
-SORT_CACHE_ITEMS
+SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
     cacheRegionId=<缓存区域>
-    scanSource=previous-scan
+    categoryZoneId=<分类区>
 ```
+
+分类区 A 的手工绑定示例：
+
+```text
+分类物识别区：7 -34 7 到 18 -34 7
+储存区：      7 -34 6 到 18 -34 5
+规则：方块 ID 精确匹配
+```
+
+绑定可以重复添加。识别区内允许多个不同方块 ID，它们都会对应到这个储存区；
+但区域应尽量只包含分类方块，避免把墙体等结构方块识别为分类。
 
 检测和扫描只覆盖玩家当前维度内已经加载的区块。扫描支持普通容器，不把潜影盒
 内部的物品当作独立容器。双联箱子只记录一个代表位置。分类只按物品注册 ID
@@ -76,7 +91,8 @@ SORT_CACHE_ITEMS
   "schemaVersion": 7,
   "coordinates": [],
   "tasks": [],
-  "regions": []
+  "regions": [],
+  "categoryZones": []
 }
 ```
 
@@ -101,6 +117,7 @@ http://127.0.0.1:8765/
 
 - **状态概览**：当前运行、坐标数量、任务数量和运行记录。
 - **坐标管理**：新增、修改和删除名称与 X/Y/Z。
+- **分类区管理**：手工维护分类识别区、储存区和识别规则。
 - **任务管理**：使用“缓存任务”和“分类任务”模板，或自行组合模块步骤。
 - **库存查询**：只读查看已有库存快照。
 
@@ -112,6 +129,7 @@ http://127.0.0.1:8765/
 GET    /v1/status
 GET    /v1/inventory
 GET    /v1/task-modules
+GET    /v1/category-rules
 
 GET    /v1/coordinates
 POST   /v1/coordinates
@@ -124,6 +142,12 @@ POST   /v1/regions
 GET    /v1/regions/{uuid}
 PUT    /v1/regions/{uuid}
 DELETE /v1/regions/{uuid}
+
+GET    /v1/category-zones
+POST   /v1/category-zones
+GET    /v1/category-zones/{uuid}
+PUT    /v1/category-zones/{uuid}
+DELETE /v1/category-zones/{uuid}
 
 GET    /v1/tasks
 POST   /v1/tasks

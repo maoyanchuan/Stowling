@@ -7,9 +7,7 @@
         "DEPOSIT_ITEMS_TO_CONTAINERS"
     ]);
     const SORT_TASK_MODULES = Object.freeze([
-        "SCAN_CONTAINERS_IN_REGION",
-        "MATCH_CONTAINER_CATEGORIES",
-        "SORT_CACHE_ITEMS"
+        "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"
     ]);
 
     /**

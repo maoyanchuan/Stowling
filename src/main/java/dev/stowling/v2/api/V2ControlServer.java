@@ -15,6 +15,9 @@ import dev.stowling.api.BearerTokenStore;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.control.CoordinateInUseException;
+import dev.stowling.v2.control.CategoryBindingRequest;
+import dev.stowling.v2.control.CategoryZoneRequest;
+import dev.stowling.v2.control.CategoryZoneUpdateRequest;
 import dev.stowling.v2.control.CoordinateRequest;
 import dev.stowling.v2.control.CoordinateUpdateRequest;
 import dev.stowling.v2.control.RevisionRequest;
@@ -223,6 +226,12 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, service.modules());
             return;
         }
+        if ("/v1/category-rules".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.categoryRules());
+            return;
+        }
         if ("/v1/task-runs".equals(path)) {
             requireMethod(method, "GET");
             requireEmpty(body);
@@ -284,6 +293,52 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 201, service.createRegion(regionRequest(json)));
             } else {
                 throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if ("/v1/category-zones".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.categoryZones());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("name", "bindings"));
+                sendJson(
+                        exchange,
+                        201,
+                        service.createCategoryZone(categoryZoneRequest(json))
+                );
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/category-zones/")) {
+            UUID id = pathUuid(path, "/v1/category-zones/");
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.categoryZone(id));
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(
+                        json,
+                        Set.of("revision", "name", "bindings")
+                );
+                sendJson(exchange, 200, service.updateCategoryZone(
+                        id,
+                        new CategoryZoneUpdateRequest(
+                                string(json, "revision"),
+                                string(json, "name"),
+                                categoryBindings(json)
+                        )
+                ));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteCategoryZone(
+                        id,
+                        revision(body)
+                ));
+            } else {
+                throw methodNotAllowed("GET, PUT, DELETE");
             }
             return;
         }
@@ -424,6 +479,53 @@ public final class V2ControlServer implements AutoCloseable {
                 integer(json, "secondY"),
                 integer(json, "secondZ")
         );
+    }
+
+    private static CategoryZoneRequest categoryZoneRequest(JsonObject json) {
+        return new CategoryZoneRequest(
+                string(json, "name"),
+                categoryBindings(json)
+        );
+    }
+
+    private static List<CategoryBindingRequest> categoryBindings(
+            JsonObject json
+    ) {
+        List<CategoryBindingRequest> result = new ArrayList<>();
+        for (JsonElement value : array(json, "bindings")) {
+            JsonObject binding = jsonObject(value, "binding");
+            requireFields(binding, Set.of(
+                    "markerFirstX",
+                    "markerFirstY",
+                    "markerFirstZ",
+                    "markerSecondX",
+                    "markerSecondY",
+                    "markerSecondZ",
+                    "storageFirstX",
+                    "storageFirstY",
+                    "storageFirstZ",
+                    "storageSecondX",
+                    "storageSecondY",
+                    "storageSecondZ",
+                    "ruleId"
+            ));
+            result.add(new CategoryBindingRequest(
+                    integer(binding, "markerFirstX"),
+                    integer(binding, "markerFirstY"),
+                    integer(binding, "markerFirstZ"),
+                    integer(binding, "markerSecondX"),
+                    integer(binding, "markerSecondY"),
+                    integer(binding, "markerSecondZ"),
+                    integer(binding, "storageFirstX"),
+                    integer(binding, "storageFirstY"),
+                    integer(binding, "storageFirstZ"),
+                    integer(binding, "storageSecondX"),
+                    integer(binding, "storageSecondY"),
+                    integer(binding, "storageSecondZ"),
+                    string(binding, "ruleId")
+            ));
+        }
+        return List.copyOf(result);
     }
 
     private static List<TaskStepRequest> steps(JsonObject json) {
@@ -797,11 +899,23 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/", read("stowling-web/index.html", html)),
                 Map.entry("/index.html", read("stowling-web/index.html", html)),
                 Map.entry("/coordinates.html", read("stowling-web/coordinates.html", html)),
+                Map.entry(
+                        "/category-zones.html",
+                        read("stowling-web/category-zones.html", html)
+                ),
                 Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
                 Map.entry("/storage.html", read("stowling-web/storage.html", html)),
                 Map.entry("/common.js", read("stowling-web/common.js", js)),
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
+                Map.entry(
+                        "/category-zone-model.js",
+                        read("stowling-web/category-zone-model.js", js)
+                ),
+                Map.entry(
+                        "/category-zones.js",
+                        read("stowling-web/category-zones.js", js)
+                ),
                 Map.entry(
                         "/coordinate-model.js",
                         read("stowling-web/coordinate-model.js", js)

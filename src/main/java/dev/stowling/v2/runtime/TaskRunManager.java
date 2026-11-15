@@ -4,6 +4,7 @@ import dev.stowling.automation.NavigationPort;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
@@ -56,6 +57,15 @@ public final class TaskRunManager {
             List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions
     ) {
+        return start(task, coordinates, regions, List.of());
+    }
+
+    public synchronized TaskRunSnapshot start(
+            TaskDefinition task,
+            List<CoordinatePoint> coordinates,
+            List<RegionDefinition> regions,
+            List<CategoryZoneDefinition> categoryZones
+    ) {
         Objects.requireNonNull(task, "task");
         if (busy()) {
             throw new TaskRunBusyException();
@@ -64,11 +74,14 @@ public final class TaskRunManager {
                 coordinates
         );
         Map<UUID, RegionDefinition> frozenRegions = indexRegions(regions);
+        Map<UUID, CategoryZoneDefinition> frozenCategoryZones =
+                indexCategoryZones(categoryZones);
         for (TaskStep step : task.steps()) {
             ConfigValidator.requireValidStep(
                     step,
                     frozenCoordinates,
-                    frozenRegions
+                    frozenRegions,
+                    frozenCategoryZones
             );
         }
         Instant now = Instant.now();
@@ -88,6 +101,7 @@ public final class TaskRunManager {
                 List.copyOf(task.steps()),
                 Map.copyOf(frozenCoordinates),
                 Map.copyOf(frozenRegions),
+                Map.copyOf(frozenCategoryZones),
                 new TaskRunWorkspace()
         );
         retain(snapshot);
@@ -171,8 +185,10 @@ public final class TaskRunManager {
                     registry.containerCategories(),
                     registry.containerTransfers(),
                     registry.containerWithdrawals(),
+                    registry.categoryZones(),
                     active.coordinates,
                     active.regions,
+                    active.categoryZones,
                     active.workspace
             );
             active.executor = registry.create(step, context);
@@ -312,6 +328,16 @@ public final class TaskRunManager {
         return result;
     }
 
+    private static Map<UUID, CategoryZoneDefinition> indexCategoryZones(
+            List<CategoryZoneDefinition> categoryZones
+    ) {
+        Map<UUID, CategoryZoneDefinition> result = new LinkedHashMap<>();
+        for (CategoryZoneDefinition zone : categoryZones) {
+            result.put(zone.id(), zone);
+        }
+        return result;
+    }
+
     private static String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank()
@@ -324,6 +350,7 @@ public final class TaskRunManager {
         private final List<TaskStep> steps;
         private final Map<UUID, CoordinatePoint> coordinates;
         private final Map<UUID, RegionDefinition> regions;
+        private final Map<UUID, CategoryZoneDefinition> categoryZones;
         private final TaskRunWorkspace workspace;
         private TaskModuleExecutor executor;
         private boolean executorStarted;
@@ -335,12 +362,14 @@ public final class TaskRunManager {
                 List<TaskStep> steps,
                 Map<UUID, CoordinatePoint> coordinates,
                 Map<UUID, RegionDefinition> regions,
+                Map<UUID, CategoryZoneDefinition> categoryZones,
                 TaskRunWorkspace workspace
         ) {
             this.snapshot = snapshot;
             this.steps = steps;
             this.coordinates = coordinates;
             this.regions = regions;
+            this.categoryZones = categoryZones;
             this.workspace = workspace;
         }
     }

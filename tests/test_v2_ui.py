@@ -128,6 +128,17 @@ def test_task_editor_loads_regions_and_builds_contract_driven_controls() -> None
     assert "defaultParameters(selected)" in editor
 
 
+def test_task_editor_loads_category_zones_for_contract_controls() -> None:
+    tasks = read("tasks.js")
+    editor = read("v2-task-editor.js")
+
+    assert 'Stowling.request("/v1/category-zones")' in tasks
+    assert "state.categoryZones" in tasks
+    assert 'kind === "category-zone-point"' in tasks
+    assert 'parameter.kind === "category-zone-point"' in editor
+    assert '"category-zone-point"' in editor
+
+
 def test_task_validation_uses_module_parameter_contracts() -> None:
     tasks = read("tasks.js")
 
@@ -160,6 +171,7 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
         "SCAN_CONTAINERS_IN_REGION",
         "MATCH_CONTAINER_CATEGORIES",
         "SORT_CACHE_ITEMS",
+        "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE",
         "DEPOSIT_ITEMS_TO_CONTAINERS",
     ):
         assert module_id in catalog
@@ -177,8 +189,7 @@ def test_task_page_offers_cache_and_sorting_templates() -> None:
     assert "CACHE_TASK_MODULES" in model
     assert "SORT_TASK_MODULES" in model
     assert '"COLLECT_DROPPED_ITEMS_IN_REGION"' in model
-    assert '"MATCH_CONTAINER_CATEGORIES"' in model
-    assert '"SORT_CACHE_ITEMS"' in model
+    assert '"SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"' in model
     assert "Model.cacheTask(state.modules)" in tasks
     assert "Model.sortTask(state.modules)" in tasks
 
@@ -238,6 +249,21 @@ def test_dashboard_uses_new_resource_endpoints_only() -> None:
     assert "/v1/task-runs" in dashboard
     for old in ("/v1/config/", "/v1/pickup", "/v1/containers"):
         assert old not in dashboard
+
+
+def test_category_zone_page_uses_manual_bindings() -> None:
+    html = read("category-zones.html")
+    javascript = read("category-zones.js")
+    model = read("category-zone-model.js")
+
+    assert "分类物识别区" in javascript
+    assert "储存区" in javascript
+    assert "markerFirstX" in model
+    assert "storageSecondZ" in model
+    assert 'Stowling.request("/v1/category-zones")' in javascript
+    assert 'Stowling.request("/v1/category-rules")' in javascript
+    assert 'id="new-category-zone-form"' in html
+    assert 'id="add-new-binding-button"' in html
 
 
 def test_retained_pages_hide_internal_ids_and_removed_controls() -> None:

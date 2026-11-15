@@ -502,6 +502,25 @@ section[id] {
     margin-top: 1rem;
 }
 
+.category-binding-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.category-binding-card {
+    display: grid;
+    gap: 0.8rem;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-soft);
+}
+
+.category-binding-section {
+    display: grid;
+    gap: 0.6rem;
+}
+
 .config-heading {
     align-items: center;
 }

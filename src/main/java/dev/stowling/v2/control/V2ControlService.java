@@ -2,6 +2,7 @@ package dev.stowling.v2.control;
 
 import dev.stowling.control.InventoryInfo;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
@@ -34,6 +35,24 @@ public interface V2ControlService {
     RegionListResponse updateRegion(UUID id, RegionUpdateRequest request);
 
     RegionListResponse deleteRegion(UUID id, RevisionRequest request);
+
+    CategoryRuleListResponse categoryRules();
+
+    CategoryZoneListResponse categoryZones();
+
+    CategoryZoneDefinition categoryZone(UUID id);
+
+    CategoryZoneListResponse createCategoryZone(CategoryZoneRequest request);
+
+    CategoryZoneListResponse updateCategoryZone(
+            UUID id,
+            CategoryZoneUpdateRequest request
+    );
+
+    CategoryZoneListResponse deleteCategoryZone(
+            UUID id,
+            RevisionRequest request
+    );
 
     TaskListResponse tasks();
 

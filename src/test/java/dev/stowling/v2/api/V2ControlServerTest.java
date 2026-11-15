@@ -392,6 +392,73 @@ class V2ControlServerTest {
         }
     }
 
+    @Test
+    void supportsCategoryZoneCrudAndListsRules() throws Exception {
+        try (Fixture fixture = fixture()) {
+            HttpResponse<String> created = fixture.send(
+                    "/v1/category-zones",
+                    "POST",
+                    categoryZone("A"),
+                    true
+            );
+            assertEquals(201, created.statusCode());
+            JsonObject createdBody = object(created);
+            JsonObject zone = createdBody.getAsJsonArray("categoryZones")
+                    .get(0)
+                    .getAsJsonObject();
+            String zoneId = zone.get("id").getAsString();
+            JsonObject binding = zone.getAsJsonArray("bindings")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals(
+                    7,
+                    binding.getAsJsonObject("markerArea")
+                            .get("firstX")
+                            .getAsInt()
+            );
+
+            HttpResponse<String> rules = fixture.send(
+                    "/v1/category-rules",
+                    "GET",
+                    null,
+                    true
+            );
+            assertEquals(200, rules.statusCode());
+            assertEquals(
+                    "DIRECT_BLOCK_ID",
+                    object(rules).getAsJsonArray("rules")
+                            .get(0)
+                            .getAsJsonObject()
+                            .get("id")
+                            .getAsString()
+            );
+
+            String revision = createdBody.get("revision").getAsString();
+            HttpResponse<String> updated = fixture.send(
+                    "/v1/category-zones/" + zoneId,
+                    "PUT",
+                    """
+                            {"revision":"%s","name":"A2","bindings":[{
+                            "markerFirstX":1,"markerFirstY":2,"markerFirstZ":3,
+                            "markerSecondX":1,"markerSecondY":2,"markerSecondZ":3,
+                            "storageFirstX":4,"storageFirstY":5,"storageFirstZ":6,
+                            "storageSecondX":4,"storageSecondY":5,"storageSecondZ":6,
+                            "ruleId":"DIRECT_BLOCK_ID"}]}
+                            """.formatted(revision),
+                    true
+            );
+            assertEquals(200, updated.statusCode());
+            assertEquals(
+                    "A2",
+                    object(updated).getAsJsonArray("categoryZones")
+                            .get(0)
+                            .getAsJsonObject()
+                            .get("name")
+                            .getAsString()
+            );
+        }
+    }
+
     private Fixture fixture() throws IOException {
         ConfigStore store = new ConfigStore(directory.resolve("stowling.json"));
         store.loadOrReset();
@@ -428,6 +495,17 @@ class V2ControlServerTest {
         return """
                 {"name":"%s","steps":[%s]}
                 """.formatted(name, steps);
+    }
+
+    private static String categoryZone(String name) {
+        return """
+                {"name":"%s","bindings":[{
+                "markerFirstX":7,"markerFirstY":-34,"markerFirstZ":7,
+                "markerSecondX":18,"markerSecondY":-34,"markerSecondZ":7,
+                "storageFirstX":7,"storageFirstY":-34,"storageFirstZ":5,
+                "storageSecondX":18,"storageSecondY":-34,"storageSecondZ":6,
+                "ruleId":"DIRECT_BLOCK_ID"}]}
+                """.formatted(name);
     }
 
     private static JsonObject object(HttpResponse<String> response) {

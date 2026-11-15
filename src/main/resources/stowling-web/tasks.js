@@ -10,6 +10,7 @@
         modules: [],
         coordinates: [],
         regions: [],
+        categoryZones: [],
         selectedId: "",
         runTaskId: "",
         draft: null,
@@ -46,11 +47,19 @@
      */
     async function loadAll() {
         try {
-            const [tasks, modules, coordinates, regions, runs] = await Promise.all([
+            const [
+                tasks,
+                modules,
+                coordinates,
+                regions,
+                categoryZones,
+                runs
+            ] = await Promise.all([
                 Stowling.request("/v1/tasks"),
                 Stowling.request("/v1/task-modules"),
                 Stowling.request("/v1/coordinates"),
                 Stowling.request("/v1/regions"),
+                Stowling.request("/v1/category-zones"),
                 Stowling.request("/v1/task-runs")
             ]);
             state.revision = String(tasks?.revision || "");
@@ -63,6 +72,9 @@
                 : [];
             state.regions = Array.isArray(regions?.regions)
                 ? regions.regions
+                : [];
+            state.categoryZones = Array.isArray(categoryZones?.categoryZones)
+                ? categoryZones.categoryZones
                 : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             renderTaskList();
@@ -253,6 +265,7 @@
             state.modules,
             state.coordinates,
             state.regions,
+            state.categoryZones,
             rerenderEditor
         );
         updateActions();
@@ -354,6 +367,9 @@
         }
         if (kind === "region-point") {
             return state.regions.some((region) => region.id === value);
+        }
+        if (kind === "category-zone-point") {
+            return state.categoryZones.some((zone) => zone.id === value);
         }
         return null;
     }

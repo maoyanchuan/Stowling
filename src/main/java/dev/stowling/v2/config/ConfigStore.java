@@ -70,12 +70,21 @@ public final class ConfigStore {
             JsonObject root = parsed.getAsJsonObject();
             requireFields(
                     root,
-                    Set.of("schemaVersion", "coordinates", "tasks", "regions"),
+                    Set.of(
+                            "schemaVersion",
+                            "coordinates",
+                            "tasks",
+                            "regions",
+                            "categoryZones"
+                    ),
                     Set.of("schemaVersion", "coordinates", "tasks")
             );
             requireCoordinateObjects(root.get("coordinates"));
             if (root.has("regions")) {
                 requireRegionObjects(root.get("regions"));
+            }
+            if (root.has("categoryZones")) {
+                requireCategoryZoneObjects(root.get("categoryZones"));
             }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
@@ -131,6 +140,40 @@ public final class ConfigStore {
         for (JsonElement item : requireArray(value, "regions")) {
             requireExactFields(requireObject(item, "region"), fields);
         }
+    }
+
+    private static void requireCategoryZoneObjects(JsonElement value) {
+        for (JsonElement item : requireArray(value, "categoryZones")) {
+            JsonObject zone = requireObject(item, "category zone");
+            requireExactFields(zone, Set.of("id", "name", "bindings"));
+            for (JsonElement bindingValue
+                    : requireArray(zone.get("bindings"), "bindings")) {
+                JsonObject binding = requireObject(
+                        bindingValue,
+                        "category binding"
+                );
+                requireExactFields(
+                        binding,
+                        Set.of("id", "markerArea", "storageArea", "ruleId")
+                );
+                requireArea(binding.get("markerArea"), "markerArea");
+                requireArea(binding.get("storageArea"), "storageArea");
+            }
+        }
+    }
+
+    private static void requireArea(JsonElement value, String name) {
+        requireExactFields(
+                requireObject(value, name),
+                Set.of(
+                        "firstX",
+                        "firstY",
+                        "firstZ",
+                        "secondX",
+                        "secondY",
+                        "secondZ"
+                )
+        );
     }
 
     private static JsonArray requireArray(JsonElement value, String name) {

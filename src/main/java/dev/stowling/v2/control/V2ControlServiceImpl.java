@@ -1,12 +1,16 @@
 package dev.stowling.v2.control;
 
 import dev.stowling.control.InventoryInfo;
+import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2ConfigSnapshot;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
@@ -26,6 +30,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private final ConfigStore configs;
     private final TaskRunManager runs;
     private final Supplier<List<InventoryInfo>> inventory;
+    private final CategoryRuleRegistry categoryRules =
+            CategoryRuleRegistry.standard();
 
     public V2ControlServiceImpl(
             ConfigStore configs,
@@ -85,7 +91,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 coordinates,
                 current.config().tasks(),
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
         return coordinateResponse(configs.save(current.revision(), updated));
     }
@@ -114,7 +121,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 coordinates,
                 current.config().tasks(),
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
         return coordinateResponse(configs.save(current.revision(), updated));
     }
@@ -144,7 +152,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .filter(point -> !point.id().equals(id))
                         .toList(),
                 current.config().tasks(),
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
         return coordinateResponse(configs.save(current.revision(), updated));
     }
@@ -178,7 +187,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 current.config().tasks(),
-                regions
+                regions,
+                current.config().categoryZones()
         )));
     }
 
@@ -208,7 +218,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 current.config().tasks(),
-                regions
+                regions,
+                current.config().categoryZones()
         )));
     }
 
@@ -226,8 +237,118 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 current.config().regions().stream()
                         .filter(region -> !region.id().equals(id))
-                        .toList()
+                        .toList(),
+                current.config().categoryZones()
         )));
+    }
+
+    @Override
+    public CategoryRuleListResponse categoryRules() {
+        return new CategoryRuleListResponse(categoryRules.definitions());
+    }
+
+    @Override
+    public synchronized CategoryZoneListResponse categoryZones() {
+        return categoryZoneResponse(configs.read());
+    }
+
+    @Override
+    public synchronized CategoryZoneDefinition categoryZone(UUID id) {
+        return requireCategoryZone(configs.read().config(), id);
+    }
+
+    @Override
+    public synchronized CategoryZoneListResponse createCategoryZone(
+            CategoryZoneRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        List<CategoryZoneDefinition> zones = new ArrayList<>(
+                current.config().categoryZones()
+        );
+        zones.add(new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                request.name(),
+                bindings(request.bindings(), List.of())
+        ));
+        return categoryZoneResponse(configs.save(
+                current.revision(),
+                new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        current.config().coordinates(),
+                        current.config().tasks(),
+                        current.config().regions(),
+                        zones
+                )
+        ));
+    }
+
+    @Override
+    public synchronized CategoryZoneListResponse updateCategoryZone(
+            UUID id,
+            CategoryZoneUpdateRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        CategoryZoneDefinition existing = requireCategoryZone(
+                current.config(),
+                id
+        );
+        CategoryZoneDefinition replacement = new CategoryZoneDefinition(
+                existing.id(),
+                request.name(),
+                bindings(request.bindings(), existing.bindings())
+        );
+        List<CategoryZoneDefinition> zones = current.config()
+                .categoryZones()
+                .stream()
+                .map(zone -> zone.id().equals(id) ? replacement : zone)
+                .toList();
+        return categoryZoneResponse(configs.save(
+                current.revision(),
+                new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        current.config().coordinates(),
+                        current.config().tasks(),
+                        current.config().regions(),
+                        zones
+                )
+        ));
+    }
+
+    @Override
+    public synchronized CategoryZoneListResponse deleteCategoryZone(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireCategoryZone(current.config(), id);
+        String zoneId = id.toString();
+        List<String> references = current.config().tasks().stream()
+                .filter(task -> task.steps().stream().anyMatch(step ->
+                        zoneId.equals(step.parameters().get(
+                                ConfigValidator.CATEGORY_ZONE_ID
+                        ))))
+                .map(TaskDefinition::name)
+                .toList();
+        if (!references.isEmpty()) {
+            throw new V2ValidationException(
+                    "category zone is used by tasks: "
+                            + String.join(", ", references)
+            );
+        }
+        return categoryZoneResponse(configs.save(
+                current.revision(),
+                new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        current.config().coordinates(),
+                        current.config().tasks(),
+                        current.config().regions(),
+                        current.config().categoryZones().stream()
+                                .filter(zone -> !zone.id().equals(id))
+                                .toList()
+                )
+        ));
     }
 
     @Override
@@ -252,7 +373,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 List.of(task),
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         ));
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.add(task);
@@ -260,7 +382,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 tasks,
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
         return taskResponse(configs.save(current.revision(), updated));
     }
@@ -285,7 +408,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 tasks,
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
         return taskResponse(configs.save(current.revision(), updated));
     }
@@ -304,7 +428,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks().stream()
                         .filter(task -> !task.id().equals(id))
                         .toList(),
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
         return taskResponse(configs.save(current.revision(), updated));
     }
@@ -316,7 +441,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return runs.start(
                 task,
                 current.config().coordinates(),
-                current.config().regions()
+                current.config().regions(),
+                current.config().categoryZones()
         );
     }
 
@@ -350,6 +476,15 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return new RegionListResponse(
                 snapshot.revision(),
                 snapshot.config().regions()
+        );
+    }
+
+    private static CategoryZoneListResponse categoryZoneResponse(
+            V2ConfigSnapshot snapshot
+    ) {
+        return new CategoryZoneListResponse(
+                snapshot.revision(),
+                snapshot.config().categoryZones()
         );
     }
 
@@ -388,6 +523,18 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .orElseThrow(() -> new V2NotFoundException("region not found"));
     }
 
+    private static CategoryZoneDefinition requireCategoryZone(
+            AppConfig config,
+            UUID id
+    ) {
+        return config.categoryZones().stream()
+                .filter(zone -> zone.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new V2NotFoundException(
+                        "category zone not found"
+                ));
+    }
+
     private static List<TaskStep> steps(List<TaskStepRequest> requestedSteps) {
         if (requestedSteps.isEmpty()) {
             throw new V2ValidationException("tasks require at least one step");
@@ -399,6 +546,46 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         step.parameters()
                 ))
                 .toList();
+    }
+
+    private List<CategoryBindingDefinition> bindings(
+            List<CategoryBindingRequest> requested,
+            List<CategoryBindingDefinition> existing
+    ) {
+        if (requested.isEmpty()) {
+            throw new V2ValidationException(
+                    "category zones require at least one binding"
+            );
+        }
+        List<CategoryBindingDefinition> result = new ArrayList<>();
+        for (int index = 0; index < requested.size(); index++) {
+            CategoryBindingRequest binding = requested.get(index);
+            categoryRules.require(binding.ruleId());
+            UUID id = index < existing.size()
+                    ? existing.get(index).id()
+                    : UUID.randomUUID();
+            result.add(new CategoryBindingDefinition(
+                    id,
+                    new AreaBounds(
+                            binding.markerFirstX(),
+                            binding.markerFirstY(),
+                            binding.markerFirstZ(),
+                            binding.markerSecondX(),
+                            binding.markerSecondY(),
+                            binding.markerSecondZ()
+                    ),
+                    new AreaBounds(
+                            binding.storageFirstX(),
+                            binding.storageFirstY(),
+                            binding.storageFirstZ(),
+                            binding.storageSecondX(),
+                            binding.storageSecondY(),
+                            binding.storageSecondZ()
+                    ),
+                    binding.ruleId()
+            ));
+        }
+        return List.copyOf(result);
     }
 
     private static UUID stepId(String value) {

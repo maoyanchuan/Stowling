@@ -15,6 +15,10 @@ by Baritone.
   depositing.
 - The recommended workflow uses two independent tasks: drops to a physical
   cache, then categorized distribution from that cache.
+- Category zones are manually configured as ordered marker-area to
+  storage-area bindings.
+- The first rule reads non-air block IDs in the marker area and requires an
+  exact match with the stored item ID.
 - The coarse stage stores all collected drops in cache containers. The fine
   stage withdraws only items that have target categories and deposits them
   into exact category matches.
@@ -48,6 +52,8 @@ editor builds its controls from that catalog.
   category mapping for the scanned containers.
 - `SORT_CACHE_ITEMS` withdraws categorized items from a cache region, deposits
   exact category matches, and returns leftovers to the cache.
+- `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves manual category zones and stores
+  cached items whose IDs exactly match the marker block IDs.
 - `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
   current run into containers from the previous scan.
 
@@ -71,10 +77,22 @@ SCAN_CONTAINERS_IN_REGION
     regionId=<target storage area>
 MATCH_CONTAINER_CATEGORIES
     scanSource=previous-scan
-SORT_CACHE_ITEMS
+SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
     cacheRegionId=<cache area>
-    scanSource=previous-scan
+    categoryZoneId=<category zone>
 ```
+
+Example category-zone A binding:
+
+```text
+marker area:  7 -34 7 through 18 -34 7
+storage area: 7 -34 6 through 18 -34 5
+rule:         exact block ID
+```
+
+Add one binding per row or storage group. Multiple different marker block IDs in
+one area may map to the same storage area. Keep structural blocks outside the
+marker area because every non-air block ID is treated as a category.
 
 Detection and scanning are limited to the player's current dimension and
 loaded chunks. Supported ordinary containers are scanned; nested shulker-box
@@ -95,7 +113,8 @@ format:
   "schemaVersion": 7,
   "coordinates": [],
   "tasks": [],
-  "regions": []
+  "regions": [],
+  "categoryZones": []
 }
 ```
 
@@ -123,6 +142,7 @@ Pages:
 
 - **Status** shows the current run, coordinate count, task count, and history.
 - **Coordinates** manages names and X/Y/Z values.
+- **Category zones** manages marker areas, storage areas, and rules.
 - **Tasks** provides cache and category-sorting templates or manual module
   composition.
 - **Inventory** displays existing read-only inventory snapshots.
@@ -135,6 +155,7 @@ All `/v1/*` requests require the Bearer token.
 GET    /v1/status
 GET    /v1/inventory
 GET    /v1/task-modules
+GET    /v1/category-rules
 
 GET    /v1/coordinates
 POST   /v1/coordinates
@@ -147,6 +168,12 @@ POST   /v1/regions
 GET    /v1/regions/{uuid}
 PUT    /v1/regions/{uuid}
 DELETE /v1/regions/{uuid}
+
+GET    /v1/category-zones
+POST   /v1/category-zones
+GET    /v1/category-zones/{uuid}
+PUT    /v1/category-zones/{uuid}
+DELETE /v1/category-zones/{uuid}
 
 GET    /v1/tasks
 POST   /v1/tasks

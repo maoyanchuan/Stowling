@@ -7,12 +7,15 @@ import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.TaskStep;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,8 +25,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     private final RegionDefinition cacheRegion;
     private final Set<String> containerTypes;
     private final int maxVolume;
-    private final Map<ContainerTarget, String> categories =
-            new LinkedHashMap<>();
+    private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer;
     private final Set<String> categoryItemIds;
     private final List<ContainerTarget> cacheTargets;
     private final List<ContainerTarget> targetContainers;
@@ -33,6 +35,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     private int storageIndex;
     private ContainerTarget activeCache;
     private ContainerTarget activeStorage;
+    private Map<String, Integer> activeRequest = Map.of();
     private boolean cacheNavigationStarted;
     private boolean storageNavigationStarted;
     private boolean withdrawalActive;
@@ -42,6 +45,14 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     private String returnReason = "";
 
     SortCacheItemsModule(TaskExecutionContext context, TaskStep step) {
+        this(context, step, null);
+    }
+
+    SortCacheItemsModule(
+            TaskExecutionContext context,
+            TaskStep step,
+            CategoryZoneDefinition categoryZone
+    ) {
         this.context = context;
         this.cacheRegion = TaskModuleSupport.region(
                 context,
@@ -54,7 +65,18 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
                 ConfigValidator.MAX_VOLUME,
                 TaskModuleSupport.DEFAULT_SCAN_VOLUME
         );
-        CategorySetup setup = loadCategories();
+        CategorySetup setup = categoryZone == null
+                ? loadCategories(context, cacheRegion, containerTypes, maxVolume)
+                : loadCategoryZone(
+                        context,
+                        categoryZone,
+                        cacheRegion,
+                        containerTypes,
+                        maxVolume
+                );
+        this.acceptedItemsByContainer = new LinkedHashMap<>(
+                setup.acceptedItemsByContainer()
+        );
         this.categoryItemIds = setup.categoryItemIds();
         this.targetContainers = setup.targetContainers();
         this.cacheTargets = setup.cacheTargets();
@@ -66,7 +88,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         if (!setupError.isEmpty()) {
             return TaskModuleResult.failed(setupError);
         }
-        if (categories.isEmpty()) {
+        if (acceptedItemsByContainer.isEmpty()) {
             return TaskModuleResult.failed("没有可识别分类的目标容器");
         }
         if (cacheTargets.isEmpty()) {
@@ -111,7 +133,12 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         context.navigation().cancel();
     }
 
-    private CategorySetup loadCategories() {
+    private static CategorySetup loadCategories(
+            TaskExecutionContext context,
+            RegionDefinition cacheRegion,
+            Set<String> containerTypes,
+            int maxVolume
+    ) {
         ContainerScanResult targetScan = context.workspace().containerScan()
                 .orElse(null);
         ContainerCategoryResult categoryResult = context.workspace()
@@ -129,9 +156,72 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         if (!categoryResult.succeeded()) {
             return CategorySetup.failure(categoryResult.message());
         }
+        Map<ContainerTarget, Set<String>> accepted =
+                new LinkedHashMap<>();
         for (ContainerCategory category : categoryResult.categories()) {
-            categories.put(category.container(), category.itemId());
+            accepted.computeIfAbsent(
+                    category.container(),
+                    ignored -> new LinkedHashSet<>()
+            ).add(category.itemId());
         }
+        return completeSetup(
+                accepted,
+                targetScan.containers(),
+                cacheRegion,
+                containerTypes,
+                maxVolume,
+                context
+        );
+    }
+
+    private static CategorySetup loadCategoryZone(
+            TaskExecutionContext context,
+            CategoryZoneDefinition zone,
+            RegionDefinition cacheRegion,
+            Set<String> containerTypes,
+            int maxVolume
+    ) {
+        CategoryZoneResult result = context.categoryZonesPort().resolve(
+                zone,
+                containerTypes,
+                maxVolume
+        );
+        if (!result.succeeded()) {
+            return CategorySetup.failure(result.message());
+        }
+        Map<ContainerTarget, Set<String>> accepted =
+                new LinkedHashMap<>();
+        List<ContainerTarget> targetContainers = new ArrayList<>();
+        for (Map.Entry<String, List<ContainerTarget>> entry
+                : result.categories().entrySet()) {
+            for (ContainerTarget container : entry.getValue()) {
+                accepted.computeIfAbsent(
+                        container,
+                        ignored -> new LinkedHashSet<>()
+                ).add(entry.getKey());
+                if (!targetContainers.contains(container)) {
+                    targetContainers.add(container);
+                }
+            }
+        }
+        return completeSetup(
+                accepted,
+                targetContainers,
+                cacheRegion,
+                containerTypes,
+                maxVolume,
+                context
+        );
+    }
+
+    private static CategorySetup completeSetup(
+            Map<ContainerTarget, Set<String>> accepted,
+            List<ContainerTarget> targetContainers,
+            RegionDefinition cacheRegion,
+            Set<String> containerTypes,
+            int maxVolume,
+            TaskExecutionContext context
+    ) {
         ContainerScanResult cacheScan = context.containerRegions().scan(
                 cacheRegion,
                 containerTypes,
@@ -140,7 +230,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         if (!cacheScan.succeeded()) {
             return CategorySetup.failure(cacheScan.message());
         }
-        Set<ContainerTarget> targetSet = Set.copyOf(targetScan.containers());
+        Set<ContainerTarget> targetSet = Set.copyOf(targetContainers);
         List<ContainerTarget> cacheContainers = cacheScan.containers().stream()
                 .filter(target -> !targetSet.contains(target))
                 .toList();
@@ -148,11 +238,25 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             return CategorySetup.failure("缓存区域与目标区域不能重叠");
         }
         return new CategorySetup(
-                Set.copyOf(categories.values()),
-                List.copyOf(categories.keySet()),
+                accepted.values().stream()
+                        .flatMap(Set::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet()),
+                List.copyOf(targetContainers),
+                copyAcceptedItems(accepted),
                 cacheContainers,
                 ""
         );
+    }
+
+    private static Map<ContainerTarget, Set<String>> copyAcceptedItems(
+            Map<ContainerTarget, Set<String>> accepted
+    ) {
+        Map<ContainerTarget, Set<String>> result = new LinkedHashMap<>();
+        for (Map.Entry<ContainerTarget, Set<String>> entry
+                : accepted.entrySet()) {
+            result.put(entry.getKey(), Set.copyOf(entry.getValue()));
+        }
+        return Map.copyOf(result);
     }
 
     private NavigationStatus navigateToCache() {
@@ -217,12 +321,10 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             return navigationResult(navigation, "正在前往分类容器");
         }
         ContainerTransferResult result;
-        String category = categories.get(activeStorage);
-        Map<String, Integer> request = carried.containsKey(category)
-                ? Map.of(category, carried.get(category))
-                : Map.of();
+        Map<String, Integer> request = requestFor(activeStorage);
         if (!depositActive) {
             depositActive = true;
+            activeRequest = request;
             result = context.containerTransfers().startDeposit(
                     activeStorage,
                     request
@@ -230,14 +332,13 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         } else {
             result = context.containerTransfers().pollDeposit();
         }
-        return handleDeposit(result, category);
+        return handleDeposit(result);
     }
 
     private boolean selectStorageTarget() {
         while (storageIndex < targetContainers.size()) {
             ContainerTarget candidate = targetContainers.get(storageIndex);
-            String category = categories.get(candidate);
-            if (carried.getOrDefault(category, 0) > 0) {
+            if (!requestFor(candidate).isEmpty()) {
                 activeStorage = candidate;
                 storageNavigationStarted = false;
                 depositActive = false;
@@ -248,20 +349,36 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
         return false;
     }
 
+    private Map<String, Integer> requestFor(ContainerTarget target) {
+        Set<String> accepted = acceptedItemsByContainer.getOrDefault(
+                target,
+                Set.of()
+        );
+        Map<String, Integer> request = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : carried.entrySet()) {
+            if (accepted.contains(entry.getKey())) {
+                request.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Map.copyOf(request);
+    }
+
     private TaskModuleResult handleDeposit(
-            ContainerTransferResult result,
-            String category
+            ContainerTransferResult result
     ) {
         if (result.state() == ContainerTransferState.PENDING) {
             return TaskModuleResult.waiting(result.message());
         }
         depositActive = false;
-        int remaining = result.remaining().getOrDefault(category, 0);
-        if (remaining > 0) {
-            carried.put(category, remaining);
-        } else {
-            carried.remove(category);
+        for (String itemId : activeRequest.keySet()) {
+            int remaining = result.remaining().getOrDefault(itemId, 0);
+            if (remaining > 0) {
+                carried.put(itemId, remaining);
+            } else {
+                carried.remove(itemId);
+            }
         }
+        activeRequest = Map.of();
         activeStorage = null;
         storageNavigationStarted = false;
         storageIndex++;
@@ -350,6 +467,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
     private record CategorySetup(
             Set<String> categoryItemIds,
             List<ContainerTarget> targetContainers,
+            Map<ContainerTarget, Set<String>> acceptedItemsByContainer,
             List<ContainerTarget> cacheTargets,
             String error
     ) {
@@ -357,6 +475,7 @@ final class SortCacheItemsModule implements TaskModuleExecutor {
             return new CategorySetup(
                     Set.of(),
                     List.of(),
+                    Map.of(),
                     List.of(),
                     message
             );

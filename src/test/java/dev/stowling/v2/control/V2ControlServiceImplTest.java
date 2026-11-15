@@ -156,6 +156,44 @@ class V2ControlServiceImplTest {
         assertEquals(current.coordinates().getFirst(), service.coordinate(point.id()));
     }
 
+    @Test
+    void supportsRegionCrud() {
+        V2ControlService service = service();
+        RegionListResponse created = service.createRegion(new RegionRequest(
+                "Farm",
+                0,
+                64,
+                0,
+                10,
+                70,
+                10
+        ));
+        var region = created.regions().getFirst();
+        assertEquals("Farm", region.name());
+
+        RegionListResponse updated = service.updateRegion(
+                region.id(),
+                new RegionUpdateRequest(
+                        created.revision(),
+                        "Field",
+                        -5,
+                        60,
+                        -5,
+                        15,
+                        72,
+                        15
+                )
+        );
+        assertEquals("Field", updated.regions().getFirst().name());
+        assertEquals(15, updated.regions().getFirst().secondZ());
+
+        RegionListResponse deleted = service.deleteRegion(
+                region.id(),
+                new RevisionRequest(updated.revision())
+        );
+        assertEquals(List.of(), deleted.regions());
+    }
+
     private V2ControlService service() {
         ConfigStore store = new ConfigStore(
                 directory.resolve("stowling-" + System.nanoTime() + ".json")

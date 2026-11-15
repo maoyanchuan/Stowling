@@ -2,6 +2,7 @@ package dev.stowling.v2.control;
 
 import dev.stowling.control.InventoryInfo;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
 import java.util.List;
@@ -23,6 +24,16 @@ public interface V2ControlService {
     CoordinateListResponse updateCoordinate(UUID id, CoordinateUpdateRequest request);
 
     CoordinateListResponse deleteCoordinate(UUID id, RevisionRequest request);
+
+    RegionListResponse regions();
+
+    RegionDefinition region(UUID id);
+
+    RegionListResponse createRegion(RegionRequest request);
+
+    RegionListResponse updateRegion(UUID id, RegionUpdateRequest request);
+
+    RegionListResponse deleteRegion(UUID id, RevisionRequest request);
 
     TaskListResponse tasks();
 

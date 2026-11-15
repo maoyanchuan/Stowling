@@ -258,6 +258,63 @@ class V2ControlServerTest {
     }
 
     @Test
+    void supportsRegionCrud() throws Exception {
+        try (Fixture fixture = fixture()) {
+            HttpResponse<String> created = fixture.send(
+                    "/v1/regions",
+                    "POST",
+                    """
+                            {"name":"Farm","firstX":0,"firstY":64,"firstZ":0,
+                            "secondX":10,"secondY":70,"secondZ":10}
+                            """,
+                    true
+            );
+            assertEquals(201, created.statusCode());
+            JsonObject createdList = object(created);
+            JsonObject region = createdList.getAsJsonArray("regions")
+                    .get(0)
+                    .getAsJsonObject();
+            String id = region.get("id").getAsString();
+            assertEquals(10, region.get("secondX").getAsInt());
+
+            HttpResponse<String> updated = fixture.send(
+                    "/v1/regions/" + id,
+                    "PUT",
+                    """
+                            {"revision":"%s","name":"Field",
+                            "firstX":-5,"firstY":60,"firstZ":-5,
+                            "secondX":15,"secondY":72,"secondZ":15}
+                            """.formatted(createdList.get("revision").getAsString()),
+                    true
+            );
+            assertEquals(200, updated.statusCode());
+            JsonObject updatedList = object(updated);
+            assertEquals(
+                    "Field",
+                    updatedList.getAsJsonArray("regions")
+                            .get(0)
+                            .getAsJsonObject()
+                            .get("name")
+                            .getAsString()
+            );
+
+            assertEquals(
+                    200,
+                    fixture.send(
+                            "/v1/regions/" + id,
+                            "DELETE",
+                            """
+                                    {"revision":"%s"}
+                                    """.formatted(
+                                            updatedList.get("revision").getAsString()
+                                    ),
+                            true
+                    ).statusCode()
+            );
+        }
+    }
+
+    @Test
     void rejectsUnknownModulesParametersAndCoordinates() throws Exception {
         try (Fixture fixture = fixture()) {
             JsonObject created = object(fixture.send(

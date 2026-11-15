@@ -8,6 +8,7 @@ Baritone.
 
 - Coordinate entries contain a name and X/Y/Z, with optional dimension and
   arrival-radius fields.
+- Regions contain a name and two full X/Y/Z corner points.
 - Tasks contain a name and one or more ordered module steps.
 - The first built-in module is `MOVE_TO_COORDINATE`.
 - One task can run at a time.
@@ -28,7 +29,8 @@ format:
 {
   "schemaVersion": 7,
   "coordinates": [],
-  "tasks": []
+  "tasks": [],
+  "regions": []
 }
 ```
 
@@ -74,6 +76,12 @@ POST   /v1/coordinates
 GET    /v1/coordinates/{uuid}
 PUT    /v1/coordinates/{uuid}
 DELETE /v1/coordinates/{uuid}
+
+GET    /v1/regions
+POST   /v1/regions
+GET    /v1/regions/{uuid}
+PUT    /v1/regions/{uuid}
+DELETE /v1/regions/{uuid}
 
 GET    /v1/tasks
 POST   /v1/tasks

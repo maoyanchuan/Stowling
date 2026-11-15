@@ -18,6 +18,8 @@ import dev.stowling.v2.control.CoordinateInUseException;
 import dev.stowling.v2.control.CoordinateRequest;
 import dev.stowling.v2.control.CoordinateUpdateRequest;
 import dev.stowling.v2.control.RevisionRequest;
+import dev.stowling.v2.control.RegionRequest;
+import dev.stowling.v2.control.RegionUpdateRequest;
 import dev.stowling.v2.control.TaskRequest;
 import dev.stowling.v2.control.TaskStepRequest;
 import dev.stowling.v2.control.TaskUpdateRequest;
@@ -264,6 +266,67 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if ("/v1/regions".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.regions());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of(
+                        "name",
+                        "firstX",
+                        "firstY",
+                        "firstZ",
+                        "secondX",
+                        "secondY",
+                        "secondZ"
+                ));
+                sendJson(exchange, 201, service.createRegion(regionRequest(json)));
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/regions/")) {
+            UUID id = pathUuid(path, "/v1/regions/");
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.region(id));
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of(
+                        "revision",
+                        "name",
+                        "firstX",
+                        "firstY",
+                        "firstZ",
+                        "secondX",
+                        "secondY",
+                        "secondZ"
+                ));
+                sendJson(exchange, 200, service.updateRegion(
+                        id,
+                        new RegionUpdateRequest(
+                                string(json, "revision"),
+                                string(json, "name"),
+                                integer(json, "firstX"),
+                                integer(json, "firstY"),
+                                integer(json, "firstZ"),
+                                integer(json, "secondX"),
+                                integer(json, "secondY"),
+                                integer(json, "secondZ")
+                        )
+                ));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteRegion(
+                        id,
+                        revision(body)
+                ));
+            } else {
+                throw methodNotAllowed("GET, PUT, DELETE");
+            }
+            return;
+        }
         if (path.startsWith("/v1/coordinates/")) {
             UUID id = pathUuid(path, "/v1/coordinates/");
             if ("GET".equals(method)) {
@@ -349,6 +412,18 @@ public final class V2ControlServer implements AutoCloseable {
 
     private static TaskRequest taskRequest(JsonObject json) {
         return new TaskRequest(string(json, "name"), steps(json));
+    }
+
+    private static RegionRequest regionRequest(JsonObject json) {
+        return new RegionRequest(
+                string(json, "name"),
+                integer(json, "firstX"),
+                integer(json, "firstY"),
+                integer(json, "firstZ"),
+                integer(json, "secondX"),
+                integer(json, "secondY"),
+                integer(json, "secondZ")
+        );
     }
 
     private static List<TaskStepRequest> steps(JsonObject json) {
@@ -730,6 +805,10 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/coordinate-model.js",
                         read("stowling-web/coordinate-model.js", js)
+                ),
+                Map.entry(
+                        "/region-model.js",
+                        read("stowling-web/region-model.js", js)
                 ),
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
                 Map.entry(

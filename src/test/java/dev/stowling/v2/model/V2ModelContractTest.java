@@ -29,6 +29,35 @@ class V2ModelContractTest {
     }
 
     @Test
+    void regionContainsOnlyHiddenIdNameAndTwoCorners() {
+        RegionDefinition region = new RegionDefinition(
+                UUID.randomUUID(),
+                " Farm ",
+                0,
+                64,
+                0,
+                10,
+                70,
+                10
+        );
+
+        assertEquals(
+                List.of(
+                        "id",
+                        "name",
+                        "firstX",
+                        "firstY",
+                        "firstZ",
+                        "secondX",
+                        "secondY",
+                        "secondZ"
+                ),
+                components(RegionDefinition.class)
+        );
+        assertEquals("Farm", region.name());
+    }
+
+    @Test
     void idsAreUuidsAndNamesAreTrimmed() {
         UUID coordinateId = UUID.randomUUID();
         UUID stepId = UUID.randomUUID();

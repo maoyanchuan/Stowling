@@ -15,7 +15,7 @@ def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     assert "坐标管理" in html
     for field in ("名称", "X", "Y", "Z"):
         assert field in html
-    for removed in ("区域", "第二角点", "容器"):
+    for removed in ("第二角点", "容器"):
         assert removed not in html
     assert "new-coordinate-use-dimension" in html
     assert "new-coordinate-use-radius" in html
@@ -26,6 +26,26 @@ def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     assert "coordinate.z" in javascript
     assert "dimension: values.useDimension.checked" in javascript
     assert "radius: values.useRadius.checked" in javascript
+
+
+def test_region_editor_accepts_two_three_dimensional_corners() -> None:
+    html = read("coordinates.html")
+    javascript = read("coordinates.js")
+    model = read("region-model.js")
+
+    assert 'id="add-region-button"' in html
+    assert 'id="new-region-form"' in html
+    for field in (
+        "new-region-first-x",
+        "new-region-first-y",
+        "new-region-first-z",
+        "new-region-second-x",
+        "new-region-second-y",
+        "new-region-second-z",
+    ):
+        assert field in html
+    assert "/v1/regions" in javascript
+    assert "normalizeRegions" in model
 
 
 def test_coordinate_cards_collapse_to_the_saved_name() -> None:
@@ -121,8 +141,6 @@ def test_retained_pages_hide_internal_ids_and_removed_controls() -> None:
         "任务 ID",
         "步骤 ID",
         "UUID",
-        "角点",
-        "区域",
         "容器",
         "触发器",
     ):

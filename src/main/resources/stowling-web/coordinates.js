@@ -3,14 +3,18 @@
 
     const Stowling = window.Stowling;
     const Model = window.StowlingCoordinateModel;
+    const RegionModel = window.StowlingRegionModel;
     const state = {
         revision: "",
-        coordinates: []
+        coordinates: [],
+        regions: []
     };
 
     const elements = {
         add: document.querySelector("#add-coordinate-button"),
+        addRegion: document.querySelector("#add-region-button"),
         form: document.querySelector("#new-coordinate-form"),
+        regionForm: document.querySelector("#new-region-form"),
         name: document.querySelector("#new-coordinate-name"),
         x: document.querySelector("#new-coordinate-x"),
         y: document.querySelector("#new-coordinate-y"),
@@ -19,7 +23,15 @@
         dimension: document.querySelector("#new-coordinate-dimension"),
         useRadius: document.querySelector("#new-coordinate-use-radius"),
         radius: document.querySelector("#new-coordinate-radius"),
+        regionName: document.querySelector("#new-region-name"),
+        regionFirstX: document.querySelector("#new-region-first-x"),
+        regionFirstY: document.querySelector("#new-region-first-y"),
+        regionFirstZ: document.querySelector("#new-region-first-z"),
+        regionSecondX: document.querySelector("#new-region-second-x"),
+        regionSecondY: document.querySelector("#new-region-second-y"),
+        regionSecondZ: document.querySelector("#new-region-second-z"),
         list: document.querySelector("#coordinate-list"),
+        regionList: document.querySelector("#region-list"),
         errors: document.querySelector("#coordinate-errors"),
         status: document.querySelector("#coordinate-status"),
         revision: document.querySelector("#coordinate-revision")
@@ -28,13 +40,24 @@
     /**
      * @returns {Promise<void>}
      */
-    async function loadCoordinates() {
+    async function loadResources() {
         try {
-            const response = await Stowling.request("/v1/coordinates");
-            applyResponse(response);
-            elements.status.textContent = "坐标已同步";
+            const [coordinates, regions] = await Promise.all([
+                Stowling.request("/v1/coordinates"),
+                Stowling.request("/v1/regions")
+            ]);
+            const normalizedCoordinates = Model.normalizeCoordinates(coordinates);
+            const normalizedRegions = RegionModel.normalizeRegions(regions);
+            state.revision = normalizedCoordinates.revision
+                || normalizedRegions.revision;
+            state.coordinates = normalizedCoordinates.coordinates;
+            state.regions = normalizedRegions.regions;
+            elements.revision.textContent = Stowling.revisionLabel(state.revision);
+            renderCoordinates();
+            renderRegions();
+            elements.status.textContent = "坐标与区域已同步";
         } catch (error) {
-            showError(error, "读取坐标失败");
+            showError(error, "读取资源失败");
         }
     }
 
@@ -47,13 +70,13 @@
         state.revision = normalized.revision;
         state.coordinates = normalized.coordinates;
         elements.revision.textContent = Stowling.revisionLabel(state.revision);
-        render();
+        renderCoordinates();
     }
 
     /**
      * @returns {void}
      */
-    function render() {
+    function renderCoordinates() {
         elements.list.replaceChildren();
         if (state.coordinates.length === 0) {
             elements.list.append(Stowling.emptyState("尚未添加坐标"));
@@ -61,6 +84,32 @@
         }
         for (const coordinate of state.coordinates) {
             elements.list.append(createCard(coordinate));
+        }
+    }
+
+    /**
+     * @param {object} response
+     * @returns {void}
+     */
+    function applyRegionResponse(response) {
+        const normalized = RegionModel.normalizeRegions(response);
+        state.revision = normalized.revision;
+        state.regions = normalized.regions;
+        elements.revision.textContent = Stowling.revisionLabel(state.revision);
+        renderRegions();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderRegions() {
+        elements.regionList.replaceChildren();
+        if (state.regions.length === 0) {
+            elements.regionList.append(Stowling.emptyState("尚未添加区域"));
+            return;
+        }
+        for (const region of state.regions) {
+            elements.regionList.append(createRegionCard(region));
         }
     }
 
@@ -134,6 +183,68 @@
     }
 
     /**
+     * @param {object} region
+     * @returns {HTMLElement}
+     */
+    function createRegionCard(region) {
+        const card = Stowling.element(
+            "details",
+            "editor-card coordinate-point-editor"
+        );
+        const heading = Stowling.element(
+            "summary",
+            "editor-card-heading coordinate-point-summary"
+        );
+        heading.append(Stowling.element("strong", "", region.name));
+        card.append(heading);
+
+        const fields = Stowling.element("div", "editor-fields");
+        const name = input("text", region.name, 80);
+        const firstX = input("number", region.firstX);
+        const firstY = input("number", region.firstY);
+        const firstZ = input("number", region.firstZ);
+        const secondX = input("number", region.secondX);
+        const secondY = input("number", region.secondY);
+        const secondZ = input("number", region.secondZ);
+        fields.append(
+            field("区域名称", name),
+            field("角点1 X", firstX),
+            field("角点1 Y", firstY),
+            field("角点1 Z", firstZ),
+            field("角点2 X", secondX),
+            field("角点2 Y", secondY),
+            field("角点2 Z", secondZ)
+        );
+
+        const actions = Stowling.element("div", "action-row");
+        const save = Stowling.element("button", "primary compact", "保存");
+        save.type = "button";
+        save.addEventListener("click", () => {
+            void saveRegion(region, {
+                name,
+                firstX,
+                firstY,
+                firstZ,
+                secondX,
+                secondY,
+                secondZ
+            });
+        });
+        const remove = Stowling.element(
+            "button",
+            "ghost compact danger-action",
+            "删除"
+        );
+        remove.type = "button";
+        remove.addEventListener("click", () => {
+            void deleteRegion(region);
+        });
+        actions.append(save, remove);
+        card.append(fields, actions);
+        return card;
+    }
+
+    /**
      * @param {object} coordinate
      * @param {object} values
      * @returns {Promise<void>}
@@ -169,6 +280,38 @@
     }
 
     /**
+     * @param {object} region
+     * @param {object} values
+     * @returns {Promise<void>}
+     */
+    async function saveRegion(region, values) {
+        try {
+            const response = await Stowling.request(
+                `/v1/regions/${encodeURIComponent(region.id)}`,
+                {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        revision: state.revision,
+                        name: values.name.value.trim(),
+                        firstX: Number(values.firstX.value),
+                        firstY: Number(values.firstY.value),
+                        firstZ: Number(values.firstZ.value),
+                        secondX: Number(values.secondX.value),
+                        secondY: Number(values.secondY.value),
+                        secondZ: Number(values.secondZ.value)
+                    })
+                }
+            );
+            applyRegionResponse(response);
+            clearErrors();
+            Stowling.showToast("区域已保存");
+        } catch (error) {
+            showError(error, "保存区域失败");
+        }
+    }
+
+    /**
      * @param {object} coordinate
      * @returns {Promise<void>}
      */
@@ -190,6 +333,31 @@
             Stowling.showToast("坐标已删除");
         } catch (error) {
             showError(error, "删除坐标失败");
+        }
+    }
+
+    /**
+     * @param {object} region
+     * @returns {Promise<void>}
+     */
+    async function deleteRegion(region) {
+        if (!window.confirm(`删除区域“${region.name}”？`)) {
+            return;
+        }
+        try {
+            const response = await Stowling.request(
+                `/v1/regions/${encodeURIComponent(region.id)}`,
+                {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ revision: state.revision })
+                }
+            );
+            applyRegionResponse(response);
+            clearErrors();
+            Stowling.showToast("区域已删除");
+        } catch (error) {
+            showError(error, "删除区域失败");
         }
     }
 
@@ -229,6 +397,58 @@
         } catch (error) {
             showError(error, "添加坐标失败");
         }
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function createRegion() {
+        try {
+            const response = await Stowling.request("/v1/regions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: elements.regionName.value.trim(),
+                    firstX: Number(elements.regionFirstX.value),
+                    firstY: Number(elements.regionFirstY.value),
+                    firstZ: Number(elements.regionFirstZ.value),
+                    secondX: Number(elements.regionSecondX.value),
+                    secondY: Number(elements.regionSecondY.value),
+                    secondZ: Number(elements.regionSecondZ.value)
+                })
+            });
+            applyRegionResponse(response);
+            elements.regionForm.reset();
+            elements.regionFirstX.value = "0";
+            elements.regionFirstY.value = "64";
+            elements.regionFirstZ.value = "0";
+            elements.regionSecondX.value = "0";
+            elements.regionSecondY.value = "64";
+            elements.regionSecondZ.value = "0";
+            elements.regionName.focus();
+            clearErrors();
+            Stowling.showToast("区域已添加");
+        } catch (error) {
+            showError(error, "添加区域失败");
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function showCoordinateForm() {
+        elements.form.hidden = false;
+        elements.regionForm.hidden = true;
+        elements.name.focus();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function showRegionForm() {
+        elements.form.hidden = true;
+        elements.regionForm.hidden = false;
+        elements.regionName.focus();
     }
 
     /**
@@ -331,7 +551,8 @@
         elements.errors.replaceChildren();
     }
 
-    elements.add.addEventListener("click", () => elements.name.focus());
+    elements.add.addEventListener("click", showCoordinateForm);
+    elements.addRegion.addEventListener("click", showRegionForm);
     elements.useDimension.addEventListener("change", () => {
         syncOptionalField(elements.useDimension, elements.dimension);
     });
@@ -342,8 +563,12 @@
         event.preventDefault();
         void createCoordinate();
     });
+    elements.regionForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void createRegion();
+    });
     syncOptionalField(elements.useDimension, elements.dimension);
     syncOptionalField(elements.useRadius, elements.radius);
-    Stowling.onConnected(() => loadCoordinates());
+    Stowling.onConnected(() => loadResources());
     Stowling.mountPage("coordinates");
 })();

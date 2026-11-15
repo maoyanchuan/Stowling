@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
 import java.util.List;
@@ -112,6 +113,22 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void rejectsRegionNamesThatDifferOnlyByCaseAndWhitespace() {
+        RegionDefinition first = region("Farm");
+        RegionDefinition second = region(" farm ");
+
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(),
+                        List.of(),
+                        List.of(first, second)
+                ))
+        );
+    }
+
+    @Test
     void requiresAtLeastOneTaskStep() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -196,6 +213,19 @@ class ConfigValidatorTest {
 
     private static CoordinatePoint point(String name) {
         return new CoordinatePoint(UUID.randomUUID(), name, 0, 64, 0);
+    }
+
+    private static RegionDefinition region(String name) {
+        return new RegionDefinition(
+                UUID.randomUUID(),
+                name,
+                0,
+                64,
+                0,
+                10,
+                70,
+                10
+        );
     }
 
     private static TaskDefinition task(String name, TaskStep step) {

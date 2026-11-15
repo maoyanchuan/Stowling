@@ -1749,6 +1749,21 @@ body[data-page="tasks"] .panel {
     align-self: end;
 }
 
+.resource-section-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.7rem;
+    margin: 1rem 0 0.55rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--line);
+}
+
+.resource-section-heading h3 {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
 @media (min-width: 980px) {
     body[data-page="tasks"] .workspace {
         grid-template-columns: minmax(220px, 0.75fr) minmax(520px, 1.8fr);

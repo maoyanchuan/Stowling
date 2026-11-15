@@ -68,8 +68,15 @@ public final class ConfigStore {
                 throw new V2ValidationException("configuration must be an object");
             }
             JsonObject root = parsed.getAsJsonObject();
-            requireExactFields(root, Set.of("schemaVersion", "coordinates", "tasks"));
+            requireFields(
+                    root,
+                    Set.of("schemaVersion", "coordinates", "tasks", "regions"),
+                    Set.of("schemaVersion", "coordinates", "tasks")
+            );
             requireCoordinateObjects(root.get("coordinates"));
+            if (root.has("regions")) {
+                requireRegionObjects(root.get("regions"));
+            }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
                 requireExactFields(taskObject, Set.of("id", "name", "steps"));
@@ -110,6 +117,22 @@ public final class ConfigStore {
         }
     }
 
+    private static void requireRegionObjects(JsonElement value) {
+        Set<String> fields = Set.of(
+                "id",
+                "name",
+                "firstX",
+                "firstY",
+                "firstZ",
+                "secondX",
+                "secondY",
+                "secondZ"
+        );
+        for (JsonElement item : requireArray(value, "regions")) {
+            requireExactFields(requireObject(item, "region"), fields);
+        }
+    }
+
     private static JsonArray requireArray(JsonElement value, String name) {
         if (value == null || !value.isJsonArray()) {
             throw new V2ValidationException(name + " must be an array");
@@ -125,7 +148,16 @@ public final class ConfigStore {
     }
 
     private static void requireExactFields(JsonObject value, Set<String> fields) {
-        if (!value.keySet().equals(fields)) {
+        requireFields(value, fields, fields);
+    }
+
+    private static void requireFields(
+            JsonObject value,
+            Set<String> allowed,
+            Set<String> required
+    ) {
+        if (!allowed.containsAll(value.keySet())
+                || !value.keySet().containsAll(required)) {
             throw new V2ValidationException("configuration fields do not match schema");
         }
     }

@@ -2,6 +2,7 @@ package dev.stowling.v2.config;
 
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
 import java.util.HashSet;
@@ -24,6 +25,7 @@ public final class ConfigValidator {
                 "coordinate"
         );
         requireUniqueNames(config.tasks().stream().map(TaskDefinition::name).toList(), "task");
+        requireUniqueNames(config.regions().stream().map(RegionDefinition::name).toList(), "region");
         Map<UUID, CoordinatePoint> coordinates = new LinkedHashMap<>();
         for (CoordinatePoint point : config.coordinates()) {
             if (coordinates.putIfAbsent(point.id(), point) != null) {
@@ -31,6 +33,12 @@ public final class ConfigValidator {
             }
         }
         Set<UUID> taskIds = new HashSet<>();
+        Set<UUID> regionIds = new HashSet<>();
+        for (RegionDefinition region : config.regions()) {
+            if (!regionIds.add(region.id())) {
+                throw new V2ValidationException("duplicate region id");
+            }
+        }
         for (TaskDefinition task : config.tasks()) {
             if (!taskIds.add(task.id())) {
                 throw new V2ValidationException("duplicate task id");

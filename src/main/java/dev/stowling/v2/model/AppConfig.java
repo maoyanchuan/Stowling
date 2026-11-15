@@ -6,7 +6,8 @@ import java.util.Objects;
 public record AppConfig(
         int schemaVersion,
         List<CoordinatePoint> coordinates,
-        List<TaskDefinition> tasks
+        List<TaskDefinition> tasks,
+        List<RegionDefinition> regions
 ) {
     public static final int CURRENT_SCHEMA_VERSION = 7;
 
@@ -16,9 +17,18 @@ public record AppConfig(
         }
         coordinates = List.copyOf(Objects.requireNonNull(coordinates, "coordinates"));
         tasks = List.copyOf(Objects.requireNonNull(tasks, "tasks"));
+        regions = regions == null ? List.of() : List.copyOf(regions);
+    }
+
+    public AppConfig(
+            int schemaVersion,
+            List<CoordinatePoint> coordinates,
+            List<TaskDefinition> tasks
+    ) {
+        this(schemaVersion, coordinates, tasks, List.of());
     }
 
     public static AppConfig empty() {
-        return new AppConfig(CURRENT_SCHEMA_VERSION, List.of(), List.of());
+        return new AppConfig(CURRENT_SCHEMA_VERSION, List.of(), List.of(), List.of());
     }
 }

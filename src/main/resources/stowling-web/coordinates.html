@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/styles.css">
     <script src="/common.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
+    <script src="/region-model.js" defer></script>
     <script src="/coordinates.js" defer></script>
 </head>
 <body data-page="coordinates">
@@ -41,8 +42,13 @@
                             坐标按名称和 X/Y/Z 保存，可按需附带维度和到达半径。
                         </p>
                     </div>
-                    <button id="add-coordinate-button" class="primary compact"
-                            type="button">添加坐标</button>
+                    <div class="action-row">
+                        <button id="add-coordinate-button"
+                                class="secondary compact"
+                                type="button">添加坐标</button>
+                        <button id="add-region-button" class="primary compact"
+                                type="button">添加区域</button>
+                    </div>
                 </div>
 
                 <form id="new-coordinate-form" class="editor-fields coordinate-create-form">
@@ -86,7 +92,62 @@
                     <button class="secondary compact" type="submit">保存新坐标</button>
                 </form>
 
+                <form id="new-region-form"
+                      class="editor-fields coordinate-create-form" hidden>
+                    <div class="editor-field">
+                        <label for="new-region-name">区域名称</label>
+                        <input id="new-region-name" maxlength="80" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-region-first-x">角点1 X</label>
+                        <input id="new-region-first-x" type="number"
+                               step="1" value="0" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-region-first-y">角点1 Y</label>
+                        <input id="new-region-first-y" type="number"
+                               step="1" value="64" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-region-first-z">角点1 Z</label>
+                        <input id="new-region-first-z" type="number"
+                               step="1" value="0" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-region-second-x">角点2 X</label>
+                        <input id="new-region-second-x" type="number"
+                               step="1" value="0" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-region-second-y">角点2 Y</label>
+                        <input id="new-region-second-y" type="number"
+                               step="1" value="64" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-region-second-z">角点2 Z</label>
+                        <input id="new-region-second-z" type="number"
+                               step="1" value="0" required>
+                    </div>
+                    <button class="secondary compact" type="submit">保存新区域</button>
+                </form>
+
+                <div class="resource-section-heading">
+                    <div>
+                        <h3>坐标点</h3>
+                        <p class="muted compact-help">可被任务引用的单点坐标。</p>
+                    </div>
+                </div>
                 <div id="coordinate-list" class="editor-list" aria-live="polite"></div>
+
+                <div class="resource-section-heading">
+                    <div>
+                        <h3>区域</h3>
+                        <p class="muted compact-help">
+                            由两个三维角点定义的共享长方体区域。
+                        </p>
+                    </div>
+                </div>
+                <div id="region-list" class="editor-list" aria-live="polite"></div>
                 <div id="coordinate-errors" class="config-errors" role="alert"></div>
                 <div class="coordinate-footer">
                     <span id="coordinate-status">尚未读取坐标</span>

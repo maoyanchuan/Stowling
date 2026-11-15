@@ -6,6 +6,7 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组。当前版本只�
 ## 功能
 
 - 坐标条目保存名称和 X/Y/Z，并可选填写维度和到达半径。
+- 区域条目保存名称以及两个完整 X/Y/Z 角点。
 - 任务只保存名称和有序模块步骤。
 - 首个内置模块为 `MOVE_TO_COORDINATE`。
 - 同一时间只运行一个任务。
@@ -23,7 +24,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组。当前版本只�
 {
   "schemaVersion": 7,
   "coordinates": [],
-  "tasks": []
+  "tasks": [],
+  "regions": []
 }
 ```
 
@@ -65,6 +67,12 @@ POST   /v1/coordinates
 GET    /v1/coordinates/{uuid}
 PUT    /v1/coordinates/{uuid}
 DELETE /v1/coordinates/{uuid}
+
+GET    /v1/regions
+POST   /v1/regions
+GET    /v1/regions/{uuid}
+PUT    /v1/regions/{uuid}
+DELETE /v1/regions/{uuid}
 
 GET    /v1/tasks
 POST   /v1/tasks

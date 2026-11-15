@@ -8,6 +8,7 @@ import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.module.TaskModuleCatalog;
@@ -82,7 +83,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 coordinates,
-                current.config().tasks()
+                current.config().tasks(),
+                current.config().regions()
         );
         return coordinateResponse(configs.save(current.revision(), updated));
     }
@@ -112,7 +114,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 coordinates,
-                current.config().tasks()
+                current.config().tasks(),
+                current.config().regions()
         );
         return coordinateResponse(configs.save(current.revision(), updated));
     }
@@ -140,9 +143,90 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().coordinates().stream()
                         .filter(point -> !point.id().equals(id))
                         .toList(),
-                current.config().tasks()
+                current.config().tasks(),
+                current.config().regions()
         );
         return coordinateResponse(configs.save(current.revision(), updated));
+    }
+
+    @Override
+    public synchronized RegionListResponse regions() {
+        return regionResponse(configs.read());
+    }
+
+    @Override
+    public synchronized RegionDefinition region(UUID id) {
+        return requireRegion(configs.read().config(), id);
+    }
+
+    @Override
+    public synchronized RegionListResponse createRegion(RegionRequest request) {
+        V2ConfigSnapshot current = configs.read();
+        List<RegionDefinition> regions = new ArrayList<>(current.config().regions());
+        regions.add(new RegionDefinition(
+                UUID.randomUUID(),
+                request.name(),
+                request.firstX(),
+                request.firstY(),
+                request.firstZ(),
+                request.secondX(),
+                request.secondY(),
+                request.secondZ()
+        ));
+        return regionResponse(configs.save(current.revision(), new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                regions
+        )));
+    }
+
+    @Override
+    public synchronized RegionListResponse updateRegion(
+            UUID id,
+            RegionUpdateRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireRegion(current.config(), id);
+        List<RegionDefinition> regions = current.config().regions().stream()
+                .map(region -> region.id().equals(id)
+                        ? new RegionDefinition(
+                                id,
+                                request.name(),
+                                request.firstX(),
+                                request.firstY(),
+                                request.firstZ(),
+                                request.secondX(),
+                                request.secondY(),
+                                request.secondZ()
+                        )
+                        : region)
+                .toList();
+        return regionResponse(configs.save(current.revision(), new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                regions
+        )));
+    }
+
+    @Override
+    public synchronized RegionListResponse deleteRegion(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireRegion(current.config(), id);
+        return regionResponse(configs.save(current.revision(), new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions().stream()
+                        .filter(region -> !region.id().equals(id))
+                        .toList()
+        )));
     }
 
     @Override
@@ -166,14 +250,16 @@ public final class V2ControlServiceImpl implements V2ControlService {
         ConfigValidator.requireValid(new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
-                List.of(task)
+                List.of(task),
+                current.config().regions()
         ));
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.add(task);
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
-                tasks
+                tasks,
+                current.config().regions()
         );
         return taskResponse(configs.save(current.revision(), updated));
     }
@@ -197,7 +283,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
-                tasks
+                tasks,
+                current.config().regions()
         );
         return taskResponse(configs.save(current.revision(), updated));
     }
@@ -215,7 +302,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().coordinates(),
                 current.config().tasks().stream()
                         .filter(task -> !task.id().equals(id))
-                        .toList()
+                        .toList(),
+                current.config().regions()
         );
         return taskResponse(configs.save(current.revision(), updated));
     }
@@ -248,6 +336,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return new TaskListResponse(snapshot.revision(), snapshot.config().tasks());
     }
 
+    private static RegionListResponse regionResponse(V2ConfigSnapshot snapshot) {
+        return new RegionListResponse(snapshot.revision(), snapshot.config().regions());
+    }
+
     private static void requireRevision(
             V2ConfigSnapshot snapshot,
             String revision
@@ -272,6 +364,13 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .filter(task -> task.id().equals(id))
                 .findFirst()
                 .orElseThrow(() -> new V2NotFoundException("task not found"));
+    }
+
+    private static RegionDefinition requireRegion(AppConfig config, UUID id) {
+        return config.regions().stream()
+                .filter(region -> region.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new V2NotFoundException("region not found"));
     }
 
     private static List<TaskStep> steps(List<TaskStepRequest> requestedSteps) {

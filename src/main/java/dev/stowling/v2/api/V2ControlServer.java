@@ -1,0 +1,787 @@
+package dev.stowling.v2.api;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
+import com.google.gson.Strictness;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import dev.stowling.api.BearerTokenStore;
+import dev.stowling.v2.config.V2RevisionConflictException;
+import dev.stowling.v2.config.V2ValidationException;
+import dev.stowling.v2.control.CoordinateInUseException;
+import dev.stowling.v2.control.CoordinateRequest;
+import dev.stowling.v2.control.CoordinateUpdateRequest;
+import dev.stowling.v2.control.RevisionRequest;
+import dev.stowling.v2.control.TaskRequest;
+import dev.stowling.v2.control.TaskStepRequest;
+import dev.stowling.v2.control.TaskUpdateRequest;
+import dev.stowling.v2.control.V2ControlService;
+import dev.stowling.v2.control.V2NotFoundException;
+import dev.stowling.v2.runtime.TaskRunBusyException;
+import dev.stowling.v2.runtime.TaskRunNotFoundException;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+public final class V2ControlServer implements AutoCloseable {
+    private static final int MAX_REQUEST_BYTES = 64 * 1024;
+    private static final String JSON_TYPE = "application/json; charset=utf-8";
+
+    private final InetSocketAddress address;
+    private final V2ControlService service;
+    private final byte[] tokenHash;
+    private final Map<String, StaticContent> staticContent;
+    private HttpServer server;
+    private ExecutorService executor;
+
+    public V2ControlServer(
+            InetSocketAddress address,
+            V2ControlService service,
+            String token
+    ) {
+        this.address = Objects.requireNonNull(address, "address");
+        this.service = Objects.requireNonNull(service, "service");
+        this.tokenHash = hash(Objects.requireNonNull(token, "token"));
+        if (token.isBlank()) {
+            throw new IllegalArgumentException("token must not be blank");
+        }
+        this.staticContent = loadStaticContent();
+    }
+
+    public static V2ControlServer loopbackWithTokenFile(
+            V2ControlService service,
+            Path tokenFile,
+            int port
+    ) {
+        String token = new BearerTokenStore(tokenFile).loadOrCreate();
+        return new V2ControlServer(loopback(port), service, token);
+    }
+
+    public synchronized void start() throws IOException {
+        if (server != null) {
+            throw new IllegalStateException("server already started");
+        }
+        HttpServer created = HttpServer.create(address, 0);
+        ExecutorService createdExecutor = Executors.newFixedThreadPool(
+                4,
+                new ControlThreadFactory()
+        );
+        created.createContext("/", this::handle);
+        created.setExecutor(createdExecutor);
+        created.start();
+        server = created;
+        executor = createdExecutor;
+    }
+
+    public synchronized InetSocketAddress localAddress() {
+        if (server == null) {
+            throw new IllegalStateException("server is not running");
+        }
+        return server.getAddress();
+    }
+
+    public synchronized void stop() {
+        HttpServer active = server;
+        ExecutorService activeExecutor = executor;
+        server = null;
+        executor = null;
+        if (active != null) {
+            active.stop(0);
+        }
+        if (activeExecutor != null) {
+            activeExecutor.shutdownNow();
+            try {
+                activeExecutor.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    @Override
+    public void close() {
+        stop();
+    }
+
+    private void handle(HttpExchange exchange) {
+        try {
+            applySecurityHeaders(exchange);
+            String path = exchange.getRequestURI().getRawPath();
+            StaticContent content = staticContent.get(path);
+            if (content != null) {
+                serveStatic(exchange, content);
+                return;
+            }
+            if (!authorized(exchange.getRequestHeaders())) {
+                exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer");
+                sendError(
+                        exchange,
+                        401,
+                        "unauthorized",
+                        "A valid bearer token is required"
+                );
+                return;
+            }
+            if (exchange.getRequestURI().getRawQuery() != null
+                    || path.contains("%")
+                    || path.contains("\\")) {
+                throw new RequestFailure(400, "invalid_request", "Invalid request target");
+            }
+            String body = readBody(exchange.getRequestBody());
+            dispatch(exchange, path, exchange.getRequestMethod(), body);
+        } catch (RequestFailure exception) {
+            if (exception.allow != null) {
+                exchange.getResponseHeaders().set("Allow", exception.allow);
+            }
+            sendErrorQuietly(
+                    exchange,
+                    exception.status,
+                    exception.code,
+                    exception.getMessage()
+            );
+        } catch (V2RevisionConflictException exception) {
+            sendErrorQuietly(exchange, 409, "revision_conflict", exception.getMessage());
+        } catch (TaskRunBusyException exception) {
+            sendErrorQuietly(exchange, 409, "task_run_busy", exception.getMessage());
+        } catch (TaskRunNotFoundException exception) {
+            sendErrorQuietly(exchange, 404, "not_found", exception.getMessage());
+        } catch (CoordinateInUseException exception) {
+            sendJsonQuietly(exchange, 409, new ErrorResponse(new ErrorBody(
+                    "coordinate_in_use",
+                    exception.getMessage(),
+                    exception.taskNames()
+            )));
+        } catch (V2NotFoundException exception) {
+            sendErrorQuietly(exchange, 404, "not_found", exception.getMessage());
+        } catch (IllegalArgumentException exception) {
+            sendErrorQuietly(exchange, 400, "invalid_request", exception.getMessage());
+        } catch (Exception exception) {
+            sendErrorQuietly(
+                    exchange,
+                    500,
+                    "internal_error",
+                    "The request could not be completed"
+            );
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private void dispatch(
+            HttpExchange exchange,
+            String path,
+            String method,
+            String body
+    ) throws IOException {
+        if ("/v1/status".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.status());
+            return;
+        }
+        if ("/v1/inventory".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.inventory());
+            return;
+        }
+        if ("/v1/task-modules".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.modules());
+            return;
+        }
+        if ("/v1/task-runs".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.taskRuns());
+            return;
+        }
+        if ("/v1/coordinates".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.coordinates());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("name", "x", "y", "z"));
+                sendJson(exchange, 201, service.createCoordinate(new CoordinateRequest(
+                        string(json, "name"),
+                        integer(json, "x"),
+                        integer(json, "y"),
+                        integer(json, "z")
+                )));
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if ("/v1/tasks".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.tasks());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("name", "steps"));
+                sendJson(exchange, 201, service.createTask(taskRequest(json)));
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/coordinates/")) {
+            UUID id = pathUuid(path, "/v1/coordinates/");
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.coordinate(id));
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("revision", "name", "x", "y", "z"));
+                sendJson(exchange, 200, service.updateCoordinate(id,
+                        new CoordinateUpdateRequest(
+                                string(json, "revision"),
+                                string(json, "name"),
+                                integer(json, "x"),
+                                integer(json, "y"),
+                                integer(json, "z")
+                        )));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteCoordinate(
+                        id,
+                        revision(body)
+                ));
+            } else {
+                throw methodNotAllowed("GET, PUT, DELETE");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/tasks/")) {
+            String suffix = path.substring("/v1/tasks/".length());
+            if (suffix.endsWith("/runs")) {
+                requireMethod(method, "POST");
+                requireEmpty(body);
+                UUID id = uuid(suffix.substring(0, suffix.length() - 5));
+                sendJson(exchange, 202, service.runTask(id));
+                return;
+            }
+            UUID id = uuid(suffix);
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.task(id));
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("revision", "name", "steps"));
+                sendJson(exchange, 200, service.updateTask(id,
+                        new TaskUpdateRequest(
+                                string(json, "revision"),
+                                string(json, "name"),
+                                steps(json)
+                        )));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteTask(id, revision(body)));
+            } else {
+                throw methodNotAllowed("GET, PUT, DELETE");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/task-runs/") && path.endsWith("/cancel")) {
+            requireMethod(method, "POST");
+            requireEmpty(body);
+            String value = path.substring(
+                    "/v1/task-runs/".length(),
+                    path.length() - "/cancel".length()
+            );
+            service.cancelRun(uuid(value));
+            sendJson(exchange, 200, Map.of("cancelled", true));
+            return;
+        }
+        throw new RequestFailure(404, "not_found", "Route not found");
+    }
+
+    private static TaskRequest taskRequest(JsonObject json) {
+        return new TaskRequest(string(json, "name"), steps(json));
+    }
+
+    private static List<TaskStepRequest> steps(JsonObject json) {
+        JsonArray values = array(json, "steps");
+        List<TaskStepRequest> result = new ArrayList<>();
+        for (JsonElement value : values) {
+            JsonObject step = jsonObject(value, "step");
+            Set<String> allowed = Set.of("id", "moduleId", "parameters");
+            requireFieldsAny(step, allowed, Set.of("moduleId", "parameters"));
+            result.add(new TaskStepRequest(
+                    optionalString(step, "id"),
+                    string(step, "moduleId"),
+                    parameters(step)
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static Map<String, String> parameters(JsonObject step) {
+        JsonObject values = object(step.get("parameters"), "parameters");
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : values.entrySet()) {
+            if (!entry.getValue().isJsonPrimitive()
+                    || !entry.getValue().getAsJsonPrimitive().isString()) {
+                throw new RequestFailure(
+                        400,
+                        "invalid_request",
+                        "parameter values must be strings"
+                );
+            }
+            result.put(entry.getKey(), entry.getValue().getAsString());
+        }
+        return Map.copyOf(result);
+    }
+
+    private static RevisionRequest revision(String body) {
+        JsonObject json = object(body);
+        requireFields(json, Set.of("revision"));
+        return new RevisionRequest(string(json, "revision"));
+    }
+
+    private static JsonObject object(String body) {
+        try {
+            validateStrictJson(body);
+            JsonElement value = JsonParser.parseString(body);
+            if (!value.isJsonObject()) {
+                throw invalid("body must be an object");
+            }
+            return value.getAsJsonObject();
+        } catch (IOException | JsonParseException exception) {
+            throw invalid("body must be valid JSON");
+        }
+    }
+
+    private static void validateStrictJson(String body) throws IOException {
+        JsonReader reader = new JsonReader(new StringReader(body));
+        reader.setStrictness(Strictness.STRICT);
+        validateJsonValue(reader);
+        if (reader.peek() != JsonToken.END_DOCUMENT) {
+            throw invalid("body must contain one JSON value");
+        }
+    }
+
+    private static void validateJsonValue(JsonReader reader) throws IOException {
+        switch (reader.peek()) {
+            case BEGIN_OBJECT -> validateJsonObject(reader);
+            case BEGIN_ARRAY -> validateJsonArray(reader);
+            case STRING -> reader.nextString();
+            case NUMBER -> reader.nextString();
+            case BOOLEAN -> reader.nextBoolean();
+            case NULL -> reader.nextNull();
+            default -> throw invalid("body must be valid JSON");
+        }
+    }
+
+    private static void validateJsonObject(JsonReader reader) throws IOException {
+        reader.beginObject();
+        Set<String> names = new java.util.HashSet<>();
+        while (reader.hasNext()) {
+            String name = reader.nextName();
+            if (!names.add(name)) {
+                throw invalid("JSON object contains a duplicate field");
+            }
+            validateJsonValue(reader);
+        }
+        reader.endObject();
+    }
+
+    private static void validateJsonArray(JsonReader reader) throws IOException {
+        reader.beginArray();
+        while (reader.hasNext()) {
+            validateJsonValue(reader);
+        }
+        reader.endArray();
+    }
+
+    private static JsonObject object(JsonElement value, String name) {
+        if (value == null || !value.isJsonObject()) {
+            throw invalid(name + " must be an object");
+        }
+        return value.getAsJsonObject();
+    }
+
+    private static JsonObject jsonObject(JsonElement value, String name) {
+        return object(value, name);
+    }
+
+    private static JsonArray array(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || !value.isJsonArray()) {
+            throw invalid(key + " must be an array");
+        }
+        return value.getAsJsonArray();
+    }
+
+    private static String string(JsonObject json, String key) {
+        String value = optionalString(json, key);
+        if (value == null || value.isBlank()) {
+            throw invalid(key + " must not be blank");
+        }
+        return value;
+    }
+
+    private static String optionalString(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+            throw invalid(key + " must be a string");
+        }
+        return value.getAsString();
+    }
+
+    private static int integer(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || !value.isJsonPrimitive()
+                || !value.getAsJsonPrimitive().isNumber()) {
+            throw invalid(key + " must be an integer");
+        }
+        double number = value.getAsDouble();
+        if (!Double.isFinite(number)
+                || number != Math.rint(number)
+                || number < Integer.MIN_VALUE
+                || number > Integer.MAX_VALUE) {
+            throw invalid(key + " must be a 32-bit integer");
+        }
+        return (int) number;
+    }
+
+    private static void requireFields(JsonObject json, Set<String> required) {
+        requireFieldsAny(json, required, required);
+    }
+
+    private static void requireFieldsAny(
+            JsonObject json,
+            Set<String> allowed,
+            Set<String> required
+    ) {
+        if (!allowed.containsAll(json.keySet())) {
+            throw invalid("unknown JSON field");
+        }
+        if (!json.keySet().containsAll(required)) {
+            throw invalid("missing required JSON field");
+        }
+    }
+
+    private static UUID pathUuid(String path, String prefix) {
+        String value = path.substring(prefix.length());
+        if (value.contains("/")) {
+            throw new RequestFailure(404, "not_found", "Route not found");
+        }
+        return uuid(value);
+    }
+
+    private static UUID uuid(String value) {
+        try {
+            UUID id = UUID.fromString(value);
+            if (!id.toString().equals(value.toLowerCase(Locale.ROOT))) {
+                throw invalid("id must be a canonical UUID");
+            }
+            return id;
+        } catch (IllegalArgumentException exception) {
+            throw invalid("id must be a canonical UUID");
+        }
+    }
+
+    private static void requireEmpty(String body) {
+        if (!body.isBlank()) {
+            throw invalid("request body must be empty");
+        }
+    }
+
+    private static void requireMethod(String actual, String expected) {
+        if (!expected.equals(actual)) {
+            throw methodNotAllowed(expected);
+        }
+    }
+
+    private static RequestFailure methodNotAllowed(String allowed) {
+        return new RequestFailure(
+                405,
+                "method_not_allowed",
+                "Allowed: " + allowed,
+                allowed
+        );
+    }
+
+    private static RequestFailure invalid(String message) {
+        return new RequestFailure(400, "invalid_request", message);
+    }
+
+    private static String readBody(InputStream input)
+            throws IOException, RequestFailure {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        int total = 0;
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            total += count;
+            if (total > MAX_REQUEST_BYTES) {
+                throw new RequestFailure(
+                        413,
+                        "request_too_large",
+                        "Request body is too large"
+                );
+            }
+            output.write(buffer, 0, count);
+        }
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(output.toByteArray()))
+                    .toString();
+        } catch (CharacterCodingException exception) {
+            throw invalid("request body must be valid UTF-8");
+        }
+    }
+
+    private boolean authorized(Headers headers) {
+        List<String> values = headers.get("Authorization");
+        if (values == null || values.size() != 1) {
+            return false;
+        }
+        String value = values.getFirst();
+        int separator = value.indexOf(' ');
+        if (separator <= 0 || separator != value.lastIndexOf(' ')) {
+            return false;
+        }
+        return "Bearer".equalsIgnoreCase(value.substring(0, separator))
+                && MessageDigest.isEqual(
+                        tokenHash,
+                        hash(value.substring(separator + 1))
+                );
+    }
+
+    private static void serveStatic(HttpExchange exchange, StaticContent content)
+            throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())
+                && !"HEAD".equals(exchange.getRequestMethod())) {
+            throw methodNotAllowed("GET, HEAD");
+        }
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Content-Type", content.contentType());
+        headers.set("Cache-Control", "no-store");
+        if ("HEAD".equals(exchange.getRequestMethod())) {
+            headers.set("Content-Length", Integer.toString(content.bytes().length));
+            exchange.sendResponseHeaders(200, -1);
+            return;
+        }
+        exchange.sendResponseHeaders(200, content.bytes().length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(content.bytes());
+        }
+    }
+
+    private static void applySecurityHeaders(HttpExchange exchange) {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("X-Content-Type-Options", "nosniff");
+        headers.set("X-Frame-Options", "DENY");
+        headers.set("Referrer-Policy", "no-referrer");
+        headers.set(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                        + "script-src 'self'; "
+                        + "style-src 'self'; "
+                        + "img-src 'self' data:; "
+                        + "connect-src 'self'; "
+                        + "frame-ancestors 'none'; "
+                        + "base-uri 'none'; "
+                        + "form-action 'self'"
+        );
+    }
+
+    private static void sendError(
+            HttpExchange exchange,
+            int status,
+            String code,
+            String message
+    ) throws IOException {
+        sendJson(exchange, status, new ErrorResponse(new ErrorBody(
+                code,
+                message,
+                List.of()
+        )));
+    }
+
+    private static void sendErrorQuietly(
+            HttpExchange exchange,
+            int status,
+            String code,
+            String message
+    ) {
+        sendJsonQuietly(exchange, status, new ErrorResponse(new ErrorBody(
+                code,
+                message,
+                List.of()
+        )));
+    }
+
+    private static void sendJson(HttpExchange exchange, int status, Object value)
+            throws IOException {
+        byte[] bytes = V2Json.gson().toJson(value)
+                .getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", JSON_TYPE);
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(bytes);
+        }
+    }
+
+    private static void sendJsonQuietly(HttpExchange exchange, int status, Object value) {
+        try {
+            sendJson(exchange, status, value);
+        } catch (IOException | RuntimeException ignored) {
+            // The client disconnected or the response was already committed.
+        }
+    }
+
+    private static byte[] hash(String value) {
+        try {
+            return MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static InetSocketAddress loopback(int port) {
+        try {
+            return new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
+        } catch (IOException exception) {
+            throw new IllegalStateException("IPv4 loopback is unavailable", exception);
+        }
+    }
+
+    private static Map<String, StaticContent> loadStaticContent() {
+        String html = "text/html; charset=utf-8";
+        String js = "text/javascript; charset=utf-8";
+        return Map.ofEntries(
+                Map.entry("/", read("stowling-web/index.html", html)),
+                Map.entry("/index.html", read("stowling-web/index.html", html)),
+                Map.entry("/coordinates.html", read("stowling-web/coordinates.html", html)),
+                Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
+                Map.entry("/storage.html", read("stowling-web/storage.html", html)),
+                Map.entry("/common.js", read("stowling-web/common.js", js)),
+                Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
+                Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
+                Map.entry(
+                        "/coordinate-model.js",
+                        read("stowling-web/coordinate-model.js", js)
+                ),
+                Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
+                Map.entry(
+                        "/v2-task-model.js",
+                        read("stowling-web/v2-task-model.js", js)
+                ),
+                Map.entry(
+                        "/v2-task-editor.js",
+                        read("stowling-web/v2-task-editor.js", js)
+                ),
+                Map.entry("/storage.js", read("stowling-web/storage.js", js)),
+                Map.entry(
+                        "/styles.css",
+                        read("stowling-web/styles.css", "text/css; charset=utf-8")
+                ),
+                Map.entry(
+                        "/icon.svg",
+                        read("assets/stowling/icon.svg", "image/svg+xml")
+                ),
+                Map.entry(
+                        "/icon.png",
+                        read("assets/stowling/icon.png", "image/png")
+                )
+        );
+    }
+
+    private static StaticContent read(String name, String type) {
+        try (InputStream input = V2ControlServer.class.getClassLoader()
+                .getResourceAsStream(name)) {
+            if (input == null) {
+                throw new IllegalStateException("missing static resource: " + name);
+            }
+            return new StaticContent(input.readAllBytes(), type);
+        } catch (IOException exception) {
+            throw new IllegalStateException("cannot read static resource: " + name, exception);
+        }
+    }
+
+    private record StaticContent(byte[] bytes, String contentType) {
+    }
+
+    private record ErrorResponse(ErrorBody error) {
+    }
+
+    private record ErrorBody(String code, String message, List<String> taskNames) {
+    }
+
+    private static final class RequestFailure extends RuntimeException {
+        private final int status;
+        private final String code;
+        private final String allow;
+
+        private RequestFailure(int status, String code, String message) {
+            this(status, code, message, null);
+        }
+
+        private RequestFailure(
+                int status,
+                String code,
+                String message,
+                String allow
+        ) {
+            super(message);
+            this.status = status;
+            this.code = code;
+            this.allow = allow;
+        }
+    }
+
+    private static final class ControlThreadFactory implements ThreadFactory {
+        private final AtomicInteger sequence = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable task) {
+            Thread thread = new Thread(
+                    task,
+                    "stowling-v2-control-" + sequence.incrementAndGet()
+            );
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+}

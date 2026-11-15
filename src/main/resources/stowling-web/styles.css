@@ -502,33 +502,8 @@ section[id] {
     margin-top: 1rem;
 }
 
-.pickup-form .inline-control {
-    max-width: 570px;
-}
-
-.pickup-launch-grid {
-    display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
-    align-items: end;
-    gap: 0.6rem;
-}
-
-.pickup-launch-action {
-    display: flex;
-}
-
-.pickup-launch-action button {
-    min-height: 43px;
-}
-
 .config-heading {
     align-items: center;
-}
-
-.pickup-config-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.9rem;
 }
 
 .config-column {
@@ -537,10 +512,6 @@ section[id] {
     border: 1px solid var(--line);
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.34);
-}
-
-.workflow-column {
-    grid-column: 1 / -1;
 }
 
 .config-column-heading,
@@ -675,8 +646,7 @@ section[id] {
 }
 
 input[aria-invalid="true"],
-select[aria-invalid="true"],
-[data-validation-container][aria-invalid="true"] {
+select[aria-invalid="true"] {
     border-color: rgba(161, 61, 55, 0.72);
     box-shadow: 0 0 0 2px rgba(161, 61, 55, 0.13);
 }
@@ -940,49 +910,6 @@ select[aria-invalid="true"],
     background: rgba(161, 61, 55, 0.12);
 }
 
-.container-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.7rem;
-}
-
-.container-option {
-    position: relative;
-    display: block;
-    padding: 0.9rem;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.55);
-    cursor: pointer;
-}
-
-.container-option:has(input:checked) {
-    border-color: rgba(38, 112, 75, 0.58);
-    background: var(--accent-soft);
-}
-
-.container-option input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-}
-
-.container-option strong,
-.container-option span {
-    display: block;
-}
-
-.container-option strong {
-    margin-bottom: 0.35rem;
-}
-
-.container-option span {
-    color: var(--muted);
-    font-size: 0.75rem;
-    line-height: 1.55;
-}
-
 .inventory-card h3 {
     margin: 0 0 0.55rem;
     font-size: 0.95rem;
@@ -1111,19 +1038,6 @@ select[aria-invalid="true"],
         flex-direction: column;
     }
 
-    .pickup-launch-grid,
-    .pickup-config-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .workflow-column {
-        grid-column: 1;
-    }
-
-    .pickup-launch-action button {
-        width: 100%;
-    }
-
     .binding-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1187,7 +1101,6 @@ select[aria-invalid="true"],
     .coordinate-row,
     .config-column,
     .editor-card,
-    .container-option,
     .inventory-card {
         background: rgba(255, 255, 255, 0.035);
     }
@@ -1381,60 +1294,9 @@ select[aria-invalid="true"],
     background: rgba(255, 255, 255, 0.32);
 }
 
-.workflow-list,
 .step-list {
     display: grid;
     gap: 0.65rem;
-}
-
-.workflow-list-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.55rem;
-    border: 1px solid var(--line);
-    border-radius: 11px;
-    background: rgba(255, 255, 255, 0.46);
-}
-
-.workflow-list-card.selected {
-    border-color: rgba(38, 112, 75, 0.65);
-    background: var(--accent-soft);
-}
-
-.workflow-list-body {
-    display: grid;
-    min-width: 0;
-    gap: 0.2rem;
-}
-
-.workflow-select-button {
-    overflow: hidden;
-    padding: 0;
-    color: var(--text);
-    font-size: 0.83rem;
-    font-weight: 720;
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    background: transparent;
-}
-
-.workflow-select-button:hover:not(:disabled) {
-    color: var(--accent);
-    transform: none;
-}
-
-.workflow-list-meta {
-    overflow-wrap: anywhere;
-    color: var(--muted);
-    font-family: "Cascadia Code", Consolas, monospace;
-    font-size: 0.65rem;
-}
-
-.workflow-meta {
-    margin-bottom: 0.9rem;
 }
 
 .step-heading {
@@ -1511,65 +1373,6 @@ select[aria-invalid="true"],
     border-top: 1px dashed var(--line);
 }
 
-.pickup-step-fields {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
-}
-
-.step-fields > .pickup-step-hint,
-.step-fields > .pickup-step-summary,
-.step-fields > .step-legacy-notice {
-    grid-column: 1 / -1;
-    min-width: 0;
-}
-
-.pickup-step-hint,
-.pickup-step-summary,
-.step-legacy-notice {
-    line-height: 1.6;
-    overflow-wrap: anywhere;
-}
-
-.pickup-step-summary {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.6rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-}
-
-.step-legacy-notice {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 0.8rem;
-    padding: 0.6rem;
-    border-left: 3px solid #c99738;
-    border-radius: 8px;
-    background: rgba(201, 151, 56, 0.08);
-}
-
-.step-legacy-notice p {
-    flex: 1 1 250px;
-}
-
-.legacy-task-notice {
-    display: grid;
-    gap: 0.35rem;
-    margin-top: 0.9rem;
-    padding: 0.75rem;
-    border: 1px solid rgba(201, 151, 56, 0.45);
-    border-radius: 12px;
-    background: rgba(201, 151, 56, 0.08);
-}
-
-.legacy-task-notice[hidden] {
-    display: none;
-}
-
-.legacy-task-notice strong {
-    font-size: 0.84rem;
-}
-
 .step-fields input[type="checkbox"] {
     width: auto;
     flex: 0 0 auto;
@@ -1587,13 +1390,11 @@ select[aria-invalid="true"],
     margin-top: 0.3rem;
 }
 
-.step-fields .editor-field,
-.workflow-meta .editor-field {
+.step-fields .editor-field {
     min-width: 0;
 }
 
 .step-fields label,
-.workflow-meta label,
 .editor-card .editor-field label {
     display: block;
     margin-bottom: 0.28rem;
@@ -1604,7 +1405,6 @@ select[aria-invalid="true"],
 
 .step-fields input,
 .step-fields select,
-.workflow-meta input,
 .editor-card input,
 .editor-card select {
     padding: 0.58rem 0.62rem;
@@ -1688,10 +1488,6 @@ select[aria-invalid="true"],
         flex-direction: column;
     }
 
-    .workflow-list-card {
-        grid-template-columns: 1fr;
-    }
-
     .hero-actions,
     .hero-actions .button-link {
         width: 100%;
@@ -1705,7 +1501,6 @@ select[aria-invalid="true"],
 @media (prefers-color-scheme: dark) {
     .summary-card,
     .usage-card,
-    .workflow-list-card,
     .step-card,
     .module-card,
     .builder-library,
@@ -1877,4 +1672,42 @@ textarea {
 body[data-page="tasks"] .panel {
     background: var(--panel-solid);
     backdrop-filter: none;
+}
+
+.task-sidebar,
+.task-editor-panel {
+    align-self: start;
+}
+
+.task-select {
+    width: 100%;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.task-select.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.15);
+}
+
+.coordinate-create-form {
+    margin-bottom: 1rem;
+    padding: 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+}
+
+.coordinate-create-form button {
+    align-self: end;
+}
+
+@media (min-width: 980px) {
+    body[data-page="tasks"] .workspace {
+        grid-template-columns: minmax(220px, 0.75fr) minmax(520px, 1.8fr);
+    }
+
+    body[data-page="tasks"] .wide {
+        grid-column: 1 / -1;
+    }
 }

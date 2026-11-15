@@ -1,34 +1,15 @@
 package dev.stowling.client.interaction;
 
-import dev.stowling.automation.GroundItem;
-import dev.stowling.automation.PlayerInventoryAdapter;
-import dev.stowling.automation.PlayerInventorySlot;
-import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.automation.WorldObservation;
 import dev.stowling.automation.WorldObserver;
 import dev.stowling.domain.BlockPosition;
-import dev.stowling.domain.PickupRegion;
-import dev.stowling.domain.PickupSite;
-import dev.stowling.domain.SpherePickupShape;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 
-public final class MinecraftWorldObserver implements WorldObserver, PlayerInventoryAdapter {
-    private static final int MAIN_INVENTORY_SLOTS = 36;
-
+public final class MinecraftWorldObserver implements WorldObserver {
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
 
@@ -39,129 +20,22 @@ public final class MinecraftWorldObserver implements WorldObserver, PlayerInvent
 
     @Override
     public WorldObservation observeWorld() {
-        requireClientThread();
+        if (!scheduler.isClientThread()) {
+            return WorldObservation.disconnected();
+        }
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
         if (player == null || level == null || player.isRemoved()) {
             return WorldObservation.disconnected();
         }
-        BlockPosition position = new BlockPosition(
-                player.blockPosition().getX(),
-                player.blockPosition().getY(),
-                player.blockPosition().getZ()
-        );
         return new WorldObservation(
                 true,
                 player.isAlive(),
-                level.dimension().identifier().toString(),
-                Optional.of(position)
+                Optional.of(new BlockPosition(
+                        player.blockPosition().getX(),
+                        player.blockPosition().getY(),
+                        player.blockPosition().getZ()
+                ))
         );
-    }
-
-    @Override
-    public List<GroundItem> observeGroundItems(PickupSite site) {
-        return observeGroundItems(new PickupRegion(
-                site.id(),
-                site.id(),
-                site.dimension(),
-                site.center(),
-                new SpherePickupShape(site.center(), site.radius())
-        ));
-    }
-
-    @Override
-    public List<GroundItem> observeGroundItems(PickupRegion region) {
-        requireClientThread();
-        Objects.requireNonNull(region, "region");
-        ClientLevel level = minecraft.level;
-        if (minecraft.player == null || level == null
-                || !level.dimension().identifier().toString().equals(region.dimension())) {
-            return List.of();
-        }
-        List<GroundItem> result = new ArrayList<>();
-        for (Entity entity : level.entitiesForRendering()) {
-            if (!(entity instanceof ItemEntity itemEntity) || entity.isRemoved()) {
-                continue;
-            }
-            ItemStack stack = itemEntity.getItem();
-            if (stack.isEmpty() || !isInsidePickupRegion(
-                    region,
-                    entity.getX(),
-                    entity.getY(),
-                    entity.getZ()
-            )) {
-                continue;
-            }
-            result.add(new GroundItem(
-                    entity.getUUID().toString(),
-                    itemId(stack),
-                    stack.getCount(),
-                    positionOf(entity)
-            ));
-        }
-        return List.copyOf(result);
-    }
-
-    @Override
-    public Set<String> tagsFor(String itemId) {
-        requireClientThread();
-        Identifier identifier = Identifier.tryParse(Objects.requireNonNull(itemId, "itemId"));
-        if (identifier == null) {
-            return Set.of();
-        }
-        Item item = BuiltInRegistries.ITEM.getValue(identifier);
-        if (item == null) {
-            return Set.of();
-        }
-        return item.builtInRegistryHolder().tags()
-                .map(tag -> tag.location().toString())
-                .collect(Collectors.toUnmodifiableSet());
-    }
-
-    @Override
-    public PlayerInventorySnapshot observe() {
-        requireClientThread();
-        LocalPlayer player = minecraft.player;
-        if (player == null) {
-            return new PlayerInventorySnapshot(MAIN_INVENTORY_SLOTS, List.of());
-        }
-        List<PlayerInventorySlot> slots = new ArrayList<>();
-        List<ItemStack> items = player.getInventory().getNonEquipmentItems();
-        int limit = Math.min(MAIN_INVENTORY_SLOTS, items.size());
-        for (int slot = 0; slot < limit; slot++) {
-            ItemStack stack = items.get(slot);
-            if (!stack.isEmpty()) {
-                slots.add(new PlayerInventorySlot(slot, itemId(stack), stack.getCount()));
-            }
-        }
-        return new PlayerInventorySnapshot(MAIN_INVENTORY_SLOTS, slots);
-    }
-
-    private String itemId(ItemStack stack) {
-        Identifier identifier = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        return identifier.toString();
-    }
-
-    static boolean isInsidePickupRegion(
-            PickupRegion region,
-            double x,
-            double y,
-            double z
-    ) {
-        return region.contains(x, y, z);
-    }
-
-    private BlockPosition positionOf(Entity entity) {
-        return new BlockPosition(
-                entity.blockPosition().getX(),
-                entity.blockPosition().getY(),
-                entity.blockPosition().getZ()
-        );
-    }
-
-    private void requireClientThread() {
-        if (!scheduler.isClientThread()) {
-            throw new IllegalStateException("world observation must run on client thread");
-        }
     }
 }

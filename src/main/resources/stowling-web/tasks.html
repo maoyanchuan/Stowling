@@ -4,12 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>任务编排 · Stowling</title>
+    <title>移动任务 · Stowling</title>
     <link rel="icon" type="image/svg+xml" href="/icon.svg">
     <link rel="icon" type="image/png" href="/icon.png">
     <link rel="stylesheet" href="/styles.css">
     <script src="/common.js" defer></script>
-    <script src="/task-resources.js" defer></script>
+    <script src="/coordinate-model.js" defer></script>
+    <script src="/v2-task-model.js" defer></script>
+    <script src="/v2-task-editor.js" defer></script>
     <script src="/tasks.js" defer></script>
 </head>
 <body data-page="tasks">
@@ -17,8 +19,8 @@
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
-                <h1>任务编排</h1>
-                <p>用自由步骤组合拾取、移动、等待、容器操作与运行队列</p>
+                <h1>移动任务</h1>
+                <p>组合线性模块并手动运行</p>
             </div>
         </div>
         <div class="connection-state">
@@ -27,259 +29,76 @@
         </div>
     </header>
 
-    <dialog id="new-task-dialog" class="panel" aria-labelledby="new-task-title">
-        <div class="step-heading">
-            <div>
-                <h3 id="new-task-title">新增任务</h3>
-                <p>选择起点；两种入口均使用自定义任务，不创建旧拾取流程。</p>
-            </div>
-        </div>
-        <div class="step-creation-options">
-            <button id="new-custom-task-button" class="primary" type="button">
-                自定义任务
-                <span class="compact-help">从空白步骤开始，自由组合规则</span>
-            </button>
-            <button id="new-pickup-task-button" class="secondary" type="button">
-                拾取并存入
-                <span class="compact-help">
-                    只设置掉落物范围和箱体位置
-                </span>
-            </button>
-        </div>
-        <div class="action-row">
-            <button id="cancel-new-task-button" class="ghost compact" type="button">取消</button>
-        </div>
-    </dialog>
-
     <main>
         <div id="auth-shell"></div>
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
-            <section class="panel wide" aria-labelledby="library-title">
+            <section class="panel task-sidebar" aria-labelledby="task-list-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">任务库</p>
-                        <h2 id="library-title">自由任务组合</h2>
-                        <p class="muted section-help">
-                            每个任务独立读取、保存和删除。筛选只影响列表，不改变配置。
-                        </p>
+                        <p class="eyebrow">任务定义</p>
+                        <h2 id="task-list-title">任务列表</h2>
                     </div>
-                    <div class="action-row">
-                        <button id="refresh-tasks-button" class="secondary compact"
-                                type="button">刷新任务与坐标</button>
-                        <button id="add-task-button" class="primary compact"
-                                type="button">新增任务</button>
-                    </div>
+                    <button id="new-task-button" class="primary compact"
+                            type="button">新建任务</button>
                 </div>
-                <div class="filter-row">
-                    <div class="editor-field">
-                        <label for="task-filter-name">名称筛选</label>
-                        <input id="task-filter-name" type="search" placeholder="输入任务名称或 ID">
-                    </div>
-                    <div class="editor-field">
-                        <label for="task-filter-kind">类型筛选</label>
-                        <select id="task-filter-kind">
-                            <option value="">全部类型</option>
-                            <option value="PICKUP">旧拾取任务（兼容）</option>
-                            <option value="AUTOMATION">自定义任务</option>
-                        </select>
-                    </div>
-                </div>
-                <div id="task-list" class="task-definition-list" aria-live="polite"></div>
                 <p id="task-list-message" class="field-message" role="status"></p>
+                <div id="task-list" class="editor-list"></div>
             </section>
 
-            <section class="panel wide" aria-labelledby="editor-title">
+            <section class="panel task-editor-panel" aria-labelledby="task-editor-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">单任务草稿</p>
-                        <h2 id="editor-title">任务定义编辑器</h2>
-                        <p class="muted section-help">
-                            保存只写入任务定义，不会自动启用调度；启用需使用列表中的操作。
-                        </p>
+                        <p class="eyebrow">线性模块</p>
+                        <h2 id="task-editor-title">任务编辑器</h2>
                     </div>
-                    <div class="action-row">
-                        <button id="discard-task-button" class="secondary compact"
-                                type="button" disabled>放弃修改</button>
-                        <button id="save-task-button" class="primary compact"
-                                type="submit" form="task-form" disabled>保存任务</button>
-                    </div>
+                    <span id="task-revision" class="loopback-tag">新任务</span>
                 </div>
-                <div id="task-empty" class="empty-state">
-                    选择列表中的任务，或新增一个任务
-                </div>
-                <form id="task-form" novalidate hidden>
-                    <div class="editor-fields task-basics">
-                        <div class="editor-field">
-                            <label for="task-kind">任务类型</label>
-                            <select id="task-kind">
-                                <option value="AUTOMATION">自定义任务</option>
-                            </select>
-                        </div>
-                        <div class="editor-field">
-                            <label for="task-id">任务 ID</label>
-                            <input id="task-id" maxlength="64" required>
-                        </div>
-                        <div class="editor-field">
-                            <label for="task-name">显示名称</label>
-                            <input id="task-name" maxlength="80" required>
-                        </div>
-                        <div class="editor-field">
-                            <label for="task-priority">优先级</label>
-                            <select id="task-priority">
-                                <option value="HIGH">高</option>
-                                <option value="MEDIUM">中</option>
-                                <option value="LOW">低</option>
-                            </select>
-                        </div>
+                <div id="task-empty" class="empty-state">选择任务或新建任务</div>
+                <form id="task-form" hidden novalidate>
+                    <div class="editor-field">
+                        <label for="task-name">任务名称</label>
+                        <input id="task-name" maxlength="80" required>
                     </div>
-
-                    <section class="editor-subsection" aria-labelledby="schedule-title">
-                        <div class="step-heading">
-                            <div>
-                                <h3 id="schedule-title">调度与中断</h3>
-                                <p>
-                                    支持手动、固定间隔、每日定时、完成后接续四种触发器；
-                                    旧任务的“区域有物品时”配置仅作兼容显示，切换后即可退出。
-                                    引用中断只接受已有自定义任务。
-                                </p>
-                            </div>
+                    <div class="step-heading">
+                        <div>
+                            <h3>模块步骤</h3>
+                            <p class="muted compact-help">按顺序执行，可添加、修改、删除和排序。</p>
                         </div>
-                        <div class="editor-fields">
-                            <div class="editor-field">
-                                <label for="trigger-kind">触发器</label>
-                                <select id="trigger-kind">
-                                    <option value="MANUAL">手动运行</option>
-                                    <option value="FIXED_INTERVAL">固定间隔</option>
-                                    <option value="DAILY">每日定时</option>
-                                    <option value="AFTER_COMPLETION">完成后接续</option>
-                                </select>
-                            </div>
-                            <div id="trigger-interval-field" class="editor-field" hidden>
-                                <label for="trigger-interval">间隔秒数</label>
-                                <input id="trigger-interval" type="number" min="1" step="1">
-                            </div>
-                            <div id="trigger-zone-field" class="editor-field" hidden>
-                                <label for="trigger-zone">时区</label>
-                                <input id="trigger-zone" value="Asia/Shanghai" maxlength="64">
-                            </div>
-                            <label class="check-option compact-check"
-                                   for="auto-start-on-restart">
-                                <input id="auto-start-on-restart" type="checkbox">
-                                <span>世界重启后自动启动</span>
-                            </label>
-                        </div>
-                        <div id="trigger-times-field" class="editor-field" hidden>
-                            <label for="trigger-times">
-                                每日时间（HH:mm，每行或逗号分隔）
-                            </label>
-                            <textarea id="trigger-times" rows="3"></textarea>
-                        </div>
-                        <div id="trigger-regions-field" class="editor-field" hidden>
-                            <label for="trigger-regions">
-                                旧配置区域 ID（仅兼容“区域有物品时”）
-                            </label>
-                            <p class="muted compact-help">
-                                区域触发器的旧 ID 仅作兼容显示；拾取范围统一在
-                                坐标与范围页面维护，待机与移动请使用独立步骤。
-                            </p>
-                            <textarea id="trigger-regions" rows="3"></textarea>
-                            <div id="trigger-region-hints" class="check-grid"></div>
-                        </div>
-                        <div class="editor-fields">
-                            <div class="editor-field">
-                                <label for="interruption-kind">中断方式</label>
-                                <select id="interruption-kind">
-                                    <option value="NONE">不中断</option>
-                                    <option value="INLINE">内联步骤</option>
-                                    <option value="TASK_REFERENCE">引用自定义任务</option>
-                                </select>
-                            </div>
-                            <div id="interruption-task-field" class="editor-field" hidden>
-                                <label for="interruption-task">中断任务</label>
-                                <select id="interruption-task"></select>
-                            </div>
-                        </div>
-                        <div id="interruption-steps-section" hidden>
-                            <div class="step-heading">
-                                <div>
-                                    <h3>内联中断步骤</h3>
-                                    <p>中断步骤使用与自定义任务相同的模块描述</p>
-                                </div>
-                                <button id="add-interruption-step-button"
-                                        class="secondary compact" type="button">
-                                    添加中断步骤
-                                </button>
-                            </div>
-                            <div id="interruption-steps" class="step-list"></div>
-                        </div>
-                    </section>
-
-                    <div id="legacy-pickup-task-notice"
-                         class="legacy-task-notice" hidden></div>
-
-                    <section id="automation-task-editor" class="editor-subsection" hidden
-                             aria-labelledby="automation-task-title">
-                        <div class="step-heading">
-                            <div>
-                                <h3 id="automation-task-title">自动化步骤</h3>
-                                <p>
-                                    默认使用“拾取并存入”，也可自由组合 NAVIGATE、WAIT、
-                                    RUN_PICKUP、移动、容器操作和装箱模块；拾取只引用
-                                    坐标与范围页面中的命名范围。
-                                </p>
-                            </div>
-                            <button id="add-task-step-button" class="primary compact"
-                                    type="button">添加步骤</button>
-                        </div>
-                        <div id="task-steps" class="step-list"></div>
-                    </section>
-
+                        <button id="add-step-button" class="secondary compact"
+                                type="button">添加步骤</button>
+                    </div>
+                    <div id="task-steps" class="step-list"></div>
                     <div id="task-errors" class="config-errors" role="alert"></div>
-                    <div class="coordinate-footer">
-                        <span id="task-status">尚未读取任务</span>
-                        <code id="task-revision">任务版本：--</code>
-                    </div>
-                    <div class="action-row task-runtime-actions">
-                        <button id="run-task-button" class="primary compact"
-                                type="button" disabled>立即运行</button>
-                        <button id="enable-task-button" class="secondary compact"
-                                type="button" disabled>启用调度</button>
-                        <button id="disable-task-button" class="secondary compact"
-                                type="button" disabled>停用调度</button>
-                        <button id="delete-task-button" class="ghost compact danger-action"
-                                type="button" disabled>删除任务</button>
+                    <div class="action-row">
+                        <button id="save-task-button" class="primary compact"
+                                type="submit">保存任务</button>
+                        <button id="discard-task-button" class="secondary compact"
+                                type="button">放弃修改</button>
+                        <button id="run-task-button" class="secondary compact"
+                                type="button">立即运行</button>
+                        <button id="delete-task-button"
+                                class="ghost compact danger-action"
+                                type="button">删除任务</button>
                     </div>
                 </form>
-            </section>
-
-            <section class="panel wide" aria-labelledby="modules-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">模块描述</p>
-                        <h2 id="modules-title">可用自动化模块</h2>
-                    </div>
-                    <span id="module-count" class="loopback-tag">-- 个模块</span>
-                </div>
-                <div id="module-catalog" class="module-catalog"></div>
             </section>
 
             <section class="panel wide" aria-labelledby="runtime-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">运行队列</p>
-                        <h2 id="runtime-title">活动任务</h2>
+                        <p class="eyebrow">手动执行</p>
+                        <h2 id="runtime-title">运行状态</h2>
                     </div>
-                    <button id="refresh-runtime-button" class="secondary compact"
-                            type="button">刷新状态与资源</button>
+                    <button id="refresh-runs-button" class="secondary compact"
+                            type="button">刷新状态</button>
                 </div>
-                <div id="runtime-task-list" class="card-list" aria-live="polite"></div>
+                <div id="runtime-list" class="card-list" aria-live="polite"></div>
             </section>
         </div>
     </main>
 
-    <div id="toast-region" class="toast-region" aria-live="polite"
-         aria-atomic="true"></div>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

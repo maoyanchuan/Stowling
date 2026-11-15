@@ -3,7 +3,7 @@
     "id": "stowling",
     "version": "${version}",
     "name": "Stowling",
-    "description": "Baritone-backed pickup, sorting, packing, and inventory automation.",
+    "description": "Baritone-backed named coordinates and linear movement tasks.",
     "icon": "assets/stowling/icon.png",
     "authors": [
         "Stowling contributors"

@@ -62,26 +62,13 @@ public final class StowlingDatabase {
                     ON DELETE CASCADE
             )
             """;
-    private static final String TASKS_SQL = """
-            CREATE TABLE tasks (
-                task_id TEXT PRIMARY KEY,
-                task_kind TEXT NOT NULL,
-                task_status TEXT NOT NULL,
-                automation_state TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                failure_reason TEXT,
-                recovery_checkpoint TEXT,
-                retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
-                CHECK (created_at <= updated_at)
-            )
-            """;
-    private static final String TASK_INDEX_SQL = """
-            CREATE INDEX tasks_recovery_index
-                ON tasks(task_status, updated_at)
-            """;
     private static final List<Migration> MIGRATIONS = List.of(
-            new Migration(1, migrationStatements())
+            new Migration(1, migrationStatements()),
+            new Migration(2, List.of(
+                    "DROP TABLE IF EXISTS task_run_definitions",
+                    "DROP TABLE IF EXISTS task_schedules",
+                    "DROP TABLE IF EXISTS tasks"
+            ))
     );
 
     private final Path databasePath;
@@ -148,9 +135,7 @@ public final class StowlingDatabase {
                 CONTAINERS_SQL,
                 SNAPSHOTS_SQL,
                 SCOPES_SQL,
-                ENTRIES_SQL,
-                TASKS_SQL,
-                TASK_INDEX_SQL
+                ENTRIES_SQL
         );
     }
 

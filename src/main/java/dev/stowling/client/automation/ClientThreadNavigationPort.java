@@ -2,7 +2,6 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
-import dev.stowling.automation.NavigationTargetType;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
@@ -22,38 +21,20 @@ public final class ClientThreadNavigationPort implements NavigationPort {
 
     @Override
     public NavigationStatus start(BlockPosition target) {
-        return start(target, NavigationTargetType.STANDARD);
-    }
-
-    @Override
-    public NavigationStatus start(
-            BlockPosition target,
-            NavigationTargetType targetType
-    ) {
         Objects.requireNonNull(target, "target");
-        Objects.requireNonNull(targetType, "targetType");
         if (!scheduler.isClientThread()) {
             return NavigationStatus.FAILED;
         }
-        return delegate.start(target, targetType);
+        return delegate.start(target);
     }
 
     @Override
     public NavigationStatus status(BlockPosition target) {
-        return status(target, NavigationTargetType.STANDARD);
-    }
-
-    @Override
-    public NavigationStatus status(
-            BlockPosition target,
-            NavigationTargetType targetType
-    ) {
         Objects.requireNonNull(target, "target");
-        Objects.requireNonNull(targetType, "targetType");
         if (!scheduler.isClientThread()) {
             return NavigationStatus.FAILED;
         }
-        return delegate.status(target, targetType);
+        return delegate.status(target);
     }
 
     @Override

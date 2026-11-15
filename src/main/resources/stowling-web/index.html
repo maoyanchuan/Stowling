@@ -17,7 +17,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>Minecraft 26.2 · 可编排客户端机器人</p>
+                <p>坐标与线性移动任务</p>
             </div>
         </div>
         <div class="connection-state">
@@ -33,16 +33,15 @@
 
             <section class="hero panel">
                 <div>
-                    <p class="eyebrow">自动化工作台</p>
-                    <h2>把机器人动作组合成自己的任务</h2>
+                    <p class="eyebrow">移动自动化</p>
+                    <h2>保存坐标，组合移动步骤，手动运行</h2>
                     <p class="muted hero-copy">
-                        命名坐标是共享的位置字典，任务由导航、等待、拾取、容器搬运、
-                        库存检查和制作等模块串联而成。
+                        坐标不绑定维度；任务执行时使用玩家当前所在维度。
                     </p>
                 </div>
                 <div class="hero-actions">
-                    <a class="button-link primary" href="/tasks.html">打开任务与资源</a>
-                    <a class="button-link secondary" href="/coordinates.html">管理命名坐标</a>
+                    <a class="button-link primary" href="/tasks.html">打开任务</a>
+                    <a class="button-link secondary" href="/coordinates.html">管理坐标</a>
                 </div>
             </section>
 
@@ -52,9 +51,8 @@
                         <p class="eyebrow">实时状态</p>
                         <h2 id="status-title">运行概览</h2>
                     </div>
-                    <button id="refresh-button" class="secondary compact" type="button">
-                        立即同步
-                    </button>
+                    <button id="refresh-button" class="secondary compact"
+                            type="button">立即同步</button>
                 </div>
                 <div class="status-grid">
                     <article class="metric">
@@ -62,80 +60,17 @@
                         <strong id="status-state">--</strong>
                     </article>
                     <article class="metric">
+                        <span>坐标数量</span>
+                        <strong id="coordinate-count">--</strong>
+                    </article>
+                    <article class="metric">
+                        <span>任务数量</span>
+                        <strong id="task-count">--</strong>
+                    </article>
+                    <article class="metric">
                         <span>最近同步</span>
                         <strong id="status-observed">--</strong>
-                        <small>每 5 秒自动同步机器人状态</small>
                     </article>
-                </div>
-                <div class="task-state-grid" aria-live="polite">
-                    <article class="task-state-column">
-                        <div class="task-state-heading">
-                            <h3>正在运行</h3>
-                            <span id="running-task-count" class="task-state-count">0</span>
-                        </div>
-                        <div id="running-task-list" class="compact-task-list"></div>
-                    </article>
-                    <article class="task-state-column">
-                        <div class="task-state-heading">
-                            <h3>排队中</h3>
-                            <span id="queued-task-count" class="task-state-count">0</span>
-                        </div>
-                        <div id="queued-task-list" class="compact-task-list"></div>
-                    </article>
-                    <article class="task-state-column">
-                        <div class="task-state-heading">
-                            <h3>已中断</h3>
-                            <span id="interrupted-task-count" class="task-state-count">0</span>
-                        </div>
-                        <div id="interrupted-task-list" class="compact-task-list"></div>
-                    </article>
-                </div>
-            </section>
-
-            <section class="panel" aria-labelledby="control-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">机器人控制</p>
-                        <h2 id="control-title">远程控制</h2>
-                    </div>
-                </div>
-                <label class="control-target-label" for="control-task-select">任务列表</label>
-                <select id="control-task-select" class="control-task-select" disabled>
-                    <option value="">暂无活动任务</option>
-                </select>
-                <div class="action-row">
-                    <button id="cancel-task-button" class="secondary" type="button" disabled>
-                        取消所选任务
-                    </button>
-                    <button id="reload-button" class="secondary" type="button">重载配置</button>
-                </div>
-                <p id="control-message" class="field-message" role="status"></p>
-            </section>
-
-            <section class="panel wide" aria-labelledby="resources-title">
-                <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">资源摘要</p>
-                        <h2 id="resources-title">机器人可用资源</h2>
-                    </div>
-                </div>
-                <div class="resource-summary">
-                    <a class="summary-card" href="/coordinates.html">
-                        <span>命名坐标</span>
-                        <strong id="coordinate-count">--</strong>
-                    </a>
-                    <a class="summary-card" href="/tasks.html">
-                        <span>自动化任务</span>
-                        <strong id="automation-count">--</strong>
-                    </a>
-                    <a class="summary-card" href="/storage.html">
-                        <span>可交互容器</span>
-                        <strong id="container-count">--</strong>
-                    </a>
-                    <a class="summary-card" href="/tasks.html">
-                        <span>拾取流程</span>
-                        <strong id="pickup-count">--</strong>
-                    </a>
                 </div>
                 <div id="dashboard-errors" class="config-errors" role="alert"></div>
             </section>
@@ -144,7 +79,7 @@
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">最近任务</p>
-                        <h2 id="recent-title">执行记录</h2>
+                        <h2 id="recent-title">运行记录</h2>
                     </div>
                     <a class="text-link" href="/tasks.html">查看全部</a>
                 </div>

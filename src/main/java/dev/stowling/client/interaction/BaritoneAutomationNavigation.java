@@ -2,7 +2,6 @@ package dev.stowling.client.interaction;
 
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
-import dev.stowling.automation.NavigationTargetType;
 import dev.stowling.automation.WorldObservation;
 import dev.stowling.automation.WorldObserver;
 import dev.stowling.domain.BlockPosition;
@@ -11,8 +10,7 @@ import dev.stowling.schedule.StopOutcome;
 import java.util.Objects;
 
 public final class BaritoneAutomationNavigation implements NavigationPort {
-    private static final double STANDARD_ARRIVAL_DISTANCE_SQUARED = 6.25D;
-    private static final double GROUND_ITEM_ARRIVAL_DISTANCE_SQUARED = 0.0D;
+    private static final double ARRIVAL_DISTANCE_SQUARED = 6.25D;
     private static final int PATH_STARTUP_GRACE_TICKS = 20;
 
     private final NavigationService navigationService;
@@ -35,13 +33,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public NavigationStatus start(BlockPosition target) {
-        return start(target, NavigationTargetType.STANDARD);
-    }
-
-    @Override
-    public NavigationStatus start(BlockPosition target, NavigationTargetType targetType) {
         Objects.requireNonNull(target, "target");
-        Objects.requireNonNull(targetType, "targetType");
         active = true;
         pathObserved = false;
         missingPathTicks = 0;
@@ -51,13 +43,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public NavigationStatus status(BlockPosition target) {
-        return status(target, NavigationTargetType.STANDARD);
-    }
-
-    @Override
-    public NavigationStatus status(BlockPosition target, NavigationTargetType targetType) {
         Objects.requireNonNull(target, "target");
-        Objects.requireNonNull(targetType, "targetType");
         WorldObservation world = worldObserver.observeWorld();
         if (!world.connected() || !world.alive() || world.playerPosition().isEmpty()) {
             return NavigationStatus.FAILED;
@@ -67,7 +53,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         double deltaY = current.y() - target.y();
         double deltaZ = current.z() - target.z();
         double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-        if (distanceSquared <= arrivalDistanceSquared(targetType)) {
+        if (distanceSquared <= ARRIVAL_DISTANCE_SQUARED) {
             if (active) {
                 active = false;
                 navigationService.cancel();
@@ -89,13 +75,6 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         return NavigationStatus.NAVIGATING;
-    }
-
-    private static double arrivalDistanceSquared(NavigationTargetType targetType) {
-        if (targetType == NavigationTargetType.GROUND_ITEM) {
-            return GROUND_ITEM_ARRIVAL_DISTANCE_SQUARED;
-        }
-        return STANDARD_ARRIVAL_DISTANCE_SQUARED;
     }
 
     @Override

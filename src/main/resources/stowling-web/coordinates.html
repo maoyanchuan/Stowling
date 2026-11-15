@@ -4,11 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>命名坐标 · Stowling</title>
+    <title>坐标管理 · Stowling</title>
     <link rel="icon" type="image/svg+xml" href="/icon.svg">
     <link rel="icon" type="image/png" href="/icon.png">
     <link rel="stylesheet" href="/styles.css">
     <script src="/common.js" defer></script>
+    <script src="/coordinate-model.js" defer></script>
     <script src="/coordinates.js" defer></script>
 </head>
 <body data-page="coordinates">
@@ -16,8 +17,8 @@
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
-                <h1>坐标与范围</h1>
-                <p>供导航、容器和任务共享的命名坐标与范围字典</p>
+                <h1>坐标管理</h1>
+                <p>保存任务可复用的坐标点</p>
             </div>
         </div>
         <div class="connection-state">
@@ -32,59 +33,44 @@
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
             <section class="panel wide" aria-labelledby="coordinate-title">
-                <div class="panel-heading coordinate-heading">
-                    <div>
-                        <p class="eyebrow">永久配置 · 独立草稿</p>
-                        <h2 id="coordinate-title">坐标与范围库</h2>
-                        <p class="muted section-help">
-                            添加一个坐标或区域：坐标可选择单点、球半径或立方体半径，
-                            区域填写同维度下的两个角点。任务只引用稳定 ID；保存后的
-                            半径与角点会在下次运行时自动生效，无需重新选择。
-                            第二角点允许反向输入。
-                        </p>
-                    </div>
-                    <div class="action-row">
-                        <button id="add-coordinate-button" class="primary compact"
-                                type="button">添加坐标</button>
-                        <button id="discard-coordinate-button" class="secondary compact"
-                                type="button">放弃修改</button>
-                        <button id="save-coordinate-button" class="primary compact"
-                                type="submit" form="coordinate-form" disabled>保存修改</button>
-                    </div>
-                </div>
-                <form id="coordinate-form" novalidate>
-                    <div id="coordinate-list" class="editor-list"></div>
-                </form>
-                <div id="coordinate-errors" class="config-errors" role="alert"></div>
-                <div class="coordinate-footer">
-                    <span id="coordinate-status">尚未读取命名坐标</span>
-                    <code id="coordinate-revision">配置版本：--</code>
-                </div>
-            </section>
-
-            <section class="panel wide" aria-labelledby="usage-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">引用保护</p>
-                        <h2 id="usage-title">使用情况</h2>
+                        <p class="eyebrow">共享资源</p>
+                        <h2 id="coordinate-title">坐标点</h2>
+                        <p class="muted section-help">
+                            每个坐标只有名称和 X/Y/Z。
+                        </p>
                     </div>
-                    <span class="loopback-tag">删除前自动检查</span>
+                    <button id="add-coordinate-button" class="primary compact"
+                            type="button">添加坐标</button>
                 </div>
-                <p class="muted">
-                    实际任务的步骤、触发器或内嵌配置引用这个条目及其关联资源时，不能删除。
-                    请先到任务页解除对应任务引用并保存，再回到这里重新读取。
-                    删除确认只列出实际关联项，不会删除自定义任务。
-                    已保存的坐标确认删除后立即保存；取消确认不作更改。
-                    新增和编辑仍需点击“保存修改”，不会随其他坐标的删除一并提交。
-                </p>
-                <p id="coordinate-reference-status" class="muted" role="status">
-                    尚未可靠读取引用，不能删除坐标。
-                </p>
-                <button id="reload-coordinate-references-button"
-                        class="secondary compact" type="button">
-                    重新读取（放弃草稿）
-                </button>
-                <div id="coordinate-usage" class="usage-list"></div>
+
+                <form id="new-coordinate-form" class="editor-fields coordinate-create-form">
+                    <div class="editor-field">
+                        <label for="new-coordinate-name">名称</label>
+                        <input id="new-coordinate-name" maxlength="80" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-coordinate-x">X</label>
+                        <input id="new-coordinate-x" type="number" step="1" value="0" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-coordinate-y">Y</label>
+                        <input id="new-coordinate-y" type="number" step="1" value="64" required>
+                    </div>
+                    <div class="editor-field">
+                        <label for="new-coordinate-z">Z</label>
+                        <input id="new-coordinate-z" type="number" step="1" value="0" required>
+                    </div>
+                    <button class="secondary compact" type="submit">保存新坐标</button>
+                </form>
+
+                <div id="coordinate-list" class="editor-list" aria-live="polite"></div>
+                <div id="coordinate-errors" class="config-errors" role="alert"></div>
+                <div class="coordinate-footer">
+                    <span id="coordinate-status">尚未读取坐标</span>
+                    <code id="coordinate-revision">配置版本：--</code>
+                </div>
             </section>
         </div>
     </main>

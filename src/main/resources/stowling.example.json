@@ -1,21 +1,5 @@
 {
-    "schemaVersion": 6,
-    "coordinatePoints": [],
-    "pickupRegions": [],
-    "cacheContainers": [],
-    "pickupWorkflows": [],
-    "automationWorkflows": [],
-    "storageRoutes": [],
-    "packingStations": [],
-    "auditSchedules": [],
-    "overflowContainer": {
-        "id": "overflow",
-        "dimension": "minecraft:overworld",
-        "position": {
-            "x": 24,
-            "y": 64,
-            "z": 0
-        },
-        "type": "CHEST"
-    }
+  "schemaVersion": 7,
+  "coordinates": [],
+  "tasks": []
 }

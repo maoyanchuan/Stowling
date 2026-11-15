@@ -2,102 +2,15 @@
     "use strict";
 
     const TOKEN_KEY = "stowling.control.token";
-    const ACTIVE_TASK_STATES = new Set(["PENDING", "RUNNING", "WAITING", "PAUSED"]);
-    const TASK_STATUS_LABELS = new Map([
-        ["PENDING", "等待中"],
-        ["RUNNING", "运行中"],
-        ["WAITING", "等待条件"],
-        ["PAUSED", "已暂停"],
-        ["SUCCEEDED", "已完成"],
-        ["FAILED", "失败"],
-        ["CANCELLED", "已取消"],
-        ["READY", "就绪"],
-        ["UNKNOWN", "未知"]
-    ]);
-    const TASK_KIND_LABELS = new Map([
-        ["PICKUP", "自动拾取"],
-        ["AUTOMATION", "自定义任务"],
-        ["TRANSFER", "容器搬运"],
-        ["AUDIT", "库存盘点"],
-        ["PACK", "潜影盒装箱"]
-    ]);
-    const PRIORITY_LABELS = new Map([
-        ["HIGH", "高"],
-        ["MEDIUM", "中"],
-        ["LOW", "低"]
-    ]);
-    const TRIGGER_KIND_LABELS = new Map([
-        ["MANUAL", "手动运行"],
-        ["FIXED_INTERVAL", "固定间隔"],
-        ["DAILY", "每日定时"],
-        ["AFTER_COMPLETION", "完成后接续"],
-        ["ITEMS_PRESENT", "区域有物品时"]
-    ]);
-    const INTERRUPTION_KIND_LABELS = new Map([
-        ["NONE", "不中断"],
-        ["INLINE", "内联步骤"],
-        ["TASK_REFERENCE", "引用自定义任务"]
-    ]);
-    const SCHEDULE_STATE_LABELS = new Map([
-        ["IDLE", "空闲"],
-        ["WAITING", "等待触发"],
-        ["RUNNING", "运行中"],
-        ["FAILED", "失败"],
-        ["UNSAFE", "异常待处理"],
-        ["BLOCKED", "受阻"],
-        ["DISABLED", "已停用"]
-    ]);
-    const SCHEDULE_MESSAGE_LABELS = new Map([
-        ["items unobservable", "等待区域可见"]
-    ]);
-    const TASK_STAGE_LABELS = new Map([
-        ["NAVIGATE_PICKUP", "前往拾取区域"],
-        ["COLLECT", "拾取掉落物"],
-        ["DEPOSIT_BUFFER", "存入缓存"],
-        ["WAIT_FOR_IDLE", "等待区域空闲"],
-        ["CLASSIFY_BUFFER", "分类缓存"],
-        ["DELIVER_LOOSE", "散装入库"],
-        ["PACK", "潜影盒装箱"],
-        ["COMPLETE", "已完成"],
-        ["READY", "就绪"],
-        ["RUNNING", "运行中"],
-        ["PAUSED", "已暂停"],
-        ["FAILED", "失败"]
-    ]);
-    const MODULE_STATE_LABELS = new Map([
-        ["RUNNING", "运行中"],
-        ["SUCCEEDED", "已完成"],
-        ["PAUSED", "已暂停"],
-        ["FAILED", "失败"]
-    ]);
     const DIMENSION_LABELS = new Map([
         ["minecraft:overworld", "主世界"],
         ["minecraft:the_nether", "下界"],
         ["minecraft:the_end", "末地"]
     ]);
-    const CONTAINER_TYPE_LABELS = new Map([
-        ["CHEST", "箱子"],
-        ["TRAPPED_CHEST", "陷阱箱"],
-        ["BARREL", "木桶"],
-        ["SHULKER_BOX", "潜影盒"],
-        ["HOPPER", "漏斗"],
-        ["OTHER", "其他"]
-    ]);
-    const CACHE_POLICY_LABELS = new Map([
-        ["NEAREST_AVAILABLE", "最近可用缓存"]
-    ]);
-    const CLASSIFICATION_TIMING_LABELS = new Map([
-        ["AFTER_REGION", "每个区域结束后"],
-        ["AFTER_ROUND", "整轮结束后"]
-    ]);
-    const COMPLETION_MODE_LABELS = new Map([
-        ["MANUAL", "手动停止"],
-        ["ALL_IDLE", "全部区域空闲后"]
-    ]);
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
-        { page: "coordinates", href: "/coordinates.html", label: "坐标与范围" },
-        { page: "tasks", href: "/tasks.html", label: "任务" },
+        { page: "coordinates", href: "/coordinates.html", label: "坐标管理" },
+        { page: "tasks", href: "/tasks.html", label: "移动任务" },
         { page: "storage", href: "/storage.html", label: "库存查询" }
     ]);
     const connectedHandlers = new Set();
@@ -111,12 +24,14 @@
          * @param {string} message
          * @param {number} status
          * @param {string} code
+         * @param {object | null} details
          */
-        constructor(message, status = 0, code = "") {
+        constructor(message, status = 0, code = "", details = null) {
             super(message);
             this.name = "ApiError";
             this.status = status;
             this.code = code;
+            this.details = details;
         }
     }
 
@@ -172,7 +87,12 @@
             if (!response.ok) {
                 const code = String(payload?.error?.code || "");
                 const fallback = String(payload?.error?.message || statusMessage(response.status));
-                throw new ApiError(friendlyMessage(code, fallback), response.status, code);
+                throw new ApiError(
+                    friendlyMessage(code, fallback),
+                    response.status,
+                    code,
+                    payload?.error || null
+                );
             }
             return payload;
         } catch (error) {
@@ -212,20 +132,10 @@
      */
     function friendlyMessage(code, fallback) {
         const messages = new Map([
-            ["config_revision_conflict", "配置已被外部修改，请重新读取后再保存"],
-            ["task_revision_conflict", "任务已被外部修改，请重新读取后再保存"],
-            ["active_task_conflict", "活动或暂停任务存在，请先取消任务或等待完成"],
-            ["coordinate_point_in_use", "命名坐标仍被其他配置引用，暂不能删除"],
-            ["invalid_pickup_config", "拾取配置未通过校验，请检查页面中的错误"],
-            ["invalid_pickup_request", "所选拾取流程或区域不可用"],
-            ["pickup_workflow_not_found", "配置中找不到这个拾取流程"],
-            ["task_not_found", "该任务已不存在，请刷新任务列表"],
-            ["container_not_found", "配置中找不到所选容器"],
-            ["invalid_automation_workflow", "自动化任务未通过校验"],
-            ["automation_workflow_not_found", "配置中找不到这个自动化任务"],
-            ["automation_module_not_found", "任务步骤使用了不可用的机器人模块"],
-            ["task_definition_not_found", "配置中找不到这个任务，请刷新任务列表"],
-            ["task_definition_exists", "该类型下已存在相同 ID 的任务"]
+            ["revision_conflict", "配置已被外部修改，请重新读取后再保存"],
+            ["coordinate_in_use", "坐标仍被任务引用，暂不能删除"],
+            ["task_run_busy", "已有任务正在运行，请完成或取消后再试"],
+            ["not_found", "请求的资源不存在"]
         ]);
         return messages.get(code) || fallback;
     }
@@ -518,152 +428,8 @@
      * @param {unknown} value
      * @returns {string}
      */
-    function conciseFailureReason(value) {
-        const reason = String(value || "").trim();
-        if (!reason) {
-            return "";
-        }
-        const normalized = reason.toLowerCase();
-        if (
-            reason.includes("目标不可达")
-            || reason.includes("寻路失败")
-            || normalized.includes("path_failed")
-        ) {
-            return "目标不可达";
-        }
-        if (normalized.includes("cancel")) {
-            return "任务已取消";
-        }
-        if (normalized.includes("disconnect")) {
-            return "客户端已断开";
-        }
-        if (normalized.includes("not alive") || normalized.includes("dead")) {
-            return "角色已死亡";
-        }
-        if (normalized.includes("dimension")) {
-            return "维度不匹配";
-        }
-        if (normalized.includes("timeout")) {
-            return "操作超时";
-        }
-        const clause = reason.split(/[：:；;，,。]/u)[0].trim();
-        return clause.length <= 24 ? clause : `${clause.slice(0, 23)}…`;
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function taskStatusLabel(value) {
-        return translatedLabel(TASK_STATUS_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function taskKindLabel(value) {
-        return translatedLabel(TASK_KIND_LABELS, value, "任务");
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function priorityLabel(value) {
-        return translatedLabel(PRIORITY_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function triggerKindLabel(value) {
-        return translatedLabel(TRIGGER_KIND_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function interruptionKindLabel(value) {
-        return translatedLabel(INTERRUPTION_KIND_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function scheduleStateLabel(value) {
-        return translatedLabel(SCHEDULE_STATE_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function scheduleMessageLabel(value) {
-        const raw = String(value ?? "").trim();
-        if (!raw) {
-            return "";
-        }
-        return SCHEDULE_MESSAGE_LABELS.get(raw.toLowerCase()) || raw;
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function taskStageLabel(value) {
-        return translatedLabel(TASK_STAGE_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function moduleStateLabel(value) {
-        return translatedLabel(MODULE_STATE_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
     function dimensionLabel(value) {
         return translatedLabel(DIMENSION_LABELS, value, "未选择");
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function containerTypeLabel(value) {
-        return translatedLabel(CONTAINER_TYPE_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function cachePolicyLabel(value) {
-        return translatedLabel(CACHE_POLICY_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function classificationTimingLabel(value) {
-        return translatedLabel(CLASSIFICATION_TIMING_LABELS, value);
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function completionModeLabel(value) {
-        return translatedLabel(COMPLETION_MODE_LABELS, value);
     }
 
     /**
@@ -676,34 +442,20 @@
     }
 
     window.Stowling = Object.freeze({
-        ACTIVE_TASK_STATES,
         ApiError,
-        cachePolicyLabel,
-        classificationTimingLabel,
         clearAuthentication,
         clone,
-        conciseFailureReason,
-        completionModeLabel,
-        containerTypeLabel,
         dimensionLabel,
         element,
         emptyState,
         formatDate,
         handleError,
-        interruptionKindLabel,
         isConnected,
-        moduleStateLabel,
         mountPage,
         onConnected,
-        priorityLabel,
         request,
         revisionLabel,
-        scheduleMessageLabel,
-        scheduleStateLabel,
         showToast,
-        taskKindLabel,
-        taskStageLabel,
-        taskStatusLabel,
-        triggerKindLabel
+        translatedLabel
     });
 })();

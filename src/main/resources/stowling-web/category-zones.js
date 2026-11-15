@@ -82,7 +82,7 @@
         summary.append(Stowling.element("strong", "", zone.name));
         card.append(summary);
 
-        const body = Stowling.element("div", "editor-fields");
+        const body = Stowling.element("div", "category-zone-editor");
         const name = document.createElement("input");
         name.value = zone.name;
         name.maxLength = 80;
@@ -90,7 +90,7 @@
 
         const bindingsHost = Stowling.element(
             "div",
-            "category-binding-list"
+            "category-binding-list category-zone-binding-list"
         );
         const readers = zone.bindings.map((binding) => (
             appendBinding(bindingsHost, binding)
@@ -107,11 +107,16 @@
                 Model.normalizeBinding({})
             ));
         });
+        const addBindingRow = Stowling.element(
+            "div",
+            "category-binding-actions"
+        );
+        addBindingRow.append(addBinding);
         body.append(
-            field("分类区名称", name),
+            categoryNameField(name),
             bindingHeading(),
             bindingsHost,
-            addBinding
+            addBindingRow
         );
 
         const actions = Stowling.element("div", "action-row");
@@ -142,14 +147,26 @@
      */
     function bindingHeading() {
         const wrapper = Stowling.element("div", "resource-section-heading");
-        wrapper.append(
+        const text = Stowling.element("div", "");
+        text.append(
             Stowling.element("h3", "", "识别区 → 储存区"),
             Stowling.element(
                 "p",
                 "muted compact-help",
-                "规则读取识别区方块 ID，并与待存物品 ID 精确比较。"
+                "同一列的分类方块决定该列箱子的物品类型。"
             )
         );
+        wrapper.append(text);
+        return wrapper;
+    }
+
+    /**
+     * @param {HTMLInputElement} input
+     * @returns {HTMLElement}
+     */
+    function categoryNameField(input) {
+        const wrapper = field("分类区名称", input);
+        wrapper.classList.add("category-zone-name-field");
         return wrapper;
     }
 

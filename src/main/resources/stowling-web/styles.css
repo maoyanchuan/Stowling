@@ -513,12 +513,70 @@ section[id] {
     padding: 0.9rem;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: var(--panel-soft);
+    background: rgba(255, 255, 255, 0.34);
 }
 
 .category-binding-section {
     display: grid;
     gap: 0.6rem;
+}
+
+.category-zone-editor {
+    display: grid;
+    gap: 0.8rem;
+}
+
+#new-category-zone-form {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.28);
+}
+
+#new-category-zone-form[hidden] {
+    display: none;
+}
+
+.category-zone-name-field {
+    width: min(100%, 320px);
+}
+
+.category-zone-editor > .resource-section-heading {
+    margin: 0;
+    padding-top: 0.9rem;
+}
+
+.category-binding-actions {
+    display: flex;
+}
+
+.category-zone-binding-list .category-binding-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.9rem;
+    padding: 1rem;
+}
+
+.category-zone-binding-list .category-binding-section {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.34);
+}
+
+.category-zone-binding-list .category-binding-section > h4 {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+.category-zone-binding-list .category-binding-card > .editor-field {
+    grid-column: 1 / -1;
+    width: min(100%, 360px);
 }
 
 .config-heading {
@@ -1072,6 +1130,11 @@ select[aria-invalid="true"] {
     .coordinate-identity {
         grid-column: 1 / -1;
     }
+
+    .category-zone-binding-list .category-binding-card,
+    .category-zone-binding-list .category-binding-section {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1120,7 +1183,10 @@ select[aria-invalid="true"] {
     .coordinate-row,
     .config-column,
     .editor-card,
-    .inventory-card {
+    .inventory-card,
+    .category-binding-card,
+    .category-zone-binding-list .category-binding-section,
+    #new-category-zone-form {
         background: rgba(255, 255, 255, 0.035);
     }
 

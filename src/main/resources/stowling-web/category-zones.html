@@ -38,7 +38,8 @@
                         <p class="eyebrow">仓库分类</p>
                         <h2 id="category-zone-title">分类区</h2>
                         <p class="muted section-help">
-                            每个绑定读取分类方块 ID，并将其对应到储存区容器。
+                            分类方块与同一列储存容器对应，方块 ID 与待存物品 ID
+                            精确比较。
                         </p>
                     </div>
                     <button id="add-category-zone-button"
@@ -56,13 +57,22 @@
                                 class="ghost compact"
                                 type="button">关闭</button>
                     </div>
-                    <div class="editor-field">
+                    <div class="editor-field category-zone-name-field">
                         <label for="new-category-zone-name">分类区名称</label>
                         <input id="new-category-zone-name"
                                maxlength="80" required>
                     </div>
+                    <div class="resource-section-heading">
+                        <div>
+                            <h3>识别区 → 储存区</h3>
+                            <p class="muted compact-help">
+                                同一列的分类方块决定该列箱子的物品类型。
+                            </p>
+                        </div>
+                    </div>
                     <div id="new-category-bindings"
-                         class="category-binding-list"></div>
+                         class="category-binding-list category-zone-binding-list">
+                    </div>
                     <div class="action-row">
                         <button id="add-new-binding-button"
                                 class="secondary compact"

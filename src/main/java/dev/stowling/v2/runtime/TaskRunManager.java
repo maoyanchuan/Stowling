@@ -170,6 +170,7 @@ public final class TaskRunManager {
                     registry.containerRegions(),
                     registry.containerCategories(),
                     registry.containerTransfers(),
+                    registry.containerWithdrawals(),
                     active.coordinates,
                     active.regions,
                     active.workspace

@@ -4,6 +4,7 @@ import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.RegionDefinition;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,6 +19,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public final class MinecraftDroppedItemObserver
         implements DroppedItemObserverPort {
@@ -54,21 +56,57 @@ public final class MinecraftDroppedItemObserver
                 y + checkedRadius,
                 z + checkedRadius
         );
+        return observeArea(area, new Vec3(x, y, z));
+    }
+
+    @Override
+    public List<DroppedItem> observe(RegionDefinition region) {
+        if (!scheduler.isClientThread()) {
+            return List.of();
+        }
+        ClientLevel level = minecraft.level;
+        if (level == null || minecraft.player == null) {
+            return List.of();
+        }
+        int minX = Math.min(region.firstX(), region.secondX());
+        int minY = Math.min(region.firstY(), region.secondY());
+        int minZ = Math.min(region.firstZ(), region.secondZ());
+        int maxX = Math.max(region.firstX(), region.secondX());
+        int maxY = Math.max(region.firstY(), region.secondY());
+        int maxZ = Math.max(region.firstZ(), region.secondZ());
+        AABB area = new AABB(
+                minX,
+                minY,
+                minZ,
+                maxX + 1.0,
+                maxY + 1.0,
+                maxZ + 1.0
+        );
+        Vec3 center = new Vec3(
+                (minX + maxX + 1.0) / 2.0,
+                (minY + maxY + 1.0) / 2.0,
+                (minZ + maxZ + 1.0) / 2.0
+        );
+        return observeArea(area, center);
+    }
+
+    private List<DroppedItem> observeArea(AABB area, Vec3 center) {
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            return List.of();
+        }
         return level.getEntities(
                         EntityTypeTest.forClass(ItemEntity.class),
                         area,
                         entity -> entity.isAlive() && !entity.isRemoved()
                 )
                 .stream()
-                .filter(entity -> distanceSquared(entity, x, y, z)
-                        <= checkedRadius * checkedRadius)
+                .filter(entity -> area.contains(entity.position()))
                 .map(entity -> droppedItem(entity))
                 .flatMap(java.util.Optional::stream)
                 .sorted(Comparator.comparingDouble(item -> distanceSquared(
                         item,
-                        x,
-                        y,
-                        z
+                        center
                 )))
                 .toList();
     }
@@ -112,27 +150,16 @@ public final class MinecraftDroppedItemObserver
     }
 
     private static double distanceSquared(
-            ItemEntity entity,
-            double x,
-            double y,
-            double z
-    ) {
-        return distanceSquared(entity.getX(), entity.getY(), entity.getZ(), x, y, z);
-    }
-
-    private static double distanceSquared(
             DroppedItem item,
-            double x,
-            double y,
-            double z
+            Vec3 center
     ) {
         return distanceSquared(
                 item.position().x() + 0.5,
                 item.position().y() + 0.5,
                 item.position().z() + 0.5,
-                x,
-                y,
-                z
+                center.x,
+                center.y,
+                center.z
         );
     }
 

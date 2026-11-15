@@ -22,8 +22,10 @@ class TaskModuleCatalogTest {
                         ConfigValidator.MOVE_TO_COORDINATE,
                         ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
                         ConfigValidator.COLLECT_DROPPED_ITEMS,
+                        ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                         ConfigValidator.MATCH_CONTAINER_CATEGORIES,
+                        ConfigValidator.SORT_CACHE_ITEMS,
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
                 ),
                 modules.stream().map(ModuleDefinition::id).toList()
@@ -31,7 +33,7 @@ class TaskModuleCatalogTest {
     }
 
     @Test
-    void exposesCoordinateRegionAndDepositParameterContracts() {
+    void exposesCoordinateRegionCategoryAndCacheParameterContracts() {
         Map<String, ModuleDefinition> modules = TaskModuleCatalog.modules().stream()
                 .collect(Collectors.toMap(ModuleDefinition::id, Function.identity()));
 
@@ -49,6 +51,13 @@ class TaskModuleCatalogTest {
         assertEquals("region-point", region.kind());
         assertTrue(region.required());
 
+        ModuleParameter collectRegion = moduleParameter(
+                modules.get(ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION),
+                ConfigValidator.REGION_ID
+        );
+        assertEquals("region-point", collectRegion.kind());
+        assertTrue(collectRegion.required());
+
         ModuleDefinition category = modules.get(
                 ConfigValidator.MATCH_CONTAINER_CATEGORIES
         );
@@ -58,6 +67,18 @@ class TaskModuleCatalogTest {
                         category,
                         ConfigValidator.SCAN_SOURCE
                 ).options()
+        );
+
+        ModuleDefinition sort = modules.get(ConfigValidator.SORT_CACHE_ITEMS);
+        ModuleParameter cacheRegion = moduleParameter(
+                sort,
+                ConfigValidator.CACHE_REGION_ID
+        );
+        assertEquals("region-point", cacheRegion.kind());
+        assertTrue(cacheRegion.required());
+        assertEquals(
+                List.of("previous-scan"),
+                moduleParameter(sort, ConfigValidator.SCAN_SOURCE).options()
         );
 
         ModuleDefinition deposit = modules.get(

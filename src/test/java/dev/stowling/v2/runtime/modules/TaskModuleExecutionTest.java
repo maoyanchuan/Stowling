@@ -11,6 +11,8 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
+import dev.stowling.automation.ContainerWithdrawalPort;
+import dev.stowling.automation.ContainerWithdrawalResult;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -229,6 +232,7 @@ class TaskModuleExecutionTest {
                         )
                 )),
                 new RecordingTransfers(),
+                new NoWithdrawals(),
                 point("Drop"),
                 region,
                 workspace
@@ -303,6 +307,7 @@ class TaskModuleExecutionTest {
                 new EmptyRegions(),
                 new NoCategories(),
                 transfers,
+                new NoWithdrawals(),
                 point("Drop"),
                 region("Storage"),
                 workspace
@@ -331,6 +336,229 @@ class TaskModuleExecutionTest {
         assertTrue(workspace.collectedItems().isEmpty());
     }
 
+    @Test
+    void collectRegionModuleRecordsEveryDropInsideTheRegion() {
+        RegionDefinition source = region("Source");
+        MutableDroppedItems dropped = new MutableDroppedItems();
+        DroppedItem first = drop("minecraft:iron_ingot", 3);
+        DroppedItem second = drop("minecraft:gold_ingot", 2);
+        dropped.items.add(first);
+        dropped.items.add(second);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                dropped,
+                new EmptyRegions(),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                point("Drop"),
+                source,
+                workspace
+        );
+        CollectDroppedItemsInRegionModule module =
+                new CollectDroppedItemsInRegionModule(
+                        context,
+                        step(
+                                ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
+                                ConfigValidator.REGION_ID,
+                                source.id().toString()
+                        )
+                );
+
+        module.start();
+        dropped.items.remove(first);
+        module.tick();
+        dropped.items.remove(second);
+        TaskModuleResult result = module.tick();
+        for (int tick = 0;
+                tick < 20 && result.state() != TaskModuleState.SUCCEEDED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                Map.of("minecraft:iron_ingot", 3, "minecraft:gold_ingot", 2),
+                workspace.collectedItems()
+        );
+    }
+
+    @Test
+    void sortCacheModuleWithdrawsOnlyCategorizedItemsForExactTargets() {
+        ContainerTarget ironTarget = target(0);
+        ContainerTarget goldTarget = target(1);
+        ContainerTarget unclassified = target(2);
+        ContainerTarget cache = target(3);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(ContainerScanResult.success(List.of(
+                ironTarget,
+                goldTarget,
+                unclassified
+        )));
+        workspace.setContainerCategories(ContainerCategoryResult.success(
+                List.of(
+                        new ContainerCategory(
+                                ironTarget,
+                                "minecraft:iron_ingot"
+                        ),
+                        new ContainerCategory(
+                                goldTarget,
+                                "minecraft:gold_ingot"
+                        )
+                )
+        ));
+        RecordingWithdrawals withdrawals = new RecordingWithdrawals();
+        withdrawals.results.add(ContainerWithdrawalResult.succeeded(
+                "withdrawn",
+                Map.of("minecraft:iron_ingot", 2, "minecraft:gold_ingot", 1),
+                false
+        ));
+        RecordingTransfers transfers = new RecordingTransfers();
+        transfers.results.add(ContainerTransferResult.pending(
+                "depositing iron",
+                Map.of()
+        ));
+        transfers.pollResults.add(ContainerTransferResult.succeeded(
+                "stored iron",
+                Map.of()
+        ));
+        transfers.results.add(ContainerTransferResult.pending(
+                "depositing gold",
+                Map.of()
+        ));
+        transfers.pollResults.add(ContainerTransferResult.succeeded(
+                "stored gold",
+                Map.of()
+        ));
+        RegionDefinition cacheRegion = region("Cache");
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new FixedRegions(ContainerScanResult.success(List.of(cache))),
+                new NoCategories(),
+                transfers,
+                withdrawals,
+                point("Drop"),
+                cacheRegion,
+                workspace
+        );
+        SortCacheItemsModule module = new SortCacheItemsModule(
+                context,
+                new TaskStep(
+                        UUID.randomUUID(),
+                        ConfigValidator.SORT_CACHE_ITEMS,
+                        Map.of(
+                                ConfigValidator.CACHE_REGION_ID,
+                                cacheRegion.id().toString(),
+                                ConfigValidator.SCAN_SOURCE,
+                                "previous-scan"
+                        )
+                )
+        );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 40 && result.state() != TaskModuleState.SUCCEEDED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(
+                Set.of("minecraft:iron_ingot", "minecraft:gold_ingot"),
+                withdrawals.requested.getFirst()
+        );
+        assertEquals(
+                List.of(
+                        Map.of("minecraft:iron_ingot", 2),
+                        Map.of("minecraft:gold_ingot", 1)
+                ),
+                transfers.requested
+        );
+    }
+
+    @Test
+    void sortCacheModuleReturnsUndepositedItemsToTheCache() {
+        ContainerTarget ironTarget = target(0);
+        ContainerTarget cache = target(1);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(ContainerScanResult.success(List.of(
+                ironTarget
+        )));
+        workspace.setContainerCategories(ContainerCategoryResult.success(
+                List.of(new ContainerCategory(
+                        ironTarget,
+                        "minecraft:iron_ingot"
+                ))
+        ));
+        RecordingWithdrawals withdrawals = new RecordingWithdrawals();
+        withdrawals.results.add(ContainerWithdrawalResult.succeeded(
+                "withdrawn",
+                Map.of("minecraft:iron_ingot", 2),
+                false
+        ));
+        RecordingTransfers transfers = new RecordingTransfers();
+        transfers.results.add(ContainerTransferResult.pending(
+                "depositing iron",
+                Map.of("minecraft:iron_ingot", 2)
+        ));
+        transfers.pollResults.add(ContainerTransferResult.failed(
+                "target full",
+                Map.of("minecraft:iron_ingot", 2)
+        ));
+        transfers.results.add(ContainerTransferResult.pending(
+                "returning iron",
+                Map.of("minecraft:iron_ingot", 2)
+        ));
+        transfers.pollResults.add(ContainerTransferResult.succeeded(
+                "returned iron",
+                Map.of()
+        ));
+        RegionDefinition cacheRegion = region("Cache");
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new FixedRegions(ContainerScanResult.success(List.of(cache))),
+                new NoCategories(),
+                transfers,
+                withdrawals,
+                point("Drop"),
+                cacheRegion,
+                workspace
+        );
+        SortCacheItemsModule module = new SortCacheItemsModule(
+                context,
+                new TaskStep(
+                        UUID.randomUUID(),
+                        ConfigValidator.SORT_CACHE_ITEMS,
+                        Map.of(
+                                ConfigValidator.CACHE_REGION_ID,
+                                cacheRegion.id().toString(),
+                                ConfigValidator.SCAN_SOURCE,
+                                "previous-scan"
+                        )
+                )
+        );
+
+        TaskModuleResult result = module.start();
+        for (int tick = 0;
+                tick < 40 && result.state() != TaskModuleState.FAILED;
+                tick++) {
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertTrue(result.message().contains("退回缓存"));
+        assertEquals(
+                List.of(
+                        Map.of("minecraft:iron_ingot", 2),
+                        Map.of("minecraft:iron_ingot", 2)
+                ),
+                transfers.requested
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             DroppedItemObserverPort dropped,
@@ -345,6 +573,7 @@ class TaskModuleExecutionTest {
                 regions,
                 new NoCategories(),
                 transfers,
+                new NoWithdrawals(),
                 point,
                 region,
                 new TaskRunWorkspace()
@@ -366,6 +595,7 @@ class TaskModuleExecutionTest {
                 regions,
                 new NoCategories(),
                 transfers,
+                new NoWithdrawals(),
                 point,
                 region,
                 workspace
@@ -378,6 +608,7 @@ class TaskModuleExecutionTest {
             ContainerRegionPort regions,
             ContainerCategoryPort categories,
             ContainerTransferPort transfers,
+            ContainerWithdrawalPort withdrawals,
             CoordinatePoint point,
             RegionDefinition region,
             TaskRunWorkspace workspace
@@ -388,6 +619,7 @@ class TaskModuleExecutionTest {
                 regions,
                 categories,
                 transfers,
+                withdrawals,
                 Map.of(point.id(), point),
                 Map.of(region.id(), region),
                 workspace
@@ -462,6 +694,11 @@ class TaskModuleExecutionTest {
         }
 
         @Override
+        public List<DroppedItem> observe(RegionDefinition region) {
+            return List.copyOf(items);
+        }
+
+        @Override
         public Optional<Map<String, Integer>> playerItemCounts() {
             return inventory;
         }
@@ -521,6 +758,59 @@ class TaskModuleExecutionTest {
                 List<ContainerTarget> containers
         ) {
             return ContainerCategoryResult.success(List.of());
+        }
+    }
+
+    private static final class NoWithdrawals
+            implements ContainerWithdrawalPort {
+        @Override
+        public ContainerWithdrawalResult startWithdrawal(
+                ContainerTarget target,
+                Set<String> matchingItemIds
+        ) {
+            return ContainerWithdrawalResult.failed(
+                    "withdrawal unavailable",
+                    Map.of(),
+                    false
+            );
+        }
+
+        @Override
+        public ContainerWithdrawalResult pollWithdrawal() {
+            return ContainerWithdrawalResult.failed(
+                    "withdrawal unavailable",
+                    Map.of(),
+                    false
+            );
+        }
+
+        @Override
+        public void cancelWithdrawal() {
+        }
+    }
+
+    private static final class RecordingWithdrawals
+            implements ContainerWithdrawalPort {
+        private final List<ContainerWithdrawalResult> results =
+                new ArrayList<>();
+        private final List<Set<String>> requested = new ArrayList<>();
+
+        @Override
+        public ContainerWithdrawalResult startWithdrawal(
+                ContainerTarget target,
+                Set<String> matchingItemIds
+        ) {
+            requested.add(Set.copyOf(matchingItemIds));
+            return results.removeFirst();
+        }
+
+        @Override
+        public ContainerWithdrawalResult pollWithdrawal() {
+            return ContainerWithdrawalResult.pending("waiting");
+        }
+
+        @Override
+        public void cancelWithdrawal() {
         }
     }
 

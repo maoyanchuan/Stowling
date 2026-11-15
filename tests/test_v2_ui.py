@@ -156,12 +156,31 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
     for module_id in (
         "WAIT_FOR_DROPPED_ITEMS",
         "COLLECT_DROPPED_ITEMS",
+        "COLLECT_DROPPED_ITEMS_IN_REGION",
         "SCAN_CONTAINERS_IN_REGION",
+        "MATCH_CONTAINER_CATEGORIES",
+        "SORT_CACHE_ITEMS",
         "DEPOSIT_ITEMS_TO_CONTAINERS",
     ):
         assert module_id in catalog
         assert module_id not in tasks
     assert "state.modules.length" in tasks
+
+
+def test_task_page_offers_cache_and_sorting_templates() -> None:
+    html = read("tasks.html")
+    model = read("v2-task-model.js")
+    tasks = read("tasks.js")
+
+    assert 'id="new-cache-task-button"' in html
+    assert 'id="new-sort-task-button"' in html
+    assert "CACHE_TASK_MODULES" in model
+    assert "SORT_TASK_MODULES" in model
+    assert '"COLLECT_DROPPED_ITEMS_IN_REGION"' in model
+    assert '"MATCH_CONTAINER_CATEGORIES"' in model
+    assert '"SORT_CACHE_ITEMS"' in model
+    assert "Model.cacheTask(state.modules)" in tasks
+    assert "Model.sortTask(state.modules)" in tasks
 
 
 def test_coordinate_choices_only_show_the_saved_name() -> None:

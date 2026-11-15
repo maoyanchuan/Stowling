@@ -19,6 +19,8 @@
 
     const elements = {
         newTask: document.querySelector("#new-task-button"),
+        newCacheTask: document.querySelector("#new-cache-task-button"),
+        newSortTask: document.querySelector("#new-sort-task-button"),
         list: document.querySelector("#task-list"),
         listMessage: document.querySelector("#task-list-message"),
         empty: document.querySelector("#task-empty"),
@@ -173,6 +175,28 @@
      * @returns {void}
      */
     function startNewTask() {
+        startTaskTemplate("new");
+    }
+
+    /**
+     * @returns {void}
+     */
+    function startCacheTask() {
+        startTaskTemplate("cache");
+    }
+
+    /**
+     * @returns {void}
+     */
+    function startSortTask() {
+        startTaskTemplate("sort");
+    }
+
+    /**
+     * @param {string} template
+     * @returns {void}
+     */
+    function startTaskTemplate(template) {
         if (state.dirty
                 && !window.confirm("当前任务有未保存修改，继续将放弃这些修改。")) {
             return;
@@ -181,13 +205,32 @@
             Stowling.showToast("任务模块尚未加载", true);
             return;
         }
+        const draft = switchTaskTemplate(template);
+        if (!draft) {
+            Stowling.showToast("任务模板所需模块尚未加载", true);
+            return;
+        }
         state.selectedId = "";
-        state.draft = Model.newTask(state.modules);
+        state.draft = draft;
         state.dirty = true;
         renderEditor();
         renderTaskList();
         elements.name.focus();
         elements.name.select();
+    }
+
+    /**
+     * @param {string} template
+     * @returns {object | null}
+     */
+    function switchTaskTemplate(template) {
+        if (template === "cache") {
+            return Model.cacheTask(state.modules);
+        }
+        if (template === "sort") {
+            return Model.sortTask(state.modules);
+        }
+        return Model.newTask(state.modules);
     }
 
     /**
@@ -550,6 +593,8 @@
     }
 
     elements.newTask.addEventListener("click", startNewTask);
+    elements.newCacheTask.addEventListener("click", startCacheTask);
+    elements.newSortTask.addEventListener("click", startSortTask);
     elements.name.addEventListener("input", () => {
         state.draft.name = elements.name.value;
         markDirty();

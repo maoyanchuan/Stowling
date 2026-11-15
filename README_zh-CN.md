@@ -8,11 +8,12 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 - 坐标条目保存名称和 X/Y/Z，并可选填写维度和到达半径。
 - 区域条目保存名称以及两个完整 X/Y/Z 角点。
 - 任务只保存名称和有序模块步骤。
-- 内置模块支持移动、等待掉落物、拾取掉落物、扫描区域容器、识别容器分类和
-  存入拾取物。
-- 容器扫描、分类识别和存入是三个独立模块；分类和存入都使用上一次扫描结果。
+- 内置模块支持移动、等待掉落物、拾取掉落物、区域收集、扫描区域容器、
+  识别容器分类、缓存分类入库和存入拾取物。
+- 推荐把处理流程拆成“掉落物入缓存”和“缓存物品分类入库”两个可独立运行任务。
+- 粗分类使用物理缓存容器；细分类从缓存取出有目标分类的物品并精确存入。
 - 分类模块识别容器附近的物品展示框或荧光物品展示框，并使用展示物的注册 ID
-  作为分类。存入时优先选择分类完全相同的容器。
+  作为分类。细分类不会把未识别物品塞入其他分类容器。
 - 存入模块默认只移动当前任务实际拾取并记录下来的物品。
 - 同一时间只运行一个任务。
 - 坐标、任务和步骤 ID 由系统内部生成，界面不显示。
@@ -28,29 +29,43 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 - `MOVE_TO_COORDINATE`：前往指定坐标。
 - `WAIT_FOR_DROPPED_ITEMS`：等待坐标半径内出现匹配的掉落物。
 - `COLLECT_DROPPED_ITEMS`：前往匹配的掉落物并等待拾取完成。
+- `COLLECT_DROPPED_ITEMS_IN_REGION`：收集指定区域内的全部匹配掉落物。
 - `SCAN_CONTAINERS_IN_REGION`：扫描区域容器，并把结果记录到当前任务运行中。
 - `MATCH_CONTAINER_CATEGORIES`：读取附近展示框中的物品，为已扫描容器生成
   本次运行专用的分类映射。
+- `SORT_CACHE_ITEMS`：从缓存区域取出有目标分类的物品，按展示框分类精确存入
+  目标容器；未匹配、目标已满或取出失败的物品会留在或退回缓存。
 - `DEPOSIT_ITEMS_TO_CONTAINERS`：只把本次运行拾取的物品存入上次扫描到的容器。
 
-一个完整的掉落物入箱任务示例：
+粗分类任务“掉落物入缓存”：
 
 ```text
-WAIT_FOR_DROPPED_ITEMS     coordinateId=<掉落点>
-COLLECT_DROPPED_ITEMS      coordinateId=<掉落点>
-SCAN_CONTAINERS_IN_REGION  regionId=<存储区域>
-MATCH_CONTAINER_CATEGORIES
-    scanSource=previous-scan
+COLLECT_DROPPED_ITEMS_IN_REGION
+    regionId=<掉落物区域>
+SCAN_CONTAINERS_IN_REGION
+    regionId=<缓存区域>
 DEPOSIT_ITEMS_TO_CONTAINERS
     scanSource=previous-scan
     itemSource=collected-this-run
     fillMode=nearest-first
 ```
 
+细分类任务“缓存物品分类入库”：
+
+```text
+SCAN_CONTAINERS_IN_REGION
+    regionId=<目标存储区域>
+MATCH_CONTAINER_CATEGORIES
+    scanSource=previous-scan
+SORT_CACHE_ITEMS
+    cacheRegionId=<缓存区域>
+    scanSource=previous-scan
+```
+
 检测和扫描只覆盖玩家当前维度内已经加载的区块。扫描支持普通容器，不把潜影盒
 内部的物品当作独立容器。双联箱子只记录一个代表位置。分类只按物品注册 ID
 匹配，因此同一注册 ID 但名称或组件不同的展示物暂时不能区分。分类结果只在
-当前任务运行中有效，不会写入配置。
+当前任务运行中有效，不会写入配置。缓存区域和目标区域不能重叠。
 
 ## 配置
 
@@ -86,7 +101,7 @@ http://127.0.0.1:8765/
 
 - **状态概览**：当前运行、坐标数量、任务数量和运行记录。
 - **坐标管理**：新增、修改和删除名称与 X/Y/Z。
-- **任务管理**：组合模块步骤、保存任务、手动运行和取消。
+- **任务管理**：使用“缓存任务”和“分类任务”模板，或自行组合模块步骤。
 - **库存查询**：只读查看已有库存快照。
 
 ## HTTP 接口

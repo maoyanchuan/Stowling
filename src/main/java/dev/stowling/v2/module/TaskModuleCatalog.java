@@ -83,6 +83,38 @@ public final class TaskModuleCatalog {
                     )
             );
 
+    private static final ModuleDefinition COLLECT_DROPPED_ITEMS_IN_REGION =
+            new ModuleDefinition(
+                    ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
+                    "收集区域掉落物",
+                    "收集指定区域内的掉落物，并记录到当前任务运行中。",
+                    List.of(
+                            new ModuleParameter(
+                                    ConfigValidator.REGION_ID,
+                                    "掉落物区域",
+                                    "region-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.ITEM_FILTER,
+                                    "物品过滤（逗号分隔）",
+                                    "text",
+                                    false
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.TIMEOUT_SECONDS,
+                                    "超时秒数",
+                                    "integer",
+                                    false,
+                                    List.of(),
+                                    0,
+                                    86_400,
+                                    1,
+                                    null
+                            )
+                    )
+            );
+
     private static final ModuleDefinition SCAN_CONTAINERS_IN_REGION =
             new ModuleDefinition(
                     ConfigValidator.SCAN_CONTAINERS_IN_REGION,
@@ -159,13 +191,54 @@ public final class TaskModuleCatalog {
                     ))
             );
 
+    private static final ModuleDefinition SORT_CACHE_ITEMS =
+            new ModuleDefinition(
+                    ConfigValidator.SORT_CACHE_ITEMS,
+                    "缓存物品分类入库",
+                    "从缓存区域取出有目标分类的物品，并精确存入对应容器。",
+                    List.of(
+                            new ModuleParameter(
+                                    ConfigValidator.CACHE_REGION_ID,
+                                    "缓存区域",
+                                    "region-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.SCAN_SOURCE,
+                                    "目标分类扫描",
+                                    "select",
+                                    true,
+                                    List.of("previous-scan")
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.CONTAINER_TYPES,
+                                    "缓存容器类型（逗号分隔）",
+                                    "text",
+                                    false
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.MAX_VOLUME,
+                                    "最大扫描体积",
+                                    "integer",
+                                    false,
+                                    List.of(),
+                                    1,
+                                    1_048_576,
+                                    1,
+                                    null
+                            )
+                    )
+            );
+
     private static final List<ModuleDefinition> MODULES =
             List.of(
                     MOVE_TO_COORDINATE,
                     WAIT_FOR_DROPPED_ITEMS,
                     COLLECT_DROPPED_ITEMS,
+                    COLLECT_DROPPED_ITEMS_IN_REGION,
                     SCAN_CONTAINERS_IN_REGION,
                     MATCH_CONTAINER_CATEGORIES,
+                    SORT_CACHE_ITEMS,
                     DEPOSIT_ITEMS_TO_CONTAINERS
             );
 

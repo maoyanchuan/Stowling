@@ -7,13 +7,19 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerWithdrawalPort;
+import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
+import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskStep;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class TaskModuleRuntimeRegistry {
     private final NavigationPort navigation;
@@ -21,6 +27,7 @@ public final class TaskModuleRuntimeRegistry {
     private final ContainerRegionPort containerRegions;
     private final ContainerCategoryPort containerCategories;
     private final ContainerTransferPort containerTransfers;
+    private final ContainerWithdrawalPort containerWithdrawals;
     private final Map<String, TaskModuleRuntimeFactory> factories;
 
     public TaskModuleRuntimeRegistry(
@@ -29,6 +36,7 @@ public final class TaskModuleRuntimeRegistry {
             ContainerRegionPort containerRegions,
             ContainerCategoryPort containerCategories,
             ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
             List<TaskModuleRuntimeFactory> factories
     ) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
@@ -44,6 +52,10 @@ public final class TaskModuleRuntimeRegistry {
         this.containerTransfers = Objects.requireNonNull(
                 containerTransfers,
                 "containerTransfers"
+        );
+        this.containerWithdrawals = Objects.requireNonNull(
+                containerWithdrawals,
+                "containerWithdrawals"
         );
         Map<String, TaskModuleRuntimeFactory> byId = new LinkedHashMap<>();
         for (TaskModuleRuntimeFactory factory : factories) {
@@ -63,8 +75,21 @@ public final class TaskModuleRuntimeRegistry {
     public static TaskModuleRuntimeRegistry unavailablePorts(
             NavigationPort navigation
     ) {
-        DroppedItemObserverPort droppedItems = (center, radius) -> {
-            throw new IllegalStateException("掉落物观察组件不可用");
+        DroppedItemObserverPort droppedItems = new DroppedItemObserverPort() {
+            @Override
+            public List<DroppedItem> observe(
+                    BlockPosition center,
+                    int radius
+            ) {
+                throw new IllegalStateException("掉落物观察组件不可用");
+            }
+
+            @Override
+            public List<DroppedItem> observe(
+                    RegionDefinition region
+            ) {
+                throw new IllegalStateException("掉落物观察组件不可用");
+            }
         };
         ContainerRegionPort containerRegions = (region, types, maxVolume) ->
                 ContainerScanResult.failure("区域扫描组件不可用");
@@ -94,12 +119,39 @@ public final class TaskModuleRuntimeRegistry {
             public void cancelDeposit() {
             }
         };
+        ContainerWithdrawalPort withdrawals = new ContainerWithdrawalPort() {
+            @Override
+            public ContainerWithdrawalResult startWithdrawal(
+                    ContainerTarget target,
+                    Set<String> matchingItemIds
+            ) {
+                return ContainerWithdrawalResult.failed(
+                        "缓存取出组件不可用",
+                        Map.of(),
+                        false
+                );
+            }
+
+            @Override
+            public ContainerWithdrawalResult pollWithdrawal() {
+                return ContainerWithdrawalResult.failed(
+                        "缓存取出组件不可用",
+                        Map.of(),
+                        false
+                );
+            }
+
+            @Override
+            public void cancelWithdrawal() {
+            }
+        };
         return new TaskModuleRuntimeRegistry(
                 navigation,
                 droppedItems,
                 containerRegions,
                 containerCategories,
                 transfers,
+                withdrawals,
                 StandardTaskModuleFactories.create()
         );
     }
@@ -122,6 +174,10 @@ public final class TaskModuleRuntimeRegistry {
 
     public ContainerTransferPort containerTransfers() {
         return containerTransfers;
+    }
+
+    public ContainerWithdrawalPort containerWithdrawals() {
+        return containerWithdrawals;
     }
 
     public TaskModuleExecutor create(

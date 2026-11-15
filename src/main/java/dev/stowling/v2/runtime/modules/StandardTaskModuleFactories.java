@@ -24,12 +24,20 @@ public final class StandardTaskModuleFactories {
                         CollectDroppedItemsModule::new
                 ),
                 factory(
+                        ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
+                        CollectDroppedItemsInRegionModule::new
+                ),
+                factory(
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                         ScanContainersInRegionModule::new
                 ),
                 factory(
                         ConfigValidator.MATCH_CONTAINER_CATEGORIES,
                         MatchContainerCategoriesModule::new
+                ),
+                factory(
+                        ConfigValidator.SORT_CACHE_ITEMS,
+                        SortCacheItemsModule::new
                 ),
                 factory(
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,

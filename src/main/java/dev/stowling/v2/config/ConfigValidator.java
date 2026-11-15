@@ -18,14 +18,18 @@ public final class ConfigValidator {
             "WAIT_FOR_DROPPED_ITEMS";
     public static final String COLLECT_DROPPED_ITEMS =
             "COLLECT_DROPPED_ITEMS";
+    public static final String COLLECT_DROPPED_ITEMS_IN_REGION =
+            "COLLECT_DROPPED_ITEMS_IN_REGION";
     public static final String SCAN_CONTAINERS_IN_REGION =
             "SCAN_CONTAINERS_IN_REGION";
     public static final String MATCH_CONTAINER_CATEGORIES =
             "MATCH_CONTAINER_CATEGORIES";
+    public static final String SORT_CACHE_ITEMS = "SORT_CACHE_ITEMS";
     public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
             "DEPOSIT_ITEMS_TO_CONTAINERS";
     public static final String COORDINATE_ID = "coordinateId";
     public static final String REGION_ID = "regionId";
+    public static final String CACHE_REGION_ID = "cacheRegionId";
     public static final String ITEM_FILTER = "itemFilter";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
     public static final String CONTAINER_TYPES = "containerTypes";
@@ -99,8 +103,11 @@ public final class ConfigValidator {
                     Set.of(COORDINATE_ID, ITEM_FILTER, TIMEOUT_SECONDS),
                     Set.of(COORDINATE_ID)
             );
+            case COLLECT_DROPPED_ITEMS_IN_REGION ->
+                    requireRegionCollectStep(step, regions);
             case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, regions);
             case MATCH_CONTAINER_CATEGORIES -> requireCategoryStep(step);
+            case SORT_CACHE_ITEMS -> requireCacheSortStep(step, regions);
             case DEPOSIT_ITEMS_TO_CONTAINERS -> requireDepositStep(step);
             default -> throw new V2ValidationException(
                     "unknown task module: " + step.moduleId()
@@ -146,6 +153,19 @@ public final class ConfigValidator {
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
     }
 
+    private static void requireRegionCollectStep(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        requireParameters(
+                step,
+                Set.of(REGION_ID, ITEM_FILTER, TIMEOUT_SECONDS),
+                Set.of(REGION_ID)
+        );
+        requireRegion(step, regions, REGION_ID);
+        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+    }
+
     private static void requireDepositStep(TaskStep step) {
         requireParameters(
                 step,
@@ -164,6 +184,38 @@ public final class ConfigValidator {
                 Set.of(SCAN_SOURCE)
         );
         requireChoice(step, SCAN_SOURCE, "previous-scan");
+    }
+
+    private static void requireCacheSortStep(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        requireParameters(
+                step,
+                Set.of(
+                        CACHE_REGION_ID,
+                        SCAN_SOURCE,
+                        CONTAINER_TYPES,
+                        MAX_VOLUME
+                ),
+                Set.of(CACHE_REGION_ID, SCAN_SOURCE)
+        );
+        requireRegion(step, regions, CACHE_REGION_ID);
+        requireChoice(step, SCAN_SOURCE, "previous-scan");
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static void requireRegion(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions,
+            String key
+    ) {
+        UUID regionId = requireUuid(step.parameters().get(key), key);
+        if (!regions.containsKey(regionId)) {
+            throw new V2ValidationException(
+                    "region does not exist: " + regionId
+            );
+        }
     }
 
     private static void requireParameters(

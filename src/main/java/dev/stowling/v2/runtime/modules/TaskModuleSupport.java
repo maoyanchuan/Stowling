@@ -34,8 +34,16 @@ final class TaskModuleSupport {
             TaskExecutionContext context,
             TaskStep step
     ) {
+        return region(context, step, ConfigValidator.REGION_ID);
+    }
+
+    static RegionDefinition region(
+            TaskExecutionContext context,
+            TaskStep step,
+            String key
+    ) {
         UUID id = UUID.fromString(
-                step.parameters().get(ConfigValidator.REGION_ID)
+                step.parameters().get(key)
         );
         return Objects.requireNonNull(context.regions().get(id), "region");
     }

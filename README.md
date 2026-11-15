@@ -10,16 +10,19 @@ by Baritone.
   arrival-radius fields.
 - Regions contain a name and two full X/Y/Z corner points.
 - Tasks contain a name and one or more ordered module steps.
-- Task modules cover movement, waiting for dropped items, collecting dropped
-  items, scanning containers, identifying container categories, and depositing
-  collected items.
-- Container scanning, category identification, and depositing are separate
-  modules. Category identification and depositing both consume the previous
-  scan result.
+- Task modules cover movement, dropped-item collection, region collection,
+  container scanning, category identification, cached-item sorting, and
+  depositing.
+- The recommended workflow uses two independent tasks: drops to a physical
+  cache, then categorized distribution from that cache.
+- The coarse stage stores all collected drops in cache containers. The fine
+  stage withdraws only items that have target categories and deposits them
+  into exact category matches.
 - Category identification reads nearby item frames or glow item frames and
   uses the displayed item registry ID as the category. Deposit prefers a
   container with an exact category match.
-- Deposit only moves items recorded as collected by the current task run.
+- Items without a category or without target capacity remain in, or are
+  returned to, the cache.
 - One task can run at a time.
 - Coordinate and task IDs are generated internally and are not shown in the UI.
 - Authentication, runtime status, and read-only inventory diagnostics remain
@@ -38,25 +41,39 @@ editor builds its controls from that catalog.
   coordinate radius.
 - `COLLECT_DROPPED_ITEMS` navigates to matching dropped items and waits until
   they are picked up.
+- `COLLECT_DROPPED_ITEMS_IN_REGION` collects matching drops from a region.
 - `SCAN_CONTAINERS_IN_REGION` records usable containers from the previous scan
   in the active task run.
 - `MATCH_CONTAINER_CATEGORIES` reads nearby item frames and builds a run-local
   category mapping for the scanned containers.
+- `SORT_CACHE_ITEMS` withdraws categorized items from a cache region, deposits
+  exact category matches, and returns leftovers to the cache.
 - `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
   current run into containers from the previous scan.
 
-A typical dropped-item storage task is:
+The coarse cache task is:
 
 ```text
-WAIT_FOR_DROPPED_ITEMS   coordinateId=<drop point>
-COLLECT_DROPPED_ITEMS    coordinateId=<drop point>
-SCAN_CONTAINERS_IN_REGION regionId=<storage area>
-MATCH_CONTAINER_CATEGORIES
-    scanSource=previous-scan
+COLLECT_DROPPED_ITEMS_IN_REGION
+    regionId=<drop area>
+SCAN_CONTAINERS_IN_REGION
+    regionId=<cache area>
 DEPOSIT_ITEMS_TO_CONTAINERS
     scanSource=previous-scan
     itemSource=collected-this-run
     fillMode=nearest-first
+```
+
+The fine category-sorting task is:
+
+```text
+SCAN_CONTAINERS_IN_REGION
+    regionId=<target storage area>
+MATCH_CONTAINER_CATEGORIES
+    scanSource=previous-scan
+SORT_CACHE_ITEMS
+    cacheRegionId=<cache area>
+    scanSource=previous-scan
 ```
 
 Detection and scanning are limited to the player's current dimension and
@@ -65,7 +82,8 @@ contents are not treated as independent containers. A double chest is recorded
 once using one representative position. Categories match only the displayed
 item registry ID, so display items with the same ID but different names or
 components cannot be distinguished yet. Category mappings exist only for the
-current task run and are never written to configuration.
+current task run and are never written to configuration. Cache and target
+regions must not overlap.
 
 ## Configuration
 
@@ -105,7 +123,8 @@ Pages:
 
 - **Status** shows the current run, coordinate count, task count, and history.
 - **Coordinates** manages names and X/Y/Z values.
-- **Tasks** combines module steps, saves tasks, runs them, and cancels runs.
+- **Tasks** provides cache and category-sorting templates or manual module
+  composition.
 - **Inventory** displays existing read-only inventory snapshots.
 
 ## HTTP API

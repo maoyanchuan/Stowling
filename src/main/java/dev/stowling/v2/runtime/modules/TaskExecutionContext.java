@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.ContainerCategoryPort;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerTransferPort;
+import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.v2.model.CoordinatePoint;
@@ -17,6 +18,7 @@ public record TaskExecutionContext(
         ContainerRegionPort containerRegions,
         ContainerCategoryPort containerCategories,
         ContainerTransferPort containerTransfers,
+        ContainerWithdrawalPort containerWithdrawals,
         Map<UUID, CoordinatePoint> coordinates,
         Map<UUID, RegionDefinition> regions,
         TaskRunWorkspace workspace
@@ -35,6 +37,10 @@ public record TaskExecutionContext(
         containerTransfers = Objects.requireNonNull(
                 containerTransfers,
                 "containerTransfers"
+        );
+        containerWithdrawals = Objects.requireNonNull(
+                containerWithdrawals,
+                "containerWithdrawals"
         );
         coordinates = Map.copyOf(Objects.requireNonNull(coordinates, "coordinates"));
         regions = Map.copyOf(Objects.requireNonNull(regions, "regions"));

@@ -290,6 +290,53 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void validatesRegionCollectionAndCacheSortContracts() {
+        RegionDefinition source = region("Source");
+        RegionDefinition cache = region("Cache");
+        TaskStep collect = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
+                Map.of(ConfigValidator.REGION_ID, source.id().toString())
+        );
+        TaskStep sort = new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.SORT_CACHE_ITEMS,
+                Map.of(
+                        ConfigValidator.CACHE_REGION_ID,
+                        cache.id().toString(),
+                        ConfigValidator.SCAN_SOURCE,
+                        "previous-scan"
+                )
+        );
+        Map<UUID, RegionDefinition> regions = Map.of(
+                source.id(),
+                source,
+                cache.id(),
+                cache
+        );
+
+        ConfigValidator.requireValidStep(collect, Map.of(), regions);
+        ConfigValidator.requireValidStep(sort, Map.of(), regions);
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValidStep(
+                        new TaskStep(
+                                UUID.randomUUID(),
+                                ConfigValidator.SORT_CACHE_ITEMS,
+                                Map.of(
+                                        ConfigValidator.CACHE_REGION_ID,
+                                        UUID.randomUUID().toString(),
+                                        ConfigValidator.SCAN_SOURCE,
+                                        "previous-scan"
+                                )
+                        ),
+                        Map.of(),
+                        regions
+                )
+        );
+    }
+
+    @Test
     void rejectsUnknownRegionReferenceAndInvalidIntegerParameter() {
         RegionDefinition region = region("Storage");
         TaskStep missingRegion = new TaskStep(

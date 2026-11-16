@@ -15,6 +15,7 @@
         logScrollPaused: false,
         moveRevision: "",
         moveTasks: [],
+        moveAllTasks: [],
         coordinates: [],
         moveDraft: Move.newDraft(),
         moveFormOpen: false,
@@ -84,8 +85,10 @@
                 Stowling.request("/v1/coordinates")
             ]);
             state.moveRevision = String(tasks?.revision || "");
-            state.moveTasks = Array.isArray(tasks?.tasks)
-                ? tasks.tasks.map(Model.normalizeTask).filter(Move.isMoveTask) : [];
+            const allTasks = Array.isArray(tasks?.tasks)
+                ? tasks.tasks.map(Model.normalizeTask) : [];
+            state.moveAllTasks = allTasks;
+            state.moveTasks = allTasks.filter(Move.isMoveTask);
             state.coordinates = Coordinates.normalizeCoordinates(coordinates).coordinates;
             state.moveResourcesReady = true;
             if (state.moveDraft.id && !state.moveDirty) {
@@ -95,7 +98,7 @@
                 if (refreshed) {
                     state.moveDraft = Move.draftFromTask(refreshed);
                 } else {
-                    state.moveDraft = Move.newDraft();
+                    state.moveDraft = Move.newDraft(state.moveAllTasks);
                     state.moveDraftActive = false;
                     state.moveFormOpen = false;
                 }
@@ -226,7 +229,8 @@
         if (state.moveDirty && !window.confirm("当前修改尚未保存，切换任务会丢弃修改。继续？")) {
             return;
         }
-        state.moveDraft = task ? Move.draftFromTask(task) : Move.newDraft();
+        state.moveDraft = task
+            ? Move.draftFromTask(task) : Move.newDraft(state.moveAllTasks);
         state.moveDirty = false;
         state.moveDraftActive = !task;
         state.moveFormOpen = true;
@@ -294,7 +298,7 @@
                 === state.moveDraft.source));
         }
         if (manual) {
-            elements.moveNote.textContent = "手动坐标在当前维度生效，不会新增坐标点。";
+            elements.moveNote.textContent = "精确到达目标方块；手动坐标在当前维度生效。";
             return;
         }
         const coordinate = state.coordinates.find(
@@ -306,9 +310,8 @@
             return;
         }
         const dimension = coordinate.dimension ? ` · ${coordinate.dimension}` : " · 当前维度";
-        const radius = coordinate.radius === null ? "" : ` · 到达半径 ${coordinate.radius}`;
         elements.moveNote.textContent = `${coordinate.x}, ${coordinate.y}, ${coordinate.z}`
-            + dimension + radius;
+            + dimension + " · 精确到达目标方块";
     }
 
     /**
@@ -346,19 +349,30 @@
     }
 
     /**
+     * @param {unknown} error
+     * @returns {boolean}
+     */
+    function isTaskNameConflict(error) {
+        const message = String(error?.message ?? "").trim();
+        return /^task name must be unique:\s+.+$/.test(message);
+    }
+
+    /**
      * @param {object} response
      * @param {string} existingId
      * @returns {void}
      */
     function applyMoveSave(response, existingId) {
         const id = existingId || String(response?.taskId || "");
-        const tasks = Array.isArray(response?.tasks)
-            ? response.tasks.map(Model.normalizeTask).filter(Move.isMoveTask) : [];
+        const allTasks = Array.isArray(response?.tasks)
+            ? response.tasks.map(Model.normalizeTask) : [];
+        const tasks = allTasks.filter(Move.isMoveTask);
         const saved = tasks.find((task) => task.id === id);
         if (!id || !saved) {
             throw new Error("保存响应缺少任务编号或内容，请刷新任务列表后再运行");
         }
         state.moveRevision = String(response.revision || "");
+        state.moveAllTasks = allTasks;
         state.moveTasks = tasks;
         state.moveDraft = Move.draftFromTask(saved);
         state.moveDirty = false;
@@ -385,7 +399,12 @@
         }
         let task;
         try {
-            task = Move.createTask(state.moveDraft, state.coordinates, original);
+            task = Move.createTask(
+                state.moveDraft,
+                state.coordinates,
+                original,
+                state.moveAllTasks
+            );
         } catch (error) {
             showMoveMessage(String(error.message || error), true);
             return;
@@ -425,10 +444,18 @@
                 Stowling.showToast("移动任务已保存");
             }
         } catch (error) {
-            const message = stage === "queue"
-                ? "任务已保存，但加入队列失败，可再次尝试" : "保存失败，请检查输入或刷新重试";
-            showMoveMessage(message, true);
-            Stowling.handleError(error, stage === "queue" ? "加入队列失败" : "保存移动任务失败");
+            if (stage === "save" && isTaskNameConflict(error)) {
+                showMoveMessage("任务名称已存在，请使用其他名称", true);
+            } else {
+                const message = stage === "queue"
+                    ? "任务已保存，但加入队列失败，可再次尝试"
+                    : "保存失败，请检查输入或刷新重试";
+                showMoveMessage(message, true);
+                Stowling.handleError(
+                    error,
+                    stage === "queue" ? "加入队列失败" : "保存移动任务失败"
+                );
+            }
         } finally {
             state.moveBusy = false;
             updateMoveControls();

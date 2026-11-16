@@ -17,7 +17,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
     private ContainerTarget container;
     private BlockPosition position;
     private String targetName = "目标";
-    private Integer arrivalRadius;
+    private Integer arrivalRadius = 0;
     private boolean navigationStarted;
     private boolean stopped;
 
@@ -69,9 +69,6 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
                     CONTAINER_NAVIGATION_RADIUS
             );
         }
-        if (coordinate != null && arrivalRadius != null) {
-            return context.navigation().startWithinRadius(position, arrivalRadius);
-        }
         return context.navigation().start(position);
     }
 
@@ -107,7 +104,6 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
                     coordinate.z()
             );
             targetName = coordinate.name();
-            arrivalRadius = coordinate.radius();
             return;
         }
         if (targetReference.type() != ResourceType.OUTPUT) {

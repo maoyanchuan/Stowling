@@ -22,13 +22,15 @@ opens an unsaved draft above; saving turns it into a saved task row. Only tasks
 whose full definition is one `ACTION` step with module `MOVE_TO_COORDINATE` are
 editable here; complex workflows and unsupported move configurations are not
 partially rewritten. Manual and saved inputs are retained while switching source,
-but only the active source is serialized.
+but only the active source is serialized. Default names for new tasks avoid all
+saved task names, including hidden complex tasks, by adding a numeric suffix.
+A manually entered duplicate name prompts for a change without overwriting tasks.
 
-Move tasks check arrival using the player's block position. Manual coordinates,
-saved coordinates without a radius, and radius `0` require the target block.
-A configured radius uses XYZ distance without expanding to container interaction
-range. Navigation that stops outside the requested radius fails rather than
-reporting arrival. Container output references retain interaction-range behavior.
+Move tasks check arrival using the player's block position. Manual XYZ and all
+saved coordinates require the target block. A coordinate resource radius is no
+longer an arrival tolerance; other modules such as dropped-item detection may
+still use it. Navigation that stops short fails rather than reporting arrival.
+Container output references retain interaction-range behavior.
 
 The move loader independently reads `GET /v1/tasks` and `GET /v1/coordinates`.
 The monitor loader still reads only `GET /v1/task-modules` and

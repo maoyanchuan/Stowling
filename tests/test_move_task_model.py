@@ -49,10 +49,46 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_new_draft_returns_the_fixed_move_shape() -> None:
-    result = _run("window.StowlingMoveTaskModel.newDraft()")
+def test_new_draft_returns_fixed_shape_and_first_free_default_name() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingMoveTaskModel;
+            /**
+             * @param {string} id
+             * @param {string} name
+             * @returns {object}
+             */
+            const complexTask = (id, name) => ({
+                id,
+                name,
+                priority: "NORMAL",
+                steps: [{
+                    kind: "ACTION",
+                    moduleId: "ASSERT_NO_MANAGED_ITEMS",
+                    parameters: {},
+                    steps: [],
+                    otherwise: [],
+                }],
+            });
+            return {
+                empty: model.newDraft([]),
+                gap: model.newDraft([
+                    complexTask("complex-1", "移动到坐标"),
+                    complexTask("complex-2", "  移动到坐标 2  "),
+                    complexTask("complex-3", "移动到坐标 4"),
+                ]).name,
+                continuous: model.newDraft([
+                    complexTask("complex-1", "移动到坐标"),
+                    complexTask("complex-2", "移动到坐标 2"),
+                    complexTask("complex-3", "移动到坐标 3"),
+                ]).name,
+            };
+        })()
+        """
+    )
 
-    assert result == {
+    assert result["empty"] == {
         "id": "",
         "name": "移动到坐标",
         "priority": "NORMAL",
@@ -62,6 +98,8 @@ def test_new_draft_returns_the_fixed_move_shape() -> None:
         "z": "",
         "coordinateId": "",
     }
+    assert result["gap"] == "移动到坐标 3"
+    assert result["continuous"] == "移动到坐标 4"
 
 
 def test_move_task_detection_accepts_only_supported_basic_shapes() -> None:
@@ -274,6 +312,64 @@ def test_validation_only_checks_the_active_source_and_uses_chinese_messages() ->
     assert "请选择坐标输入方式" in result["invalid"]
     assert result["missingSaved"] == ["所选坐标不存在，请刷新后重试"]
     assert not any("int32" in error for error in result["outOfRange"])
+
+
+def test_name_validation_normalizes_and_excludes_the_edited_task() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingMoveTaskModel;
+            const base = {
+                ...model.newDraft(),
+                name: "本地名称",
+                x: "1",
+                y: "2",
+                z: "3",
+            };
+            const tasks = [
+                { id: "complex-1", name: "  MiXeD Task  " },
+                { id: "self-id", name: "当前移动任务" },
+            ];
+            const duplicate = model.validateDraft(
+                { ...base, name: " mixed TASK " },
+                [],
+                tasks
+            );
+            const self = model.validateDraft(
+                { ...base, id: "self-id", name: " 当前移动任务 " },
+                [],
+                tasks
+            );
+            const created = model.createTask(
+                { ...base, id: "self-id", name: " 当前移动任务 " },
+                [],
+                null,
+                tasks
+            );
+            let duplicateCreate = null;
+            try {
+                model.createTask(
+                    { ...base, name: " mixed TASK " },
+                    [],
+                    null,
+                    tasks
+                );
+            } catch (error) {
+                duplicateCreate = {
+                    name: error.name,
+                    message: error.message,
+                };
+            }
+            return { duplicate, self, created, duplicateCreate };
+        })()
+        """
+    )
+
+    assert result["duplicate"] == ["任务名称已存在，请使用其他名称"]
+    assert result["self"] == []
+    assert result["created"]["name"] == "当前移动任务"
+    assert result["duplicateCreate"]["name"] == "RangeError"
+    assert "任务名称已存在，请使用其他名称" in result["duplicateCreate"]["message"]
 
 
 def test_create_task_serializes_only_the_active_source() -> None:

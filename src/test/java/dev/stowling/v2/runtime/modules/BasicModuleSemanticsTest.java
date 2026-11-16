@@ -28,7 +28,11 @@ import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.automation.FoodStatus;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
+import dev.stowling.automation.WorldObservation;
+import dev.stowling.automation.WorldObserver;
+import dev.stowling.client.interaction.BaritoneAutomationNavigation;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.navigation.NavigationService;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
@@ -43,6 +47,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
@@ -99,7 +104,7 @@ class BasicModuleSemanticsTest {
                 List.of(new BlockPosition(-12, 64, 30)),
                 navigation.statusPositions()
         );
-        assertNull(navigation.statusRadii().get(0));
+        assertEquals(List.of(0), navigation.statusRadii());
     }
 
     @Test
@@ -179,12 +184,12 @@ class BasicModuleSemanticsTest {
                 List.of(new BlockPosition(5, 70, -9)),
                 navigation.statusPositions()
         );
-        assertNull(navigation.statusRadii().get(0));
+        assertEquals(List.of(0), navigation.statusRadii());
     }
 
     @Test
-    void savedCoordinateRadiiUseWithinRadiusEntry() {
-        for (int radius : List.of(0, 1, 7)) {
+    void savedCoordinateRadiiUseExactNavigationEntry() {
+        for (Integer radius : java.util.Arrays.asList(null, 0, 1, 2, 7)) {
             UUID coordinateId = UUID.randomUUID();
             CoordinatePoint point = new CoordinatePoint(
                     coordinateId,
@@ -220,19 +225,18 @@ class BasicModuleSemanticsTest {
                     List.of("minecraft:overworld"),
                     navigation.dimensionChecks()
             );
-            assertTrue(navigation.exactPositions().isEmpty());
-            assertTrue(navigation.containerPositions().isEmpty());
             assertEquals(
                     List.of(new BlockPosition(5, 70, -9)),
-                    navigation.coordinatePositions()
+                    navigation.exactPositions()
             );
-            assertEquals(List.of(radius), navigation.coordinateRadii());
+            assertTrue(navigation.coordinatePositions().isEmpty());
+            assertTrue(navigation.containerPositions().isEmpty());
             assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
             assertEquals(
                     List.of(new BlockPosition(5, 70, -9)),
                     navigation.statusPositions()
             );
-            assertEquals(List.of(radius), navigation.statusRadii());
+            assertEquals(List.of(0), navigation.statusRadii());
         }
     }
 
@@ -276,6 +280,81 @@ class BasicModuleSemanticsTest {
                 navigation.statusPositions()
         );
         assertEquals(List.of(4), navigation.statusRadii());
+    }
+
+    @Test
+    void savedCoordinateRadiusSevenDoesNotArriveTwoBlocksAway() {
+        UUID coordinateId = UUID.randomUUID();
+        CoordinatePoint point = new CoordinatePoint(
+                coordinateId,
+                "Saved",
+                5,
+                70,
+                -9,
+                "minecraft:overworld",
+                7
+        );
+        ToggleNavigationService service = new ToggleNavigationService();
+        service.navigating = true;
+        AtomicReference<BlockPosition> player = new AtomicReference<>(
+                new BlockPosition(7, 70, -9)
+        );
+        MoveToCoordinateModule module = savedCoordinateModule(
+                context(
+                        new BaritoneAutomationNavigation(service, worldAt(player)),
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        new TaskRunWorkspace(),
+                        Map.of(coordinateId, point)
+                ),
+                coordinateId
+        );
+
+        assertEquals(TaskModuleState.RUNNING, module.start().state());
+        assertEquals(TaskModuleState.RUNNING, module.tick().state());
+        assertEquals(new BlockPosition(5, 70, -9), service.exactTarget);
+        assertEquals(0, service.cancellations);
+
+        player.set(new BlockPosition(5, 70, -9));
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(1, service.cancellations);
+    }
+
+    @Test
+    void savedCoordinateRadiusSevenFailsWhenPathStopsAwayFromTarget() {
+        UUID coordinateId = UUID.randomUUID();
+        CoordinatePoint point = new CoordinatePoint(
+                coordinateId,
+                "Saved",
+                5,
+                70,
+                -9,
+                "minecraft:overworld",
+                7
+        );
+        ToggleNavigationService service = new ToggleNavigationService();
+        service.navigating = true;
+        AtomicReference<BlockPosition> player = new AtomicReference<>(
+                new BlockPosition(7, 70, -9)
+        );
+        MoveToCoordinateModule module = savedCoordinateModule(
+                context(
+                        new BaritoneAutomationNavigation(service, worldAt(player)),
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        new TaskRunWorkspace(),
+                        Map.of(coordinateId, point)
+                ),
+                coordinateId
+        );
+
+        assertEquals(TaskModuleState.RUNNING, module.start().state());
+        assertEquals(TaskModuleState.RUNNING, module.tick().state());
+        service.navigating = false;
+        assertEquals(TaskModuleState.FAILED, module.tick().state());
+        assertEquals(1, service.cancellations);
     }
 
     @Test
@@ -1311,6 +1390,34 @@ class BasicModuleSemanticsTest {
         );
     }
 
+    private static MoveToCoordinateModule savedCoordinateModule(
+            TaskExecutionContext context,
+            UUID coordinateId
+    ) {
+        return new MoveToCoordinateModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.MOVE_TO_COORDINATE,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId
+                        )
+                )
+        );
+    }
+
+    private static WorldObserver worldAt(
+            AtomicReference<BlockPosition> player
+    ) {
+        return () -> new WorldObservation(
+                true,
+                true,
+                "minecraft:overworld",
+                Optional.of(player.get())
+        );
+    }
+
     private static ContainerTarget target(int x, int y, int z, String type) {
         return new ContainerTarget(new BlockPosition(x, y, z), type);
     }
@@ -1366,6 +1473,39 @@ class BasicModuleSemanticsTest {
                 Map<UUID, Map<BlockPosition, Set<String>>> contents
         ) {
             saved = true;
+        }
+    }
+
+    private static final class ToggleNavigationService
+            implements NavigationService {
+        private BlockPosition exactTarget;
+        private boolean navigating;
+        private int cancellations;
+
+        @Override
+        public void navigateTo(BlockPosition target) {
+            exactTarget = target;
+        }
+
+        @Override
+        public void navigateToNear(BlockPosition target, int radius) {
+            throw new AssertionError("coordinate moves must use exact navigation");
+        }
+
+        @Override
+        public void navigateToWithinRadius(BlockPosition target, int radius) {
+            throw new AssertionError("coordinate moves must use exact navigation");
+        }
+
+        @Override
+        public void cancel() {
+            cancellations++;
+            navigating = false;
+        }
+
+        @Override
+        public boolean isNavigatingOrCalculating() {
+            return navigating;
         }
     }
 

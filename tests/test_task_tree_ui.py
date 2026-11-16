@@ -99,7 +99,8 @@ def test_branches_and_depth_labels_are_explicit_and_compact() -> None:
     assert "const cappedDepth = Math.min(depth, 4);" in editor
     assert "`workflow-depth-${cappedDepth}`" in editor
     assert "`workflow-branch-${role}`" in editor
-    assert 'path.map((value) => value + 1).join(".")' not in editor
+    assert '"workflow-node-position"' in editor
+    assert 'path.map((index) => index + 1).join(".")' in editor
 
 
 def test_tree_actions_keep_existing_model_callbacks_and_stop_bubbling() -> None:

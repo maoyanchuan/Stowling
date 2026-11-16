@@ -115,23 +115,44 @@ final class ResourceReferenceSupport {
     ) {
         if (reference.type() != ResourceType.OUTPUT) {
             throw new IllegalArgumentException(
-                    "target must reference a dynamic output"
+                    "目标引用必须是动态输出（output:container、output:storage "
+                            + "或 output:marker）"
             );
         }
         return switch (reference.key()) {
             case "container" -> workspace.selectedContainer().orElseThrow(
-                    () -> new IllegalStateException("no container selected")
+                    () -> missingOutput(
+                            "container",
+                            "容器",
+                            "选择容器",
+                            TaskModuleIds.SELECT_CONTAINER
+                    )
             );
             case "storage" -> workspace.selectedStorageTarget().orElseThrow(
-                    () -> new IllegalStateException("no storage target selected")
+                    () -> missingOutput(
+                            "storage",
+                            "存储位",
+                            "选择存储位",
+                            TaskModuleIds.SELECT_STORAGE_TARGET
+                    )
             );
-            case "marker" -> workspace.selectedMarkerContainer().orElseThrow(
-                    () -> new IllegalStateException("no marker container selected")
-            );
+            case "marker" -> markerContainer(workspace);
             default -> throw new IllegalArgumentException(
-                    "unknown output reference: " + reference.key()
+                    "未知动态输出引用 output:" + reference.key()
+                            + "；可用值为 container、storage、marker"
             );
         };
+    }
+
+    static ContainerTarget markerContainer(TaskRunWorkspace workspace) {
+        return workspace.selectedMarkerContainer().orElseThrow(
+                () -> missingOutput(
+                        "marker",
+                        "标记容器",
+                        "选择标记容器",
+                        TaskModuleIds.SELECT_MARKER_CONTAINER
+                )
+        );
     }
 
     static UUID taskId(TaskStep step) {
@@ -158,5 +179,18 @@ final class ResourceReferenceSupport {
             );
         }
         return ResourceReference.parse(trimmed);
+    }
+
+    private static IllegalStateException missingOutput(
+            String key,
+            String label,
+            String selectionName,
+            String prerequisiteModuleId
+    ) {
+        return new IllegalStateException(
+                "无法解析 output:" + key + "：未选择" + label
+                        + "；请先执行“" + selectionName + "”前置模块（"
+                        + prerequisiteModuleId + "）"
+        );
     }
 }

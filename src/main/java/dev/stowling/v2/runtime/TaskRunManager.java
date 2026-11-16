@@ -384,7 +384,7 @@ public final class TaskRunManager {
         try {
             TaskFlowExecutor currentFlow = flow();
             TaskModuleResult result = currentFlow.tick();
-            active.completedSteps = currentFlow.completedTopLevelSteps();
+            syncCompletedSteps();
             if (active.stopRequested) {
                 return;
             }
@@ -416,6 +416,7 @@ public final class TaskRunManager {
                 );
             }
         } catch (RuntimeException exception) {
+            syncCompletedSteps();
             String message = "流程执行失败: " + safeMessage(exception);
             if (active.prepared.interruptionTask == null) {
                 finishRun(
@@ -717,6 +718,12 @@ public final class TaskRunManager {
             active.flow = newFlow(active, active.prepared.task, true);
         }
         return active.flow;
+    }
+
+    private void syncCompletedSteps() {
+        if (active != null && active.flow != null) {
+            active.completedSteps = active.flow.completedTopLevelSteps();
+        }
     }
 
     private TaskFlowExecutor newFlow(

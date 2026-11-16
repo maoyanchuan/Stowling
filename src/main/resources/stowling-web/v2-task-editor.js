@@ -17,9 +17,15 @@
         CREATE_TASK: "＋"
     });
     const OUTPUT_REFERENCE_LABELS = Object.freeze({
-        "output:container": "当前结果 · 容器",
-        "output:storage": "当前结果 · 存储位",
-        "output:marker": "当前结果 · 标记容器"
+        "output:container": "前序选择 · 容器",
+        "output:storage": "前序选择 · 存储位",
+        "output:marker": "前序选择 · 标记容器"
+    });
+    const OUTPUT_REFERENCE_HINTS = Object.freeze({
+        "output:container": "需要先扫描区域并执行“选择容器”；不会自动选择缓存箱。",
+        "output:storage": "需要先执行“选择存储位”；不会自动选择分类目标。",
+        "output:marker": "需要先扫描分类标记并执行“选择标记容器”；"
+            + "收集掉落物不会产生此结果。若要存入固定缓存箱，请选择它的已保存坐标。"
     });
     const ITEM_SOURCE_LABELS = Object.freeze({
         collected: "已收集",
@@ -147,7 +153,12 @@
             title,
             meta
         );
+        const position = Stowling.element(
+            "span", "workflow-node-position", path.map((index) => index + 1).join(".")
+        );
+        position.setAttribute("aria-label", `步骤 ${position.textContent}`);
         summary.append(
+            position,
             icon,
             copy,
             Stowling.element(
@@ -966,12 +977,13 @@
      * @param {object} step
      * @param {object} parameter
      * @param {Array<string>} types
-     * @returns {HTMLSelectElement}
+     * @returns {HTMLElement}
      */
     function referenceSelect(context, step, parameter, types) {
         const select = document.createElement("select");
         select.required = Boolean(parameter.required);
-        select.append(new Option("请选择已保存资源或当前结果", ""));
+        select.setAttribute("aria-label", parameter.label || "资源引用");
+        select.append(new Option("请选择已保存资源或前序选择结果", ""));
         const current = normalizeLegacyReference(context, step, parameter, types);
         let found = false;
         for (const type of types) {
@@ -999,10 +1011,21 @@
             select.append(invalid);
         }
         select.value = current;
+        const wrapper = Stowling.element("div", "task-reference-control");
+        const hint = Stowling.element("p", "task-reference-hint");
+        hint.setAttribute("aria-live", "polite");
+        /** @returns {void} */
+        const updateHint = () => {
+            hint.textContent = OUTPUT_REFERENCE_HINTS[select.value] || "";
+            hint.hidden = !hint.textContent;
+        };
+        updateHint();
         select.addEventListener("change", () => {
+            updateHint();
             setParameter(step, parameter.key, select.value, context.changed);
         });
-        return select;
+        wrapper.append(select, hint);
+        return wrapper;
     }
 
     /**
@@ -1091,17 +1114,17 @@
         const all = [
             {
                 type: "output-container",
-                label: "当前结果 · 容器",
+                label: OUTPUT_REFERENCE_LABELS["output:container"],
                 value: "output:container"
             },
             {
                 type: "output-storage",
-                label: "当前结果 · 存储位",
+                label: OUTPUT_REFERENCE_LABELS["output:storage"],
                 value: "output:storage"
             },
             {
                 type: "output-marker",
-                label: "当前结果 · 标记容器",
+                label: OUTPUT_REFERENCE_LABELS["output:marker"],
                 value: "output:marker"
             }
         ];
@@ -1123,10 +1146,10 @@
             region: "区域",
             "category-zone": "分类区",
             task: "任务",
-            output: "当前结果",
-            "output-container": "当前结果 · 容器",
-            "output-storage": "当前结果 · 存储位",
-            "output-marker": "当前结果 · 标记容器"
+            output: "前序步骤结果",
+            "output-container": OUTPUT_REFERENCE_LABELS["output:container"],
+            "output-storage": OUTPUT_REFERENCE_LABELS["output:storage"],
+            "output-marker": OUTPUT_REFERENCE_LABELS["output:marker"]
         };
         return labels[type] || "引用";
     }

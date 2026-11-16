@@ -250,11 +250,11 @@ def test_task_references_are_unified_and_show_resource_types() -> None:
     assert 'parameter.kind === "region-reference"' in editor
     assert 'parameter.kind === "category-zone-reference"' in editor
     assert 'parameter.kind === "container-reference"' in editor
-    assert 'select.append(new Option("请选择已保存资源或当前结果", ""))' in editor
+    assert 'select.append(new Option("请选择已保存资源或前序选择结果", ""))' in editor
     assert 'label: "坐标"' in editor or '"coordinate": "坐标"' in editor
     assert '"category-zone": "分类区"' in editor
     assert 'task: "任务"' in editor
-    assert 'output: "当前结果"' in editor
+    assert 'output: "前序步骤结果"' in editor
     assert "normalizeLegacyReference" in editor
     assert "validateReference(parameter, value, step.moduleId)" in tasks
 
@@ -707,7 +707,7 @@ def test_task_tabs_use_hash_and_polling_never_changes_partitions() -> None:
     opener = opener.split("function applyTaskHashRoute()", 1)[0]
     assert "state.openTriggersAfterTaskReady = false" in opener
 
-    selection = javascript.split("function selectTask(task)", 1)[1]
+    selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
     selection = selection.split("function renderRunControls", 1)[0]
     assert 'showTaskTab("orchestration", true)' in selection
     assert 'showTaskTab("triggers", true)' not in javascript
@@ -834,7 +834,7 @@ def test_workflow_tree_styles_support_nested_details_and_mobile_indent() -> None
 
 def test_task_selection_aligns_saved_run_target_without_using_the_draft() -> None:
     javascript = read("tasks.js")
-    selection = javascript.split("function selectTask(task)", 1)[1]
+    selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
     selection = selection.split("function renderRunControls", 1)[0]
 
     assert "state.runTaskId = task.id" in selection

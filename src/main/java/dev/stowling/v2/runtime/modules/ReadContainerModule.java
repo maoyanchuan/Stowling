@@ -20,11 +20,9 @@ final class ReadContainerModule implements TaskModuleExecutor {
                 TaskModuleIds.TARGET_REF,
                 ResourceType.OUTPUT
         );
-        ContainerTarget selected = context.workspace()
-                .selectedMarkerContainer()
-                .orElseThrow(() -> new IllegalStateException(
-                        "no marker container selected"
-                ));
+        ContainerTarget selected = ResourceReferenceSupport.markerContainer(
+                context.workspace()
+        );
         ContainerTarget requested = reference == null
                 ? selected
                 : ResourceReferenceSupport.output(context.workspace(), reference);

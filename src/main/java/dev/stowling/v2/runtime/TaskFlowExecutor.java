@@ -56,6 +56,23 @@ public final class TaskFlowExecutor {
         if (stopRequested) {
             return tickWhileStopping();
         }
+        try {
+            return tickActiveFlow();
+        } catch (RuntimeException exception) {
+            return failureFor(exception);
+        }
+    }
+
+    public synchronized TaskModuleResult tickWhileStopping() {
+        stopRequested = true;
+        try {
+            return tickStoppingAction();
+        } catch (RuntimeException exception) {
+            return failureFor(exception);
+        }
+    }
+
+    private TaskModuleResult tickActiveFlow() {
         int operations = 0;
         while (operations++ < OPERATION_BUDGET) {
             if (stopRequested) {
@@ -94,8 +111,7 @@ public final class TaskFlowExecutor {
         return TaskModuleResult.running("流程推进中");
     }
 
-    public synchronized TaskModuleResult tickWhileStopping() {
-        stopRequested = true;
+    private TaskModuleResult tickStoppingAction() {
         if (action == null) {
             return TaskModuleResult.succeeded("流程已到安全停止点");
         }
@@ -106,9 +122,10 @@ public final class TaskFlowExecutor {
                 || result.state() == TaskModuleState.WAITING) {
             return result;
         }
+        ActionState stopping = action;
         action = null;
         return result.state() == TaskModuleState.FAILED
-                ? TaskModuleResult.failed(result.message())
+                ? failAt(stopping, result.message())
                 : TaskModuleResult.succeeded("当前动作已确认，可安全停止");
     }
 
@@ -146,8 +163,9 @@ public final class TaskFlowExecutor {
                 ? action.executor.tick()
                 : startAction();
         if (result.state() == TaskModuleState.FAILED) {
+            ActionState failed = action;
             action = null;
-            return result;
+            return failAt(failed, result.message());
         }
         if (result.state() != TaskModuleState.SUCCEEDED) {
             return result;
@@ -179,7 +197,7 @@ public final class TaskFlowExecutor {
             return null;
         }
         if (step.steps().isEmpty()) {
-            return TaskModuleResult.failed("REPEAT 的流程体不能为空");
+            return failAt(frame, "REPEAT 的流程体不能为空");
         }
         int maxIterations = integerParameter(
                 step,
@@ -187,7 +205,7 @@ public final class TaskFlowExecutor {
                 DEFAULT_MAX_ITERATIONS
         );
         if (maxIterations <= 0) {
-            return TaskModuleResult.failed("maxIterations 必须为正数");
+            return failAt(frame, "maxIterations 必须为正数");
         }
         frames.push(Frame.repeat(frame, step, maxIterations));
         return null;
@@ -200,7 +218,8 @@ public final class TaskFlowExecutor {
             return null;
         }
         if (frame.iterations >= frame.maxIterations) {
-            return TaskModuleResult.failed(
+            return failAt(
+                    frame.location(),
                     "REPEAT 达到最大迭代次数 " + frame.maxIterations
             );
         }
@@ -211,7 +230,7 @@ public final class TaskFlowExecutor {
 
     private TaskModuleResult createTask(Frame frame, TaskStep step) {
         if (!allowTaskCreation) {
-            return TaskModuleResult.failed("中断收尾流程不能创建新任务");
+            return failAt(frame, "中断收尾流程不能创建新任务");
         }
         String taskRef = parameter(step, TaskModuleIds.TASK_REF);
         TaskPriority priority = null;
@@ -297,6 +316,54 @@ public final class TaskFlowExecutor {
         return value == null ? fallback : Integer.parseInt(value);
     }
 
+    private TaskModuleResult failureFor(RuntimeException exception) {
+        StepLocation location = action == null
+                ? currentLocation()
+                : action.frame.location();
+        return failAt(location, safeMessage(exception));
+    }
+
+    private StepLocation currentLocation() {
+        Frame frame = frames.peek();
+        return frame == null
+                ? new StepLocation("?", "流程")
+                : frame.location();
+    }
+
+    private static TaskModuleResult failAt(
+            ActionState failedAction,
+            String message
+    ) {
+        return failAt(failedAction.frame.location(), message);
+    }
+
+    private static TaskModuleResult failAt(Frame frame, String message) {
+        return failAt(frame.location(), message);
+    }
+
+    private static TaskModuleResult failAt(
+            StepLocation location,
+            String message
+    ) {
+        String detail = message == null || message.isBlank()
+                ? "未知错误"
+                : message;
+        return TaskModuleResult.failed(location.describe() + "执行失败: " + detail);
+    }
+
+    private static String safeMessage(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank()
+                ? exception.getClass().getSimpleName()
+                : message;
+    }
+
+    private static String stepLabel(TaskStep step) {
+        return step.moduleId().isBlank()
+                ? step.kind().name()
+                : step.moduleId();
+    }
+
     private static final class ActionState {
         private final Frame frame;
         private final TaskStep step;
@@ -367,12 +434,39 @@ public final class TaskFlowExecutor {
             );
         }
 
+        private StepLocation location() {
+            TaskStep step = index < steps.size()
+                    ? steps.get(index)
+                    : controlStep;
+            return new StepLocation(
+                    path(),
+                    step == null ? "流程" : stepLabel(step)
+            );
+        }
+
+        private String path() {
+            if (controlStep == null) {
+                int position = Math.min(index + 1, Math.max(steps.size(), 1));
+                return Integer.toString(Math.max(position, 1));
+            }
+            String parentPath = parent == null ? "1" : parent.path();
+            return index >= steps.size()
+                    ? parentPath
+                    : parentPath + "." + (index + 1);
+        }
+
         private boolean isRoot() {
             return root;
         }
 
         private boolean isRepeat() {
             return repeat;
+        }
+    }
+
+    private record StepLocation(String path, String label) {
+        private String describe() {
+            return "第 " + path + " 步（" + label + "）";
         }
     }
 }

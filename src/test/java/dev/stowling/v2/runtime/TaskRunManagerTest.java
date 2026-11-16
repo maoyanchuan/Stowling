@@ -214,6 +214,37 @@ class TaskRunManagerTest {
     }
 
     @Test
+    void laterStepCreationFailurePreservesCompletedProgress() {
+        UUID coordinateId = UUID.randomUUID();
+        RecordingNavigation navigation = new RecordingNavigation(
+                NavigationStatus.ARRIVED
+        );
+        TaskRunManager manager = new TaskRunManager(navigation);
+        TaskStep broken = TaskStep.action(
+                UUID.randomUUID(),
+                "UNKNOWN_TEST_ACTION",
+                Map.of()
+        );
+        TaskRunSnapshot run = manager.start(
+                task(step(coordinateId), broken),
+                coordinates(coordinateId)
+        );
+
+        manager.tick();
+        manager.tick();
+
+        TaskRunSnapshot failed = manager.runs().stream()
+                .filter(candidate -> candidate.runId().equals(run.runId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(TaskRunState.FAILED, failed.state());
+        assertEquals(1, failed.completedSteps());
+        assertEquals(2, failed.totalSteps());
+        assertTrue(failed.message().contains("第 2 步（UNKNOWN_TEST_ACTION）"));
+        assertTrue(manager.status().isEmpty());
+    }
+
+    @Test
     void cancelsOnlyTheActiveRun() {
         UUID coordinateId = UUID.randomUUID();
         TaskRunManager manager = new TaskRunManager(

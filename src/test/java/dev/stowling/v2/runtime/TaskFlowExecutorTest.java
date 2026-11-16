@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -108,6 +109,159 @@ class TaskFlowExecutorTest {
     }
 
     @Test
+    void actionCreationFailureReportsStepAndPreservesProgress() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "FIRST", (context, step) -> action(
+                        () -> TaskModuleResult.succeeded("first")
+                ),
+                "BROKEN_CREATE", (context, step) -> {
+                    throw new IllegalStateException("create boom");
+                }
+        ), List.of(
+                actionStep("FIRST"),
+                actionStep("BROKEN_CREATE")
+        ));
+
+        TaskModuleResult result = flow.tick();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertEquals(1, flow.completedTopLevelSteps());
+        assertEquals(2, flow.totalTopLevelSteps());
+        assertTrue(flow.safeToStop());
+        assertTrue(result.message().contains("第 2 步（BROKEN_CREATE）"));
+        assertTrue(result.message().contains("create boom"));
+    }
+
+    @Test
+    void nestedActionStartFailureReportsPathAndPreservesProgress() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "FIRST", (context, step) -> action(
+                        () -> TaskModuleResult.succeeded("first")
+                ),
+                "BROKEN_START", (context, step) -> action(() -> {
+                    throw new IllegalStateException("start boom");
+                })
+        ), List.of(
+                actionStep("FIRST"),
+                TaskStep.repeat(
+                        UUID.randomUUID(),
+                        Map.of(TaskModuleIds.CONDITION, "ALWAYS"),
+                        List.of(actionStep("BROKEN_START"))
+                )
+        ));
+
+        TaskModuleResult result = flow.tick();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertEquals(1, flow.completedTopLevelSteps());
+        assertTrue(result.message().contains("第 2.1 步（BROKEN_START）"));
+        assertTrue(result.message().contains("start boom"));
+    }
+
+    @Test
+    void actionTickFailureReportsStepAndPreservesProgress() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "FIRST", (context, step) -> action(
+                        () -> TaskModuleResult.succeeded("first")
+                ),
+                "WAIT_THEN_THROW", (context, step) -> action(
+                        () -> TaskModuleResult.waiting("waiting"),
+                        () -> {
+                            throw new IllegalStateException("tick boom");
+                        }
+                )
+        ), List.of(
+                actionStep("FIRST"),
+                actionStep("WAIT_THEN_THROW")
+        ));
+
+        TaskModuleResult waiting = flow.tick();
+        TaskModuleResult failed = flow.tick();
+
+        assertEquals(TaskModuleState.WAITING, waiting.state());
+        assertEquals(TaskModuleState.FAILED, failed.state());
+        assertEquals(1, flow.completedTopLevelSteps());
+        assertTrue(failed.message().contains("第 2 步（WAIT_THEN_THROW）"));
+        assertTrue(failed.message().contains("tick boom"));
+    }
+
+    @Test
+    void stoppingActionFailureKeepsStepLocation() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "STOP_FAIL", (context, step) -> action(
+                        () -> TaskModuleResult.waiting("waiting"),
+                        () -> {
+                            throw new IllegalStateException("stop boom");
+                        }
+                )
+        ), List.of(actionStep("STOP_FAIL")));
+
+        assertEquals(TaskModuleState.WAITING, flow.tick().state());
+        flow.requestStop();
+        TaskModuleResult result = flow.tickWhileStopping();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertEquals(0, flow.completedTopLevelSteps());
+        assertTrue(result.message().contains("第 1 步（STOP_FAIL）"));
+        assertTrue(result.message().contains("stop boom"));
+    }
+
+    @Test
+    void startExceptionRetainsUnsafeActionUntilCancelled() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        AtomicInteger requestStops = new AtomicInteger();
+        AtomicInteger cancels = new AtomicInteger();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "UNSAFE_START", (context, step) -> new UnsafeExecutor(
+                        true,
+                        requestStops,
+                        cancels
+                )
+        ), List.of(actionStep("UNSAFE_START")));
+
+        TaskModuleResult result = flow.tick();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertFalse(flow.safeToStop());
+        flow.requestStop();
+        assertEquals(1, requestStops.get());
+        assertFalse(flow.safeToStop());
+        flow.cancel();
+        assertEquals(1, cancels.get());
+        assertTrue(flow.safeToStop());
+    }
+
+    @Test
+    void stoppingTickExceptionRetainsUnsafeActionUntilCancelled() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        AtomicInteger requestStops = new AtomicInteger();
+        AtomicInteger cancels = new AtomicInteger();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "UNSAFE_TICK", (context, step) -> new UnsafeExecutor(
+                        false,
+                        requestStops,
+                        cancels
+                )
+        ), List.of(actionStep("UNSAFE_TICK")));
+
+        assertEquals(TaskModuleState.WAITING, flow.tick().state());
+        flow.requestStop();
+        TaskModuleResult result = flow.tickWhileStopping();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertEquals(1, requestStops.get());
+        assertFalse(flow.safeToStop());
+        assertTrue(result.message().contains("第 1 步（UNSAFE_TICK）"));
+        flow.cancel();
+        assertEquals(1, cancels.get());
+        assertTrue(flow.safeToStop());
+    }
+
+    @Test
     void createTaskOmitsPriorityForTargetTaskDefault() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         AtomicReference<TaskPriority> observed = new AtomicReference<>();
@@ -202,15 +356,22 @@ class TaskFlowExecutorTest {
     }
 
     private static TaskModuleExecutor action(ResultSupplier supplier) {
+        return action(supplier, supplier);
+    }
+
+    private static TaskModuleExecutor action(
+            ResultSupplier start,
+            ResultSupplier tick
+    ) {
         return new TaskModuleExecutor() {
             @Override
             public TaskModuleResult start() {
-                return supplier.get();
+                return start.get();
             }
 
             @Override
             public TaskModuleResult tick() {
-                return supplier.get();
+                return tick.get();
             }
 
             @Override
@@ -242,6 +403,50 @@ class TaskFlowExecutorTest {
     @FunctionalInterface
     private interface ResultSupplier {
         TaskModuleResult get();
+    }
+
+    private static final class UnsafeExecutor implements TaskModuleExecutor {
+        private final boolean startThrows;
+        private final AtomicInteger requestStops;
+        private final AtomicInteger cancels;
+
+        private UnsafeExecutor(
+                boolean startThrows,
+                AtomicInteger requestStops,
+                AtomicInteger cancels
+        ) {
+            this.startThrows = startThrows;
+            this.requestStops = requestStops;
+            this.cancels = cancels;
+        }
+
+        @Override
+        public TaskModuleResult start() {
+            if (startThrows) {
+                throw new IllegalStateException("start boom");
+            }
+            return TaskModuleResult.waiting("waiting");
+        }
+
+        @Override
+        public TaskModuleResult tick() {
+            throw new IllegalStateException("tick boom");
+        }
+
+        @Override
+        public void requestStop() {
+            requestStops.incrementAndGet();
+        }
+
+        @Override
+        public boolean safeToStop() {
+            return false;
+        }
+
+        @Override
+        public void cancel() {
+            cancels.incrementAndGet();
+        }
     }
 
     private static final class FoodPort implements FoodConsumptionPort {

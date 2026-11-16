@@ -11,6 +11,7 @@ import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.ContainerCategoryPort;
 import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerInspectionPort;
+import dev.stowling.automation.ContainerInspectionResult;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
@@ -33,6 +34,7 @@ import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.TaskStep;
 import java.util.List;
 import java.util.Map;
@@ -101,6 +103,83 @@ class BasicModuleSemanticsTest {
         workspace.recordContainerRead(markerB, Set.of("minecraft:gold_ingot"));
         assertEquals(TaskModuleState.SUCCEEDED, incomplete.start().state());
         assertTrue(cache.saved);
+    }
+
+    @Test
+    void outputFailuresNameReferenceAndPrerequisiteModule() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+
+        assertMissingOutput(
+                workspace,
+                "container",
+                "容器",
+                "选择容器",
+                TaskModuleIds.SELECT_CONTAINER
+        );
+        assertMissingOutput(
+                workspace,
+                "storage",
+                "存储位",
+                "选择存储位",
+                TaskModuleIds.SELECT_STORAGE_TARGET
+        );
+        assertMissingOutput(
+                workspace,
+                "marker",
+                "标记容器",
+                "选择标记容器",
+                TaskModuleIds.SELECT_MARKER_CONTAINER
+        );
+    }
+
+    @Test
+    void readContainerUsesSharedMarkerRequirementAndReadsSelectedMarker() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext missingContext = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        IllegalStateException shared = assertThrows(
+                IllegalStateException.class,
+                () -> ResourceReferenceSupport.markerContainer(workspace)
+        );
+        IllegalStateException module = assertThrows(
+                IllegalStateException.class,
+                () -> new ReadContainerModule(
+                        missingContext,
+                        readContainerStep()
+                )
+        );
+        assertEquals(shared.getMessage(), module.getMessage());
+
+        ContainerTarget marker = target(3, 64, 3, "marker");
+        workspace.setMarkerPlan(
+                UUID.randomUUID(),
+                new MarkerContainerScanAction.Plan(
+                        Map.of(),
+                        List.of(new MarkerContainerScanAction.Target(marker)),
+                        ""
+                )
+        );
+        workspace.selectMarker();
+        RecordingInspection inspection = new RecordingInspection(marker);
+        TaskExecutionContext selectedContext = contextWithInspection(
+                workspace,
+                inspection
+        );
+
+        ReadContainerModule reader = new ReadContainerModule(
+                selectedContext,
+                readContainerStep()
+        );
+        TaskModuleResult result = reader.start();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(marker, inspection.observedTarget());
+        assertEquals(1, workspace.markerReadCount());
     }
 
     @Test
@@ -354,6 +433,55 @@ class BasicModuleSemanticsTest {
     }
 
 
+    private static void assertMissingOutput(
+            TaskRunWorkspace workspace,
+            String key,
+            String label,
+            String selectionName,
+            String prerequisiteModuleId
+    ) {
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> ResourceReferenceSupport.output(
+                        workspace,
+                        ResourceReference.output(key)
+                )
+        );
+        assertTrue(failure.getMessage().contains("output:" + key));
+        assertTrue(failure.getMessage().contains(label));
+        assertTrue(failure.getMessage().contains(selectionName));
+        assertTrue(failure.getMessage().contains(prerequisiteModuleId));
+    }
+
+    private static TaskExecutionContext contextWithInspection(
+            TaskRunWorkspace workspace,
+            ContainerInspectionPort inspection
+    ) {
+        TaskExecutionContext base = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        return new TaskExecutionContext(
+                base.navigation(),
+                base.droppedItems(),
+                base.containerRegions(),
+                base.containerCategories(),
+                base.containerTransfers(),
+                base.containerWithdrawals(),
+                inspection,
+                base.categoryMarkerCache(),
+                base.foodConsumption(),
+                base.categoryZonesPort(),
+                base.coordinates(),
+                base.regions(),
+                base.categoryZones(),
+                workspace
+        );
+    }
+
     private static TaskExecutionContext contextWithMarker(
             TaskRunWorkspace workspace,
             Map<UUID, CategoryZoneDefinition> zones,
@@ -394,6 +522,14 @@ class BasicModuleSemanticsTest {
                         new AreaBounds(2, 0, 0, 3, 1, 1),
                         "test-rule"
                 ))
+        );
+    }
+
+    private static TaskStep readContainerStep() {
+        return TaskStep.action(
+                UUID.randomUUID(),
+                TaskModuleIds.READ_CONTAINER,
+                Map.of()
         );
     }
 
@@ -470,6 +606,43 @@ class BasicModuleSemanticsTest {
 
     private static ContainerTarget target(int x, int y, int z, String type) {
         return new ContainerTarget(new BlockPosition(x, y, z), type);
+    }
+
+    private static final class RecordingInspection
+            implements ContainerInspectionPort {
+        private final ContainerTarget expected;
+        private ContainerTarget observed;
+
+        private RecordingInspection(ContainerTarget expected) {
+            this.expected = expected;
+        }
+
+        @Override
+        public ContainerInspectionResult startInspection(
+                ContainerTarget target
+        ) {
+            observed = target;
+            if (!expected.equals(target)) {
+                return ContainerInspectionResult.failed("unexpected target");
+            }
+            return ContainerInspectionResult.success(
+                    "read",
+                    Set.of("minecraft:iron_ingot")
+            );
+        }
+
+        @Override
+        public ContainerInspectionResult pollInspection() {
+            return ContainerInspectionResult.failed("not pending");
+        }
+
+        @Override
+        public void cancelInspection() {
+        }
+
+        private ContainerTarget observedTarget() {
+            return observed;
+        }
     }
 
     private static final class RecordingMarkerCache

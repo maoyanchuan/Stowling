@@ -78,6 +78,8 @@
         search: document.querySelector("#task-search"),
         taskCount: document.querySelector("#task-list-count"),
         settingsLabel: document.querySelector("#task-settings-label"),
+        editorTitle: document.querySelector("#task-editor-title"),
+        draftStatus: document.querySelector("#task-draft-status"),
         list: document.querySelector("#task-list"),
         listMessage: document.querySelector("#task-list-message"),
         empty: document.querySelector("#task-empty"),
@@ -747,7 +749,10 @@
                 && matchesTaskFilter(task)
                 && matchesTaskFolder(task)
             ))
-            .sort(compareTasks);
+            .sort((left, right) => (
+                Number(isInterruptionTask(left)) - Number(isInterruptionTask(right))
+                || compareTasks(left, right)
+            ));
         elements.taskCount.textContent = String(matches.length);
         updateTaskFilters();
         if (matches.length === 0) {
@@ -758,7 +763,13 @@
             ));
             return;
         }
+        const groupHeadings = new Set();
         for (const task of matches) {
+            const group = isInterruptionTask(task) ? "中断收尾" : "日常任务";
+            if (state.taskFilter === "ALL" && !groupHeadings.has(group)) {
+                elements.list.append(Stowling.element("h3", "task-list-group", group));
+                groupHeadings.add(group);
+            }
             const button = Stowling.element(
                 "button",
                 "task-card task-select"
@@ -771,7 +782,7 @@
                 Stowling.element(
                     "span",
                     "compact-help",
-                    `${task.steps.length} 个根步骤`
+                    taskListSummary(task)
                 ),
                 ...(interruption
                     ? [Stowling.element(
@@ -799,6 +810,21 @@
             button.addEventListener("click", () => selectTask(task));
             elements.list.append(button);
         }
+    }
+
+    /**
+     * @param {object} task
+     * @returns {string}
+     */
+    function taskListSummary(task) {
+        const folder = state.folders.find((item) => item.id === task.folderId);
+        const boundTriggers = state.triggers.filter(
+            (trigger) => trigger.targetTaskId === task.id
+        ).length;
+        const activation = boundTriggers > 0
+            ? `${boundTriggers} 个触发器`
+            : task.repeatWhenIdle ? "完成后重排" : "手动 / 其他任务调用";
+        return `${folder?.name || "未分组"} · ${task.steps.length} 个根步骤 · ${activation}`;
     }
 
     /**
@@ -1347,11 +1373,18 @@
 
     /**
      * @param {object} task
+     * @param {boolean} revealInList
      * @returns {void}
      */
-    function selectTask(task) {
+    function selectTask(task, revealInList = false) {
         if (!confirmDiscardForTaskChange()) {
             return;
+        }
+        if (revealInList) {
+            state.query = "";
+            elements.search.value = "";
+            state.taskFilter = "ALL";
+            state.folderFilter = FOLDER_FILTER_ALL;
         }
         const preserveTab = state.preserveTabOnSelect;
         state.preserveTabOnSelect = false;
@@ -1715,6 +1748,7 @@
         elements.triggerSettings.hidden = !hasDraft;
         renderTaskFolderSelect();
         if (!hasDraft) {
+            updateActions();
             renderTriggerList();
             renderTriggerEditor();
             return;
@@ -2317,11 +2351,18 @@
         if (run.state === "INTERRUPTING") {
             return "正在执行中断收尾，队列暂停";
         }
-        if (run.state === "INTERRUPTION_FAILED") {
-            return "中断收尾失败，队列暂停；请重试，或先确认导航停止"
-                + "并处理完受管物品后跳过";
-        }
-        return String(run.message || "");
+        const message = String(run.message || "")
+            .replace("no marker container selected", "未选择标记容器（缺少前序选择结果）")
+            .replace("no container selected", "未选择容器（缺少前序选择结果）")
+            .replace("no storage target selected", "未选择存储位（缺少前序选择结果）")
+            .replace(/第 ([\d.]+) 步（([^）]+)）/g, (match, path, moduleId) => {
+                const module = state.modules.find((item) => item.id === moduleId);
+                return module ? `第 ${path} 步（${module.name}）` : match;
+            });
+        return run.state === "INTERRUPTION_FAILED"
+            ? (message || "中断收尾失败")
+                + "；队列暂停，请重试收尾，或确认导航停止并处理受管物品后跳过"
+            : message;
     }
 
     /**
@@ -2329,6 +2370,12 @@
      */
     function updateActions() {
         const errors = validationErrors();
+        elements.editorTitle.textContent = state.draft?.name || "任务编辑器";
+        elements.draftStatus.textContent = !state.draft
+            ? "未选择任务"
+            : !state.selectedId ? "未保存的新任务"
+            : state.dirty ? "有未保存修改" : "已保存";
+        elements.draftStatus.classList.toggle("is-dirty", state.dirty);
         elements.errors.replaceChildren();
         if (state.dirty && errors.length > 0) {
             elements.errors.append(
@@ -2594,69 +2641,100 @@
      * @returns {void}
      */
     function renderRuntime() {
+        const wasOpen = elements.runtime.querySelector(".task-run-history")?.open;
         elements.runtime.replaceChildren();
         const runs = state.runs.filter((run) => run.state !== "QUEUED");
-        if (runs.length === 0) {
-            elements.runtime.append(Stowling.emptyState("当前没有运行记录"));
-            return;
-        }
-        for (const run of runs) {
-            const card = Stowling.element("article", "task-card");
-            const content = Stowling.element("div");
-            content.append(
-                Stowling.element(
-                    "strong",
-                    "",
-                    `${run.taskName} · ${Model.priorityLabel(run.priority)}`
-                ),
-                Stowling.element(
-                    "p",
-                    "muted compact-help",
-                    `${runStateLabel(run.state)} · `
-                        + `${run.completedSteps}/${run.totalSteps} · `
-                        + runStateMessage(run)
-                ),
-                Stowling.element(
-                    "span",
-                    "muted compact-help",
-                    Stowling.formatDate(run.updatedAt)
-                )
-            );
-            card.append(content);
-            if (run.state === "INTERRUPTION_FAILED") {
-                const retry = Stowling.element(
-                    "button",
-                    "primary compact",
-                    "重试收尾"
-                );
-                retry.type = "button";
-                retry.addEventListener("click", () => {
-                    void retryInterruption(run.runId);
-                });
-                const skip = Stowling.element(
-                    "button",
-                    "secondary compact",
-                    "尝试跳过收尾"
-                );
-                skip.type = "button";
-                skip.addEventListener("click", () => {
-                    void skipInterruption(run.runId);
-                });
-                card.append(retry, skip);
-            } else if (isActiveRun(run)) {
-                const cancel = Stowling.element(
-                    "button",
-                    "secondary compact",
-                    "取消任务"
-                );
-                cancel.type = "button";
-                cancel.addEventListener("click", () => {
-                    void cancelRun(run.runId);
-                });
-                card.append(cancel);
+        const activeRuns = runs.filter(isActiveRun);
+        const historyRuns = runs.filter((run) => !isActiveRun(run));
+        const current = Stowling.element("section", "task-run-group");
+        current.append(Stowling.element("h3", "task-run-group-title", "当前执行"));
+        if (activeRuns.length === 0) {
+            current.append(Stowling.emptyState("当前空闲，没有正在执行的任务"));
+        } else {
+            for (const run of activeRuns) {
+                current.append(runtimeCard(run));
             }
-            elements.runtime.append(card);
         }
+        elements.runtime.append(current);
+        if (historyRuns.length > 0) {
+            const history = Stowling.element("details", "task-run-history");
+            history.open = wasOpen ?? activeRuns.length === 0;
+            history.append(Stowling.element(
+                "summary", "", `最近记录 · ${historyRuns.length} 次`
+            ));
+            const records = Stowling.element("div", "task-run-group");
+            for (const run of historyRuns) {
+                records.append(runtimeCard(run));
+            }
+            history.append(records);
+            elements.runtime.append(history);
+        }
+    }
+
+    /**
+     * @param {object} run
+     * @returns {HTMLElement}
+     */
+    function runtimeCard(run) {
+        const failed = run.state === "FAILED" || run.state === "INTERRUPTION_FAILED";
+        const card = Stowling.element("article", "task-card task-run-card");
+        card.classList.toggle("is-failed", failed);
+        const heading = Stowling.element("div", "task-run-heading");
+        heading.append(
+            Stowling.element("strong", "", run.taskName),
+            Stowling.element("span", "task-state-tag", runStateLabel(run.state))
+        );
+        const meta = Stowling.element("p", "task-run-meta");
+        meta.append(Stowling.element(
+            "span", "", `本次优先级：${Model.priorityLabel(run.priority)}`
+        ));
+        meta.append(Stowling.element(
+            "span", "", `已完成 ${run.completedSteps} / ${run.totalSteps} 个根步骤`
+        ));
+        const message = Stowling.element("p", "task-run-message", runStateMessage(run));
+        if (failed) {
+            message.prepend(Stowling.element("strong", "", "失败原因："));
+        }
+        card.append(heading, meta, message);
+        if (failed && /no marker container selected|未选择标记容器/.test(run.message || "")) {
+            card.append(Stowling.element(
+                "p", "task-reference-hint",
+                "请检查目标引用：固定缓存箱选它的已保存坐标；"
+                    + "使用标记容器则需先扫描分类标记并选择标记容器。"
+            ));
+        }
+        const footer = Stowling.element("div", "task-run-footer");
+        footer.append(Stowling.element(
+            "span", "muted compact-help", Stowling.formatDate(run.updatedAt)
+        ));
+        const actions = Stowling.element("div", "action-row");
+        const task = state.tasks.find((item) => item.id === run.taskId);
+        if (task) {
+            const edit = Stowling.element("button", "secondary compact", "查看任务配置");
+            edit.type = "button";
+            edit.addEventListener("click", () => {
+                // Use the existing selection path, including unsaved-change confirmation.
+                selectTask(task, true);
+            });
+            actions.append(edit);
+        }
+        if (run.state === "INTERRUPTION_FAILED") {
+            const retry = Stowling.element("button", "primary compact", "重试收尾");
+            retry.type = "button";
+            retry.addEventListener("click", () => { void retryInterruption(run.runId); });
+            const skip = Stowling.element("button", "secondary compact", "尝试跳过收尾");
+            skip.type = "button";
+            skip.addEventListener("click", () => { void skipInterruption(run.runId); });
+            actions.append(retry, skip);
+        } else if (isActiveRun(run)) {
+            const cancel = Stowling.element("button", "secondary compact", "取消任务");
+            cancel.type = "button";
+            cancel.addEventListener("click", () => { void cancelRun(run.runId); });
+            actions.append(cancel);
+        }
+        footer.append(actions);
+        card.append(footer);
+        return card;
     }
 
     /**

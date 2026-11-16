@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -542,6 +543,100 @@ class TaskInterruptionLifecycleTest {
 
         assertEquals(TaskRunState.PREEMPTED, runState(manager, run.runId()));
         assertEquals(2, attempts.get());
+    }
+
+    @Test
+    void unsafeInFlightStartFailureWaitsBeforeInterruption() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        AtomicBoolean safeToStop = new AtomicBoolean();
+        AtomicInteger cancels = new AtomicInteger();
+        AtomicInteger requestStops = new AtomicInteger();
+        TaskModuleRuntimeFactory unsafe = new TaskModuleRuntimeFactory() {
+            @Override
+            public String moduleId() {
+                return "TEST_UNSAFE_START";
+            }
+
+            @Override
+            public TaskModuleExecutor create(
+                    TaskStep step,
+                    TaskExecutionContext context
+            ) {
+                return new TestAction(context) {
+                    @Override
+                    public TaskModuleResult start() {
+                        throw new IllegalStateException("start boom");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        throw new IllegalStateException("stop boom");
+                    }
+
+                    @Override
+                    public void requestStop() {
+                        requestStops.incrementAndGet();
+                    }
+
+                    @Override
+                    public boolean safeToStop() {
+                        return safeToStop.get();
+                    }
+
+                    @Override
+                    public void cancel() {
+                        cancels.incrementAndGet();
+                    }
+                };
+            }
+        };
+        TaskRunManager manager = new TaskRunManager(
+                navigation,
+                registry(navigation, unsafe)
+        );
+        TaskDefinition cleanup = task(
+                "Cleanup",
+                TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE,
+                actionStep(NOOP)
+        );
+        TaskDefinition background = withCleanup(task(
+                "Unsafe",
+                TaskPriority.NORMAL,
+                TaskInterruptionMode.NONE,
+                actionStep("TEST_UNSAFE_START")
+        ), cleanup, false);
+        AppConfig config = config(
+                List.of(),
+                List.of(background, cleanup)
+        );
+
+        TaskRunSnapshot run = manager.start(background, config, null);
+        manager.tick();
+        manager.tick();
+
+        assertEquals(
+                TaskRunState.INTERRUPTING,
+                manager.status().orElseThrow().state()
+        );
+        assertEquals(1, requestStops.get());
+        assertEquals(0, navigation.requestStopCount());
+        assertEquals(0, cancels.get());
+
+        safeToStop.set(true);
+        manager.tick();
+        manager.tick();
+
+        TaskRunSnapshot failed = manager.runs().stream()
+                .filter(candidate -> candidate.runId().equals(run.runId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(TaskRunState.FAILED, failed.state());
+        assertEquals(0, failed.completedSteps());
+        assertTrue(failed.message().contains("第 1 步（TEST_UNSAFE_START）"));
+        assertEquals(1, navigation.requestStopCount());
+        assertEquals(1, cancels.get());
+        assertTrue(manager.status().isEmpty());
     }
 
     @Test

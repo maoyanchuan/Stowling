@@ -21,7 +21,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>任务管理 · 基础动作、递归流程与独立任务队列</p>
+                <p>任务管理 · 配置流程与查看运行结果</p>
             </div>
         </div>
         <div class="connection-state">
@@ -149,10 +149,15 @@
                     <section class="panel task-editor-panel" aria-labelledby="task-editor-title">
                         <div class="panel-heading">
                             <div>
-                                <p class="eyebrow">编排步骤</p>
+                                <p class="eyebrow">编辑配置 · 不影响已在运行的任务</p>
                                 <h2 id="task-editor-title">任务编辑器</h2>
                             </div>
-                            <span id="task-revision" class="loopback-tag">新任务</span>
+                            <div class="task-editor-status">
+                                <span id="task-draft-status" class="task-state-tag">
+                                    未选择任务
+                                </span>
+                                <span id="task-revision" class="loopback-tag">新任务</span>
+                            </div>
                         </div>
                     <form id="auto-eat-preset-form"
                           class="task-preset-form" hidden>
@@ -274,7 +279,7 @@
                             </details>
                             <div class="step-heading">
                                 <div>
-                                    <h3>任务流程</h3>
+                                    <h3>执行步骤</h3>
                                     <p class="muted compact-help">
                                         任务只组合基础动作。条件、循环和创建任务都
                                         在这里递归编辑；创建的任务独立排队。收集入缓存后
@@ -300,6 +305,10 @@
                                     </button>
                                 </div>
                             </div>
+                            <p class="task-reference-guide">
+                                固定目标用“已保存坐标”；“前序选择”需要先由选择动作产生，
+                                不会自动寻找缓存箱或分类箱。
+                            </p>
                             <div id="task-steps" class="step-list"></div>
                             <div id="task-errors" class="config-errors" role="alert"></div>
                             <div class="action-row task-save-actions">

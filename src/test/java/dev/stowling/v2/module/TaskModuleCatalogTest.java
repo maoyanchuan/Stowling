@@ -33,6 +33,13 @@ class TaskModuleCatalogTest {
                         ConfigValidator.AUTO_EAT_AT_COORDINATE,
                         ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                         ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
+                        "CATEGORY_SORT_PLAN",
+                        "CACHE_WITHDRAWAL",
+                        "CATEGORY_DEPOSIT",
+                        "CACHE_RETURN",
+                        "MARKER_CONTAINER_SCAN",
+                        "MARKER_CONTAINER_INSPECT",
+                        "MARKER_CACHE_SAVE",
                         ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
                         ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
                         ConfigValidator.MATCH_CONTAINER_CATEGORIES,
@@ -42,7 +49,10 @@ class TaskModuleCatalogTest {
         );
         assertEquals(
                 11,
-                modules.stream().filter(module -> !module.deprecated()).count()
+                modules.stream()
+                        .filter(module -> !module.deprecated())
+                        .filter(module -> module.kind() != TaskModuleKind.INTERNAL)
+                        .count()
         );
         assertEquals(
                 3,

@@ -442,6 +442,13 @@ public final class TaskModuleCatalog {
                                     1,
                                     null
                             )
+                    ),
+                    false,
+                    List.of(
+                            "CATEGORY_SORT_PLAN",
+                            "CACHE_WITHDRAWAL",
+                            "CATEGORY_DEPOSIT",
+                            "CACHE_RETURN"
                     )
             );
 
@@ -470,7 +477,83 @@ public final class TaskModuleCatalog {
                                     1,
                                     null
                             )
+                    ),
+                    false,
+                    List.of(
+                            "MARKER_CONTAINER_SCAN",
+                            "MARKER_CONTAINER_INSPECT",
+                            "MARKER_CACHE_SAVE"
                     )
+            );
+
+    private static final ModuleDefinition CATEGORY_SORT_PLAN =
+            new ModuleDefinition(
+                    "CATEGORY_SORT_PLAN",
+                    "解析分类区",
+                    "解析分类区规则并生成缓存容器和目标容器的分类映射。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
+            );
+
+    private static final ModuleDefinition CACHE_WITHDRAWAL =
+            new ModuleDefinition(
+                    "CACHE_WITHDRAWAL",
+                    "取出缓存物品",
+                    "从当前缓存容器取出符合目标分类的物品。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
+            );
+
+    private static final ModuleDefinition CATEGORY_DEPOSIT =
+            new ModuleDefinition(
+                    "CATEGORY_DEPOSIT",
+                    "存入分类容器",
+                    "把当前携带物品存入对应的分类储存容器。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
+            );
+
+    private static final ModuleDefinition CACHE_RETURN =
+            new ModuleDefinition(
+                    "CACHE_RETURN",
+                    "退回缓存物品",
+                    "目标容器空间不足时，把未存入物品退回缓存。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
+            );
+
+    private static final ModuleDefinition MARKER_CONTAINER_SCAN =
+            new ModuleDefinition(
+                    "MARKER_CONTAINER_SCAN",
+                    "扫描分类标记范围",
+                    "扫描分类区中的标记容器范围。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
+            );
+
+    private static final ModuleDefinition MARKER_CONTAINER_INSPECT =
+            new ModuleDefinition(
+                    "MARKER_CONTAINER_INSPECT",
+                    "读取分类标记容器",
+                    "依次打开标记容器并读取物品槽位。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
+            );
+
+    private static final ModuleDefinition MARKER_CACHE_SAVE =
+            new ModuleDefinition(
+                    "MARKER_CACHE_SAVE",
+                    "保存分类标记索引",
+                    "把读取到的标记容器内容保存为分类索引。",
+                    TaskModuleKind.INTERNAL,
+                    TaskModuleLevel.BASIC,
+                    List.of()
             );
 
     private static final List<ModuleDefinition> MODULES =
@@ -486,6 +569,13 @@ public final class TaskModuleCatalog {
                     AUTO_EAT_AT_COORDINATE,
                     SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     REFRESH_CATEGORY_MARKER_CACHE,
+                    CATEGORY_SORT_PLAN,
+                    CACHE_WITHDRAWAL,
+                    CATEGORY_DEPOSIT,
+                    CACHE_RETURN,
+                    MARKER_CONTAINER_SCAN,
+                    MARKER_CONTAINER_INSPECT,
+                    MARKER_CACHE_SAVE,
                     WAIT_FOR_DROPPED_ITEMS,
                     COLLECT_DROPPED_ITEMS_IN_REGION,
                     MATCH_CONTAINER_CATEGORIES,

@@ -97,6 +97,10 @@ catalog when creating a step.
 - `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
   current run into containers from the previous scan. This module has no
   configurable parameters.
+- The category-sort preset composes category planning, cache withdrawal,
+  category deposit, and cache return actions.
+- The marker-cache refresh preset composes marker-area scanning, container
+  inspection, and marker-index saving actions.
 
 `WAIT_FOR_DROPPED_ITEMS`, `COLLECT_DROPPED_ITEMS_IN_REGION`,
 `MATCH_CONTAINER_CATEGORIES`, and `SORT_CACHE_ITEMS` are deprecated compatibility

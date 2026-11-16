@@ -67,6 +67,8 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
   不移动物品，并更新持久缓存。
 - `DEPOSIT_ITEMS_TO_CONTAINERS`：只把本次运行拾取的物品存入上次扫描到的容器。
   该模块不再需要配置参数。
+- “按分类区入库”预设内部调用分类规划、缓存取物、分类存款和退回缓存动作。
+- “刷新分类容器缓存”预设内部调用标记范围扫描、标记容器读取和索引保存动作。
 
 `WAIT_FOR_DROPPED_ITEMS`、`COLLECT_DROPPED_ITEMS_IN_REGION`、
 `MATCH_CONTAINER_CATEGORIES` 和 `SORT_CACHE_ITEMS` 仅作为旧任务兼容模块保留。

@@ -17,7 +17,8 @@
     const MODULE_KINDS = Object.freeze([
         "ACTION",
         "LISTENER",
-        "PRESET"
+        "PRESET",
+        "INTERNAL"
     ]);
 
     /**
@@ -68,7 +69,10 @@
      * @returns {Array<object>}
      */
     function visibleModules(modules) {
-        return modules.filter((module) => !module?.deprecated);
+        return modules.filter((module) => (
+            !module?.deprecated
+                && moduleKind(module) !== "INTERNAL"
+        ));
     }
 
     /**

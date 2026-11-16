@@ -2252,7 +2252,10 @@
      * @returns {Array<string>}
      */
     function targetReferenceTypesFor(moduleId) {
-        if (moduleId === "MOVE_TO_COORDINATE") {
+        if (
+            moduleId === "MOVE_TO_COORDINATE"
+            || moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
+        ) {
             return ["coordinate", "output"];
         }
         if (moduleId === "WITHDRAW_FOOD") {
@@ -2260,7 +2263,6 @@
         }
         const outputModules = new Set([
             "WITHDRAW_ITEMS",
-            "DEPOSIT_ITEMS_TO_CONTAINERS",
             "READ_CONTAINER"
         ]);
         return outputModules.has(moduleId) ? ["output"] : ["coordinate"];

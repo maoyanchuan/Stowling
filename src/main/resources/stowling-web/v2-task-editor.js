@@ -922,6 +922,9 @@
         if (moduleId === "READ_CONTAINER") {
             return ["output-marker"];
         }
+        if (moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS") {
+            return ["coordinate", ...outputTypesFor(moduleId)];
+        }
         const outputs = outputTypesFor(moduleId);
         return outputs.length > 0 ? outputs : ["coordinate"];
     }
@@ -986,18 +989,29 @@
         select.append(new Option("请选择已保存资源或前序选择结果", ""));
         const current = normalizeLegacyReference(context, step, parameter, types);
         let found = false;
+        const groups = new Map();
         for (const type of types) {
             const options = referenceOptions(context, step, type);
             if (options.length === 0) {
                 continue;
             }
-            const group = document.createElement("optgroup");
-            group.label = referenceTypeLabel(type);
+            const groupType = type.startsWith("output") ? "output" : type;
+            let group = groups.get(groupType);
+            if (!group) {
+                group = document.createElement("optgroup");
+                group.label = groupType === "coordinate"
+                    ? "已保存坐标"
+                    : referenceTypeLabel(groupType);
+                groups.set(groupType, group);
+                select.append(group);
+            }
             for (const option of options) {
-                group.append(new Option(option.label, option.value));
+                const label = groupType === "output"
+                    ? option.label.replace(/^前序选择 · /, "")
+                    : option.label;
+                group.append(new Option(label, option.value));
                 found = found || option.value === current;
             }
-            select.append(group);
         }
         if (current && !found) {
             const invalid = document.createElement("optgroup");
@@ -1017,6 +1031,15 @@
         /** @returns {void} */
         const updateHint = () => {
             hint.textContent = OUTPUT_REFERENCE_HINTS[select.value] || "";
+            if (
+                step.moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
+                && Model.referenceType(select.value) === "coordinate"
+                && context.coordinates.some(
+                    (point) => Model.coordinateRef(point.id) === select.value
+                )
+            ) {
+                hint.textContent = "直接存入该坐标处的容器；请确认坐标指向箱子等可打开的容器。";
+            }
             hint.hidden = !hint.textContent;
         };
         updateHint();

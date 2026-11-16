@@ -3765,6 +3765,7 @@ button:active:not(:disabled) {
 
 .task-reference-control {
     display: grid;
+    width: min(100%, 30rem);
     min-width: 0;
     gap: 0.4rem;
 }

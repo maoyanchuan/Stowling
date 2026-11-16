@@ -308,6 +308,28 @@ public final class TaskModuleCatalog {
                     true
             );
 
+    private static final ModuleDefinition WITHDRAW_FOOD =
+            new ModuleDefinition(
+                    ConfigValidator.WITHDRAW_FOOD,
+                    "取出食物",
+                    "从当前食物箱取出一个指定食物，不负责寻路或进食。",
+                    TaskModuleLevel.BASIC,
+                    List.of(
+                            new ModuleParameter(
+                                    ConfigValidator.COORDINATE_ID,
+                                    "食物箱坐标",
+                                    "coordinate-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.FOOD_ITEM_ID,
+                                    "食物 ID",
+                                    "text",
+                                    true
+                            )
+                    )
+            );
+
     private static final ModuleDefinition EAT_FOOD =
             new ModuleDefinition(
                     ConfigValidator.EAT_FOOD,
@@ -358,6 +380,7 @@ public final class TaskModuleCatalog {
                     List.of(
                             "FOOD_STATUS_LISTENER",
                             "MOVE_TO_COORDINATE",
+                            "WITHDRAW_FOOD",
                             "EAT_FOOD"
                     )
             );
@@ -566,6 +589,7 @@ public final class TaskModuleCatalog {
                     SCAN_CONTAINERS_IN_REGION,
                     DEPOSIT_ITEMS_TO_CONTAINERS,
                     EAT_FOOD,
+                    WITHDRAW_FOOD,
                     AUTO_EAT_AT_COORDINATE,
                     SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     REFRESH_CATEGORY_MARKER_CACHE,

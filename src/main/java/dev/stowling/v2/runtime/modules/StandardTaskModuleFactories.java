@@ -40,6 +40,10 @@ public final class StandardTaskModuleFactories {
                         EatFoodModule::new
                 ),
                 factory(
+                        ConfigValidator.WITHDRAW_FOOD,
+                        WithdrawFoodModule::new
+                ),
+                factory(
                         ConfigValidator.AUTO_EAT_AT_COORDINATE,
                         AutoEatAtCoordinateModule::new
                 ),

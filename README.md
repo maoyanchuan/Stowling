@@ -86,10 +86,11 @@ catalog when creating a step.
   radius or a saved region.
 - `SCAN_CONTAINERS_IN_REGION` records usable containers from the previous scan
   in the active task run.
+- `WITHDRAW_FOOD` removes one configured food item from a food-container
+  coordinate without navigating or eating.
 - `EAT_FOOD` consumes one configured food item already held by the player.
-- `AUTO_EAT_AT_COORDINATE` composes the food-level listener, coordinate
-  navigation, food acquisition, and `EAT_FOOD`; it skips when food is sufficient
-  and otherwise eats until the threshold is met.
+- The automatic-eating task preset creates a food-level listener plus ordinary
+  steps for navigation, `WITHDRAW_FOOD`, and `EAT_FOOD`.
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
   stores cached items whose IDs exactly match the recognized item IDs.
 - `REFRESH_CATEGORY_MARKER_CACHE` opens the category marker chests or barrels,

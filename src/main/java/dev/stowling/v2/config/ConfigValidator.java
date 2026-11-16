@@ -32,6 +32,7 @@ public final class ConfigValidator {
     public static final String AUTO_EAT_AT_COORDINATE =
             "AUTO_EAT_AT_COORDINATE";
     public static final String EAT_FOOD = "EAT_FOOD";
+    public static final String WITHDRAW_FOOD = "WITHDRAW_FOOD";
     public static final String SCAN_CONTAINERS_IN_REGION =
             "SCAN_CONTAINERS_IN_REGION";
     public static final String MATCH_CONTAINER_CATEGORIES =
@@ -197,6 +198,8 @@ public final class ConfigValidator {
             case AUTO_EAT_AT_COORDINATE ->
                     requireAutoEatStep(step, coordinates);
             case EAT_FOOD -> requireEatFoodStep(step);
+            case WITHDRAW_FOOD ->
+                    requireWithdrawFoodStep(step, coordinates);
             case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, regions);
             case MATCH_CONTAINER_CATEGORIES -> requireCategoryStep(step);
             case SORT_CACHE_ITEMS -> requireCacheSortStep(step, regions);
@@ -350,6 +353,27 @@ public final class ConfigValidator {
                 Set.of(FOOD_ITEM_ID),
                 Set.of(FOOD_ITEM_ID)
         );
+        requireFoodItemId(step);
+    }
+
+    private static void requireWithdrawFoodStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        requireParameters(
+                step,
+                Set.of(COORDINATE_ID, FOOD_ITEM_ID),
+                Set.of(COORDINATE_ID, FOOD_ITEM_ID)
+        );
+        UUID coordinateId = requireUuid(
+                step.parameters().get(COORDINATE_ID),
+                COORDINATE_ID
+        );
+        if (!coordinates.containsKey(coordinateId)) {
+            throw new V2ValidationException(
+                    "coordinate does not exist: " + coordinateId
+            );
+        }
         requireFoodItemId(step);
     }
 

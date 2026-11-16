@@ -30,6 +30,7 @@ class TaskModuleCatalogTest {
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                         ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                         ConfigValidator.EAT_FOOD,
+                        ConfigValidator.WITHDRAW_FOOD,
                         ConfigValidator.AUTO_EAT_AT_COORDINATE,
                         ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                         ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
@@ -48,7 +49,7 @@ class TaskModuleCatalogTest {
                 modules.stream().map(ModuleDefinition::id).toList()
         );
         assertEquals(
-                11,
+                12,
                 modules.stream()
                         .filter(module -> !module.deprecated())
                         .filter(module -> module.kind() != TaskModuleKind.INTERNAL)

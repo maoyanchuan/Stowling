@@ -209,6 +209,7 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
         "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE",
         "DEPOSIT_ITEMS_TO_CONTAINERS",
         "EAT_FOOD",
+        "WITHDRAW_FOOD",
     ):
         assert module_id in catalog
         assert module_id not in tasks
@@ -244,6 +245,22 @@ def test_task_module_catalog_includes_listeners() -> None:
     assert "TaskModuleKind.TRIGGER" not in catalog
     assert "triggerModules" in tasks
     assert "new Option(module.name, module.id)" in tasks
+
+
+def test_task_creation_offers_auto_eat_preset() -> None:
+    html = read("tasks.html")
+    tasks = read("tasks.js")
+
+    assert 'id="new-auto-eat-task-button"' in html
+    assert "自动进食预设" in html
+    assert 'id="auto-eat-preset-form"' in html
+    assert 'id="auto-eat-coordinate"' in html
+    assert 'id="auto-eat-food"' in html
+    assert 'id="auto-eat-threshold"' in html
+    assert "function createAutoEatPreset()" in tasks
+    assert 'moduleId: "WITHDRAW_FOOD"' in tasks
+    assert 'moduleId: "EAT_FOOD"' in tasks
+    assert '"FOOD_LEVEL_AT_OR_BELOW"' in tasks
 
 
 def test_task_page_offers_cache_and_sorting_templates() -> None:

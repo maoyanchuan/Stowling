@@ -1016,6 +1016,45 @@ class TaskModuleExecutionTest {
         );
     }
 
+    @Test
+    void withdrawFoodModuleAcquiresTheConfiguredFood() {
+        CoordinatePoint point = point("Eating");
+        RecordingFood food = new RecordingFood(10, 10);
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new EmptyRegions(),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                new NoCategoryZones(),
+                Map.of(),
+                point,
+                region("Storage"),
+                new TaskRunWorkspace(),
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                food
+        );
+        WithdrawFoodModule module = new WithdrawFoodModule(
+                context,
+                step(
+                        ConfigValidator.WITHDRAW_FOOD,
+                        ConfigValidator.COORDINATE_ID,
+                        point.id().toString(),
+                        ConfigValidator.FOOD_ITEM_ID,
+                        "minecraft:bread"
+                )
+        );
+
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(
+                List.of("acquire:minecraft:bread", "acquired:minecraft:bread"),
+                food.events
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             DroppedItemObserverPort dropped,

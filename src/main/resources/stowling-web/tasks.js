@@ -30,6 +30,14 @@
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
         newSortTask: document.querySelector("#new-sort-task-button"),
+        newAutoEatTask: document.querySelector("#new-auto-eat-task-button"),
+        autoEatForm: document.querySelector("#auto-eat-preset-form"),
+        autoEatCoordinate: document.querySelector("#auto-eat-coordinate"),
+        autoEatFood: document.querySelector("#auto-eat-food"),
+        autoEatThreshold: document.querySelector("#auto-eat-threshold"),
+        autoEatErrors: document.querySelector("#auto-eat-preset-errors"),
+        createAutoEatPreset: document.querySelector("#create-auto-eat-preset"),
+        cancelAutoEatPreset: document.querySelector("#cancel-auto-eat-preset"),
         search: document.querySelector("#task-search"),
         taskCount: document.querySelector("#task-list-count"),
         settingsLabel: document.querySelector("#task-settings-label"),
@@ -562,8 +570,7 @@
         }
         const groups = [
             ["LISTENER", "监听器"],
-            ["BASIC", "基础模块"],
-            ["PRESET", "任务预设"]
+            ["BASIC", "基础模块"]
         ];
         for (const [groupKey, label] of groups) {
             const modules = visibleModules.filter((module) => (
@@ -714,6 +721,159 @@
         elements.runSelect.disabled = state.tasks.length === 0;
         elements.runPriority.disabled = state.tasks.length === 0;
         elements.run.disabled = !state.runTaskId;
+    }
+
+    /**
+     * @param {string} base
+     * @param {Array<string>} existing
+     * @returns {string}
+     */
+    function uniqueName(base, existing) {
+        const used = new Set(existing.map((name) => name.toLocaleLowerCase()));
+        if (!used.has(base.toLocaleLowerCase())) {
+            return base;
+        }
+        let suffix = 2;
+        while (used.has(`${base} ${suffix}`.toLocaleLowerCase())) {
+            suffix++;
+        }
+        return `${base} ${suffix}`;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function showAutoEatPresetForm() {
+        elements.autoEatCoordinate.replaceChildren(
+            new Option("请选择食物箱坐标", "")
+        );
+        for (const coordinate of state.coordinates) {
+            elements.autoEatCoordinate.append(
+                new Option(coordinate.name, coordinate.id)
+            );
+        }
+        elements.autoEatFood.value = "minecraft:bread";
+        elements.autoEatThreshold.value = "18";
+        elements.autoEatErrors.replaceChildren();
+        elements.autoEatForm.hidden = false;
+        elements.autoEatCoordinate.focus();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function hideAutoEatPresetForm() {
+        elements.autoEatForm.hidden = true;
+        elements.autoEatErrors.replaceChildren();
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function createAutoEatPreset() {
+        const coordinateId = elements.autoEatCoordinate.value;
+        const foodItemId = elements.autoEatFood.value.trim();
+        const threshold = Number(elements.autoEatThreshold.value);
+        const errors = [];
+        if (!state.coordinates.some((coordinate) => (
+            coordinate.id === coordinateId
+        ))) {
+            errors.push("请选择食物箱坐标");
+        }
+        if (!/^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(foodItemId)) {
+            errors.push("食物 ID 必须是 minecraft:bread 这样的资源 ID");
+        }
+        if (!Number.isInteger(threshold) || threshold < 1 || threshold > 20) {
+            errors.push("饱食度阈值必须是 1 到 20 的整数");
+        }
+        elements.autoEatErrors.replaceChildren();
+        if (errors.length > 0) {
+            for (const error of errors) {
+                elements.autoEatErrors.append(
+                    Stowling.element("p", "", error)
+                );
+            }
+            return;
+        }
+        const taskName = uniqueName(
+            "自动进食",
+            state.tasks.map((task) => task.name)
+        );
+        const triggerName = uniqueName(
+            `${taskName} 监听器`,
+            state.triggers.map((trigger) => trigger.name)
+        );
+        const steps = [
+            {
+                moduleId: "MOVE_TO_COORDINATE",
+                parameters: { coordinateId }
+            },
+            {
+                moduleId: "WITHDRAW_FOOD",
+                parameters: { coordinateId, foodItemId }
+            },
+            {
+                moduleId: "EAT_FOOD",
+                parameters: { foodItemId }
+            }
+        ];
+        elements.createAutoEatPreset.disabled = true;
+        try {
+            const taskResponse = await Stowling.request("/v1/tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: taskName,
+                    priority: "NORMAL",
+                    repeatWhenIdle: false,
+                    steps
+                })
+            });
+            state.revision = String(taskResponse?.revision || state.revision);
+            state.tasks = taskResponse.tasks.map(Model.normalizeTask);
+            const createdTask = state.tasks.find(
+                (task) => task.name === taskName
+            );
+            if (!createdTask) {
+                throw new Error("任务创建成功，但没有返回任务 ID");
+            }
+            const triggerPayload = {
+                name: triggerName,
+                type: "FOOD_LEVEL_AT_OR_BELOW",
+                targetTaskId: createdTask.id,
+                priority: "NORMAL",
+                intervalTicks: 20,
+                cooldownTicks: 100,
+                coordinateId: null,
+                itemFilter: null,
+                foodLevelThreshold: threshold,
+                cacheRegionId: null
+            };
+            const triggerResponse = await Stowling.request(
+                "/v1/task-triggers",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(triggerPayload)
+                }
+            );
+            state.revision = String(
+                triggerResponse?.revision || state.revision
+            );
+            state.triggers = triggerResponse.triggers.map(
+                TriggerModel.normalizeTrigger
+            );
+            hideAutoEatPresetForm();
+            selectTask(createdTask);
+            renderTriggerList();
+            renderTriggerEditor();
+            renderRunControls();
+            Stowling.showToast("自动进食任务与饱食度监听器已创建");
+        } catch (error) {
+            Stowling.handleError(error, "创建自动进食预设失败");
+        } finally {
+            elements.createAutoEatPreset.disabled = false;
+        }
     }
 
     /**
@@ -1327,6 +1487,12 @@
     elements.newTask.addEventListener("click", startNewTask);
     elements.newCacheTask.addEventListener("click", startCacheTask);
     elements.newSortTask.addEventListener("click", startSortTask);
+    elements.newAutoEatTask.addEventListener("click", showAutoEatPresetForm);
+    elements.cancelAutoEatPreset.addEventListener("click", hideAutoEatPresetForm);
+    elements.autoEatForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void createAutoEatPreset();
+    });
     elements.name.addEventListener("input", () => {
         state.draft.name = elements.name.value;
         markDirty();

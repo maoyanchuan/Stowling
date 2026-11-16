@@ -22,9 +22,6 @@ class TaskModuleCatalogTest {
 
         assertEquals(
                 List.of(
-                        "DROPPED_ITEMS_LISTENER",
-                        "FOOD_STATUS_LISTENER",
-                        "CACHE_UPDATE_LISTENER",
                         TaskTriggerType.DROPPED_ITEMS.name(),
                         TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW.name(),
                         TaskTriggerType.CACHE_UPDATED.name(),
@@ -43,20 +40,8 @@ class TaskModuleCatalogTest {
                 modules.stream().map(ModuleDefinition::id).toList()
         );
         assertEquals(
-                13,
+                10,
                 modules.stream().filter(module -> !module.deprecated()).count()
-        );
-        assertEquals(
-                6,
-                modules.stream()
-                        .filter(module -> module.kind() != TaskModuleKind.ACTION)
-                        .count()
-        );
-        assertEquals(
-                3,
-                modules.stream()
-                        .filter(module -> module.kind() == TaskModuleKind.TRIGGER)
-                        .count()
         );
         assertEquals(
                 3,

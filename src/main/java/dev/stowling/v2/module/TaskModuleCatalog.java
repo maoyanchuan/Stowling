@@ -11,43 +11,10 @@ import java.util.List;
 public final class TaskModuleCatalog {
     private static final ModuleDefinition DROPPED_ITEMS_LISTENER =
             new ModuleDefinition(
-                    "DROPPED_ITEMS_LISTENER",
-                    "掉落物监听器",
-                    "持续观察坐标半径内的掉落物，为掉落物触发器提供事件。",
-                    TaskModuleKind.LISTENER,
-                    TaskModuleLevel.BASIC,
-                    List.of(),
-                    false
-            );
-
-    private static final ModuleDefinition FOOD_STATUS_LISTENER =
-            new ModuleDefinition(
-                    "FOOD_STATUS_LISTENER",
-                    "饱食度监听器",
-                    "读取玩家当前饱食度，为饱食度触发器提供状态。",
-                    TaskModuleKind.LISTENER,
-                    TaskModuleLevel.BASIC,
-                    List.of(),
-                    false
-            );
-
-    private static final ModuleDefinition CACHE_UPDATE_LISTENER =
-            new ModuleDefinition(
-                    "CACHE_UPDATE_LISTENER",
-                    "缓存更新监听器",
-                    "接收本次任务运行中实际存入缓存区域的事件。",
-                    TaskModuleKind.LISTENER,
-                    TaskModuleLevel.BASIC,
-                    List.of(),
-                    false
-            );
-
-    private static final ModuleDefinition DROPPED_ITEMS_TRIGGER =
-            new ModuleDefinition(
                     TaskTriggerType.DROPPED_ITEMS.name(),
-                    "掉落物出现触发",
-                    "使用掉落物监听器；命中后按优先级启动目标任务。",
-                    TaskModuleKind.TRIGGER,
+                    "掉落物监听器",
+                    "监听指定坐标范围内出现的掉落物；命中后按优先级启动目标任务。",
+                    TaskModuleKind.LISTENER,
                     TaskModuleLevel.BASIC,
                     List.of(
                             triggerTargetParameter(),
@@ -70,12 +37,12 @@ public final class TaskModuleCatalog {
                     false
             );
 
-    private static final ModuleDefinition FOOD_LEVEL_TRIGGER =
+    private static final ModuleDefinition FOOD_STATUS_LISTENER =
             new ModuleDefinition(
                     TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW.name(),
-                    "饱食度不足触发",
-                    "使用饱食度监听器；达到阈值后按优先级启动目标任务。",
-                    TaskModuleKind.TRIGGER,
+                    "饱食度监听器",
+                    "监听当前饱食度；达到阈值后按优先级启动目标任务。",
+                    TaskModuleKind.LISTENER,
                     TaskModuleLevel.BASIC,
                     List.of(
                             triggerTargetParameter(),
@@ -97,12 +64,12 @@ public final class TaskModuleCatalog {
                     false
             );
 
-    private static final ModuleDefinition CACHE_UPDATED_TRIGGER =
+    private static final ModuleDefinition CACHE_UPDATE_LISTENER =
             new ModuleDefinition(
                     TaskTriggerType.CACHE_UPDATED.name(),
-                    "缓存更新触发",
-                    "使用缓存更新监听器；防抖后按优先级启动目标任务。",
-                    TaskModuleKind.TRIGGER,
+                    "缓存更新监听器",
+                    "监听缓存区域的实际存入事件；防抖后按优先级启动目标任务。",
+                    TaskModuleKind.LISTENER,
                     TaskModuleLevel.BASIC,
                     List.of(
                             triggerTargetParameter(),
@@ -485,9 +452,6 @@ public final class TaskModuleCatalog {
                     DROPPED_ITEMS_LISTENER,
                     FOOD_STATUS_LISTENER,
                     CACHE_UPDATE_LISTENER,
-                    DROPPED_ITEMS_TRIGGER,
-                    FOOD_LEVEL_TRIGGER,
-                    CACHE_UPDATED_TRIGGER,
                     MOVE_TO_COORDINATE,
                     COLLECT_DROPPED_ITEMS,
                     SCAN_CONTAINERS_IN_REGION,

@@ -16,7 +16,6 @@
     ]);
     const MODULE_KINDS = Object.freeze([
         "ACTION",
-        "TRIGGER",
         "LISTENER"
     ]);
 

@@ -143,7 +143,6 @@ def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
     assert "复合任务" in tasks
     assert "module-group" in tasks
     assert "监听器" in tasks
-    assert "触发器" in tasks
 
 
 def test_task_editor_loads_regions_and_builds_contract_driven_controls() -> None:
@@ -216,7 +215,7 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
     assert "state.modules.length" in tasks
 
 
-def test_task_module_catalog_includes_triggers_and_listeners() -> None:
+def test_task_module_catalog_includes_listeners() -> None:
     catalog = (
         ROOT
         / "src"
@@ -231,16 +230,13 @@ def test_task_module_catalog_includes_triggers_and_listeners() -> None:
     tasks = read("tasks.js")
 
     for module_id in (
-        "DROPPED_ITEMS_LISTENER",
-        "FOOD_STATUS_LISTENER",
-        "CACHE_UPDATE_LISTENER",
         "DROPPED_ITEMS",
         "FOOD_LEVEL_AT_OR_BELOW",
         "CACHE_UPDATED",
     ):
         assert module_id in catalog
     assert "TaskModuleKind.LISTENER" in catalog
-    assert "TaskModuleKind.TRIGGER" in catalog
+    assert "TaskModuleKind.TRIGGER" not in catalog
     assert "triggerModules" in tasks
     assert "new Option(module.name, module.id)" in tasks
 

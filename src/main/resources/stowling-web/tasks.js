@@ -299,7 +299,7 @@
             return;
         }
         const triggerModules = Model.visibleModules(state.modules).filter(
-            (module) => Model.moduleKind(module) === "TRIGGER"
+            (module) => Model.moduleKind(module) === "LISTENER"
         );
         if (triggerModules.length > 0) {
             elements.triggerType.replaceChildren();
@@ -561,7 +561,6 @@
         }
         const groups = [
             ["LISTENER", "监听器"],
-            ["TRIGGER", "触发器"],
             ["BASIC", "基础模块"],
             ["COMPOSITE", "复合模块"]
         ];
@@ -599,9 +598,6 @@
      */
     function moduleTag(module) {
         const kind = Model.moduleKind(module);
-        if (kind === "TRIGGER") {
-            return "触发";
-        }
         if (kind === "LISTENER") {
             return "监听";
         }

@@ -3208,9 +3208,27 @@ body[data-page="tasks"] .task-sidebar {
     margin-bottom: 0;
 }
 
+.task-launch-panel {
+    width: 100%;
+    max-width: 52rem;
+    justify-self: start;
+}
+
 .task-launch-grid {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
-    gap: 0.85rem;
+    grid-template-columns: minmax(0, 1fr) 11rem auto;
+    gap: 0.75rem;
+}
+
+.task-launch-grid select {
+    min-width: 0;
+    text-overflow: ellipsis;
+}
+
+.task-launch-note {
+    margin: 0.8rem 0 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.6;
 }
 
 .task-launch-grid > button {

@@ -481,36 +481,40 @@
                  class="page-tab-panel task-monitor-page" role="tabpanel"
                  aria-labelledby="task-tab-monitor"
                  data-task-panel="monitor" hidden>
-                    <section id="task-run-panel" class="panel"
+                    <section id="task-run-panel" class="panel task-launch-panel"
                              aria-labelledby="task-run-title">
                         <div class="panel-heading">
                             <div>
                                 <p class="eyebrow">执行</p>
                                 <h2 id="task-run-title">运行任务</h2>
                                 <p class="muted section-help">
-                                    选择已保存的任务并运行，不会使用编辑器中未保存的修改。
+                                    选择任务，按优先级加入执行队列。
                                 </p>
                             </div>
                         </div>
                         <div class="task-launch-grid">
                             <div class="editor-field">
-                                <label for="run-task-select">已保存任务</label>
+                                <label for="run-task-select">任务</label>
                                 <select id="run-task-select">
                                     <option value="">请选择任务</option>
                                 </select>
                             </div>
                             <div class="editor-field">
-                                <label for="run-priority-select">本次优先级</label>
-                                <select id="run-priority-select">
-                                    <option value="">使用任务默认值</option>
+                                <label for="run-priority-select">运行优先级</label>
+                                <select id="run-priority-select"
+                                        aria-describedby="task-launch-note">
+                                    <option value="">跟随任务</option>
                                     <option value="BACKGROUND">后台</option>
                                     <option value="NORMAL">普通</option>
                                     <option value="URGENT">紧急</option>
                                 </select>
                             </div>
                             <button id="run-task-button" class="primary compact"
-                                    type="button">运行所选任务</button>
+                                    type="button">运行任务</button>
                         </div>
+                        <p id="task-launch-note" class="task-launch-note">
+                            仅使用已保存的流程；这里的优先级只对本次运行生效。
+                        </p>
                     </section>
                     <div class="task-monitor">
                         <section class="panel trigger-status-panel"

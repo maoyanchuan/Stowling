@@ -1378,10 +1378,7 @@
         const current = state.runTaskId;
         elements.runSelect.replaceChildren(new Option("请选择任务", ""));
         for (const task of [...state.tasks].sort(compareTasks)) {
-            elements.runSelect.append(new Option(
-                `${Model.priorityLabel(task.priority)} · ${task.name}`,
-                task.id
-            ));
+            elements.runSelect.append(new Option(task.name, task.id));
         }
         const preserved = state.tasks.some((task) => task.id === current)
             ? current
@@ -1395,6 +1392,10 @@
      * @returns {void}
      */
     function updateRunActions() {
+        const task = state.tasks.find((entry) => entry.id === state.runTaskId);
+        elements.runPriority.options[0].textContent = task
+            ? `跟随任务（${Model.priorityLabel(task.priority)}）`
+            : "跟随任务";
         elements.runSelect.disabled = state.tasks.length === 0;
         elements.runPriority.disabled = state.tasks.length === 0;
         elements.run.disabled = !state.runTaskId;

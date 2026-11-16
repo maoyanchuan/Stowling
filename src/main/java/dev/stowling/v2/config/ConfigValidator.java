@@ -13,6 +13,7 @@ import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskCondition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskFolderDefinition;
 import dev.stowling.v2.model.TaskFlowTemplates;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskStep;
@@ -114,6 +115,12 @@ public final class ConfigValidator {
                         .toList(),
                 "task trigger"
         );
+        requireUniqueNames(
+                config.taskFolders().stream()
+                        .map(TaskFolderDefinition::name)
+                        .toList(),
+                "task folder"
+        );
         Map<UUID, CoordinatePoint> coordinates = new LinkedHashMap<>();
         for (CoordinatePoint point : config.coordinates()) {
             if (coordinates.putIfAbsent(point.id(), point) != null) {
@@ -128,10 +135,22 @@ public final class ConfigValidator {
         }
         Map<UUID, CategoryZoneDefinition> categoryZones =
                 validateCategoryZones(config.categoryZones());
+        Map<UUID, TaskFolderDefinition> taskFolders = new LinkedHashMap<>();
+        for (TaskFolderDefinition folder : config.taskFolders()) {
+            if (taskFolders.putIfAbsent(folder.id(), folder) != null) {
+                throw new V2ValidationException("duplicate task folder id");
+            }
+        }
         Map<UUID, TaskDefinition> tasks = new LinkedHashMap<>();
         for (TaskDefinition task : config.tasks()) {
             if (tasks.putIfAbsent(task.id(), task) != null) {
                 throw new V2ValidationException("duplicate task id");
+            }
+            if (task.folderId() != null
+                    && !taskFolders.containsKey(task.folderId())) {
+                throw new V2ValidationException(
+                        "task folder does not exist: " + task.folderId()
+                );
             }
         }
         int defaultInterruptionFlows = 0;

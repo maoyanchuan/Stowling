@@ -2981,6 +2981,140 @@ body[data-page="tasks"] .task-sidebar {
     background: var(--accent-soft);
 }
 
+.task-folders {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0 0 0.8rem;
+}
+
+.task-folder-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.task-folder-heading h3 {
+    margin: 0;
+    font-size: 0.82rem;
+}
+
+.task-folder-new {
+    min-height: 2rem;
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    color: var(--accent-strong);
+    font-size: 0.72rem;
+    background: transparent;
+}
+
+.task-folder-list {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.task-folder-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.task-folder-filter {
+    display: flex;
+    min-width: 0;
+    min-height: 2rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.55rem;
+    border: 0;
+    border-radius: 8px;
+    color: var(--muted);
+    background: transparent;
+    text-align: left;
+}
+
+.task-folder-filter:hover,
+.task-folder-filter[aria-pressed="true"] {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    transform: none;
+}
+
+.task-folder-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-folder-count {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.task-folder-manage {
+    display: grid;
+    width: 2rem;
+    min-width: 2rem;
+    height: 2rem;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    color: var(--muted);
+    background: transparent;
+}
+
+.task-folder-manage:hover,
+.task-folder-manage:focus-visible {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    transform: none;
+}
+
+.task-folder-form {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.35rem;
+    padding: 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.46);
+}
+
+.task-folder-form[hidden],
+.task-trigger-settings[hidden],
+.trigger-save-hint[hidden] {
+    display: none !important;
+}
+
+.task-folder-form label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
+.task-folder-form input {
+    width: 100%;
+}
+
+.task-folder-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.task-folder-form-actions button[hidden] {
+    display: none;
+}
+
+.task-folder-errors,
+.task-folder-form .config-errors {
+    margin: 0;
+}
+
 .task-category-tag {
     width: fit-content;
     padding: 0.14rem 0.34rem;
@@ -3134,7 +3268,7 @@ body[data-page="tasks"] .task-sidebar {
     color: var(--text);
 }
 
-.task-settings > summary span {
+.task-settings > summary span:last-child {
     margin-left: auto;
     color: var(--muted);
     font-size: 0.73rem;
@@ -3148,6 +3282,57 @@ body[data-page="tasks"] .task-sidebar {
 
 .task-settings .compact-help {
     margin: 0.8rem 0;
+}
+
+.task-basic-fields {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    margin-bottom: 0.35rem;
+}
+
+.task-trigger-settings {
+    margin: 1rem 0 0;
+    padding: 0.8rem 0 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+}
+
+.task-trigger-body {
+    display: grid;
+    gap: 0.75rem;
+    padding-top: 0.35rem;
+}
+
+.task-trigger-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.task-trigger-heading .compact-help {
+    margin: 0;
+}
+
+.trigger-binding {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 0.6rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    background: rgba(255, 255, 255, 0.38);
+}
+
+.trigger-binding strong {
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.task-trigger-settings .trigger-workbench {
+    grid-template-columns: minmax(180px, 0.65fr) minmax(0, 1.35fr);
 }
 
 .task-main .step-heading {
@@ -3476,6 +3661,7 @@ button:active:not(:disabled) {
         display: none;
     }
 
+    .task-basic-fields,
     .category-range-pair,
     .category-recognition-fields,
     .category-override-card,
@@ -3496,6 +3682,21 @@ button:active:not(:disabled) {
 
     .task-save-actions .danger-action {
         margin-left: 0;
+    }
+
+    .task-trigger-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .task-trigger-settings .trigger-workbench {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .task-folder-manage {
+        width: 2.75rem;
+        min-width: 2.75rem;
+        height: 2.75rem;
     }
 }
 

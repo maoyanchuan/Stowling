@@ -5,15 +5,18 @@ coordinates, regions, category zones, queued tasks, and condition listeners.
 Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
-The task page is split into hash-addressable sections: `#orchestration` contains
-the task list and editor, `#triggers` manages automatic triggers, and `#monitor`
-shows launch controls, trigger status, queueing, and run records. The list can
-filter ordinary tasks from interruption cleanup tasks without storing another
-task category.
+The task page has two hash-addressable sections. `#orchestration` contains the
+folder-aware task list and editor, including each saved task's automatic trigger
+settings. `#monitor` shows launch controls, trigger status, queueing, and run
+records. The legacy `#triggers` link opens orchestration and expands the current
+task's trigger settings. The list can filter ordinary tasks from interruption
+cleanup tasks without storing another task category.
 
 ## Task model
 
-Tasks contain ordered tree steps. Every step has one kind:
+Tasks contain a name, optional `folderId`, and ordered tree steps. Folder IDs
+refer to persisted task folders; `null` means the task is ungrouped. Every step
+has one kind:
 
 - `ACTION` runs one basic module.
 - `IF` evaluates a condition and runs `steps` or `otherwise`.
@@ -229,14 +232,24 @@ generated cleanup.
 `WAIT_FOR_DROPPED_ITEMS` and `MATCH_CONTAINER_CATEGORIES` remain accepted only
 for legacy configuration compatibility and previous-scan migration.
 
+## Task folders
+
+Task folders are persisted configuration objects with a flat one-level
+structure. A task belongs to at most one folder; moving or saving it writes the
+same folder ID atomically with the task. Deleting a folder only dissolves the
+group: its tasks remain and their `folderId` becomes `null`. Folder selection
+combines with search and the ordinary/interruption task filters.
+
 ## Queuing and triggers
 
 One task runs at a time. Pending work is ordered by `BACKGROUND`, `NORMAL`, and
 `URGENT` priority. Trigger-created tasks and `CREATE_TASK` steps use the same
 queue.
 
-Triggers are stored independently and support dropped items, food level, and
-cache updates. Trigger intervals and cooldowns retain their existing meaning.
+Triggers are stored independently but bound to one saved target task. The task
+editor only lists triggers for the current task, and a task may have multiple
+triggers. Dropped items, food level, and cache updates are supported. Trigger
+intervals and cooldowns retain their existing meaning.
 
 Background tasks may requeue after completion. `requeueAfterInterruption`
 controls whether an interrupted task returns to the queue after cleanup.
@@ -252,7 +265,8 @@ The active file is `config/stowling.json` with schema version 7:
   "tasks": [],
   "regions": [],
   "categoryZones": [],
-  "triggers": []
+  "triggers": [],
+  "taskFolders": []
 }
 ```
 

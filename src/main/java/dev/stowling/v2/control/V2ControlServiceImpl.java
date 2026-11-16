@@ -19,6 +19,7 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskFolderDefinition;
 import dev.stowling.v2.model.TaskFlowNormalizer;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
@@ -104,7 +105,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -137,7 +139,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -181,7 +184,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -219,7 +223,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 regions,
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         )));
     }
 
@@ -251,7 +256,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 regions,
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         )));
     }
 
@@ -293,7 +299,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .filter(region -> !region.id().equals(id))
                         .toList(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         )));
     }
 
@@ -333,7 +340,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().tasks(),
                         current.config().regions(),
                         zones,
-                        current.config().triggers()
+                        current.config().triggers(),
+                        current.config().taskFolders()
                 )
         ));
     }
@@ -367,7 +375,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().tasks(),
                         current.config().regions(),
                         zones,
-                        current.config().triggers()
+                        current.config().triggers(),
+                        current.config().taskFolders()
                 )
         ));
     }
@@ -404,9 +413,94 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().categoryZones().stream()
                                 .filter(zone -> !zone.id().equals(id))
                                 .toList(),
-                        current.config().triggers()
+                        current.config().triggers(),
+                        current.config().taskFolders()
                 )
         ));
+    }
+
+    @Override
+    public synchronized TaskFolderListResponse taskFolders() {
+        return taskFolderResponse(configs.read());
+    }
+
+    @Override
+    public synchronized TaskFolderListResponse createTaskFolder(
+            TaskFolderRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        List<TaskFolderDefinition> folders = new ArrayList<>(
+                current.config().taskFolders()
+        );
+        folders.add(new TaskFolderDefinition(
+                UUID.randomUUID(),
+                request.name()
+        ));
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                current.config().triggers(),
+                folders
+        );
+        return taskFolderResponse(configs.save(current.revision(), updated));
+    }
+
+    @Override
+    public synchronized TaskFolderListResponse updateTaskFolder(
+            UUID id,
+            TaskFolderUpdateRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireTaskFolder(current.config(), id);
+        TaskFolderDefinition replacement = new TaskFolderDefinition(
+                id,
+                request.name()
+        );
+        List<TaskFolderDefinition> folders = current.config().taskFolders()
+                .stream()
+                .map(folder -> folder.id().equals(id) ? replacement : folder)
+                .toList();
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                current.config().triggers(),
+                folders
+        );
+        return taskFolderResponse(configs.save(current.revision(), updated));
+    }
+
+    @Override
+    public synchronized TaskFolderListResponse deleteTaskFolder(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireTaskFolder(current.config(), id);
+        List<TaskDefinition> tasks = current.config().tasks().stream()
+                .map(task -> id.equals(task.folderId())
+                        ? withFolder(task, null)
+                        : task)
+                .toList();
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                tasks,
+                current.config().regions(),
+                current.config().categoryZones(),
+                current.config().triggers(),
+                current.config().taskFolders().stream()
+                        .filter(folder -> !folder.id().equals(id))
+                        .toList()
+        );
+        return taskFolderResponse(configs.save(current.revision(), updated));
     }
 
     @Override
@@ -431,7 +525,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.interruptionMode(),
                 request.interruptionTaskRef(),
                 request.defaultInterruptionFlow(),
-                request.requeueAfterInterruption()
+                request.requeueAfterInterruption(),
+                request.folderId()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.add(task);
@@ -441,7 +536,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 tasks,
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -465,7 +561,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.interruptionMode(),
                 request.interruptionTaskRef(),
                 request.defaultInterruptionFlow(),
-                request.requeueAfterInterruption()
+                request.requeueAfterInterruption(),
+                request.folderId()
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
                 .map(task -> task.id().equals(id) ? updatedTask : task)
@@ -476,7 +573,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 tasks,
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -495,13 +593,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 ResourceType.TASK,
                 id
         );
-        List<String> references = new ArrayList<>(
-                current.config().triggers().stream()
-                        .filter(trigger -> trigger.targetTaskId().equals(id))
-                        .map(TaskTriggerDefinition::name)
-                        .toList()
-        );
-        references.addAll(current.config().tasks().stream()
+        List<String> references = current.config().tasks().stream()
                 .filter(task -> !task.id().equals(id))
                 .filter(task -> TaskFlowNormalizer.references(
                         task,
@@ -509,7 +601,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 ) || (existing.defaultInterruptionFlow()
                         && task.interruptionMode() == TaskInterruptionMode.DEFAULT))
                 .map(TaskDefinition::name)
-                .toList());
+                .toList();
         if (!references.isEmpty()) {
             throw new TaskInUseException(references);
         }
@@ -521,7 +613,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .toList(),
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers()
+                current.config().triggers().stream()
+                        .filter(trigger -> !trigger.targetTaskId().equals(id))
+                        .toList(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -566,7 +661,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 current.config().regions(),
                 current.config().categoryZones(),
-                triggers
+                triggers,
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -606,7 +702,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().tasks(),
                 current.config().regions(),
                 current.config().categoryZones(),
-                triggers
+                triggers,
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -629,7 +726,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers().stream()
                         .filter(trigger -> !trigger.id().equals(id))
-                        .toList()
+                        .toList(),
+                current.config().taskFolders()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -691,6 +789,14 @@ public final class V2ControlServiceImpl implements V2ControlService {
         );
     }
 
+    private static TaskFolderListResponse taskFolderResponse(
+            V2ConfigSnapshot snapshot
+    ) {
+        return new TaskFolderListResponse(
+                snapshot.revision(),
+                snapshot.config().taskFolders()
+        );
+    }
 
     private static TaskTriggerListResponse taskTriggerResponse(
             V2ConfigSnapshot snapshot
@@ -743,6 +849,36 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .filter(task -> task.id().equals(id))
                 .findFirst()
                 .orElseThrow(() -> new V2NotFoundException("task not found"));
+    }
+
+    private static TaskFolderDefinition requireTaskFolder(
+            AppConfig config,
+            UUID id
+    ) {
+        return config.taskFolders().stream()
+                .filter(folder -> folder.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new V2NotFoundException(
+                        "task folder not found"
+                ));
+    }
+
+    private static TaskDefinition withFolder(
+            TaskDefinition task,
+            UUID folderId
+    ) {
+        return new TaskDefinition(
+                task.id(),
+                task.name(),
+                task.priority(),
+                task.repeatWhenIdle(),
+                task.steps(),
+                task.interruptionMode(),
+                task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(),
+                task.requeueAfterInterruption(),
+                folderId
+        );
     }
 
     private static TaskTriggerDefinition requireTaskTrigger(

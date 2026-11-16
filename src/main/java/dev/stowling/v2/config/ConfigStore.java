@@ -80,7 +80,8 @@ public final class ConfigStore {
                             "tasks",
                             "regions",
                             "categoryZones",
-                            "triggers"
+                            "triggers",
+                            "taskFolders"
                     ),
                     Set.of("schemaVersion", "coordinates", "tasks")
             );
@@ -93,6 +94,9 @@ public final class ConfigStore {
             }
             if (root.has("triggers")) {
                 requireTaskTriggerObjects(root.get("triggers"));
+            }
+            if (root.has("taskFolders")) {
+                requireTaskFolderObjects(root.get("taskFolders"));
             }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
@@ -108,7 +112,8 @@ public final class ConfigStore {
                                 "interruptionMode",
                                 "interruptionTaskRef",
                                 "defaultInterruptionFlow",
-                                "requeueAfterInterruption"
+                                "requeueAfterInterruption",
+                                "folderId"
                         ),
                         Set.of("id", "name", "steps")
                 );
@@ -172,6 +177,15 @@ public final class ConfigStore {
                             "intervalTicks",
                             "cooldownTicks"
                     )
+            );
+        }
+    }
+
+    private static void requireTaskFolderObjects(JsonElement value) {
+        for (JsonElement item : requireArray(value, "taskFolders")) {
+            requireExactFields(
+                    requireObject(item, "task folder"),
+                    Set.of("id", "name")
             );
         }
     }

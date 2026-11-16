@@ -42,11 +42,6 @@
                         aria-controls="task-panel-orchestration"
                         aria-selected="true"
                         data-task-tab="orchestration">任务编排</button>
-                <button id="task-tab-triggers" class="page-subnav-tab"
-                        type="button" role="tab"
-                        aria-controls="task-panel-triggers"
-                        aria-selected="false"
-                        data-task-tab="triggers">自动触发</button>
                 <button id="task-tab-monitor" class="page-subnav-tab"
                         type="button" role="tab"
                         aria-controls="task-panel-monitor"
@@ -95,6 +90,40 @@
                             </div>
                         </details>
                     </div>
+                    <section class="task-folders" aria-labelledby="task-folders-title">
+                        <div class="task-folder-heading">
+                            <h3 id="task-folders-title">文件夹</h3>
+                            <button id="new-folder-button"
+                                    class="task-folder-new" type="button">
+                                + 新建
+                            </button>
+                        </div>
+                        <div id="task-folder-list" class="task-folder-list"
+                             aria-live="polite"></div>
+                        <form id="task-folder-form" class="task-folder-form"
+                              hidden novalidate>
+                            <label id="task-folder-form-label"
+                                   for="task-folder-name">新建文件夹</label>
+                            <input id="task-folder-name" maxlength="80"
+                                   autocomplete="off" required>
+                            <div class="task-folder-form-actions">
+                                <button id="save-folder-button"
+                                        class="primary compact"
+                                        type="submit">保存</button>
+                                <button id="cancel-folder-button"
+                                        class="secondary compact"
+                                        type="button">取消</button>
+                                <button id="delete-folder-button"
+                                        class="ghost compact danger-action"
+                                        type="button" hidden>解散文件夹</button>
+                            </div>
+                            <p class="muted compact-help">
+                                删除文件夹只会解散分组，不会删除任务。
+                            </p>
+                            <div id="task-folder-errors" class="config-errors"
+                                 role="alert"></div>
+                        </form>
+                    </section>
                     <label class="search-field" for="task-search">
                         <span class="visually-hidden">搜索任务</span>
                         <input id="task-search" type="search" placeholder="搜索任务名称"
@@ -175,9 +204,15 @@
                             </ol>
                         </div>
                         <form id="task-form" hidden novalidate>
-                            <div class="editor-field">
-                                <label for="task-name">任务名称</label>
-                                <input id="task-name" maxlength="80" required>
+                            <div class="editor-fields task-basic-fields">
+                                <div class="editor-field">
+                                    <label for="task-name">任务名称</label>
+                                    <input id="task-name" maxlength="80" required>
+                                </div>
+                                <div class="editor-field">
+                                    <label for="task-folder-select">所属文件夹</label>
+                                    <select id="task-folder-select"></select>
+                                </div>
                             </div>
                             <details class="task-settings">
                                 <summary>调度设置 <span
@@ -277,6 +312,154 @@
                                         type="button">删除任务</button>
                             </div>
                         </form>
+                        <details id="task-trigger-settings"
+                                 class="task-settings task-trigger-settings">
+                            <summary>
+                                <span>自动触发</span>
+                                <span id="task-trigger-summary">未绑定触发器</span>
+                            </summary>
+                            <div class="task-trigger-body">
+                                <div class="task-trigger-heading">
+                                    <p class="muted compact-help">
+                                        触发器只会在当前已保存任务上运行；条件命中后，
+                                        按设定优先级把该任务加入现有队列。
+                                    </p>
+                                    <button id="new-trigger-button"
+                                            class="secondary compact"
+                                            type="button">新建触发器</button>
+                                </div>
+                                <p id="trigger-save-hint"
+                                   class="field-message trigger-save-hint" hidden>
+                                    先保存任务再配置触发器。
+                                </p>
+                                <div class="trigger-binding">
+                                    <span>绑定当前任务</span>
+                                    <strong id="trigger-bound-task">新任务</strong>
+                                </div>
+                                <div class="trigger-workbench">
+                                    <div id="trigger-list" class="editor-list"
+                                         aria-live="polite"></div>
+                                    <form id="trigger-form" class="trigger-form"
+                                          hidden novalidate>
+                                        <div class="editor-fields">
+                                            <div class="editor-field">
+                                                <label for="trigger-name">
+                                                    触发器名称
+                                                </label>
+                                                <input id="trigger-name"
+                                                       maxlength="80" required>
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="trigger-type">
+                                                    触发条件
+                                                </label>
+                                                <select id="trigger-type">
+                                                    <option value="DROPPED_ITEMS">
+                                                        坐标范围内出现掉落物
+                                                    </option>
+                                                    <option value="FOOD_LEVEL_AT_OR_BELOW">
+                                                        饱食度不高于设定值
+                                                    </option>
+                                                    <option value="CACHE_UPDATED">
+                                                        缓存区域收到新物品
+                                                    </option>
+                                                </select>
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="trigger-priority">
+                                                    入队优先级
+                                                </label>
+                                                <select id="trigger-priority">
+                                                    <option value="BACKGROUND">后台</option>
+                                                    <option value="NORMAL">普通</option>
+                                                    <option value="URGENT">紧急</option>
+                                                </select>
+                                            </div>
+                                            <div class="editor-field">
+                                                <label id="trigger-interval-label"
+                                                       for="trigger-interval">
+                                                    检测间隔（秒）
+                                                </label>
+                                                <input id="trigger-interval"
+                                                       type="number" min="0.05"
+                                                       max="60" step="0.05">
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="trigger-cooldown">
+                                                    完成冷却（秒）
+                                                </label>
+                                                <input id="trigger-cooldown"
+                                                       type="number" min="0"
+                                                       max="3600" step="0.05">
+                                            </div>
+                                        </div>
+                                        <div id="trigger-drop-fields"
+                                             class="editor-fields trigger-condition-fields">
+                                            <div class="editor-field">
+                                                <label for="trigger-coordinate">
+                                                    检测坐标
+                                                </label>
+                                                <select id="trigger-coordinate"></select>
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="trigger-item-filter">
+                                                    物品过滤（可选）
+                                                </label>
+                                                <input id="trigger-item-filter"
+                                                       placeholder="留空表示全部物品">
+                                            </div>
+                                        </div>
+                                        <div id="trigger-food-fields"
+                                             class="editor-fields trigger-condition-fields"
+                                             hidden>
+                                            <div class="editor-field">
+                                                <label for="trigger-food-threshold">
+                                                    饱食度不高于
+                                                </label>
+                                                <input id="trigger-food-threshold"
+                                                       type="number" min="0"
+                                                       max="20" step="1">
+                                            </div>
+                                        </div>
+                                        <div id="trigger-cache-fields"
+                                             class="editor-fields trigger-condition-fields"
+                                             hidden>
+                                            <div class="editor-field">
+                                                <label for="trigger-cache-region">
+                                                    缓存区域
+                                                </label>
+                                                <select id="trigger-cache-region"></select>
+                                            </div>
+                                            <p class="muted compact-help">
+                                                物品成功存入该区域后触发。连续存入会先
+                                                防抖；分类任务由任务流程按低优先级
+                                                独立创建。
+                                            </p>
+                                        </div>
+                                        <div id="trigger-errors"
+                                             class="config-errors"
+                                             role="alert"></div>
+                                        <div class="action-row">
+                                            <button id="save-trigger-button"
+                                                    class="primary compact"
+                                                    type="submit">
+                                                保存触发器
+                                            </button>
+                                            <button id="discard-trigger-button"
+                                                    class="secondary compact"
+                                                    type="button">
+                                                放弃修改
+                                            </button>
+                                            <button id="delete-trigger-button"
+                                                    class="ghost compact danger-action"
+                                                    type="button">
+                                                删除触发器
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </details>
                     </section>
                 </div>
                 <details id="task-module-panel" class="panel module-library">
@@ -292,133 +475,6 @@
                     <div id="task-module-catalog" class="module-catalog"
                          aria-live="polite"></div>
                 </details>
-            </div>
-
-            <div id="task-panel-triggers" class="page-tab-panel"
-                 role="tabpanel" aria-labelledby="task-tab-triggers"
-                 data-task-panel="triggers" hidden>
-                    <section id="task-trigger-panel" class="panel"
-                             aria-labelledby="task-trigger-title">
-                        <div class="panel-heading">
-                            <div>
-                                <p class="eyebrow">后台条件</p>
-                                <h2 id="task-trigger-title">任务触发器</h2>
-                                <p class="muted section-help">
-                                    触发器空闲时不占执行位；条件命中后，把选定任务
-                                    按指定优先级加入现有队列。
-                                </p>
-                            </div>
-                            <button id="new-trigger-button"
-                                    class="secondary compact"
-                                    type="button">新建触发器</button>
-                        </div>
-                        <div class="trigger-workbench">
-                            <div id="trigger-list" class="editor-list"
-                                 aria-live="polite"></div>
-                            <form id="trigger-form" class="trigger-form"
-                                  hidden novalidate>
-                                <div class="editor-fields">
-                                    <div class="editor-field">
-                                        <label for="trigger-name">触发器名称</label>
-                                        <input id="trigger-name" maxlength="80"
-                                               required>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="trigger-type">触发条件</label>
-                                        <select id="trigger-type">
-                                            <option value="DROPPED_ITEMS">
-                                                坐标范围内出现掉落物
-                                            </option>
-                                            <option value="FOOD_LEVEL_AT_OR_BELOW">
-                                                饱食度不高于设定值
-                                            </option>
-                                            <option value="CACHE_UPDATED">
-                                                缓存区域收到新物品
-                                            </option>
-                                        </select>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="trigger-target-task">目标任务</label>
-                                        <select id="trigger-target-task"></select>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="trigger-priority">入队优先级</label>
-                                        <select id="trigger-priority">
-                                            <option value="BACKGROUND">后台</option>
-                                            <option value="NORMAL">普通</option>
-                                            <option value="URGENT">紧急</option>
-                                        </select>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label id="trigger-interval-label"
-                                               for="trigger-interval">
-                                            检测间隔（秒）
-                                        </label>
-                                        <input id="trigger-interval" type="number"
-                                               min="0.05" max="60" step="0.05">
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="trigger-cooldown">完成冷却（秒）</label>
-                                        <input id="trigger-cooldown" type="number"
-                                               min="0" max="3600" step="0.05">
-                                    </div>
-                                </div>
-                                <div id="trigger-drop-fields"
-                                     class="editor-fields trigger-condition-fields">
-                                    <div class="editor-field">
-                                        <label for="trigger-coordinate">检测坐标</label>
-                                        <select id="trigger-coordinate"></select>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="trigger-item-filter">
-                                            物品过滤（可选）
-                                        </label>
-                                        <input id="trigger-item-filter"
-                                               placeholder="留空表示全部物品">
-                                    </div>
-                                </div>
-                                <div id="trigger-food-fields"
-                                     class="editor-fields trigger-condition-fields"
-                                     hidden>
-                                    <div class="editor-field">
-                                        <label for="trigger-food-threshold">
-                                            饱食度不高于
-                                        </label>
-                                        <input id="trigger-food-threshold"
-                                               type="number" min="0" max="20"
-                                               step="1">
-                                    </div>
-                                </div>
-                                <div id="trigger-cache-fields"
-                                     class="editor-fields trigger-condition-fields"
-                                     hidden>
-                                    <div class="editor-field">
-                                        <label for="trigger-cache-region">
-                                            缓存区域
-                                        </label>
-                                        <select id="trigger-cache-region"></select>
-                                    </div>
-                                    <p class="muted compact-help">
-                                        物品成功存入该区域后触发。连续存入会先防抖；
-                                        分类任务由任务流程按低优先级独立创建。
-                                    </p>
-                                </div>
-                                <div id="trigger-errors" class="config-errors"
-                                     role="alert"></div>
-                                <div class="action-row">
-                                    <button id="save-trigger-button"
-                                            class="primary compact"
-                                            type="submit">保存触发器</button>
-                                    <button id="discard-trigger-button"
-                                            class="secondary compact"
-                                            type="button">放弃修改</button>
-                                    <button id="delete-trigger-button"
-                                            class="ghost compact danger-action"
-                                            type="button">删除触发器</button>
-                                </div>
-                            </form>
-                        </div>
-                    </section>
             </div>
 
             <div id="task-panel-monitor"

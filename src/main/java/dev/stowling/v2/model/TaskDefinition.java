@@ -15,7 +15,8 @@ public record TaskDefinition(
         TaskInterruptionMode interruptionMode,
         String interruptionTaskRef,
         boolean defaultInterruptionFlow,
-        boolean requeueAfterInterruption
+        boolean requeueAfterInterruption,
+        UUID folderId
 ) {
     public static final int MAX_STEP_DEPTH = 16;
     public static final int MAX_TOTAL_STEPS = 512;
@@ -77,7 +78,33 @@ public record TaskDefinition(
                 TaskInterruptionMode.DEFAULT,
                 null,
                 false,
-                false
+                false,
+                null
+        );
+    }
+
+    public TaskDefinition(
+            UUID id,
+            String name,
+            TaskPriority priority,
+            boolean repeatWhenIdle,
+            List<TaskStep> steps,
+            TaskInterruptionMode interruptionMode,
+            String interruptionTaskRef,
+            boolean defaultInterruptionFlow,
+            boolean requeueAfterInterruption
+    ) {
+        this(
+                id,
+                name,
+                priority,
+                repeatWhenIdle,
+                steps,
+                interruptionMode,
+                interruptionTaskRef,
+                defaultInterruptionFlow,
+                requeueAfterInterruption,
+                null
         );
     }
 

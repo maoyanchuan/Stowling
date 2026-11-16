@@ -56,6 +56,20 @@ public interface V2ControlService {
             RevisionRequest request
     );
 
+    TaskFolderListResponse taskFolders();
+
+    TaskFolderListResponse createTaskFolder(TaskFolderRequest request);
+
+    TaskFolderListResponse updateTaskFolder(
+            UUID id,
+            TaskFolderUpdateRequest request
+    );
+
+    TaskFolderListResponse deleteTaskFolder(
+            UUID id,
+            RevisionRequest request
+    );
+
     TaskListResponse tasks();
 
     TaskDefinition task(UUID id);

@@ -21,6 +21,7 @@ import dev.stowling.v2.runtime.TaskRunManager;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -289,7 +290,7 @@ class V2ControlServiceImplTest {
     }
 
     @Test
-    void blocksDeletingTaskReferencedByATrigger() {
+    void deletingTaskAlsoDeletesItsTriggers() {
         V2ControlService service = service();
         CoordinatePoint point = createPoint(service, "Home");
         TaskListResponse tasks = service.createTask(task(
@@ -311,15 +312,153 @@ class V2ControlServiceImplTest {
                 )
         );
 
-        TaskInUseException exception = assertThrows(
-                TaskInUseException.class,
-                () -> service.deleteTask(
-                        tasks.tasks().getFirst().id(),
-                        new RevisionRequest(triggers.revision())
-                )
+        TaskListResponse deleted = service.deleteTask(
+                tasks.tasks().getFirst().id(),
+                new RevisionRequest(triggers.revision())
         );
 
-        assertEquals(List.of("Hunger"), exception.triggerNames());
+        assertEquals(List.of(), deleted.tasks());
+        assertEquals(List.of(), service.taskTriggers().triggers());
+        assertEquals(List.of(), service.taskRuns().triggers());
+    }
+
+    @Test
+    void managesFoldersAndClearsAssignmentsWhenAFolderIsDeleted() {
+        V2ControlService service = service();
+        TaskFolderListResponse created = service.createTaskFolder(
+                new TaskFolderRequest(" Farm ")
+        );
+        var folder = created.folders().getFirst();
+
+        assertEquals("Farm", folder.name());
+        assertEquals(List.of(folder), service.taskFolders().folders());
+        CoordinatePoint point = createPoint(service, "Field");
+        TaskListResponse tasks = service.createTask(task(
+                "Harvest",
+                point.id().toString(),
+                folder.id()
+        ));
+        assertEquals(folder.id(), tasks.tasks().getFirst().folderId());
+
+        TaskFolderListResponse renamed = service.updateTaskFolder(
+                folder.id(),
+                new TaskFolderUpdateRequest(tasks.revision(), "Fields")
+        );
+        assertEquals("Fields", renamed.folders().getFirst().name());
+        TaskTriggerListResponse triggers = service.createTaskTrigger(
+                new TaskTriggerRequest(
+                        "Hunger",
+                        TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW,
+                        tasks.tasks().getFirst().id(),
+                        TaskPriority.NORMAL,
+                        20,
+                        100,
+                        null,
+                        null,
+                        18,
+                        null
+                )
+        );
+        TaskFolderListResponse deleted = service.deleteTaskFolder(
+                folder.id(),
+                new RevisionRequest(triggers.revision())
+        );
+
+        assertEquals(List.of(), deleted.folders());
+        TaskListResponse remaining = service.tasks();
+        assertEquals(1, remaining.tasks().size());
+        assertEquals(null, remaining.tasks().getFirst().folderId());
+        assertEquals(1, service.taskTriggers().triggers().size());
+    }
+
+    @Test
+    void rejectsAssigningATaskToAnUnknownFolder() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Field");
+
+        assertThrows(
+                V2ValidationException.class,
+                () -> service.createTask(task(
+                        "Harvest",
+                        point.id().toString(),
+                        UUID.randomUUID()
+                ))
+        );
+    }
+
+    @Test
+    void preservesFoldersAcrossResourceAndTriggerSaves() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Field");
+        TaskFolderListResponse createdFolder = service.createTaskFolder(
+                new TaskFolderRequest("Farm")
+        );
+        var folder = createdFolder.folders().getFirst();
+        TaskListResponse tasks = service.createTask(task(
+                "Harvest",
+                point.id().toString(),
+                folder.id()
+        ));
+        var task = tasks.tasks().getFirst();
+
+        CoordinateListResponse coordinates = service.updateCoordinate(
+                point.id(),
+                new CoordinateUpdateRequest(
+                        tasks.revision(),
+                        "Field base",
+                        10,
+                        65,
+                        20
+                )
+        );
+        RegionListResponse regions = service.createRegion(new RegionRequest(
+                "Storage",
+                100,
+                64,
+                100,
+                110,
+                70,
+                110
+        ));
+        CategoryBindingRequest binding = new CategoryBindingRequest(
+                7,
+                -34,
+                7,
+                18,
+                -34,
+                7,
+                7,
+                -34,
+                5,
+                18,
+                -34,
+                6,
+                "DIRECT_BLOCK_ID",
+                List.of(),
+                List.of()
+        );
+        CategoryZoneListResponse zones = service.createCategoryZone(
+                new CategoryZoneRequest("A", List.of(binding))
+        );
+        service.createTaskTrigger(new TaskTriggerRequest(
+                "Hunger",
+                TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW,
+                task.id(),
+                TaskPriority.NORMAL,
+                20,
+                100,
+                null,
+                null,
+                18,
+                null
+        ));
+
+        TaskFolderListResponse folders = service.taskFolders();
+        TaskListResponse finalTasks = service.tasks();
+        assertEquals(1, regions.regions().size());
+        assertEquals(1, zones.categoryZones().size());
+        assertEquals(List.of(folder), folders.folders());
+        assertEquals(folder.id(), finalTasks.tasks().getFirst().folderId());
     }
 
     @Test
@@ -391,13 +530,14 @@ class V2ControlServiceImplTest {
                 false
         ));
 
-        assertThrows(
+        TaskInUseException exception = assertThrows(
                 TaskInUseException.class,
                 () -> service.deleteTask(
                         targetTask.id(),
                         new RevisionRequest(withParent.revision())
                 )
         );
+        assertEquals(List.of("Parent"), exception.taskNames());
 
         TaskListResponse cleanup = service.createTask(new TaskRequest(
                 "Default cleanup",
@@ -467,6 +607,28 @@ class V2ControlServiceImplTest {
                         ConfigValidator.MOVE_TO_COORDINATE,
                         Map.of(ConfigValidator.COORDINATE_ID, coordinateId)
                 ))
+        );
+    }
+
+    private static TaskRequest task(
+            String name,
+            String coordinateId,
+            UUID folderId
+    ) {
+        return new TaskRequest(
+                name,
+                TaskPriority.NORMAL,
+                false,
+                List.of(new TaskStepRequest(
+                        null,
+                        ConfigValidator.MOVE_TO_COORDINATE,
+                        Map.of(ConfigValidator.COORDINATE_ID, coordinateId)
+                )),
+                TaskInterruptionMode.DEFAULT,
+                null,
+                false,
+                false,
+                folderId
         );
     }
 

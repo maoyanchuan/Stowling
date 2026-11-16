@@ -135,6 +135,8 @@ class ConfigStoreTest {
 
         assertEquals(dev.stowling.v2.model.TaskPriority.NORMAL, task.priority());
         assertEquals(false, task.repeatWhenIdle());
+        assertEquals(null, task.folderId());
+        assertTrue(store.loadOrReset().config().taskFolders().isEmpty());
         assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
     }
 

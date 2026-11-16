@@ -9,7 +9,8 @@ public record AppConfig(
         List<TaskDefinition> tasks,
         List<RegionDefinition> regions,
         List<CategoryZoneDefinition> categoryZones,
-        List<TaskTriggerDefinition> triggers
+        List<TaskTriggerDefinition> triggers,
+        List<TaskFolderDefinition> taskFolders
 ) {
     public static final int CURRENT_SCHEMA_VERSION = 7;
 
@@ -26,6 +27,28 @@ public record AppConfig(
                 ? List.of()
                 : List.copyOf(categoryZones);
         triggers = triggers == null ? List.of() : List.copyOf(triggers);
+        taskFolders = taskFolders == null
+                ? List.of()
+                : List.copyOf(taskFolders);
+    }
+
+    public AppConfig(
+            int schemaVersion,
+            List<CoordinatePoint> coordinates,
+            List<TaskDefinition> tasks,
+            List<RegionDefinition> regions,
+            List<CategoryZoneDefinition> categoryZones,
+            List<TaskTriggerDefinition> triggers
+    ) {
+        this(
+                schemaVersion,
+                coordinates,
+                tasks,
+                regions,
+                categoryZones,
+                triggers,
+                List.of()
+        );
     }
 
     public AppConfig(
@@ -41,6 +64,7 @@ public record AppConfig(
                 tasks,
                 regions,
                 categoryZones,
+                List.of(),
                 List.of()
         );
     }
@@ -65,6 +89,7 @@ public record AppConfig(
     public static AppConfig empty() {
         return new AppConfig(
                 CURRENT_SCHEMA_VERSION,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of(),

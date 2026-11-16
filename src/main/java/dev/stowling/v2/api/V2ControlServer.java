@@ -27,6 +27,8 @@ import dev.stowling.v2.control.RegionUpdateRequest;
 import dev.stowling.v2.control.TaskRequest;
 import dev.stowling.v2.control.TaskStepRequest;
 import dev.stowling.v2.control.TaskInUseException;
+import dev.stowling.v2.control.TaskFolderRequest;
+import dev.stowling.v2.control.TaskFolderUpdateRequest;
 import dev.stowling.v2.control.TaskTriggerRequest;
 import dev.stowling.v2.control.TaskTriggerUpdateRequest;
 import dev.stowling.v2.control.TaskUpdateRequest;
@@ -195,7 +197,7 @@ public final class V2ControlServer implements AutoCloseable {
             sendJsonQuietly(exchange, 409, new ErrorResponse(new ErrorBody(
                     "task_in_use",
                     exception.getMessage(),
-                    exception.triggerNames()
+                    exception.taskNames()
             )));
         } catch (V2NotFoundException exception) {
             sendErrorQuietly(exchange, 404, "not_found", exception.getMessage());
@@ -273,6 +275,25 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if ("/v1/task-folders".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.taskFolders());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("name"));
+                sendJson(
+                        exchange,
+                        201,
+                        service.createTaskFolder(new TaskFolderRequest(
+                                string(json, "name")
+                        ))
+                );
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
         if ("/v1/coordinates".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);
@@ -313,7 +334,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "interruptionMode",
                                 "interruptionTaskRef",
                                 "defaultInterruptionFlow",
-                                "requeueAfterInterruption"
+                                "requeueAfterInterruption",
+                                "folderId"
                         ),
                         Set.of("name", "steps")
                 );
@@ -502,7 +524,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "interruptionMode",
                                 "interruptionTaskRef",
                                 "defaultInterruptionFlow",
-                                "requeueAfterInterruption"
+                                "requeueAfterInterruption",
+                                "folderId"
                         ),
                         Set.of("revision", "name", "steps")
                 );
@@ -516,7 +539,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 optionalInterruptionMode(json),
                                 optionalString(json, "interruptionTaskRef"),
                                 optionalBoolean(json, "defaultInterruptionFlow"),
-                                optionalBoolean(json, "requeueAfterInterruption")
+                                optionalBoolean(json, "requeueAfterInterruption"),
+                                optionalUuid(json, "folderId")
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteTask(id, revision(body)));
@@ -598,6 +622,28 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if (path.startsWith("/v1/task-folders/")) {
+            UUID id = pathUuid(path, "/v1/task-folders/");
+            if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("revision", "name"));
+                sendJson(exchange, 200, service.updateTaskFolder(
+                        id,
+                        new TaskFolderUpdateRequest(
+                                string(json, "revision"),
+                                string(json, "name")
+                        )
+                ));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteTaskFolder(
+                        id,
+                        revision(body)
+                ));
+            } else {
+                throw methodNotAllowed("PUT, DELETE");
+            }
+            return;
+        }
         throw new RequestFailure(404, "not_found", "Route not found");
     }
 
@@ -610,7 +656,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInterruptionMode(json),
                 optionalString(json, "interruptionTaskRef"),
                 optionalBoolean(json, "defaultInterruptionFlow"),
-                optionalBoolean(json, "requeueAfterInterruption")
+                optionalBoolean(json, "requeueAfterInterruption"),
+                optionalUuid(json, "folderId")
         );
     }
 

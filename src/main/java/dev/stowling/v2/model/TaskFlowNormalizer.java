@@ -82,7 +82,8 @@ public final class TaskFlowNormalizer {
                     TaskInterruptionMode.CUSTOM,
                     reference,
                     false,
-                    task.requeueAfterInterruption()
+                    task.requeueAfterInterruption(),
+                    task.folderId()
             );
             replacements.put(task.id(), interrupted);
             if (!taskIds.contains(interruptionId)) {
@@ -100,7 +101,8 @@ public final class TaskFlowNormalizer {
                         TaskInterruptionMode.NONE,
                         null,
                         false,
-                        false
+                        false,
+                        task.folderId()
                 ));
                 taskIds.add(interruptionId);
             }
@@ -112,7 +114,8 @@ public final class TaskFlowNormalizer {
                     tasks,
                     config.regions(),
                     config.categoryZones(),
-                    config.triggers()
+                    config.triggers(),
+                    config.taskFolders()
             );
         }
         List<TaskDefinition> replaced = tasks.stream()
@@ -126,7 +129,8 @@ public final class TaskFlowNormalizer {
                 result,
                 config.regions(),
                 config.categoryZones(),
-                config.triggers()
+                config.triggers(),
+                config.taskFolders()
         );
     }
 
@@ -141,7 +145,8 @@ public final class TaskFlowNormalizer {
                 task.interruptionMode(),
                 normalizeTaskReference(task.interruptionTaskRef()),
                 task.defaultInterruptionFlow(),
-                task.requeueAfterInterruption()
+                task.requeueAfterInterruption(),
+                task.folderId()
         );
     }
 

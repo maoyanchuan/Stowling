@@ -28,7 +28,8 @@ class V2ModelContractTest {
                         "interruptionMode",
                         "interruptionTaskRef",
                         "defaultInterruptionFlow",
-                        "requeueAfterInterruption"
+                        "requeueAfterInterruption",
+                        "folderId"
                 ),
                 components(TaskDefinition.class)
         );
@@ -85,6 +86,17 @@ class V2ModelContractTest {
     }
 
     @Test
+    void taskFolderContainsOnlyIdAndTrimmedName() {
+        TaskFolderDefinition folder = new TaskFolderDefinition(
+                UUID.randomUUID(),
+                " Farm "
+        );
+
+        assertEquals(List.of("id", "name"), components(TaskFolderDefinition.class));
+        assertEquals("Farm", folder.name());
+    }
+
+    @Test
     void idsAreUuidsAndNamesAreTrimmed() {
         UUID coordinateId = UUID.randomUUID();
         UUID stepId = UUID.randomUUID();
@@ -113,6 +125,7 @@ class V2ModelContractTest {
         assertEquals(TaskInterruptionMode.DEFAULT, task.interruptionMode());
         assertEquals(false, task.defaultInterruptionFlow());
         assertEquals(false, task.requeueAfterInterruption());
+        assertEquals(null, task.folderId());
     }
 
     private static List<String> components(Class<?> type) {

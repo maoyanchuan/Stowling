@@ -129,6 +129,7 @@
         return {
             id: String(value?.id || ""),
             name: String(value?.name || "").trim(),
+            folderId: String(value?.folderId || ""),
             priority: PRIORITIES.includes(value?.priority)
                 ? value.priority
                 : "NORMAL",
@@ -149,6 +150,7 @@
         return {
             id: "",
             name: "新任务",
+            folderId: "",
             priority: "NORMAL",
             repeatWhenIdle: false,
             interruptionMode: "DEFAULT",
@@ -652,6 +654,7 @@
         const mode = isDefault ? "NONE" : requestedMode;
         return {
             name: String(task.name || "").trim(),
+            folderId: task.folderId ? String(task.folderId) : null,
             priority: task.priority,
             repeatWhenIdle: Boolean(
                 task.priority === "BACKGROUND"

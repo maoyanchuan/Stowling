@@ -151,6 +151,61 @@ class TaskFlowNormalizerTest {
     }
 
     @Test
+    void keepsFoldersAndAssignmentsForGeneratedLegacyCleanup() {
+        UUID regionId = UUID.randomUUID();
+        UUID folderId = UUID.randomUUID();
+        TaskFolderDefinition folder = new TaskFolderDefinition(
+                folderId,
+                "Legacy"
+        );
+        RegionDefinition region = new RegionDefinition(
+                regionId,
+                "Cache",
+                0,
+                64,
+                0,
+                8,
+                70,
+                8
+        );
+        TaskDefinition task = new TaskDefinition(
+                UUID.randomUUID(),
+                "Legacy sort",
+                TaskPriority.NORMAL,
+                false,
+                List.of(new TaskStep(
+                        UUID.randomUUID(),
+                        ConfigValidator.SORT_CACHE_ITEMS,
+                        Map.of(
+                                ConfigValidator.CACHE_REGION_ID,
+                                regionId.toString()
+                        )
+                )),
+                TaskInterruptionMode.DEFAULT,
+                null,
+                false,
+                false,
+                folderId
+        );
+        AppConfig config = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(),
+                List.of(task),
+                List.of(region),
+                List.of(),
+                List.of(),
+                List.of(folder)
+        );
+
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+
+        assertEquals(List.of(folder), normalized.taskFolders());
+        assertEquals(2, normalized.tasks().size());
+        assertEquals(folderId, normalized.tasks().getFirst().folderId());
+        assertEquals(folderId, normalized.tasks().getLast().folderId());
+    }
+
+    @Test
     void keepsNewClassificationTaskOnDefaultInterruption() {
         UUID regionId = UUID.randomUUID();
         UUID zoneId = UUID.randomUUID();

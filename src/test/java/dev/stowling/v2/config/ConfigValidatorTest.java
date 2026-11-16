@@ -14,6 +14,7 @@ import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskFolderDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.model.TaskTriggerDefinition;
@@ -23,6 +24,67 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
+    @Test
+    void validatesFolderNamesAndTaskAssignments() {
+        CoordinatePoint point = point("Home");
+        TaskFolderDefinition folder = new TaskFolderDefinition(
+                UUID.randomUUID(),
+                "Base"
+        );
+        TaskDefinition plain = task("Travel", step(point.id()));
+        TaskDefinition assigned = new TaskDefinition(
+                plain.id(),
+                plain.name(),
+                plain.priority(),
+                plain.repeatWhenIdle(),
+                plain.steps(),
+                plain.interruptionMode(),
+                plain.interruptionTaskRef(),
+                plain.defaultInterruptionFlow(),
+                plain.requeueAfterInterruption(),
+                folder.id()
+        );
+        assertDoesNotThrow(() -> ConfigValidator.requireValid(new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(point),
+                List.of(assigned),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(folder)
+        )));
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(point),
+                        List.of(assigned),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of()
+                ))
+        );
+        assertThrows(
+                V2ValidationException.class,
+                () -> ConfigValidator.requireValid(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(point),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(
+                                folder,
+                                new TaskFolderDefinition(
+                                        UUID.randomUUID(),
+                                        " base "
+                                )
+                        )
+                ))
+        );
+    }
+
     @Test
     void validatesTriggerTargetsAndCoordinateReferences() {
         CoordinatePoint point = point("Drops");

@@ -411,7 +411,7 @@ def test_task_execution_is_separate_from_the_editor() -> None:
     assert "renderRunControls()" in tasks
 
 
-def test_task_page_supports_independent_task_triggers() -> None:
+def test_task_page_supports_task_bound_triggers_inside_the_editor() -> None:
     html = read("tasks.html")
     model = read("v2-task-model.js")
     trigger_model = read("v2-trigger-model.js")
@@ -419,8 +419,10 @@ def test_task_page_supports_independent_task_triggers() -> None:
     styles = read("styles.css")
 
     assert '<script src="/v2-trigger-model.js" defer></script>' in html
+    assert 'id="task-trigger-settings"' in html
     assert 'id="new-trigger-button"' in html
-    assert 'id="trigger-target-task"' in html
+    assert 'id="trigger-bound-task"' in html
+    assert 'id="trigger-target-task"' not in html
     assert 'id="trigger-priority"' in html
     assert 'id="trigger-coordinate"' in html
     assert 'id="trigger-food-threshold"' in html
@@ -438,11 +440,13 @@ def test_task_page_supports_independent_task_triggers() -> None:
     assert "payloadTrigger" in trigger_model
     assert "state.triggerStatuses" in tasks
     assert '"/v1/task-triggers"' in tasks
+    assert "function currentTaskTriggers()" in tasks
+    assert "trigger.targetTaskId === state.selectedId" in tasks
     assert "function renderTriggerList" in tasks
     assert "function renderTriggerEditor" in tasks
     assert "function renderTriggerStatuses" in tasks
     assert ".trigger-workbench" in styles
-    assert "按指定优先级加入现有队列" in html
+    assert "按设定优先级把该任务加入现有队列" in html
 
 
 def test_dashboard_has_an_independent_trigger_status_panel() -> None:
@@ -643,28 +647,35 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     assert "bindingDescription(binding)" in javascript
 
 
-def test_task_page_separates_orchestration_triggers_and_monitoring() -> None:
+def test_task_page_separates_orchestration_and_monitoring() -> None:
     html = read("tasks.html")
     orchestration = html.split('id="task-panel-orchestration"', 1)[1]
-    orchestration = orchestration.split('id="task-panel-triggers"', 1)[0]
-    triggers = html.split('id="task-panel-triggers"', 1)[1]
-    triggers = triggers.split('id="task-panel-monitor"', 1)[0]
+    orchestration = orchestration.split('id="task-panel-monitor"', 1)[0]
     monitor = html.split('id="task-panel-monitor"', 1)[1]
 
-    for tab in ("orchestration", "triggers", "monitor"):
+    assert html.count('data-task-tab="') == 2
+    assert html.count('data-task-panel="') == 2
+    for tab in ("orchestration", "monitor"):
         assert f'data-task-tab="{tab}"' in html
         assert f'data-task-panel="{tab}"' in html
+    assert 'data-task-tab="triggers"' not in html
+    assert 'data-task-panel="triggers"' not in html
     assert 'id="task-panel-orchestration"' in html
-    assert 'aria-selected="true"' in html.split('data-task-tab="orchestration"', 1)[0]
-    assert 'data-task-panel="triggers" hidden' in html
+    assert 'aria-selected="true"' in html.split(
+        'data-task-tab="orchestration"', 1
+    )[0]
     assert 'data-task-panel="monitor" hidden' in html
 
-    for marker in ("task-list", "task-editor-panel", "task-module-panel"):
+    for marker in (
+        "task-list",
+        "task-editor-panel",
+        "task-module-panel",
+        "task-trigger-settings",
+        "trigger-form",
+    ):
         assert marker in orchestration
     assert 'id="task-run-panel"' not in orchestration
-    assert 'id="trigger-form"' not in orchestration
-    assert 'id="trigger-form"' in triggers
-    assert 'id="trigger-status-list"' not in triggers
+    assert 'id="trigger-status-list"' not in orchestration
     assert 'id="task-run-panel"' in monitor
     for marker in ("trigger-status-list", "task-queue-list", "runtime-list"):
         assert marker in monitor
@@ -674,17 +685,33 @@ def test_task_tabs_use_hash_and_polling_never_changes_partitions() -> None:
     javascript = read("tasks.js")
 
     assert 'orchestration: "#orchestration"' in javascript
-    assert 'triggers: "#triggers"' in javascript
+    assert 'triggers: "#triggers"' not in javascript
     assert 'monitor: "#monitor"' in javascript
+    assert 'if (hash === "triggers")' in javascript
+    assert "function hasLegacyTriggerHash()" in javascript
     assert "panel.hidden = panel.dataset.taskPanel !== next" in javascript
     assert 'window.history.replaceState(null, "", hash)' in javascript
     assert 'window.addEventListener("hashchange"' in javascript
     assert "state.preserveTabOnSelect = true" in javascript
+    assert "openTriggersAfterTaskReady: false" in javascript
+    assert "state.openTriggersAfterTaskReady = true" in javascript
+    route = javascript.split("function applyTaskHashRoute()", 1)[1]
+    route = route.split("function handleTaskTabKeydown", 1)[0]
+    assert "if (state.openTriggersAfterTaskReady)" in route
+    assert "openCurrentTaskTriggers()" in route
+    editor = javascript.split("function renderEditor()", 1)[1]
+    editor = editor.split("function renderInterruptionControls", 1)[0]
+    assert "if (state.openTriggersAfterTaskReady)" in editor
+    assert "openCurrentTaskTriggers()" in editor
+    opener = javascript.split("function openCurrentTaskTriggers()", 1)[1]
+    opener = opener.split("function applyTaskHashRoute()", 1)[0]
+    assert "state.openTriggersAfterTaskReady = false" in opener
 
     selection = javascript.split("function selectTask(task)", 1)[1]
     selection = selection.split("function renderRunControls", 1)[0]
     assert 'showTaskTab("orchestration", true)' in selection
-    assert 'showTaskTab("triggers", true)' in javascript
+    assert 'showTaskTab("triggers", true)' not in javascript
+    assert "openCurrentTaskTriggers()" in javascript
     assert 'showTaskTab("monitor", true)' in javascript
 
     polling = javascript.split("async function loadRuns()", 1)[1]

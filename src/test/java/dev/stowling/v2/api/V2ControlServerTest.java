@@ -71,6 +71,13 @@ class V2ControlServerTest {
                             .firstValue("WWW-Authenticate")
                             .orElse("")
             );
+            HttpResponse<String> unauthorizedFolders = fixture.send(
+                    "/v1/task-folders",
+                    "GET",
+                    null,
+                    false
+            );
+            assertEquals(401, unauthorizedFolders.statusCode());
 
             HttpResponse<String> wrongMethod = fixture.send(
                     "/v1/coordinates",
@@ -104,6 +111,90 @@ class V2ControlServerTest {
                 );
                 assertEquals(404, response.statusCode(), path);
             }
+        }
+    }
+
+    @Test
+    void managesTaskFoldersAndClearsTaskAssignmentsOnDelete() throws Exception {
+        try (Fixture fixture = fixture()) {
+            HttpResponse<String> createdFolder = fixture.send(
+                    "/v1/task-folders",
+                    "POST",
+                    "{\"name\":\"Farm\"}",
+                    true
+            );
+            assertEquals(201, createdFolder.statusCode());
+            JsonObject folder = object(createdFolder)
+                    .getAsJsonArray("folders")
+                    .get(0)
+                    .getAsJsonObject();
+            String folderId = folder.get("id").getAsString();
+            assertEquals(
+                    "Farm",
+                    folder.get("name").getAsString()
+            );
+
+            HttpResponse<String> createdTask = fixture.send(
+                    "/v1/tasks",
+                    "POST",
+                    """
+                            {"name":"Harvest","folderId":"%s","steps":[{
+                            "moduleId":"MOVE_TO_COORDINATE",
+                            "parameters":{"targetRef":"output:container"}}]}
+                            """.formatted(folderId),
+                    true
+            );
+            assertEquals(201, createdTask.statusCode());
+            HttpResponse<String> listedTasks = fixture.send(
+                    "/v1/tasks",
+                    "GET",
+                    null,
+                    true
+            );
+            JsonObject task = object(listedTasks).getAsJsonArray("tasks")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals(folderId, task.get("folderId").getAsString());
+            String revision = object(listedTasks).get("revision").getAsString();
+
+            HttpResponse<String> renamed = fixture.send(
+                    "/v1/task-folders/" + folderId,
+                    "PUT",
+                    """
+                            {"revision":"%s","name":"Fields"}
+                            """.formatted(revision),
+                    true
+            );
+            assertEquals(200, renamed.statusCode());
+            JsonObject renamedFolder = object(renamed)
+                    .getAsJsonArray("folders")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals(
+                    "Fields",
+                    renamedFolder.get("name").getAsString()
+            );
+
+            HttpResponse<String> deleted = fixture.send(
+                    "/v1/task-folders/" + folderId,
+                    "DELETE",
+                    """
+                            {"revision":"%s"}
+                            """.formatted(object(renamed)
+                                    .get("revision")
+                                    .getAsString()),
+                    true
+            );
+            assertEquals(200, deleted.statusCode());
+            assertEquals(0, object(deleted).getAsJsonArray("folders").size());
+            JsonObject remainingTask = object(fixture.send(
+                    "/v1/tasks",
+                    "GET",
+                    null,
+                    true
+            )).getAsJsonArray("tasks").get(0).getAsJsonObject();
+            assertTrue(remainingTask.has("folderId"));
+            assertTrue(remainingTask.get("folderId").isJsonNull());
         }
     }
 

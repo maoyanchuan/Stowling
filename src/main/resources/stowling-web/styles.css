@@ -2893,7 +2893,7 @@ summary::-webkit-details-marker {
     padding-block: 0.45rem;
 }
 
-/* Reserve the upper workspace for display; select existing tasks below. */
+/* Reserve both workspace panels; keep task monitoring on the left. */
 body[data-page="tasks"] .workspace {
     grid-template-columns: minmax(0, 1fr);
 }
@@ -2910,13 +2910,14 @@ body[data-page="tasks"] .workspace {
     min-height: clamp(14rem, 30dvh, 22rem);
 }
 
-.task-display-placeholder .panel-heading {
+.task-display-placeholder .panel-heading,
+.task-selection-panel .panel-heading {
     margin-bottom: 0;
 }
 
 .task-selection-panel {
     min-width: 0;
-    scroll-margin-top: 1rem;
+    min-height: 10rem;
 }
 
 .task-monitor-page {
@@ -4036,12 +4037,6 @@ button:active:not(:disabled) {
     overflow-wrap: anywhere;
 }
 
-button.rail-task-name:hover {
-    color: var(--accent);
-    background: transparent;
-    transform: none;
-}
-
 .rail-priority {
     flex-shrink: 0;
     color: var(--muted);
@@ -4099,68 +4094,6 @@ button.rail-task-name:hover {
 .rail-log-entry.is-error .rail-state,
 .rail-log-entry.is-error .rail-log-message {
     color: var(--danger);
-}
-
-.task-console .task-folder-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-}
-
-.task-console .task-folder-row {
-    border: 1px solid var(--line);
-    border-radius: 9px;
-}
-
-.task-console .task-folder-form {
-    max-width: 32rem;
-}
-
-.task-console .task-launch-panel {
-    margin-bottom: 1rem;
-    padding: 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--bg);
-}
-
-.task-console .task-launch-panel .panel-heading {
-    margin-bottom: 0.5rem;
-}
-
-.task-console .task-launch-panel h3 {
-    margin: 0;
-    font-size: 0.8rem;
-}
-
-.task-console .task-sidebar #task-list {
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
-    max-height: 26rem;
-    overflow: auto;
-    padding: 0.15rem;
-    scrollbar-width: thin;
-}
-
-.task-console .task-list-group {
-    grid-column: 1 / -1;
-}
-
-.task-console .task-sidebar .task-select {
-    align-items: flex-start;
-    min-height: 5.5rem;
-    border: 1px solid var(--line);
-    background: var(--bg);
-}
-
-.task-console .task-sidebar .task-select:hover,
-.task-console .task-sidebar .task-select.active {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-}
-
-.task-console .task-select-identity {
-    min-width: 0;
-    overflow-wrap: anywhere;
 }
 
 .task-run-dialog {

@@ -9,6 +9,12 @@ def read(name: str) -> str:
     return (WEB / name).read_text(encoding="utf-8")
 
 
+def between(source: str, start: str, end: str) -> str:
+    start_index = source.index(start)
+    content_start = start_index + len(start)
+    return source[content_start:source.index(end, content_start)]
+
+
 def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     html = read("coordinates.html")
     javascript = read("coordinates.js")
@@ -255,7 +261,7 @@ def test_task_queue_creation_priority_and_interruption_run_states() -> None:
     editor = read("v2-task-editor.js")
 
     assert "function priorityRank(" in model
-    assert "Model.priorityRank(left.priority)" in tasks
+    assert "Model.priorityLabel(" in tasks
     assert "MAX_ROOT_STEPS = 128" in model
     assert "MAX_STEP_DEPTH = 16" in model
     assert "MAX_TOTAL_STEPS = 512" in model
@@ -270,7 +276,7 @@ def test_task_queue_creation_priority_and_interruption_run_states() -> None:
     assert 'INTERRUPTION_FAILED: "中断收尾失败，队列暂停"' in tasks
     assert "function runStateMessage(" in tasks
     assert "正在执行中断收尾，队列暂停" in tasks
-    assert "请重试，或先确认导航停止" in tasks
+    assert "请重试收尾，或确认导航停止" in tasks
     assert '"INTERRUPTING",\n            "INTERRUPTION_FAILED"' in tasks
     assert "重试收尾" in tasks
     assert "尝试跳过收尾" in tasks
@@ -327,24 +333,26 @@ def test_coordinate_choices_only_show_the_saved_name() -> None:
     assert "rawRadius === null" in model
 
 
-def test_task_selection_page_supports_run_refresh_and_cancel() -> None:
+def test_task_monitor_supports_run_refresh_and_cancel() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
 
-    for text in ("运行任务", "刷新", "取消任务"):
-        assert text in html or text in tasks
-    assert "保存任务" not in html
-    assert "/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs" in tasks
+    assert "刷新" in html
+    assert "取消任务" in tasks
+    assert "运行任务" not in html
+    assert "运行任务" not in tasks
+    assert "/v1/tasks/${encodeURIComponent(" not in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
     assert '"RUNNING",\n            "WAITING",' in tasks
     assert '"INTERRUPTING",\n            "INTERRUPTION_FAILED"' in tasks
     assert "isActiveRun(run)" in tasks
     assert 'run.state === "INTERRUPTION_FAILED"' in tasks
-    failed_actions = tasks.rsplit(
+    failed_actions = between(
+        tasks,
         'if (run.state === "INTERRUPTION_FAILED")',
-        1
-    )[1].split("else if (isActiveRun(run))", 1)[0]
+        "else if (isActiveRun(run))",
+    )
     assert "retryInterruption(run.runId)" in failed_actions
     assert "skipInterruption(run.runId)" in failed_actions
     assert "取消任务" not in failed_actions
@@ -352,19 +360,27 @@ def test_task_selection_page_supports_run_refresh_and_cancel() -> None:
     assert "run.totalSteps" in tasks
 
 
-def test_task_execution_uses_selection_without_an_editor() -> None:
+def test_task_page_is_monitor_only_without_launch_controls() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
 
     assert 'id="task-form"' not in html
     assert 'id="task-display-area"' in html
-    assert 'id="task-run-panel"' in html
-    assert 'id="run-task-select"' in html
-    assert "state.runTaskId" in tasks
-    controls = tasks.split("function renderRunControls()", 1)[1]
-    controls = controls.split("function updateRunActions()", 1)[0]
-    assert "state.tasks[0]?.id" not in controls
-    assert "renderRunControls()" in tasks
+    assert 'id="task-run-panel"' not in html
+    assert 'id="run-task-select"' not in html
+    assert 'id="run-task-button"' not in html
+    for removed in (
+        "state.runTaskId",
+        "renderRunControls",
+        "updateRunActions",
+        "function runTask(",
+        "selectTask",
+    ):
+        assert removed not in tasks
+    loading = between(tasks, "async function loadAll()", "function isActiveRun")
+    assert loading.count("Stowling.request(") == 2
+    assert '"/v1/task-modules"' in loading
+    assert '"/v1/task-runs"' in loading
 
 
 def test_trigger_model_survives_without_a_task_trigger_editor() -> None:
@@ -385,23 +401,26 @@ def test_trigger_model_survives_without_a_task_trigger_editor() -> None:
     assert "cacheRegionId" in trigger_model
     assert "payloadTrigger" in trigger_model
     assert "state.triggerStatuses" in tasks
-    assert '"/v1/task-triggers"' in tasks
+    assert '"/v1/task-triggers"' not in tasks
     assert "renderTriggerEditor" not in tasks
     assert "/v1/task-triggers/${" not in tasks
 
 
-def test_task_page_uses_a_display_and_selection_workbench() -> None:
+def test_task_page_reserves_display_and_selection_workbench() -> None:
     styles = read("styles.css")
-    workbench = styles.split(".task-workbench {", 1)[1].split("}", 1)[0]
-    display = styles.split(".task-display-placeholder {", 1)[1].split("}", 1)[0]
+    workbench = between(styles, ".task-workbench {", "}")
+    display = between(styles, ".task-display-placeholder {", "}")
+    selection = between(styles, ".task-selection-panel {", "}")
 
     assert 'body[data-page="tasks"] .workspace' in styles
     assert "grid-template-columns: minmax(0, 1fr)" in workbench
     assert "min-height: clamp(14rem, 30dvh, 22rem);" in display
-    assert 'body[data-page="tasks"] .task-sidebar' in styles
-    assert "position: static" in styles.split(
-        'body[data-page="tasks"] .task-sidebar {', 1
-    )[1].split("}", 1)[0]
+    assert "min-height: 10rem;" in selection
+    assert "margin-bottom: 0;" in between(
+        styles,
+        ".task-display-placeholder .panel-heading,",
+        "}",
+    )
     assert "grid-template-columns: 280px minmax(0, 1fr)" not in styles
 
 
@@ -592,27 +611,32 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     assert "bindingDescription(binding)" in javascript
 
 
-def test_task_console_shows_monitor_beside_task_selection() -> None:
+def test_task_console_shows_monitor_beside_blank_task_panels() -> None:
     html = read("tasks.html")
-    rail = html.split('<aside class="task-monitor-rail"', 1)[1].split("</aside>", 1)[0]
-    selection = html.split('id="task-selection-area"', 1)[1]
-    selection = selection.split('<dialog id="task-run-details"', 1)[0]
+    rail = between(html, '<aside class="task-monitor-rail"', "</aside>")
+    selection = between(
+        html,
+        'id="task-selection-area"',
+        '<dialog id="task-run-details"',
+    )
 
     assert 'class="task-console"' in html
     assert "data-task-tab=" not in html
     assert "data-task-panel=" not in html
     for marker in ("task-queue-list", "task-log-list", "export-task-logs"):
         assert marker in rail
-    for marker in ("task-display-area", "task-list", "task-run-panel"):
+    for marker in ("task-display-area", "task-list-title", "task-selection-panel"):
         assert marker in selection
+    for removed in ("task-list-count", 'id="task-list"', "task-run-panel"):
+        assert removed not in selection
     assert selection.index('id="task-display-area"') < selection.index(
-        'class="panel task-sidebar task-selection-panel"'
+        'class="panel task-selection-panel"'
     )
     assert 'id="task-run-details"' in html
     assert 'id="runtime-list"' in html
 
 
-def test_legacy_trigger_route_is_gone_and_selection_is_pure() -> None:
+def test_legacy_trigger_route_is_gone_and_monitor_is_read_only() -> None:
     javascript = read("tasks.js")
     html = read("tasks.html")
 
@@ -624,41 +648,34 @@ def test_legacy_trigger_route_is_gone_and_selection_is_pure() -> None:
     assert "panel.hidden =" not in javascript
     assert "handleTaskTabKeydown" not in javascript
     assert "task-trigger-settings" not in html
+    assert "selectTask" not in javascript
+    assert "state.runTaskId" not in javascript
 
-    selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
-    selection = selection.split("function renderRunControls", 1)[0]
-    assert "confirmDiscardForTaskChange" not in selection
-    assert "state.runTaskId = task.id" in selection
-    assert "if (revealInList)" in selection
-    assert "elements.runDetails.close()" in selection
-    assert "elements.selectionPanel.scrollIntoView" in selection
-
-    polling = javascript.split("async function loadRuns()", 1)[1]
-    polling = polling.split("function renderRuntime()", 1)[0]
+    polling = between(javascript, "async function loadRuns()", "function renderRuntime")
     assert "setTaskRoute(" not in polling
     assert "renderQueue()" in polling
     assert "appendMonitorLogs()" in polling
     assert "renderRuntime()" in polling
     assert "同步失败 · 显示上次状态" in polling
+    assert "updateRunActions" not in polling
 
 
-def test_task_list_filters_interruption_roles_without_a_saved_category() -> None:
+def test_task_page_has_no_task_filters_or_list_state() -> None:
     html = read("tasks.html")
     javascript = read("tasks.js")
 
     for value in ("ALL", "NORMAL", "INTERRUPTION"):
-        assert f'data-task-filter="{value}"' in html
-    for label in ("全部", "普通任务", "中断收尾"):
-        assert label in html
-    assert 'taskFilter: "ALL"' in javascript
-    assert "function isInterruptionTask(task)" in javascript
-    assert "task.defaultInterruptionFlow" in javascript
-    assert "candidate.interruptionTaskRef" in javascript
-    assert "Model.parseReference(" in javascript
-    assert "candidate.id === task.id" in javascript
-    assert "function matchesTaskFilter(task)" in javascript
-    assert "state.taskFilter = button.dataset.taskFilter" in javascript
-    assert "task.category" not in javascript
+        assert f'data-task-filter="{value}"' not in html
+    for removed in (
+        "taskFilter",
+        "isInterruptionTask",
+        "matchesTaskFilter",
+        "state.tasks",
+        '"/v1/tasks"',
+    ):
+        assert removed not in javascript
+    assert "defaultInterruptionFlow" not in javascript
+    assert "interruptionTaskRef" not in javascript
 
 
 def test_task_page_does_not_expose_creation_templates_or_modules() -> None:
@@ -683,7 +700,7 @@ def test_task_page_does_not_expose_creation_templates_or_modules() -> None:
         "function renderModuleCatalog(",
     ):
         assert removed_function not in javascript
-    assert "选择一个任务开始" in html
+    assert "选择一个任务开始" not in html
 
 
 def test_shared_tabs_and_resource_partitions_hide_inactive_content() -> None:
@@ -737,19 +754,25 @@ def test_workflow_tree_styles_support_nested_details_and_mobile_indent() -> None
     assert "--workflow-branch-offset: 0;" in mobile
 
 
-def test_task_selection_syncs_run_controls_without_a_default_task() -> None:
+def test_monitor_initializes_without_a_default_task_or_run_controls() -> None:
     javascript = read("tasks.js")
-    selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
-    selection = selection.split("function renderRunControls", 1)[0]
+    loading = between(javascript, "async function loadAll()", "function isActiveRun")
+    polling = between(javascript, "async function loadRuns()", "function renderRuntime")
 
-    assert "state.runTaskId = task.id" in selection
-    assert "renderRunControls()" in selection
-    assert "state.draft" not in javascript
-    assert "state.tasks[0]?.id" not in javascript
-    assert "task.name.toLocaleLowerCase().includes(state.query)" in javascript
-    assert "task.steps.length" in javascript
-    assert 'button.setAttribute("aria-pressed"' in javascript
-    assert "state.selectedId = preserved" in javascript
+    assert loading.count("Stowling.request(") == 2
+    assert '"/v1/task-modules"' in loading
+    assert '"/v1/task-runs"' in loading
+    assert 'Stowling.onConnected(() => loadAll());' in javascript
+    assert 'elements.refreshRuns.addEventListener("click", () => void loadRuns());' in (
+        javascript
+    )
+    assert "renderRuntime();" in polling
+    assert "renderQueue();" in polling
+    assert "appendMonitorLogs();" in polling
+    assert "updateRunActions" not in javascript
+    for removed in ("state.runTaskId", "renderRunControls", "state.tasks"):
+        assert removed not in javascript
+    assert "Model.priorityLabel(" in javascript
 
 
 def test_lightweight_animations_respect_reduced_motion_and_hidden_content() -> None:

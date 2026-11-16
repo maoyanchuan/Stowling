@@ -9,25 +9,38 @@ def read(name: str) -> str:
     return (WEB / name).read_text(encoding="utf-8")
 
 
+def between(source: str, start: str, end: str) -> str:
+    start_index = source.index(start)
+    content_start = start_index + len(start)
+    return source[content_start:source.index(end, content_start)]
+
+
 def test_inventory_is_not_exposed_in_navigation_but_sources_are_preserved() -> None:
     common = read("common.js")
-    navigation = common.split("const NAV_ITEMS", 1)[1].split("]);", 1)[0]
+    navigation = between(common, "const NAV_ITEMS", "]);")
     assert "库存查询" not in navigation
     assert "/storage.html" not in navigation
     assert (WEB / "storage.html").exists()
     assert (WEB / "storage.js").exists()
 
 
-def test_narrow_rail_has_queue_above_logs_and_selection_on_the_right() -> None:
+def test_narrow_rail_has_queue_above_logs_and_blank_selection_on_the_right() -> None:
     html = read("tasks.html")
-    rail = html.split('<aside class="task-monitor-rail"', 1)[1].split("</aside>", 1)[0]
+    rail = between(
+        html,
+        '<aside class="task-monitor-rail"',
+        "</aside>",
+    )
     assert rail.index('id="task-queue-list"') < rail.index('id="task-log-list"')
     assert html.index("</aside>") < html.index('id="task-selection-area"')
     assert "data-task-tab=" not in html
     assert "data-task-panel=" not in html
     assert "紧急 → 普通 → 后台" in rail
     for name in (
-        "export-task-logs", "clear-task-logs", "pause-task-log-scroll", "show-run-details"
+        "export-task-logs",
+        "clear-task-logs",
+        "pause-task-log-scroll",
+        "show-run-details",
     ):
         assert f'id="{name}"' in rail
     assert 'role="log"' in rail
@@ -35,16 +48,17 @@ def test_narrow_rail_has_queue_above_logs_and_selection_on_the_right() -> None:
     assert 'tabindex="0"' in rail
 
 
-def test_monitor_uses_shared_model_and_pure_task_selection() -> None:
+def test_monitor_uses_shared_model_and_static_task_names() -> None:
     html = read("tasks.html")
     javascript = read("tasks.js")
+    queue = between(javascript, "function renderQueue()", "function railAction")
+
     assert html.index('src="/task-monitor-model.js"') < html.index('src="/tasks.js"')
-    queue = javascript.split("function renderQueue()", 1)[1]
-    queue = queue.split("function railAction", 1)[0]
     assert "Monitor.queueEntries(" in queue
     assert "state.runs, state.queue, state.triggerStatuses" in queue
-    assert "selectTask(task, true)" in queue
-    assert "confirmDiscardForTaskChange" not in queue
+    assert 'Stowling.element("strong", "rail-task-name", entry.taskName)' in queue
+    assert "selectTask" not in queue
+    assert "selectTask" not in javascript
     assert "retryInterruption(entry.run.runId)" in queue
     assert "skipInterruption(entry.run.runId)" in queue
     assert "cancelRun(entry.run.runId)" in queue
@@ -67,13 +81,10 @@ def test_log_controls_export_clear_and_pause_without_stopping_tasks() -> None:
     assert "innerHTML" not in javascript
 
 
-def test_task_details_select_tasks_and_keep_interruption_recovery() -> None:
+def test_task_details_use_static_names_and_keep_interruption_recovery() -> None:
     html = read("tasks.html")
     javascript = read("tasks.js")
-    runtime = javascript.split("function runtimeCard(run)", 1)[1]
-    runtime = runtime.split("function renderQueue", 1)[0]
-    queue = javascript.split("function renderQueue()", 1)[1]
-    queue = queue.split("function railAction", 1)[0]
+    runtime = between(javascript, "function runtimeCard(run)", "function renderQueue")
 
     assert '<dialog id="task-run-details"' in html
     assert 'aria-labelledby="runtime-title"' in html
@@ -81,30 +92,46 @@ def test_task_details_select_tasks_and_keep_interruption_recovery() -> None:
     assert "elements.runDetails.close()" in javascript
     assert 'state === "INTERRUPTION_FAILED"' in javascript
     assert "查看任务配置" not in javascript
-    assert '"选择任务"' in runtime
-    assert 'name.title = "选择任务"' in queue
-    assert "selectTask(task, true)" in runtime
+    assert 'Stowling.element("strong", "", run.taskName)' in runtime
+    assert '"选择任务"' not in runtime
     assert "retryInterruption(run.runId)" in runtime
     assert "skipInterruption(run.runId)" in runtime
+    assert "cancelRun(run.runId)" in runtime
 
 
-def test_layout_keeps_scrollable_rail_and_responsive_task_cards() -> None:
+def test_layout_keeps_a_scrollable_monitor_rail_and_responsive_columns() -> None:
     css = read("styles.css")
-    console = css.split(".task-console {", 1)[1].split("}", 1)[0]
+    console = between(css, ".task-console {", "}")
+    rail = between(css, ".task-monitor-rail {", "}")
     assert "grid-template-columns: 300px minmax(0, 1fr)" in console
-    rail = css.split(".task-monitor-rail {", 1)[1].split("}", 1)[0]
     assert "position: sticky" in rail
     assert "grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr)" in rail
     assert "overscroll-behavior: contain" in css
-    assert "repeat(auto-fill, minmax(min(100%, 240px), 1fr))" in css
     assert "@media (max-width: 779px)" in css
     assert "@media (max-width: 520px)" in css
 
 
-def test_initial_load_does_not_force_open_the_first_task() -> None:
+def test_initial_load_reads_only_modules_and_runs() -> None:
     javascript = read("tasks.js")
-    loading = javascript.split("async function loadAll()", 1)[1]
-    loading = loading.split("function renderTaskList()", 1)[0]
+    loading = between(
+        javascript,
+        "async function loadAll()",
+        "function isActiveRun",
+    )
 
-    assert "selectTask(state.tasks[0]" not in loading
-    assert "openTriggersAfterTaskReady" not in javascript
+    assert '"/v1/task-modules"' in loading
+    assert '"/v1/task-runs"' in loading
+    assert loading.count("Stowling.request(") == 2
+    for removed in (
+        '"/v1/tasks"',
+        '"/v1/task-folders"',
+        '"/v1/task-triggers"',
+        "renderTaskList()",
+        "renderRunControls()",
+    ):
+        assert removed not in loading
+    assert 'Stowling.onConnected(() => loadAll());' in javascript
+    assert 'elements.refreshRuns.addEventListener("click", () => void loadRuns());' in (
+        javascript
+    )
+    assert "updateRunActions" not in javascript

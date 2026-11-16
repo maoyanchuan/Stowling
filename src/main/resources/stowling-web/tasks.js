@@ -5,45 +5,15 @@
     const Model = window.StowlingTaskModel;
     const Monitor = window.StowlingTaskMonitorModel;
     const taskLogs = Monitor.createLogBuffer(300);
-    const FOLDER_FILTER_ALL = "ALL";
-    const FOLDER_FILTER_UNGROUPED = "UNGROUPED";
     const state = {
-        revision: "",
-        tasks: [],
-        folders: [],
-        triggers: [],
         triggerStatuses: [],
         modules: [],
-        selectedId: "",
-        runTaskId: "",
         runs: [],
         queue: [],
-        query: "",
-        taskFilter: "ALL",
-        folderFilter: FOLDER_FILTER_ALL,
-        folderEditorId: "",
-        folderBusy: false,
         logScrollPaused: false
     };
 
     const elements = {
-        taskFilters: [...document.querySelectorAll("[data-task-filter]")],
-        selectionPanel: document.querySelector(".task-selection-panel"),
-        taskFolders: document.querySelector("#task-folder-list"),
-        newFolder: document.querySelector("#new-folder-button"),
-        folderForm: document.querySelector("#task-folder-form"),
-        folderFormLabel: document.querySelector("#task-folder-form-label"),
-        folderName: document.querySelector("#task-folder-name"),
-        folderErrors: document.querySelector("#task-folder-errors"),
-        saveFolder: document.querySelector("#save-folder-button"),
-        cancelFolder: document.querySelector("#cancel-folder-button"),
-        deleteFolder: document.querySelector("#delete-folder-button"),
-        search: document.querySelector("#task-search"),
-        taskCount: document.querySelector("#task-list-count"),
-        list: document.querySelector("#task-list"),
-        runSelect: document.querySelector("#run-task-select"),
-        runPriority: document.querySelector("#run-priority-select"),
-        run: document.querySelector("#run-task-button"),
         runtime: document.querySelector("#runtime-list"),
         queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button"),
@@ -60,553 +30,25 @@
     };
 
     /**
-     * @returns {void}
-     */
-    function updateTaskFilters() {
-        for (const button of elements.taskFilters) {
-            const active = button.dataset.taskFilter === state.taskFilter;
-            button.setAttribute("aria-pressed", String(active));
-        }
-    }
-
-    /**
-     * @param {object} value
-     * @returns {{id: string, name: string}}
-     */
-    function normalizeFolder(value) {
-        return {
-            id: String(value?.id || ""),
-            name: String(value?.name || "").trim()
-        };
-    }
-
-    /**
-     * @param {Array<object>} folders
-     * @returns {Array<object>}
-     */
-    function normalizeFolders(folders) {
-        return Array.isArray(folders)
-            ? folders.map(normalizeFolder).filter((folder) => folder.id)
-            : [];
-    }
-
-    /**
-     * @param {object} task
-     * @returns {boolean}
-     */
-    function matchesTaskFolder(task) {
-        if (state.folderFilter === FOLDER_FILTER_ALL) {
-            return true;
-        }
-        if (state.folderFilter === FOLDER_FILTER_UNGROUPED) {
-            return !task.folderId;
-        }
-        return task.folderId === state.folderFilter;
-    }
-
-    /**
-     * @param {string} filter
-     * @returns {number}
-     */
-    function folderTaskCount(filter) {
-        return state.tasks.filter((task) => {
-            if (filter === FOLDER_FILTER_ALL) {
-                return true;
-            }
-            if (filter === FOLDER_FILTER_UNGROUPED) {
-                return !task.folderId;
-            }
-            return task.folderId === filter;
-        }).length;
-    }
-
-    /**
-     * @param {string} filter
-     * @param {string} label
-     * @param {number} count
-     * @param {string} manageId
-     * @returns {HTMLElement}
-     */
-    function folderRow(filter, label, count, manageId = "") {
-        const row = Stowling.element("div", "task-folder-row");
-        const button = Stowling.element("button", "task-folder-filter");
-        button.type = "button";
-        button.setAttribute(
-            "aria-pressed",
-            String(state.folderFilter === filter)
-        );
-        button.append(
-            Stowling.element("span", "task-folder-name", label),
-            Stowling.element("span", "task-folder-count", String(count))
-        );
-        button.addEventListener("click", () => {
-            state.folderFilter = filter;
-            renderTaskList();
-        });
-        row.append(button);
-        if (!manageId) {
-            return row;
-        }
-        const folder = state.folders.find((entry) => entry.id === manageId);
-        const manage = Stowling.element(
-            "button",
-            "task-folder-manage",
-            "⋯"
-        );
-        manage.type = "button";
-        manage.title = `管理文件夹“${folder?.name || label}”`;
-        manage.setAttribute("aria-label", manage.title);
-        manage.addEventListener("click", () => openFolderForm(manageId));
-        row.append(manage);
-        return row;
-    }
-
-    /**
-     * @returns {void}
-     */
-    function renderTaskFolders() {
-        elements.taskFolders.replaceChildren(
-            folderRow(
-                FOLDER_FILTER_ALL,
-                "全部任务",
-                folderTaskCount(FOLDER_FILTER_ALL)
-            ),
-            folderRow(
-                FOLDER_FILTER_UNGROUPED,
-                "未分组",
-                folderTaskCount(FOLDER_FILTER_UNGROUPED)
-            )
-        );
-        const folders = [...state.folders].sort((left, right) => (
-            left.name.localeCompare(right.name, "zh-CN")
-        ));
-        for (const folder of folders) {
-            elements.taskFolders.append(folderRow(
-                folder.id,
-                folder.name,
-                folderTaskCount(folder.id),
-                folder.id
-            ));
-        }
-    }
-
-    /**
-     * @returns {void}
-     */
-    function updateFolderControls() {
-        const editing = Boolean(state.folderEditorId);
-        elements.folderFormLabel.textContent = editing
-            ? "重命名文件夹"
-            : "新建文件夹";
-        elements.deleteFolder.hidden = !editing;
-        elements.newFolder.disabled = state.folderBusy;
-        elements.saveFolder.disabled = state.folderBusy;
-        elements.cancelFolder.disabled = state.folderBusy;
-        elements.deleteFolder.disabled = state.folderBusy;
-        elements.folderName.disabled = state.folderBusy;
-    }
-
-    /**
-     * @param {string} folderId
-     * @returns {void}
-     */
-    function openFolderForm(folderId = "") {
-        const folder = state.folders.find((entry) => entry.id === folderId);
-        state.folderEditorId = folder?.id || "";
-        elements.folderName.value = folder?.name || "";
-        elements.folderErrors.replaceChildren();
-        elements.folderForm.hidden = false;
-        updateFolderControls();
-        elements.folderName.focus();
-        elements.folderName.select();
-    }
-
-    /**
-     * @returns {void}
-     */
-    function closeFolderForm() {
-        state.folderEditorId = "";
-        elements.folderForm.hidden = true;
-        elements.folderName.value = "";
-        elements.folderErrors.replaceChildren();
-        updateFolderControls();
-    }
-
-    /**
-     * @param {unknown} response
-     * @returns {void}
-     */
-    function applyFolderResponse(response) {
-        state.revision = String(response?.revision || state.revision);
-        state.folders = normalizeFolders(response?.folders);
-        renderTaskList();
-    }
-
-    /**
-     * @returns {Array<string>}
-     */
-    function folderValidationErrors() {
-        const errors = [];
-        const name = elements.folderName.value.trim();
-        if (!name) {
-            errors.push("文件夹名称不能为空");
-        }
-        if (name.length > 80) {
-            errors.push("文件夹名称不能超过 80 个字符");
-        }
-        return errors;
-    }
-
-    /**
-     * @returns {Promise<void>}
-     */
-    async function saveFolder() {
-        const errors = folderValidationErrors();
-        elements.folderErrors.replaceChildren();
-        if (errors.length > 0) {
-            for (const error of errors) {
-                elements.folderErrors.append(
-                    Stowling.element("p", "", error)
-                );
-            }
-            return;
-        }
-        const name = elements.folderName.value.trim();
-        const editing = Boolean(state.folderEditorId);
-        state.folderBusy = true;
-        updateFolderControls();
-        try {
-            let response;
-            if (editing) {
-                response = await Stowling.request(
-                    `/v1/task-folders/${encodeURIComponent(
-                        state.folderEditorId
-                    )}`,
-                    {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            revision: state.revision,
-                            name
-                        })
-                    }
-                );
-            } else {
-                response = await Stowling.request("/v1/task-folders", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name })
-                });
-            }
-            applyFolderResponse(response);
-            closeFolderForm();
-            Stowling.showToast(
-                editing ? "文件夹已重命名" : "文件夹已创建"
-            );
-        } catch (error) {
-            Stowling.handleError(error, "保存文件夹失败");
-        } finally {
-            state.folderBusy = false;
-            updateFolderControls();
-        }
-    }
-
-    /**
-     * @returns {Promise<void>}
-     */
-    async function deleteFolder() {
-        const folder = state.folders.find(
-            (entry) => entry.id === state.folderEditorId
-        );
-        if (!folder) {
-            return;
-        }
-        const confirmed = window.confirm(
-            `解散文件夹“${folder.name}”？其中的任务会变为未分组，`
-                + "任务本身不会被删除。"
-        );
-        if (!confirmed) {
-            return;
-        }
-        state.folderBusy = true;
-        updateFolderControls();
-        let response;
-        try {
-            response = await Stowling.request(
-                `/v1/task-folders/${encodeURIComponent(folder.id)}`,
-                {
-                    method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ revision: state.revision })
-                }
-            );
-        } catch (error) {
-            Stowling.handleError(error, "解散文件夹失败");
-            state.folderBusy = false;
-            updateFolderControls();
-            return;
-        }
-        try {
-            state.revision = String(response?.revision || state.revision);
-            state.folders = normalizeFolders(response?.folders);
-            if (state.folderFilter === folder.id) {
-                state.folderFilter = FOLDER_FILTER_ALL;
-            }
-            state.tasks = state.tasks.map((task) => (
-                task.folderId === folder.id
-                    ? { ...task, folderId: "" }
-                    : task
-            ));
-            closeFolderForm();
-            renderTaskList();
-            renderRunControls();
-            let tasksResponse;
-            try {
-                tasksResponse = await Stowling.request("/v1/tasks");
-            } catch (error) {
-                Stowling.handleError(
-                    error,
-                    "文件夹已解散，但刷新任务失败"
-                );
-                return;
-            }
-            state.revision = String(
-                tasksResponse?.revision || state.revision
-            );
-            state.tasks = Array.isArray(tasksResponse?.tasks)
-                ? tasksResponse.tasks.map(Model.normalizeTask)
-                : [];
-            state.tasks = state.tasks.map((task) => (
-                task.folderId === folder.id
-                    ? { ...task, folderId: "" }
-                    : task
-            ));
-            renderTaskList();
-            renderRunControls();
-            Stowling.showToast("文件夹已解散，任务已保留为未分组");
-        } finally {
-            state.folderBusy = false;
-            updateFolderControls();
-        }
-    }
-
-    /**
-     * @param {object} task
-     * @returns {boolean}
-     */
-    function isInterruptionTask(task) {
-        if (task.defaultInterruptionFlow) {
-            return true;
-        }
-        return state.tasks.some((candidate) => {
-            if (candidate.id === task.id) {
-                return false;
-            }
-            const reference = Model.parseReference(
-                candidate.interruptionTaskRef
-            );
-            return reference?.type === "task" && reference.id === task.id;
-        });
-    }
-
-    /**
-     * @param {object} task
-     * @returns {boolean}
-     */
-    function matchesTaskFilter(task) {
-        if (state.taskFilter === "INTERRUPTION") {
-            return isInterruptionTask(task);
-        }
-        if (state.taskFilter === "NORMAL") {
-            return !isInterruptionTask(task);
-        }
-        return true;
-    }
-
-    /**
      * @returns {Promise<void>}
      */
     async function loadAll() {
         try {
-            const [tasks, folders, triggers, modules, runs] = await Promise.all([
-                Stowling.request("/v1/tasks"),
-                Stowling.request("/v1/task-folders"),
-                Stowling.request("/v1/task-triggers"),
+            const [modules, runs] = await Promise.all([
                 Stowling.request("/v1/task-modules"),
                 Stowling.request("/v1/task-runs")
             ]);
-            state.revision = String(tasks?.revision || folders?.revision || "");
-            state.tasks = Array.isArray(tasks?.tasks)
-                ? tasks.tasks.map(Model.normalizeTask) : [];
-            state.folders = normalizeFolders(folders?.folders);
-            state.triggers = Array.isArray(triggers?.triggers) ? triggers.triggers : [];
             state.modules = Array.isArray(modules?.modules) ? modules.modules : [];
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             state.queue = Array.isArray(runs?.queue) ? runs.queue : [];
             state.triggerStatuses = Array.isArray(runs?.triggers) ? runs.triggers : [];
-            renderRunControls();
-            renderTaskList();
             renderRuntime();
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
         } catch (error) {
-            Stowling.handleError(error, "读取任务失败");
+            Stowling.handleError(error, "读取运行状态失败");
         }
-    }
-
-    /**
-     * @returns {void}
-     */
-    function renderTaskList() {
-        elements.list.replaceChildren();
-        renderTaskFolders();
-        const matches = state.tasks
-            .filter((task) => (
-                task.name.toLocaleLowerCase().includes(state.query)
-                && matchesTaskFilter(task)
-                && matchesTaskFolder(task)
-            ))
-            .sort((left, right) => (
-                Number(isInterruptionTask(left)) - Number(isInterruptionTask(right))
-                || compareTasks(left, right)
-            ));
-        elements.taskCount.textContent = String(matches.length);
-        updateTaskFilters();
-        if (matches.length === 0) {
-            elements.list.append(Stowling.emptyState(
-                state.tasks.length === 0
-                    ? "尚未创建任务"
-                    : "没有符合当前分类和搜索条件的任务"
-            ));
-            return;
-        }
-        const groupHeadings = new Set();
-        for (const task of matches) {
-            const group = isInterruptionTask(task) ? "中断收尾" : "日常任务";
-            if (state.taskFilter === "ALL" && !groupHeadings.has(group)) {
-                elements.list.append(Stowling.element("h3", "task-list-group", group));
-                groupHeadings.add(group);
-            }
-            const button = Stowling.element(
-                "button",
-                "task-card task-select"
-            );
-            button.type = "button";
-            const identity = Stowling.element("div", "task-select-identity");
-            const interruption = isInterruptionTask(task);
-            identity.append(
-                Stowling.element("strong", "", task.name),
-                Stowling.element(
-                    "span",
-                    "compact-help",
-                    taskListSummary(task)
-                ),
-                ...(interruption
-                    ? [Stowling.element(
-                        "span",
-                        "task-category-tag",
-                        task.defaultInterruptionFlow
-                            ? "默认中断收尾"
-                            : "中断收尾"
-                    )]
-                    : [])
-            );
-            button.setAttribute(
-                "aria-pressed",
-                String(task.id === state.selectedId)
-            );
-            button.append(
-                identity,
-                Stowling.element(
-                    "span",
-                    "module-level-tag",
-                    Model.priorityLabel(task.priority)
-                )
-            );
-            button.classList.toggle("active", task.id === state.selectedId);
-            button.addEventListener("click", () => selectTask(task));
-            elements.list.append(button);
-        }
-    }
-
-    /**
-     * @param {object} task
-     * @returns {string}
-     */
-    function taskListSummary(task) {
-        const folder = state.folders.find((item) => item.id === task.folderId);
-        const boundTriggers = state.triggers.filter(
-            (trigger) => trigger.targetTaskId === task.id
-        ).length;
-        const activation = boundTriggers > 0
-            ? `${boundTriggers} 个触发器`
-            : task.repeatWhenIdle ? "完成后重排" : "手动 / 其他任务调用";
-        return `${folder?.name || "未分组"} · ${task.steps.length} 个根步骤 · ${activation}`;
-    }
-
-    /**
-     * @param {object} left
-     * @param {object} right
-     * @returns {number}
-     */
-    function compareTasks(left, right) {
-        const priority = Model.priorityRank(left.priority)
-            - Model.priorityRank(right.priority);
-        return priority || left.name.localeCompare(right.name, "zh-CN");
-    }
-
-    /**
-     * @param {object} task
-     * @param {boolean} revealInList
-     * @returns {void}
-     */
-    function selectTask(task, revealInList = false) {
-        if (revealInList) {
-            state.query = "";
-            elements.search.value = "";
-            state.taskFilter = "ALL";
-            state.folderFilter = FOLDER_FILTER_ALL;
-        }
-        state.selectedId = task.id;
-        state.runTaskId = task.id;
-        renderTaskList();
-        renderRunControls();
-        if (revealInList) {
-            elements.runDetails.close();
-            elements.selectionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-    }
-
-    /**
-     * @returns {void}
-     */
-    function renderRunControls() {
-        const current = state.runTaskId;
-        elements.runSelect.replaceChildren(new Option("请选择任务", ""));
-        for (const task of [...state.tasks].sort(compareTasks)) {
-            elements.runSelect.append(new Option(task.name, task.id));
-        }
-        const preserved = state.tasks.some((task) => task.id === current)
-            ? current
-            : "";
-        state.runTaskId = preserved;
-        state.selectedId = preserved;
-        elements.runSelect.value = preserved;
-        updateRunActions();
-    }
-
-    /**
-     * @returns {void}
-     */
-    function updateRunActions() {
-        const task = state.tasks.find((entry) => entry.id === state.runTaskId);
-        elements.runPriority.options[0].textContent = task
-            ? `跟随任务（${Model.priorityLabel(task.priority)}）`
-            : "跟随任务";
-        elements.runSelect.disabled = state.tasks.length === 0;
-        elements.runPriority.disabled = state.tasks.length === 0;
-        elements.run.disabled = !state.runTaskId;
     }
 
     /**
@@ -666,35 +108,6 @@
     /**
      * @returns {Promise<void>}
      */
-    async function runTask() {
-        if (!state.runTaskId) {
-            return;
-        }
-        try {
-            const response = await Stowling.request(
-                `/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(elements.runPriority.value
-                        ? { priority: elements.runPriority.value }
-                        : {})
-                }
-            );
-            await loadRuns();
-            Stowling.showToast(
-                response?.state === "QUEUED"
-                    ? "任务已加入调度队列"
-                    : "任务已开始运行"
-            );
-        } catch (error) {
-            Stowling.handleError(error, "运行任务失败");
-        }
-    }
-
-    /**
-     * @returns {Promise<void>}
-     */
     async function loadRuns() {
         try {
             const response = await Stowling.request("/v1/task-runs");
@@ -709,7 +122,6 @@
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
-            updateRunActions();
         } catch (error) {
             elements.monitorMessage.textContent = "同步失败 · 显示上次状态";
             elements.monitorMessage.classList.add("is-stale");
@@ -788,15 +200,6 @@
             "span", "muted compact-help", Stowling.formatDate(run.updatedAt)
         ));
         const actions = Stowling.element("div", "action-row");
-        const task = state.tasks.find((item) => item.id === run.taskId);
-        if (task) {
-            const select = Stowling.element("button", "secondary compact", "选择任务");
-            select.type = "button";
-            select.addEventListener("click", () => {
-                selectTask(task, true);
-            });
-            actions.append(select);
-        }
         if (run.state === "INTERRUPTION_FAILED") {
             const retry = Stowling.element("button", "primary compact", "重试收尾");
             retry.type = "button";
@@ -834,15 +237,7 @@
             card.dataset.priority = entry.priority;
             card.dataset.kind = entry.kind;
             const heading = Stowling.element("div", "rail-card-heading");
-            const task = state.tasks.find((item) => item.id === entry.taskId);
-            const name = Stowling.element(
-                task ? "button" : "strong", "rail-task-name", entry.taskName
-            );
-            if (task) {
-                name.type = "button";
-                name.title = "选择任务";
-                name.addEventListener("click", () => selectTask(task, true));
-            }
+            const name = Stowling.element("strong", "rail-task-name", entry.taskName);
             heading.append(name, Stowling.element(
                 "span", "rail-priority", Model.priorityLabel(entry.priority)
             ));
@@ -1033,35 +428,6 @@
         }
     }
 
-    for (const button of elements.taskFilters) {
-        button.addEventListener("click", () => {
-            state.taskFilter = button.dataset.taskFilter;
-            renderTaskList();
-        });
-    }
-    elements.search.addEventListener("input", () => {
-        state.query = elements.search.value.trim().toLocaleLowerCase();
-        renderTaskList();
-    });
-    elements.newFolder.addEventListener("click", () => openFolderForm());
-    elements.folderForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        void saveFolder();
-    });
-    elements.cancelFolder.addEventListener("click", closeFolderForm);
-    elements.deleteFolder.addEventListener("click", () => void deleteFolder());
-    elements.runSelect.addEventListener("change", () => {
-        const task = state.tasks.find((entry) => entry.id === elements.runSelect.value);
-        if (task) {
-            selectTask(task);
-        } else {
-            state.selectedId = "";
-            state.runTaskId = "";
-            renderTaskList();
-            updateRunActions();
-        }
-    });
-    elements.run.addEventListener("click", () => void runTask());
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
     elements.exportLogs.addEventListener("click", exportMonitorLogs);
     elements.clearLogs.addEventListener("click", () => {
@@ -1092,11 +458,8 @@
             elements.runDetails.close();
         }
     });
-    renderTaskList();
-    renderRunControls();
     renderQueue();
     renderMonitorLogs();
-    updateFolderControls();
     Stowling.onConnected(() => loadAll());
     window.setInterval(() => {
         if (Stowling.isConnected()) {

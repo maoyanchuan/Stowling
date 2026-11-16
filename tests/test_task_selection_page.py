@@ -20,68 +20,101 @@ def read(name: str) -> str:
     return (WEB / name).read_text(encoding="utf-8")
 
 
-def test_task_workbench_reserves_display_before_selection() -> None:
-    html = read("tasks.html")
-    workbench = html.split('id="task-selection-area"', 1)[1]
-    display_start = workbench.index('id="task-display-area"')
-    selection_start = workbench.index('class="panel task-sidebar task-selection-panel"')
+def between(source: str, start: str, end: str) -> str:
+    start_index = source.index(start)
+    content_start = start_index + len(start)
+    return source[content_start:source.index(end, content_start)]
 
-    assert 'class="task-workbench"' in html
-    assert display_start < selection_start
-    assert "任务展示" in workbench[display_start:selection_start]
-    display = workbench[display_start:selection_start]
-    styles = read("styles.css")
-    placeholder = styles.split(".task-display-placeholder {", 1)[1].split("}", 1)[0]
-    assert "min-height: clamp(14rem, 30dvh, 22rem);" in placeholder
-    mobile = styles.rsplit("@media (max-width: 779px)", 1)[1]
-    mobile = mobile.split("@media", 1)[0]
-    assert ".task-display-placeholder {" in mobile
-    assert "min-height: 11rem;" in mobile
-    assert "task-display-placeholder" in display
+
+def test_task_workbench_keeps_two_blank_panels() -> None:
+    html = read("tasks.html")
+    workbench = between(
+        html,
+        'id="task-selection-area"',
+        '<dialog id="task-run-details"',
+    )
+
+    assert workbench.index('id="task-display-area"') < workbench.index(
+        'class="panel task-selection-panel"'
+    )
+    display = between(workbench, 'id="task-display-area"', "</section>")
+    assert 'id="task-display-title">任务展示</h2>' in display
     assert "<p" not in display
-    assert "task-display-area" not in read("tasks.js")
-    for removed in ("task-form", "task-editor-title", "task-trigger-settings"):
+    for removed in ("<button", "<input", "<select", "<textarea"):
         assert removed not in display
 
+    selection = between(
+        workbench,
+        'class="panel task-selection-panel"',
+        "</section>",
+    )
+    assert selection.count("<div") == 1
+    assert selection.count("<h2") == 1
+    assert '<div class="panel-heading">' in selection
+    assert 'id="task-list-title">任务选择</h2>' in selection
+    for removed in ("<button", "<input", "<select", "<textarea", "<h3"):
+        assert removed not in selection
 
-def test_task_page_removes_editor_module_and_creation_entry_points() -> None:
+    styles = read("styles.css")
+    display_style = between(styles, ".task-display-placeholder {", "}")
+    selection_style = between(styles, ".task-selection-panel {", "}")
+    headings = between(
+        styles,
+        ".task-display-placeholder .panel-heading,",
+        "}",
+    )
+    assert "min-height: clamp(14rem, 30dvh, 22rem);" in display_style
+    assert "min-height: 10rem;" in selection_style
+    assert "margin-bottom: 0;" in headings
+
+
+def test_task_page_removes_task_management_and_launch_controls() -> None:
     html = read("tasks.html")
 
     for removed in (
-        'id="task-form"',
-        'id="task-trigger-settings"',
-        'id="task-module-panel"',
-        'id="task-editor-title"',
-        'id="task-list-message"',
-        'id="new-task-button"',
-        'id="new-cache-task-button"',
-        'id="new-sort-task-button"',
-        'id="new-marker-task-button"',
-        'id="new-interruption-task-button"',
-        'id="new-auto-eat-task-button"',
-        'class="task-template-menu"',
-    ):
-        assert removed not in html
-    for removed_text in ("新建任务", "快捷模板", "模块参考"):
-        assert removed_text not in html
-
-    for retained in (
+        'id="task-list-count"',
+        'id="task-folder-list"',
+        'id="new-folder-button"',
+        'id="task-folder-form"',
+        'id="task-folder-name"',
+        'id="delete-folder-button"',
         'id="task-search"',
+        'id="task-filter-all"',
+        'id="task-filter-normal"',
+        'id="task-filter-interruption"',
         'data-task-filter="ALL"',
         'data-task-filter="NORMAL"',
         'data-task-filter="INTERRUPTION"',
-        'id="new-folder-button"',
-        'id="task-folder-form"',
         'id="task-list"',
+        'id="task-run-panel"',
         'id="run-task-select"',
+        'id="run-priority-select"',
         'id="run-task-button"',
+        'id="task-launch-note"',
+    ):
+        assert removed not in html
+    for removed_text in (
+        "选择一个任务开始",
+        "新建文件夹",
+        "搜索任务",
+        "普通任务",
+        "加入运行队列",
+        "运行任务",
+        "请选择任务",
+    ):
+        assert removed_text not in html
+
+    for retained in (
         'id="task-queue-list"',
         'id="task-log-list"',
+        'id="refresh-runs-button"',
+        'id="task-run-details"',
+        'id="runtime-list"',
     ):
         assert retained in html
 
 
-def test_task_page_loads_only_the_selection_script_stack() -> None:
+def test_task_page_loads_only_the_monitor_script_stack() -> None:
     html = read("tasks.html")
 
     assert '<script src="/v2-task-model.js" defer></script>' in html
@@ -95,39 +128,104 @@ def test_task_page_loads_only_the_selection_script_stack() -> None:
         assert removed not in html
 
 
-def test_tasks_script_reads_selection_data_without_editor_state() -> None:
+def test_tasks_script_is_read_only_monitoring() -> None:
     javascript = read("tasks.js")
-    loading = javascript.split("async function loadAll()", 1)[1]
-    loading = loading.split("function renderTaskList()", 1)[0]
+    state = between(javascript, "const state = {", "};")
 
-    for path in (
+    for retained in (
+        "triggerStatuses: []",
+        "modules: []",
+        "runs: []",
+        "queue: []",
+        "logScrollPaused: false",
+    ):
+        assert retained in state
+    for removed in (
+        "tasks: []",
+        "folders: []",
+        "triggers: []",
+        "selectedId",
+        "runTaskId",
+        "query:",
+        "taskFilter",
+        "folderFilter",
+        "folderEditorId",
+    ):
+        assert removed not in state
+
+    for removed_path in (
         '"/v1/tasks"',
+        '"/v1/tasks/',
         '"/v1/task-folders"',
         '"/v1/task-triggers"',
-        '"/v1/task-modules"',
-        '"/v1/task-runs"',
     ):
-        assert path in loading
-    for removed_path in (
-        '"/v1/coordinates"',
-        '"/v1/regions"',
-        '"/v1/category-zones"',
+        assert removed_path not in javascript
+    for removed_function in (
+        "selectTask",
+        "renderTaskList",
+        "renderTaskFolders",
+        "saveFolder",
+        "deleteFolder",
+        "renderRunControls",
+        "updateRunActions",
+        "runTask",
+        "isInterruptionTask",
+        "matchesTaskFilter",
     ):
-        assert removed_path not in loading
+        assert removed_function not in javascript
+    assert "Model.priorityRank" not in javascript
+    assert "Model.priorityLabel(" in javascript
 
-    for removed in (
-        "state.draft",
-        "state.triggerDraft",
-        "TriggerModel",
-        "Editor.",
-        "confirmDiscardForTaskChange",
-        'window.location.hash === "#triggers"',
-        "deleteTrigger",
+    load_all = between(javascript, "async function loadAll()", "function isActiveRun")
+    assert "Promise.all([" in load_all
+    assert '"/v1/task-modules"' in load_all
+    assert '"/v1/task-runs"' in load_all
+    assert load_all.count("Stowling.request(") == 2
+    for retained in ("renderRuntime();", "renderQueue();", "appendMonitorLogs();"):
+        assert retained in load_all
+
+    load_runs = between(javascript, "async function loadRuns()", "function renderRuntime")
+    assert 'Stowling.request("/v1/task-runs")' in load_runs
+    assert load_runs.count("Stowling.request(") == 1
+    for retained in ("renderRuntime();", "renderQueue();", "appendMonitorLogs();"):
+        assert retained in load_runs
+    assert "updateRunActions" not in javascript
+
+
+def test_queue_and_details_use_static_task_names_and_keep_recovery() -> None:
+    javascript = read("tasks.js")
+    queue = between(javascript, "function renderQueue()", "function railAction")
+    runtime = between(javascript, "function runtimeCard(run)", "function renderQueue")
+
+    assert 'Stowling.element("strong", "rail-task-name", entry.taskName)' in queue
+    assert 'Stowling.element("strong", "", run.taskName)' in runtime
+    assert '"选择任务"' not in javascript
+    for retained in (
+        "retryInterruption(entry.run.runId)",
+        "skipInterruption(entry.run.runId)",
+        "cancelRun(entry.run.runId)",
+        'entry.state === "QUEUED" ? "取消排队" : "取消任务"',
     ):
-        assert removed not in javascript
-    assert "/v1/task-triggers/${" not in javascript
-    assert "function selectTask(task, revealInList = false)" in javascript
-    assert "state.runTaskId = task.id" in javascript
+        assert retained in queue
+    for retained in (
+        "失败原因：",
+        "retryInterruption(run.runId)",
+        "skipInterruption(run.runId)",
+        "cancelRun(run.runId)",
+    ):
+        assert retained in runtime
+
+
+def test_interruption_recovery_and_monitor_endpoints_are_retained() -> None:
+    javascript = read("tasks.js")
+
+    assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in javascript
+    assert "/retry-interruption" in javascript
+    assert "/skip-interruption" in javascript
+    assert "window.confirm(" in javascript
+    assert "确认现在尝试跳过？" in javascript
+    assert "同步失败 · 显示上次状态" in javascript
+    assert 'Stowling.onConnected(() => loadAll());' in javascript
 
 
 PAGE_RUNNER = r"""
@@ -136,23 +234,20 @@ const vm = require("node:vm");
 
 const [htmlPath, tasksPath, modelPath, monitorPath] = process.argv.slice(1);
 const html = fs.readFileSync(htmlPath, "utf8");
-
-let scrollCount = 0;
+const requests = [];
+const connectedHandlers = [];
+const errors = [];
+let runReads = 0;
 
 class FakeElement {
     constructor(tagName = "div", id = "") {
         this.tagName = String(tagName).toUpperCase();
         this.id = id;
-        this.parent = null;
+        this.className = "";
         this.children = [];
         this.listeners = new Map();
-        this.attributes = new Map();
         this.dataset = {};
-        this.className = "";
-        this.value = "";
-        this.checked = false;
         this.disabled = false;
-        this.hidden = false;
         this.open = false;
         this.scrollTop = 0;
         this.scrollHeight = 0;
@@ -160,7 +255,6 @@ class FakeElement {
         const classes = new Set();
         this.classList = {
             add: (...names) => names.forEach((name) => classes.add(name)),
-            contains: (name) => classes.has(name),
             remove: (...names) => names.forEach((name) => classes.delete(name)),
             toggle: (name, force) => {
                 const enabled = force === undefined ? !classes.has(name) : force;
@@ -183,21 +277,15 @@ class FakeElement {
         this.children = [];
     }
 
-    get options() {
-        return this.children.filter((child) => child.tagName === "OPTION");
-    }
-
     get childElementCount() {
         return this.children.length;
     }
-
 
     append(...nodes) {
         for (const node of nodes) {
             const child = typeof node === "string"
                 ? Object.assign(new FakeElement("#text"), { _text: node })
                 : node;
-            child.parent = this;
             this.children.push(child);
         }
     }
@@ -213,341 +301,120 @@ class FakeElement {
         this.listeners.set(type, entries);
     }
 
-    dispatch(type, init = {}) {
-        const event = {
-            type,
-            target: this,
-            currentTarget: this,
-            clientX: 0,
-            clientY: 0,
-            preventDefault() {},
-            stopPropagation() {},
-            ...init,
-        };
-        for (const listener of this.listeners.get(type) || []) {
+    click() {
+        const event = { target: this, currentTarget: this };
+        for (const listener of this.listeners.get("click") || []) {
             listener(event);
         }
-        return event;
     }
 
-    click() {
-        return this.dispatch("click");
-    }
-
-    setAttribute(name, value) {
-        this.attributes.set(name, String(value));
-        if (name === "id") {
-            this.id = String(value);
-        }
-    }
-
-    getAttribute(name) {
-        return this.attributes.get(name) ?? null;
-    }
-
-
-    querySelector(selector) {
-        return this.querySelectorAll(selector)[0] || null;
-    }
-
-    querySelectorAll(selector) {
-        const matches = [];
-        const visit = (element) => {
-            if (element.matches(selector)) {
-                matches.push(element);
-            }
-            element.children.forEach(visit);
-        };
-        this.children.forEach(visit);
-        return matches;
-    }
-
-    matches(selector) {
-        if (selector.startsWith("#")) {
-            return this.id === selector.slice(1);
-        }
-        if (selector.startsWith(".")) {
-            return this.className.split(/\s+/).includes(selector.slice(1));
-        }
-        if (selector.startsWith("[data-")) {
-            const name = selector.slice(6, -1).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-            return this.dataset[name] !== undefined;
-        }
-        return this.tagName === selector.toUpperCase();
-    }
-
-    remove() {
-        if (this.parent) {
-            this.parent.children = this.parent.children.filter((child) => child !== this);
-        }
-    }
-
-    scrollIntoView() {
-        scrollCount += 1;
-    }
-
-    select() {}
-
-    focus() {}
-    showModal() { this.open = true; }
-    close() { this.open = false; }
-    getBoundingClientRect() {
-        return { left: 0, top: 0, right: 100, bottom: 100 };
-    }
-}
-
-class FakeDocument {
-    constructor(source) {
-        this.byId = new Map();
-        this.body = new FakeElement("body");
-        const ids = [...source.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
-        ids.forEach((id) => this.byId.set(id, new FakeElement("div", id)));
-        this.filters = [
-            ["task-filter-all", "ALL"],
-            ["task-filter-normal", "NORMAL"],
-            ["task-filter-interruption", "INTERRUPTION"],
-        ].filter(([id]) => this.byId.has(id)).map(([id, value]) => {
-            const element = this.byId.get(id);
-            element.dataset.taskFilter = value;
-            return element;
-        });
-        this.seedOptions();
-    }
-
-    seedOptions() {
-        const priority = this.byId.get("run-priority-select");
-        if (priority) {
-            priority.append(
-                new Option("跟随任务", ""),
-                new Option("后台", "BACKGROUND"),
-                new Option("普通", "NORMAL"),
-                new Option("紧急", "URGENT"),
-            );
-        }
-        const runSelect = this.byId.get("run-task-select");
-        if (runSelect) {
-            runSelect.append(new Option("请选择任务", ""));
-        }
-    }
-
-    querySelector(selector) {
-        if (selector.startsWith("#")) {
-            const id = selector.slice(1);
-            if (!this.byId.has(id)) {
-                throw new Error(`tasks.js requested missing DOM node #${id}`);
-            }
-            return this.byId.get(id);
-        }
-        if (selector === ".task-selection-panel") {
-            const panel = new FakeElement("section");
-            panel.className = "panel task-sidebar task-selection-panel";
-            return panel;
-        }
+    querySelector() {
         return null;
     }
+}
 
-    querySelectorAll(selector) {
-        if (selector === "[data-task-filter]") {
-            return this.filters;
+const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+const byId = new Map(ids.map((id) => [id, new FakeElement("div", id)]));
+const document = {
+    body: new FakeElement("body"),
+    createElement: (tagName) => new FakeElement(tagName),
+    querySelector: (selector) => {
+        if (!selector.startsWith("#")) {
+            return null;
         }
-        return [];
-    }
-
-    createElement(tagName) {
-        return new FakeElement(tagName);
-    }
-
-}
-
-function Option(text = "", value = "") {
-    const option = new FakeElement("option");
-    option.textContent = text;
-    option.value = value;
-    return option;
-}
-
-const document = new FakeDocument(html);
-const requests = [];
-const connectedHandlers = [];
-const errors = [];
-let confirmCount = 0;
-
-const tasks = [{
-    id: "task-1",
-    name: "已有任务",
-    folderId: "folder-1",
-    priority: "NORMAL",
-    steps: [],
-    interruptionMode: "NONE",
-}];
-const folders = [{ id: "folder-1", name: "常用" }];
-const triggers = [{ id: "trigger-1", targetTaskId: "task-1", enabled: true }];
-const modules = [{ id: "MOVE_TO_COORDINATE", name: "移动到坐标", kind: "ACTION" }];
-const runs = {
-    runs: [{
-        runId: "run-1",
-        taskId: "task-1",
-        taskName: "已有任务",
-        state: "SUCCEEDED",
-        priority: "NORMAL",
-        completedSteps: 0,
-        totalSteps: 0,
-    }],
-    queue: [],
-    triggers: [],
+        const id = selector.slice(1);
+        if (!byId.has(id)) {
+            throw new Error(`tasks.js requested missing DOM node #${id}`);
+        }
+        return byId.get(id);
+    },
 };
 
-async function request(path, options = {}) {
-    const method = String(options.method || "GET").toUpperCase();
-    requests.push({ path, method });
-    await Promise.resolve();
-    if (method === "POST" && path === "/v1/tasks/task-1/runs") {
-        return { runId: "run-2", taskId: "task-1", state: "QUEUED" };
-    }
-    if (path === "/v1/tasks") {
-        return { tasks, revision: "7" };
-    }
-    if (path === "/v1/task-folders") {
-        return { folders, revision: "7" };
-    }
-    if (path === "/v1/task-triggers") {
-        return { triggers, revision: "7" };
-    }
-    if (path === "/v1/task-modules") {
-        return { modules };
-    }
-    if (path === "/v1/task-runs") {
-        return runs;
-    }
-    return {};
-}
+const runResponses = [
+    {
+        runs: [{ runId: "run-1", taskName: "初始任务", state: "RUNNING",
+            priority: "URGENT", completedSteps: 1, totalSteps: 2 }],
+        queue: [],
+        triggers: [],
+    },
+    {
+        runs: [{ runId: "run-2", taskName: "刷新任务", state: "WAITING",
+            priority: "NORMAL", completedSteps: 0, totalSteps: 1 }],
+        queue: [],
+        triggers: [],
+    },
+];
 
 const Stowling = {
-    request,
-    clone: (value) => JSON.parse(JSON.stringify(value)),
-    isConnected: () => true,
-    onConnected: (handler) => connectedHandlers.push(handler),
-    mountPage: () => {},
     element: (tagName, className = "", text = "") => {
         const element = new FakeElement(tagName);
         element.className = className;
         element.textContent = text;
         return element;
     },
-    emptyState: (text) => Object.assign(new FakeElement("p"), { textContent: text }),
-    formatDate: (value) => String(value || ""),
-    showToast: () => {},
-    handleError: (error, context) => errors.push(`${context}: ${error.message}`),
-};
-
-const windowObject = {
-    Stowling,
-    document,
-    setInterval: () => 1,
-    confirm: () => {
-        confirmCount += 1;
-        throw new Error("selection must not request discard confirmation");
+    emptyState: (text) => Stowling.element("p", "empty-state", text),
+    formatDate: () => "2026-11-16 00:00",
+    handleError: (error, context) => errors.push(`${context}: ${error}`),
+    request: async (path, options = {}) => {
+        const method = String(options.method || "GET").toUpperCase();
+        if (method !== "GET") {
+            throw new Error(`unexpected ${method} request ${path}`);
+        }
+        requests.push({ path, method });
+        if (path === "/v1/task-modules") {
+            return { modules: [{ id: "MOVE", name: "移动" }] };
+        }
+        if (path === "/v1/task-runs") {
+            const response = runResponses[Math.min(runReads, runResponses.length - 1)];
+            runReads += 1;
+            return response;
+        }
+        throw new Error(`unexpected request ${path}`);
     },
+    onConnected: (handler) => connectedHandlers.push(handler),
+    isConnected: () => true,
+    mountPage: () => {},
+    showToast: () => {},
 };
 
-globalThis.window = windowObject;
-globalThis.document = document;
-globalThis.Option = Option;
+global.document = document;
+global.window = {
+    Stowling,
+    setInterval: () => 1,
+    setTimeout: () => 1,
+    confirm: () => true,
+};
 
 for (const path of [modelPath, monitorPath, tasksPath]) {
     vm.runInThisContext(fs.readFileSync(path, "utf8"), { filename: path });
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const findButton = (text, parent = document.body) => {
-    const candidates = [];
-    const visit = (element) => {
-        if (element.listeners.has("click") && element.textContent.includes(text)) {
-            candidates.push(element);
-        }
-        element.children.forEach(visit);
-    };
-    visit(parent);
-    return candidates[0] || null;
-};
 
 (async () => {
     for (const handler of connectedHandlers) {
         await handler();
     }
     await tick();
+
+    const initialRequests = requests.map((entry) => `${entry.method} ${entry.path}`);
+    const queueList = document.querySelector("#task-queue-list");
+    const initialQueueText = queueList.textContent;
+    const syncMessage = document.querySelector("#task-monitor-message").textContent;
+
+    document.querySelector("#refresh-runs-button").click();
+    await tick();
     await tick();
 
-    const initialRequests = requests.map((entry) => entry.path);
-    const runSelect = document.byId.get("run-task-select");
-    const runButton = document.byId.get("run-task-button");
-    const taskList = document.byId.get("task-list");
-    const runtime = document.byId.get("runtime-list");
-    const runDetails = document.byId.get("task-run-details");
-    const selectionBefore = runSelect.value;
-
-    runDetails.open = true;
-    const runtimeSelect = findButton("选择任务", runtime);
-    if (!runtimeSelect) {
-        throw new Error("runtime task selection button was not rendered");
-    }
-    const scrollBeforeReveal = scrollCount;
-    runtimeSelect.click();
-    await tick();
-    const revealClosedDetails = runDetails.open === false;
-    const revealScrolled = scrollCount > scrollBeforeReveal;
-
-    runSelect.value = "";
-    runSelect.dispatch("change");
-    await tick();
-    const clearedSelection = runSelect.value;
-
-    runSelect.value = "task-1";
-    runSelect.dispatch("change");
-    await tick();
-    const dropdownSelection = runSelect.value;
-    const selectedTaskButton = findButton("已有任务", taskList);
-    if (!selectedTaskButton) {
-        throw new Error("existing task button was not rendered after dropdown selection");
-    }
-    const dropdownCardPressed = selectedTaskButton.getAttribute("aria-pressed") === "true";
-    selectedTaskButton.click();
-    await tick();
-    const cardSelection = runSelect.value;
-    const enabledAfterSelection = !runButton.disabled;
-
-    runButton.click();
-    await tick();
-    await tick();
-    const runRequest = requests.find((entry) => (
-        entry.method === "POST" && entry.path === "/v1/tasks/task-1/runs"
-    ));
-    const runsReadsBeforeRefresh = requests.filter((entry) => (
-        entry.path === "/v1/task-runs"
-    )).length;
-    document.byId.get("refresh-runs-button").click();
-    await tick();
-    await tick();
-    const runsReadsAfterRefresh = requests.filter((entry) => (
-        entry.path === "/v1/task-runs"
-    )).length;
-    const postRequests = requests.filter((entry) => entry.method === "POST");
-
+    const refreshedQueueText = queueList.textContent;
+    const postRequests = requests.filter((entry) => entry.method !== "GET");
     process.stdout.write(JSON.stringify({
         initialRequests,
-        selectionBefore,
-        clearedSelection,
-        dropdownSelection,
-        dropdownCardPressed,
-        cardSelection,
-        revealClosedDetails,
-        revealScrolled,
-        enabledAfterSelection,
-        runRequested: Boolean(runRequest),
+        runReads,
+        initialQueueText,
+        refreshedQueueText,
+        syncMessage,
         postRequests,
-        runsReadsBeforeRefresh,
-        runsReadsAfterRefresh,
-        confirmCount,
         errors,
     }));
 })().catch((error) => {
@@ -580,32 +447,18 @@ def _run_page_scenario() -> dict[str, Any]:
 
 @pytest.mark.skipif(
     NODE is None,
-    reason="Node.js is required to exercise the task selection page",
+    reason="Node.js is required to exercise the task monitor page",
 )
-def test_selection_page_initializes_selects_runs_and_refreshes_without_launch() -> None:
+def test_monitor_initializes_and_refreshes_with_run_reads_only() -> None:
     result = _run_page_scenario()
 
     assert result["errors"] == []
-    assert result["selectionBefore"] == ""
-    assert result["clearedSelection"] == ""
-    assert result["dropdownSelection"] == "task-1"
-    assert result["dropdownCardPressed"] is True
-    assert result["cardSelection"] == "task-1"
-    assert result["revealClosedDetails"] is True
-    assert result["revealScrolled"] is True
-    assert result["enabledAfterSelection"] is True
-    assert result["runRequested"] is True
-    assert result["confirmCount"] == 0
-    assert result["runsReadsAfterRefresh"] > result["runsReadsBeforeRefresh"]
-    assert len(result["postRequests"]) == 1
-    assert result["postRequests"][0] == {
-        "path": "/v1/tasks/task-1/runs",
-        "method": "POST",
-    }
-    assert set(result["initialRequests"]) == {
-        "/v1/tasks",
-        "/v1/task-folders",
-        "/v1/task-triggers",
-        "/v1/task-modules",
-        "/v1/task-runs",
-    }
+    assert result["initialRequests"] == [
+        "GET /v1/task-modules",
+        "GET /v1/task-runs",
+    ]
+    assert result["runReads"] == 2
+    assert "初始任务" in result["initialQueueText"]
+    assert "刷新任务" in result["refreshedQueueText"]
+    assert result["syncMessage"].startswith("已同步 · ")
+    assert result["postRequests"] == []

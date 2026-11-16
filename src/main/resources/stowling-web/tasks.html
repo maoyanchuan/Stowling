@@ -19,7 +19,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>任务管理 · 选择任务与查看运行情况</p>
+                <p>任务管理 · 运行队列与日志</p>
             </div>
         </div>
         <div class="connection-state">
@@ -78,99 +78,11 @@
                             <h2 id="task-display-title">任务展示</h2>
                         </div>
                     </section>
-                    <section class="panel task-sidebar task-selection-panel"
+                    <section class="panel task-selection-panel"
                              aria-labelledby="task-list-title">
                         <div class="panel-heading">
-                            <div>
-                                <p class="eyebrow">选择一个任务开始</p>
-                                <h2 id="task-list-title">任务选择</h2>
-                            </div>
-                            <span id="task-list-count" class="count-label">0</span>
+                            <h2 id="task-list-title">任务选择</h2>
                         </div>
-                        <section class="task-folders" aria-labelledby="task-folders-title">
-                            <div class="task-folder-heading">
-                                <h3 id="task-folders-title">文件夹</h3>
-                                <button id="new-folder-button"
-                                        class="task-folder-new" type="button">
-                                    + 新建
-                                </button>
-                            </div>
-                            <div id="task-folder-list" class="task-folder-list"
-                                 aria-live="polite"></div>
-                            <form id="task-folder-form" class="task-folder-form"
-                                  hidden novalidate>
-                                <label id="task-folder-form-label"
-                                       for="task-folder-name">新建文件夹</label>
-                                <input id="task-folder-name" maxlength="80"
-                                       autocomplete="off" required>
-                                <div class="task-folder-form-actions">
-                                    <button id="save-folder-button"
-                                            class="primary compact"
-                                            type="submit">保存</button>
-                                    <button id="cancel-folder-button"
-                                            class="secondary compact"
-                                            type="button">取消</button>
-                                    <button id="delete-folder-button"
-                                            class="ghost compact danger-action"
-                                            type="button" hidden>解散文件夹</button>
-                                </div>
-                                <p class="muted compact-help">
-                                    删除文件夹只会解散分组，不会删除任务。
-                                </p>
-                                <div id="task-folder-errors" class="config-errors"
-                                     role="alert"></div>
-                            </form>
-                        </section>
-                        <label class="search-field" for="task-search">
-                            <span class="visually-hidden">搜索任务</span>
-                            <input id="task-search" type="search" placeholder="搜索任务名称"
-                                   autocomplete="off">
-                        </label>
-                        <div class="task-filter" role="group"
-                             aria-label="任务分类">
-                            <button id="task-filter-all" class="task-filter-button"
-                                    type="button" data-task-filter="ALL"
-                                    aria-pressed="true">全部</button>
-                            <button id="task-filter-normal" class="task-filter-button"
-                                    type="button" data-task-filter="NORMAL"
-                                    aria-pressed="false">普通任务</button>
-                            <button id="task-filter-interruption"
-                                    class="task-filter-button" type="button"
-                                    data-task-filter="INTERRUPTION"
-                                    aria-pressed="false">中断收尾</button>
-                        </div>
-                        <section id="task-run-panel" class="task-launch-panel"
-                                 aria-labelledby="task-run-title">
-                            <div class="panel-heading">
-                                <div>
-                                    <h3 id="task-run-title">加入运行队列</h3>
-                                </div>
-                            </div>
-                            <div class="task-launch-grid">
-                                <div class="editor-field">
-                                    <label for="run-task-select">任务</label>
-                                    <select id="run-task-select">
-                                        <option value="">请选择任务</option>
-                                    </select>
-                                </div>
-                                <div class="editor-field">
-                                    <label for="run-priority-select">运行优先级</label>
-                                    <select id="run-priority-select"
-                                            aria-describedby="task-launch-note">
-                                        <option value="">跟随任务</option>
-                                        <option value="BACKGROUND">后台</option>
-                                        <option value="NORMAL">普通</option>
-                                        <option value="URGENT">紧急</option>
-                                    </select>
-                                </div>
-                                <button id="run-task-button" class="primary compact"
-                                        type="button">运行任务</button>
-                            </div>
-                            <p id="task-launch-note" class="task-launch-note">
-                                仅使用已保存的流程；这里的优先级只对本次运行生效。
-                            </p>
-                        </section>
-                        <div id="task-list" class="editor-list"></div>
                     </section>
                 </div>
             </div>

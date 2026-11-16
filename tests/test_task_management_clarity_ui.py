@@ -9,10 +9,19 @@ def read(name: str) -> str:
     return (WEB / name).read_text(encoding="utf-8")
 
 
+def between(source: str, start: str, end: str) -> str:
+    start_index = source.index(start)
+    content_start = start_index + len(start)
+    return source[content_start:source.index(end, content_start)]
+
+
 def test_reference_select_explains_required_producer_without_changing_targets() -> None:
     editor = read("v2-task-editor.js")
-    control = editor.split("function referenceSelect(", 1)[1]
-    control = control.split("function normalizeLegacyReference(", 1)[0]
+    control = between(
+        editor,
+        "function referenceSelect(",
+        "function normalizeLegacyReference(",
+    )
 
     assert "OUTPUT_REFERENCE_HINTS[select.value]" in control
     assert "hint.hidden = !hint.textContent" in control
@@ -26,29 +35,53 @@ def test_reference_select_explains_required_producer_without_changing_targets() 
         assert f'"output:{reference}"' in editor
 
 
-def test_task_list_separates_purpose_and_summarizes_folder_and_activation() -> None:
-    javascript = read("tasks.js")
-    listing = javascript.split("function renderTaskList()", 1)[1]
-    listing = listing.split("function taskListSummary(task)", 1)[0]
+def test_display_area_and_selection_panel_are_blank_placeholders() -> None:
+    html = read("tasks.html")
+    styles = read("styles.css")
+    display = between(html, 'id="task-display-area"', "</section>")
+    selection = between(
+        html,
+        'class="panel task-selection-panel"',
+        "</section>",
+    )
 
-    assert '"中断收尾" : "日常任务"' in listing
-    assert 'state.taskFilter === "ALL"' in listing
-    assert "taskListSummary(task)" in listing
-    assert "&& matchesTaskFolder(task)" in listing
-    assert "|| compareTasks(left, right)" in listing
-    summary = javascript.split("function taskListSummary(task)", 1)[1]
-    summary = summary.split("function compareTasks", 1)[0]
-    assert "item.id === task.folderId" in summary
-    assert "trigger.targetTaskId === task.id" in summary
-    assert "${boundTriggers} 个触发器" in summary
-    assert "trigger.enabled" not in summary
-    assert "task.repeatWhenIdle" in summary
+    assert 'id="task-display-title">任务展示</h2>' in display
+    assert 'id="task-list-title">任务选择</h2>' in selection
+    assert "<p" not in display
+    assert "<button" not in display
+    assert selection.count("<div") == 1
+    assert selection.count("<h2") == 1
+    assert "<p" not in selection
+    assert "<button" not in selection
+    assert "min-height: 10rem;" in between(styles, ".task-selection-panel {", "}")
+    assert "margin-bottom: 0;" in between(
+        styles,
+        ".task-display-placeholder .panel-heading,",
+        "}",
+    )
+
+
+def test_task_page_removes_editor_draft_and_task_list_state() -> None:
+    javascript = read("tasks.js")
+    html = read("tasks.html")
+
+    assert 'id="task-editor-title"' not in html
+    assert 'id="task-draft-status"' not in html
+    assert "编辑配置 · 不影响已在运行的任务" not in html
+    for removed in (
+        "state.draft",
+        "state.tasks",
+        "state.selectedId",
+        "renderTaskList",
+        "taskListSummary",
+        "有未保存修改",
+    ):
+        assert removed not in javascript
 
 
 def test_runtime_separates_active_history_and_preserves_expansion() -> None:
     javascript = read("tasks.js")
-    runtime = javascript.split("function renderRuntime()", 1)[1]
-    runtime = runtime.split("function runtimeCard", 1)[0]
+    runtime = between(javascript, "function renderRuntime()", "function runtimeCard")
 
     assert "const activeRuns = runs.filter(isActiveRun)" in runtime
     assert "const historyRuns = runs.filter((run) => !isActiveRun(run))" in runtime
@@ -56,65 +89,49 @@ def test_runtime_separates_active_history_and_preserves_expansion() -> None:
     assert "当前执行" in runtime
     assert "当前空闲，没有正在执行的任务" in runtime
     assert "最近记录" in runtime
-    active = javascript.split("function isActiveRun(run)", 1)[1]
-    active = active.split("function runStateLabel", 1)[0]
+    active = between(javascript, "function isActiveRun(run)", "function runStateLabel")
     assert '"INTERRUPTION_FAILED"' in active
 
 
-def test_failure_card_keeps_reason_progress_and_task_selection() -> None:
+def test_failure_card_keeps_reason_progress_and_recovery_without_selection() -> None:
     javascript = read("tasks.js")
-    card = javascript.split("function runtimeCard(run)", 1)[1]
-    card = card.split("function renderQueue", 1)[0]
+    card = between(javascript, "function runtimeCard(run)", "function renderQueue")
 
     assert "失败原因：" in card
     assert "runStateMessage(run)" in card
     assert "${run.completedSteps} / ${run.totalSteps} 个根步骤" in card
-    assert "item.id === run.taskId" in card
-    assert "if (task)" in card
-    assert "selectTask(task, true)" in card
-    assert '"选择任务"' in card
+    assert 'Stowling.element("strong", "", run.taskName)' in card
+    assert "selectTask" not in card
+    assert '"选择任务"' not in card
     assert "retryInterruption(run.runId)" in card
     assert "skipInterruption(run.runId)" in card
     assert "cancelRun(run.runId)" in card
-    assert "confirmDiscardForTaskChange" not in card
     styles = read("styles.css")
     assert ".task-run-card.is-failed" in styles
     assert ".task-reference-hint[hidden]" in styles
     assert "overflow-wrap: anywhere;" in styles
 
 
-def test_display_area_is_reserved_without_an_editor_or_draft_state() -> None:
+def test_read_only_monitor_has_no_task_selection_bridge() -> None:
     javascript = read("tasks.js")
-    html = read("tasks.html")
 
-    assert 'id="task-display-area"' in html
-    assert "task-display-placeholder" in html
-    assert "任务展示" in html
-    assert 'id="task-editor-title"' not in html
-    assert 'id="task-draft-status"' not in html
-    assert "编辑配置 · 不影响已在运行的任务" not in html
-    assert "state.draft" not in javascript
-    assert "有未保存修改" not in javascript
-
-
-def test_monitor_task_selection_is_pure_and_reveals_existing_task() -> None:
-    javascript = read("tasks.js")
-    select = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
-    select = select.split("function renderRunControls", 1)[0]
-
-    assert "confirmDiscardForTaskChange" not in select
-    assert "state.selectedId = task.id" in select
-    assert "state.runTaskId = task.id" in select
-    assert 'state.query = ""' in select
-    assert "state.folderFilter = FOLDER_FILTER_ALL" in select
-    assert "renderTaskList()" in select
-    assert "renderRunControls()" in select
+    for removed in (
+        "selectTask",
+        "runTaskId",
+        "selectedId",
+        "state.tasks",
+        '"/v1/tasks"',
+        '"/v1/task-folders"',
+        '"/v1/task-triggers"',
+    ):
+        assert removed not in javascript
+    assert 'Stowling.element("strong", "rail-task-name", entry.taskName)' in javascript
+    assert 'Stowling.element("strong", "", run.taskName)' in javascript
 
 
 def test_runtime_uses_catalog_names_and_keeps_interruption_failure_detail() -> None:
     javascript = read("tasks.js")
-    message = javascript.split("function runStateMessage(run)", 1)[1]
-    message = message.split("async function runTask()", 1)[0]
+    message = between(javascript, "function runStateMessage(run)", "async function loadRuns")
 
     assert "item.id === moduleId" in message
     assert "${module.name}" in message

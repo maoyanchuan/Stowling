@@ -10,14 +10,13 @@ queued runs, and listening tasks visible in urgent / normal / background priorit
 order. Its lower half shows page-session task state changes, with export, clear,
 and pause-scroll controls (up to 300 entries). Pause-scroll does not pause tasks;
 reloading the page starts a new log session. Run details and interruption recovery
-remain available in a dialog. The right side starts with an intentionally blank
-task display area. Below it, folder-aware task cards, filters, and run controls let
-users select an existing task; no task is selected automatically. The task page
-does not load a task editor, module reference, creation menu, trigger editor, or
-legacy hash route. Task, trigger, folder, and editor source data remain available
-to the backend and reusable editor code. Inventory query navigation and static web
-routes are temporarily removed; inventory APIs, data, and source assets remain
-intact for later restoration.
+remain available in a dialog. The right side has two intentionally blank panels:
+an upper task display area and a lower task selection section, each showing only
+its heading. The web page is monitor-only and does not manage or launch tasks.
+Persisted task, trigger, folder, and reusable editor source data remain available
+to the backend and editor code. Inventory query navigation and static web routes
+are temporarily removed; inventory APIs, data, and source assets remain intact for
+later restoration.
 
 ## Task model
 
@@ -270,10 +269,10 @@ for legacy configuration compatibility and previous-scan migration.
 
 Task folders are persisted configuration objects with a flat one-level
 structure. A task belongs to at most one folder; configuration/API writes keep
-the task and folder assignment together. The task page provides persisted folder
-creation, rename, and dissolve controls. Deleting a folder only dissolves the
-group: its tasks remain and their `folderId` becomes `null`. Folder selection
-combines with search and the ordinary/interruption task filters.
+the task and folder assignment together. Deleting a folder only dissolves the
+group: its tasks remain and their `folderId` becomes `null`. Folder data remains
+available to the backend, while the current web page does not expose folder
+management or filtering controls.
 
 ## Queuing and triggers
 
@@ -283,9 +282,9 @@ queue.
 
 Triggers are stored independently but bound to one saved target task, and a task
 may have multiple triggers. Dropped items, food level, and cache updates are
-supported. The task page reads trigger records for queue/list summaries and
-monitoring but does not create, edit, or delete them. Trigger intervals and
-cooldowns retain their existing meaning.
+supported. The web page no longer reads trigger configuration directly; run
+snapshots still provide listening status for the queue and logs. Trigger
+intervals and cooldowns retain their existing meaning.
 
 Background tasks may requeue after completion. `requeueAfterInterruption`
 controls whether an interrupted task returns to the queue after cleanup.

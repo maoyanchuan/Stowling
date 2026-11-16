@@ -254,6 +254,10 @@ def test_task_creation_offers_auto_eat_preset() -> None:
     assert 'id="new-auto-eat-task-button"' in html
     assert "自动进食预设" in html
     assert 'id="auto-eat-preset-form"' in html
+    assert (
+        html.index('class="panel task-editor-panel"')
+        < html.index('id="auto-eat-preset-form"')
+    )
     assert 'id="auto-eat-coordinate"' in html
     assert 'id="auto-eat-food"' in html
     assert 'id="auto-eat-threshold"' in html

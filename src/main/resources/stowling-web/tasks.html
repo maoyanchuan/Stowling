@@ -56,45 +56,6 @@
                                     type="button">自动进食预设</button>
                         </div>
                     </div>
-                    <form id="auto-eat-preset-form"
-                          class="task-preset-form" hidden>
-                        <div>
-                            <p class="eyebrow">任务预设</p>
-                            <h3>自动进食</h3>
-                            <p class="muted compact-help">
-                                监听饱食度，并生成“移动到坐标 → 取出食物 → 进食”
-                                的普通任务步骤。
-                            </p>
-                        </div>
-                        <div class="editor-fields">
-                            <div class="editor-field">
-                                <label for="auto-eat-coordinate">食物箱坐标</label>
-                                <select id="auto-eat-coordinate" required></select>
-                            </div>
-                            <div class="editor-field">
-                                <label for="auto-eat-food">食物 ID</label>
-                                <input id="auto-eat-food" value="minecraft:bread"
-                                       placeholder="minecraft:bread" required>
-                            </div>
-                            <div class="editor-field">
-                                <label for="auto-eat-threshold">饱食度阈值</label>
-                                <input id="auto-eat-threshold" type="number"
-                                       min="1" max="20" step="1" value="18" required>
-                            </div>
-                        </div>
-                        <p class="muted compact-help">
-                            右侧步骤可编辑；可增删、重排或替换模块，创建时按右侧
-                            最终流程保存。
-                        </p>
-                        <div id="auto-eat-preset-errors" class="config-errors"
-                             role="alert"></div>
-                        <div class="action-row">
-                            <button id="create-auto-eat-preset" class="primary compact"
-                                    type="submit">创建任务与监听器</button>
-                            <button id="cancel-auto-eat-preset" class="secondary compact"
-                                    type="button">取消</button>
-                        </div>
-                    </form>
                     <label class="search-field" for="task-search">
                         <span class="visually-hidden">搜索任务</span>
                         <input id="task-search" type="search" placeholder="搜索任务名称"
@@ -267,6 +228,45 @@
                             </div>
                             <span id="task-revision" class="loopback-tag">新任务</span>
                         </div>
+                    <form id="auto-eat-preset-form"
+                          class="task-preset-form" hidden>
+                        <div>
+                            <p class="eyebrow">任务预设</p>
+                            <h3>自动进食</h3>
+                            <p class="muted compact-help">
+                                监听饱食度，并生成“移动到坐标 → 取出食物 → 进食”
+                                的普通任务步骤。
+                            </p>
+                        </div>
+                        <div class="editor-fields">
+                            <div class="editor-field">
+                                <label for="auto-eat-coordinate">食物箱坐标</label>
+                                <select id="auto-eat-coordinate" required></select>
+                            </div>
+                            <div class="editor-field">
+                                <label for="auto-eat-food">食物 ID</label>
+                                <input id="auto-eat-food" value="minecraft:bread"
+                                       placeholder="minecraft:bread" required>
+                            </div>
+                            <div class="editor-field">
+                                <label for="auto-eat-threshold">饱食度阈值</label>
+                                <input id="auto-eat-threshold" type="number"
+                                       min="1" max="20" step="1" value="18" required>
+                            </div>
+                        </div>
+                        <p class="muted compact-help">
+                            右侧步骤可编辑；可增删、重排或替换模块，创建时按右侧
+                            最终流程保存。
+                        </p>
+                        <div id="auto-eat-preset-errors" class="config-errors"
+                             role="alert"></div>
+                        <div class="action-row">
+                            <button id="create-auto-eat-preset" class="primary compact"
+                                    type="submit">创建任务与监听器</button>
+                            <button id="cancel-auto-eat-preset" class="secondary compact"
+                                    type="button">取消</button>
+                        </div>
+                        </form>
                         <div id="task-empty" class="task-welcome">
                             <span class="welcome-symbol" aria-hidden="true">＋</span>
                             <h3>从一个任务开始</h3>

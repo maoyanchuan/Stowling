@@ -2,11 +2,21 @@ package dev.stowling.automation;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
+import java.util.Objects;
 
 public interface NavigationPort {
     NavigationStatus start(BlockPosition target);
 
     default NavigationStatus startNear(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        return start(target);
+    }
+
+    default NavigationStatus startWithinRadius(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }

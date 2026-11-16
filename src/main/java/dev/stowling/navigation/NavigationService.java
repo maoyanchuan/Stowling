@@ -1,11 +1,20 @@
 package dev.stowling.navigation;
 
 import dev.stowling.domain.BlockPosition;
+import java.util.Objects;
 
 public interface NavigationService {
     void navigateTo(BlockPosition target);
 
     void navigateToNear(BlockPosition target, int radius);
+
+    default void navigateToWithinRadius(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        navigateTo(target);
+    }
 
     default boolean isWithinInteractionRange(BlockPosition target) {
         return false;

@@ -51,9 +51,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         NavigationStatus status;
         if (!navigationStarted) {
             navigationStarted = true;
-            status = arrivalRadius == null
-                    ? context.navigation().start(position)
-                    : context.navigation().startNear(position, arrivalRadius);
+            status = startNavigation();
         } else {
             status = context.navigation().status(position, arrivalRadius);
         }
@@ -62,6 +60,19 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
             case NAVIGATING -> TaskModuleResult.running("正在前往 " + targetName);
             case FAILED -> TaskModuleResult.failed("无法前往 " + targetName);
         };
+    }
+
+    private NavigationStatus startNavigation() {
+        if (container != null) {
+            return context.navigation().startNear(
+                    position,
+                    CONTAINER_NAVIGATION_RADIUS
+            );
+        }
+        if (coordinate != null && arrivalRadius != null) {
+            return context.navigation().startWithinRadius(position, arrivalRadius);
+        }
+        return context.navigation().start(position);
     }
 
     @Override

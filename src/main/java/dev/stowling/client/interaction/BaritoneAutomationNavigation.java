@@ -11,7 +11,7 @@ import dev.stowling.schedule.StopOutcome;
 import java.util.Objects;
 
 public final class BaritoneAutomationNavigation implements NavigationPort {
-    private static final double ARRIVAL_DISTANCE_SQUARED = 6.25D;
+    private static final int DEFAULT_COORDINATE_RADIUS = 0;
     private static final int PATH_STARTUP_GRACE_TICKS = 20;
     private static final int NEAR_PATH_RETRIES = 2;
     private static final int NEAR_RETRY_DELAY_TICKS = 20;
@@ -21,6 +21,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private boolean active;
     private boolean nearNavigation;
     private boolean pathObserved;
+    private int coordinateRadius = DEFAULT_COORDINATE_RADIUS;
     private int missingPathTicks;
     private int nearPathRetries;
     private int nearRadius;
@@ -41,11 +42,27 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public NavigationStatus start(BlockPosition target) {
         Objects.requireNonNull(target, "target");
+        coordinateRadius = DEFAULT_COORDINATE_RADIUS;
         nearNavigation = false;
         nearPathRetries = 0;
         retryDelayTicks = 0;
         prepareNavigation();
         navigationService.navigateTo(target);
+        return NavigationStatus.NAVIGATING;
+    }
+
+    @Override
+    public NavigationStatus startWithinRadius(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        coordinateRadius = radius;
+        nearNavigation = false;
+        nearPathRetries = 0;
+        retryDelayTicks = 0;
+        prepareNavigation();
+        navigationService.navigateToWithinRadius(target, radius);
         return NavigationStatus.NAVIGATING;
     }
 
@@ -91,8 +108,8 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         double deltaY = current.y() - target.y();
         double deltaZ = current.z() - target.z();
         double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-        if (!nearNavigation
-                && distanceSquared <= arrivalDistanceSquared(radius)) {
+        int targetRadius = radius == null ? coordinateRadius : radius;
+        if (!nearNavigation && distanceSquared <= arrivalDistanceSquared(targetRadius)) {
             return arrive();
         }
         if (!active) {
@@ -138,10 +155,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         return world.connected() && dimension.equals(world.dimension());
     }
 
-    private static double arrivalDistanceSquared(Integer radius) {
-        if (radius == null) {
-            return ARRIVAL_DISTANCE_SQUARED;
-        }
+    private static double arrivalDistanceSquared(int radius) {
         return (double) radius * radius;
     }
 

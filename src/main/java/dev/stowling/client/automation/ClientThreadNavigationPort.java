@@ -41,6 +41,18 @@ public final class ClientThreadNavigationPort implements NavigationPort {
     }
 
     @Override
+    public NavigationStatus startWithinRadius(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        if (!scheduler.isClientThread()) {
+            return NavigationStatus.FAILED;
+        }
+        return delegate.startWithinRadius(target, radius);
+    }
+
+    @Override
     public NavigationStatus status(BlockPosition target) {
         return status(target, null);
     }

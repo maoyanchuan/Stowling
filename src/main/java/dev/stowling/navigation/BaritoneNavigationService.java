@@ -3,6 +3,7 @@ package dev.stowling.navigation;
 import baritone.api.IBaritone;
 import baritone.api.IBaritoneProvider;
 import baritone.api.behavior.IPathingBehavior;
+import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalComposite;
 import baritone.api.pathing.goals.GoalNear;
@@ -21,9 +22,18 @@ public final class BaritoneNavigationService implements NavigationService {
 
     @Override
     public void navigateTo(BlockPosition target) {
+        navigateToWithinRadius(target, 0);
+    }
+
+    @Override
+    public void navigateToWithinRadius(BlockPosition target, int radius) {
         Objects.requireNonNull(target, "target");
-        GoalBlock goal = new GoalBlock(target.x(), target.y(), target.z());
-        primaryBaritone().getCustomGoalProcess().setGoalAndPath(goal);
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        primaryBaritone().getCustomGoalProcess().setGoalAndPath(
+                coordinateGoal(target, radius)
+        );
     }
 
     @Override
@@ -72,6 +82,22 @@ public final class BaritoneNavigationService implements NavigationService {
 
     private IBaritone primaryBaritone() {
         return provider.getPrimaryBaritone();
+    }
+
+    static Goal coordinateGoal(BlockPosition target, int radius) {
+        Objects.requireNonNull(target, "target");
+        if (radius < 0) {
+            throw new IllegalArgumentException("radius must not be negative");
+        }
+        BlockPos targetPos = new BlockPos(
+                target.x(),
+                target.y(),
+                target.z()
+        );
+        if (radius == 0) {
+            return new GoalBlock(targetPos);
+        }
+        return new GoalNear(targetPos, radius);
     }
 
     static GoalComposite nearContainerGoal(

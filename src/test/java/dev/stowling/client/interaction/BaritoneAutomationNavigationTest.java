@@ -8,17 +8,17 @@ import dev.stowling.automation.WorldObservation;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BaritoneAutomationNavigationTest {
     @Test
     void startNearUsesNearNavigationWithoutExactGoal() {
         RecordingNavigationService service = new RecordingNavigationService();
-        BaritoneAutomationNavigation navigation =
-                new BaritoneAutomationNavigation(
-                        service,
-                        WorldObservation::disconnected
-                );
+        BaritoneAutomationNavigation navigation = new BaritoneAutomationNavigation(
+                service,
+                WorldObservation::disconnected
+        );
         BlockPosition target = new BlockPosition(7, -40, 1);
 
         NavigationStatus status = navigation.startNear(target, 2);
@@ -26,29 +26,31 @@ class BaritoneAutomationNavigationTest {
         assertEquals(NavigationStatus.NAVIGATING, status);
         assertEquals(target, service.nearTarget);
         assertEquals(2, service.nearRadius);
+        assertEquals(1, service.nearCalls);
         assertNull(service.exactTarget);
+        assertNull(service.coordinateTarget);
     }
 
     @Test
     void arrivesImmediatelyWhenTheTargetIsWithinInteractionRange() {
         RecordingNavigationService service = new RecordingNavigationService();
         service.withinInteractionRange = true;
-        BaritoneAutomationNavigation navigation =
-                new BaritoneAutomationNavigation(
-                        service,
-                        () -> new WorldObservation(
-                                true,
-                                true,
-                                "minecraft:overworld",
-                                Optional.of(new BlockPosition(100, 64, 100))
-                        )
-                );
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(100, 64, 100))
+        );
         BlockPosition target = new BlockPosition(7, 67, 1);
 
-        navigation.startNear(target, 4);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.startNear(target, 4));
         NavigationStatus status = navigation.status(target, 4);
 
         assertEquals(NavigationStatus.ARRIVED, status);
+        assertEquals(1, service.interactionChecks);
+        assertEquals(1, service.cancellations);
+        assertEquals(target, service.nearTarget);
+        assertEquals(4, service.nearRadius);
+        assertNull(service.exactTarget);
+        assertNull(service.coordinateTarget);
     }
 
     @Test
@@ -56,38 +58,138 @@ class BaritoneAutomationNavigationTest {
         RecordingNavigationService service = new RecordingNavigationService();
         service.withinInteractionRange = true;
         service.navigating = true;
-        BaritoneAutomationNavigation navigation =
-                new BaritoneAutomationNavigation(
-                        service,
-                        () -> new WorldObservation(
-                                true,
-                                true,
-                                "minecraft:overworld",
-                                Optional.of(new BlockPosition(7, 64, 5))
-                        )
-                );
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(7, 64, 5))
+        );
         BlockPosition target = new BlockPosition(7, 64, 1);
 
-        navigation.start(target);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.start(target));
         NavigationStatus status = navigation.status(target, 1);
 
         assertEquals(NavigationStatus.NAVIGATING, status);
+        assertEquals(target, service.exactTarget);
+        assertEquals(0, service.interactionChecks);
+        assertEquals(0, service.cancellations);
+        assertNull(service.nearTarget);
+        assertNull(service.coordinateTarget);
     }
 
     @Test
-    void exactNavigationStillUsesItsConfiguredArrivalRadius() {
+    void exactNavigationWaitsForTheSameBlockByDefault() {
         RecordingNavigationService service = new RecordingNavigationService();
         service.navigating = true;
-        BaritoneAutomationNavigation navigation =
-                new BaritoneAutomationNavigation(
-                        service,
-                        () -> new WorldObservation(
-                                true,
-                                true,
-                                "minecraft:overworld",
-                                Optional.of(new BlockPosition(7, 64, 5))
-                        )
-                );
+        AtomicReference<BlockPosition> player =
+                new AtomicReference<>(new BlockPosition(8, 64, 1));
+        BaritoneAutomationNavigation navigation = navigationAt(service, player);
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        assertEquals(NavigationStatus.NAVIGATING, navigation.start(target));
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        player.set(new BlockPosition(9, 64, 1));
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        assertEquals(0, service.cancellations);
+        player.set(target);
+        assertEquals(NavigationStatus.ARRIVED, navigation.status(target));
+        assertEquals(1, service.cancellations);
+    }
+
+    @Test
+    void startWithinRadiusUsesTheCoordinateEntryInsteadOfContainerNear() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(100, 64, 100))
+        );
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        NavigationStatus status = navigation.startWithinRadius(target, 2);
+
+        assertEquals(NavigationStatus.NAVIGATING, status);
+        assertEquals(target, service.coordinateTarget);
+        assertEquals(2, service.coordinateRadius);
+        assertNull(service.exactTarget);
+        assertNull(service.nearTarget);
+    }
+
+    @Test
+    void coordinateRadiusZeroIgnoresBlockInteractionRange() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        service.withinInteractionRange = true;
+        AtomicReference<BlockPosition> player =
+                new AtomicReference<>(new BlockPosition(8, 64, 1));
+        BaritoneAutomationNavigation navigation = navigationAt(service, player);
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.startWithinRadius(target, 0);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        assertEquals(0, service.interactionChecks);
+        player.set(target);
+        assertEquals(NavigationStatus.ARRIVED, navigation.status(target));
+        assertEquals(1, service.cancellations);
+    }
+
+    @Test
+    void coordinateRadiusOneUsesThreeDimensionalDistance() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        service.withinInteractionRange = true;
+        AtomicReference<BlockPosition> player =
+                new AtomicReference<>(new BlockPosition(8, 65, 1));
+        BaritoneAutomationNavigation navigation = navigationAt(service, player);
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.startWithinRadius(target, 1);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        player.set(new BlockPosition(7, 66, 1));
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        player.set(new BlockPosition(8, 64, 1));
+        assertEquals(NavigationStatus.ARRIVED, navigation.status(target));
+    }
+
+    @Test
+    void statusWithoutExplicitRadiusUsesTheStartedCoordinateRadius() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(9, 64, 1))
+        );
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.startWithinRadius(target, 2);
+        NavigationStatus status = navigation.status(target);
+
+        assertEquals(NavigationStatus.ARRIVED, status);
+        assertEquals(1, service.cancellations);
+    }
+
+    @Test
+    void coordinatePathLostOutsideRadiusFailsInsteadOfArriving() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(9, 64, 1))
+        );
+        BlockPosition target = new BlockPosition(7, 64, 1);
+
+        navigation.startWithinRadius(target, 1);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(target));
+        service.navigating = false;
+        assertEquals(NavigationStatus.FAILED, navigation.status(target));
+        assertEquals(1, service.cancellations);
+    }
+
+    @Test
+    void explicitStatusRadiusKeepsLegacyDistanceSemantics() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(7, 64, 5))
+        );
         BlockPosition target = new BlockPosition(7, 64, 1);
 
         navigation.start(target);
@@ -100,16 +202,10 @@ class BaritoneAutomationNavigationTest {
     void nearNavigationRequiresInteractionRangeInsteadOfRadiusAlone() {
         RecordingNavigationService service = new RecordingNavigationService();
         service.navigating = true;
-        BaritoneAutomationNavigation navigation =
-                new BaritoneAutomationNavigation(
-                        service,
-                        () -> new WorldObservation(
-                                true,
-                                true,
-                                "minecraft:overworld",
-                                Optional.of(new BlockPosition(10, 64, 1))
-                        )
-                );
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(10, 64, 1))
+        );
         BlockPosition target = new BlockPosition(7, 64, 1);
 
         navigation.startNear(target, 4);
@@ -122,16 +218,10 @@ class BaritoneAutomationNavigationTest {
     void retriesNearNavigationBeforeReportingFailure() {
         RecordingNavigationService service = new RecordingNavigationService();
         service.navigating = true;
-        BaritoneAutomationNavigation navigation =
-                new BaritoneAutomationNavigation(
-                        service,
-                        () -> new WorldObservation(
-                                true,
-                                true,
-                                "minecraft:overworld",
-                                Optional.of(new BlockPosition(100, 64, 100))
-                        )
-                );
+        BaritoneAutomationNavigation navigation = navigationAt(
+                service,
+                new AtomicReference<>(new BlockPosition(100, 64, 100))
+        );
         BlockPosition target = new BlockPosition(7, -40, 1);
 
         navigation.startNear(target, 4);
@@ -158,12 +248,31 @@ class BaritoneAutomationNavigationTest {
         assertEquals(NavigationStatus.FAILED, navigation.status(target, 4));
     }
 
+    private static BaritoneAutomationNavigation navigationAt(
+            RecordingNavigationService service,
+            AtomicReference<BlockPosition> player
+    ) {
+        return new BaritoneAutomationNavigation(
+                service,
+                () -> new WorldObservation(
+                        true,
+                        true,
+                        "minecraft:overworld",
+                        Optional.of(player.get())
+                )
+        );
+    }
+
     private static final class RecordingNavigationService
             implements NavigationService {
         private BlockPosition exactTarget;
         private BlockPosition nearTarget;
+        private BlockPosition coordinateTarget;
         private int nearRadius;
+        private int coordinateRadius;
         private int nearCalls;
+        private int interactionChecks;
+        private int cancellations;
         private boolean withinInteractionRange;
         private boolean navigating;
 
@@ -180,12 +289,20 @@ class BaritoneAutomationNavigationTest {
         }
 
         @Override
+        public void navigateToWithinRadius(BlockPosition target, int radius) {
+            coordinateTarget = target;
+            coordinateRadius = radius;
+        }
+
+        @Override
         public boolean isWithinInteractionRange(BlockPosition target) {
+            interactionChecks++;
             return withinInteractionRange;
         }
 
         @Override
         public void cancel() {
+            cancellations++;
         }
 
         @Override

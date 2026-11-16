@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -87,12 +88,18 @@ class BasicModuleSemanticsTest {
         assertEquals(TaskModuleState.RUNNING, module.start().state());
         assertEquals(
                 List.of(new BlockPosition(-12, 64, 30)),
-                navigation.startPositions()
+                navigation.exactPositions()
         );
-        assertEquals(List.of(), navigation.startRadii());
+        assertTrue(navigation.coordinatePositions().isEmpty());
+        assertTrue(navigation.containerPositions().isEmpty());
         assertTrue(navigation.dimensionChecks().isEmpty());
         assertTrue(context.coordinates().isEmpty());
         assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(
+                List.of(new BlockPosition(-12, 64, 30)),
+                navigation.statusPositions()
+        );
+        assertNull(navigation.statusRadii().get(0));
     }
 
     @Test
@@ -125,16 +132,16 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
-    void referencedMoveKeepsDimensionAndArrivalRadius() {
+    void savedCoordinateWithoutRadiusUsesExactStartAndChecksDimension() {
         UUID coordinateId = UUID.randomUUID();
         CoordinatePoint point = new CoordinatePoint(
                 coordinateId,
-                "Nearby",
+                "Exact",
                 5,
                 70,
                 -9,
                 "minecraft:overworld",
-                7
+                null
         );
         RecordingMoveNavigation navigation = new RecordingMoveNavigation();
         MoveToCoordinateModule module = new MoveToCoordinateModule(
@@ -163,9 +170,70 @@ class BasicModuleSemanticsTest {
         );
         assertEquals(
                 List.of(new BlockPosition(5, 70, -9)),
-                navigation.startPositions()
+                navigation.exactPositions()
         );
-        assertEquals(List.of(7), navigation.startRadii());
+        assertTrue(navigation.coordinatePositions().isEmpty());
+        assertTrue(navigation.containerPositions().isEmpty());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(
+                List.of(new BlockPosition(5, 70, -9)),
+                navigation.statusPositions()
+        );
+        assertNull(navigation.statusRadii().get(0));
+    }
+
+    @Test
+    void savedCoordinateRadiiUseWithinRadiusEntry() {
+        for (int radius : List.of(0, 1, 7)) {
+            UUID coordinateId = UUID.randomUUID();
+            CoordinatePoint point = new CoordinatePoint(
+                    coordinateId,
+                    "Nearby",
+                    5,
+                    70,
+                    -9,
+                    "minecraft:overworld",
+                    radius
+            );
+            RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+            MoveToCoordinateModule module = new MoveToCoordinateModule(
+                    context(
+                            navigation,
+                            new RecordingTransfers(),
+                            new FailedWithdrawals(),
+                            new FoodPort(),
+                            new TaskRunWorkspace(),
+                            Map.of(coordinateId, point)
+                    ),
+                    TaskStep.action(
+                            UUID.randomUUID(),
+                            TaskModuleIds.MOVE_TO_COORDINATE,
+                            Map.of(
+                                    TaskModuleIds.TARGET_REF,
+                                    "coordinate:" + coordinateId
+                            )
+                    )
+            );
+
+            assertEquals(TaskModuleState.RUNNING, module.start().state());
+            assertEquals(
+                    List.of("minecraft:overworld"),
+                    navigation.dimensionChecks()
+            );
+            assertTrue(navigation.exactPositions().isEmpty());
+            assertTrue(navigation.containerPositions().isEmpty());
+            assertEquals(
+                    List.of(new BlockPosition(5, 70, -9)),
+                    navigation.coordinatePositions()
+            );
+            assertEquals(List.of(radius), navigation.coordinateRadii());
+            assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+            assertEquals(
+                    List.of(new BlockPosition(5, 70, -9)),
+                    navigation.statusPositions()
+            );
+            assertEquals(List.of(radius), navigation.statusRadii());
+        }
     }
 
     @Test
@@ -196,10 +264,18 @@ class BasicModuleSemanticsTest {
         assertEquals(TaskModuleState.RUNNING, module.start().state());
         assertEquals(
                 List.of(new BlockPosition(8, 60, -4)),
-                navigation.startPositions()
+                navigation.containerPositions()
         );
-        assertEquals(List.of(4), navigation.startRadii());
+        assertEquals(List.of(4), navigation.containerRadii());
+        assertTrue(navigation.exactPositions().isEmpty());
+        assertTrue(navigation.coordinatePositions().isEmpty());
         assertTrue(navigation.dimensionChecks().isEmpty());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(
+                List.of(new BlockPosition(8, 60, -4)),
+                navigation.statusPositions()
+        );
+        assertEquals(List.of(4), navigation.statusRadii());
     }
 
     @Test
@@ -1294,21 +1370,33 @@ class BasicModuleSemanticsTest {
     }
 
     private static final class RecordingMoveNavigation implements NavigationPort {
-        private final List<BlockPosition> startPositions = new ArrayList<>();
-        private final List<Integer> startRadii = new ArrayList<>();
+        private final List<BlockPosition> exactPositions = new ArrayList<>();
+        private final List<BlockPosition> coordinatePositions = new ArrayList<>();
+        private final List<Integer> coordinateRadii = new ArrayList<>();
+        private final List<BlockPosition> containerPositions = new ArrayList<>();
+        private final List<Integer> containerRadii = new ArrayList<>();
+        private final List<BlockPosition> statusPositions = new ArrayList<>();
+        private final List<Integer> statusRadii = new ArrayList<>();
         private final List<String> dimensionChecks = new ArrayList<>();
         private int cancellations;
 
         @Override
         public NavigationStatus start(BlockPosition target) {
-            startPositions.add(target);
+            exactPositions.add(target);
             return NavigationStatus.NAVIGATING;
         }
 
         @Override
         public NavigationStatus startNear(BlockPosition target, int radius) {
-            startPositions.add(target);
-            startRadii.add(radius);
+            containerPositions.add(target);
+            containerRadii.add(radius);
+            return NavigationStatus.NAVIGATING;
+        }
+
+        @Override
+        public NavigationStatus startWithinRadius(BlockPosition target, int radius) {
+            coordinatePositions.add(target);
+            coordinateRadii.add(radius);
             return NavigationStatus.NAVIGATING;
         }
 
@@ -1319,6 +1407,8 @@ class BasicModuleSemanticsTest {
 
         @Override
         public NavigationStatus status(BlockPosition target, Integer radius) {
+            statusPositions.add(target);
+            statusRadii.add(radius);
             return NavigationStatus.ARRIVED;
         }
 
@@ -1339,12 +1429,32 @@ class BasicModuleSemanticsTest {
             return StopOutcome.CLEAN;
         }
 
-        private List<BlockPosition> startPositions() {
-            return List.copyOf(startPositions);
+        private List<BlockPosition> exactPositions() {
+            return List.copyOf(exactPositions);
         }
 
-        private List<Integer> startRadii() {
-            return List.copyOf(startRadii);
+        private List<BlockPosition> coordinatePositions() {
+            return List.copyOf(coordinatePositions);
+        }
+
+        private List<Integer> coordinateRadii() {
+            return List.copyOf(coordinateRadii);
+        }
+
+        private List<BlockPosition> containerPositions() {
+            return List.copyOf(containerPositions);
+        }
+
+        private List<Integer> containerRadii() {
+            return List.copyOf(containerRadii);
+        }
+
+        private List<BlockPosition> statusPositions() {
+            return List.copyOf(statusPositions);
+        }
+
+        private List<Integer> statusRadii() {
+            return new ArrayList<>(statusRadii);
         }
 
         private List<String> dimensionChecks() {

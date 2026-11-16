@@ -20,6 +20,12 @@ only existing tasks whose full definition is one `ACTION` step with module
 out of this editor instead of being partially rewritten. Manual and saved inputs
 are both retained while switching source, but only the active source is serialized.
 
+Move tasks check arrival using the player's block position. Manual coordinates,
+saved coordinates without a radius, and radius `0` require the target block.
+A configured radius uses XYZ distance without expanding to container interaction
+range. Navigation that stops outside the requested radius fails rather than
+reporting arrival. Container output references retain interaction-range behavior.
+
 The move loader independently reads `GET /v1/tasks` and `GET /v1/coordinates`.
 The monitor loader still reads only `GET /v1/task-modules` and
 `GET /v1/task-runs`; connection starts both loaders in parallel. Saving a new task

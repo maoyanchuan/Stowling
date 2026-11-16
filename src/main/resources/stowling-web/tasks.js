@@ -158,7 +158,8 @@
         }
         const groups = [
             ["BASIC", "基础任务"],
-            ["COMPOSITE", "复合任务"]
+            ["PRESET", "任务预设"],
+            ["COMPOSITE", "组合任务"]
         ];
         for (const [level, label] of groups) {
             const tasks = matches.filter(
@@ -562,11 +563,11 @@
         const groups = [
             ["LISTENER", "监听器"],
             ["BASIC", "基础模块"],
-            ["COMPOSITE", "复合模块"]
+            ["PRESET", "任务预设"]
         ];
         for (const [groupKey, label] of groups) {
             const modules = visibleModules.filter((module) => (
-                groupKey === "BASIC" || groupKey === "COMPOSITE"
+                groupKey === "BASIC"
                     ? Model.moduleKind(module) === "ACTION"
                         && module.level === groupKey
                     : Model.moduleKind(module) === groupKey
@@ -601,6 +602,9 @@
         if (kind === "LISTENER") {
             return "监听";
         }
+        if (kind === "PRESET") {
+            return "预设";
+        }
         return module.level === "BASIC" ? "基础" : "复合";
     }
 
@@ -626,13 +630,29 @@
             }).join("、");
         card.append(
             summary,
-            Stowling.element("p", "", module.description || ""),
-            Stowling.element(
+            Stowling.element("p", "", module.description || "")
+        );
+        const composedOf = Array.isArray(module.composedOf)
+            ? module.composedOf
+            : [];
+        if (composedOf.length > 0) {
+            const names = composedOf.map((moduleId) => {
+                const called = state.modules.find(
+                    (candidate) => candidate.id === moduleId
+                );
+                return called?.name || moduleId;
+            });
+            card.append(Stowling.element(
                 "p",
                 "compact-help",
-                `参数：${parameterText}`
-            )
-        );
+                `调用：${names.join(" → ")}`
+            ));
+        }
+        card.append(Stowling.element(
+            "p",
+            "compact-help",
+            `参数：${parameterText}`
+        ));
         return card;
     }
 
@@ -663,7 +683,8 @@
         elements.runSelect.replaceChildren(new Option("请选择任务", ""));
         const groups = [
             ["BASIC", "基础任务"],
-            ["COMPOSITE", "复合任务"]
+            ["PRESET", "任务预设"],
+            ["COMPOSITE", "组合任务"]
         ];
         for (const [level, label] of groups) {
             const group = document.createElement("optgroup");

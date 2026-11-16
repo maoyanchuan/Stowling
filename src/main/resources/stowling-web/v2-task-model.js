@@ -16,7 +16,8 @@
     ]);
     const MODULE_KINDS = Object.freeze([
         "ACTION",
-        "LISTENER"
+        "LISTENER",
+        "PRESET"
     ]);
 
     /**
@@ -112,6 +113,9 @@
         const module = modules.find(
             (candidate) => candidate.id === task.steps[0].moduleId
         );
+        if (moduleKind(module) === "PRESET") {
+            return "PRESET";
+        }
         return module?.level === "BASIC" ? "BASIC" : "COMPOSITE";
     }
 

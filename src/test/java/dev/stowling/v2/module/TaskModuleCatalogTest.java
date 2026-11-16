@@ -50,6 +50,13 @@ class TaskModuleCatalogTest {
                         .filter(module -> module.kind() == TaskModuleKind.LISTENER)
                         .count()
         );
+        assertEquals(
+                4,
+                modules.stream()
+                        .filter(module -> !module.deprecated())
+                        .filter(module -> module.kind() == TaskModuleKind.PRESET)
+                        .count()
+        );
     }
 
     @Test

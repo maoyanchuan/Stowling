@@ -10,7 +10,8 @@ public record ModuleDefinition(
         TaskModuleKind kind,
         TaskModuleLevel level,
         List<ModuleParameter> parameters,
-        boolean deprecated
+        boolean deprecated,
+        List<String> composedOf
 ) {
     public ModuleDefinition {
         id = requireText(id, "id");
@@ -19,6 +20,50 @@ public record ModuleDefinition(
         kind = Objects.requireNonNull(kind, "kind");
         level = Objects.requireNonNull(level, "level");
         parameters = List.copyOf(Objects.requireNonNull(parameters, "parameters"));
+        composedOf = List.copyOf(
+                Objects.requireNonNull(composedOf, "composedOf")
+        );
+    }
+
+    public ModuleDefinition(
+            String id,
+            String name,
+            String description,
+            TaskModuleKind kind,
+            TaskModuleLevel level,
+            List<ModuleParameter> parameters
+    ) {
+        this(
+                id,
+                name,
+                description,
+                kind,
+                level,
+                parameters,
+                false,
+                List.of()
+        );
+    }
+
+    public ModuleDefinition(
+            String id,
+            String name,
+            String description,
+            TaskModuleKind kind,
+            TaskModuleLevel level,
+            List<ModuleParameter> parameters,
+            boolean deprecated
+    ) {
+        this(
+                id,
+                name,
+                description,
+                kind,
+                level,
+                parameters,
+                deprecated,
+                List.of()
+        );
     }
 
     public ModuleDefinition(
@@ -36,7 +81,8 @@ public record ModuleDefinition(
                 TaskModuleKind.ACTION,
                 level,
                 parameters,
-                deprecated
+                deprecated,
+                List.of()
         );
     }
 
@@ -50,9 +96,11 @@ public record ModuleDefinition(
                 id,
                 name,
                 description,
+                TaskModuleKind.ACTION,
                 TaskModuleLevel.BASIC,
                 parameters,
-                false
+                false,
+                List.of()
         );
     }
 
@@ -67,9 +115,11 @@ public record ModuleDefinition(
                 id,
                 name,
                 description,
+                TaskModuleKind.ACTION,
                 level,
                 parameters,
-                false
+                false,
+                List.of()
         );
     }
 

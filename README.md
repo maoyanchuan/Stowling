@@ -11,9 +11,9 @@ by Baritone.
 - Regions contain a name and two full X/Y/Z corner points.
 - Tasks contain a name, priority, optional background repeat mode, and one or
   more ordered module steps.
-- Module metadata marks each step as `BASIC` or `COMPOSITE`. A saved task with
-  exactly one basic step appears under basic tasks; all other tasks appear under
-  composite tasks.
+- Executable action modules are `BASIC`; multi-action workflows are task
+  presets that compose reusable small modules. Existing composite step IDs
+  remain compatible with saved tasks.
 - Task modules cover movement, dropped-item collection, region collection,
   container scanning, category identification, cached-item sorting, and
   depositing.
@@ -68,8 +68,8 @@ editor builds its controls from that catalog. The same catalog lists listener
 modules before executable action modules, so the module reference shows the
 event-to-task flow without making listeners selectable as task steps.
 
-The task list, run selector, module catalog, and step module selector are split
-into basic and composite groups without changing existing task configuration.
+The task list and run selector distinguish basic tasks, task presets, and
+custom combinations without changing existing task configuration.
 
 Background tasks can automatically requeue five seconds after completion.
 Manual runs may override the saved priority for that run only.
@@ -77,9 +77,9 @@ Manual runs may override the saved priority for that run only.
 Task triggers are configured independently from tasks and automatic requeue.
 Idle triggers create no run records and do not block another task.
 
-New task steps expose eight action modules. Older modules remain readable for
-existing configurations but are hidden from the module catalog when creating a
-step.
+New task steps expose four action modules and four task presets. Older modules
+remain readable for existing configurations but are hidden from the module
+catalog when creating a step.
 
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
 - `COLLECT_DROPPED_ITEMS` collects matching drops from either a coordinate
@@ -281,8 +281,8 @@ Pages:
 - **Coordinates** groups points, regions, and category-zone setup in one
   submenu. Points and regions manage reusable geometry; category zones manage
   marker areas, storage areas, and rules.
-- **Tasks** provides cache and category-sorting templates, manual module
-  composition, and independent task triggers.
+- **Tasks** provides task presets, manual small-module composition, and
+  independent task triggers.
 - **Inventory** displays existing read-only inventory snapshots.
 
 ## HTTP API

@@ -113,21 +113,24 @@
      */
     function moduleSelect(step, modules, changed) {
         const select = document.createElement("select");
-        const selectable = modules.filter(
-            (module) => Model.moduleKind(module) === "ACTION"
-                && (!module.deprecated || module.id === step.moduleId)
-        );
+        const selectable = modules.filter((module) => (
+            Model.moduleKind(module) === "ACTION"
+                || module.id === step.moduleId
+        ) && (!module.deprecated || module.id === step.moduleId));
         const groups = [
             ["BASIC", "基础模块"],
-            ["COMPOSITE", "复合模块"]
+            ["PRESET", "任务预设"]
         ];
         for (const [level, label] of groups) {
             const group = document.createElement("optgroup");
             group.label = label;
-            for (const module of selectable.filter(
-                (candidate) => candidate.level === level
-                    && (!candidate.deprecated || candidate.id === step.moduleId)
-            )) {
+            for (const module of selectable.filter((candidate) => (
+                level === "PRESET"
+                    ? Model.moduleKind(candidate) === "PRESET"
+                        && candidate.id === step.moduleId
+                    : Model.moduleKind(candidate) === "ACTION"
+                        && candidate.level === level
+            ) && (!candidate.deprecated || candidate.id === step.moduleId))) {
                 group.append(new Option(module.name, module.id));
             }
             if (group.children.length > 0) {

@@ -186,6 +186,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.COLLECT_DROPPED_ITEMS,
                     "收集掉落物",
                     "在坐标半径或指定区域内拾取掉落物。",
+                    TaskModuleKind.PRESET,
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
@@ -219,6 +220,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
                     "收集区域掉落物",
                     "收集指定区域内的掉落物，并记录到当前任务运行中。",
+                    TaskModuleKind.PRESET,
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
@@ -325,6 +327,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.AUTO_EAT_AT_COORDINATE,
                     "自动进食",
                     "组合饱食度监听、移动到坐标、取食和进食模块，持续补足饱食度。",
+                    TaskModuleKind.PRESET,
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
@@ -350,6 +353,12 @@ public final class TaskModuleCatalog {
                                     1,
                                     "18"
                             )
+                    ),
+                    false,
+                    List.of(
+                            "FOOD_STATUS_LISTENER",
+                            "MOVE_TO_COORDINATE",
+                            "EAT_FOOD"
                     )
             );
 
@@ -358,6 +367,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.SORT_CACHE_ITEMS,
                     "缓存物品分类入库",
                     "从缓存区域取出有目标分类的物品，并精确存入对应容器。",
+                    TaskModuleKind.PRESET,
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
@@ -400,6 +410,7 @@ public final class TaskModuleCatalog {
                     "按分类区入库",
                     "使用分类区自动识别、容器缓存和例外规则，把缓存物品存入"
                             + "对应储存区。",
+                    TaskModuleKind.PRESET,
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
@@ -439,6 +450,7 @@ public final class TaskModuleCatalog {
                     ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
                     "刷新分类容器缓存",
                     "读取分类区识别箱或木桶的物品槽位并保存缓存，不移动样本物品。",
+                    TaskModuleKind.PRESET,
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(

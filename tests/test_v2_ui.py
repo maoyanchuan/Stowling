@@ -109,7 +109,7 @@ def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
     assert "module.parameters" in editor
     assert "parameter.kind" in editor
     assert "基础模块" in editor
-    assert "复合模块" in editor
+    assert "任务预设" in editor
     assert "coordinate-point" in editor
     assert "region-point" in editor
     assert "area-reference" in editor
@@ -140,7 +140,7 @@ def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
     assert "module.description" in tasks
     assert "parameter.label" in tasks
     assert "基础任务" in tasks
-    assert "复合任务" in tasks
+    assert "组合任务" in tasks
     assert "module-group" in tasks
     assert "监听器" in tasks
 
@@ -214,6 +214,10 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
         assert module_id not in tasks
     assert "deprecated" in catalog
     assert "state.modules.length" in tasks
+    assert "TaskModuleKind.PRESET" in catalog
+    assert "composedOf" in catalog
+    assert "module.composedOf" in tasks
+    assert "调用：" in tasks
 
 
 def test_task_module_catalog_includes_listeners() -> None:

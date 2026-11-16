@@ -1,6 +1,8 @@
 package dev.stowling.v2.control;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.automation.NavigationPort;
@@ -28,6 +30,19 @@ import org.junit.jupiter.api.io.TempDir;
 class V2ControlServiceImplTest {
     @TempDir
     Path directory;
+
+    @Test
+    void createTaskResponseIncludesExactCreatedTaskId() {
+        V2ControlService service = service();
+        TaskListResponse created = service.createTask(new TaskRequest(
+                "Created",
+                List.of(moveOutputStep())
+        ));
+
+        assertNotNull(created.taskId());
+        assertEquals("Created", service.task(created.taskId()).name());
+        assertNull(service.tasks().taskId());
+    }
 
     @Test
     void blocksDeletingCoordinateReferencedByTaskAndListsReferences() {

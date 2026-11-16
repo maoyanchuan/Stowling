@@ -130,6 +130,23 @@ class V2ControlServerTest {
                             .firstValue("Content-Type")
                             .orElse("")
             );
+
+            HttpResponse<String> moveTaskModel = fixture.send(
+                    "/move-task-model.js",
+                    "GET",
+                    null,
+                    false
+            );
+            assertEquals(200, moveTaskModel.statusCode());
+            assertEquals(
+                    "text/javascript; charset=utf-8",
+                    moveTaskModel.headers()
+                            .firstValue("Content-Type")
+                            .orElse("")
+            );
+            assertTrue(moveTaskModel.body().contains(
+                    "window.StowlingMoveTaskModel"
+            ));
         }
     }
 
@@ -185,6 +202,9 @@ class V2ControlServerTest {
                     true
             );
             assertEquals(201, createdTask.statusCode());
+            String createdTaskId = object(createdTask)
+                    .get("taskId")
+                    .getAsString();
             HttpResponse<String> listedTasks = fixture.send(
                     "/v1/tasks",
                     "GET",
@@ -195,6 +215,7 @@ class V2ControlServerTest {
                     .get(0)
                     .getAsJsonObject();
             assertEquals(folderId, task.get("folderId").getAsString());
+            assertEquals(createdTaskId, task.get("id").getAsString());
             String revision = object(listedTasks).get("revision").getAsString();
 
             HttpResponse<String> renamed = fixture.send(

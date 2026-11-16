@@ -74,6 +74,25 @@ class TaskModuleCatalogTest {
                         ConfigValidator.TARGET_REF
                 ).kind()
         );
+        ModuleParameter moveTarget = parameter(
+                modules.get(ConfigValidator.MOVE_TO_COORDINATE),
+                ConfigValidator.TARGET_REF
+        );
+        assertFalse(moveTarget.required());
+        for (String key : List.of(
+                ConfigValidator.X,
+                ConfigValidator.Y,
+                ConfigValidator.Z
+        )) {
+            ModuleParameter coordinate = parameter(
+                    modules.get(ConfigValidator.MOVE_TO_COORDINATE),
+                    key
+            );
+            assertEquals("integer", coordinate.kind());
+            assertFalse(coordinate.required());
+            assertEquals(Integer.MIN_VALUE, coordinate.min());
+            assertEquals(Integer.MAX_VALUE, coordinate.max());
+        }
         assertEquals(
                 "area-reference",
                 parameter(

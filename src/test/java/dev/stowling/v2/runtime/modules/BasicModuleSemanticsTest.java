@@ -36,6 +36,7 @@ import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.TaskStep;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +59,148 @@ class BasicModuleSemanticsTest {
         assertFalse(ids.contains("COLLECT_DROPPED_ITEMS_IN_REGION"));
     }
 
+
+    @Test
+    void manualMoveUsesExactPositionWithoutPersistingCoordinate() {
+        RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext context = context(
+                navigation,
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        MoveToCoordinateModule module = new MoveToCoordinateModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.MOVE_TO_COORDINATE,
+                        Map.of(
+                                TaskModuleIds.X, "-12",
+                                TaskModuleIds.Y, "64",
+                                TaskModuleIds.Z, "30"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.RUNNING, module.start().state());
+        assertEquals(
+                List.of(new BlockPosition(-12, 64, 30)),
+                navigation.startPositions()
+        );
+        assertEquals(List.of(), navigation.startRadii());
+        assertTrue(navigation.dimensionChecks().isEmpty());
+        assertTrue(context.coordinates().isEmpty());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+    }
+
+    @Test
+    void manualMoveCancellationStopsNavigation() {
+        RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+        MoveToCoordinateModule module = new MoveToCoordinateModule(
+                context(
+                        navigation,
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        new TaskRunWorkspace()
+                ),
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.MOVE_TO_COORDINATE,
+                        Map.of(
+                                TaskModuleIds.X, "1",
+                                TaskModuleIds.Y, "2",
+                                TaskModuleIds.Z, "3"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.RUNNING, module.start().state());
+        module.requestStop();
+
+        assertEquals(1, navigation.cancellations());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+    }
+
+    @Test
+    void referencedMoveKeepsDimensionAndArrivalRadius() {
+        UUID coordinateId = UUID.randomUUID();
+        CoordinatePoint point = new CoordinatePoint(
+                coordinateId,
+                "Nearby",
+                5,
+                70,
+                -9,
+                "minecraft:overworld",
+                7
+        );
+        RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+        MoveToCoordinateModule module = new MoveToCoordinateModule(
+                context(
+                        navigation,
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        new TaskRunWorkspace(),
+                        Map.of(coordinateId, point)
+                ),
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.MOVE_TO_COORDINATE,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.RUNNING, module.start().state());
+        assertEquals(
+                List.of("minecraft:overworld"),
+                navigation.dimensionChecks()
+        );
+        assertEquals(
+                List.of(new BlockPosition(5, 70, -9)),
+                navigation.startPositions()
+        );
+        assertEquals(List.of(7), navigation.startRadii());
+    }
+
+    @Test
+    void outputMoveKeepsContainerRadius() {
+        ContainerTarget container = target(8, 60, -4, "container");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(ContainerScanResult.success(List.of(container)));
+        workspace.selectNextContainer().orElseThrow();
+        RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+        MoveToCoordinateModule module = new MoveToCoordinateModule(
+                context(
+                        navigation,
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        workspace
+                ),
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.MOVE_TO_COORDINATE,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "output:container"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.RUNNING, module.start().state());
+        assertEquals(
+                List.of(new BlockPosition(8, 60, -4)),
+                navigation.startPositions()
+        );
+        assertEquals(List.of(4), navigation.startRadii());
+        assertTrue(navigation.dimensionChecks().isEmpty());
+    }
 
     @Test
     void markerSaveRequiresSameZoneAndEveryTargetRead() {
@@ -1147,6 +1290,69 @@ class BasicModuleSemanticsTest {
                 Map<UUID, Map<BlockPosition, Set<String>>> contents
         ) {
             saved = true;
+        }
+    }
+
+    private static final class RecordingMoveNavigation implements NavigationPort {
+        private final List<BlockPosition> startPositions = new ArrayList<>();
+        private final List<Integer> startRadii = new ArrayList<>();
+        private final List<String> dimensionChecks = new ArrayList<>();
+        private int cancellations;
+
+        @Override
+        public NavigationStatus start(BlockPosition target) {
+            startPositions.add(target);
+            return NavigationStatus.NAVIGATING;
+        }
+
+        @Override
+        public NavigationStatus startNear(BlockPosition target, int radius) {
+            startPositions.add(target);
+            startRadii.add(radius);
+            return NavigationStatus.NAVIGATING;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target) {
+            return NavigationStatus.ARRIVED;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target, Integer radius) {
+            return NavigationStatus.ARRIVED;
+        }
+
+        @Override
+        public boolean isInDimension(String dimension) {
+            dimensionChecks.add(dimension);
+            return true;
+        }
+
+        @Override
+        public void cancel() {
+            cancellations++;
+        }
+
+        @Override
+        public StopOutcome requestStop() {
+            cancel();
+            return StopOutcome.CLEAN;
+        }
+
+        private List<BlockPosition> startPositions() {
+            return List.copyOf(startPositions);
+        }
+
+        private List<Integer> startRadii() {
+            return List.copyOf(startRadii);
+        }
+
+        private List<String> dimensionChecks() {
+            return List.copyOf(dimensionChecks);
+        }
+
+        private int cancellations() {
+            return cancellations;
         }
     }
 

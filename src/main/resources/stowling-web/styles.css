@@ -2893,7 +2893,7 @@ summary::-webkit-details-marker {
     padding-block: 0.45rem;
 }
 
-/* Reserve both workspace panels; keep task monitoring on the left. */
+/* Configure fixed tasks above the selection area; monitor on the left. */
 body[data-page="tasks"] .workspace {
     grid-template-columns: minmax(0, 1fr);
 }
@@ -4144,4 +4144,152 @@ button:active:not(:disabled) {
         height: 40rem;
     }
 
+}
+
+/* Fixed movement task: a compact form, not a free-form workflow editor. */
+.move-placeholder {
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+}
+
+.move-task-form {
+    max-width: 38rem;
+    margin-top: 1.25rem;
+}
+
+.move-task-form[hidden],
+.move-task-form [hidden],
+.move-placeholder[hidden] {
+    display: none !important;
+}
+
+.move-task-form fieldset {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.move-field {
+    display: grid;
+    min-width: 0;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+}
+
+.move-field input,
+.move-field select {
+    width: 100%;
+    min-width: 0;
+}
+
+.move-target-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    font-size: 0.82rem;
+}
+
+.move-source-switch {
+    display: flex;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+}
+
+.move-source-switch button {
+    padding: 0.35rem 0.65rem;
+    color: var(--muted);
+    background: transparent;
+    font-size: 0.78rem;
+}
+
+.move-source-switch [aria-pressed="true"] {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+}
+
+.move-axis-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+
+.move-target-note {
+    margin: -0.4rem 0 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.move-priority {
+    max-width: 11rem;
+}
+
+.move-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.move-task-options,
+.move-task-list {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.move-task-options {
+    margin-top: 0.9rem;
+}
+
+.move-task-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 14rem;
+    min-height: 5rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--line);
+    color: var(--text);
+    background: var(--panel-solid);
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.move-task-option strong {
+    font-size: 0.85rem;
+}
+
+.move-task-option span {
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+.move-task-option.is-new {
+    border-style: dashed;
+    color: var(--accent-strong);
+}
+
+.move-task-option[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+@media (max-width: 520px) {
+    .move-task-option {
+        width: 100%;
+    }
+
+    .move-task-list {
+        width: 100%;
+    }
 }

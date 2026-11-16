@@ -23,13 +23,13 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
 
     MoveToCoordinateModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
-        this.targetReference = ResourceReferenceSupport.reference(
+        this.targetReference = ResourceReferenceSupport.optionalReference(
                 step,
                 TaskModuleIds.TARGET_REF,
                 ResourceType.COORDINATE,
                 TaskModuleIds.COORDINATE_ID
         );
-        resolveTarget();
+        resolveTarget(step);
     }
 
     @Override
@@ -76,7 +76,15 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         context.navigation().cancel();
     }
 
-    private void resolveTarget() {
+    private void resolveTarget(TaskStep step) {
+        if (targetReference == null) {
+            int x = manualCoordinate(step, TaskModuleIds.X);
+            int y = manualCoordinate(step, TaskModuleIds.Y);
+            int z = manualCoordinate(step, TaskModuleIds.Z);
+            position = new BlockPosition(x, y, z);
+            targetName = "手动坐标 (" + x + ", " + y + ", " + z + ")";
+            return;
+        }
         if (targetReference.type() == ResourceType.COORDINATE) {
             coordinate = ResourceReferenceSupport.coordinate(
                     context,
@@ -103,5 +111,9 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         position = container.position();
         targetName = container.type();
         arrivalRadius = CONTAINER_NAVIGATION_RADIUS;
+    }
+
+    private static int manualCoordinate(TaskStep step, String key) {
+        return Integer.parseInt(ResourceReferenceSupport.parameter(step, key));
     }
 }

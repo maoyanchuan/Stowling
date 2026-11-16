@@ -48,6 +48,9 @@ public final class TaskModuleIds {
             "allowEmptyContainerScan";
 
     public static final String COORDINATE_ID = "coordinateId";
+    public static final String X = "x";
+    public static final String Y = "y";
+    public static final String Z = "z";
     public static final String REGION_ID = "regionId";
     public static final String CATEGORY_ZONE_ID = "categoryZoneId";
     public static final String CACHE_REGION_ID = "cacheRegionId";

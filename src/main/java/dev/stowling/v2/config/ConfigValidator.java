@@ -21,6 +21,7 @@ import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,6 +74,9 @@ public final class ConfigValidator {
     public static final String CATEGORY_ZONE_REF = "categoryZoneRef";
     public static final String TASK_REF = "taskRef";
     public static final String COORDINATE_ID = "coordinateId";
+    public static final String X = "x";
+    public static final String Y = "y";
+    public static final String Z = "z";
     public static final String REGION_ID = "regionId";
     public static final String CACHE_REGION_ID = "cacheRegionId";
     public static final String CATEGORY_ZONE_ID = "categoryZoneId";
@@ -89,6 +93,9 @@ public final class ConfigValidator {
     public static final String ALLOW_EMPTY_CONTAINER_SCAN =
             "allowEmptyContainerScan";
     public static final String PRIORITY = "priority";
+
+    private static final Set<String> MANUAL_COORDINATE_KEYS =
+            Set.of(X, Y, Z);
 
 
     private ConfigValidator() {
@@ -691,9 +698,16 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(TARGET_REF, COORDINATE_ID),
+                Set.of(TARGET_REF, COORDINATE_ID, X, Y, Z),
                 Set.of()
         );
+        if (!Collections.disjoint(
+                step.parameters().keySet(),
+                MANUAL_COORDINATE_KEYS
+        )) {
+            requireManualMoveCoordinates(step);
+            return;
+        }
         ResourceReference reference = referenceParameter(
                 step,
                 ResourceType.COORDINATE,
@@ -707,6 +721,31 @@ public final class ConfigValidator {
                 || !coordinates.containsKey(reference.uuid())) {
             throw new V2ValidationException(
                     "move target does not exist: " + reference
+            );
+        }
+    }
+
+    private static void requireManualMoveCoordinates(TaskStep step) {
+        if (step.parameters().containsKey(TARGET_REF)
+                || step.parameters().containsKey(COORDINATE_ID)) {
+            throw new V2ValidationException(
+                    "manual move coordinates cannot be combined with a reference"
+            );
+        }
+        for (String key : MANUAL_COORDINATE_KEYS) {
+            String value = step.parameters().get(key);
+            if (value == null || value.isBlank()) {
+                throw new V2ValidationException(
+                        "manual move coordinates require x, y and z"
+                );
+            }
+        }
+        for (String key : MANUAL_COORDINATE_KEYS) {
+            requireRequiredInteger(
+                    step,
+                    key,
+                    Integer.MIN_VALUE,
+                    Integer.MAX_VALUE
             );
         }
     }

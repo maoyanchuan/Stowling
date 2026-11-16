@@ -38,6 +38,31 @@ class TaskFlowNormalizerTest {
     }
 
     @Test
+    void preservesManualMoveCoordinates() {
+        TaskDefinition task = task(TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.MOVE_TO_COORDINATE,
+                Map.of(
+                        ConfigValidator.X, "-12",
+                        ConfigValidator.Y, "64",
+                        ConfigValidator.Z, "30"
+                )
+        ));
+
+        TaskStep normalized = TaskFlowNormalizer.normalize(config(task))
+                .tasks().getFirst().steps().getFirst();
+
+        assertEquals(
+                Map.of(
+                        ConfigValidator.X, "-12",
+                        ConfigValidator.Y, "64",
+                        ConfigValidator.Z, "30"
+                ),
+                normalized.parameters()
+        );
+    }
+
+    @Test
     void expandsLegacyDepositIntoSelectMoveDepositLoop() {
         UUID region = UUID.randomUUID();
         TaskDefinition task = task(new TaskStep(

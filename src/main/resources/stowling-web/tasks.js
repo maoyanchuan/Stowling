@@ -4,16 +4,48 @@
     const Stowling = window.Stowling;
     const Model = window.StowlingTaskModel;
     const Monitor = window.StowlingTaskMonitorModel;
+    const Move = window.StowlingMoveTaskModel;
+    const Coordinates = window.StowlingCoordinateModel;
     const taskLogs = Monitor.createLogBuffer(300);
     const state = {
         triggerStatuses: [],
         modules: [],
         runs: [],
         queue: [],
-        logScrollPaused: false
+        logScrollPaused: false,
+        moveRevision: "",
+        moveTasks: [],
+        coordinates: [],
+        moveDraft: Move.newDraft(),
+        moveFormOpen: false,
+        moveResourcesReady: false,
+        moveLoading: false,
+        moveBusy: false,
+        moveDirty: false
     };
 
     const elements = {
+        moveForm: document.querySelector("#move-task-form"),
+        moveFields: document.querySelector("#move-task-fields"),
+        moveTitle: document.querySelector("#task-display-title"),
+        movePlaceholder: document.querySelector("#move-task-placeholder"),
+        moveName: document.querySelector("#move-task-name"),
+        moveSources: [...document.querySelectorAll("[data-move-source]")],
+        moveManual: document.querySelector("#move-manual-target"),
+        moveSaved: document.querySelector("#move-saved-target"),
+        moveX: document.querySelector("#move-target-x"),
+        moveY: document.querySelector("#move-target-y"),
+        moveZ: document.querySelector("#move-target-z"),
+        moveCoordinate: document.querySelector("#move-saved-coordinate"),
+        moveNote: document.querySelector("#move-target-note"),
+        movePriority: document.querySelector("#move-priority"),
+        moveMessage: document.querySelector("#move-task-message"),
+        moveResourcesMessage: document.querySelector("#move-resources-message"),
+        newMove: document.querySelector("#new-move-task"),
+        moveList: document.querySelector("#move-task-list"),
+        refreshMove: document.querySelector("#refresh-move-tasks"),
+        saveMove: document.querySelector("#save-move-task"),
+        runMove: document.querySelector("#run-move-task"),
         runtime: document.querySelector("#runtime-list"),
         queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button"),
@@ -28,6 +60,301 @@
         closeRunDetails: document.querySelector("#close-run-details"),
         runDetails: document.querySelector("#task-run-details")
     };
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function loadMoveResources() {
+        if (state.moveBusy || state.moveLoading) {
+            return;
+        }
+        state.moveLoading = true;
+        updateMoveControls();
+        elements.moveResourcesMessage.textContent = "正在读取任务和坐标…";
+        elements.moveResourcesMessage.classList.remove("error");
+        try {
+            const [tasks, coordinates] = await Promise.all([
+                Stowling.request("/v1/tasks"),
+                Stowling.request("/v1/coordinates")
+            ]);
+            state.moveRevision = String(tasks?.revision || "");
+            state.moveTasks = Array.isArray(tasks?.tasks)
+                ? tasks.tasks.map(Model.normalizeTask).filter(Move.isMoveTask) : [];
+            state.coordinates = Coordinates.normalizeCoordinates(coordinates).coordinates;
+            state.moveResourcesReady = true;
+            if (state.moveDraft.id && !state.moveDirty) {
+                const refreshed = state.moveTasks.find(
+                    (task) => task.id === state.moveDraft.id
+                );
+                if (refreshed) {
+                    state.moveDraft = Move.draftFromTask(refreshed);
+                }
+            }
+            syncMoveForm();
+            renderMoveTaskList();
+            elements.moveResourcesMessage.textContent = "";
+        } catch (error) {
+            state.moveResourcesReady = false;
+            elements.moveResourcesMessage.textContent = "读取失败，请点击刷新重试";
+            elements.moveResourcesMessage.classList.add("error");
+            Stowling.handleError(error, "读取移动任务和坐标失败");
+        } finally {
+            state.moveLoading = false;
+            updateMoveControls();
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderMoveCoordinates() {
+        const selectedId = state.moveDraft.coordinateId;
+        elements.moveCoordinate.replaceChildren();
+        const placeholder = Stowling.element("option", "", state.coordinates.length
+            ? "请选择已保存坐标" : "暂无坐标，请先在坐标页面添加");
+        placeholder.value = "";
+        elements.moveCoordinate.append(placeholder);
+        for (const coordinate of state.coordinates) {
+            const label = `${coordinate.name} · ${coordinate.x}, ${coordinate.y}, ${coordinate.z}`;
+            const option = Stowling.element("option", "", label);
+            option.value = coordinate.id;
+            elements.moveCoordinate.append(option);
+        }
+        if (selectedId && !state.coordinates.some((point) => point.id === selectedId)) {
+            const missing = Stowling.element("option", "", "原坐标已不存在，请重新选择");
+            missing.value = selectedId;
+            missing.disabled = true;
+            elements.moveCoordinate.append(missing);
+        }
+        elements.moveCoordinate.value = selectedId;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderMoveTaskList() {
+        elements.moveList.replaceChildren();
+        for (const task of state.moveTasks) {
+            const draft = Move.draftFromTask(task);
+            const button = Stowling.element("button", "move-task-option");
+            button.type = "button";
+            button.dataset.taskId = task.id;
+            button.setAttribute("aria-pressed", String(state.moveDraft.id === task.id));
+            button.append(Stowling.element("strong", "", task.name));
+            const coordinate = state.coordinates.find((point) => point.id === draft.coordinateId);
+            const target = draft.source === "saved"
+                ? (coordinate?.name || "坐标已不存在")
+                : `${draft.x}, ${draft.y}, ${draft.z}`;
+            button.append(Stowling.element(
+                "span", "", `${target} · ${Model.priorityLabel(task.priority)}`
+            ));
+            button.addEventListener("click", () => selectMoveTask(task));
+            elements.moveList.append(button);
+        }
+        updateMoveControls();
+    }
+
+    /**
+     * @param {object | null} task
+     * @returns {void}
+     */
+    function selectMoveTask(task = null) {
+        if (state.moveBusy || state.moveLoading || !state.moveResourcesReady) {
+            return;
+        }
+        if (state.moveDirty && !window.confirm("当前修改尚未保存，切换任务会丢弃修改。继续？")) {
+            return;
+        }
+        state.moveDraft = task ? Move.draftFromTask(task) : Move.newDraft();
+        state.moveDirty = false;
+        state.moveFormOpen = true;
+        showMoveMessage(task ? "已保存，可直接加入队列" : "新任务，配置目标后保存或运行");
+        syncMoveForm();
+        renderMoveTaskList();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function syncMoveForm() {
+        const draft = state.moveDraft;
+        elements.moveForm.hidden = !state.moveFormOpen;
+        elements.movePlaceholder.hidden = state.moveFormOpen;
+        elements.moveTitle.textContent = state.moveFormOpen ? "移动到坐标" : "任务展示";
+        elements.moveName.value = draft.name;
+        elements.moveX.value = draft.x.replace(/^\+/, "");
+        elements.moveY.value = draft.y.replace(/^\+/, "");
+        elements.moveZ.value = draft.z.replace(/^\+/, "");
+        elements.movePriority.value = draft.priority;
+        renderMoveCoordinates();
+        updateMoveTarget();
+        updateMoveControls();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function readMoveForm() {
+        state.moveDraft = {
+            ...state.moveDraft,
+            name: elements.moveName.value,
+            priority: elements.movePriority.value,
+            x: elements.moveX.value,
+            y: elements.moveY.value,
+            z: elements.moveZ.value,
+            coordinateId: elements.moveCoordinate.value
+        };
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateMoveTarget() {
+        const manual = state.moveDraft.source === "manual";
+        elements.moveManual.hidden = !manual;
+        elements.moveSaved.hidden = manual;
+        for (const button of elements.moveSources) {
+            button.setAttribute("aria-pressed", String(button.dataset.moveSource
+                === state.moveDraft.source));
+        }
+        if (manual) {
+            elements.moveNote.textContent = "手动坐标在当前维度生效，不会新增坐标点。";
+            return;
+        }
+        const coordinate = state.coordinates.find(
+            (point) => point.id === state.moveDraft.coordinateId
+        );
+        if (!coordinate) {
+            elements.moveNote.textContent = state.coordinates.length
+                ? "选择坐标页面中已保存的坐标点。" : "暂无坐标，请先到坐标页面添加。";
+            return;
+        }
+        const dimension = coordinate.dimension ? ` · ${coordinate.dimension}` : " · 当前维度";
+        const radius = coordinate.radius === null ? "" : ` · 到达半径 ${coordinate.radius}`;
+        elements.moveNote.textContent = `${coordinate.x}, ${coordinate.y}, ${coordinate.z}`
+            + dimension + radius;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateMoveControls() {
+        const disabled = state.moveBusy || state.moveLoading
+            || !state.moveResourcesReady || !Stowling.isConnected();
+        elements.moveFields.disabled = disabled;
+        elements.newMove.disabled = disabled;
+        elements.refreshMove.disabled = state.moveBusy || state.moveLoading
+            || !Stowling.isConnected();
+        for (const button of elements.moveList.querySelectorAll("button")) {
+            button.disabled = disabled;
+        }
+        elements.moveCoordinate.disabled = state.moveDraft.source !== "saved"
+            || state.coordinates.length === 0;
+        for (const input of [elements.moveX, elements.moveY, elements.moveZ]) {
+            input.disabled = state.moveDraft.source !== "manual";
+        }
+        elements.runMove.textContent = state.moveDraft.id && !state.moveDirty
+            ? "加入运行队列" : "保存并加入队列";
+    }
+
+    /**
+     * @param {string} text
+     * @param {boolean} [error]
+     * @returns {void}
+     */
+    function showMoveMessage(text, error = false) {
+        elements.moveMessage.textContent = text;
+        elements.moveMessage.classList.toggle("error", error);
+    }
+
+    /**
+     * @param {object} response
+     * @param {string} existingId
+     * @returns {void}
+     */
+    function applyMoveSave(response, existingId) {
+        const id = existingId || String(response?.taskId || "");
+        const tasks = Array.isArray(response?.tasks)
+            ? response.tasks.map(Model.normalizeTask).filter(Move.isMoveTask) : [];
+        const saved = tasks.find((task) => task.id === id);
+        if (!id || !saved) {
+            throw new Error("保存响应缺少任务编号或内容，请刷新任务列表后再运行");
+        }
+        state.moveRevision = String(response.revision || "");
+        state.moveTasks = tasks;
+        state.moveDraft = Move.draftFromTask(saved);
+        state.moveDirty = false;
+        syncMoveForm();
+        renderMoveTaskList();
+    }
+
+    /**
+     * @param {boolean} [enqueue]
+     * @returns {Promise<void>}
+     */
+    async function saveMoveTask(enqueue = false) {
+        if (state.moveBusy || state.moveLoading || !state.moveResourcesReady
+                || !Stowling.isConnected() || !state.moveFormOpen) {
+            return;
+        }
+        readMoveForm();
+        const original = state.moveDraft.id
+            ? state.moveTasks.find((task) => task.id === state.moveDraft.id) : null;
+        if (state.moveDraft.id && !original) {
+            showMoveMessage("任务已不存在或流程已更改，请重新选择任务。", true);
+            return;
+        }
+        let task;
+        try {
+            task = Move.createTask(state.moveDraft, state.coordinates, original);
+        } catch (error) {
+            showMoveMessage(String(error.message || error), true);
+            return;
+        }
+        state.moveBusy = true;
+        updateMoveControls();
+        let stage = "save";
+        try {
+            if (!task.id || state.moveDirty) {
+                showMoveMessage("正在保存任务…");
+                const payload = Model.payloadTask(task);
+                const response = await Stowling.request(task.id
+                    ? `/v1/tasks/${encodeURIComponent(task.id)}` : "/v1/tasks", {
+                    method: task.id ? "PUT" : "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(task.id
+                        ? { ...payload, revision: state.moveRevision } : payload)
+                });
+                applyMoveSave(response, task.id);
+            }
+            showMoveMessage("任务已保存");
+            if (enqueue) {
+                stage = "queue";
+                const response = await Stowling.request(
+                    `/v1/tasks/${encodeURIComponent(state.moveDraft.id)}/runs`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({})
+                    }
+                );
+                const message = response?.state === "QUEUED"
+                    ? "任务已加入队列" : "任务已开始运行";
+                showMoveMessage(message);
+                await loadRuns();
+                Stowling.showToast(message);
+            } else {
+                Stowling.showToast("移动任务已保存");
+            }
+        } catch (error) {
+            const message = stage === "queue"
+                ? "任务已保存，但加入队列失败，可再次尝试" : "保存失败，请检查输入或刷新重试";
+            showMoveMessage(message, true);
+            Stowling.handleError(error, stage === "queue" ? "加入队列失败" : "保存移动任务失败");
+        } finally {
+            state.moveBusy = false;
+            updateMoveControls();
+        }
+    }
 
     /**
      * @returns {Promise<void>}
@@ -428,6 +755,33 @@
         }
     }
 
+    elements.newMove.addEventListener("click", () => selectMoveTask());
+    elements.refreshMove.addEventListener("click", () => void loadMoveResources());
+    elements.moveForm.addEventListener("input", () => {
+        readMoveForm();
+        state.moveDirty = true;
+        showMoveMessage("未保存修改");
+        updateMoveTarget();
+        updateMoveControls();
+    });
+    for (const button of elements.moveSources) {
+        button.addEventListener("click", () => {
+            readMoveForm();
+            if (state.moveDraft.source === button.dataset.moveSource) {
+                return;
+            }
+            state.moveDraft.source = button.dataset.moveSource;
+            state.moveDirty = true;
+            showMoveMessage("未保存修改");
+            updateMoveTarget();
+            updateMoveControls();
+        });
+    }
+    elements.saveMove.addEventListener("click", () => void saveMoveTask());
+    elements.moveForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void saveMoveTask(true);
+    });
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
     elements.exportLogs.addEventListener("click", exportMonitorLogs);
     elements.clearLogs.addEventListener("click", () => {
@@ -460,8 +814,12 @@
     });
     renderQueue();
     renderMonitorLogs();
-    Stowling.onConnected(() => loadAll());
+    syncMoveForm();
+    Stowling.onConnected(async () => {
+        await Promise.all([loadAll(), loadMoveResources()]);
+    });
     window.setInterval(() => {
+        updateMoveControls();
         if (Stowling.isConnected()) {
             void loadRuns();
         } else {

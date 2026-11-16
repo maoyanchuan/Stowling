@@ -35,7 +35,7 @@ def test_reference_select_explains_required_producer_without_changing_targets() 
         assert f'"output:{reference}"' in editor
 
 
-def test_display_area_and_selection_panel_are_blank_placeholders() -> None:
+def test_display_area_and_selection_panel_keep_the_fixed_move_workbench() -> None:
     html = read("tasks.html")
     styles = read("styles.css")
     display = between(html, 'id="task-display-area"', "</section>")
@@ -47,12 +47,25 @@ def test_display_area_and_selection_panel_are_blank_placeholders() -> None:
 
     assert 'id="task-display-title">任务展示</h2>' in display
     assert 'id="task-list-title">任务选择</h2>' in selection
-    assert "<p" not in display
-    assert "<button" not in display
-    assert selection.count("<div") == 1
-    assert selection.count("<h2") == 1
-    assert "<p" not in selection
-    assert "<button" not in selection
+    for retained in (
+        'id="move-task-form"',
+        'id="move-task-name"',
+        'id="move-saved-coordinate"',
+        'id="save-move-task"',
+        'id="run-move-task"',
+    ):
+        assert retained in display
+    for retained in (
+        'id="new-move-task"',
+        'id="move-task-list"',
+        'id="refresh-move-tasks"',
+    ):
+        assert retained in selection
+    assert 'id="task-list"' not in display
+    assert 'id="task-list"' not in selection
+    assert 'id="task-form"' not in display
+    assert ".move-task-form" in styles
+    assert ".move-task-option" in styles
     assert "min-height: 10rem;" in between(styles, ".task-selection-panel {", "}")
     assert "margin-bottom: 0;" in between(
         styles,
@@ -112,7 +125,7 @@ def test_failure_card_keeps_reason_progress_and_recovery_without_selection() -> 
     assert "overflow-wrap: anywhere;" in styles
 
 
-def test_read_only_monitor_has_no_task_selection_bridge() -> None:
+def test_monitor_state_stays_separate_from_fixed_move_configuration() -> None:
     javascript = read("tasks.js")
 
     for removed in (
@@ -120,11 +133,18 @@ def test_read_only_monitor_has_no_task_selection_bridge() -> None:
         "runTaskId",
         "selectedId",
         "state.tasks",
-        '"/v1/tasks"',
         '"/v1/task-folders"',
         '"/v1/task-triggers"',
     ):
         assert removed not in javascript
+    loading = between(javascript, "async function loadAll()", "function isActiveRun")
+    assert '"/v1/tasks"' not in loading
+    assert '"/v1/coordinates"' not in loading
+    assert "state.moveTasks" in javascript
+    assert "Move.draftFromTask(task)" in javascript
+    assert "Move.isMoveTask" in javascript
+    assert '"/v1/tasks"' in javascript
+    assert '"/v1/coordinates"' in javascript
     assert 'Stowling.element("strong", "rail-task-name", entry.taskName)' in javascript
     assert 'Stowling.element("strong", "", run.taskName)' in javascript
 

@@ -57,3 +57,12 @@ def test_task_page_has_no_trigger_editor_or_config_reads() -> None:
     assert "DROPPED_ITEMS" in trigger_model
     assert "FOOD_LEVEL_AT_OR_BELOW" in trigger_model
     assert "CACHE_UPDATED" in trigger_model
+
+def test_fixed_move_editor_preserves_folder_metadata_without_folder_api() -> None:
+    model = read("move-task-model.js")
+    tasks = read("tasks.js")
+
+    assert "folderId: normalized.folderId" in model
+    assert "interruptionMode: normalized.interruptionMode === \"NONE\"" in model
+    assert "state.moveTasks = tasks;" in tasks
+    assert '"/v1/task-folders"' not in tasks

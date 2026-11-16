@@ -333,7 +333,7 @@ def test_coordinate_choices_only_show_the_saved_name() -> None:
     assert "rawRadius === null" in model
 
 
-def test_task_monitor_supports_run_refresh_and_cancel() -> None:
+def test_task_page_supports_monitor_actions_and_fixed_move_launch() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
 
@@ -341,7 +341,8 @@ def test_task_monitor_supports_run_refresh_and_cancel() -> None:
     assert "取消任务" in tasks
     assert "运行任务" not in html
     assert "运行任务" not in tasks
-    assert "/v1/tasks/${encodeURIComponent(" not in tasks
+    assert "`/v1/tasks/${encodeURIComponent(state.moveDraft.id)}/runs`" in tasks
+    assert "method: task.id ? \"PUT\" : \"POST\"" in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
     assert '"RUNNING",\n            "WAITING",' in tasks
@@ -360,7 +361,7 @@ def test_task_monitor_supports_run_refresh_and_cancel() -> None:
     assert "run.totalSteps" in tasks
 
 
-def test_task_page_is_monitor_only_without_launch_controls() -> None:
+def test_task_page_removes_generic_editor_but_keeps_fixed_move_launch() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
 
@@ -611,7 +612,7 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     assert "bindingDescription(binding)" in javascript
 
 
-def test_task_console_shows_monitor_beside_blank_task_panels() -> None:
+def test_task_console_shows_monitor_beside_fixed_move_panels() -> None:
     html = read("tasks.html")
     rail = between(html, '<aside class="task-monitor-rail"', "</aside>")
     selection = between(
@@ -636,7 +637,7 @@ def test_task_console_shows_monitor_beside_blank_task_panels() -> None:
     assert 'id="runtime-list"' in html
 
 
-def test_legacy_trigger_route_is_gone_and_monitor_is_read_only() -> None:
+def test_legacy_trigger_route_is_gone_and_monitor_polling_stays_separate() -> None:
     javascript = read("tasks.js")
     html = read("tasks.html")
 
@@ -762,7 +763,9 @@ def test_monitor_initializes_without_a_default_task_or_run_controls() -> None:
     assert loading.count("Stowling.request(") == 2
     assert '"/v1/task-modules"' in loading
     assert '"/v1/task-runs"' in loading
-    assert 'Stowling.onConnected(() => loadAll());' in javascript
+    assert '"/v1/tasks"' not in loading
+    assert '"/v1/coordinates"' not in loading
+    assert "await Promise.all([loadAll(), loadMoveResources()]);" in javascript
     assert 'elements.refreshRuns.addEventListener("click", () => void loadRuns());' in (
         javascript
     )

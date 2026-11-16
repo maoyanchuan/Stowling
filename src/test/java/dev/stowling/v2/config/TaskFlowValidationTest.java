@@ -61,6 +61,75 @@ class TaskFlowValidationTest {
     }
 
     @Test
+    void validatesCompleteManualMoveCoordinatesAndRejectsMixedGroups() {
+        TaskStep complete = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.MOVE_TO_COORDINATE,
+                Map.of(
+                        ConfigValidator.X,
+                        Integer.toString(Integer.MIN_VALUE),
+                        ConfigValidator.Y,
+                        "0",
+                        ConfigValidator.Z,
+                        Integer.toString(Integer.MAX_VALUE)
+                )
+        );
+        assertDoesNotThrow(() -> ConfigValidator.requireValidStep(
+                complete,
+                Map.of(),
+                Map.of()
+        ));
+
+        List<TaskStep> invalid = List.of(
+                moveStep(Map.of()),
+                moveStep(Map.of(
+                        ConfigValidator.X, "1",
+                        ConfigValidator.Y, "2"
+                )),
+                moveStep(Map.of(
+                        ConfigValidator.X, "1",
+                        ConfigValidator.Y, "2",
+                        ConfigValidator.Z, " "
+                )),
+                moveStep(Map.of(
+                        ConfigValidator.X, "1",
+                        ConfigValidator.Y, "2",
+                        ConfigValidator.Z, "1.5"
+                )),
+                moveStep(Map.of(
+                        ConfigValidator.X, "2147483648",
+                        ConfigValidator.Y, "2",
+                        ConfigValidator.Z, "3"
+                )),
+                moveStep(Map.of(
+                        ConfigValidator.X, "1",
+                        ConfigValidator.Y, "2",
+                        ConfigValidator.Z, "3",
+                        ConfigValidator.TARGET_REF, "output:container"
+                )),
+                moveStep(Map.of(
+                        ConfigValidator.X, "1",
+                        ConfigValidator.Y, "2",
+                        ConfigValidator.Z, "3",
+                        ConfigValidator.COORDINATE_ID, UUID.randomUUID().toString()
+                ))
+        );
+        for (TaskStep step : invalid) {
+            assertThrows(V2ValidationException.class, () ->
+                    ConfigValidator.requireValidStep(step, Map.of(), Map.of())
+            );
+        }
+    }
+
+    private static TaskStep moveStep(Map<String, String> parameters) {
+        return TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.MOVE_TO_COORDINATE,
+                parameters
+        );
+    }
+
+    @Test
     void assertItemSourceAcceptsOnlyExplicitSupportedLedgers() {
         TaskStep defaultAssertion = TaskStep.action(
                 UUID.randomUUID(),

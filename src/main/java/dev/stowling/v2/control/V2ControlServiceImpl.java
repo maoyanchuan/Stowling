@@ -541,7 +541,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
-        return taskResponse(saved);
+        return new TaskListResponse(
+                saved.revision(),
+                task.id(),
+                saved.config().tasks()
+        );
     }
 
     @Override

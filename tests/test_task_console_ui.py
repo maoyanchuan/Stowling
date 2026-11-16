@@ -24,7 +24,7 @@ def test_inventory_is_not_exposed_in_navigation_but_sources_are_preserved() -> N
     assert (WEB / "storage.js").exists()
 
 
-def test_narrow_rail_has_queue_above_logs_and_blank_selection_on_the_right() -> None:
+def test_narrow_rail_has_queue_above_logs_and_move_workbench_on_the_right() -> None:
     html = read("tasks.html")
     rail = between(
         html,
@@ -111,12 +111,17 @@ def test_layout_keeps_a_scrollable_monitor_rail_and_responsive_columns() -> None
     assert "@media (max-width: 520px)" in css
 
 
-def test_initial_load_reads_only_modules_and_runs() -> None:
+def test_monitor_and_move_resources_load_independently_then_connect_together() -> None:
     javascript = read("tasks.js")
     loading = between(
         javascript,
         "async function loadAll()",
         "function isActiveRun",
+    )
+    move_loading = between(
+        javascript,
+        "async function loadMoveResources()",
+        "function renderMoveCoordinates()",
     )
 
     assert '"/v1/task-modules"' in loading
@@ -124,13 +129,20 @@ def test_initial_load_reads_only_modules_and_runs() -> None:
     assert loading.count("Stowling.request(") == 2
     for removed in (
         '"/v1/tasks"',
+        '"/v1/coordinates"',
         '"/v1/task-folders"',
         '"/v1/task-triggers"',
         "renderTaskList()",
         "renderRunControls()",
     ):
         assert removed not in loading
-    assert 'Stowling.onConnected(() => loadAll());' in javascript
+    assert '"/v1/tasks"' in move_loading
+    assert '"/v1/coordinates"' in move_loading
+    assert move_loading.count("Stowling.request(") == 2
+    assert "if (state.moveDraft.id && !state.moveDirty)" in move_loading
+    assert "state.moveDraft = Move.draftFromTask(refreshed);" in move_loading
+    assert "syncMoveForm();" in move_loading
+    assert "await Promise.all([loadAll(), loadMoveResources()]);" in javascript
     assert 'elements.refreshRuns.addEventListener("click", () => void loadRuns());' in (
         javascript
     )

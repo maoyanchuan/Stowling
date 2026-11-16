@@ -135,13 +135,39 @@ public final class TaskModuleCatalog {
             action(
                     ConfigValidator.MOVE_TO_COORDINATE,
                     "移动到坐标",
-                    "移动到坐标或当前输出引用指向的位置。",
-                    List.of(reference(
-                            ConfigValidator.TARGET_REF,
-                            "目标",
-                            "coordinate-reference",
-                            true
-                    ))
+                    "移动到已保存坐标、输出位置或手动输入的 X/Y/Z；目标引用与手动坐标二选一。",
+                    List.of(
+                            reference(
+                                    ConfigValidator.TARGET_REF,
+                                    "目标",
+                                    "coordinate-reference",
+                                    false
+                            ),
+                            integer(
+                                    ConfigValidator.X,
+                                    "X 坐标",
+                                    false,
+                                    Integer.MIN_VALUE,
+                                    Integer.MAX_VALUE,
+                                    null
+                            ),
+                            integer(
+                                    ConfigValidator.Y,
+                                    "Y 坐标",
+                                    false,
+                                    Integer.MIN_VALUE,
+                                    Integer.MAX_VALUE,
+                                    null
+                            ),
+                            integer(
+                                    ConfigValidator.Z,
+                                    "Z 坐标",
+                                    false,
+                                    Integer.MIN_VALUE,
+                                    Integer.MAX_VALUE,
+                                    null
+                            )
+                    )
             ),
             action(
                     ConfigValidator.COLLECT_DROPPED_ITEMS,

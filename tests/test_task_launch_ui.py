@@ -15,7 +15,7 @@ def between(source: str, start: str, end: str) -> str:
     return source[content_start:source.index(end, content_start)]
 
 
-def test_task_page_has_no_launch_controls() -> None:
+def test_task_page_has_only_the_fixed_move_launch_flow() -> None:
     html = read("tasks.html")
 
     for removed in (
@@ -27,11 +27,19 @@ def test_task_page_has_no_launch_controls() -> None:
         'class="task-launch-grid"',
     ):
         assert removed not in html
-    for removed_text in ("加入运行队列", "跟随任务", "运行任务", "请选择任务"):
+    for removed_text in ("跟随任务", "运行任务", "请选择任务"):
         assert removed_text not in html
+    for retained in (
+        'id="move-task-form"',
+        'id="save-move-task"',
+        'id="run-move-task"',
+        'id="new-move-task"',
+    ):
+        assert retained in html
+    assert "保存并加入队列" in html
 
 
-def test_monitor_script_does_not_launch_or_select_tasks() -> None:
+def test_fixed_move_launcher_does_not_restore_generic_task_selection() -> None:
     javascript = read("tasks.js")
 
     for removed in (
@@ -40,9 +48,17 @@ def test_monitor_script_does_not_launch_or_select_tasks() -> None:
         "updateRunActions",
         "state.runTaskId",
         "selectTask",
-        "/v1/tasks/",
+        "/v1/task-folders",
+        "/v1/task-triggers",
     ):
         assert removed not in javascript
+    for retained in (
+        "function selectMoveTask(",
+        "async function saveMoveTask(",
+        "method: task.id ? \"PUT\" : \"POST\"",
+        "`/v1/tasks/${encodeURIComponent(state.moveDraft.id)}/runs`",
+    ):
+        assert retained in javascript
     assert "Model.priorityLabel(" in javascript
     assert "Monitor.queueEntries(" in javascript
 

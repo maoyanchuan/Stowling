@@ -10,9 +10,25 @@ queued runs, and listening tasks visible in urgent / normal / background priorit
 order. Its lower half shows page-session task state changes, with export, clear,
 and pause-scroll controls (up to 300 entries). Pause-scroll does not pause tasks;
 reloading the page starts a new log session. Run details and interruption recovery
-remain available in a dialog. The right side has two intentionally blank panels:
-an upper task display area and a lower task selection section, each showing only
-its heading. The web page is monitor-only and does not manage or launch tasks.
+remain available in a dialog.
+
+The right side is a fixed single-action move task workbench. Its upper form edits
+a task name, manual XYZ coordinates or a saved coordinate, and priority. It can
+save the task or save and enqueue it. The lower section adds a move task and lists
+only existing tasks whose full definition is one `ACTION` step with module
+`MOVE_TO_COORDINATE`; complex workflows and unsupported move configurations stay
+out of this editor instead of being partially rewritten. Manual and saved inputs
+are both retained while switching source, but only the active source is serialized.
+
+The move loader independently reads `GET /v1/tasks` and `GET /v1/coordinates`.
+The monitor loader still reads only `GET /v1/task-modules` and
+`GET /v1/task-runs`; connection starts both loaders in parallel. Saving a new task
+uses `POST /v1/tasks`, editing uses `PUT /v1/tasks/{id}` with the loaded snapshot
+revision, and enqueueing uses `POST /v1/tasks/{id}/runs` with `{}`. The create
+response supplies an exact `taskId` while retaining `revision` and `tasks`, so the
+page never guesses the new task by name or by diffing IDs. The page never creates a
+saved coordinate. Folder and trigger configuration APIs are not restored.
+
 Persisted task, trigger, folder, and reusable editor source data remain available
 to the backend and editor code. Inventory query navigation and static web routes
 are temporarily removed; inventory APIs, data, and source assets remain intact for
@@ -55,8 +71,9 @@ through `operation`. Compact steps remain compact in saved configuration and
 compile into existing basic actions and loops when queued, freezing resources
 and detector configuration. There is no new monolithic workflow executor.
 `GET /v1/task-modules` retains basic actions and three listeners for old tasks.
-The task page reads the catalog only to translate runtime error names and does not
-expose a module reference; reusable editor source remains in the repository.
+The monitor reads the catalog only to translate runtime error names. The fixed move
+selector separately reads the full task list, so reusable editor source remains in
+the repository without being exposed on the task page.
 
 Actions:
 

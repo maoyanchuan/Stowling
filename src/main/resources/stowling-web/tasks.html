@@ -77,93 +77,113 @@
                     <section id="task-display-area" class="panel task-display-placeholder"
                              aria-labelledby="task-display-title">
                         <div class="panel-heading">
-                            <h2 id="task-display-title">任务展示</h2>
+                            <div class="saved-task-heading">
+                                <h2 id="task-display-title">已保存任务</h2>
+                                <span id="move-task-count" class="count-label">0</span>
+                            </div>
+                            <button id="refresh-move-tasks" class="ghost compact"
+                                    type="button">刷新</button>
                         </div>
+                        <p id="move-resources-message" class="field-message"
+                           role="status">连接后可查看已保存任务</p>
                         <p id="move-task-placeholder" class="muted move-placeholder">
-                            选择下方的移动任务，配置目标位置。
+                            暂无已保存任务，从下方选择一种任务开始。
                         </p>
-                        <form id="move-task-form" class="move-task-form" hidden novalidate>
-                            <fieldset id="move-task-fields" disabled>
-                                <label class="move-field" for="move-task-name">
-                                    <span>任务名称</span>
-                                    <input id="move-task-name" maxlength="80" required
-                                           autocomplete="off" value="移动到坐标">
-                                </label>
-                                <div class="move-target-heading">
-                                    <span>目标位置</span>
-                                    <div class="move-source-switch" role="group"
-                                         aria-label="坐标来源">
-                                        <button type="button" data-move-source="manual"
-                                                aria-pressed="true">手动输入</button>
-                                        <button type="button" data-move-source="saved"
-                                                aria-pressed="false">已保存坐标</button>
-                                    </div>
-                                </div>
-                                <div id="move-manual-target" class="move-axis-grid">
-                                    <label class="move-field" for="move-target-x">
-                                        <span>X</span>
-                                        <input id="move-target-x" type="number" step="1"
-                                               min="-2147483648" max="2147483647"
-                                               placeholder="例如 120" required>
-                                    </label>
-                                    <label class="move-field" for="move-target-y">
-                                        <span>Y</span>
-                                        <input id="move-target-y" type="number" step="1"
-                                               min="-2147483648" max="2147483647"
-                                               placeholder="例如 64" required>
-                                    </label>
-                                    <label class="move-field" for="move-target-z">
-                                        <span>Z</span>
-                                        <input id="move-target-z" type="number" step="1"
-                                               min="-2147483648" max="2147483647"
-                                               placeholder="例如 -80" required>
-                                    </label>
-                                </div>
-                                <div id="move-saved-target" class="move-field" hidden>
-                                    <label for="move-saved-coordinate">选择坐标</label>
-                                    <select id="move-saved-coordinate">
-                                        <option value="">请选择已保存坐标</option>
-                                    </select>
-                                </div>
-                                <p id="move-target-note" class="move-target-note">
-                                    手动坐标在当前维度生效，不会新增坐标点。
-                                </p>
-                                <label class="move-field move-priority" for="move-priority">
-                                    <span>运行优先级</span>
-                                    <select id="move-priority">
-                                        <option value="NORMAL">普通</option>
-                                        <option value="URGENT">紧急</option>
-                                        <option value="BACKGROUND">后台</option>
-                                    </select>
-                                </label>
-                                <p id="move-task-message" class="field-message"
-                                   role="status" aria-live="polite"></p>
-                                <div class="move-form-actions">
-                                    <button id="save-move-task" class="secondary"
-                                            type="button">保存任务</button>
-                                    <button id="run-move-task" class="primary"
-                                            type="submit">保存并加入队列</button>
-                                </div>
-                            </fieldset>
-                        </form>
+                        <div id="move-task-list" class="move-task-list"
+                             aria-label="已保存的移动任务"></div>
+                        <div id="move-task-draft" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-move-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="move-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">↗</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 移动到坐标</strong>
+                                    <span>配置目标后保存为任务</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
+                            <div id="move-draft-body" class="move-task-body" hidden>
+                                <form id="move-task-form" class="move-task-form"
+                                      hidden novalidate>
+                                    <fieldset id="move-task-fields" disabled>
+                                        <label class="move-field" for="move-task-name">
+                                            <span>任务名称</span>
+                                            <input id="move-task-name" maxlength="80" required
+                                                   autocomplete="off" value="移动到坐标">
+                                        </label>
+                                        <div class="move-target-heading">
+                                            <span>目标位置</span>
+                                            <div class="move-source-switch" role="group"
+                                                 aria-label="坐标来源">
+                                                <button type="button" data-move-source="manual"
+                                                        aria-pressed="true">手动输入</button>
+                                                <button type="button" data-move-source="saved"
+                                                        aria-pressed="false">已保存坐标</button>
+                                            </div>
+                                        </div>
+                                        <div id="move-manual-target" class="move-axis-grid">
+                                            <label class="move-field" for="move-target-x">
+                                                <span>X</span>
+                                                <input id="move-target-x" type="number" step="1"
+                                                       min="-2147483648" max="2147483647"
+                                                       placeholder="例如 120" required>
+                                            </label>
+                                            <label class="move-field" for="move-target-y">
+                                                <span>Y</span>
+                                                <input id="move-target-y" type="number" step="1"
+                                                       min="-2147483648" max="2147483647"
+                                                       placeholder="例如 64" required>
+                                            </label>
+                                            <label class="move-field" for="move-target-z">
+                                                <span>Z</span>
+                                                <input id="move-target-z" type="number" step="1"
+                                                       min="-2147483648" max="2147483647"
+                                                       placeholder="例如 -80" required>
+                                            </label>
+                                        </div>
+                                        <div id="move-saved-target" class="move-field" hidden>
+                                            <label for="move-saved-coordinate">选择坐标</label>
+                                            <select id="move-saved-coordinate">
+                                                <option value="">请选择已保存坐标</option>
+                                            </select>
+                                        </div>
+                                        <p id="move-target-note" class="move-target-note">
+                                            手动坐标在当前维度生效，不会新增坐标点。
+                                        </p>
+                                        <label class="move-field move-priority"
+                                               for="move-priority">
+                                            <span>运行优先级</span>
+                                            <select id="move-priority">
+                                                <option value="NORMAL">普通</option>
+                                                <option value="URGENT">紧急</option>
+                                                <option value="BACKGROUND">后台</option>
+                                            </select>
+                                        </label>
+                                        <p id="move-task-message" class="field-message"
+                                           role="status" aria-live="polite"></p>
+                                        <div class="move-form-actions">
+                                            <button id="save-move-task" class="secondary"
+                                                    type="button">保存任务</button>
+                                            <button id="run-move-task" class="primary"
+                                                    type="submit">保存并加入队列</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </div>
                     </section>
                     <section class="panel task-selection-panel"
                              aria-labelledby="task-list-title">
                         <div class="panel-heading">
                             <h2 id="task-list-title">任务选择</h2>
-                            <button id="refresh-move-tasks" class="ghost compact"
-                                    type="button">刷新</button>
                         </div>
-                        <p id="move-resources-message" class="field-message"
-                           role="status">连接后可创建移动任务</p>
                         <div class="move-task-options">
                             <button id="new-move-task" class="move-task-option is-new"
                                     type="button" disabled>
                                 <strong>＋ 移动到坐标</strong>
-                                <span>新建一个单步移动任务</span>
+                                <span>设置目标坐标，保存或运行</span>
                             </button>
-                            <div id="move-task-list" class="move-task-list"
-                                 aria-label="已保存的移动任务"></div>
                         </div>
                     </section>
                 </div>

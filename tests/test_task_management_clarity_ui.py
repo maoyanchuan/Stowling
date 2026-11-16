@@ -45,7 +45,7 @@ def test_display_area_and_selection_panel_keep_the_fixed_move_workbench() -> Non
         "</section>",
     )
 
-    assert 'id="task-display-title">任务展示</h2>' in display
+    assert 'id="task-display-title">已保存任务</h2>' in display
     assert 'id="task-list-title">任务选择</h2>' in selection
     for retained in (
         'id="move-task-form"',
@@ -53,14 +53,13 @@ def test_display_area_and_selection_panel_keep_the_fixed_move_workbench() -> Non
         'id="move-saved-coordinate"',
         'id="save-move-task"',
         'id="run-move-task"',
-    ):
-        assert retained in display
-    for retained in (
-        'id="new-move-task"',
         'id="move-task-list"',
         'id="refresh-move-tasks"',
     ):
-        assert retained in selection
+        assert retained in display
+    assert 'id="new-move-task"' in selection
+    for moved in ('id="move-task-list"', 'id="refresh-move-tasks"'):
+        assert moved not in selection
     assert 'id="task-list"' not in display
     assert 'id="task-list"' not in selection
     assert 'id="task-form"' not in display

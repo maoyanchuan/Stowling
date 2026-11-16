@@ -12,13 +12,17 @@ and pause-scroll controls (up to 300 entries). Pause-scroll does not pause tasks
 reloading the page starts a new log session. Run details and interruption recovery
 remain available in a dialog.
 
-The right side is a fixed single-action move task workbench. Its upper form edits
-a task name, manual XYZ coordinates or a saved coordinate, and priority. It can
-save the task or save and enqueue it. The lower section adds a move task and lists
-only existing tasks whose full definition is one `ACTION` step with module
-`MOVE_TO_COORDINATE`; complex workflows and unsupported move configurations stay
-out of this editor instead of being partially rewritten. Manual and saved inputs
-are both retained while switching source, but only the active source is serialized.
+The right side is a fixed single-action move task workbench. Saved tasks appear
+at the top as compact rows showing their name, target, and priority, collapsed
+by default. Opening a row reveals its name, manual XYZ or saved coordinate, and
+priority controls, with save and enqueue actions. Collapsing and reopening keeps
+unsaved inputs; switching to another task asks before discarding changes. The
+lower task-selection area contains only task templates. Selecting a template
+opens an unsaved draft above; saving turns it into a saved task row. Only tasks
+whose full definition is one `ACTION` step with module `MOVE_TO_COORDINATE` are
+editable here; complex workflows and unsupported move configurations are not
+partially rewritten. Manual and saved inputs are retained while switching source,
+but only the active source is serialized.
 
 Move tasks check arrival using the player's block position. Manual coordinates,
 saved coordinates without a radius, and radius `0` require the target block.

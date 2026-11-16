@@ -18,6 +18,7 @@
         coordinates: [],
         moveDraft: Move.newDraft(),
         moveFormOpen: false,
+        moveDraftActive: false,
         moveResourcesReady: false,
         moveLoading: false,
         moveBusy: false,
@@ -27,7 +28,10 @@
     const elements = {
         moveForm: document.querySelector("#move-task-form"),
         moveFields: document.querySelector("#move-task-fields"),
-        moveTitle: document.querySelector("#task-display-title"),
+        moveDraftCard: document.querySelector("#move-task-draft"),
+        moveDraftToggle: document.querySelector("#toggle-move-draft"),
+        moveDraftBody: document.querySelector("#move-draft-body"),
+        moveCount: document.querySelector("#move-task-count"),
         movePlaceholder: document.querySelector("#move-task-placeholder"),
         moveName: document.querySelector("#move-task-name"),
         moveSources: [...document.querySelectorAll("[data-move-source]")],
@@ -61,6 +65,8 @@
         runDetails: document.querySelector("#task-run-details")
     };
 
+    const moveRows = new Map();
+
     /**
      * @returns {Promise<void>}
      */
@@ -88,6 +94,10 @@
                 );
                 if (refreshed) {
                     state.moveDraft = Move.draftFromTask(refreshed);
+                } else {
+                    state.moveDraft = Move.newDraft();
+                    state.moveDraftActive = false;
+                    state.moveFormOpen = false;
                 }
             }
             syncMoveForm();
@@ -133,25 +143,70 @@
      * @returns {void}
      */
     function renderMoveTaskList() {
+        // Keep the one editor alive while rebuilding its surrounding task rows.
+        elements.moveDraftBody.append(elements.moveForm);
         elements.moveList.replaceChildren();
+        moveRows.clear();
         for (const task of state.moveTasks) {
             const draft = Move.draftFromTask(task);
-            const button = Stowling.element("button", "move-task-option");
+            const card = Stowling.element("article", "move-saved-task");
+            card.dataset.taskId = task.id;
+            const button = Stowling.element("button", "move-task-summary");
             button.type = "button";
             button.dataset.taskId = task.id;
-            button.setAttribute("aria-pressed", String(state.moveDraft.id === task.id));
-            button.append(Stowling.element("strong", "", task.name));
+            const body = Stowling.element("div", "move-task-body");
+            body.id = `move-task-body-${task.id}`;
+            button.setAttribute("aria-controls", body.id);
+            const kind = Stowling.element("span", "move-task-kind", "↗");
+            kind.setAttribute("aria-hidden", "true");
+            button.append(kind);
+            const overview = Stowling.element("span", "move-task-overview");
+            overview.append(Stowling.element("strong", "", task.name));
             const coordinate = state.coordinates.find((point) => point.id === draft.coordinateId);
             const target = draft.source === "saved"
                 ? (coordinate?.name || "坐标已不存在")
                 : `${draft.x}, ${draft.y}, ${draft.z}`;
+            overview.append(Stowling.element("span", "move-task-target", target));
+            button.append(overview);
             button.append(Stowling.element(
-                "span", "", `${target} · ${Model.priorityLabel(task.priority)}`
+                "span", "move-task-priority", Model.priorityLabel(task.priority)
             ));
+            const status = Stowling.element("span", "move-task-state", "已保存");
+            button.append(status);
+            const chevron = Stowling.element("span", "move-task-chevron", "⌄");
+            chevron.setAttribute("aria-hidden", "true");
+            button.append(chevron);
             button.addEventListener("click", () => selectMoveTask(task));
-            elements.moveList.append(button);
+            if (state.moveDraft.id === task.id) {
+                body.append(elements.moveForm);
+            }
+            card.append(button, body);
+            elements.moveList.append(card);
+            moveRows.set(task.id, { button, body, status });
         }
         updateMoveControls();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function syncMoveDisclosure() {
+        const newDraft = state.moveDraftActive && !state.moveDraft.id;
+        elements.moveDraftCard.hidden = !newDraft;
+        elements.moveDraftBody.hidden = !newDraft || !state.moveFormOpen;
+        elements.moveDraftToggle.setAttribute("aria-expanded", String(
+            newDraft && state.moveFormOpen
+        ));
+        elements.moveForm.hidden = !state.moveFormOpen;
+        elements.movePlaceholder.hidden = state.moveTasks.length > 0 || newDraft;
+        elements.moveCount.textContent = String(state.moveTasks.length);
+        for (const [id, row] of moveRows) {
+            const selected = state.moveDraft.id === id;
+            const expanded = selected && state.moveFormOpen;
+            row.button.setAttribute("aria-expanded", String(expanded));
+            row.body.hidden = !expanded;
+            row.status.textContent = selected && state.moveDirty ? "未保存修改" : "已保存";
+        }
     }
 
     /**
@@ -159,7 +214,13 @@
      * @returns {void}
      */
     function selectMoveTask(task = null) {
-        if (state.moveBusy || state.moveLoading || !state.moveResourcesReady) {
+        if (state.moveBusy || state.moveLoading || !state.moveResourcesReady
+                || !Stowling.isConnected()) {
+            return;
+        }
+        if (task && state.moveDraft.id === task.id) {
+            state.moveFormOpen = !state.moveFormOpen;
+            syncMoveDisclosure();
             return;
         }
         if (state.moveDirty && !window.confirm("当前修改尚未保存，切换任务会丢弃修改。继续？")) {
@@ -167,10 +228,28 @@
         }
         state.moveDraft = task ? Move.draftFromTask(task) : Move.newDraft();
         state.moveDirty = false;
+        state.moveDraftActive = !task;
         state.moveFormOpen = true;
         showMoveMessage(task ? "已保存，可直接加入队列" : "新任务，配置目标后保存或运行");
         syncMoveForm();
         renderMoveTaskList();
+        if (task) {
+            moveRows.get(task.id)?.button.focus();
+        } else {
+            elements.moveDraftToggle.focus();
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function toggleMoveDraft() {
+        if (state.moveBusy || state.moveLoading || !state.moveResourcesReady
+                || !Stowling.isConnected()) {
+            return;
+        }
+        state.moveFormOpen = !state.moveFormOpen;
+        syncMoveDisclosure();
     }
 
     /**
@@ -178,9 +257,6 @@
      */
     function syncMoveForm() {
         const draft = state.moveDraft;
-        elements.moveForm.hidden = !state.moveFormOpen;
-        elements.movePlaceholder.hidden = state.moveFormOpen;
-        elements.moveTitle.textContent = state.moveFormOpen ? "移动到坐标" : "任务展示";
         elements.moveName.value = draft.name;
         elements.moveX.value = draft.x.replace(/^\+/, "");
         elements.moveY.value = draft.y.replace(/^\+/, "");
@@ -245,8 +321,9 @@
         elements.newMove.disabled = disabled;
         elements.refreshMove.disabled = state.moveBusy || state.moveLoading
             || !Stowling.isConnected();
-        for (const button of elements.moveList.querySelectorAll("button")) {
-            button.disabled = disabled;
+        elements.moveDraftToggle.disabled = disabled;
+        for (const row of moveRows.values()) {
+            row.button.disabled = disabled;
         }
         elements.moveCoordinate.disabled = state.moveDraft.source !== "saved"
             || state.coordinates.length === 0;
@@ -255,6 +332,7 @@
         }
         elements.runMove.textContent = state.moveDraft.id && !state.moveDirty
             ? "加入运行队列" : "保存并加入队列";
+        syncMoveDisclosure();
     }
 
     /**
@@ -284,6 +362,7 @@
         state.moveTasks = tasks;
         state.moveDraft = Move.draftFromTask(saved);
         state.moveDirty = false;
+        state.moveDraftActive = false;
         syncMoveForm();
         renderMoveTaskList();
     }
@@ -756,6 +835,7 @@
     }
 
     elements.newMove.addEventListener("click", () => selectMoveTask());
+    elements.moveDraftToggle.addEventListener("click", toggleMoveDraft);
     elements.refreshMove.addEventListener("click", () => void loadMoveResources());
     elements.moveForm.addEventListener("input", () => {
         readMoveForm();

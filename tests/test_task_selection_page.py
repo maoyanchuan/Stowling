@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,7 +29,14 @@ def between(source: str, start: str, end: str) -> str:
     return source[content_start:source.index(end, content_start)]
 
 
-def test_task_workbench_has_a_fixed_move_form_and_task_cards() -> None:
+def opening_tag(source: str, element_id: str) -> str:
+    pattern = rf'<[^>]*\bid="{re.escape(element_id)}"[^>]*>'
+    match = re.search(pattern, source)
+    assert match is not None
+    return match.group(0)
+
+
+def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     html = read("tasks.html")
     workbench = between(
         html,
@@ -40,8 +48,20 @@ def test_task_workbench_has_a_fixed_move_form_and_task_cards() -> None:
         'class="panel task-selection-panel"'
     )
     display = between(workbench, 'id="task-display-area"', "</section>")
-    assert 'id="task-display-title">任务展示</h2>' in display
-    assert 'id="move-task-form"' in display
+    assert 'id="task-display-title">已保存任务</h2>' in display
+    for retained in (
+        'id="move-task-list"',
+        'id="refresh-move-tasks"',
+        'id="move-resources-message"',
+        'id="move-task-count"',
+        'id="move-task-placeholder"',
+        'id="move-task-draft"',
+        'id="toggle-move-draft"',
+        'id="move-draft-body"',
+        'id="move-task-form"',
+    ):
+        assert retained in display
+    assert 'id="new-move-task"' not in display
     assert 'id="move-task-fields"' in display
     for field_id in (
         "move-task-name",
@@ -58,6 +78,11 @@ def test_task_workbench_has_a_fixed_move_form_and_task_cards() -> None:
     assert "data-move-source=\"saved\"" in display
     assert "保存任务" in display
     assert "保存并加入队列" in display
+    assert "hidden" in opening_tag(display, "move-task-form")
+    assert "hidden" in opening_tag(display, "move-task-draft")
+    assert "hidden" in opening_tag(display, "move-draft-body")
+    toggle = opening_tag(display, "toggle-move-draft")
+    assert 'aria-expanded="false"' in toggle
 
     selection = between(
         workbench,
@@ -66,10 +91,16 @@ def test_task_workbench_has_a_fixed_move_form_and_task_cards() -> None:
     )
     assert 'id="task-list-title">任务选择</h2>' in selection
     assert 'id="new-move-task"' in selection
-    assert 'id="move-task-list"' in selection
-    assert 'id="refresh-move-tasks"' in selection
+    assert "移动到坐标" in selection
+    for moved in (
+        'id="move-task-list"',
+        'id="refresh-move-tasks"',
+        'id="move-resources-message"',
+        'id="move-task-form"',
+    ):
+        assert moved not in selection
     assert "添加移动任务" not in selection
-    assert "新建一个单步移动任务" in selection
+    assert "设置目标坐标，保存或运行" in selection
 
 
 def test_task_page_keeps_only_the_fixed_move_editor_and_monitor() -> None:
@@ -116,6 +147,10 @@ def test_task_page_keeps_only_the_fixed_move_editor_and_monitor() -> None:
         'id="refresh-runs-button"',
         'id="task-run-details"',
         'id="runtime-list"',
+        'id="move-task-count"',
+        'id="move-task-draft"',
+        'id="toggle-move-draft"',
+        'id="move-draft-body"',
         'id="move-task-form"',
         'id="move-task-list"',
     ):
@@ -161,6 +196,7 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
         "moveTasks: []",
         "coordinates: []",
         "moveDraft: Move.newDraft()",
+        "moveDraftActive: false",
     ):
         assert retained in state
     for removed in (
@@ -193,6 +229,8 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
     assert "if (state.moveDraft.id && !state.moveDirty)" in load_move
     assert "state.moveTasks.find(" in load_move
     assert "state.moveDraft = Move.draftFromTask(refreshed);" in load_move
+    assert "state.moveDraftActive = false;" in load_move
+    assert "state.moveFormOpen = false;" in load_move
     assert "syncMoveForm();" in load_move
     assert "renderMoveTaskList();" in load_move
     assert 'Stowling.onConnected(async () => {\n' in javascript
@@ -249,6 +287,49 @@ def test_move_form_uses_input_events_and_preserves_both_source_values() -> None:
     assert "elements.moveCoordinate.value = \"\";" not in source_handler
 
 
+def test_move_disclosure_uses_row_controls_and_guards_disconnected_actions() -> None:
+    javascript = read("tasks.js")
+    disclosure = between(
+        javascript,
+        "function syncMoveDisclosure()",
+        "function selectMoveTask(task = null)",
+    )
+    selection = between(
+        javascript,
+        "function selectMoveTask(task = null)",
+        "function syncMoveForm()",
+    )
+    controls = between(
+        javascript,
+        "function updateMoveControls()",
+        "function showMoveMessage(",
+    )
+
+    assert "elements.moveDraftCard.hidden = !newDraft;" in disclosure
+    assert "elements.moveDraftBody.hidden = !newDraft || !state.moveFormOpen;" in disclosure
+    placeholder = "elements.movePlaceholder.hidden = state.moveTasks.length > 0"
+    assert placeholder + " || newDraft;" in disclosure
+    same_task = selection.index("if (task && state.moveDraft.id === task.id)")
+    dirty_confirm = selection.index(
+        "if (state.moveDirty && !window.confirm("
+    )
+    assert same_task < dirty_confirm
+    for retained in (
+        "syncMoveDisclosure();",
+        "state.moveDraftActive = !task;",
+        "elements.moveDraftToggle.focus();",
+        "function toggleMoveDraft()",
+        "|| !Stowling.isConnected()",
+    ):
+        assert retained in selection
+    assert "for (const row of moveRows.values())" in controls
+    assert "row.button.disabled = disabled;" in controls
+    assert "elements.newMove.disabled = disabled;" in controls
+    assert "elements.moveDraftToggle.disabled = disabled;" in controls
+    assert "elements.refreshMove.disabled = state.moveBusy || state.moveLoading" in controls
+    assert 'elements.moveList.querySelectorAll("button")' not in javascript
+
+
 def test_queue_and_details_use_static_task_names_and_keep_recovery() -> None:
     javascript = read("tasks.js")
     queue = between(javascript, "function renderQueue()", "function railAction")
@@ -301,9 +382,11 @@ const requests = [];
 const connectedHandlers = [];
 const sourceButtons = [];
 const errors = [];
+const confirmRequests = [];
 let runReads = 0;
 let taskSequence = 0;
 let failNextRun = false;
+let confirmResult = true;
 let revision = "rev-1";
 let tasksState = [];
 
@@ -313,11 +396,13 @@ class FakeElement {
         this.id = id;
         this.className = "";
         this.children = [];
+        this.parentElement = null;
         this.listeners = new Map();
         this.dataset = {};
         this.attributes = new Map();
         this.disabled = false;
         this.hidden = false;
+        this.focused = false;
         this.open = false;
         this.value = "";
         this.scrollTop = 0;
@@ -344,6 +429,9 @@ class FakeElement {
     }
 
     set textContent(value) {
+        for (const child of this.children) {
+            child.parentElement = null;
+        }
         this._text = String(value);
         this.children = [];
     }
@@ -352,25 +440,59 @@ class FakeElement {
         return this.children.length;
     }
 
-    append(...nodes) {
-        for (const node of nodes) {
-            const child = typeof node === "string"
-                ? Object.assign(new FakeElement("#text"), { _text: node })
-                : node;
-            this.children.push(child);
+    /**
+     * @param {FakeElement | string} node
+     * @returns {FakeElement}
+     */
+    adopt(node) {
+        const child = typeof node === "string"
+            ? Object.assign(new FakeElement("#text"), { _text: node })
+            : node;
+        if (child.parentElement) {
+            child.parentElement.removeChild(child);
         }
+        child.parentElement = this;
+        return child;
+    }
+
+    append(...nodes) {
+        this.children.push(...nodes.map((node) => this.adopt(node)));
     }
 
     prepend(...nodes) {
-        const added = nodes.map((node) => typeof node === "string"
-            ? Object.assign(new FakeElement("#text"), { _text: node })
-            : node);
+        const added = nodes.map((node) => this.adopt(node));
         this.children.unshift(...added);
     }
 
     replaceChildren(...nodes) {
+        for (const child of this.children) {
+            child.parentElement = null;
+        }
         this.children = [];
         this.append(...nodes);
+    }
+
+    /**
+     * @param {FakeElement} node
+     * @returns {FakeElement}
+     */
+    removeChild(node) {
+        const index = this.children.indexOf(node);
+        if (index < 0) {
+            throw new Error("removeChild called with a node that is not a child");
+        }
+        this.children.splice(index, 1);
+        node.parentElement = null;
+        return node;
+    }
+
+    /**
+     * @returns {void}
+     */
+    remove() {
+        if (this.parentElement) {
+            this.parentElement.removeChild(this);
+        }
     }
 
     addEventListener(type, listener) {
@@ -399,6 +521,13 @@ class FakeElement {
         this.dispatchEvent("click");
     }
 
+    /**
+     * @returns {void}
+     */
+    focus() {
+        this.focused = true;
+    }
+
     setAttribute(name, value) {
         this.attributes.set(name, String(value));
     }
@@ -407,20 +536,40 @@ class FakeElement {
         return this.attributes.get(name) ?? null;
     }
 
-    querySelector(selector) {
-        if (!selector.startsWith(".")) {
-            return null;
+    /**
+     * @param {string} selector
+     * @returns {boolean}
+     */
+    matches(selector) {
+        const tag = selector.match(/^[a-z][\w-]*/i)?.[0];
+        if (tag && this.tagName !== tag.toUpperCase()) {
+            return false;
         }
-        const className = selector.slice(1);
-        return this.children.find((child) => child.className.split(" ").includes(className))
-            || null;
+        for (const match of selector.matchAll(/\.([\w-]+)/g)) {
+            if (!this.className.split(" ").includes(match[1])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @returns {FakeElement[]}
+     */
+    descendants() {
+        const found = [];
+        for (const child of this.children) {
+            found.push(child, ...child.descendants());
+        }
+        return found;
+    }
+
+    querySelector(selector) {
+        return this.descendants().find((child) => child.matches(selector)) || null;
     }
 
     querySelectorAll(selector) {
-        if (selector !== "button") {
-            return [];
-        }
-        return this.children.filter((child) => child.tagName === "BUTTON");
+        return this.descendants().filter((child) => child.matches(selector));
     }
 
     showModal() {
@@ -436,8 +585,22 @@ class FakeElement {
     }
 }
 
-const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
-const byId = new Map(ids.map((id) => [id, new FakeElement("div", id)]));
+const byId = new Map();
+const markupPattern = /<([a-z][\w-]*)([^>]*\bid="([^"]+)"[^>]*)>/gi;
+for (const match of html.matchAll(markupPattern)) {
+    const [, tagName, attributes, id] = match;
+    const element = new FakeElement(tagName, id);
+    const className = attributes.match(/\bclass="([^"]*)"/i)?.[1];
+    if (className) {
+        element.className = className;
+    }
+    element.hidden = /(?:^|\s)hidden(?:\s|=|$)/i.test(attributes);
+    element.disabled = /(?:^|\s)disabled(?:\s|=|$)/i.test(attributes);
+    for (const attribute of attributes.matchAll(/(aria-[\w-]+)="([^"]*)"/g)) {
+        element.setAttribute(attribute[1], attribute[2]);
+    }
+    byId.set(id, element);
+}
 for (const source of ["manual", "saved"]) {
     const button = new FakeElement("button");
     button.dataset.moveSource = source;
@@ -591,7 +754,10 @@ global.window = {
     Stowling,
     setInterval: () => 1,
     setTimeout: () => 1,
-    confirm: () => true,
+    confirm: (message) => {
+        confirmRequests.push(message);
+        return confirmResult;
+    },
 };
 
 for (const path of [
@@ -622,8 +788,51 @@ const fill = (name, x, y, z, priority = "NORMAL") => {
 const sourceButton = (source) => sourceButtons.find(
     (button) => button.dataset.moveSource === source
 );
-const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
-    .find((button) => button.dataset.taskId === taskId);
+/**
+ * @returns {FakeElement[]}
+ */
+const savedRows = () => node("move-task-list")
+    .querySelectorAll("article.move-saved-task");
+/**
+ * @param {string} taskId
+ * @returns {FakeElement | undefined}
+ */
+const savedRow = (taskId) => savedRows()
+    .find((row) => row.dataset.taskId === taskId);
+/**
+ * @param {string} taskId
+ * @returns {FakeElement | undefined}
+ */
+const savedSummary = (taskId) => savedRow(taskId)
+    ?.querySelector("button.move-task-summary");
+/**
+ * @param {string} taskId
+ * @returns {FakeElement | undefined}
+ */
+const savedBody = (taskId) => savedRow(taskId)
+    ?.querySelector(".move-task-body");
+/**
+ * @returns {string[]}
+ */
+const savedIds = () => savedRows().map(
+    (row) => row.dataset.taskId || row.querySelector(".move-task-summary")?.dataset.taskId
+);
+/**
+ * @param {string} taskId
+ * @returns {object}
+ */
+const disclosure = (taskId) => {
+    const summary = savedSummary(taskId);
+    const body = savedBody(taskId);
+    return {
+        expanded: summary?.getAttribute("aria-expanded"),
+        controls: summary?.getAttribute("aria-controls"),
+        bodyId: body?.id,
+        hidden: body?.hidden,
+        formInside: body?.children.includes(node("move-task-form")),
+    };
+};
+const moveButton = savedSummary;
 
 (async () => {
     for (const handler of connectedHandlers) {
@@ -633,11 +842,96 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
 
     const initialRequests = requests.map((entry) => `${entry.method} ${entry.path}`);
     const initialQueueText = node("task-queue-list").textContent;
-    const initialListIds = node("move-task-list").querySelectorAll("button")
-        .map((button) => button.dataset.taskId);
+    const initialListIds = savedIds();
+    const initialDisclosures = Object.fromEntries(savedRows().map((row) => [
+        row.dataset.taskId,
+        disclosure(row.dataset.taskId),
+    ]));
+    const initialFormHidden = node("move-task-form").hidden;
+    const initialDraftHidden = node("move-task-draft").hidden;
+    const initialPlaceholderHidden = node("move-task-placeholder").hidden;
+    const initialCount = node("move-task-count").textContent;
 
+    const confirmBeforeTaskToggle = confirmRequests.length;
+    moveButton("existing-manual").click();
+    const manualExpanded = {
+        disclosure: disclosure("existing-manual"),
+        savedDisclosure: disclosure("existing-saved"),
+        formHidden: node("move-task-form").hidden,
+        summaryText: savedSummary("existing-manual").textContent,
+        focused: savedSummary("existing-manual").focused,
+        confirmDelta: confirmRequests.length - confirmBeforeTaskToggle,
+    };
+
+    node("move-task-name").value = "未保存手动移动";
+    node("move-target-x").value = "777";
+    node("move-task-form").dispatchEvent("input");
+    const confirmBeforeSameTaskToggle = confirmRequests.length;
+    moveButton("existing-manual").click();
+    const manualCollapsedDirty = {
+        disclosure: disclosure("existing-manual"),
+        formHidden: node("move-task-form").hidden,
+        name: node("move-task-name").value,
+        x: node("move-target-x").value,
+    };
+    moveButton("existing-manual").click();
+    const manualReexpandedDirty = {
+        disclosure: disclosure("existing-manual"),
+        formHidden: node("move-task-form").hidden,
+        name: node("move-task-name").value,
+        x: node("move-target-x").value,
+    };
+    const sameTaskConfirmDelta = confirmRequests.length - confirmBeforeSameTaskToggle;
+
+    confirmResult = false;
+    const confirmBeforeBlockedSwitch = confirmRequests.length;
+    moveButton("existing-saved").click();
+    const blockedDirtySwitch = {
+        manual: disclosure("existing-manual"),
+        saved: disclosure("existing-saved"),
+        x: node("move-target-x").value,
+        confirmDelta: confirmRequests.length - confirmBeforeBlockedSwitch,
+    };
+    confirmResult = true;
+    moveButton("existing-saved").click();
+    const acceptedDirtySwitch = {
+        manual: disclosure("existing-manual"),
+        saved: disclosure("existing-saved"),
+        formInside: disclosure("existing-saved").formInside,
+    };
+
+    const requestsBeforeNewDraft = requests.length;
     node("new-move-task").click();
+    const newDraft = {
+        cardHidden: node("move-task-draft").hidden,
+        expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
+        bodyHidden: node("move-draft-body").hidden,
+        formHidden: node("move-task-form").hidden,
+        formInside: node("move-draft-body").children.includes(node("move-task-form")),
+        focused: node("toggle-move-draft").focused,
+        placeholderHidden: node("move-task-placeholder").hidden,
+        count: node("move-task-count").textContent,
+    };
     fill("新移动任务", "+1", "-2", "3", "URGENT");
+    const confirmBeforeDraftToggle = confirmRequests.length;
+    node("toggle-move-draft").click();
+    const newDraftCollapsed = {
+        expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
+        bodyHidden: node("move-draft-body").hidden,
+        formHidden: node("move-task-form").hidden,
+        name: node("move-task-name").value,
+        x: node("move-target-x").value,
+    };
+    node("toggle-move-draft").click();
+    const newDraftReexpanded = {
+        expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
+        bodyHidden: node("move-draft-body").hidden,
+        formHidden: node("move-task-form").hidden,
+        name: node("move-task-name").value,
+        x: node("move-target-x").value,
+    };
+    const newDraftToggleConfirmDelta = confirmRequests.length - confirmBeforeDraftToggle;
+    const requestsBeforeFirstSave = requests.length;
     node("move-task-form").dispatchEvent("submit");
     await settle();
     const createdWrite = requests.find(
@@ -646,9 +940,12 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
     const createRun = requests.find(
         (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
     );
-    const createdListIds = node("move-task-list").querySelectorAll("button")
-        .map((button) => button.dataset.taskId);
+    const createdListIds = savedIds();
     const createdFormX = node("move-target-x").value;
+    const createdDisclosure = disclosure("server-created-id-1");
+    const createdDraftHidden = node("move-task-draft").hidden;
+    const createdFormHidden = node("move-task-form").hidden;
+    const createdCount = node("move-task-count").textContent;
 
     node("new-move-task").click();
     fill("保存坐标移动", "11", "65", "21", "NORMAL");
@@ -702,6 +999,8 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
     node("move-task-form").dispatchEvent("submit");
     await settle();
     const queueFailureMessage = node("move-task-message").textContent;
+    const queueFailureDisclosure = disclosure("server-created-id-3");
+    const queueFailureFormHidden = node("move-task-form").hidden;
     const taskWritesAfterQueueFailure = requests.filter(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
     ).length;
@@ -717,6 +1016,8 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
         (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
     ).length;
     const queueRetryMessage = node("move-task-message").textContent;
+    const queueRetryDisclosure = disclosure("server-created-id-3");
+    const queueRetryFormHidden = node("move-task-form").hidden;
 
     moveButton("existing-manual").click();
     const cleanSourceTask = tasksState.find((task) => task.id === "existing-manual");
@@ -725,6 +1026,28 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
     node("refresh-move-tasks").click();
     await settle();
     const refreshedCleanX = node("move-target-x").value;
+    const refreshedCleanDisclosure = {
+        manual: disclosure("existing-manual"),
+        saved: disclosure("existing-saved"),
+        created: disclosure("server-created-id-1"),
+    };
+    const refreshedCleanExpandedIds = savedRows()
+        .filter((row) => row.querySelector("button.move-task-summary")
+            .getAttribute("aria-expanded") === "true")
+        .map((row) => row.dataset.taskId);
+    const refreshedCleanDraftHidden = node("move-task-draft").hidden;
+
+    moveButton("existing-manual").click();
+    revision = "rev-move-refresh-collapsed";
+    node("refresh-move-tasks").click();
+    await settle();
+    const refreshedCollapsedDisclosure = disclosure("existing-manual");
+    const refreshedCollapsedExpandedIds = savedRows()
+        .filter((row) => row.querySelector("button.move-task-summary")
+            .getAttribute("aria-expanded") === "true")
+        .map((row) => row.dataset.taskId);
+    const refreshedCollapsedFormHidden = node("move-task-form").hidden;
+    moveButton("existing-manual").click();
 
     node("move-target-x").value = "42";
     node("move-task-form").dispatchEvent("input");
@@ -734,6 +1057,11 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
     await settle();
     const refreshedDirtyX = node("move-target-x").value;
     const refreshedDirtyMessage = node("move-task-message").textContent;
+    const refreshedDirtyDisclosure = disclosure("existing-manual");
+    const refreshedDirtyExpandedIds = savedRows()
+        .filter((row) => row.querySelector("button.move-task-summary")
+            .getAttribute("aria-expanded") === "true")
+        .map((row) => row.dataset.taskId);
 
     const requestCountBeforeRefresh = requests.length;
     node("refresh-runs-button").click();
@@ -741,18 +1069,38 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
     const refreshRequests = requests.slice(requestCountBeforeRefresh)
         .map((entry) => `${entry.method} ${entry.path}`);
 
-    const finalListIds = node("move-task-list").querySelectorAll("button")
-        .map((button) => button.dataset.taskId);
+    const finalListIds = savedIds();
     const writeRequests = requests.filter((entry) => entry.method !== "GET")
         .map((entry) => `${entry.method} ${entry.path}`);
     process.stdout.write(JSON.stringify({
         initialRequests,
         initialQueueText,
         initialListIds,
+        initialDisclosures,
+        initialFormHidden,
+        initialDraftHidden,
+        initialPlaceholderHidden,
+        initialCount,
+        manualExpanded,
+        manualCollapsedDirty,
+        manualReexpandedDirty,
+        sameTaskConfirmDelta,
+        blockedDirtySwitch,
+        acceptedDirtySwitch,
+        requestsBeforeNewDraft,
+        newDraft,
+        newDraftCollapsed,
+        newDraftReexpanded,
+        newDraftToggleConfirmDelta,
+        requestsBeforeFirstSave,
         createdWrite,
         createRun,
         createdListIds,
         createdFormX,
+        createdDisclosure,
+        createdDraftHidden,
+        createdFormHidden,
+        createdCount,
         savedCoordinateAfterSwitch,
         manualAfterSwitch,
         savedAfterSwitch,
@@ -767,10 +1115,22 @@ const moveButton = (taskId) => node("move-task-list").querySelectorAll("button")
         runRequestsBeforeRetry,
         runRequestsAfterRetry,
         queueFailureMessage,
+        queueFailureDisclosure,
+        queueFailureFormHidden,
         queueRetryMessage,
+        queueRetryDisclosure,
+        queueRetryFormHidden,
         refreshedCleanX,
+        refreshedCleanDisclosure,
+        refreshedCleanExpandedIds,
+        refreshedCleanDraftHidden,
+        refreshedCollapsedDisclosure,
+        refreshedCollapsedExpandedIds,
+        refreshedCollapsedFormHidden,
         refreshedDirtyX,
         refreshedDirtyMessage,
+        refreshedDirtyDisclosure,
+        refreshedDirtyExpandedIds,
         writeRequests,
         refreshRequests,
         finalListIds,
@@ -806,12 +1166,19 @@ def _run_page_scenario() -> dict[str, Any]:
     return json.loads(completed.stdout)
 
 
+@pytest.fixture(scope="module")
+def page_scenario() -> dict[str, Any]:
+    return _run_page_scenario()
+
+
 @pytest.mark.skipif(
     NODE is None,
     reason="Node.js is required to exercise the fixed move task page",
 )
-def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry() -> None:
-    result = _run_page_scenario()
+def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
+    page_scenario: dict[str, Any],
+) -> None:
+    result = page_scenario
 
     assert len(result["errors"]) == 1
     assert result["errors"][0].startswith("加入队列失败:")
@@ -878,3 +1245,131 @@ def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry() -> None:
     assert "未保存修改" in result["refreshedDirtyMessage"]
     assert result["refreshRequests"] == ["GET /v1/task-runs"]
     assert "complex-task" not in result["finalListIds"]
+
+
+@pytest.mark.skipif(
+    NODE is None,
+    reason="Node.js is required to exercise saved task disclosure",
+)
+def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
+    page_scenario: dict[str, Any],
+) -> None:
+    result = page_scenario
+
+    assert result["initialCount"] == "2"
+    assert result["initialFormHidden"] is True
+    assert result["initialDraftHidden"] is True
+    assert result["initialPlaceholderHidden"] is True
+    for state in result["initialDisclosures"].values():
+        assert state["expanded"] == "false"
+        assert state["hidden"] is True
+        assert state["formInside"] is False
+        assert state["controls"] == state["bodyId"]
+
+    expanded = result["manualExpanded"]
+    assert expanded["disclosure"]["expanded"] == "true"
+    assert expanded["disclosure"]["hidden"] is False
+    assert expanded["disclosure"]["formInside"] is True
+    assert expanded["savedDisclosure"]["expanded"] == "false"
+    assert expanded["savedDisclosure"]["hidden"] is True
+    assert expanded["formHidden"] is False
+    assert expanded["focused"] is True
+    assert expanded["confirmDelta"] == 0
+    for text in ("已有手动移动", "3, 4, 5", "普通"):
+        assert text in expanded["summaryText"]
+
+    collapsed = result["manualCollapsedDirty"]
+    assert collapsed["disclosure"]["expanded"] == "false"
+    assert collapsed["disclosure"]["hidden"] is True
+    assert collapsed["formHidden"] is True
+    assert collapsed["name"] == "未保存手动移动"
+    assert collapsed["x"] == "777"
+
+    reexpanded = result["manualReexpandedDirty"]
+    assert reexpanded["disclosure"]["expanded"] == "true"
+    assert reexpanded["disclosure"]["hidden"] is False
+    assert reexpanded["formHidden"] is False
+    assert reexpanded["name"] == "未保存手动移动"
+    assert reexpanded["x"] == "777"
+    assert result["sameTaskConfirmDelta"] == 0
+
+    blocked = result["blockedDirtySwitch"]
+    assert blocked["confirmDelta"] == 1
+    assert blocked["manual"]["expanded"] == "true"
+    assert blocked["saved"]["expanded"] == "false"
+    assert blocked["x"] == "777"
+
+    accepted = result["acceptedDirtySwitch"]
+    assert accepted["manual"]["expanded"] == "false"
+    assert accepted["manual"]["hidden"] is True
+    assert accepted["saved"]["expanded"] == "true"
+    assert accepted["saved"]["hidden"] is False
+    assert accepted["formInside"] is True
+
+    assert result["requestsBeforeNewDraft"] == result["requestsBeforeFirstSave"]
+    draft = result["newDraft"]
+    assert draft["cardHidden"] is False
+    assert draft["expanded"] == "true"
+    assert draft["bodyHidden"] is False
+    assert draft["formHidden"] is False
+    assert draft["formInside"] is True
+    assert draft["focused"] is True
+    assert draft["placeholderHidden"] is True
+    assert draft["count"] == "2"
+
+    collapsed_draft = result["newDraftCollapsed"]
+    assert collapsed_draft["expanded"] == "false"
+    assert collapsed_draft["bodyHidden"] is True
+    assert collapsed_draft["formHidden"] is True
+    assert collapsed_draft["name"] == "新移动任务"
+    assert collapsed_draft["x"] == "+1"
+    reexpanded_draft = result["newDraftReexpanded"]
+    assert reexpanded_draft["expanded"] == "true"
+    assert reexpanded_draft["bodyHidden"] is False
+    assert reexpanded_draft["formHidden"] is False
+    assert reexpanded_draft["name"] == "新移动任务"
+    assert reexpanded_draft["x"] == "+1"
+    assert result["newDraftToggleConfirmDelta"] == 0
+
+    created = result["createdDisclosure"]
+    assert created["expanded"] == "true"
+    assert created["hidden"] is False
+    assert created["formInside"] is True
+    assert created["controls"] == created["bodyId"]
+    assert result["createdDraftHidden"] is True
+    assert result["createdFormHidden"] is False
+    assert result["createdCount"] == "3"
+    assert "server-created-id-1" in result["createdListIds"]
+
+    for state in (
+        result["queueFailureDisclosure"],
+        result["queueRetryDisclosure"],
+    ):
+        assert state["expanded"] == "true"
+        assert state["hidden"] is False
+        assert state["formInside"] is True
+    assert result["queueFailureFormHidden"] is False
+    assert result["queueRetryFormHidden"] is False
+
+    clean_refresh = result["refreshedCleanDisclosure"]
+    assert clean_refresh["manual"]["expanded"] == "true"
+    assert clean_refresh["manual"]["hidden"] is False
+    assert clean_refresh["saved"]["expanded"] == "false"
+    assert clean_refresh["saved"]["hidden"] is True
+    assert clean_refresh["created"]["expanded"] == "false"
+    assert clean_refresh["created"]["hidden"] is True
+    assert result["refreshedCleanExpandedIds"] == ["existing-manual"]
+    assert result["refreshedCleanDraftHidden"] is True
+
+    collapsed_refresh = result["refreshedCollapsedDisclosure"]
+    assert collapsed_refresh["expanded"] == "false"
+    assert collapsed_refresh["hidden"] is True
+    assert collapsed_refresh["formInside"] is True
+    assert result["refreshedCollapsedExpandedIds"] == []
+    assert result["refreshedCollapsedFormHidden"] is True
+
+    assert result["refreshedDirtyX"] == "42"
+    assert result["refreshedDirtyMessage"] == "未保存修改"
+    assert result["refreshedDirtyDisclosure"]["expanded"] == "true"
+    assert result["refreshedDirtyDisclosure"]["hidden"] is False
+    assert result["refreshedDirtyExpandedIds"] == ["existing-manual"]

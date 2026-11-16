@@ -412,11 +412,14 @@ def test_task_page_reserves_display_and_selection_workbench() -> None:
     workbench = between(styles, ".task-workbench {", "}")
     display = between(styles, ".task-display-placeholder {", "}")
     selection = between(styles, ".task-selection-panel {", "}")
+    summary = between(styles, ".move-task-summary {", "}")
 
     assert 'body[data-page="tasks"] .workspace' in styles
     assert "grid-template-columns: minmax(0, 1fr)" in workbench
-    assert "min-height: clamp(14rem, 30dvh, 22rem);" in display
+    assert "min-height: 10rem;" in display
     assert "min-height: 10rem;" in selection
+    assert "display: flex;" in summary
+    assert "min-height: 3.75rem;" in summary
     assert "margin-bottom: 0;" in between(
         styles,
         ".task-display-placeholder .panel-heading,",

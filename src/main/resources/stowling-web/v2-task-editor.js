@@ -2,6 +2,7 @@
     "use strict";
 
     const Stowling = window.Stowling;
+    const Model = window.StowlingTaskModel;
 
     /**
      * @param {HTMLElement} host
@@ -113,7 +114,8 @@
     function moduleSelect(step, modules, changed) {
         const select = document.createElement("select");
         const selectable = modules.filter(
-            (module) => !module.deprecated || module.id === step.moduleId
+            (module) => Model.moduleKind(module) === "ACTION"
+                && (!module.deprecated || module.id === step.moduleId)
         );
         const groups = [
             ["BASIC", "基础模块"],

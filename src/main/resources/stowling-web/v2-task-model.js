@@ -14,6 +14,11 @@
         "NORMAL",
         "URGENT"
     ]);
+    const MODULE_KINDS = Object.freeze([
+        "ACTION",
+        "TRIGGER",
+        "LISTENER"
+    ]);
 
     /**
      * @param {object} value
@@ -67,13 +72,33 @@
     }
 
     /**
+     * @param {object} module
+     * @returns {string}
+     */
+    function moduleKind(module) {
+        return MODULE_KINDS.includes(module?.kind)
+            ? module.kind
+            : "ACTION";
+    }
+
+    /**
+     * @param {Array<object>} modules
+     * @returns {Array<object>}
+     */
+    function actionModules(modules) {
+        return visibleModules(modules).filter(
+            (module) => moduleKind(module) === "ACTION"
+        );
+    }
+
+    /**
      * @param {Array<object>} modules
      * @returns {object | undefined}
      */
     function defaultModule(modules) {
-        const visible = visibleModules(modules);
-        return visible.find((module) => module?.level === "BASIC")
-            || visible[0];
+        const actions = actionModules(modules);
+        return actions.find((module) => module?.level === "BASIC")
+            || actions[0];
     }
 
     /**
@@ -197,6 +222,8 @@
     window.StowlingTaskModel = Object.freeze({
         newStep,
         visibleModules,
+        actionModules,
+        moduleKind,
         defaultModule,
         newTask,
         taskLevel,
@@ -206,6 +233,7 @@
         normalizeTask,
         payloadTask,
         priorityLabel,
-        PRIORITIES
+        PRIORITIES,
+        MODULE_KINDS
     });
 })();

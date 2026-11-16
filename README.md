@@ -64,7 +64,10 @@ crafting, and scheduling APIs are intentionally not compatible.
 ## Task modules
 
 The backend module catalog is available at `GET /v1/task-modules`; the task
-editor builds its controls from that catalog.
+editor builds its controls from that catalog. The same catalog lists event
+listeners and trigger modules before executable action modules, so the module
+reference shows the event-to-task flow without making triggers selectable as
+task steps.
 
 The task list, run selector, module catalog, and step module selector are split
 into basic and composite groups without changing existing task configuration.

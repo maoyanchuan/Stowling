@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.ModuleDefinition;
 import dev.stowling.v2.model.ModuleParameter;
+import dev.stowling.v2.model.TaskModuleKind;
 import dev.stowling.v2.model.TaskModuleLevel;
+import dev.stowling.v2.model.TaskTriggerType;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -20,6 +22,12 @@ class TaskModuleCatalogTest {
 
         assertEquals(
                 List.of(
+                        "DROPPED_ITEMS_LISTENER",
+                        "FOOD_STATUS_LISTENER",
+                        "CACHE_UPDATE_LISTENER",
+                        TaskTriggerType.DROPPED_ITEMS.name(),
+                        TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW.name(),
+                        TaskTriggerType.CACHE_UPDATED.name(),
                         ConfigValidator.MOVE_TO_COORDINATE,
                         ConfigValidator.COLLECT_DROPPED_ITEMS,
                         ConfigValidator.SCAN_CONTAINERS_IN_REGION,
@@ -35,8 +43,26 @@ class TaskModuleCatalogTest {
                 modules.stream().map(ModuleDefinition::id).toList()
         );
         assertEquals(
-                7,
+                13,
                 modules.stream().filter(module -> !module.deprecated()).count()
+        );
+        assertEquals(
+                6,
+                modules.stream()
+                        .filter(module -> module.kind() != TaskModuleKind.ACTION)
+                        .count()
+        );
+        assertEquals(
+                3,
+                modules.stream()
+                        .filter(module -> module.kind() == TaskModuleKind.TRIGGER)
+                        .count()
+        );
+        assertEquals(
+                3,
+                modules.stream()
+                        .filter(module -> module.kind() == TaskModuleKind.LISTENER)
+                        .count()
         );
     }
 

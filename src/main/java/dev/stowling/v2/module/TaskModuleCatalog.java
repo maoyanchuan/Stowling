@@ -3,10 +3,169 @@ package dev.stowling.v2.module;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.ModuleDefinition;
 import dev.stowling.v2.model.ModuleParameter;
+import dev.stowling.v2.model.TaskModuleKind;
 import dev.stowling.v2.model.TaskModuleLevel;
+import dev.stowling.v2.model.TaskTriggerType;
 import java.util.List;
 
 public final class TaskModuleCatalog {
+    private static final ModuleDefinition DROPPED_ITEMS_LISTENER =
+            new ModuleDefinition(
+                    "DROPPED_ITEMS_LISTENER",
+                    "掉落物监听器",
+                    "持续观察坐标半径内的掉落物，为掉落物触发器提供事件。",
+                    TaskModuleKind.LISTENER,
+                    TaskModuleLevel.BASIC,
+                    List.of(),
+                    false
+            );
+
+    private static final ModuleDefinition FOOD_STATUS_LISTENER =
+            new ModuleDefinition(
+                    "FOOD_STATUS_LISTENER",
+                    "饱食度监听器",
+                    "读取玩家当前饱食度，为饱食度触发器提供状态。",
+                    TaskModuleKind.LISTENER,
+                    TaskModuleLevel.BASIC,
+                    List.of(),
+                    false
+            );
+
+    private static final ModuleDefinition CACHE_UPDATE_LISTENER =
+            new ModuleDefinition(
+                    "CACHE_UPDATE_LISTENER",
+                    "缓存更新监听器",
+                    "接收本次任务运行中实际存入缓存区域的事件。",
+                    TaskModuleKind.LISTENER,
+                    TaskModuleLevel.BASIC,
+                    List.of(),
+                    false
+            );
+
+    private static final ModuleDefinition DROPPED_ITEMS_TRIGGER =
+            new ModuleDefinition(
+                    TaskTriggerType.DROPPED_ITEMS.name(),
+                    "掉落物出现触发",
+                    "使用掉落物监听器；命中后按优先级启动目标任务。",
+                    TaskModuleKind.TRIGGER,
+                    TaskModuleLevel.BASIC,
+                    List.of(
+                            triggerTargetParameter(),
+                            triggerPriorityParameter(),
+                            triggerIntervalParameter("检测间隔（tick）"),
+                            triggerCooldownParameter(),
+                            new ModuleParameter(
+                                    ConfigValidator.COORDINATE_ID,
+                                    "检测坐标",
+                                    "coordinate-point",
+                                    true
+                            ),
+                            new ModuleParameter(
+                                    ConfigValidator.ITEM_FILTER,
+                                    "物品过滤",
+                                    "text",
+                                    false
+                            )
+                    ),
+                    false
+            );
+
+    private static final ModuleDefinition FOOD_LEVEL_TRIGGER =
+            new ModuleDefinition(
+                    TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW.name(),
+                    "饱食度不足触发",
+                    "使用饱食度监听器；达到阈值后按优先级启动目标任务。",
+                    TaskModuleKind.TRIGGER,
+                    TaskModuleLevel.BASIC,
+                    List.of(
+                            triggerTargetParameter(),
+                            triggerPriorityParameter(),
+                            triggerIntervalParameter("检测间隔（tick）"),
+                            triggerCooldownParameter(),
+                            new ModuleParameter(
+                                    ConfigValidator.FOOD_LEVEL_THRESHOLD,
+                                    "饱食度阈值",
+                                    "integer",
+                                    true,
+                                    List.of(),
+                                    0,
+                                    20,
+                                    1,
+                                    "18"
+                            )
+                    ),
+                    false
+            );
+
+    private static final ModuleDefinition CACHE_UPDATED_TRIGGER =
+            new ModuleDefinition(
+                    TaskTriggerType.CACHE_UPDATED.name(),
+                    "缓存更新触发",
+                    "使用缓存更新监听器；防抖后按优先级启动目标任务。",
+                    TaskModuleKind.TRIGGER,
+                    TaskModuleLevel.BASIC,
+                    List.of(
+                            triggerTargetParameter(),
+                            triggerPriorityParameter(),
+                            triggerIntervalParameter("触发防抖（tick）"),
+                            triggerCooldownParameter(),
+                            new ModuleParameter(
+                                    ConfigValidator.CACHE_REGION_ID,
+                                    "缓存区域",
+                                    "region-point",
+                                    true
+                            )
+                    ),
+                    false
+            );
+
+    private static ModuleParameter triggerTargetParameter() {
+        return new ModuleParameter(
+                "targetTaskId",
+                "目标任务",
+                "task-point",
+                true
+        );
+    }
+
+    private static ModuleParameter triggerPriorityParameter() {
+        return new ModuleParameter(
+                "priority",
+                "触发优先级",
+                "select",
+                true,
+                List.of("BACKGROUND", "NORMAL", "URGENT")
+        );
+    }
+
+    private static ModuleParameter triggerIntervalParameter(String label) {
+        return new ModuleParameter(
+                "intervalTicks",
+                label,
+                "integer",
+                true,
+                List.of(),
+                1,
+                1_200,
+                1,
+                "20"
+        );
+    }
+
+    private static ModuleParameter triggerCooldownParameter() {
+        return new ModuleParameter(
+                "cooldownTicks",
+                "完成冷却（tick）",
+                "integer",
+                false,
+                List.of(),
+                0,
+                72_000,
+                1,
+                "100"
+        );
+    }
+
     private static final ModuleDefinition MOVE_TO_COORDINATE =
             new ModuleDefinition(
                     ConfigValidator.MOVE_TO_COORDINATE,
@@ -323,6 +482,12 @@ public final class TaskModuleCatalog {
 
     private static final List<ModuleDefinition> MODULES =
             List.of(
+                    DROPPED_ITEMS_LISTENER,
+                    FOOD_STATUS_LISTENER,
+                    CACHE_UPDATE_LISTENER,
+                    DROPPED_ITEMS_TRIGGER,
+                    FOOD_LEVEL_TRIGGER,
+                    CACHE_UPDATED_TRIGGER,
                     MOVE_TO_COORDINATE,
                     COLLECT_DROPPED_ITEMS,
                     SCAN_CONTAINERS_IN_REGION,

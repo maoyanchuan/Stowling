@@ -7,6 +7,7 @@ public record ModuleDefinition(
         String id,
         String name,
         String description,
+        TaskModuleKind kind,
         TaskModuleLevel level,
         List<ModuleParameter> parameters,
         boolean deprecated
@@ -15,8 +16,28 @@ public record ModuleDefinition(
         id = requireText(id, "id");
         name = requireText(name, "name");
         description = Objects.requireNonNull(description, "description").trim();
+        kind = Objects.requireNonNull(kind, "kind");
         level = Objects.requireNonNull(level, "level");
         parameters = List.copyOf(Objects.requireNonNull(parameters, "parameters"));
+    }
+
+    public ModuleDefinition(
+            String id,
+            String name,
+            String description,
+            TaskModuleLevel level,
+            List<ModuleParameter> parameters,
+            boolean deprecated
+    ) {
+        this(
+                id,
+                name,
+                description,
+                TaskModuleKind.ACTION,
+                level,
+                parameters,
+                deprecated
+        );
     }
 
     public ModuleDefinition(

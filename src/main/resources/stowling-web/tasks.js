@@ -298,6 +298,17 @@
         if (!draft) {
             return;
         }
+        const triggerModules = Model.visibleModules(state.modules).filter(
+            (module) => Model.moduleKind(module) === "TRIGGER"
+        );
+        if (triggerModules.length > 0) {
+            elements.triggerType.replaceChildren();
+            for (const module of triggerModules) {
+                elements.triggerType.append(
+                    new Option(module.name, module.id)
+                );
+            }
+        }
         elements.triggerTargetTask.replaceChildren(
             new Option("请选择目标任务", "")
         );
@@ -549,13 +560,21 @@
             return;
         }
         const groups = [
+            ["LISTENER", "监听器"],
+            ["TRIGGER", "触发器"],
             ["BASIC", "基础模块"],
             ["COMPOSITE", "复合模块"]
         ];
-        for (const [level, label] of groups) {
-            const modules = visibleModules.filter(
-                (module) => module.level === level
-            );
+        for (const [groupKey, label] of groups) {
+            const modules = visibleModules.filter((module) => (
+                groupKey === "BASIC" || groupKey === "COMPOSITE"
+                    ? Model.moduleKind(module) === "ACTION"
+                        && module.level === groupKey
+                    : Model.moduleKind(module) === groupKey
+            ));
+            if (modules.length === 0) {
+                continue;
+            }
             const group = Stowling.element("section", "module-group");
             const heading = Stowling.element("div", "task-group-heading");
             heading.append(
@@ -576,6 +595,21 @@
 
     /**
      * @param {object} module
+     * @returns {string}
+     */
+    function moduleTag(module) {
+        const kind = Model.moduleKind(module);
+        if (kind === "TRIGGER") {
+            return "触发";
+        }
+        if (kind === "LISTENER") {
+            return "监听";
+        }
+        return module.level === "BASIC" ? "基础" : "复合";
+    }
+
+    /**
+     * @param {object} module
      * @returns {HTMLElement}
      */
     function createModuleCard(module) {
@@ -583,9 +617,7 @@
         const summary = Stowling.element("summary", "");
         summary.append(
             Stowling.element("strong", "", module.name),
-            Stowling.element(
-                "span", "module-level-tag", module.level === "BASIC" ? "基础" : "复合"
-            )
+            Stowling.element("span", "module-level-tag", moduleTag(module))
         );
         const parameters = Array.isArray(module.parameters)
             ? module.parameters

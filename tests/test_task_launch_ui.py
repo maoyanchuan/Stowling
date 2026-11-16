@@ -13,7 +13,9 @@ def test_task_launcher_is_bounded_and_keeps_responsive_layouts() -> None:
     css = read("styles.css")
     panel = css.split(".task-launch-panel {", 1)[1].split("}", 1)[0]
 
-    assert 'class="panel task-launch-panel"' in html
+    assert 'class="task-launch-panel"' in html
+    selection = html.split('id="task-selection-area"', 1)[1]
+    assert 'id="task-run-panel"' in selection
     assert "width: 100%;" in panel
     assert "max-width: 52rem;" in panel
     assert "justify-self: start;" in panel

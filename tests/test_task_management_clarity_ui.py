@@ -101,7 +101,7 @@ def test_monitor_edit_reveals_task_only_after_discard_confirmation() -> None:
     assert select.index("confirmDiscardForTaskChange()") < select.index("if (revealInList)")
     assert 'state.query = ""' in select
     assert "state.folderFilter = FOLDER_FILTER_ALL" in select
-    assert 'showTaskTab("orchestration", true)' in select
+    assert 'setTaskRoute("tasks")' in select
 
 
 def test_runtime_uses_catalog_names_and_keeps_interruption_failure_detail() -> None:

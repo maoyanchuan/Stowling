@@ -432,7 +432,7 @@ def test_task_page_supports_task_bound_triggers_inside_the_editor() -> None:
     assert 'id="trigger-food-threshold"' in html
     assert 'id="trigger-cache-region"' in html
     assert 'id="trigger-list"' in html
-    assert 'id="trigger-status-list"' in html
+    assert 'id="task-queue-list"' in html
     assert 'id="task-watch-enabled"' not in html
     assert "watchTask" not in model
     assert "trigger: task.trigger" not in model
@@ -651,100 +651,47 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     assert "bindingDescription(binding)" in javascript
 
 
-def test_task_page_separates_orchestration_and_monitoring() -> None:
+def test_task_console_shows_monitor_beside_task_selection() -> None:
     html = read("tasks.html")
-    orchestration = html.split('id="task-panel-orchestration"', 1)[1]
-    orchestration = orchestration.split('id="task-panel-monitor"', 1)[0]
-    monitor = html.split('id="task-panel-monitor"', 1)[1]
+    rail = html.split('<aside class="task-monitor-rail"', 1)[1].split("</aside>", 1)[0]
+    selection = html.split('id="task-selection-area"', 1)[1]
+    selection = selection.split('<dialog id="task-run-details"', 1)[0]
 
-    assert html.count('data-task-tab="') == 2
-    assert html.count('data-task-panel="') == 2
-    for tab in ("orchestration", "monitor"):
-        assert f'data-task-tab="{tab}"' in html
-        assert f'data-task-panel="{tab}"' in html
-    assert 'data-task-tab="triggers"' not in html
-    assert 'data-task-panel="triggers"' not in html
-    assert 'id="task-panel-orchestration"' in html
-    assert 'aria-selected="true"' in html.split(
-        'data-task-tab="orchestration"', 1
-    )[0]
-    assert 'data-task-panel="monitor" hidden' in html
-
-    for marker in (
-        "task-list",
-        "task-editor-panel",
-        "task-module-panel",
-        "task-trigger-settings",
-        "trigger-form",
-    ):
-        assert marker in orchestration
-    assert 'id="task-run-panel"' not in orchestration
-    assert 'id="trigger-status-list"' not in orchestration
-    assert 'id="task-run-panel"' in monitor
-    for marker in ("trigger-status-list", "task-queue-list", "runtime-list"):
-        assert marker in monitor
+    assert 'class="task-console"' in html
+    assert "data-task-tab=" not in html
+    assert "data-task-panel=" not in html
+    for marker in ("task-queue-list", "task-log-list", "export-task-logs"):
+        assert marker in rail
+    for marker in ("task-list", "task-run-panel", "task-trigger-settings", "trigger-form"):
+        assert marker in selection
+    assert 'id="task-run-details"' in html
+    assert 'id="runtime-list"' in html
 
 
-def test_task_tabs_use_hash_and_polling_never_changes_partitions() -> None:
+def test_legacy_trigger_link_survives_without_hiding_console_panels() -> None:
     javascript = read("tasks.js")
 
-    assert 'orchestration: "#orchestration"' in javascript
-    assert 'triggers: "#triggers"' not in javascript
-    assert 'monitor: "#monitor"' in javascript
-    assert 'if (hash === "triggers")' in javascript
     assert "function hasLegacyTriggerHash()" in javascript
-    assert "panel.hidden = panel.dataset.taskPanel !== next" in javascript
-    assert 'window.history.replaceState(null, "", hash)' in javascript
-    assert 'window.addEventListener("hashchange"' in javascript
-    assert "state.preserveTabOnSelect = true" in javascript
-    assert "openTriggersAfterTaskReady: false" in javascript
     assert "state.openTriggersAfterTaskReady = true" in javascript
+    assert "openTriggersAfterTaskReady: false" in javascript
     route = javascript.split("function applyTaskHashRoute()", 1)[1]
-    route = route.split("function handleTaskTabKeydown", 1)[0]
-    assert "if (state.openTriggersAfterTaskReady)" in route
+    route = route.split("function updateTaskFilters()", 1)[0]
     assert "openCurrentTaskTriggers()" in route
-    editor = javascript.split("function renderEditor()", 1)[1]
-    editor = editor.split("function renderInterruptionControls", 1)[0]
-    assert "if (state.openTriggersAfterTaskReady)" in editor
-    assert "openCurrentTaskTriggers()" in editor
-    opener = javascript.split("function openCurrentTaskTriggers()", 1)[1]
-    opener = opener.split("function applyTaskHashRoute()", 1)[0]
-    assert "state.openTriggersAfterTaskReady = false" in opener
+    assert 'window.history.replaceState(null, "", hash)' in route
+    assert 'window.addEventListener("hashchange"' in javascript
+    assert "panel.hidden =" not in javascript
+    assert "handleTaskTabKeydown" not in javascript
 
     selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
     selection = selection.split("function renderRunControls", 1)[0]
-    assert 'showTaskTab("orchestration", true)' in selection
-    assert 'showTaskTab("triggers", true)' not in javascript
-    assert "openCurrentTaskTriggers()" in javascript
-    assert 'showTaskTab("monitor", true)' in javascript
-
+    assert 'setTaskRoute("tasks")' in selection
     polling = javascript.split("async function loadRuns()", 1)[1]
-    polling = polling.split("function renderTriggerStatuses()", 1)[0]
-    assert "showTaskTab(" not in polling
-    assert "renderTriggerStatuses()" in polling
-    assert "renderRuntime()" in polling
+    polling = polling.split("function renderRuntime()", 1)[0]
+    assert "setTaskRoute(" not in polling
     assert "renderQueue()" in polling
-
-    saving = javascript.split("async function saveTask()", 1)[1]
-    saving = saving.split("async function deleteTask()", 1)[0]
-    assert "showTaskTab(" not in saving
-    assert "renderEditor()" in saving
-    assert "renderTaskList()" in saving
-
-
-def test_task_tabs_support_roving_keyboard_navigation() -> None:
-    javascript = read("tasks.js")
-
-    assert "button.tabIndex = selected ? 0 : -1" in javascript
-    assert "function handleTaskTabKeydown(event)" in javascript
-    assert 'event.key === "ArrowRight"' in javascript
-    assert 'event.key === "ArrowLeft"' in javascript
-    assert 'event.key === "Home"' in javascript
-    assert 'event.key === "End"' in javascript
-    assert "event.preventDefault()" in javascript
-    assert "showTaskTab(target.dataset.taskTab, true)" in javascript
-    assert "target.focus()" in javascript
-    assert 'button.addEventListener("keydown", handleTaskTabKeydown)' in javascript
+    assert "appendMonitorLogs()" in polling
+    assert "renderRuntime()" in polling
+    assert "同步失败 · 显示上次状态" in polling
 
 
 def test_task_list_filters_interruption_roles_without_a_saved_category() -> None:

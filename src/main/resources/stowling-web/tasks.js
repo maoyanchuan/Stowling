@@ -5,14 +5,8 @@
     const Model = window.StowlingTaskModel;
     const TriggerModel = window.StowlingTriggerModel;
     const Editor = window.StowlingTaskEditor;
-    const TASK_TAB_IDS = Object.freeze([
-        "orchestration",
-        "monitor"
-    ]);
-    const TASK_TAB_HASHES = Object.freeze({
-        orchestration: "#orchestration",
-        monitor: "#monitor"
-    });
+    const Monitor = window.StowlingTaskMonitorModel;
+    const taskLogs = Monitor.createLogBuffer(300);
     const FOLDER_FILTER_ALL = "ALL";
     const FOLDER_FILTER_UNGROUPED = "UNGROUPED";
     const state = {
@@ -40,7 +34,7 @@
         folderFilter: FOLDER_FILTER_ALL,
         folderEditorId: "",
         folderBusy: false,
-        activeTab: "orchestration",
+        logScrollPaused: false,
         preserveTabOnSelect: false,
         openTriggersAfterTaskReady: false,
         taskEditSerial: 0,
@@ -48,8 +42,6 @@
     };
 
     const elements = {
-        tabButtons: [...document.querySelectorAll("[data-task-tab]")],
-        tabPanels: [...document.querySelectorAll("[data-task-panel]")],
         taskFilters: [...document.querySelectorAll("[data-task-filter]")],
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
@@ -140,37 +132,20 @@
         saveTrigger: document.querySelector("#save-trigger-button"),
         discardTrigger: document.querySelector("#discard-trigger-button"),
         deleteTrigger: document.querySelector("#delete-trigger-button"),
-        triggerStatusList: document.querySelector("#trigger-status-list"),
         runtime: document.querySelector("#runtime-list"),
         queueList: document.querySelector("#task-queue-list"),
-        refreshRuns: document.querySelector("#refresh-runs-button")
+        refreshRuns: document.querySelector("#refresh-runs-button"),
+        queueCount: document.querySelector("#task-queue-count"),
+        monitorMessage: document.querySelector("#task-monitor-message"),
+        logList: document.querySelector("#task-log-list"),
+        logCount: document.querySelector("#task-log-count"),
+        exportLogs: document.querySelector("#export-task-logs"),
+        clearLogs: document.querySelector("#clear-task-logs"),
+        pauseLogScroll: document.querySelector("#pause-task-log-scroll"),
+        runDetails: document.querySelector("#task-run-details"),
+        showRunDetails: document.querySelector("#show-run-details"),
+        closeRunDetails: document.querySelector("#close-run-details")
     };
-
-    /**
-     * @param {string} value
-     * @returns {string}
-     */
-    function normalizeTaskTab(value) {
-        const normalized = String(value || "")
-            .replace(/^#/, "")
-            .toLocaleLowerCase();
-        return TASK_TAB_IDS.includes(normalized)
-            ? normalized
-            : "orchestration";
-    }
-
-    /**
-     * @returns {string}
-     */
-    function taskTabFromHash() {
-        const hash = String(window.location.hash || "")
-            .replace(/^#/, "")
-            .toLocaleLowerCase();
-        if (hash === "triggers") {
-            return "orchestration";
-        }
-        return TASK_TAB_IDS.includes(hash) ? hash : "";
-    }
 
     /**
      * @returns {boolean}
@@ -197,71 +172,23 @@
      * @returns {void}
      */
     function applyTaskHashRoute() {
-        const legacyTriggers = hasLegacyTriggerHash();
-        if (legacyTriggers) {
+        if (hasLegacyTriggerHash()) {
             state.openTriggersAfterTaskReady = true;
         }
-        showTaskTab(taskTabFromHash() || "orchestration", legacyTriggers);
         if (state.openTriggersAfterTaskReady) {
             openCurrentTaskTriggers();
         }
     }
 
     /**
-     * @param {string} tab
-     * @param {boolean} updateHash
+     * @param {string} view
      * @returns {void}
      */
-    function showTaskTab(tab, updateHash = false) {
-        const next = normalizeTaskTab(tab);
-        state.activeTab = next;
-        for (const button of elements.tabButtons) {
-            const selected = button.dataset.taskTab === next;
-            button.setAttribute("aria-selected", String(selected));
-            button.tabIndex = selected ? 0 : -1;
-        }
-        for (const panel of elements.tabPanels) {
-            panel.hidden = panel.dataset.taskPanel !== next;
-        }
-        if (!updateHash) {
-            return;
-        }
-        const hash = TASK_TAB_HASHES[next];
+    function setTaskRoute(view) {
+        const hash = view === "monitor" ? "#queue" : "#tasks";
         if (window.location.hash !== hash) {
             window.history.replaceState(null, "", hash);
         }
-    }
-
-    /**
-     * @param {KeyboardEvent} event
-     * @returns {void}
-     */
-    function handleTaskTabKeydown(event) {
-        if (!(event.currentTarget instanceof HTMLButtonElement)) {
-            return;
-        }
-        const tab = event.currentTarget;
-        const current = elements.tabButtons.indexOf(tab);
-        if (current < 0) {
-            return;
-        }
-        let next = current;
-        if (event.key === "ArrowRight") {
-            next = (current + 1) % elements.tabButtons.length;
-        } else if (event.key === "ArrowLeft") {
-            next = (current - 1 + elements.tabButtons.length)
-                % elements.tabButtons.length;
-        } else if (event.key === "Home") {
-            next = 0;
-        } else if (event.key === "End") {
-            next = elements.tabButtons.length - 1;
-        } else {
-            return;
-        }
-        event.preventDefault();
-        const target = elements.tabButtons[next];
-        showTaskTab(target.dataset.taskTab, true);
-        target.focus();
     }
 
     /**
@@ -724,13 +651,15 @@
             renderTriggerEditor();
             renderModuleCatalog();
             renderRunControls();
-            if (!state.draft && state.tasks.length > 0) {
+            if (!state.draft && state.tasks.length > 0
+                    && state.openTriggersAfterTaskReady) {
                 state.preserveTabOnSelect = true;
                 selectTask(state.tasks[0]);
             }
-            renderTriggerStatuses();
             renderRuntime();
             renderQueue();
+            appendMonitorLogs();
+            showMonitorSync();
             applyTaskHashRoute();
         } catch (error) {
             Stowling.handleError(error, "读取任务失败");
@@ -1422,7 +1351,7 @@
         const preserveTab = state.preserveTabOnSelect;
         state.preserveTabOnSelect = false;
         if (!preserveTab) {
-            showTaskTab("orchestration", true);
+            setTaskRoute("tasks");
         }
         state.presetMode = false;
         elements.autoEatForm.hidden = true;
@@ -1521,7 +1450,7 @@
         );
         state.dirty = true;
         elements.autoEatForm.hidden = false;
-        showTaskTab("orchestration", true);
+        setTaskRoute("tasks");
         syncAutoEatDraft();
         renderEditor();
         elements.autoEatCoordinate.focus();
@@ -1692,7 +1621,7 @@
             elements.triggerSettings.open = true;
         }
         state.dirty = true;
-        showTaskTab("orchestration", true);
+        setTaskRoute("tasks");
         renderEditor();
         renderTaskList();
         elements.name.focus();
@@ -2669,7 +2598,7 @@
             return;
         }
         try {
-            showTaskTab("monitor", true);
+            setTaskRoute("monitor");
             const response = await Stowling.request(
                 `/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs`,
                 {
@@ -2705,50 +2634,15 @@
                 ? response.triggers
                 : [];
             renderTriggerList();
-            renderTriggerStatuses();
             renderRuntime();
             renderQueue();
+            appendMonitorLogs();
+            showMonitorSync();
             updateRunActions();
         } catch (error) {
+            elements.monitorMessage.textContent = "同步失败 · 显示上次状态";
+            elements.monitorMessage.classList.add("is-stale");
             Stowling.handleError(error, "读取运行状态失败");
-        }
-    }
-
-    /**
-     * @returns {void}
-     */
-    function renderTriggerStatuses() {
-        elements.triggerStatusList.replaceChildren();
-        if (state.triggerStatuses.length === 0) {
-            elements.triggerStatusList.append(
-                Stowling.emptyState("当前没有后台触发器")
-            );
-            return;
-        }
-        for (const status of state.triggerStatuses) {
-            const card = Stowling.element("article", "task-card");
-            const content = Stowling.element("div");
-            content.append(
-                Stowling.element("strong", "", status.triggerName),
-                Stowling.element(
-                    "span",
-                    "module-level-tag trigger-state-tag",
-                    triggerStateLabel(status.state)
-                ),
-                Stowling.element(
-                    "p",
-                    "muted compact-help",
-                    `目标：${status.targetTaskName} · `
-                        + `${Model.priorityLabel(status.priority)}队列`
-                ),
-                Stowling.element(
-                    "span",
-                    "muted compact-help",
-                    status.message || ""
-                )
-            );
-            card.append(content);
-            elements.triggerStatusList.append(card);
         }
     }
 
@@ -2856,68 +2750,157 @@
      * @returns {void}
      */
     function renderQueue() {
+        const scrollTop = elements.queueList.scrollTop;
         elements.queueList.replaceChildren();
-        const interruption = state.runs.find((run) => (
-            run.state === "INTERRUPTING"
-            || run.state === "INTERRUPTION_FAILED"
-        ));
-        if (interruption) {
-            const notice = Stowling.element(
-                "article",
-                "task-card interruption-notice"
-            );
-            notice.append(
-                Stowling.element(
-                    "strong",
-                    "",
-                    runStateLabel(interruption.state)
-                ),
-                Stowling.element(
-                    "span",
-                    "muted compact-help",
-                    runStateMessage(interruption)
-                )
-            );
-            elements.queueList.append(notice);
+        const entries = Monitor.queueEntries(
+            state.runs, state.queue, state.triggerStatuses
+        );
+        elements.queueCount.textContent = String(entries.length);
+        if (entries.length === 0) {
+            elements.queueList.append(Stowling.emptyState("暂无排队或监听任务"));
         }
-        if (state.queue.length === 0) {
-            elements.queueList.append(
-                Stowling.emptyState("当前没有等待任务")
+        for (const entry of entries) {
+            const card = Stowling.element("article", "rail-queue-card");
+            card.dataset.priority = entry.priority;
+            card.dataset.kind = entry.kind;
+            const heading = Stowling.element("div", "rail-card-heading");
+            const task = state.tasks.find((item) => item.id === entry.taskId);
+            const name = Stowling.element(
+                task ? "button" : "strong", "rail-task-name", entry.taskName
             );
-            return;
-        }
-        state.queue.forEach((run, index) => {
-            const card = Stowling.element("article", "task-card");
-            const content = Stowling.element("div");
-            content.append(
-                Stowling.element(
-                    "strong",
-                    "",
-                    `${index + 1}. ${run.taskName}`
-                ),
-                Stowling.element(
-                    "span",
-                    "module-level-tag",
-                    Model.priorityLabel(run.priority)
-                ),
-                Stowling.element(
-                    "span",
-                    "muted compact-help",
-                    run.message || "排队等待"
-                )
-            );
-            const cancel = Stowling.element(
-                "button",
-                "secondary compact",
-                "取消排队"
-            );
-            cancel.type = "button";
-            cancel.addEventListener("click", () => {
-                void cancelRun(run.runId);
-            });
-            card.append(content, cancel);
+            if (task) {
+                name.type = "button";
+                name.title = "查看任务配置";
+                name.addEventListener("click", () => selectTask(task, true));
+            }
+            heading.append(name, Stowling.element(
+                "span", "rail-priority", Model.priorityLabel(entry.priority)
+            ));
+            const status = entry.kind === "trigger"
+                ? listeningStateLabel(entry.state)
+                : runStateLabel(entry.state);
+            card.append(heading, Stowling.element("span", "rail-state", status));
+            card.append(Stowling.element("p", "rail-card-message", entry.message));
+            const actions = Stowling.element("div", "rail-card-actions");
+            if (entry.run?.state === "INTERRUPTION_FAILED") {
+                actions.append(
+                    railAction("重试收尾", () => void retryInterruption(entry.run.runId)),
+                    railAction("尝试跳过", () => void skipInterruption(entry.run.runId))
+                );
+            } else if (entry.run) {
+                actions.append(railAction(
+                    entry.state === "QUEUED" ? "取消排队" : "取消任务",
+                    () => void cancelRun(entry.run.runId)
+                ));
+            }
+            if (actions.childElementCount > 0) {
+                card.append(actions);
+            }
             elements.queueList.append(card);
-        });
+        }
+        elements.queueList.scrollTop = scrollTop;
+    }
+
+    /**
+     * @param {string} label
+     * @param {() => void} action
+     * @returns {HTMLButtonElement}
+     */
+    function railAction(label, action) {
+        const button = Stowling.element("button", "ghost compact", label);
+        button.type = "button";
+        button.addEventListener("click", action);
+        return button;
+    }
+
+    /**
+     * @param {string} value
+     * @returns {string}
+     */
+    function listeningStateLabel(value) {
+        const labels = {
+            IDLE: "监听中", RUNNING: "监听 · 已触发",
+            COOLDOWN: "监听 · 冷却中", ERROR: "监听异常"
+        };
+        return labels[value] || "监听中";
+    }
+
+    /**
+     * @returns {void}
+     */
+    function showMonitorSync() {
+        elements.monitorMessage.textContent = "已同步 · "
+            + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        elements.monitorMessage.classList.remove("is-stale");
+    }
+
+    /**
+     * @returns {void}
+     */
+    function appendMonitorLogs() {
+        const added = taskLogs.ingest(
+            state.runs, state.queue, state.triggerStatuses, new Date().toISOString()
+        );
+        if (added > 0 || elements.logList.childElementCount === 0) {
+            renderMonitorLogs();
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderMonitorLogs() {
+        const scrollTop = elements.logList.scrollTop;
+        const entries = taskLogs.entries();
+        elements.logList.replaceChildren();
+        elements.logCount.textContent = String(entries.length);
+        elements.exportLogs.disabled = entries.length === 0;
+        elements.clearLogs.disabled = entries.length === 0;
+        if (entries.length === 0) {
+            elements.logList.append(Stowling.emptyState("暂无任务日志"));
+        }
+        for (const entry of entries) {
+            const row = Stowling.element("article", "rail-log-entry");
+            row.classList.toggle("is-error", [
+                "ERROR", "FAILED", "INTERRUPTION_FAILED"
+            ].includes(entry.state));
+            const time = Stowling.element("time", "rail-log-time");
+            time.dateTime = entry.time;
+            time.textContent = new Date(entry.time).toLocaleTimeString(
+                "zh-CN", { hour12: false }
+            );
+            const status = entry.kind === "trigger"
+                ? listeningStateLabel(entry.state)
+                : runStateLabel(entry.state);
+            const heading = Stowling.element("div", "rail-log-heading");
+            heading.append(time, Stowling.element("span", "rail-state", status));
+            row.append(heading, Stowling.element("strong", "", entry.taskName));
+            row.append(Stowling.element("p", "rail-log-message", entry.message));
+            const progress = entry.completedSteps !== undefined
+                ? ` · ${entry.completedSteps} / ${entry.totalSteps ?? "—"} 步` : "";
+            row.append(Stowling.element(
+                "span", "rail-log-time", Model.priorityLabel(entry.priority) + progress
+            ));
+            elements.logList.append(row);
+        }
+        elements.logList.scrollTop = state.logScrollPaused
+            ? scrollTop : elements.logList.scrollHeight;
+    }
+
+    /**
+     * @returns {void}
+     */
+    function exportMonitorLogs() {
+        const blob = new Blob([taskLogs.exportText()], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        const date = new Date().toISOString().replace(/[:.]/g, "-");
+        link.download = `stowling-task-log-${date}.txt`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     /**
@@ -2980,12 +2963,6 @@
         }
     }
 
-    for (const button of elements.tabButtons) {
-        button.addEventListener("click", () => {
-            showTaskTab(button.dataset.taskTab, true);
-        });
-        button.addEventListener("keydown", handleTaskTabKeydown);
-    }
     for (const button of elements.taskFilters) {
         button.addEventListener("click", () => {
             state.taskFilter = button.dataset.taskFilter;
@@ -3192,6 +3169,37 @@
         void deleteTrigger();
     });
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
+    elements.exportLogs.addEventListener("click", exportMonitorLogs);
+    elements.clearLogs.addEventListener("click", () => {
+        taskLogs.clear();
+        renderMonitorLogs();
+    });
+    elements.pauseLogScroll.addEventListener("click", () => {
+        state.logScrollPaused = !state.logScrollPaused;
+        elements.pauseLogScroll.setAttribute("aria-pressed", String(state.logScrollPaused));
+        elements.pauseLogScroll.textContent = state.logScrollPaused
+            ? "继续滚动" : "暂停滚动";
+        if (!state.logScrollPaused) {
+            elements.logList.scrollTop = elements.logList.scrollHeight;
+        }
+    });
+    elements.showRunDetails.addEventListener("click", () => {
+        renderRuntime();
+        elements.runDetails.showModal();
+    });
+    elements.closeRunDetails.addEventListener("click", () => elements.runDetails.close());
+    elements.runDetails.addEventListener("click", (event) => {
+        if (event.target !== elements.runDetails) {
+            return;
+        }
+        const bounds = elements.runDetails.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right
+                || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+            elements.runDetails.close();
+        }
+    });
+    renderEditor();
+    renderMonitorLogs();
     updateTaskFilters();
     updateFolderControls();
     applyTaskHashRoute();
@@ -3199,6 +3207,9 @@
     window.setInterval(() => {
         if (Stowling.isConnected()) {
             void loadRuns();
+        } else {
+            elements.monitorMessage.textContent = "未连接 · 等待同步";
+            elements.monitorMessage.classList.add("is-stale");
         }
     }, 3000);
     Stowling.mountPage("tasks");

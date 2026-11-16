@@ -13,6 +13,7 @@
     <script src="/v2-task-model.js" defer></script>
     <script src="/v2-trigger-model.js" defer></script>
     <script src="/v2-task-editor.js" defer></script>
+    <script src="/task-monitor-model.js" defer></script>
     <script src="/tasks.js" defer></script>
 </head>
 <body data-page="tasks">
@@ -21,7 +22,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>任务管理 · 配置流程与查看运行结果</p>
+                <p>任务管理 · 选择任务与查看运行情况</p>
             </div>
         </div>
         <div class="connection-state">
@@ -35,29 +36,50 @@
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
-            <nav id="task-page-subnav" class="page-subnav" role="tablist"
-                 aria-label="任务管理分区">
-                <button id="task-tab-orchestration"
-                        class="page-subnav-tab" type="button" role="tab"
-                        aria-controls="task-panel-orchestration"
-                        aria-selected="true"
-                        data-task-tab="orchestration">任务编排</button>
-                <button id="task-tab-monitor" class="page-subnav-tab"
-                        type="button" role="tab"
-                        aria-controls="task-panel-monitor"
-                        aria-selected="false"
-                        data-task-tab="monitor">运行监控</button>
-            </nav>
-
-            <div id="task-panel-orchestration"
-                 class="page-tab-panel task-workbench" role="tabpanel"
-                 aria-labelledby="task-tab-orchestration"
-                 data-task-panel="orchestration">
+            <div class="task-console">
+                <aside class="task-monitor-rail" aria-label="任务运行与日志">
+                    <section class="panel task-queue-panel" aria-labelledby="queue-title">
+                        <div class="panel-heading rail-heading">
+                            <h2 id="queue-title">运行队列</h2>
+                            <div class="rail-heading-actions">
+                                <span id="task-queue-count" class="count-label">0</span>
+                                <button id="refresh-runs-button" class="ghost compact"
+                                        type="button" title="刷新运行状态">刷新</button>
+                            </div>
+                        </div>
+                        <p class="rail-caption">紧急 → 普通 → 后台 · 排队与监听</p>
+                        <p id="task-monitor-message" class="rail-sync-state"
+                           role="status">等待连接</p>
+                        <div id="task-queue-list" class="rail-queue-list"
+                             aria-live="polite"></div>
+                    </section>
+                    <section class="panel task-log-panel" aria-labelledby="task-log-title">
+                        <div class="panel-heading rail-heading">
+                            <h2 id="task-log-title">日志输出</h2>
+                            <span id="task-log-count" class="count-label">0</span>
+                        </div>
+                        <div class="rail-log-actions" role="group" aria-label="日志操作">
+                            <button id="export-task-logs" class="ghost compact"
+                                    type="button" disabled>导出</button>
+                            <button id="clear-task-logs" class="ghost compact"
+                                    type="button" disabled>清空</button>
+                            <button id="pause-task-log-scroll" class="ghost compact"
+                                    type="button" aria-pressed="false">暂停滚动</button>
+                            <button id="show-run-details" class="ghost compact"
+                                    type="button">运行详情</button>
+                        </div>
+                        <p class="rail-caption">本页任务状态变化 · 最多保留 300 条</p>
+                        <div id="task-log-list" class="rail-log-list" role="log"
+                             aria-label="任务状态日志" aria-live="off" tabindex="0"></div>
+                    </section>
+                </aside>
+                <div id="task-selection-area" class="task-workbench"
+                     aria-label="任务选择与配置">
                 <section class="panel task-sidebar" aria-labelledby="task-list-title">
                     <div class="panel-heading">
                         <div>
-                            <p class="eyebrow">我的任务</p>
-                            <h2 id="task-list-title">任务列表</h2>
+                            <p class="eyebrow">选择一个任务开始</p>
+                            <h2 id="task-list-title">任务选择</h2>
                         </div>
                         <span id="task-list-count" class="count-label">0</span>
                     </div>
@@ -143,6 +165,37 @@
                                 aria-pressed="false">中断收尾</button>
                     </div>
                     <p id="task-list-message" class="field-message" role="status"></p>
+                    <section id="task-run-panel" class="task-launch-panel"
+                             aria-labelledby="task-run-title">
+                        <div class="panel-heading">
+                            <div>
+                                <h3 id="task-run-title">加入运行队列</h3>
+                            </div>
+                        </div>
+                        <div class="task-launch-grid">
+                            <div class="editor-field">
+                                <label for="run-task-select">任务</label>
+                                <select id="run-task-select">
+                                    <option value="">请选择任务</option>
+                                </select>
+                            </div>
+                            <div class="editor-field">
+                                <label for="run-priority-select">运行优先级</label>
+                                <select id="run-priority-select"
+                                        aria-describedby="task-launch-note">
+                                    <option value="">跟随任务</option>
+                                    <option value="BACKGROUND">后台</option>
+                                    <option value="NORMAL">普通</option>
+                                    <option value="URGENT">紧急</option>
+                                </select>
+                            </div>
+                            <button id="run-task-button" class="primary compact"
+                                    type="button">运行任务</button>
+                        </div>
+                        <p id="task-launch-note" class="task-launch-note">
+                            仅使用已保存的流程；这里的优先级只对本次运行生效。
+                        </p>
+                    </section>
                     <div id="task-list" class="editor-list"></div>
                 </section>
                 <div class="task-main">
@@ -186,7 +239,7 @@
                             </div>
                         </div>
                         <p class="muted compact-help">
-                            右侧步骤可编辑；可增删、重排或替换模块，创建时按右侧
+                            下方步骤可编辑；可增删、重排或替换模块，创建时按下方
                             最终流程保存。
                         </p>
                         <div id="auto-eat-preset-errors" class="config-errors"
@@ -201,7 +254,7 @@
                         <div id="task-empty" class="task-welcome">
                             <span class="welcome-symbol" aria-hidden="true">＋</span>
                             <h3>从一个任务开始</h3>
-                            <p class="muted">选择左侧任务继续编辑，或新建一个任务。</p>
+                            <p class="muted">选择上方任务查看配置，或新建一个任务。</p>
                             <ol class="task-guide">
                                 <li>命名任务</li>
                                 <li>组合步骤</li>
@@ -209,7 +262,7 @@
                             </ol>
                         </div>
                         <details id="task-trigger-settings"
-                                 class="task-settings task-trigger-settings">
+                                 class="task-settings task-trigger-settings" hidden>
                             <summary>
                                 <span>① 启动条件 · 添加检测器</span>
                                 <span id="task-trigger-summary">未绑定触发器</span>
@@ -487,92 +540,16 @@
                 </details>
             </div>
 
-            <div id="task-panel-monitor"
-                 class="page-tab-panel task-monitor-page" role="tabpanel"
-                 aria-labelledby="task-tab-monitor"
-                 data-task-panel="monitor" hidden>
-                    <section id="task-run-panel" class="panel task-launch-panel"
-                             aria-labelledby="task-run-title">
-                        <div class="panel-heading">
-                            <div>
-                                <p class="eyebrow">执行</p>
-                                <h2 id="task-run-title">运行任务</h2>
-                                <p class="muted section-help">
-                                    选择任务，按优先级加入执行队列。
-                                </p>
-                            </div>
-                        </div>
-                        <div class="task-launch-grid">
-                            <div class="editor-field">
-                                <label for="run-task-select">任务</label>
-                                <select id="run-task-select">
-                                    <option value="">请选择任务</option>
-                                </select>
-                            </div>
-                            <div class="editor-field">
-                                <label for="run-priority-select">运行优先级</label>
-                                <select id="run-priority-select"
-                                        aria-describedby="task-launch-note">
-                                    <option value="">跟随任务</option>
-                                    <option value="BACKGROUND">后台</option>
-                                    <option value="NORMAL">普通</option>
-                                    <option value="URGENT">紧急</option>
-                                </select>
-                            </div>
-                            <button id="run-task-button" class="primary compact"
-                                    type="button">运行任务</button>
-                        </div>
-                        <p id="task-launch-note" class="task-launch-note">
-                            仅使用已保存的流程；这里的优先级只对本次运行生效。
-                        </p>
-                    </section>
-                    <div class="task-monitor">
-                        <section class="panel trigger-status-panel"
-                                 aria-labelledby="trigger-status-title">
-                            <div class="panel-heading">
-                                <div>
-                                    <p class="eyebrow">后台条件</p>
-                                    <h2 id="trigger-status-title">触发器状态</h2>
-                                    <p class="muted section-help queue-help">
-                                        独立显示每个触发器的当前状态，即使没有运行任务
-                                        或等待队列也会持续更新。
-                                    </p>
-                                </div>
-                            </div>
-                            <div id="trigger-status-list" class="card-list"
-                                 aria-live="polite"></div>
-                        </section>
-
-                        <section class="panel" aria-labelledby="queue-title">
-                            <div class="panel-heading">
-                                <div>
-                                    <p class="eyebrow">等待队列</p>
-                                    <h2 id="queue-title">等待任务</h2>
-                                    <p class="muted section-help queue-help">
-                                        任务按优先级进入统一队列。高优先级任务先执行
-                                        可配置的中断收尾，收尾完成后才让位；收尾失败时
-                                        队列暂停，必须先重试，或在确认导航停止并处理完
-                                        受管物品后跳过。
-                                    </p>
-                                </div>
-                            </div>
-                            <div id="task-queue-list" class="card-list"
-                                 aria-live="polite"></div>
-                        </section>
-
-                        <section class="panel" aria-labelledby="runtime-title">
-                            <div class="panel-heading">
-                                <div>
-                                    <p class="eyebrow">调度与执行</p>
-                                    <h2 id="runtime-title">运行状态</h2>
-                                </div>
-                                <button id="refresh-runs-button" class="secondary compact"
-                                        type="button">刷新状态</button>
-                            </div>
-                            <div id="runtime-list" class="card-list" aria-live="polite"></div>
-                        </section>
-                    </div>
             </div>
+            <dialog id="task-run-details" class="task-run-dialog"
+                    aria-labelledby="runtime-title">
+                <div class="panel-heading">
+                    <h2 id="runtime-title">运行详情</h2>
+                    <button id="close-run-details" class="secondary compact"
+                            type="button">关闭</button>
+                </div>
+                <div id="runtime-list" class="card-list" aria-live="polite"></div>
+            </dialog>
         </div>
     </main>
 

@@ -1343,7 +1343,6 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/category-zones.html", html)
                 ),
                 Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
-                Map.entry("/storage.html", read("stowling-web/storage.html", html)),
                 Map.entry("/common.js", read("stowling-web/common.js", js)),
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
@@ -1365,6 +1364,10 @@ public final class V2ControlServer implements AutoCloseable {
                 ),
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
                 Map.entry(
+                        "/task-monitor-model.js",
+                        read("stowling-web/task-monitor-model.js", js)
+                ),
+                Map.entry(
                         "/v2-task-model.js",
                         read("stowling-web/v2-task-model.js", js)
                 ),
@@ -1376,7 +1379,6 @@ public final class V2ControlServer implements AutoCloseable {
                         "/v2-task-editor.js",
                         read("stowling-web/v2-task-editor.js", js)
                 ),
-                Map.entry("/storage.js", read("stowling-web/storage.js", js)),
                 Map.entry(
                         "/styles.css",
                         read("stowling-web/styles.css", "text/css; charset=utf-8")

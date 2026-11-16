@@ -94,6 +94,46 @@ class V2ControlServerTest {
     }
 
     @Test
+    void hidesInventoryWebRoutesAndServesTaskAssets() throws Exception {
+        try (Fixture fixture = fixture()) {
+            for (String path : List.of(
+                    "/storage.html",
+                    "/storage.js"
+            )) {
+                HttpResponse<String> response = fixture.send(
+                        path,
+                        "GET",
+                        null,
+                        true
+                );
+                assertEquals(404, response.statusCode(), path);
+            }
+
+            HttpResponse<String> tasksPage = fixture.send(
+                    "/tasks.html",
+                    "GET",
+                    null,
+                    false
+            );
+            assertEquals(200, tasksPage.statusCode());
+
+            HttpResponse<String> taskMonitorModel = fixture.send(
+                    "/task-monitor-model.js",
+                    "GET",
+                    null,
+                    false
+            );
+            assertEquals(200, taskMonitorModel.statusCode());
+            assertEquals(
+                    "text/javascript; charset=utf-8",
+                    taskMonitorModel.headers()
+                            .firstValue("Content-Type")
+                            .orElse("")
+            );
+        }
+    }
+
+    @Test
     void removesEveryLegacyRoute() throws Exception {
         try (Fixture fixture = fixture()) {
             for (String path : List.of(

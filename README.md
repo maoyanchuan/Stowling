@@ -5,12 +5,17 @@ coordinates, regions, category zones, queued tasks, and condition listeners.
 Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
-The task page has two hash-addressable sections. `#orchestration` contains the
-folder-aware task list and editor, including automatic trigger settings. New tasks
-can stage a detector before their first save. `#monitor` shows launch controls, trigger status, queueing, and run
-records. The legacy `#triggers` link opens orchestration and expands the current
-task's trigger settings. The list can filter ordinary tasks from interruption
-cleanup tasks without storing another task category.
+The task page uses a two-column console. A narrow left rail keeps active runs,
+queued runs, and listening tasks visible in urgent / normal / background priority
+order. Its lower half shows page-session task state changes, with export, clear,
+and pause-scroll controls (up to 300 entries). Pause-scroll does not pause tasks;
+reloading the page starts a new log session. Run details and interruption recovery
+remain available in a dialog. The right side contains folder-aware task cards,
+filters, launch controls, and the existing editor; no task opens automatically.
+New tasks can stage a detector before their first save. The legacy `#triggers`
+link still expands task trigger settings. Inventory query navigation and static
+web routes are temporarily removed; inventory APIs, data, and source assets remain
+intact for later restoration.
 
 ## Task model
 

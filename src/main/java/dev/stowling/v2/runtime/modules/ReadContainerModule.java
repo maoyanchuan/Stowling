@@ -3,6 +3,8 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.ContainerInspectionResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferState;
+import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
@@ -20,18 +22,37 @@ final class ReadContainerModule implements TaskModuleExecutor {
                 TaskModuleIds.TARGET_REF,
                 ResourceType.OUTPUT
         );
-        ContainerTarget selected = ResourceReferenceSupport.markerContainer(
-                context.workspace()
-        );
-        ContainerTarget requested = reference == null
-                ? selected
-                : ResourceReferenceSupport.output(context.workspace(), reference);
-        if (!selected.equals(requested)) {
-            throw new IllegalArgumentException(
-                    "READ_CONTAINER target must match the selected marker"
+        if (reference == null) {
+            this.target = ResourceReferenceSupport.markerContainer(
+                    context.workspace()
             );
+            return;
         }
-        this.target = selected;
+        if (reference.type() == ResourceType.OUTPUT) {
+            this.target = ResourceReferenceSupport.output(
+                    context.workspace(),
+                    reference
+            );
+            return;
+        }
+        if (reference.type() == ResourceType.COORDINATE) {
+            CoordinatePoint coordinate = ResourceReferenceSupport.coordinate(
+                    context,
+                    reference
+            );
+            this.target = new ContainerTarget(
+                    new BlockPosition(
+                            coordinate.x(),
+                            coordinate.y(),
+                            coordinate.z()
+                    ),
+                    "container"
+            );
+            return;
+        }
+        throw new IllegalArgumentException(
+                "READ_CONTAINER target must be a coordinate or output"
+        );
     }
 
     @Override

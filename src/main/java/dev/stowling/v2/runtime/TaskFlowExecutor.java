@@ -267,7 +267,7 @@ public final class TaskFlowExecutor {
             case FOOD_BELOW_THRESHOLD -> foodBelowThreshold(step);
             case HAS_CONTAINERS -> context.workspace().hasContainers();
             case HAS_CARRIED_ITEMS -> context.workspace().hasCarriedItems();
-            case HAS_MANAGED_ITEMS -> context.workspace().hasManagedItems();
+            case HAS_MANAGED_ITEMS -> hasSourceItems(step, "managed");
             case CACHE_HAS_MORE -> context.workspace().cacheHasMore();
             case HAS_MARKER_CONTAINERS -> context.workspace().hasMarkerContainers();
         };
@@ -276,6 +276,18 @@ public final class TaskFlowExecutor {
                 TaskModuleIds.NEGATE
         ));
         return negate ? !result : result;
+    }
+
+    private boolean hasSourceItems(TaskStep step, String fallback) {
+        String source = parameterOptional(step, TaskModuleIds.ITEM_SOURCE);
+        String effective = source == null ? fallback : source;
+        return switch (effective) {
+            case "collected", "carried", "managed" ->
+                    !context.workspace().itemsForSource(effective).isEmpty();
+            default -> throw new IllegalArgumentException(
+                    "unsupported condition itemSource: " + effective
+            );
+        };
     }
 
     private boolean foodBelowThreshold(TaskStep step) {

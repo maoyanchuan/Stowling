@@ -61,6 +61,42 @@ class TaskFlowExecutorTest {
     }
 
     @Test
+    void managedItemsConditionCanTrackCollectedSubLedger() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordCollected("minecraft:gold_ingot", 1);
+        workspace.recordWithdrawn("minecraft:iron_ingot", 1);
+        AtomicInteger count = new AtomicInteger();
+        TaskFlowExecutor flow = flow(workspace, Map.of(
+                "CLEAR_COLLECTED", (context, step) -> action(() -> {
+                    context.workspace().removeCollected(
+                            "minecraft:gold_ingot",
+                            1
+                    );
+                    count.incrementAndGet();
+                    return TaskModuleResult.succeeded("cleared");
+                })
+        ), List.of(TaskStep.repeat(
+                UUID.randomUUID(),
+                Map.of(
+                        TaskModuleIds.CONDITION,
+                        "HAS_MANAGED_ITEMS",
+                        TaskModuleIds.ITEM_SOURCE,
+                        "collected"
+                ),
+                List.of(actionStep("CLEAR_COLLECTED"))
+        )));
+
+        TaskModuleResult result = flow.tick();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(1, count.get());
+        assertEquals(
+                Map.of("minecraft:iron_ingot", 1),
+                workspace.carriedItems()
+        );
+    }
+
+    @Test
     void repeatAlwaysHonorsMaxIterations() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         AtomicInteger count = new AtomicInteger();

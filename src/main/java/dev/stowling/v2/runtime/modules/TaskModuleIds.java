@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
 public final class TaskModuleIds {
+    public static final String CONTAINER_INTERACTION = "CONTAINER_INTERACTION";
     public static final String MOVE_TO_COORDINATE = "MOVE_TO_COORDINATE";
     public static final String COLLECT_DROPPED_ITEMS = "COLLECT_DROPPED_ITEMS";
     public static final String SCAN_CONTAINERS_IN_REGION =
@@ -42,6 +43,9 @@ public final class TaskModuleIds {
     public static final String CONTAINER_TYPES = "containerTypes";
     public static final String MAX_VOLUME = "maxVolume";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
+    public static final String OPERATION = "operation";
+    public static final String ALLOW_EMPTY_CONTAINER_SCAN =
+            "allowEmptyContainerScan";
 
     public static final String COORDINATE_ID = "coordinateId";
     public static final String REGION_ID = "regionId";

@@ -86,7 +86,7 @@ def test_trigger_editor_is_task_bound_and_guards_stale_responses() -> None:
         ">", 1
     )[0]
     assert 'id="trigger-target-task"' not in html
-    assert "先保存任务再配置触发器" in html
+    assert "新任务的检测器随任务保存" in html
     assert "function currentTaskTriggers()" in javascript
     assert "trigger.targetTaskId === state.selectedId" in javascript
     assert "TriggerModel.newTrigger(state.selectedId)" in javascript

@@ -36,6 +36,7 @@
         "HAS_MARKER_CONTAINERS"
     ]);
     const ACTION_MODULE_IDS = Object.freeze([
+        "CONTAINER_INTERACTION",
         "MOVE_TO_COORDINATE",
         "COLLECT_DROPPED_ITEMS",
         "SCAN_CONTAINERS_IN_REGION",
@@ -52,11 +53,55 @@
         "SAVE_CATEGORY_MARKER_CACHE",
         "ASSERT_NO_MANAGED_ITEMS"
     ]);
+    const INTERACTION_OPERATIONS = Object.freeze([
+        "COLLECT",
+        "FIND",
+        "READ",
+        "WITHDRAW",
+        "DEPOSIT"
+    ]);
+    const LEGACY_INTERACTION_OPERATIONS = Object.freeze({
+        COLLECT_DROPPED_ITEMS: "COLLECT",
+        SCAN_CONTAINERS_IN_REGION: "FIND",
+        READ_CONTAINER: "READ",
+        WITHDRAW_ITEMS: "WITHDRAW",
+        DEPOSIT_ITEMS_TO_CONTAINERS: "DEPOSIT"
+    });
+    const INTERACTION_OPERATION_LABELS = Object.freeze({
+        COLLECT: "拾取掉落物",
+        FIND: "查找容器",
+        READ: "读取容器",
+        WITHDRAW: "取出物品",
+        DEPOSIT: "存入物品"
+    });
+    const INTERACTION_REFERENCE_TYPES = Object.freeze({
+        COLLECT: Object.freeze({
+            areaRef: Object.freeze(["coordinate", "region"])
+        }),
+        FIND: Object.freeze({
+            targetRef: Object.freeze(["region", "category-zone"])
+        }),
+        READ: Object.freeze({
+            targetRef: Object.freeze(["coordinate", "output"])
+        }),
+        WITHDRAW: Object.freeze({
+            targetRef: Object.freeze(["coordinate", "output"])
+        }),
+        DEPOSIT: Object.freeze({
+            targetRef: Object.freeze([
+                "coordinate",
+                "region",
+                "category-zone",
+                "output"
+            ])
+        })
+    });
     const MAX_REPEAT_ITERATIONS = 1_000_000;
     const MAX_ROOT_STEPS = 128;
     const MAX_STEP_DEPTH = 16;
     const MAX_TOTAL_STEPS = 512;
     const DEFAULT_REPEAT_ITERATIONS = 1024;
+    const DEFAULT_COLLECT_TIMEOUT_SECONDS = 120;
     const OUTPUT_REFERENCES = Object.freeze([
         "output:container",
         "output:storage",
@@ -208,7 +253,8 @@
      */
     function defaultModule(modules) {
         const actions = actionModules(modules);
-        return actions.find((module) => module?.level === "BASIC")
+        return actions.find((module) => module?.id === "CONTAINER_INTERACTION")
+            || actions.find((module) => module?.level === "BASIC")
             || actions[0];
     }
 
@@ -375,6 +421,9 @@
                 otherwise: []
             };
         }
+        if (module?.id === "CONTAINER_INTERACTION") {
+            return interactionStep("COLLECT", { areaRef: "detector" });
+        }
         return actionStep(String(module?.id || ""), {});
     }
 
@@ -391,6 +440,315 @@
             steps: [],
             otherwise: []
         };
+    }
+
+    /**
+     * @param {string} key
+     * @param {string} label
+     * @param {string} kind
+     * @param {boolean} required
+     * @param {object} [extras]
+     * @returns {object}
+     */
+    function interactionParameter(key, label, kind, required, extras = {}) {
+        return {
+            key,
+            label,
+            kind,
+            required,
+            options: Array.isArray(extras.options) ? [...extras.options] : [],
+            min: extras.min ?? null,
+            max: extras.max ?? null,
+            step: extras.step ?? null,
+            defaultValue: extras.defaultValue ?? null
+        };
+    }
+
+    const INTERACTION_PARAMETER_DEFINITIONS = Object.freeze({
+        COLLECT: Object.freeze([
+            interactionParameter(
+                "areaRef",
+                "收集范围",
+                "area-reference",
+                true,
+                { defaultValue: "detector" }
+            ),
+            interactionParameter("itemFilter", "物品过滤", "text", false),
+            interactionParameter(
+                "timeoutSeconds",
+                "收集超时（秒）",
+                "integer",
+                false,
+                {
+                    min: 0,
+                    max: 86_400,
+                    step: 1,
+                    defaultValue: String(DEFAULT_COLLECT_TIMEOUT_SECONDS)
+                }
+            )
+        ]),
+        FIND: Object.freeze([
+            interactionParameter(
+                "targetRef",
+                "查找范围",
+                "region-category-zone-reference",
+                true
+            ),
+            interactionParameter("containerTypes", "容器类型", "text", false),
+            interactionParameter(
+                "maxVolume",
+                "最大扫描体积",
+                "integer",
+                false,
+                { min: 1, max: 1_048_576, step: 1 }
+            )
+        ]),
+        READ: Object.freeze([
+            interactionParameter(
+                "targetRef",
+                "读取目标",
+                "coordinate-output-reference",
+                true
+            )
+        ]),
+        WITHDRAW: Object.freeze([
+            interactionParameter(
+                "targetRef",
+                "取出目标",
+                "coordinate-output-reference",
+                true
+            ),
+            interactionParameter(
+                "itemSource",
+                "物品来源",
+                "select",
+                false,
+                {
+                    options: ["classified"],
+                    defaultValue: "classified"
+                }
+            )
+        ]),
+        DEPOSIT: Object.freeze([
+            interactionParameter(
+                "targetRef",
+                "存入目标",
+                "deposit-target-reference",
+                true
+            ),
+            interactionParameter(
+                "itemSource",
+                "物品来源",
+                "select",
+                false,
+                {
+                    options: ["collected", "carried", "managed"],
+                    defaultValue: "collected"
+                }
+            )
+        ])
+    });
+
+    /**
+     * @param {string} operation
+     * @returns {string}
+     */
+    function normalizeInteractionOperation(operation) {
+        const value = String(operation || "").trim().toUpperCase();
+        return INTERACTION_OPERATIONS.includes(value) ? value : "";
+    }
+
+    /**
+     * @param {string} operation
+     * @returns {Array<object>}
+     */
+    function interactionParameters(operation) {
+        const normalized = normalizeInteractionOperation(operation);
+        const definitions = INTERACTION_PARAMETER_DEFINITIONS[normalized] || [];
+        return definitions.map((parameter) => ({
+            ...parameter,
+            options: [...parameter.options]
+        }));
+    }
+
+    /**
+     * @param {string} operation
+     * @param {object} [parameters]
+     * @returns {object}
+     */
+    function interactionStep(operation, parameters = {}) {
+        const normalized = normalizeInteractionOperation(operation);
+        if (!normalized) {
+            throw new RangeError(`不支持的容器交互操作：${operation}`);
+        }
+        return actionStep("CONTAINER_INTERACTION", {
+            ...normalizeParameters(parameters),
+            operation: normalized
+        });
+    }
+
+    /**
+     * @param {object} step
+     * @param {string} [operation]
+     * @returns {boolean}
+     */
+    function isInteractionStep(step, operation) {
+        if (
+            (step?.kind || "ACTION") !== "ACTION"
+            || step?.moduleId !== "CONTAINER_INTERACTION"
+        ) {
+            return false;
+        }
+        if (operation === undefined) {
+            return true;
+        }
+        const expected = normalizeInteractionOperation(operation);
+        return Boolean(expected) && interactionOperation(step) === expected;
+    }
+
+    /**
+     * @param {object} step
+     * @returns {string}
+     */
+    function interactionOperation(step) {
+        if ((step?.kind || "ACTION") !== "ACTION") {
+            return "";
+        }
+        if (step?.moduleId === "CONTAINER_INTERACTION") {
+            return normalizeInteractionOperation(step?.parameters?.operation);
+        }
+        return LEGACY_INTERACTION_OPERATIONS[String(step?.moduleId || "")] || "";
+    }
+
+    /**
+     * @param {string} operation
+     * @returns {string}
+     */
+    function interactionOperationLabel(operation) {
+        const normalized = normalizeInteractionOperation(operation);
+        return INTERACTION_OPERATION_LABELS[normalized] || "未知容器交互";
+    }
+
+    /**
+     * @param {string} operation
+     * @param {string} key
+     * @param {string} value
+     * @param {Array<string>} types
+     * @param {Array<string>} errors
+     * @returns {void}
+     */
+    function validateInteractionReference(operation, key, value, types, errors) {
+        if (operation === "COLLECT" && key === "areaRef" && value === "detector") {
+            return;
+        }
+        const parsed = parseReference(value);
+        if (!parsed || !types.includes(parsed.type)) {
+            errors.push(`“${key}”必须是${types.join("、")}引用`);
+            return;
+        }
+        if (parsed.type === "output") {
+            if (!isOutputReference(value)) {
+                errors.push(`“${key}”的输出引用无效`);
+            } else if (
+                (operation === "READ" || operation === "WITHDRAW")
+                && value !== "output:container"
+                && value !== "output:marker"
+            ) {
+                errors.push(`操作 ${operation} 仅支持 output:container 或 output:marker`);
+            }
+        }
+    }
+
+    /**
+     * @param {object} step
+     * @returns {Array<string>}
+     */
+    function validateInteractionStep(step) {
+        const errors = [];
+        if ((step?.kind || "ACTION") !== "ACTION") {
+            return ["容器交互步骤必须是动作"];
+        }
+        if (step?.moduleId !== "CONTAINER_INTERACTION") {
+            return ["步骤不是容器交互动作"];
+        }
+        if ((step.steps || []).length > 0 || (step.otherwise || []).length > 0) {
+            errors.push("容器交互步骤不能包含子步骤");
+        }
+        const parameters = step.parameters && typeof step.parameters === "object"
+            ? step.parameters
+            : {};
+        const operation = String(parameters.operation ?? "").trim();
+        if (!INTERACTION_OPERATIONS.includes(operation)) {
+            errors.push("容器交互操作无效");
+            return errors;
+        }
+        const definitions = interactionParameters(operation);
+        const allowedKeys = new Set([
+            "operation",
+            ...definitions.map((parameter) => parameter.key)
+        ]);
+        for (const key of Object.keys(parameters)) {
+            if (!allowedKeys.has(key)) {
+                errors.push(`操作 ${operation} 不支持参数“${key}”`);
+            }
+        }
+        if (
+            operation === "FIND"
+            && referenceType(parameters.targetRef) === "category-zone"
+            && Object.prototype.hasOwnProperty.call(parameters, "containerTypes")
+        ) {
+            errors.push("FIND 的 category-zone 目标不支持参数“containerTypes”");
+        }
+        const references = INTERACTION_REFERENCE_TYPES[operation] || {};
+        for (const parameter of definitions) {
+            const present = Object.prototype.hasOwnProperty.call(
+                parameters,
+                parameter.key
+            );
+            const fallback = !present && operation === "COLLECT" && parameter.key === "areaRef"
+                ? "detector"
+                : "";
+            const value = String(parameters[parameter.key] ?? fallback).trim();
+            if (!value) {
+                if (parameter.required) {
+                    errors.push(`必须填写“${parameter.label}”`);
+                } else if (present && parameter.key === "itemSource") {
+                    errors.push(`“${parameter.label}”不能为空`);
+                }
+                continue;
+            }
+            if (references[parameter.key]) {
+                validateInteractionReference(
+                    operation,
+                    parameter.key,
+                    value,
+                    references[parameter.key],
+                    errors
+                );
+            }
+            if (parameter.kind === "integer") {
+                if (!/^[+-]?\d+$/.test(value)) {
+                    errors.push(`“${parameter.label}”必须是整数`);
+                    continue;
+                }
+                const number = Number(value);
+                if (!Number.isInteger(number)) {
+                    errors.push(`“${parameter.label}”必须是整数`);
+                } else if (
+                    (parameter.min !== null && number < parameter.min)
+                    || (parameter.max !== null && number > parameter.max)
+                ) {
+                    errors.push(`“${parameter.label}”超出允许范围`);
+                }
+            }
+            if (
+                parameter.kind === "select"
+                && !parameter.options.includes(value)
+            ) {
+                errors.push(`“${parameter.label}”不是有效选项`);
+            }
+        }
+        return errors;
     }
 
     /**
@@ -493,10 +851,13 @@
      */
     function collectTask(modules) {
         const steps = [
-            actionStep("COLLECT_DROPPED_ITEMS", { areaRef: "" }),
-            ...depositToRegionSteps("", "collected")
+            interactionStep("COLLECT", { areaRef: "detector" }),
+            interactionStep("DEPOSIT", {
+                targetRef: "",
+                itemSource: "collected"
+            })
         ];
-        return taskTemplate("收集入缓存", "NORMAL", steps);
+        return taskTemplate("拾取并存入", "NORMAL", steps);
     }
 
     /**
@@ -614,7 +975,12 @@
         return taskTemplate(
             "中断收尾",
             "BACKGROUND",
-            depositToRegionSteps("", "managed")
+            [
+                interactionStep("DEPOSIT", {
+                    targetRef: "",
+                    itemSource: "managed"
+                })
+            ]
         );
     }
 
@@ -746,6 +1112,7 @@
         CONDITIONS,
         DEFAULT_REPEAT_ITERATIONS,
         DEPOSIT_ITEM_SOURCES,
+        INTERACTION_OPERATIONS,
         INTERRUPTION_MODES,
         MAX_REPEAT_ITERATIONS,
         MAX_ROOT_STEPS,
@@ -769,8 +1136,13 @@
         depositToRegionSteps,
         eatTask,
         ifStep,
+        interactionOperation,
+        interactionOperationLabel,
+        interactionParameters,
+        interactionStep,
         interruptionModeLabel,
         interruptionTask,
+        isInteractionStep,
         isOutputReference,
         markerTask,
         missingModules,
@@ -792,6 +1164,7 @@
         taskModuleIds,
         taskRef,
         taskTemplate,
+        validateInteractionStep,
         visibleModules
     });
 })();

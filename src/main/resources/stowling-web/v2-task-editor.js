@@ -4,6 +4,13 @@
     const Stowling = window.Stowling;
     const Model = window.StowlingTaskModel;
     const OUTPUT_TYPES = Object.freeze(["output"]);
+    const INTERACTION_LABELS = Object.freeze({
+        COLLECT: "拾取掉落物",
+        FIND: "寻找容器",
+        READ: "读取容器物品",
+        WITHDRAW: "取出物品",
+        DEPOSIT: "存入物品"
+    });
     const STEP_KIND_LABELS = Object.freeze({
         ACTION: "动作",
         IF: "条件",
@@ -28,9 +35,9 @@
             + "收集掉落物不会产生此结果。若要存入固定缓存箱，请选择它的已保存坐标。"
     });
     const ITEM_SOURCE_LABELS = Object.freeze({
-        collected: "已收集",
+        collected: "本次拾取的物品",
         classified: "已分类",
-        carried: "当前携带",
+        carried: "本次取出的物品",
         managed: "任务管理物品"
     });
     const editorState = {
@@ -49,6 +56,7 @@
      * @param {Array<object>} categoryZones
      * @param {() => void} changed
      * @param {Array<object>} tasks
+     * @param {Array<object>} triggers
      * @returns {void}
      */
     function render(
@@ -59,7 +67,8 @@
         regions,
         categoryZones,
         changed,
-        tasks = []
+        tasks = [],
+        triggers = []
     ) {
         const context = {
             task,
@@ -68,6 +77,7 @@
             regions,
             categoryZones,
             tasks,
+            triggers,
             changed
         };
         host.replaceChildren();
@@ -253,7 +263,21 @@
             moduleSelect(step, context.modules, context.changed)
         ));
         const parameters = Stowling.element("div", "step-fields");
-        for (const parameter of module?.parameters || []) {
+        const interaction = Model.isInteractionStep(step);
+        if (interaction) {
+            fields.append(field(
+                "操作类型", interactionOperationSelect(step, context.changed)
+            ));
+        }
+        const definitions = interaction
+            ? Model.interactionParameters(step.parameters.operation)
+            : module?.parameters || [];
+        for (const parameter of definitions) {
+            if (Model.isInteractionStep(step, "FIND")
+                    && Model.referenceType(step.parameters.targetRef) === "category-zone"
+                    && parameter.key === "containerTypes") {
+                continue;
+            }
             const label = step.moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
                 && parameter.key === "targetRef"
                 ? "存入位置"
@@ -268,7 +292,75 @@
         if (parameters.children.length > 0) {
             editor.append(parameters);
         }
+        if (interaction) {
+            editor.append(Stowling.element(
+                "p", "muted compact-help workflow-node-help",
+                "地址自动识别类型；移动、遍历和结果确认由基础流程执行。"
+                    + "只处理所选来源的物品，不会存走整个背包。"
+            ));
+        }
         return editor;
+    }
+
+    /**
+     * @param {object} step
+     * @param {() => void} changed
+     * @returns {HTMLSelectElement}
+     */
+    function interactionOperationSelect(step, changed) {
+        const select = document.createElement("select");
+        for (const operation of Model.INTERACTION_OPERATIONS) {
+            select.append(new Option(INTERACTION_LABELS[operation], operation));
+        }
+        select.value = step.parameters.operation || "COLLECT";
+        select.addEventListener("change", () => {
+            const old = step.parameters || {};
+            const parameters = { operation: select.value };
+            for (const definition of Model.interactionParameters(select.value)) {
+                const value = old[definition.key] ?? definition.defaultValue;
+                if (value !== undefined && value !== null && value !== "") {
+                    parameters[definition.key] = String(value);
+                }
+            }
+            // Only reuse a target when the new operation accepts its resource type.
+            const types = interactionTargetTypes(select.value);
+            if (parameters.targetRef
+                    && !types.includes(Model.referenceType(parameters.targetRef))) {
+                delete parameters.targetRef;
+            }
+            if (select.value === "DEPOSIT"
+                    && !Model.DEPOSIT_ITEM_SOURCES.includes(parameters.itemSource)) {
+                parameters.itemSource = "collected";
+            }
+            if (select.value === "WITHDRAW") {
+                parameters.itemSource = "classified";
+            }
+            if (["READ", "WITHDRAW"].includes(select.value)
+                    && parameters.targetRef === "output:storage") {
+                delete parameters.targetRef;
+            }
+            if (select.value === "FIND"
+                    && Model.referenceType(parameters.targetRef) === "category-zone") {
+                delete parameters.containerTypes;
+            }
+            step.parameters = parameters;
+            changed(true);
+        });
+        return select;
+    }
+
+    /**
+     * @param {string} operation
+     * @returns {Array<string>}
+     */
+    function interactionTargetTypes(operation) {
+        if (operation === "DEPOSIT") {
+            return ["coordinate", "region", "category-zone", "output"];
+        }
+        if (operation === "FIND") {
+            return ["region", "category-zone"];
+        }
+        return ["coordinate", "output"];
     }
 
     /**
@@ -378,7 +470,9 @@
     function stepHeadline(kind, module, step) {
         if (kind === "ACTION") {
             if (module?.name) {
-                return module.name;
+                return Model.isInteractionStep(step)
+                    ? INTERACTION_LABELS[step.parameters.operation] || module.name
+                    : module.name;
             }
             return step.moduleId ? "动作不可用" : "未选择动作";
         }
@@ -491,7 +585,10 @@
             return step.moduleId ? "请选择可用动作" : "尚未选择动作";
         }
         const parts = [];
-        for (const parameter of module.parameters || []) {
+        const definitions = Model.isInteractionStep(step)
+            ? Model.interactionParameters(step.parameters.operation)
+            : module.parameters || [];
+        for (const parameter of definitions) {
             const value = parameterSummaryValue(context, step, parameter);
             if (value) {
                 parts.push(`${parameter.label}：${value}`);
@@ -600,6 +697,9 @@
         const text = String(value || "");
         if (!text) {
             return "未设置";
+        }
+        if (text === "detector") {
+            return "沿用掉落物检测器的范围";
         }
         if (OUTPUT_REFERENCE_LABELS[text]) {
             return OUTPUT_REFERENCE_LABELS[text];
@@ -742,19 +842,28 @@
         } else {
             select.append(new Option("请选择基础动作", ""));
         }
-        const group = document.createElement("optgroup");
-        group.label = "基础动作";
+        const common = document.createElement("optgroup");
+        common.label = "常用模块";
+        const advanced = document.createElement("optgroup");
+        advanced.label = "高级基础动作 · 兼容旧任务";
         for (const module of actions) {
+            const group = ["CONTAINER_INTERACTION", "MOVE_TO_COORDINATE", "EAT_FOOD"]
+                .includes(module.id) ? common : advanced;
             group.append(new Option(module.name, module.id));
         }
-        if (group.children.length > 0) {
-            select.append(group);
+        if (common.children.length > 0) {
+            select.append(common);
+        }
+        if (advanced.children.length > 0) {
+            select.append(advanced);
         }
         select.value = step.moduleId;
         select.addEventListener("change", () => {
             const selected = modules.find((module) => module.id === select.value);
             step.moduleId = select.value;
-            step.parameters = defaultParameters(selected);
+            step.parameters = select.value === "CONTAINER_INTERACTION"
+                ? { operation: "COLLECT", areaRef: "detector" }
+                : defaultParameters(selected);
             changed(true);
         });
         return select;
@@ -887,7 +996,9 @@
             return ["coordinate", "region"];
         }
         if (key === "targetRef") {
-            return targetReferenceTypesFor(step.moduleId);
+            return Model.isInteractionStep(step)
+                ? interactionTargetTypes(step.parameters.operation)
+                : targetReferenceTypesFor(step.moduleId);
         }
         if (
             parameter.kind === "coordinate-point"
@@ -998,7 +1109,12 @@
         const isRegionDeposit = step.moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
             && parameter.key === "targetRef";
         const current = normalizeLegacyReference(context, step, parameter, types);
-        let found = false;
+        const inheritDetector = Model.isInteractionStep(step, "COLLECT")
+            && parameter.key === "areaRef";
+        if (inheritDetector) {
+            select.append(new Option("沿用掉落物检测器的范围", "detector"));
+        }
+        let found = inheritDetector && current === "detector";
         const groups = new Map();
         for (const type of types) {
             const options = referenceOptions(context, step, type);
@@ -1043,6 +1159,27 @@
         /** @returns {void} */
         const updateHint = () => {
             hint.textContent = OUTPUT_REFERENCE_HINTS[select.value] || "";
+            if (Model.isInteractionStep(step)) {
+                const type = Model.referenceType(select.value);
+                if (select.value === "detector") {
+                    const detectors = (context.triggers || []).filter(
+                        (trigger) => trigger.type === "DROPPED_ITEMS"
+                    );
+                    hint.textContent = detectors.length === 1
+                        ? "沿用检测坐标的范围及过滤；轮到任务时才开始拾取。"
+                        : detectors.length > 1
+                            ? "有多个掉落物检测器，请为拾取步骤明确选择范围。"
+                            : "请在上方添加掉落物检测器；未配置时可以保存，不能运行。";
+                } else if (step.parameters.operation === "DEPOSIT") {
+                    const labels = {
+                        coordinate: "已识别为单点：只存入该坐标处的容器。",
+                        region: "已识别为区域：按需遍历区域内的容器，直到存完。",
+                        "category-zone": "已识别为分类区：按物品匹配容器，不会任意存放。",
+                        output: "使用前序选择的容器；不会擅自更换目标。"
+                    };
+                    hint.textContent = labels[type] || "请选择已保存的存入地址。";
+                }
+            }
             if (
                 step.moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
                 && Model.referenceType(select.value) === "coordinate"
@@ -1063,6 +1200,13 @@
                     hint.textContent = error;
                     hint.hidden = false;
                 }
+                return;
+            }
+            if (Model.isInteractionStep(step, "FIND") && parameter.key === "targetRef") {
+                if (Model.referenceType(select.value) === "category-zone") {
+                    delete step.parameters.containerTypes;
+                }
+                setParameter(step, parameter.key, select.value, () => context.changed(true));
                 return;
             }
             updateHint();
@@ -1117,8 +1261,10 @@
      * @returns {string}
      */
     function normalizeLegacyReference(context, step, parameter, types) {
-        let value = String(step.parameters[parameter.key] || "");
-        if (!value || Model.parseReference(value)) {
+        const fallback = Model.isInteractionStep(step, "COLLECT")
+            && parameter.key === "areaRef" ? "detector" : "";
+        let value = String(step.parameters[parameter.key] ?? fallback);
+        if (!value || value === "detector" || Model.parseReference(value)) {
             return value;
         }
         const candidates = [
@@ -1173,6 +1319,12 @@
                     label: String(task.name || "未命名任务"),
                     value: Model.taskRef(task.id)
                 }));
+        }
+        if (Model.isInteractionStep(step) && type === "output") {
+            const options = outputOptions(type, "MOVE_TO_COORDINATE");
+            return ["READ", "WITHDRAW"].includes(step.parameters.operation)
+                ? options.filter((option) => option.value !== "output:storage")
+                : options;
         }
         return outputOptions(type, step.moduleId);
     }
@@ -1249,9 +1401,9 @@
             ? parameter.options
             : ["collected", "classified", "carried", "managed"];
         const labels = {
-            collected: "已收集",
+            collected: "本次拾取的物品",
             classified: "已分类",
-            carried: "当前携带",
+            carried: "本次取出的物品",
             managed: "任务管理物品"
         };
         for (const option of choices) {

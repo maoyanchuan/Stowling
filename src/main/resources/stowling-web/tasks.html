@@ -69,7 +69,7 @@
                             <div class="task-template-actions">
                                 <button id="new-cache-task-button"
                                         class="secondary compact" type="button">
-                                    收集入缓存
+                                    拾取并存入
                                 </button>
                                 <button id="new-sort-task-button"
                                         class="secondary compact" type="button">
@@ -208,123 +208,10 @@
                                 <li>保存并运行</li>
                             </ol>
                         </div>
-                        <form id="task-form" hidden novalidate>
-                            <div class="editor-fields task-basic-fields">
-                                <div class="editor-field">
-                                    <label for="task-name">任务名称</label>
-                                    <input id="task-name" maxlength="80" required>
-                                </div>
-                                <div class="editor-field">
-                                    <label for="task-folder-select">所属文件夹</label>
-                                    <select id="task-folder-select"></select>
-                                </div>
-                            </div>
-                            <details class="task-settings">
-                                <summary>调度设置 <span
-                                    id="task-settings-label">优先级、重排与中断</span></summary>
-                                <div class="editor-fields task-scheduling-fields">
-                                    <div class="editor-field">
-                                        <label for="task-priority">默认优先级</label>
-                                        <select id="task-priority">
-                                            <option value="BACKGROUND">后台</option>
-                                            <option value="NORMAL">普通</option>
-                                            <option value="URGENT">紧急</option>
-                                        </select>
-                                    </div>
-                                    <label class="checkbox-field" for="task-repeat">
-                                        <input id="task-repeat" type="checkbox">
-                                        <span>完成后自动重新排队</span>
-                                    </label>
-                                </div>
-                                <div class="editor-fields task-scheduling-fields">
-                                    <div class="editor-field">
-                                        <label for="task-interruption-mode">
-                                            中断收尾模式
-                                        </label>
-                                        <select id="task-interruption-mode">
-                                            <option value="DEFAULT">
-                                                引用全局默认收尾
-                                            </option>
-                                            <option value="CUSTOM">
-                                                引用指定收尾任务
-                                            </option>
-                                            <option value="NONE">
-                                                不执行收尾
-                                            </option>
-                                        </select>
-                                    </div>
-                                    <div class="editor-field">
-                                        <label for="task-interruption-task-ref">
-                                            收尾任务
-                                        </label>
-                                        <select id="task-interruption-task-ref"></select>
-                                    </div>
-                                    <label class="checkbox-field" for="task-default-interruption">
-                                        <input id="task-default-interruption" type="checkbox">
-                                        <span>标记为全局默认收尾任务</span>
-                                    </label>
-                                    <label class="checkbox-field"
-                                           for="task-requeue-after-interruption">
-                                        <input id="task-requeue-after-interruption"
-                                               type="checkbox">
-                                        <span>收尾完成后重新排队当前任务</span>
-                                    </label>
-                                </div>
-                                <p id="interruption-default-hint"
-                                   class="muted compact-help"></p>
-                                <p class="muted compact-help">
-                                    只有后台任务可以自动重排。默认收尾任务由所有
-                                    DEFAULT 模式任务共享；指定收尾任务必须独立保存。
-                                </p>
-                            </details>
-                            <div class="step-heading">
-                                <div>
-                                    <h3>执行步骤</h3>
-                                    <p class="muted compact-help">
-                                        任务只组合基础动作。条件、循环和创建任务都
-                                        在这里递归编辑；创建的任务独立排队。收集入缓存后
-                                        可添加“创建任务”并选择低优先级分类任务。
-                                    </p>
-                                </div>
-                                <div class="step-heading-actions">
-                                    <button id="add-step-button"
-                                            class="secondary compact" type="button">
-                                        添加动作
-                                    </button>
-                                    <button id="add-if-step-button"
-                                            class="secondary compact" type="button">
-                                        添加条件
-                                    </button>
-                                    <button id="add-repeat-step-button"
-                                            class="secondary compact" type="button">
-                                        添加循环
-                                    </button>
-                                    <button id="add-create-task-step"
-                                            class="secondary compact" type="button">
-                                        创建任务
-                                    </button>
-                                </div>
-                            </div>
-                            <p class="task-reference-guide">
-                                固定目标用“已保存坐标”；“前序选择”需要先由选择动作产生，
-                                不会自动寻找缓存箱或分类箱。
-                            </p>
-                            <div id="task-steps" class="step-list"></div>
-                            <div id="task-errors" class="config-errors" role="alert"></div>
-                            <div class="action-row task-save-actions">
-                                <button id="save-task-button" class="primary compact"
-                                        type="submit">保存任务</button>
-                                <button id="discard-task-button" class="secondary compact"
-                                        type="button">放弃修改</button>
-                                <button id="delete-task-button"
-                                        class="ghost compact danger-action"
-                                        type="button">删除任务</button>
-                            </div>
-                        </form>
                         <details id="task-trigger-settings"
                                  class="task-settings task-trigger-settings">
                             <summary>
-                                <span>自动触发</span>
+                                <span>① 启动条件 · 添加检测器</span>
                                 <span id="task-trigger-summary">未绑定触发器</span>
                             </summary>
                             <div class="task-trigger-body">
@@ -335,11 +222,11 @@
                                     </p>
                                     <button id="new-trigger-button"
                                             class="secondary compact"
-                                            type="button">新建触发器</button>
+                                            type="button">添加检测器</button>
                                 </div>
                                 <p id="trigger-save-hint"
                                    class="field-message trigger-save-hint" hidden>
-                                    先保存任务再配置触发器。
+                                    先配置检测器，再编辑拾取与存入；新任务的检测器随任务保存。
                                 </p>
                                 <div class="trigger-binding">
                                     <span>绑定当前任务</span>
@@ -469,6 +356,120 @@
                                 </div>
                             </div>
                         </details>
+                        <form id="task-form" hidden novalidate>
+                            <div class="editor-fields task-basic-fields">
+                                <div class="editor-field">
+                                    <label for="task-name">任务名称</label>
+                                    <input id="task-name" maxlength="80" required>
+                                </div>
+                                <div class="editor-field">
+                                    <label for="task-folder-select">所属文件夹</label>
+                                    <select id="task-folder-select"></select>
+                                </div>
+                            </div>
+                            <details class="task-settings">
+                                <summary>调度设置 <span
+                                    id="task-settings-label">优先级、重排与中断</span></summary>
+                                <div class="editor-fields task-scheduling-fields">
+                                    <div class="editor-field">
+                                        <label for="task-priority">默认优先级</label>
+                                        <select id="task-priority">
+                                            <option value="BACKGROUND">后台</option>
+                                            <option value="NORMAL">普通</option>
+                                            <option value="URGENT">紧急</option>
+                                        </select>
+                                    </div>
+                                    <label class="checkbox-field" for="task-repeat">
+                                        <input id="task-repeat" type="checkbox">
+                                        <span>完成后自动重新排队</span>
+                                    </label>
+                                </div>
+                                <div class="editor-fields task-scheduling-fields">
+                                    <div class="editor-field">
+                                        <label for="task-interruption-mode">
+                                            中断收尾模式
+                                        </label>
+                                        <select id="task-interruption-mode">
+                                            <option value="DEFAULT">
+                                                引用全局默认收尾
+                                            </option>
+                                            <option value="CUSTOM">
+                                                引用指定收尾任务
+                                            </option>
+                                            <option value="NONE">
+                                                不执行收尾
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="task-interruption-task-ref">
+                                            收尾任务
+                                        </label>
+                                        <select id="task-interruption-task-ref"></select>
+                                    </div>
+                                    <label class="checkbox-field" for="task-default-interruption">
+                                        <input id="task-default-interruption" type="checkbox">
+                                        <span>标记为全局默认收尾任务</span>
+                                    </label>
+                                    <label class="checkbox-field"
+                                           for="task-requeue-after-interruption">
+                                        <input id="task-requeue-after-interruption"
+                                               type="checkbox">
+                                        <span>收尾完成后重新排队当前任务</span>
+                                    </label>
+                                </div>
+                                <p id="interruption-default-hint"
+                                   class="muted compact-help"></p>
+                                <p class="muted compact-help">
+                                    只有后台任务可以自动重排。默认收尾任务由所有
+                                    DEFAULT 模式任务共享；指定收尾任务必须独立保存。
+                                </p>
+                            </details>
+                            <div class="step-heading">
+                                <div>
+                                    <h3>执行步骤</h3>
+                                    <p class="muted compact-help">
+                                        ② 拾取检测点周围的物品 → ③ 存入你选择的地址。
+                                        使用“物品／容器交互”选择操作，条件、循环与创建任务
+                                        仍可单独配置；创建的任务按优先级排队。
+                                    </p>
+                                </div>
+                                <div class="step-heading-actions">
+                                    <button id="add-step-button"
+                                            class="secondary compact" type="button">
+                                        添加动作
+                                    </button>
+                                    <button id="add-if-step-button"
+                                            class="secondary compact" type="button">
+                                        添加条件
+                                    </button>
+                                    <button id="add-repeat-step-button"
+                                            class="secondary compact" type="button">
+                                        添加循环
+                                    </button>
+                                    <button id="add-create-task-step"
+                                            class="secondary compact" type="button">
+                                        创建任务
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="task-reference-guide">
+                                拾取范围默认沿用检测点。存入地址可选坐标、区域或分类区，
+                                自动识别目标类型；高级动作的前序结果仍需要先选择容器。
+                            </p>
+                            <div id="task-steps" class="step-list"></div>
+                            <div id="task-errors" class="config-errors" role="alert"></div>
+                            <div class="action-row task-save-actions">
+                                <button id="save-task-button" class="primary compact"
+                                        type="submit">保存任务</button>
+                                <button id="discard-task-button" class="secondary compact"
+                                        type="button">放弃修改</button>
+                                <button id="delete-task-button"
+                                        class="ghost compact danger-action"
+                                        type="button">删除任务</button>
+                            </div>
+                        </form>
+
                     </section>
                 </div>
                 <details id="task-module-panel" class="panel module-library">

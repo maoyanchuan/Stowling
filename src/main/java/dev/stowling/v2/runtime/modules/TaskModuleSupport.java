@@ -60,6 +60,17 @@ final class TaskModuleSupport {
                 : Integer.parseInt(value);
     }
 
+    static boolean booleanParameter(
+            TaskStep step,
+            String key,
+            boolean fallback
+    ) {
+        String value = step.parameters().get(key);
+        return value == null || value.isBlank()
+                ? fallback
+                : Boolean.parseBoolean(value.trim());
+    }
+
     static Set<String> itemFilter(TaskStep step) {
         return csvParameter(step, TaskModuleIds.ITEM_FILTER);
     }

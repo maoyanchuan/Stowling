@@ -6,8 +6,8 @@ Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
 The task page has two hash-addressable sections. `#orchestration` contains the
-folder-aware task list and editor, including each saved task's automatic trigger
-settings. `#monitor` shows launch controls, trigger status, queueing, and run
+folder-aware task list and editor, including automatic trigger settings. New tasks
+can stage a detector before their first save. `#monitor` shows launch controls, trigger status, queueing, and run
 records. The legacy `#triggers` link opens orchestration and expands the current
 task's trigger settings. The list can filter ordinary tasks from interruption
 cleanup tasks without storing another task category.
@@ -38,17 +38,23 @@ HAS_MARKER_CONTAINERS
 ```
 
 `FOOD_BELOW_THRESHOLD` uses `foodLevelThreshold` from `0` to `20`.
-`IF` and `REPEAT` accept optional `negate=true`.
+`IF` and `REPEAT` accept optional `negate=true`. `HAS_MANAGED_ITEMS` can
+narrow its ledger using `itemSource=collected/carried/managed`; omitted means `managed`.
 
 ## Basic modules
 
-The module catalog at `GET /v1/task-modules` exposes only real actions and the
-three existing listeners. Internal scanning, selection, and tracking are not
-declared as fake preset or composite modules.
+The common entries are `CONTAINER_INTERACTION` and independent movement.
+Container interaction selects `COLLECT`, `FIND`, `READ`, `WITHDRAW`, or `DEPOSIT`
+through `operation`. Compact steps remain compact in saved configuration and
+compile into existing basic actions and loops when queued, freezing resources
+and detector configuration. There is no new monolithic workflow executor.
+`GET /v1/task-modules` retains basic actions and three listeners for old tasks;
+the editor places old actions in its advanced group.
 
 Actions:
 
 ```text
+CONTAINER_INTERACTION
 MOVE_TO_COORDINATE
 COLLECT_DROPPED_ITEMS
 SCAN_CONTAINERS_IN_REGION
@@ -153,16 +159,36 @@ IF FOOD_BELOW_THRESHOLD
         EAT_FOOD
 ```
 
-Collect and store:
+Collect and store in the task editor:
+
+1. Add a dropped-item detector with a saved detection coordinate and queue priority.
+2. Add container interaction `COLLECT`, inheriting the detector's scope.
+3. Add container interaction `DEPOSIT`, choosing a saved destination and `collected` source.
+
+The detector only queues work; collection begins when the task gets its turn.
+Detector inheritance requires exactly one dropped-item detector on the task and
+inherits its item filter unless overridden. An unbound draft can be saved but not run.
+A coordinate addresses one container; a region tries its containers; a category zone
+matches items to containers (marker rules still require an existing marker cache).
+Remaining items after full or unmatched containers cause failure. Unmanaged inventory
+is not included.
+
+```text
+CONTAINER_INTERACTION operation=COLLECT areaRef=detector
+CONTAINER_INTERACTION operation=DEPOSIT targetRef=<saved-address> itemSource=collected
+```
+
+The region variant compiles into the existing basic actions:
 
 ```text
 COLLECT_DROPPED_ITEMS
 SCAN_CONTAINERS_IN_REGION
 REPEAT HAS_CONTAINERS
     SELECT_CONTAINER
-    MOVE output:container
-    DEPOSIT_ITEMS_TO_CONTAINERS itemSource=collected
-ASSERT_NO_MANAGED_ITEMS
+    IF HAS_MANAGED_ITEMS itemSource=collected
+        MOVE output:container
+        DEPOSIT_ITEMS_TO_CONTAINERS itemSource=collected
+ASSERT_NO_MANAGED_ITEMS itemSource=collected
 ```
 
 Category sort:

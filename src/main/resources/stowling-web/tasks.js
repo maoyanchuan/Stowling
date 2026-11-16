@@ -851,6 +851,19 @@
     }
 
     /**
+     * @returns {Array<object>}
+     */
+    function editingTaskTriggers() {
+        const triggers = currentTaskTriggers().filter(
+            (trigger) => trigger.id !== state.selectedTriggerId || !state.triggerDraft
+        );
+        if (state.triggerDraft) {
+            triggers.push(state.triggerDraft);
+        }
+        return triggers;
+    }
+
+    /**
      * @param {string} triggerId
      * @returns {object | null}
      */
@@ -877,7 +890,8 @@
                 ? `${state.draft.name}（未保存）`
                 : "未选择任务";
         if (!state.selectedId) {
-            elements.triggerSummary.textContent = "先保存任务";
+            elements.triggerSummary.textContent = state.triggerDraft
+                ? "检测器待随任务保存" : "点击添加检测器";
             return;
         }
         elements.triggerSummary.textContent = triggers.length === 0
@@ -893,7 +907,7 @@
         renderTriggerSummary();
         if (!state.selectedId) {
             elements.triggerList.append(
-                Stowling.emptyState("先保存任务再配置触发器")
+                Stowling.emptyState("添加检测器，保存时自动绑定当前任务")
             );
             return;
         }
@@ -955,18 +969,15 @@
         state.triggerEditSerial++;
         state.triggerDirty = false;
         elements.triggerSettings.open = true;
-        renderTriggerList();
-        renderTriggerEditor();
+        renderEditor();
     }
 
     /**
      * @returns {void}
      */
     function startNewTrigger() {
-        if (!state.selectedId) {
-            elements.triggerSettings.open = true;
-            elements.triggerSaveHint.hidden = false;
-            Stowling.showToast("先保存任务再配置触发器", true);
+        if (!state.draft) {
+            Stowling.showToast("请先新建或选择一个任务", true);
             return;
         }
         if (state.triggerDirty
@@ -975,11 +986,12 @@
         }
         state.selectedTriggerId = "";
         state.triggerDraft = TriggerModel.newTrigger(state.selectedId);
+        state.triggerDraft.name = `${state.draft.name || "任务"} · 掉落物检测器`;
+        state.triggerDraft.priority = state.draft.priority;
         state.triggerEditSerial++;
         state.triggerDirty = true;
         elements.triggerSettings.open = true;
-        renderTriggerList();
-        renderTriggerEditor();
+        renderEditor();
         elements.triggerName.focus();
         elements.triggerName.select();
     }
@@ -1045,6 +1057,7 @@
         state.triggerDirty = true;
         state.triggerEditSerial++;
         updateTriggerActions();
+        updateActions();
     }
 
     /**
@@ -1062,8 +1075,8 @@
         if (!TriggerModel.TYPES.includes(trigger.type)) {
             errors.push("触发条件无效");
         }
-        if (!state.selectedId
-                || trigger.targetTaskId !== state.selectedId) {
+        if (!state.draft || (state.selectedId
+                && trigger.targetTaskId !== state.selectedId)) {
             errors.push("触发器必须绑定当前任务");
         }
         if (!Number.isInteger(trigger.intervalTicks)
@@ -1115,10 +1128,11 @@
                 );
             }
         }
-        elements.newTrigger.disabled = !state.selectedId;
+        elements.newTrigger.disabled = !state.draft;
         elements.triggerSaveHint.hidden = Boolean(state.selectedId);
-        elements.saveTrigger.disabled = !state.selectedId
-            || !state.triggerDraft
+        elements.saveTrigger.textContent = state.selectedId
+            ? "保存检测器" : "随任务保存";
+        elements.saveTrigger.disabled = !state.triggerDraft
             || !state.triggerDirty
             || errors.length > 0;
         elements.discardTrigger.disabled = !state.triggerDirty;
@@ -1127,19 +1141,23 @@
     }
 
     /**
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>}
      */
     async function saveTrigger() {
         const taskId = state.selectedId;
+        if (!taskId && state.triggerDraft && state.draft) {
+            await saveTask();
+            return !state.triggerDirty;
+        }
         if (!taskId || !state.triggerDraft) {
             elements.triggerSettings.open = true;
             elements.triggerSaveHint.hidden = false;
-            return;
+            return false;
         }
         const errors = triggerValidationErrors();
         if (errors.length > 0) {
             updateTriggerActions();
-            return;
+            return false;
         }
         const triggerId = state.selectedTriggerId;
         const draftSnapshot = state.triggerDraft;
@@ -1196,9 +1214,12 @@
             }
             renderTriggerList();
             await loadRuns();
-            Stowling.showToast("任务触发器已保存");
+            renderEditor();
+            Stowling.showToast("任务检测器已保存");
+            return true;
         } catch (error) {
             Stowling.handleError(error, "保存任务触发器失败");
+            return false;
         }
     }
 
@@ -1272,18 +1293,30 @@
             );
             return;
         }
+        const commonIds = new Set([
+            "CONTAINER_INTERACTION", "MOVE_TO_COORDINATE", "EAT_FOOD"
+        ]);
         for (const [kind, label] of [
-            ["ACTION", "基础动作"],
-            ["LISTENER", "监听器"]
+            ["COMMON", "常用模块"],
+            ["ADVANCED", "高级基础动作 · 兼容旧任务"],
+            ["LISTENER", "任务启动条件"]
         ]) {
-            const modules = visibleModules.filter(
-                (module) => Model.moduleKind(module) === kind
-            );
+            const modules = visibleModules.filter((module) => {
+                if (kind === "LISTENER") {
+                    return Model.moduleKind(module) === "LISTENER";
+                }
+                return Model.moduleKind(module) === "ACTION"
+                    && commonIds.has(module.id) === (kind === "COMMON");
+            });
             if (modules.length === 0) {
                 continue;
             }
-            const group = Stowling.element("section", "module-group");
-            const heading = Stowling.element("div", "task-group-heading");
+            const group = Stowling.element(
+                kind === "ADVANCED" ? "details" : "section", "module-group"
+            );
+            const heading = Stowling.element(
+                kind === "ADVANCED" ? "summary" : "div", "task-group-heading"
+            );
             heading.append(
                 Stowling.element("strong", "", label),
                 Stowling.element(
@@ -1651,6 +1684,13 @@
         state.triggerEditSerial++;
         draft.folderId = defaultFolderIdForNewTask();
         state.draft = draft;
+        if (template === "collect") {
+            state.triggerDraft = TriggerModel.newTrigger("");
+            state.triggerDraft.name = `${draft.name} · 掉落物检测器`;
+            state.triggerDraft.priority = draft.priority;
+            state.triggerDirty = true;
+            elements.triggerSettings.open = true;
+        }
         state.dirty = true;
         showTaskTab("orchestration", true);
         renderEditor();
@@ -1771,7 +1811,8 @@
             state.regions,
             state.categoryZones,
             rerenderEditor,
-            state.tasks
+            state.tasks,
+            editingTaskTriggers()
         );
         renderTriggerList();
         renderTriggerEditor();
@@ -2021,6 +2062,9 @@
             return errors;
         }
         const parameters = step.parameters || {};
+        if (Model.isInteractionStep(step)) {
+            return validateInteractionAction(step, label);
+        }
         for (const parameter of module.parameters || []) {
             const value = String(parameters[parameter.key] ?? "").trim();
             if (parameter.required && !value) {
@@ -2044,6 +2088,47 @@
             if (parameter.kind === "select"
                     && !selectOptions(parameter).includes(value)) {
                 errors.push(`${label}的“${parameter.label}”不是有效选项`);
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * @param {object} step
+     * @param {string} label
+     * @returns {Array<string>}
+     */
+    function validateInteractionAction(step, label) {
+        const errors = Model.validateInteractionStep(step).map(
+            (message) => `${label}：${message}`
+        );
+        for (const key of ["areaRef", "targetRef"]) {
+            const fallback = Model.isInteractionStep(step, "COLLECT")
+                && key === "areaRef" ? "detector" : "";
+            const value = step.parameters?.[key] ?? fallback;
+            if (!value) {
+                continue;
+            }
+            if (value === "detector") {
+                const detectors = editingTaskTriggers().filter(
+                    (trigger) => trigger.type === "DROPPED_ITEMS"
+                );
+                if (detectors.length > 1) {
+                    errors.push(`${label}有多个掉落物检测器，请明确选择拾取范围`);
+                }
+                continue;
+            }
+            const reference = Model.parseReference(value);
+            const resources = {
+                coordinate: state.coordinates,
+                region: state.regions,
+                "category-zone": state.categoryZones
+            };
+            if (reference && reference.type !== "output"
+                    && !(resources[reference.type] || []).some(
+                        (resource) => resource.id === reference.id
+                    )) {
+                errors.push(`${label}选择的地址已不存在，请重新选择`);
             }
         }
         return errors;
@@ -2388,9 +2473,9 @@
             }
         }
         elements.save.disabled = state.presetMode
-            || !state.dirty
+            || (!state.dirty && !state.triggerDirty)
             || errors.length > 0;
-        elements.discard.disabled = !state.dirty;
+        elements.discard.disabled = !state.dirty && !state.triggerDirty;
         elements.remove.disabled = state.presetMode || !state.selectedId;
     }
 
@@ -2398,6 +2483,18 @@
      * @returns {Promise<void>}
      */
     async function saveTask() {
+        const pendingTrigger = state.triggerDirty ? state.triggerDraft : null;
+        const triggerSerial = state.triggerEditSerial;
+        if (pendingTrigger && triggerValidationErrors().length > 0) {
+            elements.triggerSettings.open = true;
+            updateTriggerActions();
+            Stowling.showToast("请先补全检测器的设置", true);
+            return;
+        }
+        if (state.selectedId && !state.dirty && pendingTrigger) {
+            await saveTrigger();
+            return;
+        }
         const errors = validationErrors();
         if (errors.length > 0) {
             updateActions();
@@ -2474,7 +2571,23 @@
             renderTaskList();
             renderTriggerList();
             renderRunControls();
-            Stowling.showToast("任务已保存");
+            let detectorSaved = false;
+            if (stillEditing && saved && pendingTrigger
+                    && state.triggerDraft === pendingTrigger) {
+                pendingTrigger.targetTaskId = saved.id;
+                if (state.triggerEditSerial !== triggerSerial) {
+                    updateActions();
+                    Stowling.showToast("任务已保存，检测器有新修改，请再次保存");
+                    return;
+                }
+                detectorSaved = await saveTrigger();
+                if (!detectorSaved) {
+                    Stowling.showToast("任务已保存，检测器未保存，请重试保存检测器", true);
+                    return;
+                }
+                renderEditor();
+            }
+            Stowling.showToast(detectorSaved ? "任务与检测器已保存" : "任务已保存");
         } catch (error) {
             Stowling.handleError(error, "保存任务失败");
         }
@@ -3046,17 +3159,19 @@
             return;
         }
         const task = state.tasks.find((entry) => entry.id === state.selectedId);
-        if (task) {
-            state.draft = Model.normalizeTask(task);
-            state.dirty = false;
-            renderEditor();
-            renderTaskList();
-        } else {
-            state.draft = null;
-            state.dirty = false;
-            renderEditor();
-            renderTaskList();
-        }
+        const trigger = state.triggers.find(
+            (entry) => entry.id === state.selectedTriggerId
+                && entry.targetTaskId === state.selectedId
+        );
+        state.draft = task ? Model.normalizeTask(task) : null;
+        state.dirty = false;
+        state.taskEditSerial++;
+        state.selectedTriggerId = trigger?.id || "";
+        state.triggerDraft = trigger ? TriggerModel.normalizeTrigger(trigger) : null;
+        state.triggerDirty = false;
+        state.triggerEditSerial++;
+        renderEditor();
+        renderTaskList();
     });
     elements.run.addEventListener("click", () => void runTask());
     elements.remove.addEventListener("click", () => void deleteTask());
@@ -3070,8 +3185,7 @@
             state.triggerDraft = null;
             state.triggerDirty = false;
             state.triggerEditSerial++;
-            renderTriggerList();
-            renderTriggerEditor();
+            renderEditor();
         }
     });
     elements.deleteTrigger.addEventListener("click", () => {

@@ -9,9 +9,11 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskInteractionCompiler;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
@@ -40,6 +42,7 @@ public final class TaskRunManager {
     private final Deque<TaskRunSnapshot> history = new ArrayDeque<>();
     private final List<QueuedRun> queue = new ArrayList<>();
     private Map<UUID, TaskDefinition> knownTasks = Map.of();
+    private List<TaskTriggerDefinition> knownTriggers = List.of();
     private ActiveRun active;
     private long nextSequence;
     private long ticks;
@@ -118,6 +121,7 @@ public final class TaskRunManager {
                 regions,
                 categoryZones,
                 knownTasks,
+                knownTriggers,
                 priorityOverride,
                 true,
                 true
@@ -145,6 +149,7 @@ public final class TaskRunManager {
                 config.regions(),
                 config.categoryZones(),
                 indexTasks(config.tasks()),
+                config.triggers(),
                 priorityOverride,
                 allowRepeat,
                 true
@@ -157,6 +162,7 @@ public final class TaskRunManager {
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
             Map<UUID, TaskDefinition> tasks,
+            List<TaskTriggerDefinition> triggerDefinitions,
             TaskPriority priorityOverride,
             boolean allowRepeat,
             boolean deduplicate
@@ -167,6 +173,7 @@ public final class TaskRunManager {
                 regions,
                 categoryZones,
                 tasks,
+                triggerDefinitions,
                 priorityOverride,
                 allowRepeat
         );
@@ -350,7 +357,8 @@ public final class TaskRunManager {
     }
 
     public synchronized void refreshTriggers(AppConfig config) {
-        knownTasks = indexTasks(config.tasks());
+        knownTriggers = List.copyOf(config.triggers());
+        knownTasks = indexKnownTasks(config.tasks(), knownTriggers);
         triggers.refresh(config);
     }
 
@@ -774,6 +782,7 @@ public final class TaskRunManager {
                 List.copyOf(run.prepared.regions.values()),
                 List.copyOf(run.prepared.categoryZones.values()),
                 run.prepared.tasks,
+                run.prepared.triggers,
                 priority,
                 false
         );
@@ -807,6 +816,7 @@ public final class TaskRunManager {
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
             Map<UUID, TaskDefinition> tasks,
+            List<TaskTriggerDefinition> triggerDefinitions,
             TaskPriority priorityOverride,
             boolean allowRepeat
     ) {
@@ -818,23 +828,32 @@ public final class TaskRunManager {
         Map<UUID, CategoryZoneDefinition> frozenCategoryZones =
                 indexCategoryZones(categoryZones);
         Map<UUID, TaskDefinition> frozenTasks = Map.copyOf(tasks);
+        List<TaskTriggerDefinition> frozenTriggers = List.copyOf(
+                triggerDefinitions
+        );
+        TaskDefinition compiledTask = TaskInteractionCompiler.compile(
+                task,
+                frozenTriggers
+        );
         TaskPriority priority = priorityOverride == null
-                ? task.priority()
+                ? compiledTask.priority()
                 : priorityOverride;
         boolean repeating = allowRepeat
                 && priority == TaskPriority.BACKGROUND
-                && task.repeatWhenIdle();
+                && compiledTask.repeatWhenIdle();
         TaskDefinition interruptionTask = interruptionTask(
-                task,
-                frozenTasks
+                compiledTask,
+                frozenTasks,
+                frozenTriggers
         );
         return new PreparedRun(
-                task,
-                List.copyOf(task.steps()),
+                compiledTask,
+                List.copyOf(compiledTask.steps()),
                 frozenCoordinates,
                 frozenRegions,
                 frozenCategoryZones,
                 frozenTasks,
+                frozenTriggers,
                 priority,
                 repeating,
                 interruptionTask
@@ -843,7 +862,8 @@ public final class TaskRunManager {
 
     private static TaskDefinition interruptionTask(
             TaskDefinition task,
-            Map<UUID, TaskDefinition> tasks
+            Map<UUID, TaskDefinition> tasks,
+            List<TaskTriggerDefinition> triggers
     ) {
         TaskInterruptionMode mode = task.interruptionMode();
         if (mode == TaskInterruptionMode.NONE) {
@@ -859,7 +879,7 @@ public final class TaskRunManager {
                         "interruption task does not exist: " + reference
                 );
             }
-            return cleanup;
+            return TaskInteractionCompiler.compile(cleanup, triggers);
         }
         List<TaskDefinition> defaults = tasks.values().stream()
                 .filter(TaskDefinition::defaultInterruptionFlow)
@@ -869,7 +889,9 @@ public final class TaskRunManager {
                     "only one default interruption flow is allowed"
             );
         }
-        return defaults.isEmpty() ? null : defaults.getFirst();
+        return defaults.isEmpty()
+                ? null
+                : TaskInteractionCompiler.compile(defaults.getFirst(), triggers);
     }
 
     private TaskRunSnapshot startQueued(QueuedRun queued) {
@@ -1101,6 +1123,21 @@ public final class TaskRunManager {
         return result;
     }
 
+    private static Map<UUID, TaskDefinition> indexKnownTasks(
+            List<TaskDefinition> tasks,
+            List<TaskTriggerDefinition> triggers
+    ) {
+        List<TaskDefinition> compiledTasks = new ArrayList<>();
+        for (TaskDefinition task : tasks) {
+            try {
+                compiledTasks.add(TaskInteractionCompiler.compile(task, triggers));
+            } catch (TaskInteractionCompiler.DetectorNotBoundException exception) {
+                compiledTasks.add(task);
+            }
+        }
+        return indexTasks(compiledTasks);
+    }
+
     private static Map<UUID, TaskDefinition> indexTasks(
             List<TaskDefinition> tasks
     ) {
@@ -1127,6 +1164,7 @@ public final class TaskRunManager {
             Map<UUID, RegionDefinition> regions,
             Map<UUID, CategoryZoneDefinition> categoryZones,
             Map<UUID, TaskDefinition> tasks,
+            List<TaskTriggerDefinition> triggers,
             TaskPriority priority,
             boolean repeating,
             TaskDefinition interruptionTask

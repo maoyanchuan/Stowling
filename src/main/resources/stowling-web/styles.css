@@ -3872,3 +3872,23 @@ button:active:not(:disabled) {
         scroll-behavior: auto !important;
     }
 }
+
+
+/* Keep detector setup before the compact pickup/deposit flow. */
+.task-trigger-settings {
+    margin: 0 0 1rem;
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(38, 112, 75, 0.035);
+}
+
+.workflow-action-editor > .editor-fields,
+.workflow-action-editor > .step-fields {
+    width: min(100%, 40rem);
+}
+
+.module-group > summary.task-group-heading {
+    cursor: pointer;
+    padding: 0.6rem 0;
+}

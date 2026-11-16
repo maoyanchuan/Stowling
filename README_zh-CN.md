@@ -4,7 +4,7 @@ Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐�
 优先级任务队列和条件监听器。移动与容器交互复用现有游戏接口和 Baritone 集成。
 
 任务管理页分为两个可用哈希直达的分区。`#orchestration` 包含支持文件夹的任务列表
-和编辑器，以及当前已保存任务的自动触发设置；`#monitor` 显示运行入口、触发器状态、
+和编辑器，以及当前任务的自动触发设置（新任务可先配置检测器，随任务保存）；`#monitor` 显示运行入口、触发器状态、
 等待队列和运行记录。旧 `#triggers` 链接会打开任务编排并展开当前任务的触发设置。
 任务列表可按普通任务与中断收尾任务筛选，不会额外持久化任务分类字段。
 
@@ -32,16 +32,21 @@ HAS_MARKER_CONTAINERS
 ```
 
 `FOOD_BELOW_THRESHOLD` 使用 `foodLevelThreshold`，范围为 `0` 到 `20`。
-`IF` 和 `REPEAT` 可使用 `negate=true`。
+`IF` 和 `REPEAT` 可使用 `negate=true`。`HAS_MANAGED_ITEMS` 可用
+`itemSource=collected/carried/managed` 限定账本，省略时仍检查全部受管物品。
 
 ## 基础模块
 
-`GET /v1/task-modules` 只返回真实动作和已有的三个监听器，不再把内部流程声明为
-虚假的预设或组合模块。
+常用入口为 `CONTAINER_INTERACTION`（容器交互）和独立移动模块。
+容器交互按 `operation` 选择 `COLLECT`、`FIND`、`READ`、`WITHDRAW`、`DEPOSIT`。
+保存时保留紧凑步骤，排队时统一编译为已有基础动作和循环，并冻结地址与检测器配置；
+不新增包含整套复杂流程的执行器。`GET /v1/task-modules` 同时保留基础动作与三个监听器，
+旧任务可继续使用高级基础动作。
 
 动作模块：
 
 ```text
+CONTAINER_INTERACTION
 MOVE_TO_COORDINATE
 COLLECT_DROPPED_ITEMS
 SCAN_CONTAINERS_IN_REGION
@@ -143,16 +148,33 @@ IF FOOD_BELOW_THRESHOLD
         EAT_FOOD
 ```
 
-收集并存入：
+拾取并存入（任务界面）：
+
+1. 添加掉落物检测器，选择检测坐标、检测间隔和创建任务的优先级。
+2. 添加容器交互「拾取」，范围选择「沿用掉落物检测器的范围」。
+3. 添加容器交互「存入」，选择已保存的地址，物品来源选择「本次拾取的物品」。
+
+检测器只创建排队任务，轮到任务时才拾取。沿用检测器要求同任务只有一个掉落物检测器，
+默认继承其物品过滤；未配置检测器的任务可以保存，但不能运行。
+单点只处理该点的容器；区域逐箱尝试；分类区按物品匹配容器（标记规则仍需已有缓存）。
+箱满或没有匹配容器而留下物品时任务失败，不会存走无关的背包物品。
+
+```text
+CONTAINER_INTERACTION operation=COLLECT areaRef=detector
+CONTAINER_INTERACTION operation=DEPOSIT targetRef=<已保存地址> itemSource=collected
+```
+
+区域存入编译后复用的基础动作：
 
 ```text
 COLLECT_DROPPED_ITEMS
 SCAN_CONTAINERS_IN_REGION
 REPEAT HAS_CONTAINERS
     SELECT_CONTAINER
-    MOVE output:container
-    DEPOSIT_ITEMS_TO_CONTAINERS itemSource=collected
-ASSERT_NO_MANAGED_ITEMS
+    IF HAS_MANAGED_ITEMS itemSource=collected
+        MOVE output:container
+        DEPOSIT_ITEMS_TO_CONTAINERS itemSource=collected
+ASSERT_NO_MANAGED_ITEMS itemSource=collected
 ```
 
 分类入库：

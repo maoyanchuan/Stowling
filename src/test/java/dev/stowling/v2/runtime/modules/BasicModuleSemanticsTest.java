@@ -183,7 +183,64 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
-    void readContainerRejectsTargetThatIsNotTheSelectedMarker() {
+    void readContainerCoordinateDoesNotRequireAMarkerPlan() {
+        UUID coordinateId = UUID.randomUUID();
+        BlockPosition expectedPosition = new BlockPosition(4, 64, 4);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        RecordingInspection inspection = new RecordingInspection(
+                new ContainerTarget(expectedPosition, "container")
+        );
+        TaskExecutionContext context = contextWithInspection(
+                workspace,
+                inspection
+        );
+        TaskExecutionContext coordinateContext = new TaskExecutionContext(
+                context.navigation(),
+                context.droppedItems(),
+                context.containerRegions(),
+                context.containerCategories(),
+                context.containerTransfers(),
+                context.containerWithdrawals(),
+                context.containerInspections(),
+                context.categoryMarkerCache(),
+                context.foodConsumption(),
+                context.categoryZonesPort(),
+                Map.of(
+                        coordinateId,
+                        new CoordinatePoint(
+                                coordinateId,
+                                "Saved chest",
+                                4,
+                                64,
+                                4
+                        )
+                ),
+                context.regions(),
+                context.categoryZones(),
+                workspace
+        );
+        ReadContainerModule module = new ReadContainerModule(
+                coordinateContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.READ_CONTAINER,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(expectedPosition, inspection.observedTarget().position());
+        assertEquals(
+                "minecraft:iron_ingot",
+                workspace.lastContainerRead()
+        );
+    }
+
+    @Test
+    void selectedMarkerDoesNotRestrictCoordinateReads() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget marker = target(1, 64, 1, "marker");
         workspace.setMarkerPlan(
@@ -196,38 +253,49 @@ class BasicModuleSemanticsTest {
         );
         workspace.selectMarker();
         UUID coordinateId = UUID.randomUUID();
-        TaskExecutionContext context = context(
-                new ForbiddenNavigation(),
-                new RecordingTransfers(),
-                new FailedWithdrawals(),
-                new FoodPort(),
-                workspace,
+        ContainerTarget expected = target(9, 64, 9, "container");
+        RecordingInspection inspection = new RecordingInspection(expected);
+        TaskExecutionContext base = contextWithInspection(workspace, inspection);
+        TaskExecutionContext context = new TaskExecutionContext(
+                base.navigation(),
+                base.droppedItems(),
+                base.containerRegions(),
+                base.containerCategories(),
+                base.containerTransfers(),
+                base.containerWithdrawals(),
+                base.containerInspections(),
+                base.categoryMarkerCache(),
+                base.foodConsumption(),
+                base.categoryZonesPort(),
                 Map.of(
                         coordinateId,
                         new CoordinatePoint(
                                 coordinateId,
-                                "Wrong",
+                                "Direct",
                                 9,
                                 64,
                                 9
                         )
-                )
+                ),
+                base.regions(),
+                base.categoryZones(),
+                workspace
         );
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new ReadContainerModule(
-                        context,
-                        TaskStep.action(
-                                UUID.randomUUID(),
-                                TaskModuleIds.READ_CONTAINER,
-                                Map.of(
-                                        TaskModuleIds.TARGET_REF,
-                                        "coordinate:" + coordinateId
-                                )
+        ReadContainerModule module = new ReadContainerModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.READ_CONTAINER,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId
                         )
                 )
         );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(expected, inspection.observedTarget());
+        assertEquals(0, workspace.markerReadCount());
     }
 
     @Test
@@ -251,6 +319,72 @@ class BasicModuleSemanticsTest {
                 workspace.selectedContainerItemIds()
         );
         assertFalse(workspace.hasContainers());
+    }
+
+    @Test
+    void storageSelectionUsesTheConfiguredSourceLedger() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:gold_ingot")),
+                List.of()
+        );
+        workspace.recordCollected("minecraft:gold_ingot", 2);
+
+        assertEquals(
+                storage,
+                workspace.selectStorageTarget("collected").orElseThrow()
+        );
+        assertTrue(workspace.selectStorageTarget("carried").isEmpty());
+    }
+
+    @Test
+    void categoryDepositWithMixedLedgersOnlyConsumesSelectedSource() {
+        String collectedItem = "minecraft:gold_ingot";
+        String carriedItem = "minecraft:iron_ingot";
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordCollected(collectedItem, 2);
+        workspace.recordWithdrawn(carriedItem, 2);
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of(collectedItem)),
+                List.of()
+        );
+        workspace.selectStorageTarget("collected").orElseThrow();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        TaskExecutionContext transferContext = contextWithTransfers(
+                context,
+                new FixedTransfers(ContainerTransferResult.succeeded(
+                        "deposited",
+                        Map.of()
+                ))
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                transferContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "output:storage",
+                                TaskModuleIds.ITEM_SOURCE,
+                                "collected"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertTrue(workspace.collectedItems().isEmpty());
+        assertEquals(Map.of(carriedItem, 2), workspace.carriedItems());
+        assertEquals(Map.of(carriedItem, 2), workspace.managedItems());
     }
 
     @Test
@@ -393,6 +527,67 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void unifiedDepositAssertionFailsWhenCapacityLeavesCollectedItems() {
+        String itemId = "minecraft:iron_ingot";
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordCollected(itemId, 5);
+        UUID coordinateId = UUID.randomUUID();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace,
+                Map.of(
+                        coordinateId,
+                        new CoordinatePoint(
+                                coordinateId,
+                                "Full",
+                                1,
+                                64,
+                                1
+                        )
+                )
+        );
+        FixedTransfers transfers = new FixedTransfers(
+                ContainerTransferResult.succeeded(
+                        "容器容量不足",
+                        Map.of(itemId, 5)
+                )
+        );
+        TaskExecutionContext transferContext = contextWithTransfers(
+                context,
+                transfers
+        );
+        DepositItemsActionModule deposit = new DepositItemsActionModule(
+                transferContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId,
+                                TaskModuleIds.ITEM_SOURCE,
+                                "collected"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, deposit.start().state());
+        assertEquals(Map.of(itemId, 5), workspace.collectedItems());
+        assertEquals(Map.of(itemId, 5), workspace.managedItems());
+        TaskModuleResult assertion = new AssertNoManagedItemsModule(
+                transferContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.ASSERT_NO_MANAGED_ITEMS,
+                        Map.of(TaskModuleIds.ITEM_SOURCE, "collected")
+                )
+        ).start();
+        assertEquals(TaskModuleState.FAILED, assertion.state());
+    }
+
+    @Test
     void failedTransferStillFailsWithoutConsumingTheLedger() {
         String itemId = "minecraft:iron_ingot";
         TaskRunWorkspace workspace = new TaskRunWorkspace();
@@ -482,6 +677,92 @@ class BasicModuleSemanticsTest {
                 Map.of("minecraft:gold_ingot", 3),
                 workspace.carriedItems()
         );
+    }
+
+    @Test
+    void withdrawalMatchingItemsAreBoundToTheRequestedTarget() {
+        ContainerTarget selected = target(1, 64, 1, "selected");
+        ContainerTarget requested = target(9, 64, 9, "requested");
+        ContainerTarget unclassified = target(8, 64, 8, "unclassified");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(selected, requested),
+                Map.of(
+                        selected, Set.of("minecraft:iron_ingot"),
+                        requested, Set.of("minecraft:gold_ingot")
+                ),
+                List.of(selected)
+        );
+        workspace.selectNextContainer().orElseThrow();
+        UUID requestedId = UUID.randomUUID();
+        UUID unclassifiedId = UUID.randomUUID();
+        CapturingWithdrawal withdrawal = new CapturingWithdrawal();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                withdrawal,
+                new FoodPort(),
+                workspace,
+                Map.of(
+                        requestedId,
+                        new CoordinatePoint(
+                                requestedId,
+                                "Requested",
+                                9,
+                                64,
+                                9
+                        ),
+                        unclassifiedId,
+                        new CoordinatePoint(
+                                unclassifiedId,
+                                "Unclassified",
+                                8,
+                                64,
+                                8
+                        )
+                )
+        );
+
+        WithdrawItemsModule requestedModule = new WithdrawItemsModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.WITHDRAW_ITEMS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + requestedId,
+                                TaskModuleIds.ITEM_SOURCE,
+                                "classified"
+                        )
+                )
+        );
+        assertEquals(
+                TaskModuleState.SUCCEEDED,
+                requestedModule.start().state()
+        );
+        assertEquals(
+                Set.of("minecraft:gold_ingot"),
+                withdrawal.matchingItemIds()
+        );
+
+        WithdrawItemsModule unclassifiedModule = new WithdrawItemsModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.WITHDRAW_ITEMS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + unclassifiedId,
+                                TaskModuleIds.ITEM_SOURCE,
+                                "classified"
+                        )
+                )
+        );
+        assertEquals(
+                TaskModuleState.SUCCEEDED,
+                unclassifiedModule.start().state()
+        );
+        assertTrue(withdrawal.matchingItemIds().isEmpty());
     }
 
     @Test
@@ -967,6 +1248,41 @@ class BasicModuleSemanticsTest {
         @Override
         public void cancelWithdrawal() {
             throw new AssertionError("in-flight withdrawal must be drained");
+        }
+    }
+
+    private static final class CapturingWithdrawal
+            implements ContainerWithdrawalPort {
+        private Set<String> matchingItemIds = Set.of();
+
+        @Override
+        public ContainerWithdrawalResult startWithdrawal(
+                ContainerTarget target,
+                Set<String> matchingItemIds
+        ) {
+            this.matchingItemIds = Set.copyOf(matchingItemIds);
+            return ContainerWithdrawalResult.succeeded(
+                    "withdrawn",
+                    Map.of(),
+                    false
+            );
+        }
+
+        @Override
+        public ContainerWithdrawalResult pollWithdrawal() {
+            return ContainerWithdrawalResult.failed(
+                    "not pending",
+                    Map.of(),
+                    false
+            );
+        }
+
+        @Override
+        public void cancelWithdrawal() {
+        }
+
+        private Set<String> matchingItemIds() {
+            return matchingItemIds;
         }
     }
 

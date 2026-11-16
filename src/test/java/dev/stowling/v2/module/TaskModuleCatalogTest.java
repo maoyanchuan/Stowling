@@ -20,7 +20,7 @@ class TaskModuleCatalogTest {
     void exposesOnlyRealActionsAndListeners() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 
-        assertEquals(18, modules.size());
+        assertEquals(19, modules.size());
         assertEquals(
                 3,
                 modules.stream()
@@ -28,7 +28,7 @@ class TaskModuleCatalogTest {
                         .count()
         );
         assertEquals(
-                15,
+                16,
                 modules.stream()
                         .filter(module -> module.kind() == TaskModuleKind.ACTION)
                         .count()
@@ -50,6 +50,23 @@ class TaskModuleCatalogTest {
                         Function.identity()
                 ));
 
+        assertEquals(
+                List.of(
+                        "COLLECT",
+                        "FIND",
+                        "READ",
+                        "WITHDRAW",
+                        "DEPOSIT"
+                ),
+                parameter(
+                        modules.get(ConfigValidator.CONTAINER_INTERACTION),
+                        "operation"
+                ).options()
+        );
+        assertTrue(parameter(
+                modules.get(ConfigValidator.CONTAINER_INTERACTION),
+                "operation"
+        ).required());
         assertEquals(
                 "coordinate-reference",
                 parameter(

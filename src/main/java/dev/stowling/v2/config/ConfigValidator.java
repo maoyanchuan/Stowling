@@ -15,6 +15,7 @@ import dev.stowling.v2.model.TaskCondition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskFolderDefinition;
 import dev.stowling.v2.model.TaskFlowTemplates;
+import dev.stowling.v2.model.TaskInteractionCompiler;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.model.TaskStepKind;
@@ -29,6 +30,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class ConfigValidator {
+    public static final String CONTAINER_INTERACTION = "CONTAINER_INTERACTION";
     public static final String MOVE_TO_COORDINATE = "MOVE_TO_COORDINATE";
     public static final String COLLECT_DROPPED_ITEMS = "COLLECT_DROPPED_ITEMS";
     public static final String SCAN_CONTAINERS_IN_REGION =
@@ -84,6 +86,8 @@ public final class ConfigValidator {
     public static final String SCAN_SOURCE = "scanSource";
     public static final String ITEM_SOURCE = "itemSource";
     public static final String FILL_MODE = "fillMode";
+    public static final String ALLOW_EMPTY_CONTAINER_SCAN =
+            "allowEmptyContainerScan";
     public static final String PRIORITY = "priority";
 
 
@@ -168,6 +172,14 @@ public final class ConfigValidator {
                         tasks.keySet()
                 );
             }
+            validateCompiledInteraction(
+                    task,
+                    config.triggers(),
+                    coordinates,
+                    regions,
+                    categoryZones,
+                    tasks.keySet()
+            );
         }
         if (defaultInterruptionFlows > 1) {
             throw new V2ValidationException(
@@ -321,12 +333,14 @@ public final class ConfigValidator {
                         TaskFlowTemplates.CONDITION,
                         TaskFlowTemplates.NEGATE,
                         FOOD_LEVEL_THRESHOLD,
-                        TaskFlowTemplates.MAX_ITERATIONS
+                        TaskFlowTemplates.MAX_ITERATIONS,
+                        ITEM_SOURCE
                 )
                 : Set.of(
                         TaskFlowTemplates.CONDITION,
                         TaskFlowTemplates.NEGATE,
-                        FOOD_LEVEL_THRESHOLD
+                        FOOD_LEVEL_THRESHOLD,
+                        ITEM_SOURCE
                 );
         requireParameters(step, allowed, Set.of(TaskFlowTemplates.CONDITION));
         TaskCondition condition;
@@ -342,6 +356,17 @@ public final class ConfigValidator {
         } else if (step.parameters().containsKey(FOOD_LEVEL_THRESHOLD)) {
             throw new V2ValidationException(
                     FOOD_LEVEL_THRESHOLD + " only applies to food conditions"
+            );
+        }
+        if (condition == TaskCondition.HAS_MANAGED_ITEMS) {
+            requireOptionalChoiceIn(
+                    step,
+                    ITEM_SOURCE,
+                    Set.of("collected", "carried", "managed")
+            );
+        } else if (step.parameters().containsKey(ITEM_SOURCE)) {
+            throw new V2ValidationException(
+                    ITEM_SOURCE + " only applies to HAS_MANAGED_ITEMS"
             );
         }
         requireOptionalBoolean(step, TaskFlowTemplates.NEGATE);
@@ -424,6 +449,12 @@ public final class ConfigValidator {
             );
         }
         switch (step.moduleId()) {
+            case CONTAINER_INTERACTION -> requireInteractionStep(
+                    step,
+                    coordinates,
+                    regions,
+                    categoryZones
+            );
             case MOVE_TO_COORDINATE -> requireMoveStep(step, coordinates);
             case COLLECT_DROPPED_ITEMS -> requireCollectStep(
                     step,
@@ -434,18 +465,22 @@ public final class ConfigValidator {
                     step,
                     regions
             );
-            case RESOLVE_CONTAINER_CATEGORIES -> requireCategoryZoneStep(
-                    step,
-                    categoryZones
-            );
+            case RESOLVE_CONTAINER_CATEGORIES ->
+                    requireResolveCategoryStep(step, categoryZones);
             case SELECT_CONTAINER -> requireParameters(
                     step,
                     Set.of(TaskFlowTemplates.RESET_CACHE_HAS_MORE),
                     Set.of()
             );
             case WITHDRAW_ITEMS -> requireWithdrawStep(step, coordinates);
-            case SELECT_STORAGE_TARGET ->
-                    requireParameters(step, Set.of(), Set.of());
+            case SELECT_STORAGE_TARGET -> {
+                requireParameters(step, Set.of(ITEM_SOURCE), Set.of());
+                requireOptionalChoiceIn(
+                        step,
+                        ITEM_SOURCE,
+                        Set.of("collected", "carried", "managed")
+                );
+            }
             case ASSERT_NO_MANAGED_ITEMS -> {
                 requireParameters(step, Set.of(ITEM_SOURCE), Set.of());
                 requireOptionalChoiceIn(
@@ -462,10 +497,10 @@ public final class ConfigValidator {
                     requireMarkerZoneStep(step, categoryZones);
             case SELECT_MARKER_CONTAINER ->
                     requireParameters(step, Set.of(), Set.of());
-            case READ_CONTAINER -> {
-                requireParameters(step, Set.of(TARGET_REF), Set.of(TARGET_REF));
-                requireReference(step, TARGET_REF, ResourceType.OUTPUT);
-            }
+            case READ_CONTAINER -> requireReadContainerStep(
+                    step,
+                    coordinates
+            );
             case WAIT_FOR_DROPPED_ITEMS -> requireLegacyWaitStep(
                     step,
                     coordinates
@@ -490,6 +525,153 @@ public final class ConfigValidator {
                     "unknown task module: " + step.moduleId()
             );
         }
+    }
+
+    private static void requireInteractionStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        try {
+            TaskInteractionCompiler.validateCompactStep(step);
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException(safeMessage(exception));
+        }
+        String operation = step.parameters().get(
+                TaskInteractionCompiler.OPERATION
+        ).trim();
+        switch (operation) {
+            case "COLLECT" -> {
+                String area = step.parameters().getOrDefault(AREA_REF,
+                        "detector");
+                if (!"detector".equals(area)) {
+                    requireInteractionResource(
+                            area,
+                            coordinates,
+                            regions,
+                            categoryZones
+                    );
+                }
+            }
+            case "FIND", "DEPOSIT" -> requireInteractionResource(
+                    step.parameters().get(TARGET_REF),
+                    coordinates,
+                    regions,
+                    categoryZones
+            );
+            case "READ", "WITHDRAW" -> requireInteractionResource(
+                    step.parameters().get(TARGET_REF),
+                    coordinates,
+                    regions,
+                    categoryZones
+            );
+            default -> throw new V2ValidationException(
+                    "unsupported container interaction operation"
+            );
+        }
+    }
+
+    private static void requireInteractionResource(
+            String value,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        ResourceReference reference = ResourceReference.parse(value);
+        switch (reference.type()) {
+            case COORDINATE -> {
+                if (!coordinates.containsKey(reference.uuid())) {
+                    throw new V2ValidationException(
+                            "coordinate does not exist: " + reference
+                    );
+                }
+            }
+            case REGION -> {
+                if (!regions.containsKey(reference.uuid())) {
+                    throw new V2ValidationException(
+                            "region does not exist: " + reference
+                    );
+                }
+            }
+            case CATEGORY_ZONE -> {
+                if (!categoryZones.containsKey(reference.uuid())) {
+                    throw new V2ValidationException(
+                            "category zone does not exist: " + reference
+                    );
+                }
+            }
+            case OUTPUT, TASK -> {
+            }
+        }
+    }
+
+    private static void validateCompiledInteraction(
+            TaskDefinition task,
+            List<TaskTriggerDefinition> triggers,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            Set<UUID> taskIds
+    ) {
+        if (!containsInteraction(task.steps())) {
+            return;
+        }
+        final TaskDefinition compiled;
+        try {
+            compiled = TaskInteractionCompiler.compile(task, triggers);
+        } catch (TaskInteractionCompiler.DetectorNotBoundException exception) {
+            return;
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException(safeMessage(exception));
+        }
+        for (TaskStep step : compiled.steps()) {
+            requireValidStep(
+                    step,
+                    coordinates,
+                    regions,
+                    categoryZones,
+                    taskIds
+            );
+        }
+    }
+
+    private static boolean containsInteraction(List<TaskStep> steps) {
+        for (TaskStep step : steps) {
+            if (CONTAINER_INTERACTION.equals(step.moduleId())
+                    || containsInteraction(step.steps())
+                    || containsInteraction(step.otherwise())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String safeMessage(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank()
+                ? exception.getClass().getSimpleName()
+                : message;
+    }
+
+    private static void requireResolveCategoryStep(
+            TaskStep step,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        requireParameters(
+                step,
+                Set.of(
+                        CATEGORY_ZONE_REF,
+                        CATEGORY_ZONE_ID,
+                        CONTAINER_TYPES,
+                        MAX_VOLUME,
+                        ALLOW_EMPTY_CONTAINER_SCAN
+                ),
+                Set.of()
+        );
+        requireCategoryZoneReference(step, categoryZones);
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+        requireOptionalBoolean(step, ALLOW_EMPTY_CONTAINER_SCAN);
     }
 
     private static void requireCoordinateStep(
@@ -612,6 +794,29 @@ public final class ConfigValidator {
         );
         requireContainerReference(step, coordinates);
         requireChoice(step, ITEM_SOURCE, "classified");
+    }
+
+    private static void requireReadContainerStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        requireParameters(step, Set.of(TARGET_REF), Set.of(TARGET_REF));
+        ResourceReference reference = ResourceReference.parse(
+                step.parameters().get(TARGET_REF)
+        );
+        if (reference.type() == ResourceType.COORDINATE) {
+            if (!coordinates.containsKey(reference.uuid())) {
+                throw new V2ValidationException(
+                        "coordinate does not exist: " + reference
+                );
+            }
+            return;
+        }
+        if (reference.type() != ResourceType.OUTPUT) {
+            throw new V2ValidationException(
+                    TARGET_REF + " must reference a coordinate or output"
+            );
+        }
     }
 
     private static void requireDepositStep(

@@ -51,11 +51,15 @@ def test_collect_and_interruption_tasks_reuse_region_deposit_flow() -> None:
     collect = function_source(model, "collectTask")
     interruption = function_source(model, "interruptionTask")
 
-    assert 'actionStep("COLLECT_DROPPED_ITEMS", { areaRef: "" })' in collect
-    assert '...depositToRegionSteps("", "collected")' in collect
+    assert 'interactionStep("COLLECT", { areaRef: "detector" })' in collect
+    assert 'interactionStep("DEPOSIT", {' in collect
+    assert 'itemSource: "collected"' in collect
+    assert 'depositToRegionSteps(' not in collect
     assert 'repeatStep("HAS_CONTAINERS"' not in collect
     assert 'actionStep("ASSERT_NO_MANAGED_ITEMS"' not in collect
-    assert 'depositToRegionSteps("", "managed")' in interruption
+    assert 'interactionStep("DEPOSIT", {' in interruption
+    assert 'itemSource: "managed"' in interruption
+    assert 'depositToRegionSteps(' not in interruption
     assert 'repeatStep("HAS_CONTAINERS"' not in interruption
     assert 'actionStep("ASSERT_NO_MANAGED_ITEMS"' not in interruption
 

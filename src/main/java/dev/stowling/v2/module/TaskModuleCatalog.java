@@ -65,6 +65,74 @@ public final class TaskModuleCatalog {
                     )
             ),
             action(
+                    ConfigValidator.CONTAINER_INTERACTION,
+                    "容器交互",
+                    "按操作统一查找、读取、取出或存入容器。",
+                    List.of(
+                            select(
+                                    "operation",
+                                    "操作",
+                                    true,
+                                    List.of(
+                                            "COLLECT",
+                                            "FIND",
+                                            "READ",
+                                            "WITHDRAW",
+                                            "DEPOSIT"
+                                    )
+                            ),
+                            reference(
+                                    ConfigValidator.AREA_REF,
+                                    "拾取范围",
+                                    "area-reference",
+                                    false
+                            ),
+                            reference(
+                                    ConfigValidator.TARGET_REF,
+                                    "目标",
+                                    "resource-reference",
+                                    false
+                            ),
+                            text(
+                                    ConfigValidator.CONTAINER_TYPES,
+                                    "容器类型",
+                                    false
+                            ),
+                            integer(
+                                    ConfigValidator.MAX_VOLUME,
+                                    "最大扫描体积",
+                                    false,
+                                    1,
+                                    1_048_576,
+                                    null
+                            ),
+                            select(
+                                    ConfigValidator.ITEM_SOURCE,
+                                    "物品来源",
+                                    false,
+                                    List.of(
+                                            "collected",
+                                            "carried",
+                                            "managed",
+                                            "classified"
+                                    )
+                            ),
+                            text(
+                                    ConfigValidator.ITEM_FILTER,
+                                    "物品过滤",
+                                    false
+                            ),
+                            integer(
+                                    ConfigValidator.TIMEOUT_SECONDS,
+                                    "超时秒数",
+                                    false,
+                                    0,
+                                    86_400,
+                                    "120"
+                            )
+                    )
+            ),
+            action(
                     ConfigValidator.MOVE_TO_COORDINATE,
                     "移动到坐标",
                     "移动到坐标或当前输出引用指向的位置。",

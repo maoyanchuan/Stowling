@@ -24,7 +24,7 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     WithdrawItemsModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
         this.target = target(context, step);
-        this.matchingItemIds = matchingItems(context, step);
+        this.matchingItemIds = matchingItems(context, step, target);
     }
 
     @Override
@@ -101,14 +101,15 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
 
     private static Set<String> matchingItems(
             TaskExecutionContext context,
-            TaskStep step
+            TaskStep step,
+            ContainerTarget target
     ) {
         String source = ResourceReferenceSupport.optionalParameter(
                 step,
                 TaskModuleIds.ITEM_SOURCE
         );
         if (source == null || source.isBlank() || CLASSIFIED.equals(source)) {
-            return context.workspace().selectedContainerItemIds();
+            return context.workspace().withdrawItemIdsFor(target);
         }
         throw new IllegalArgumentException(
                 "WITHDRAW_ITEMS supports itemSource=classified"

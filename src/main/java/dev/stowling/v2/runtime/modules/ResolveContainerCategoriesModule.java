@@ -23,6 +23,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
     private final CategoryZoneDefinition zone;
     private final Set<String> containerTypes;
     private final int maxVolume;
+    private final boolean allowEmptyContainerScan;
 
     ResolveContainerCategoriesModule(
             TaskExecutionContext context,
@@ -42,14 +43,22 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 TaskModuleIds.MAX_VOLUME,
                 TaskModuleSupport.DEFAULT_SCAN_VOLUME
         );
+        this.allowEmptyContainerScan = TaskModuleSupport.booleanParameter(
+                step,
+                TaskModuleIds.ALLOW_EMPTY_CONTAINER_SCAN,
+                false
+        );
     }
 
     @Override
     public TaskModuleResult start() {
         ContainerScanResult cacheScan = context.workspace().containerScan()
                 .orElse(null);
-        if (cacheScan == null || !cacheScan.succeeded()) {
+        if (cacheScan == null && !allowEmptyContainerScan) {
             return TaskModuleResult.failed("缺少有效的缓存容器扫描结果");
+        }
+        if (cacheScan != null && !cacheScan.succeeded()) {
+            return TaskModuleResult.failed(cacheScan.message());
         }
         Map<BlockPosition, Set<String>> markerContents = new LinkedHashMap<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
@@ -90,10 +99,13 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 }
             }
         }
+        List<ContainerTarget> cacheTargets = cacheScan == null
+                ? List.of()
+                : cacheScan.containers();
         context.workspace().setResolvedCategories(
                 targets,
                 accepted,
-                cacheScan.containers()
+                cacheTargets
         );
         return TaskModuleResult.succeeded(
                 "已解析 " + accepted.size() + " 个分类目标容器"

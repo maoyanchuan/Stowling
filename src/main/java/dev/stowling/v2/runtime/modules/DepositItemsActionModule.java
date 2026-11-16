@@ -110,7 +110,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             String source,
             Map<String, Integer> items
     ) {
-        if (!"carried".equals(source)
+        if ("inventory".equals(source)
                 || reference.type() != ResourceType.OUTPUT
                 || !"storage".equals(reference.key())) {
             return items;

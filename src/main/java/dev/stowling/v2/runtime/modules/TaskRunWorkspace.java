@@ -23,6 +23,7 @@ public final class TaskRunWorkspace {
     private final List<ContainerTarget> targetContainers = new ArrayList<>();
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
+    private Set<String> classifiedItemIds = Set.of();
     private final List<MarkerContainerScanAction.Target> markerTargets =
             new ArrayList<>();
     private ContainerScanResult containerScan;
@@ -38,7 +39,6 @@ public final class TaskRunWorkspace {
     private UUID markerZoneId;
     private final Set<BlockPosition> readMarkerPositions =
             new LinkedHashSet<>();
-    private Set<String> classifiedItemIds = Set.of();
     private boolean cacheHasMore;
     private String lastContainerRead = "";
 
@@ -178,7 +178,10 @@ public final class TaskRunWorkspace {
         acceptedItemsByContainer.clear();
         Set<String> itemIds = new LinkedHashSet<>();
         for (Map.Entry<ContainerTarget, Set<String>> entry : accepted.entrySet()) {
-            acceptedItemsByContainer.put(entry.getKey(), Set.copyOf(entry.getValue()));
+            acceptedItemsByContainer.put(
+                    entry.getKey(),
+                    Set.copyOf(entry.getValue())
+            );
             itemIds.addAll(entry.getValue());
         }
         classifiedItemIds = Set.copyOf(itemIds);
@@ -200,7 +203,10 @@ public final class TaskRunWorkspace {
         acceptedItemsByContainer.clear();
         Set<String> itemIds = new LinkedHashSet<>();
         for (Map.Entry<ContainerTarget, Set<String>> entry : accepted.entrySet()) {
-            acceptedItemsByContainer.put(entry.getKey(), Set.copyOf(entry.getValue()));
+            acceptedItemsByContainer.put(
+                    entry.getKey(),
+                    Set.copyOf(entry.getValue())
+            );
             itemIds.addAll(entry.getValue());
         }
         classifiedItemIds = Set.copyOf(itemIds);
@@ -248,13 +254,24 @@ public final class TaskRunWorkspace {
         if (selectedContainer == null) {
             return Set.of();
         }
-        if (!acceptedItemsByContainer.containsKey(selectedContainer)) {
-            return classifiedItemIds;
+        return withdrawItemIdsFor(selectedContainer);
+    }
+
+    public synchronized Set<String> withdrawItemIdsFor(
+            ContainerTarget target
+    ) {
+        for (Map.Entry<ContainerTarget, Set<String>> entry
+                : acceptedItemsByContainer.entrySet()) {
+            if (entry.getKey().position().equals(target.position())) {
+                return Set.copyOf(entry.getValue());
+            }
         }
-        return acceptedItemsByContainer.getOrDefault(
-                selectedContainer,
-                Set.of()
-        );
+        for (ContainerTarget candidate : containerCandidates) {
+            if (candidate.position().equals(target.position())) {
+                return classifiedItemIds;
+            }
+        }
+        return Set.of();
     }
 
     public synchronized void setCacheHasMore(boolean value) {
@@ -266,7 +283,14 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized Optional<ContainerTarget> selectStorageTarget() {
-        if (carriedItems.isEmpty()) {
+        return selectStorageTarget("carried");
+    }
+
+    public synchronized Optional<ContainerTarget> selectStorageTarget(
+            String itemSource
+    ) {
+        Map<String, Integer> items = itemsForSource(itemSource);
+        if (items.isEmpty()) {
             selectedStorageTarget = null;
             return Optional.empty();
         }
@@ -276,7 +300,7 @@ public final class TaskRunWorkspace {
                     candidate,
                     Set.of()
             );
-            for (String itemId : carriedItems.keySet()) {
+            for (String itemId : items.keySet()) {
                 if (accepted.contains(itemId)) {
                     selectedStorageTarget = candidate;
                     return Optional.of(candidate);
@@ -355,16 +379,16 @@ public final class TaskRunWorkspace {
         MarkerContainerScanAction.Target marker = markerTargets.stream()
                 .filter(candidate -> candidate.target().equals(target))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "read target is not part of the active marker plan"
-                ));
-        for (UUID bindingId : marker.bindingIds()) {
-            markerCache.computeIfAbsent(
-                    bindingId,
-                    ignored -> new LinkedHashMap<>()
-            ).put(target.position(), Set.copyOf(itemIds));
+                .orElse(null);
+        if (marker != null) {
+            for (UUID bindingId : marker.bindingIds()) {
+                markerCache.computeIfAbsent(
+                        bindingId,
+                        ignored -> new LinkedHashMap<>()
+                ).put(target.position(), Set.copyOf(itemIds));
+            }
+            readMarkerPositions.add(target.position());
         }
-        readMarkerPositions.add(target.position());
         lastContainerRead = String.join(",", itemIds);
     }
 

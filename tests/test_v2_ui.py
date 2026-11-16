@@ -258,6 +258,12 @@ def test_task_creation_offers_auto_eat_preset() -> None:
     assert 'id="auto-eat-food"' in html
     assert 'id="auto-eat-threshold"' in html
     assert "function createAutoEatPreset()" in tasks
+    assert "state.presetMode" in tasks
+    assert "state.draft = {" in tasks
+    assert "右侧步骤可编辑" in html
+    assert '"移动"' in tasks
+    assert '"交互"' in tasks
+    assert '"进食"' in tasks
     assert 'moduleId: "WITHDRAW_FOOD"' in tasks
     assert 'moduleId: "EAT_FOOD"' in tasks
     assert '"FOOD_LEVEL_AT_OR_BELOW"' in tasks

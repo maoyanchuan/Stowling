@@ -19,6 +19,7 @@
         runTaskId: "",
         draft: null,
         triggerDraft: null,
+        presetMode: false,
         dirty: false,
         triggerDirty: false,
         runs: [],
@@ -570,7 +571,8 @@
         }
         const groups = [
             ["LISTENER", "监听器"],
-            ["BASIC", "基础模块"]
+            ["BASIC", "基础模块"],
+            ["PRESET", "任务预设"]
         ];
         for (const [groupKey, label] of groups) {
             const modules = visibleModules.filter((module) => (
@@ -672,6 +674,8 @@
                 && !window.confirm("当前任务有未保存修改，继续将放弃这些修改。")) {
             return;
         }
+        state.presetMode = false;
+        elements.autoEatForm.hidden = true;
         state.selectedId = task.id;
         state.runTaskId = task.id;
         state.draft = Model.normalizeTask(task);
@@ -744,6 +748,10 @@
      * @returns {void}
      */
     function showAutoEatPresetForm() {
+        if (state.dirty
+                && !window.confirm("当前任务有未保存修改，继续将放弃这些修改。")) {
+            return;
+        }
         elements.autoEatCoordinate.replaceChildren(
             new Option("请选择食物箱坐标", "")
         );
@@ -755,7 +763,35 @@
         elements.autoEatFood.value = "minecraft:bread";
         elements.autoEatThreshold.value = "18";
         elements.autoEatErrors.replaceChildren();
+        state.presetMode = true;
+        state.selectedId = "";
+        state.draft = {
+            id: "",
+            name: uniqueName(
+                "自动进食",
+                state.tasks.map((task) => task.name)
+            ),
+            priority: "NORMAL",
+            repeatWhenIdle: false,
+            steps: [
+                {
+                    moduleId: "MOVE_TO_COORDINATE",
+                    parameters: { coordinateId: "" }
+                },
+                {
+                    moduleId: "WITHDRAW_FOOD",
+                    parameters: { coordinateId: "", foodItemId: "" }
+                },
+                {
+                    moduleId: "EAT_FOOD",
+                    parameters: { foodItemId: "" }
+                }
+            ]
+        };
+        state.dirty = true;
         elements.autoEatForm.hidden = false;
+        syncAutoEatDraft();
+        renderEditor();
         elements.autoEatCoordinate.focus();
     }
 
@@ -763,26 +799,18 @@
      * @returns {void}
      */
     function hideAutoEatPresetForm() {
-        elements.autoEatForm.hidden = true;
-        elements.autoEatErrors.replaceChildren();
+        if (state.presetMode) {
+            resetAutoEatPreset();
+        }
     }
 
     /**
      * @returns {Promise<void>}
      */
     async function createAutoEatPreset() {
-        const coordinateId = elements.autoEatCoordinate.value;
-        const foodItemId = elements.autoEatFood.value.trim();
+        syncAutoEatDraft();
         const threshold = Number(elements.autoEatThreshold.value);
-        const errors = [];
-        if (!state.coordinates.some((coordinate) => (
-            coordinate.id === coordinateId
-        ))) {
-            errors.push("请选择食物箱坐标");
-        }
-        if (!/^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(foodItemId)) {
-            errors.push("食物 ID 必须是 minecraft:bread 这样的资源 ID");
-        }
+        const errors = [...validationErrors()];
         if (!Number.isInteger(threshold) || threshold < 1 || threshold > 20) {
             errors.push("饱食度阈值必须是 1 到 20 的整数");
         }
@@ -795,39 +823,18 @@
             }
             return;
         }
-        const taskName = uniqueName(
-            "自动进食",
-            state.tasks.map((task) => task.name)
-        );
+        const payload = Model.payloadTask(state.draft);
+        const taskName = payload.name;
         const triggerName = uniqueName(
             `${taskName} 监听器`,
             state.triggers.map((trigger) => trigger.name)
         );
-        const steps = [
-            {
-                moduleId: "MOVE_TO_COORDINATE",
-                parameters: { coordinateId }
-            },
-            {
-                moduleId: "WITHDRAW_FOOD",
-                parameters: { coordinateId, foodItemId }
-            },
-            {
-                moduleId: "EAT_FOOD",
-                parameters: { foodItemId }
-            }
-        ];
         elements.createAutoEatPreset.disabled = true;
         try {
             const taskResponse = await Stowling.request("/v1/tasks", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    name: taskName,
-                    priority: "NORMAL",
-                    repeatWhenIdle: false,
-                    steps
-                })
+                body: JSON.stringify(payload)
             });
             state.revision = String(taskResponse?.revision || state.revision);
             state.tasks = taskResponse.tasks.map(Model.normalizeTask);
@@ -841,7 +848,7 @@
                 name: triggerName,
                 type: "FOOD_LEVEL_AT_OR_BELOW",
                 targetTaskId: createdTask.id,
-                priority: "NORMAL",
+                priority: payload.priority,
                 intervalTicks: 20,
                 cooldownTicks: 100,
                 coordinateId: null,
@@ -863,7 +870,10 @@
             state.triggers = triggerResponse.triggers.map(
                 TriggerModel.normalizeTrigger
             );
-            hideAutoEatPresetForm();
+            state.presetMode = false;
+            elements.autoEatForm.hidden = true;
+            state.draft = null;
+            state.dirty = false;
             selectTask(createdTask);
             renderTriggerList();
             renderTriggerEditor();
@@ -902,6 +912,9 @@
      * @returns {void}
      */
     function startTaskTemplate(template) {
+        if (state.presetMode) {
+            resetAutoEatPreset();
+        }
         if (state.dirty
                 && !window.confirm("当前任务有未保存修改，继续将放弃这些修改。")) {
             return;
@@ -937,6 +950,41 @@
             return Model.sortTask(state.modules);
         }
         return Model.newTask(state.modules);
+    }
+
+    /**
+     * @returns {void}
+     */
+    function syncAutoEatDraft() {
+        if (!state.presetMode || !state.draft) {
+            return;
+        }
+        const coordinateId = elements.autoEatCoordinate.value;
+        const foodItemId = elements.autoEatFood.value.trim();
+        for (const step of state.draft.steps) {
+            if (step.moduleId === "MOVE_TO_COORDINATE") {
+                step.parameters.coordinateId = coordinateId;
+            } else if (step.moduleId === "WITHDRAW_FOOD") {
+                step.parameters.coordinateId = coordinateId;
+                step.parameters.foodItemId = foodItemId;
+            } else if (step.moduleId === "EAT_FOOD") {
+                step.parameters.foodItemId = foodItemId;
+            }
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function resetAutoEatPreset() {
+        state.presetMode = false;
+        state.selectedId = "";
+        state.draft = null;
+        state.dirty = false;
+        elements.autoEatForm.hidden = true;
+        elements.autoEatErrors.replaceChildren();
+        renderEditor();
+        renderTaskList();
     }
 
     /**
@@ -1186,9 +1234,11 @@
                 elements.errors.append(Stowling.element("p", "", error));
             }
         }
-        elements.save.disabled = !state.dirty || errors.length > 0;
+        elements.save.disabled = state.presetMode
+            || !state.dirty
+            || errors.length > 0;
         elements.discard.disabled = !state.dirty;
-        elements.remove.disabled = !state.selectedId;
+        elements.remove.disabled = state.presetMode || !state.selectedId;
     }
 
     /**
@@ -1577,6 +1627,10 @@
         updateRunActions();
     });
     elements.discard.addEventListener("click", () => {
+        if (state.presetMode) {
+            resetAutoEatPreset();
+            return;
+        }
         const task = state.tasks.find((entry) => entry.id === state.selectedId);
         if (task) {
             selectTask(task);

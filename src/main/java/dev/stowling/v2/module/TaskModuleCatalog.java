@@ -311,8 +311,8 @@ public final class TaskModuleCatalog {
     private static final ModuleDefinition WITHDRAW_FOOD =
             new ModuleDefinition(
                     ConfigValidator.WITHDRAW_FOOD,
-                    "取出食物",
-                    "从当前食物箱取出一个指定食物，不负责寻路或进食。",
+                    "交互",
+                    "打开食物箱并取出一个指定食物，不负责寻路或进食。",
                     TaskModuleLevel.BASIC,
                     List.of(
                             new ModuleParameter(

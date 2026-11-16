@@ -72,7 +72,6 @@
         return modules.filter((module) => (
             !module?.deprecated
                 && moduleKind(module) !== "INTERNAL"
-                && moduleKind(module) !== "PRESET"
         ));
     }
 

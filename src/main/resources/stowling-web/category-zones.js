@@ -3,11 +3,14 @@
 
     const Stowling = window.Stowling;
     const Model = window.StowlingCategoryZoneModel;
+    const TAB_EVENT = "stowling:resource-tab-change";
     const state = {
         revision: "",
         rules: [],
-        categoryZones: []
+        categoryZones: [],
+        query: ""
     };
+    let loadRequest = 0;
 
     const elements = {
         add: document.querySelector("#add-category-zone-button"),
@@ -16,6 +19,8 @@
         name: document.querySelector("#new-category-zone-name"),
         bindings: document.querySelector("#new-category-bindings"),
         addBinding: document.querySelector("#add-new-binding-button"),
+        search: document.querySelector("#category-zone-search"),
+        count: document.querySelector("#category-zone-list-count"),
         list: document.querySelector("#category-zone-list"),
         errors: document.querySelector("#category-zone-errors"),
         status: document.querySelector("#category-zone-status"),
@@ -24,32 +29,58 @@
     const newBindingReaders = [];
 
     /**
+     * @param {HTMLElement} host
+     * @returns {boolean}
+     */
+    function hasDirtyZone(host) {
+        return Boolean(host.querySelector('[data-dirty="true"]'));
+    }
+
+    /**
+     * @param {boolean} [preserveDirty]
      * @returns {Promise<void>}
      */
-    async function loadAll() {
+    async function loadAll(preserveDirty = false) {
+        const requestId = ++loadRequest;
+        elements.status.textContent = "正在同步分类区…";
         try {
             const [zones, rules] = await Promise.all([
                 Stowling.request("/v1/category-zones"),
                 Stowling.request("/v1/category-rules")
             ]);
+            if (requestId !== loadRequest) {
+                return;
+            }
             state.rules = Array.isArray(rules?.rules) ? rules.rules : [];
-            applyResponse(zones);
-            elements.status.textContent = "分类区已同步";
+            applyResponse(zones, preserveDirty);
         } catch (error) {
+            if (requestId !== loadRequest) {
+                return;
+            }
+            elements.status.textContent = "读取分类区失败";
             showError(error, "读取分类区失败");
         }
     }
 
     /**
      * @param {object} response
+     * @param {boolean} [preserveDirty]
      * @returns {void}
      */
-    function applyResponse(response) {
+    function applyResponse(response, preserveDirty = false) {
         const normalized = Model.normalizeCategoryZones(response);
-        state.revision = normalized.revision;
+        state.revision = normalized.revision || state.revision;
         state.categoryZones = normalized.categoryZones;
         elements.revision.textContent = Stowling.revisionLabel(state.revision);
+        if (preserveDirty && hasDirtyZone(elements.list)) {
+            elements.status.textContent = "有未保存修改，已同步版本";
+            filterCategoryZones();
+            return;
+        }
         renderCategoryZones();
+        elements.status.textContent = state.categoryZones.length === 0
+            ? "尚未添加分类区"
+            : "分类区已同步";
     }
 
     /**
@@ -57,12 +88,33 @@
      */
     function renderCategoryZones() {
         elements.list.replaceChildren();
+        elements.count.textContent = String(state.categoryZones.length);
         if (state.categoryZones.length === 0) {
             elements.list.append(Stowling.emptyState("尚未添加分类区"));
             return;
         }
         for (const zone of state.categoryZones) {
             elements.list.append(createZoneCard(zone));
+        }
+        const empty = Stowling.emptyState("没有匹配的分类区");
+        empty.classList.add("search-empty");
+        elements.list.append(empty);
+        filterCategoryZones();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function filterCategoryZones() {
+        let visible = 0;
+        for (const card of elements.list.querySelectorAll(".coordinate-point-editor")) {
+            const searchText = String(card.dataset.searchText || "");
+            card.hidden = !searchText.toLocaleLowerCase().includes(state.query);
+            visible += card.hidden ? 0 : 1;
+        }
+        const empty = elements.list.querySelector(".search-empty");
+        if (empty) {
+            empty.hidden = visible > 0;
         }
     }
 
@@ -75,6 +127,12 @@
             "details",
             "editor-card coordinate-point-editor"
         );
+        card.dataset.dirty = "false";
+        card.dataset.resourceId = zone.id;
+        card.dataset.searchText = [
+            zone.name,
+            ...zone.bindings.map((binding) => bindingDescription(binding))
+        ].join(" ");
         const summary = Stowling.element(
             "summary",
             "editor-card-heading coordinate-point-summary"
@@ -109,6 +167,7 @@
         );
         addBinding.type = "button";
         addBinding.addEventListener("click", () => {
+            card.dataset.dirty = "true";
             readers.push(appendBinding(
                 bindingsHost,
                 Model.normalizeBinding({}),
@@ -134,7 +193,7 @@
             void saveZone(zone, {
                 name: name.value,
                 bindings: readers.map((read) => read())
-            });
+            }, card);
         });
         const remove = Stowling.element(
             "button",
@@ -143,7 +202,7 @@
         );
         remove.type = "button";
         remove.addEventListener("click", () => {
-            void deleteZone(zone);
+            void deleteZone(zone, card);
         });
         actions.append(save, remove);
         body.append(actions);
@@ -258,6 +317,7 @@
         );
         addOverride.type = "button";
         addOverride.addEventListener("click", () => {
+            markContainingZoneDirty(addOverride);
             addOverrideReader(Model.normalizeContainerOverride({
                 storageX: binding.storageFirstX,
                 storageY: binding.storageFirstY,
@@ -291,6 +351,17 @@
             ignoredMarkerBlockIds: parseBlockIds(ignored.value),
             containerOverrides: overrideReaders.map((reader) => reader.read())
         });
+    }
+
+    /**
+     * @param {Element} control
+     * @returns {void}
+     */
+    function markContainingZoneDirty(control) {
+        const card = control.closest(".coordinate-point-editor");
+        if (card instanceof HTMLElement) {
+            card.dataset.dirty = "true";
+        }
     }
 
     /**
@@ -338,6 +409,7 @@
         );
         remove.type = "button";
         remove.addEventListener("click", () => {
+            markContainingZoneDirty(remove);
             card.remove();
             onRemove();
         });
@@ -463,9 +535,10 @@
     /**
      * @param {object} zone
      * @param {object} values
+     * @param {HTMLElement} card
      * @returns {Promise<void>}
      */
-    async function saveZone(zone, values) {
+    async function saveZone(zone, values, card) {
         try {
             const response = await Stowling.request(
                 `/v1/category-zones/${encodeURIComponent(zone.id)}`,
@@ -478,7 +551,9 @@
                     })
                 }
             );
-            applyResponse(response);
+            ++loadRequest;
+            card.dataset.dirty = "false";
+            applyResponse(response, true);
             clearErrors();
             Stowling.showToast("分类区已保存");
         } catch (error) {
@@ -488,9 +563,10 @@
 
     /**
      * @param {object} zone
+     * @param {HTMLElement} card
      * @returns {Promise<void>}
      */
-    async function deleteZone(zone) {
+    async function deleteZone(zone, card) {
         if (!window.confirm(`删除分类区“${zone.name}”？`)) {
             return;
         }
@@ -503,7 +579,9 @@
                     body: JSON.stringify({ revision: state.revision })
                 }
             );
-            applyResponse(response);
+            ++loadRequest;
+            card.remove();
+            applyResponse(response, true);
             clearErrors();
             Stowling.showToast("分类区已删除");
         } catch (error) {
@@ -524,7 +602,8 @@
                     bindings: newBindingReaders.map((read) => read())
                 }))
             });
-            applyResponse(response);
+            ++loadRequest;
+            applyResponse(response, true);
             elements.form.reset();
             elements.form.hidden = true;
             clearErrors();
@@ -571,6 +650,40 @@
         elements.errors.replaceChildren();
     }
 
+    /**
+     * @param {Event} event
+     * @returns {void}
+     */
+    function markDirtyZoneEditor(event) {
+        if (!(event.target instanceof Element)) {
+            return;
+        }
+        const card = event.target.closest(".coordinate-point-editor");
+        const host = event.currentTarget;
+        if (!card || !(host instanceof HTMLElement) || !host.contains(card)) {
+            return;
+        }
+        card.dataset.dirty = "true";
+    }
+
+    /**
+     * @param {Event} event
+     * @returns {void}
+     */
+    function refreshCategoryZones(event) {
+        const detail = event instanceof CustomEvent ? event.detail : null;
+        if (detail?.panelId === "category-zones" && Stowling.isConnected()) {
+            void loadAll(true);
+        }
+    }
+
+    elements.search.addEventListener("input", () => {
+        state.query = elements.search.value.trim().toLocaleLowerCase();
+        filterCategoryZones();
+    });
+    elements.list.addEventListener("input", markDirtyZoneEditor);
+    elements.list.addEventListener("change", markDirtyZoneEditor);
+    document.addEventListener(TAB_EVENT, refreshCategoryZones);
     elements.add.addEventListener("click", showCreateForm);
     elements.cancel.addEventListener("click", () => {
         elements.form.hidden = true;
@@ -587,6 +700,9 @@
         event.preventDefault();
         void createZone();
     });
+    const embedded = document.body.dataset.page === "coordinates";
     Stowling.onConnected(() => loadAll());
-    Stowling.mountPage("category-zones");
+    if (!embedded) {
+        Stowling.mountPage("category-zones");
+    }
 })();

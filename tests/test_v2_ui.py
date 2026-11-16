@@ -12,13 +12,15 @@ def read(name: str) -> str:
 def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     html = read("coordinates.html")
     javascript = read("coordinates.js")
+    coordinate_points = html.split('id="coordinate-points"', 1)[1]
+    coordinate_points = coordinate_points.split('id="regions"', 1)[0]
     assert "坐标管理" in html
     for field in ("名称", "X", "Y", "Z"):
-        assert field in html
+        assert field in coordinate_points
     for removed in ("第二角点", "容器"):
-        assert removed not in html
-    assert "new-coordinate-use-dimension" in html
-    assert "new-coordinate-use-radius" in html
+        assert removed not in coordinate_points
+    assert "new-coordinate-use-dimension" in coordinate_points
+    assert "new-coordinate-use-radius" in coordinate_points
     assert "/v1/coordinates/${encodeURIComponent(coordinate.id)}" in javascript
     assert "coordinate.name" in javascript
     assert "coordinate.x" in javascript
@@ -77,7 +79,7 @@ def test_coordinate_page_uses_progressive_creation_layout() -> None:
     styles = read("styles.css")
 
     assert 'class="resource-create-grid"' in html
-    assert 'class="resource-list-grid"' in html
+    assert "resource-tab-panel" in html
     assert 'id="new-coordinate-form"' in html
     assert 'id="new-region-form"' in html
     assert 'class="coordinate-create-form" hidden' in html
@@ -86,7 +88,7 @@ def test_coordinate_page_uses_progressive_creation_layout() -> None:
     assert "hideCreateForms" in javascript
     assert ".coordinate-create-fields" in styles
     assert ".region-corner-group" in styles
-    assert ".resource-list-grid" in styles
+    assert ".resource-tab-panel" in styles
 
 
 def test_coordinate_cards_collapse_to_the_saved_name() -> None:
@@ -641,19 +643,166 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     assert "bindingDescription(binding)" in javascript
 
 
-def test_task_workbench_keeps_execution_with_editor_and_folds_module_reference() -> None:
+def test_task_page_separates_orchestration_triggers_and_monitoring() -> None:
     html = read("tasks.html")
-    workbench = html.split('<div class="task-workbench">', 1)[1]
-    workbench = workbench.split('<details id="task-module-panel"', 1)[0]
+    orchestration = html.split('id="task-panel-orchestration"', 1)[1]
+    orchestration = orchestration.split('id="task-panel-triggers"', 1)[0]
+    triggers = html.split('id="task-panel-triggers"', 1)[1]
+    triggers = triggers.split('id="task-panel-monitor"', 1)[0]
+    monitor = html.split('id="task-panel-monitor"', 1)[1]
 
-    for name in ("task-sidebar", "task-main", "task-monitor", "task-editor-panel"):
-        assert name in workbench
-    assert 'id="task-run-panel"' in workbench
-    assert 'id="task-search"' in workbench
+    for tab in ("orchestration", "triggers", "monitor"):
+        assert f'data-task-tab="{tab}"' in html
+        assert f'data-task-panel="{tab}"' in html
+    assert 'id="task-panel-orchestration"' in html
+    assert 'aria-selected="true"' in html.split('data-task-tab="orchestration"', 1)[0]
+    assert 'data-task-panel="triggers" hidden' in html
+    assert 'data-task-panel="monitor" hidden' in html
+
+    for marker in ("task-list", "task-editor-panel", "task-module-panel"):
+        assert marker in orchestration
+    assert 'id="task-run-panel"' not in orchestration
+    assert 'id="trigger-form"' not in orchestration
+    assert 'id="trigger-form"' in triggers
+    assert 'id="trigger-status-list"' not in triggers
+    assert 'id="task-run-panel"' in monitor
+    for marker in ("trigger-status-list", "task-queue-list", "runtime-list"):
+        assert marker in monitor
+
+
+def test_task_tabs_use_hash_and_polling_never_changes_partitions() -> None:
+    javascript = read("tasks.js")
+
+    assert 'orchestration: "#orchestration"' in javascript
+    assert 'triggers: "#triggers"' in javascript
+    assert 'monitor: "#monitor"' in javascript
+    assert "panel.hidden = panel.dataset.taskPanel !== next" in javascript
+    assert 'window.history.replaceState(null, "", hash)' in javascript
+    assert 'window.addEventListener("hashchange"' in javascript
+    assert "state.preserveTabOnSelect = true" in javascript
+
+    selection = javascript.split("function selectTask(task)", 1)[1]
+    selection = selection.split("function renderRunControls", 1)[0]
+    assert 'showTaskTab("orchestration", true)' in selection
+    assert 'showTaskTab("triggers", true)' in javascript
+    assert 'showTaskTab("monitor", true)' in javascript
+
+    polling = javascript.split("async function loadRuns()", 1)[1]
+    polling = polling.split("function renderTriggerStatuses()", 1)[0]
+    assert "showTaskTab(" not in polling
+    assert "renderTriggerStatuses()" in polling
+    assert "renderRuntime()" in polling
+    assert "renderQueue()" in polling
+
+    saving = javascript.split("async function saveTask()", 1)[1]
+    saving = saving.split("async function deleteTask()", 1)[0]
+    assert "showTaskTab(" not in saving
+    assert "renderEditor()" in saving
+    assert "renderTaskList()" in saving
+
+
+def test_task_tabs_support_roving_keyboard_navigation() -> None:
+    javascript = read("tasks.js")
+
+    assert "button.tabIndex = selected ? 0 : -1" in javascript
+    assert "function handleTaskTabKeydown(event)" in javascript
+    assert 'event.key === "ArrowRight"' in javascript
+    assert 'event.key === "ArrowLeft"' in javascript
+    assert 'event.key === "Home"' in javascript
+    assert 'event.key === "End"' in javascript
+    assert "event.preventDefault()" in javascript
+    assert "showTaskTab(target.dataset.taskTab, true)" in javascript
+    assert "target.focus()" in javascript
+    assert 'button.addEventListener("keydown", handleTaskTabKeydown)' in javascript
+
+
+def test_task_list_filters_interruption_roles_without_a_saved_category() -> None:
+    html = read("tasks.html")
+    javascript = read("tasks.js")
+
+    for value in ("ALL", "NORMAL", "INTERRUPTION"):
+        assert f'data-task-filter="{value}"' in html
+    for label in ("全部", "普通任务", "中断收尾"):
+        assert label in html
+    assert 'taskFilter: "ALL"' in javascript
+    assert "function isInterruptionTask(task)" in javascript
+    assert "task.defaultInterruptionFlow" in javascript
+    assert "candidate.interruptionTaskRef" in javascript
+    assert "Model.parseReference(" in javascript
+    assert "candidate.id === task.id" in javascript
+    assert "function matchesTaskFilter(task)" in javascript
+    assert "state.taskFilter = button.dataset.taskFilter" in javascript
+    assert "task.category" not in javascript
+
+
+def test_task_templates_are_folded_into_the_create_menu() -> None:
+    html = read("tasks.html")
+
+    menu = html.split('<details class="task-template-menu">', 1)[1]
+    menu = menu.split("</details>", 1)[0]
+    for button_id in (
+        "new-cache-task-button",
+        "new-sort-task-button",
+        "new-marker-task-button",
+        "new-interruption-task-button",
+        "new-auto-eat-task-button",
+    ):
+        assert f'id="{button_id}"' in menu
     assert '<details class="task-settings">' in html
     module_heading = html.split('<details id="task-module-panel"', 1)[1].split(">", 1)[0]
     assert "open" not in module_heading
     assert "从一个任务开始" in html
+
+
+def test_shared_tabs_and_resource_partitions_hide_inactive_content() -> None:
+    styles = read("styles.css")
+
+    assert ".page-subnav {" in styles
+    assert '.page-subnav-tab[aria-selected="true"]' in styles
+    assert ".page-subnav-tab:focus-visible" in styles
+    assert (
+        ".page-tab-panel[hidden],\n"
+        ".resource-tab-panel[hidden] {\n"
+        "    display: none !important;\n"
+        "}"
+    ) in styles
+    assert (
+        ".resource-tab-panel {\n"
+        "    display: grid;\n"
+        "    grid-template-columns: minmax(0, 1fr);"
+    ) in styles
+
+
+def test_workflow_tree_styles_support_nested_details_and_mobile_indent() -> None:
+    styles = read("styles.css")
+
+    for selector in (
+        ".workflow-tree",
+        ".workflow-node-details",
+        ".workflow-node-tools",
+        ".workflow-node-summary",
+        ".workflow-node-body",
+        ".workflow-node-config",
+        ".workflow-config-meta",
+        ".workflow-action-editor",
+        ".workflow-node-help",
+        ".workflow-branch-heading",
+        ".workflow-step-list",
+        ".workflow-branch-empty",
+        ".workflow-node-invalid",
+        ".workflow-node-unsupported",
+        ".workflow-depth-4",
+    ):
+        assert selector in styles
+    assert ".workflow-node-summary:focus-visible" in styles
+    assert (
+        ".workflow-node-tools {\n"
+        "    position: absolute;"
+    ) in styles
+    assert 'workflow-node[data-depth="4"]' in styles
+    mobile = styles.split("@media (max-width: 600px) {", 1)[1]
+    assert ".workflow-branch," in mobile
+    assert "--workflow-branch-offset: 0;" in mobile
 
 
 def test_task_selection_aligns_saved_run_target_without_using_the_draft() -> None:

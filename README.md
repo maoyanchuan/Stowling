@@ -5,6 +5,12 @@ coordinates, regions, category zones, queued tasks, and condition listeners.
 Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
+The task page is split into hash-addressable sections: `#orchestration` contains
+the task list and editor, `#triggers` manages automatic triggers, and `#monitor`
+shows launch controls, trigger status, queueing, and run records. The list can
+filter ordinary tasks from interruption cleanup tasks without storing another
+task category.
+
 ## Task model
 
 Tasks contain ordered tree steps. Every step has one kind:

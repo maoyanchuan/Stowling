@@ -4,6 +4,35 @@
     const Stowling = window.Stowling;
     const Model = window.StowlingTaskModel;
     const OUTPUT_TYPES = Object.freeze(["output"]);
+    const STEP_KIND_LABELS = Object.freeze({
+        ACTION: "动作",
+        IF: "条件",
+        REPEAT: "循环",
+        CREATE_TASK: "创建任务"
+    });
+    const STEP_KIND_ICONS = Object.freeze({
+        ACTION: "◆",
+        IF: "◇",
+        REPEAT: "↻",
+        CREATE_TASK: "＋"
+    });
+    const OUTPUT_REFERENCE_LABELS = Object.freeze({
+        "output:container": "当前结果 · 容器",
+        "output:storage": "当前结果 · 存储位",
+        "output:marker": "当前结果 · 标记容器"
+    });
+    const ITEM_SOURCE_LABELS = Object.freeze({
+        collected: "已收集",
+        classified: "已分类",
+        carried: "当前携带",
+        managed: "任务管理物品"
+    });
+    const editorState = {
+        nodeOpen: new Map(),
+        configOpen: new Map(),
+        draftKeys: new WeakMap(),
+        nextDraftKey: 1
+    };
 
     /**
      * @param {HTMLElement} host
@@ -36,7 +65,9 @@
             changed
         };
         host.replaceChildren();
-        renderStepList(context, host, task.steps || [], [], true);
+        const tree = Stowling.element("div", "workflow-tree");
+        renderStepList(context, tree, task.steps || [], [], true, 0);
+        host.append(tree);
     }
 
     /**
@@ -45,12 +76,21 @@
      * @param {Array<object>} steps
      * @param {Array<number>} parentPath
      * @param {boolean} isRoot
+     * @param {number} depth
      * @returns {void}
      */
-    function renderStepList(context, host, steps, parentPath, isRoot) {
+    function renderStepList(context, host, steps, parentPath, isRoot, depth) {
         steps.forEach((step, index) => {
             const path = [...parentPath, index];
-            host.append(createStepCard(context, step, steps, index, path, isRoot));
+            host.append(createStepNode(
+                context,
+                step,
+                steps,
+                index,
+                path,
+                isRoot,
+                depth
+            ));
         });
     }
 
@@ -61,125 +101,253 @@
      * @param {number} index
      * @param {Array<number>} path
      * @param {boolean} isRoot
+     * @param {number} depth
      * @returns {HTMLElement}
      */
-    function createStepCard(context, step, siblings, index, path, isRoot) {
+    function createStepNode(context, step, siblings, index, path, isRoot, depth) {
         const kind = step.kind || "ACTION";
         const module = context.modules.find(
             (candidate) => candidate.id === step.moduleId
         );
-        const card = Stowling.element(
+        const invalid = kind === "ACTION" && !module;
+        const node = Stowling.element(
             "article",
-            `step-card step-kind-${kind.toLocaleLowerCase()}`
+            [
+                "workflow-node",
+                `workflow-node-kind-${kind.toLocaleLowerCase()}`,
+                invalid ? "workflow-node-invalid" : "",
+                invalid && step.moduleId ? "workflow-node-unsupported" : ""
+            ].filter(Boolean).join(" ")
         );
-        const heading = Stowling.element("div", "step-card-heading");
-        const identity = Stowling.element("div", "step-identity");
-        identity.append(
-            Stowling.element("strong", "", stepTitle(kind, module, step)),
-            Stowling.element("span", "muted compact-help", stepHelp(kind, module))
+        node.dataset.stepKind = kind;
+        node.dataset.depth = String(Math.min(depth, 4));
+
+        const stateKey = stepStateKey(step);
+        const details = Stowling.element("details", "workflow-node-details");
+        details.dataset.stateKey = stateKey;
+        const summary = Stowling.element("summary", "workflow-node-summary");
+        const icon = Stowling.element(
+            "span",
+            "workflow-node-icon",
+            STEP_KIND_ICONS[kind] || "◆"
         );
-        const actions = Stowling.element("div", "move-buttons");
-        actions.append(
+        icon.setAttribute("aria-hidden", "true");
+        const copy = Stowling.element("span", "workflow-node-copy");
+        const title = Stowling.element(
+            "strong",
+            "workflow-node-title",
+            stepHeadline(kind, module, step)
+        );
+        const meta = Stowling.element(
+            "span",
+            "workflow-node-meta",
+            stepSummary(context, step, module)
+        );
+        copy.append(
+            title,
+            meta
+        );
+        summary.append(
+            icon,
+            copy,
+            Stowling.element(
+                "span",
+                "workflow-node-kind-badge",
+                STEP_KIND_LABELS[kind] || "步骤"
+            )
+        );
+
+        const body = Stowling.element("div", "workflow-node-body");
+        if (kind === "ACTION") {
+            body.append(actionEditor(context, step, module));
+        } else if (kind === "CREATE_TASK") {
+            body.append(createTaskEditor(context, step));
+        } else {
+            body.append(configurationEditor(context, step, kind));
+            body.append(branchEditor(
+                context,
+                step,
+                "steps",
+                kind === "IF" ? "满足条件" : "重复执行",
+                path,
+                depth + 1,
+                kind === "IF" ? "then" : "repeat"
+            ));
+            if (kind === "IF") {
+                body.append(branchEditor(
+                    context,
+                    step,
+                    "otherwise",
+                    "否则",
+                    path,
+                    depth + 1,
+                    "otherwise"
+                ));
+            }
+        }
+        body.addEventListener("input", () => {
+            refreshNodeSummary(
+                body,
+                title,
+                meta,
+                context,
+                step,
+                module,
+                kind
+            );
+        });
+        body.addEventListener("change", () => {
+            refreshNodeSummary(
+                body,
+                title,
+                meta,
+                context,
+                step,
+                module,
+                kind
+            );
+        });
+        details.append(summary, body);
+        details.open = expansionValue(
+            editorState.nodeOpen,
+            stateKey,
+            kind === "IF" || kind === "REPEAT"
+        );
+        bindExpansion(details, editorState.nodeOpen, stateKey);
+
+        const tools = Stowling.element("div", "workflow-node-tools");
+        tools.append(
             moveButton("↑", siblings, index, -1, context.changed),
             moveButton("↓", siblings, index, 1, context.changed),
-            deleteButton(siblings, index, isRoot, context.changed)
+            deleteButton(context, step, siblings, index, isRoot)
         );
-        heading.append(
-            Stowling.element("span", "step-number", pathLabel(path)),
-            identity,
-            actions
-        );
+        node.append(details, tools);
+        return node;
+    }
 
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @param {object | undefined} module
+     * @returns {HTMLElement}
+     */
+    function actionEditor(context, step, module) {
         const fields = Stowling.element("div", "editor-fields");
-        if (kind === "ACTION") {
-            fields.append(field(
-                "基础动作",
-                moduleSelect(step, context.modules, context.changed)
-            ));
-        } else if (kind === "CREATE_TASK") {
-            fields.append(
-                field(
-                    "目标任务",
-                    taskReferenceSelect(
-                        step,
-                        "taskRef",
-                        "请选择要创建的任务",
-                        context,
-                        true
-                    )
-                ),
-                field(
-                    "新任务优先级",
-                    createTaskPrioritySelect(step, context.changed)
-                )
-            );
-        } else {
-            fields.append(field(
-                "条件",
-                conditionSelect(step, context.changed)
-            ));
-        }
-
+        fields.append(field(
+            "基础动作",
+            moduleSelect(step, context.modules, context.changed)
+        ));
         const parameters = Stowling.element("div", "step-fields");
-        if (kind === "ACTION") {
-            for (const parameter of module?.parameters || []) {
-                parameters.append(field(
-                    `${parameter.label}${parameter.required ? " *" : ""}`,
-                    parameterControl(context, step, parameter)
-                ));
-            }
-        } else if (kind === "IF" || kind === "REPEAT") {
-            if (Model.conditionNeedsThreshold(step.parameters.condition)) {
-                parameters.append(field(
-                    "饱食度阈值 *",
-                    integerControl(
-                        step,
-                        "foodLevelThreshold",
-                        context.changed,
-                        0,
-                        20,
-                        18
-                    )
-                ));
-            }
+        for (const parameter of module?.parameters || []) {
             parameters.append(field(
-                "条件取反",
-                negateControl(step, context.changed)
+                `${parameter.label}${parameter.required ? " *" : ""}`,
+                parameterControl(context, step, parameter)
             ));
-            if (kind === "REPEAT") {
-                parameters.append(field(
-                    "最大循环次数",
-                    integerControl(
-                        step,
-                        "maxIterations",
-                        context.changed,
-                        1,
-                        Model.MAX_REPEAT_ITERATIONS,
-                        Model.DEFAULT_REPEAT_ITERATIONS
-                    )
-                ));
-            }
         }
-
-        card.append(heading, fields);
+        const editor = Stowling.element("div", "workflow-action-editor");
+        editor.append(fields);
         if (parameters.children.length > 0) {
-            card.append(parameters);
+            editor.append(parameters);
         }
-        if (kind === "IF") {
-            card.append(
-                branchEditor(context, step, "steps", "满足时", path),
-                branchEditor(context, step, "otherwise", "否则", path)
-            );
-        } else if (kind === "REPEAT") {
-            card.append(branchEditor(context, step, "steps", "每轮执行", path));
-        } else if (kind === "CREATE_TASK") {
-            card.append(Stowling.element(
+        return editor;
+    }
+
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @returns {HTMLElement}
+     */
+    function createTaskEditor(context, step) {
+        const editor = Stowling.element("div", "workflow-action-editor");
+        const fields = Stowling.element("div", "editor-fields");
+        fields.append(
+            field(
+                "目标任务",
+                taskReferenceSelect(
+                    step,
+                    "taskRef",
+                    "请选择要创建的任务",
+                    context,
+                    true
+                )
+            ),
+            field(
+                "新任务优先级",
+                createTaskPrioritySelect(step, context.changed)
+            )
+        );
+        editor.append(
+            fields,
+            Stowling.element(
                 "p",
-                "muted compact-help step-kind-hint",
-                "新任务会独立入队；未指定优先级时沿用目标任务配置。"
+                "muted compact-help workflow-node-help",
+                "未指定优先级时沿用目标任务配置。"
+            )
+        );
+        return editor;
+    }
+
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @param {string} kind
+     * @returns {HTMLElement}
+     */
+    function configurationEditor(context, step, kind) {
+        const key = stepStateKey(step);
+        const details = Stowling.element("details", "workflow-node-config");
+        const summary = Stowling.element("summary", "workflow-config-summary");
+        summary.append(
+            Stowling.element("span", "", kind === "IF" ? "条件配置" : "循环配置"),
+            Stowling.element(
+                "span",
+                "workflow-config-meta",
+                configurationSummary(step, kind)
+            )
+        );
+
+        const body = Stowling.element("div", "workflow-config-body");
+        const fields = Stowling.element("div", "editor-fields");
+        fields.append(field(
+            "条件",
+            conditionSelect(step, context.changed)
+        ));
+        const parameters = Stowling.element("div", "step-fields");
+        if (Model.conditionNeedsThreshold(step.parameters.condition)) {
+            parameters.append(field(
+                "饱食度阈值 *",
+                integerControl(
+                    step,
+                    "foodLevelThreshold",
+                    context.changed,
+                    0,
+                    20,
+                    18
+                )
             ));
         }
-        return card;
+        parameters.append(field(
+            "条件取反",
+            negateControl(step, context.changed)
+        ));
+        if (kind === "REPEAT") {
+            parameters.append(field(
+                "最大循环次数",
+                integerControl(
+                    step,
+                    "maxIterations",
+                    context.changed,
+                    1,
+                    Model.MAX_REPEAT_ITERATIONS,
+                    Model.DEFAULT_REPEAT_ITERATIONS
+                )
+            ));
+        }
+        body.append(fields, parameters);
+        details.append(summary, body);
+        details.open = expansionValue(editorState.configOpen, key, false);
+        bindExpansion(details, editorState.configOpen, key);
+        return details;
     }
 
     /**
@@ -188,43 +356,355 @@
      * @param {object} step
      * @returns {string}
      */
-    function stepTitle(kind, module, step) {
+    function stepHeadline(kind, module, step) {
         if (kind === "ACTION") {
-            return module?.name || step.moduleId || "请选择基础动作";
+            if (module?.name) {
+                return module.name;
+            }
+            return step.moduleId ? "动作不可用" : "未选择动作";
         }
         if (kind === "CREATE_TASK") {
             return "创建独立任务";
         }
         if (kind === "IF") {
-            return `条件：${Model.conditionLabel(step.parameters.condition)}`;
+            const condition = step.parameters?.condition || "ALWAYS";
+            return condition === "ALWAYS"
+                ? "条件分支"
+                : `如果${conditionPhrase(step)}`;
         }
-        return `循环：${Model.conditionLabel(step.parameters.condition)}`;
+        const condition = step.parameters?.condition || "ALWAYS";
+        return condition === "ALWAYS"
+            ? "重复执行"
+            : `当${conditionPhrase(step)}时重复`;
     }
 
     /**
-     * @param {string} kind
+     * @param {object} context
+     * @param {object} step
      * @param {object | undefined} module
      * @returns {string}
      */
-    function stepHelp(kind, module) {
+    function stepSummary(context, step, module) {
+        const kind = step.kind || "ACTION";
         if (kind === "ACTION") {
-            return module?.description || "模块只执行一个基础动作。";
-        }
-        if (kind === "CREATE_TASK") {
-            return "完成后创建新任务，交给统一优先级队列。";
+            return actionParameterSummary(context, step, module);
         }
         if (kind === "IF") {
-            return "条件成立时执行子步骤，否则可执行另一组步骤。";
+            return [
+                `条件：${conditionPhrase(step)}`,
+                `满足时 ${(step.steps || []).length} 步`,
+                `否则 ${(step.otherwise || []).length} 步`
+            ].join(" · ");
         }
-        return "重复执行子步骤，直到条件不成立或达到次数上限。";
+        if (kind === "REPEAT") {
+            return [
+                `条件：${conditionPhrase(step)}`,
+                `最多 ${repeatCount(step)} 次`,
+                `每轮 ${(step.steps || []).length} 步`
+            ].join(" · ");
+        }
+        return createTaskSummary(context, step);
     }
 
     /**
-     * @param {Array<number>} path
+     * @param {HTMLElement} body
+     * @param {HTMLElement} title
+     * @param {HTMLElement} meta
+     * @param {object} context
+     * @param {object} step
+     * @param {object | undefined} module
+     * @param {string} kind
+     * @returns {void}
+     */
+    function refreshNodeSummary(body, title, meta, context, step, module, kind) {
+        title.textContent = stepHeadline(kind, module, step);
+        meta.textContent = stepSummary(context, step, module);
+        const configMeta = body.querySelector(".workflow-config-meta");
+        if (configMeta) {
+            configMeta.textContent = configurationSummary(step, kind);
+        }
+    }
+
+    /**
+     * @param {object} step
      * @returns {string}
      */
-    function pathLabel(path) {
-        return path.map((value) => value + 1).join(".");
+    function conditionPhrase(step) {
+        const parameters = step.parameters || {};
+        const condition = parameters.condition || "ALWAYS";
+        const label = condition === "FOOD_BELOW_THRESHOLD"
+            ? `饱食度低于 ${parameters.foodLevelThreshold || 18}`
+            : Model.conditionLabel(condition);
+        return parameters.negate === "true" ? `不满足“${label}”` : label;
+    }
+
+    /**
+     * @param {object} step
+     * @returns {string}
+     */
+    function repeatCount(step) {
+        return String(
+            step.parameters?.maxIterations || Model.DEFAULT_REPEAT_ITERATIONS
+        );
+    }
+
+    /**
+     * @param {object} step
+     * @param {string} kind
+     * @returns {string}
+     */
+    function configurationSummary(step, kind) {
+        const parts = [conditionPhrase(step)];
+        if (kind === "REPEAT") {
+            parts.push(`最多 ${repeatCount(step)} 次`);
+        }
+        return parts.join(" · ");
+    }
+
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @param {object | undefined} module
+     * @returns {string}
+     */
+    function actionParameterSummary(context, step, module) {
+        if (!module) {
+            return step.moduleId ? "请选择可用动作" : "尚未选择动作";
+        }
+        const parts = [];
+        for (const parameter of module.parameters || []) {
+            const value = parameterSummaryValue(context, step, parameter);
+            if (value) {
+                parts.push(`${parameter.label}：${value}`);
+            }
+        }
+        if (parts.length === 0) {
+            return module.description || "无需额外参数";
+        }
+        if (parts.length > 4) {
+            return [
+                parts.slice(0, 4).join(" · "),
+                `另有 ${parts.length - 4} 项`
+            ].join(" · ");
+        }
+        return parts.join(" · ");
+    }
+
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @param {object} parameter
+     * @returns {string}
+     */
+    function parameterSummaryValue(context, step, parameter) {
+        const value = step.parameters?.[parameter.key]
+            ?? defaultValue(parameter);
+        if (value === null || value === undefined || value === "") {
+            return parameter.required ? "未设置" : "";
+        }
+        const referenceTypes = referenceTypesFor(step, parameter);
+        if (referenceTypes.length > 0) {
+            return referenceDisplayName(context, String(value));
+        }
+        if (parameter.kind === "boolean") {
+            return String(value) === "true" ? "是" : "否";
+        }
+        if (parameter.key === "priority") {
+            return Model.priorityLabel(String(value));
+        }
+        if (parameter.kind === "select") {
+            return optionDisplayLabel(parameter, String(value));
+        }
+        return humanizeParameterValue(String(value));
+    }
+
+    /**
+     * @param {object} parameter
+     * @param {string} value
+     * @returns {string}
+     */
+    function optionDisplayLabel(parameter, value) {
+        if (parameter.key === "itemSource" && ITEM_SOURCE_LABELS[value]) {
+            return ITEM_SOURCE_LABELS[value];
+        }
+        for (const option of parameter.options || []) {
+            const optionValue = String(option?.value ?? option);
+            if (optionValue !== value) {
+                continue;
+            }
+            const label = option?.label ?? option?.name ?? option?.text;
+            return label ? String(label) : humanizeParameterValue(value);
+        }
+        return humanizeParameterValue(value);
+    }
+
+    /**
+     * @param {string} value
+     * @returns {string}
+     */
+    function humanizeParameterValue(value) {
+        return value.split(",").map((part) => {
+            const trimmed = part.trim();
+            if (!trimmed) {
+                return "";
+            }
+            const separator = trimmed.lastIndexOf(":");
+            const name = separator >= 0
+                ? trimmed.slice(separator + 1)
+                : trimmed;
+            return name.replaceAll("_", " ");
+        }).filter(Boolean).join("、");
+    }
+
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @returns {string}
+     */
+    function createTaskSummary(context, step) {
+        const parameters = step.parameters || {};
+        const task = parameters.taskRef
+            ? referenceDisplayName(context, parameters.taskRef)
+            : "尚未选择目标任务";
+        const priority = parameters.priority
+            ? `优先级：${Model.priorityLabel(parameters.priority)}`
+            : "沿用目标任务优先级";
+        return `${task} · ${priority}`;
+    }
+
+    /**
+     * @param {object} context
+     * @param {string} value
+     * @returns {string}
+     */
+    function referenceDisplayName(context, value) {
+        const text = String(value || "");
+        if (!text) {
+            return "未设置";
+        }
+        if (OUTPUT_REFERENCE_LABELS[text]) {
+            return OUTPUT_REFERENCE_LABELS[text];
+        }
+        const parsed = Model.parseReference(text);
+        if (parsed) {
+            const resource = findResource(context, parsed.type, parsed.id);
+            if (resource) {
+                return resourceDisplayName(
+                    resource,
+                    referenceTypeLabel(parsed.type)
+                );
+            }
+            return `已失效的${referenceTypeLabel(parsed.type)}`;
+        }
+        for (const [type, resources] of referenceCollections(context)) {
+            const resource = resources.find((candidate) => candidate.id === text);
+            if (resource) {
+                return resourceDisplayName(resource, referenceTypeLabel(type));
+            }
+        }
+        return "引用不可用";
+    }
+
+    /**
+     * @param {object} context
+     * @param {string} type
+     * @param {string} id
+     * @returns {object | undefined}
+     */
+    function findResource(context, type, id) {
+        for (const [candidateType, resources] of referenceCollections(context)) {
+            if (candidateType === type) {
+                return resources.find((resource) => resource.id === id);
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * @param {object} context
+     * @returns {Array<[string, Array<object>]>}
+     */
+    function referenceCollections(context) {
+        return [
+            ["coordinate", context.coordinates || []],
+            ["region", context.regions || []],
+            ["category-zone", context.categoryZones || []],
+            ["task", context.tasks || []]
+        ];
+    }
+
+    /**
+     * @param {object} resource
+     * @param {string} fallback
+     * @returns {string}
+     */
+    function resourceDisplayName(resource, fallback) {
+        const name = String(
+            resource?.displayName
+                ?? resource?.name
+                ?? resource?.label
+                ?? ""
+        ).trim();
+        return name || fallback;
+    }
+
+    /**
+     * @param {object} step
+     * @returns {string}
+     */
+    function stepStateKey(step) {
+        if (step?.id) {
+            return `step:${String(step.id)}`;
+        }
+        let key = editorState.draftKeys.get(step);
+        if (!key) {
+            key = `draft:${editorState.nextDraftKey}`;
+            editorState.nextDraftKey += 1;
+            editorState.draftKeys.set(step, key);
+        }
+        return key;
+    }
+
+    /**
+     * @param {Map<string, boolean>} values
+     * @param {string} key
+     * @param {boolean} fallback
+     * @returns {boolean}
+     */
+    function expansionValue(values, key, fallback) {
+        return values.has(key) ? values.get(key) : fallback;
+    }
+
+    /**
+     * @param {HTMLDetailsElement} details
+     * @param {Map<string, boolean>} values
+     * @param {string} key
+     * @returns {void}
+     */
+    function bindExpansion(details, values, key) {
+        details.addEventListener("toggle", () => {
+            values.set(key, details.open);
+        });
+    }
+
+    /**
+     * @param {object} step
+     * @returns {void}
+     */
+    function forgetStepState(step) {
+        if (!step) {
+            return;
+        }
+        const key = stepStateKey(step);
+        editorState.nodeOpen.delete(key);
+        editorState.configOpen.delete(key);
+        editorState.draftKeys.delete(step);
+        for (const child of step.steps || []) {
+            forgetStepState(child);
+        }
+        for (const child of step.otherwise || []) {
+            forgetStepState(child);
+        }
     }
 
     /**
@@ -814,16 +1294,31 @@
      * @param {string} branchKey
      * @param {string} title
      * @param {Array<number>} parentPath
+     * @param {number} depth
+     * @param {string} role
      * @returns {HTMLElement}
      */
-    function branchEditor(context, step, branchKey, title, parentPath) {
+    function branchEditor(context, step, branchKey, title, parentPath, depth, role) {
         if (!Array.isArray(step[branchKey])) {
             step[branchKey] = [];
         }
-        const branch = Stowling.element("section", "step-branch");
-        const heading = Stowling.element("div", "step-branch-heading");
-        heading.append(Stowling.element("strong", "", title));
-        const addButtons = Stowling.element("div", "step-branch-actions");
+        const cappedDepth = Math.min(depth, 4);
+        const branch = Stowling.element(
+            "section",
+            [
+                "workflow-branch",
+                `workflow-branch-${role}`,
+                `workflow-depth-${cappedDepth}`
+            ].join(" ")
+        );
+        branch.dataset.depth = String(cappedDepth);
+        const heading = Stowling.element("div", "workflow-branch-heading");
+        heading.append(Stowling.element(
+            "span",
+            "workflow-branch-title",
+            title
+        ));
+        const addButtons = Stowling.element("div", "workflow-branch-actions");
         for (const [kind, label] of [
             ["ACTION", "动作"],
             ["IF", "条件"],
@@ -839,12 +1334,19 @@
         }
         heading.append(addButtons);
         branch.append(heading);
-        const list = Stowling.element("div", "step-list nested-step-list");
-        renderStepList(context, list, step[branchKey], parentPath, false);
+        const list = Stowling.element("div", "workflow-step-list");
+        renderStepList(
+            context,
+            list,
+            step[branchKey],
+            parentPath,
+            false,
+            depth
+        );
         if (step[branchKey].length === 0) {
             list.append(Stowling.element(
                 "p",
-                "muted compact-help empty-branch",
+                "muted compact-help workflow-branch-empty",
                 "尚未添加步骤"
             ));
         }
@@ -866,7 +1368,8 @@
             `＋${label}`
         );
         button.type = "button";
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
+            event.stopPropagation();
             steps.push(Model.newStep(
                 Model.defaultModule(context.modules),
                 kind
@@ -959,7 +1462,8 @@
         const button = Stowling.element("button", "secondary compact", text);
         button.type = "button";
         button.disabled = index + offset < 0 || index + offset >= steps.length;
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
+            event.stopPropagation();
             const [step] = steps.splice(index, 1);
             steps.splice(index + offset, 0, step);
             changed(true);
@@ -968,13 +1472,14 @@
     }
 
     /**
+     * @param {object} context
+     * @param {object} step
      * @param {Array<object>} steps
      * @param {number} index
      * @param {boolean} isRoot
-     * @param {() => void} changed
      * @returns {HTMLButtonElement}
      */
-    function deleteButton(steps, index, isRoot, changed) {
+    function deleteButton(context, step, steps, index, isRoot) {
         const button = Stowling.element(
             "button",
             "ghost compact danger-action",
@@ -982,9 +1487,11 @@
         );
         button.type = "button";
         button.disabled = isRoot && steps.length <= 1;
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            forgetStepState(step);
             steps.splice(index, 1);
-            changed(true);
+            context.changed(true);
         });
         return button;
     }

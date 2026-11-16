@@ -9,28 +9,7 @@
     ]);
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
-        {
-            label: "坐标",
-            children: [
-                {
-                    page: "coordinates",
-                    href: "/coordinates.html#coordinate-points",
-                    label: "坐标点",
-                    section: "coordinate-points"
-                },
-                {
-                    page: "coordinates",
-                    href: "/coordinates.html#regions",
-                    label: "区域",
-                    section: "regions"
-                },
-                {
-                    page: "category-zones",
-                    href: "/category-zones.html",
-                    label: "分类区"
-                }
-            ]
-        },
+        { page: "coordinates", href: "/coordinates.html", label: "坐标" },
         { page: "tasks", href: "/tasks.html", label: "任务管理" },
         { page: "storage", href: "/storage.html", label: "库存查询" }
     ]);
@@ -211,14 +190,7 @@
      * @returns {boolean}
      */
     function navigationItemActive(item, activePage) {
-        if (item.page !== activePage) {
-            return false;
-        }
-        if (activePage !== "coordinates" || !item.section) {
-            return true;
-        }
-        const activeSection = String(window.location.hash || "").replace("#", "");
-        return item.section === (activeSection || "coordinate-points");
+        return item.page === activePage;
     }
 
     /**
@@ -239,37 +211,6 @@
     }
 
     /**
-     * @param {object} item
-     * @param {string} activePage
-     * @returns {HTMLElement}
-     */
-    function navigationGroup(item, activePage) {
-        const group = document.createElement("details");
-        group.className = "workspace-nav-group";
-        const children = Array.isArray(item.children) ? item.children : [];
-        const active = children.some(
-            (child) => navigationItemActive(child, activePage)
-        );
-        group.open = active;
-        const summary = document.createElement("summary");
-        summary.className = "workspace-nav-link workspace-nav-summary";
-        summary.textContent = item.label;
-        if (active) {
-            summary.classList.add("active");
-        }
-        const subnav = document.createElement("div");
-        subnav.className = "workspace-subnav";
-        subnav.setAttribute("aria-label", `${item.label}子菜单`);
-        for (const child of children) {
-            const link = navigationLink(child, activePage);
-            link.classList.add("workspace-subnav-link");
-            subnav.append(link);
-        }
-        group.append(summary, subnav);
-        return group;
-    }
-
-    /**
      * @returns {void}
      */
     function mountNavigation() {
@@ -280,11 +221,7 @@
         const activePage = String(document.body.dataset.page || "");
         nav.replaceChildren();
         for (const item of NAV_ITEMS) {
-            if (Array.isArray(item.children)) {
-                nav.append(navigationGroup(item, activePage));
-            } else {
-                nav.append(navigationLink(item, activePage));
-            }
+            nav.append(navigationLink(item, activePage));
         }
     }
 

@@ -5,6 +5,16 @@
     const Model = window.StowlingTaskModel;
     const TriggerModel = window.StowlingTriggerModel;
     const Editor = window.StowlingTaskEditor;
+    const TASK_TAB_IDS = Object.freeze([
+        "orchestration",
+        "triggers",
+        "monitor"
+    ]);
+    const TASK_TAB_HASHES = Object.freeze({
+        orchestration: "#orchestration",
+        triggers: "#triggers",
+        monitor: "#monitor"
+    });
     const state = {
         revision: "",
         tasks: [],
@@ -24,10 +34,16 @@
         triggerDirty: false,
         runs: [],
         queue: [],
-        query: ""
+        query: "",
+        taskFilter: "ALL",
+        activeTab: "orchestration",
+        preserveTabOnSelect: false
     };
 
     const elements = {
+        tabButtons: [...document.querySelectorAll("[data-task-tab]")],
+        tabPanels: [...document.querySelectorAll("[data-task-panel]")],
+        taskFilters: [...document.querySelectorAll("[data-task-filter]")],
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
         newSortTask: document.querySelector("#new-sort-task-button"),
@@ -109,6 +125,129 @@
     };
 
     /**
+     * @param {string} value
+     * @returns {string}
+     */
+    function normalizeTaskTab(value) {
+        const normalized = String(value || "")
+            .replace(/^#/, "")
+            .toLocaleLowerCase();
+        return TASK_TAB_IDS.includes(normalized)
+            ? normalized
+            : "orchestration";
+    }
+
+    /**
+     * @returns {string}
+     */
+    function taskTabFromHash() {
+        const hash = String(window.location.hash || "")
+            .replace(/^#/, "")
+            .toLocaleLowerCase();
+        return TASK_TAB_IDS.includes(hash) ? hash : "";
+    }
+
+    /**
+     * @param {string} tab
+     * @param {boolean} updateHash
+     * @returns {void}
+     */
+    function showTaskTab(tab, updateHash = false) {
+        const next = normalizeTaskTab(tab);
+        state.activeTab = next;
+        for (const button of elements.tabButtons) {
+            const selected = button.dataset.taskTab === next;
+            button.setAttribute("aria-selected", String(selected));
+            button.tabIndex = selected ? 0 : -1;
+        }
+        for (const panel of elements.tabPanels) {
+            panel.hidden = panel.dataset.taskPanel !== next;
+        }
+        if (!updateHash) {
+            return;
+        }
+        const hash = TASK_TAB_HASHES[next];
+        if (window.location.hash !== hash) {
+            window.history.replaceState(null, "", hash);
+        }
+    }
+
+    /**
+     * @param {KeyboardEvent} event
+     * @returns {void}
+     */
+    function handleTaskTabKeydown(event) {
+        if (!(event.currentTarget instanceof HTMLButtonElement)) {
+            return;
+        }
+        const tab = event.currentTarget;
+        const current = elements.tabButtons.indexOf(tab);
+        if (current < 0) {
+            return;
+        }
+        let next = current;
+        if (event.key === "ArrowRight") {
+            next = (current + 1) % elements.tabButtons.length;
+        } else if (event.key === "ArrowLeft") {
+            next = (current - 1 + elements.tabButtons.length)
+                % elements.tabButtons.length;
+        } else if (event.key === "Home") {
+            next = 0;
+        } else if (event.key === "End") {
+            next = elements.tabButtons.length - 1;
+        } else {
+            return;
+        }
+        event.preventDefault();
+        const target = elements.tabButtons[next];
+        showTaskTab(target.dataset.taskTab, true);
+        target.focus();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function updateTaskFilters() {
+        for (const button of elements.taskFilters) {
+            const active = button.dataset.taskFilter === state.taskFilter;
+            button.setAttribute("aria-pressed", String(active));
+        }
+    }
+
+    /**
+     * @param {object} task
+     * @returns {boolean}
+     */
+    function isInterruptionTask(task) {
+        if (task.defaultInterruptionFlow) {
+            return true;
+        }
+        return state.tasks.some((candidate) => {
+            if (candidate.id === task.id) {
+                return false;
+            }
+            const reference = Model.parseReference(
+                candidate.interruptionTaskRef
+            );
+            return reference?.type === "task" && reference.id === task.id;
+        });
+    }
+
+    /**
+     * @param {object} task
+     * @returns {boolean}
+     */
+    function matchesTaskFilter(task) {
+        if (state.taskFilter === "INTERRUPTION") {
+            return isInterruptionTask(task);
+        }
+        if (state.taskFilter === "NORMAL") {
+            return !isInterruptionTask(task);
+        }
+        return true;
+    }
+
+    /**
      * @returns {Promise<void>}
      */
     async function loadAll() {
@@ -158,6 +297,7 @@
             renderModuleCatalog();
             renderRunControls();
             if (!state.draft && state.tasks.length > 0) {
+                state.preserveTabOnSelect = true;
                 selectTask(state.tasks[0]);
             }
             renderTriggerStatuses();
@@ -173,18 +313,20 @@
      */
     function renderTaskList() {
         elements.list.replaceChildren();
-        elements.taskCount.textContent = String(state.tasks.length);
         const matches = state.tasks
             .filter((task) => (
                 task.name.toLocaleLowerCase().includes(state.query)
+                && matchesTaskFilter(task)
             ))
             .sort(compareTasks);
-        if (matches.length === 0 && state.tasks.length > 0) {
-            elements.list.append(Stowling.emptyState("没有匹配的任务"));
-            return;
-        }
-        if (state.tasks.length === 0) {
-            elements.list.append(Stowling.emptyState("尚未创建任务"));
+        elements.taskCount.textContent = String(matches.length);
+        updateTaskFilters();
+        if (matches.length === 0) {
+            elements.list.append(Stowling.emptyState(
+                state.tasks.length === 0
+                    ? "尚未创建任务"
+                    : "没有符合当前分类和搜索条件的任务"
+            ));
             return;
         }
         for (const task of matches) {
@@ -194,6 +336,7 @@
             );
             button.type = "button";
             const identity = Stowling.element("div", "task-select-identity");
+            const interruption = isInterruptionTask(task);
             identity.append(
                 Stowling.element("strong", "", task.name),
                 Stowling.element(
@@ -201,11 +344,13 @@
                     "compact-help",
                     `${task.steps.length} 个根步骤`
                 ),
-                ...(task.defaultInterruptionFlow
+                ...(interruption
                     ? [Stowling.element(
                         "span",
-                        "muted compact-help",
-                        "全局默认中断收尾"
+                        "task-category-tag",
+                        task.defaultInterruptionFlow
+                            ? "默认中断收尾"
+                            : "中断收尾"
                     )]
                     : [])
             );
@@ -294,6 +439,7 @@
         }
         state.selectedTriggerId = trigger.id;
         state.triggerDraft = TriggerModel.normalizeTrigger(trigger);
+        showTaskTab("triggers", true);
         state.triggerDirty = false;
         renderTriggerList();
         renderTriggerEditor();
@@ -308,6 +454,7 @@
             return;
         }
         state.selectedTriggerId = "";
+        showTaskTab("triggers", true);
         state.triggerDraft = TriggerModel.newTrigger(
             state.selectedId || state.tasks[0]?.id
         );
@@ -667,6 +814,11 @@
                 && !window.confirm("当前任务有未保存修改，继续将放弃这些修改。")) {
             return;
         }
+        const preserveTab = state.preserveTabOnSelect;
+        state.preserveTabOnSelect = false;
+        if (!preserveTab) {
+            showTaskTab("orchestration", true);
+        }
         state.presetMode = false;
         elements.autoEatForm.hidden = true;
         state.selectedId = task.id;
@@ -758,6 +910,7 @@
         );
         state.dirty = true;
         elements.autoEatForm.hidden = false;
+        showTaskTab("orchestration", true);
         syncAutoEatDraft();
         renderEditor();
         elements.autoEatCoordinate.focus();
@@ -917,6 +1070,7 @@
         state.selectedId = "";
         state.draft = draft;
         state.dirty = true;
+        showTaskTab("orchestration", true);
         renderEditor();
         renderTaskList();
         elements.name.focus();
@@ -1723,6 +1877,7 @@
             return;
         }
         try {
+            showTaskTab("monitor", true);
             const response = await Stowling.request(
                 `/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs`,
                 {
@@ -2002,6 +2157,21 @@
         }
     }
 
+    for (const button of elements.tabButtons) {
+        button.addEventListener("click", () => {
+            showTaskTab(button.dataset.taskTab, true);
+        });
+        button.addEventListener("keydown", handleTaskTabKeydown);
+    }
+    for (const button of elements.taskFilters) {
+        button.addEventListener("click", () => {
+            state.taskFilter = button.dataset.taskFilter;
+            renderTaskList();
+        });
+    }
+    window.addEventListener("hashchange", () => {
+        showTaskTab(taskTabFromHash() || "orchestration");
+    });
     elements.search.addEventListener("input", () => {
         state.query = elements.search.value.trim().toLocaleLowerCase();
         renderTaskList();
@@ -2184,6 +2354,8 @@
         void deleteTrigger();
     });
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
+    updateTaskFilters();
+    showTaskTab(taskTabFromHash() || "orchestration");
     Stowling.onConnected(() => loadAll());
     window.setInterval(() => {
         if (Stowling.isConnected()) {

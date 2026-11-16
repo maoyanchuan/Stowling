@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "main" / "resources" / "stowling-web"
 
@@ -60,7 +61,7 @@ def test_runtime_separates_active_history_and_preserves_expansion() -> None:
     assert '"INTERRUPTION_FAILED"' in active
 
 
-def test_failure_card_keeps_reason_progress_and_guarded_edit_entry() -> None:
+def test_failure_card_keeps_reason_progress_and_task_selection() -> None:
     javascript = read("tasks.js")
     card = javascript.split("function runtimeCard(run)", 1)[1]
     card = card.split("function renderQueue", 1)[0]
@@ -71,43 +72,49 @@ def test_failure_card_keeps_reason_progress_and_guarded_edit_entry() -> None:
     assert "item.id === run.taskId" in card
     assert "if (task)" in card
     assert "selectTask(task, true)" in card
+    assert '"选择任务"' in card
     assert "retryInterruption(run.runId)" in card
     assert "skipInterruption(run.runId)" in card
     assert "cancelRun(run.runId)" in card
-    assert "固定缓存箱选它的已保存坐标" in card
-    assert "已保存坐标" in read("tasks.html")
+    assert "confirmDiscardForTaskChange" not in card
+    styles = read("styles.css")
+    assert ".task-run-card.is-failed" in styles
+    assert ".task-reference-hint[hidden]" in styles
+    assert "overflow-wrap: anywhere;" in styles
 
 
-def test_editor_and_cards_use_existing_theme_and_explicit_draft_state() -> None:
+def test_display_area_is_reserved_without_an_editor_or_draft_state() -> None:
     javascript = read("tasks.js")
     html = read("tasks.html")
-    css = read("styles.css")
 
-    assert 'id="task-draft-status"' in html
-    assert "编辑配置 · 不影响已在运行的任务" in html
-    assert "未保存的新任务" in javascript
-    assert "有未保存修改" in javascript
-    assert "elements.editorTitle.textContent = state.draft?.name" in javascript
-    assert ".task-run-card.is-failed" in css
-    assert ".task-reference-hint[hidden]" in css
-    assert "overflow-wrap: anywhere;" in css
+    assert 'id="task-display-area"' in html
+    assert "task-display-placeholder" in html
+    assert "任务展示" in html
+    assert 'id="task-editor-title"' not in html
+    assert 'id="task-draft-status"' not in html
+    assert "编辑配置 · 不影响已在运行的任务" not in html
+    assert "state.draft" not in javascript
+    assert "有未保存修改" not in javascript
 
 
-def test_monitor_edit_reveals_task_only_after_discard_confirmation() -> None:
+def test_monitor_task_selection_is_pure_and_reveals_existing_task() -> None:
     javascript = read("tasks.js")
     select = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
     select = select.split("function renderRunControls", 1)[0]
 
-    assert select.index("confirmDiscardForTaskChange()") < select.index("if (revealInList)")
+    assert "confirmDiscardForTaskChange" not in select
+    assert "state.selectedId = task.id" in select
+    assert "state.runTaskId = task.id" in select
     assert 'state.query = ""' in select
     assert "state.folderFilter = FOLDER_FILTER_ALL" in select
-    assert 'setTaskRoute("tasks")' in select
+    assert "renderTaskList()" in select
+    assert "renderRunControls()" in select
 
 
 def test_runtime_uses_catalog_names_and_keeps_interruption_failure_detail() -> None:
     javascript = read("tasks.js")
     message = javascript.split("function runStateMessage(run)", 1)[1]
-    message = message.split("function updateActions", 1)[0]
+    message = message.split("async function runTask()", 1)[0]
 
     assert "item.id === moduleId" in message
     assert "${module.name}" in message

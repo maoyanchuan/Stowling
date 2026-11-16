@@ -121,13 +121,10 @@ def test_task_model_preserves_recursive_steps_and_string_parameters() -> None:
     assert "function renderStepList(" in editor
     assert "function branchEditor(" in editor
     assert "step[branchKey] = []" in editor
-    assert "step.otherwise || []" in read("tasks.js")
 
 
 def test_task_templates_use_recursive_basic_actions() -> None:
     model = read("v2-task-model.js")
-    tasks = read("tasks.js")
-    html = read("tasks.html")
 
     for module_id in (
         "COLLECT_DROPPED_ITEMS",
@@ -152,20 +149,14 @@ def test_task_templates_use_recursive_basic_actions() -> None:
     assert "function markerTask(" in model
     assert "function interruptionTask(" in model
     assert "composedOf" not in model
-    assert "composedOf" not in tasks
     assert "PRESET" not in model
     assert "INTERNAL" not in model
     assert 'repeatStep("FOOD_BELOW_THRESHOLD"' in model
     assert 'repeatStep("HAS_MARKER_CONTAINERS"' in model
     assert 'depositToRegionSteps("", "managed")' in model
-    assert "Model.collectTask(state.modules)" in tasks
-    assert "Model.sortTask(state.modules)" in tasks
-    assert "Model.eatTask(" in tasks
     collect = model.split("function collectTask(", 1)[1]
     collect = collect.split("function cacheTask(", 1)[0]
     assert "CREATE_TASK" not in collect
-    assert 'id="new-marker-task-button"' in html
-    assert 'id="new-interruption-task-button"' in html
 
 
 def test_sort_task_navigates_to_cache_inside_each_cache_iteration() -> None:
@@ -193,20 +184,9 @@ def test_sort_task_navigates_to_cache_inside_each_cache_iteration() -> None:
 
 
 def test_task_editor_supports_recursive_conditions_loops_and_task_creation() -> None:
-    html = read("tasks.html")
     editor = read("v2-task-editor.js")
     model = read("v2-task-model.js")
 
-    for identifier in (
-        "add-if-step-button",
-        "add-repeat-step-button",
-        "add-create-task-step",
-        "task-interruption-mode",
-        "task-interruption-task-ref",
-        "task-default-interruption",
-        "task-requeue-after-interruption",
-    ):
-        assert f'id="{identifier}"' in html
     assert '"ACTION", "IF", "REPEAT", "CREATE_TASK"' in model
     assert '"ALWAYS"' in model
     assert '"FOOD_BELOW_THRESHOLD"' in model
@@ -226,7 +206,6 @@ def test_task_editor_supports_recursive_conditions_loops_and_task_creation() -> 
 def test_task_references_are_unified_and_show_resource_types() -> None:
     model = read("v2-task-model.js")
     editor = read("v2-task-editor.js")
-    tasks = read("tasks.js")
 
     for value in (
         "coordinate:",
@@ -256,18 +235,11 @@ def test_task_references_are_unified_and_show_resource_types() -> None:
     assert 'task: "任务"' in editor
     assert 'output: "前序步骤结果"' in editor
     assert "normalizeLegacyReference" in editor
-    assert "validateReference(parameter, value, step.moduleId)" in tasks
 
 
-def test_task_interruption_contract_and_default_selection() -> None:
-    html = read("tasks.html")
+def test_task_model_keeps_the_interruption_contract() -> None:
     model = read("v2-task-model.js")
-    tasks = read("tasks.js")
 
-    assert 'id="task-interruption-mode"' in html
-    assert 'id="task-interruption-task-ref"' in html
-    assert 'id="task-default-interruption"' in html
-    assert 'id="task-requeue-after-interruption"' in html
     assert '"DEFAULT"' in model
     assert '"CUSTOM"' in model
     assert '"NONE"' in model
@@ -275,18 +247,9 @@ def test_task_interruption_contract_and_default_selection() -> None:
     assert 'interruptionTaskRef: mode === "CUSTOM"' in model
     assert "defaultInterruptionFlow" in model
     assert "requeueAfterInterruption" in model
-    assert "function validateInterruption(" in tasks
-    assert "已有默认中断收尾任务" in tasks
-    assert "中断收尾不能引用当前任务自身" in tasks
-    assert "默认中断收尾任务不能自动重新排队" in tasks
-    assert "默认中断收尾任务不能创建其他任务" in tasks
-    assert "function containsCreateTask(" in tasks
-    assert "state.draft.defaultInterruptionFlow" in tasks
-    assert 'state.draft.interruptionMode = "NONE"' in tasks
 
 
 def test_task_queue_creation_priority_and_interruption_run_states() -> None:
-    html = read("tasks.html")
     model = read("v2-task-model.js")
     tasks = read("tasks.js")
     editor = read("v2-task-editor.js")
@@ -297,18 +260,12 @@ def test_task_queue_creation_priority_and_interruption_run_states() -> None:
     assert "MAX_STEP_DEPTH = 16" in model
     assert "MAX_TOTAL_STEPS = 512" in model
     assert "MAX_REPEAT_ITERATIONS = 1_000_000" in model
-    assert "function taskStepStats(" in tasks
-    assert "至少需要一个子步骤" in tasks
-    assert "循环步骤不能配置否则分支" in tasks
-    assert "不能包含子步骤" in tasks
     assert "CREATE_TASK" in model
     assert '沿用目标任务优先级' in editor
     assert 'taskRef: ""' in model
     assert "未指定优先级时沿用目标任务配置" in editor
-    assert "if (priority && !Model.PRIORITIES.includes(priority))" in tasks
     assert "delete payload.parameters.priority" in model
     assert "delete step.parameters.priority" in editor
-    assert "任务按优先级进入统一队列" in html
     assert 'INTERRUPTING: "正在执行中断收尾"' in tasks
     assert 'INTERRUPTION_FAILED: "中断收尾失败，队列暂停"' in tasks
     assert "function runStateMessage(" in tasks
@@ -324,9 +281,8 @@ def test_task_queue_creation_priority_and_interruption_run_states() -> None:
     assert "确认风险后跳过" not in tasks
 
 
-def test_task_target_outputs_match_runtime_contract() -> None:
+def test_task_target_outputs_match_editor_contract() -> None:
     editor = read("v2-task-editor.js")
-    tasks = read("tasks.js")
 
     outputs = editor.split("function outputTypesFor(", 1)[1]
     outputs = outputs.split("function resourceTypesFromParameter(", 1)[0]
@@ -346,28 +302,19 @@ def test_task_target_outputs_match_runtime_contract() -> None:
         'return ["coordinate", "region", ...outputTypesFor(moduleId)];'
         in target_types
     )
-    assert "DEPOSIT_ITEMS_TO_CONTAINERS: Model.OUTPUT_REFERENCES" in tasks
-    assert 'READ_CONTAINER: ["output:marker"]' in tasks
 
 
-def test_task_editor_keeps_revision_save_and_auto_eat_flow() -> None:
-    html = read("tasks.html")
-    tasks = read("tasks.js")
+def test_task_model_keeps_the_auto_eat_flow() -> None:
+    model = read("v2-task-model.js")
+    eat = model.split("function eatTask(", 1)[1]
+    eat = eat.split("function markerTask(", 1)[0]
 
-    assert 'id="auto-eat-preset-form"' in html
-    assert 'id="auto-eat-coordinate"' in html
-    assert 'id="auto-eat-food"' in html
-    assert 'id="auto-eat-threshold"' in html
-    assert "function createAutoEatPreset()" in tasks
-    assert "function syncAutoEatDraft()" in tasks
-    assert 'step.parameters.condition === "FOOD_BELOW_THRESHOLD"' in tasks
-    assert "state.draft = Model.eatTask(" in tasks
-    assert "revision: state.revision" in tasks
-    assert "state.revision = String(response?.revision || state.revision)" in tasks
-    assert 'Stowling.request("/v1/tasks"' in tasks
-    assert '/runs`' in tasks
-    assert "/cancel`" in tasks
-    assert "Authorization" not in tasks
+    assert 'const eatLoop = repeatStep(' in eat
+    assert 'const gate = ifStep(' in eat
+    assert '"FOOD_BELOW_THRESHOLD"' in eat
+    assert 'actionStep("WITHDRAW_FOOD"' in eat
+    assert 'actionStep("EAT_FOOD"' in eat
+    assert "Model.eatTask(" not in read("tasks.js")
 
 
 def test_coordinate_choices_only_show_the_saved_name() -> None:
@@ -380,11 +327,13 @@ def test_coordinate_choices_only_show_the_saved_name() -> None:
     assert "rawRadius === null" in model
 
 
-def test_task_ui_supports_save_run_refresh_and_cancel() -> None:
+def test_task_selection_page_supports_run_refresh_and_cancel() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
-    for text in ("保存任务", "运行所选任务", "刷新状态", "取消任务"):
+
+    for text in ("运行任务", "刷新", "取消任务"):
         assert text in html or text in tasks
+    assert "保存任务" not in html
     assert "/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs" in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
@@ -403,54 +352,57 @@ def test_task_ui_supports_save_run_refresh_and_cancel() -> None:
     assert "run.totalSteps" in tasks
 
 
-def test_task_execution_is_separate_from_the_editor() -> None:
+def test_task_execution_uses_selection_without_an_editor() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
-    editor = html.split('id="task-form"', 1)[1].split("</form>", 1)[0]
 
-    assert 'id="run-task-button"' not in editor
+    assert 'id="task-form"' not in html
+    assert 'id="task-display-area"' in html
     assert 'id="task-run-panel"' in html
     assert 'id="run-task-select"' in html
     assert "state.runTaskId" in tasks
+    controls = tasks.split("function renderRunControls()", 1)[1]
+    controls = controls.split("function updateRunActions()", 1)[0]
+    assert "state.tasks[0]?.id" not in controls
     assert "renderRunControls()" in tasks
 
 
-def test_task_page_supports_task_bound_triggers_inside_the_editor() -> None:
+def test_trigger_model_survives_without_a_task_trigger_editor() -> None:
     html = read("tasks.html")
     model = read("v2-task-model.js")
     trigger_model = read("v2-trigger-model.js")
     tasks = read("tasks.js")
-    styles = read("styles.css")
 
-    assert '<script src="/v2-trigger-model.js" defer></script>' in html
-    assert 'id="task-trigger-settings"' in html
-    assert 'id="new-trigger-button"' in html
-    assert 'id="trigger-bound-task"' in html
-    assert 'id="trigger-target-task"' not in html
-    assert 'id="trigger-priority"' in html
-    assert 'id="trigger-coordinate"' in html
-    assert 'id="trigger-food-threshold"' in html
-    assert 'id="trigger-cache-region"' in html
-    assert 'id="trigger-list"' in html
-    assert 'id="task-queue-list"' in html
-    assert 'id="task-watch-enabled"' not in html
+    assert (WEB / "v2-trigger-model.js").exists()
+    assert '<script src="/v2-trigger-model.js" defer></script>' not in html
+    assert 'id="task-trigger-settings"' not in html
+    assert 'id="new-trigger-button"' not in html
     assert "watchTask" not in model
     assert "trigger: task.trigger" not in model
     assert "FOOD_LEVEL_AT_OR_BELOW" in trigger_model
     assert "DROPPED_ITEMS" in trigger_model
     assert "CACHE_UPDATED" in trigger_model
     assert "cacheRegionId" in trigger_model
-    assert "触发防抖（秒）" in tasks
     assert "payloadTrigger" in trigger_model
     assert "state.triggerStatuses" in tasks
     assert '"/v1/task-triggers"' in tasks
-    assert "function currentTaskTriggers()" in tasks
-    assert "trigger.targetTaskId === state.selectedId" in tasks
-    assert "function renderTriggerList" in tasks
-    assert "function renderTriggerEditor" in tasks
-    assert "function renderTriggerStatuses" in tasks
-    assert ".trigger-workbench" in styles
-    assert "按设定优先级把该任务加入现有队列" in html
+    assert "renderTriggerEditor" not in tasks
+    assert "/v1/task-triggers/${" not in tasks
+
+
+def test_task_page_uses_a_display_and_selection_workbench() -> None:
+    styles = read("styles.css")
+    workbench = styles.split(".task-workbench {", 1)[1].split("}", 1)[0]
+    display = styles.split(".task-display-placeholder {", 1)[1].split("}", 1)[0]
+
+    assert 'body[data-page="tasks"] .workspace' in styles
+    assert "grid-template-columns: minmax(0, 1fr)" in workbench
+    assert "min-height: clamp(14rem, 30dvh, 22rem);" in display
+    assert 'body[data-page="tasks"] .task-sidebar' in styles
+    assert "position: static" in styles.split(
+        'body[data-page="tasks"] .task-sidebar {', 1
+    )[1].split("}", 1)[0]
+    assert "grid-template-columns: 280px minmax(0, 1fr)" not in styles
 
 
 def test_dashboard_has_an_independent_trigger_status_panel() -> None:
@@ -461,17 +413,6 @@ def test_dashboard_has_an_independent_trigger_status_panel() -> None:
     assert "触发器状态" in html
     assert "renderTriggerStatuses" in dashboard
     assert "runs.triggers" in dashboard
-
-
-def test_task_page_uses_a_wide_editor_with_a_compact_sidebar() -> None:
-    styles = read("styles.css")
-
-    assert 'body[data-page="tasks"] .workspace' in styles
-    assert ".task-workbench" in styles
-    assert "grid-template-columns: 280px minmax(0, 1fr)" in styles
-    assert 'body[data-page="tasks"] .task-sidebar' in styles
-    assert ".task-main" in styles
-    assert "position: sticky" in styles
 
 
 def test_dashboard_uses_new_resource_endpoints_only() -> None:
@@ -662,29 +603,36 @@ def test_task_console_shows_monitor_beside_task_selection() -> None:
     assert "data-task-panel=" not in html
     for marker in ("task-queue-list", "task-log-list", "export-task-logs"):
         assert marker in rail
-    for marker in ("task-list", "task-run-panel", "task-trigger-settings", "trigger-form"):
+    for marker in ("task-display-area", "task-list", "task-run-panel"):
         assert marker in selection
+    assert selection.index('id="task-display-area"') < selection.index(
+        'class="panel task-sidebar task-selection-panel"'
+    )
     assert 'id="task-run-details"' in html
     assert 'id="runtime-list"' in html
 
 
-def test_legacy_trigger_link_survives_without_hiding_console_panels() -> None:
+def test_legacy_trigger_route_is_gone_and_selection_is_pure() -> None:
     javascript = read("tasks.js")
+    html = read("tasks.html")
 
-    assert "function hasLegacyTriggerHash()" in javascript
-    assert "state.openTriggersAfterTaskReady = true" in javascript
-    assert "openTriggersAfterTaskReady: false" in javascript
-    route = javascript.split("function applyTaskHashRoute()", 1)[1]
-    route = route.split("function updateTaskFilters()", 1)[0]
-    assert "openCurrentTaskTriggers()" in route
-    assert 'window.history.replaceState(null, "", hash)' in route
-    assert 'window.addEventListener("hashchange"' in javascript
+    assert "#triggers" not in javascript
+    assert "hasLegacyTriggerHash" not in javascript
+    assert "openTriggersAfterTaskReady" not in javascript
+    assert "window.history.replaceState" not in javascript
+    assert 'window.addEventListener("hashchange"' not in javascript
     assert "panel.hidden =" not in javascript
     assert "handleTaskTabKeydown" not in javascript
+    assert "task-trigger-settings" not in html
 
     selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
     selection = selection.split("function renderRunControls", 1)[0]
-    assert 'setTaskRoute("tasks")' in selection
+    assert "confirmDiscardForTaskChange" not in selection
+    assert "state.runTaskId = task.id" in selection
+    assert "if (revealInList)" in selection
+    assert "elements.runDetails.close()" in selection
+    assert "elements.selectionPanel.scrollIntoView" in selection
+
     polling = javascript.split("async function loadRuns()", 1)[1]
     polling = polling.split("function renderRuntime()", 1)[0]
     assert "setTaskRoute(" not in polling
@@ -713,23 +661,29 @@ def test_task_list_filters_interruption_roles_without_a_saved_category() -> None
     assert "task.category" not in javascript
 
 
-def test_task_templates_are_folded_into_the_create_menu() -> None:
+def test_task_page_does_not_expose_creation_templates_or_modules() -> None:
     html = read("tasks.html")
+    javascript = read("tasks.js")
 
-    menu = html.split('<details class="task-template-menu">', 1)[1]
-    menu = menu.split("</details>", 1)[0]
-    for button_id in (
-        "new-cache-task-button",
-        "new-sort-task-button",
-        "new-marker-task-button",
-        "new-interruption-task-button",
-        "new-auto-eat-task-button",
+    for removed in (
+        '<details class="task-template-menu">',
+        'id="task-module-panel"',
+        'id="new-task-button"',
+        'id="new-cache-task-button"',
+        'id="new-sort-task-button"',
+        'id="new-marker-task-button"',
+        'id="new-interruption-task-button"',
+        'id="new-auto-eat-task-button"',
     ):
-        assert f'id="{button_id}"' in menu
-    assert '<details class="task-settings">' in html
-    module_heading = html.split('<details id="task-module-panel"', 1)[1].split(">", 1)[0]
-    assert "open" not in module_heading
-    assert "从一个任务开始" in html
+        assert removed not in html
+    for removed_function in (
+        "function startNewTask(",
+        "function startTaskTemplate(",
+        "function createAutoEatPreset(",
+        "function renderModuleCatalog(",
+    ):
+        assert removed_function not in javascript
+    assert "选择一个任务开始" in html
 
 
 def test_shared_tabs_and_resource_partitions_hide_inactive_content() -> None:
@@ -783,29 +737,28 @@ def test_workflow_tree_styles_support_nested_details_and_mobile_indent() -> None
     assert "--workflow-branch-offset: 0;" in mobile
 
 
-def test_task_selection_aligns_saved_run_target_without_using_the_draft() -> None:
+def test_task_selection_syncs_run_controls_without_a_default_task() -> None:
     javascript = read("tasks.js")
     selection = javascript.split("function selectTask(task, revealInList = false)", 1)[1]
     selection = selection.split("function renderRunControls", 1)[0]
 
     assert "state.runTaskId = task.id" in selection
     assert "renderRunControls()" in selection
-    assert "!state.draft && state.tasks.length > 0" in javascript
+    assert "state.draft" not in javascript
+    assert "state.tasks[0]?.id" not in javascript
     assert "task.name.toLocaleLowerCase().includes(state.query)" in javascript
     assert "task.steps.length" in javascript
     assert 'button.setAttribute("aria-pressed"' in javascript
+    assert "state.selectedId = preserved" in javascript
 
 
 def test_lightweight_animations_respect_reduced_motion_and_hidden_content() -> None:
     styles = read("styles.css")
-    javascript = read("tasks.js")
 
     assert "@keyframes ui-reveal" in styles
     assert "::details-content" in styles
     assert "@media (prefers-reduced-motion: reduce)" in styles
     assert "animation: none !important" in styles
-    assert 'window.matchMedia("(prefers-reduced-motion: reduce)").matches' in javascript
-    assert "elements.form.animate(" in javascript
     assert ".task-welcome[hidden]" in styles
     assert ".coordinate-point-editor[hidden]" in styles
     assert ".search-empty[hidden]" in styles

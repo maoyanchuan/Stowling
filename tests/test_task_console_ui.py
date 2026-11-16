@@ -35,7 +35,7 @@ def test_narrow_rail_has_queue_above_logs_and_selection_on_the_right() -> None:
     assert 'tabindex="0"' in rail
 
 
-def test_monitor_uses_shared_model_and_guarded_task_selection() -> None:
+def test_monitor_uses_shared_model_and_pure_task_selection() -> None:
     html = read("tasks.html")
     javascript = read("tasks.js")
     assert html.index('src="/task-monitor-model.js"') < html.index('src="/tasks.js"')
@@ -44,11 +44,13 @@ def test_monitor_uses_shared_model_and_guarded_task_selection() -> None:
     assert "Monitor.queueEntries(" in queue
     assert "state.runs, state.queue, state.triggerStatuses" in queue
     assert "selectTask(task, true)" in queue
+    assert "confirmDiscardForTaskChange" not in queue
     assert "retryInterruption(entry.run.runId)" in queue
     assert "skipInterruption(entry.run.runId)" in queue
     assert "cancelRun(entry.run.runId)" in queue
     assert 'entry.state === "QUEUED" ? "取消排队" : "取消任务"' in queue
     assert "elements.queueList.scrollTop = scrollTop" in queue
+    assert 'QUEUED: "排队中"' in javascript
 
 
 def test_log_controls_export_clear_and_pause_without_stopping_tasks() -> None:
@@ -65,16 +67,25 @@ def test_log_controls_export_clear_and_pause_without_stopping_tasks() -> None:
     assert "innerHTML" not in javascript
 
 
-def test_task_details_remain_available_without_an_extra_page() -> None:
+def test_task_details_select_tasks_and_keep_interruption_recovery() -> None:
     html = read("tasks.html")
     javascript = read("tasks.js")
+    runtime = javascript.split("function runtimeCard(run)", 1)[1]
+    runtime = runtime.split("function renderQueue", 1)[0]
+    queue = javascript.split("function renderQueue()", 1)[1]
+    queue = queue.split("function railAction", 1)[0]
+
     assert '<dialog id="task-run-details"' in html
     assert 'aria-labelledby="runtime-title"' in html
     assert "elements.runDetails.showModal()" in javascript
     assert "elements.runDetails.close()" in javascript
-    assert "function runtimeCard(run)" in javascript
     assert 'state === "INTERRUPTION_FAILED"' in javascript
-    assert "查看任务配置" in javascript
+    assert "查看任务配置" not in javascript
+    assert '"选择任务"' in runtime
+    assert 'name.title = "选择任务"' in queue
+    assert "selectTask(task, true)" in runtime
+    assert "retryInterruption(run.runId)" in runtime
+    assert "skipInterruption(run.runId)" in runtime
 
 
 def test_layout_keeps_scrollable_rail_and_responsive_task_cards() -> None:
@@ -94,5 +105,6 @@ def test_initial_load_does_not_force_open_the_first_task() -> None:
     javascript = read("tasks.js")
     loading = javascript.split("async function loadAll()", 1)[1]
     loading = loading.split("function renderTaskList()", 1)[0]
-    selection = loading.split("selectTask(state.tasks[0])", 1)[0]
-    assert "&& state.openTriggersAfterTaskReady" in selection
+
+    assert "selectTask(state.tasks[0]" not in loading
+    assert "openTriggersAfterTaskReady" not in javascript

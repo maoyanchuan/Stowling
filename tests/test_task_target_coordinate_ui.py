@@ -14,21 +14,15 @@ def function_source(source: str, name: str) -> str:
     return body.split("\n    function ", 1)[0]
 
 
-def test_deposit_target_matches_editor_and_save_validation() -> None:
+def test_deposit_target_matches_editor_contract() -> None:
     editor = read("v2-task-editor.js")
-    tasks = read("tasks.js")
     editor_target = function_source(editor, "targetReferenceTypesFor")
-    tasks_target = function_source(tasks, "targetReferenceTypesFor")
 
     assert 'moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"' in editor_target
     assert (
         'return ["coordinate", "region", ...outputTypesFor(moduleId)];'
         in editor_target
     )
-    assert 'moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"' in tasks_target
-    assert 'return ["coordinate", "output"];' in tasks_target
-    output_modules = tasks_target.split("const outputModules", 1)[1]
-    assert "DEPOSIT_ITEMS_TO_CONTAINERS" not in output_modules
 
     outputs = function_source(editor, "outputTypesFor")
     deposit = outputs.split(
@@ -38,16 +32,11 @@ def test_deposit_target_matches_editor_and_save_validation() -> None:
     for output_type in ("output-container", "output-storage", "output-marker"):
         assert output_type in deposit
 
-    valid_outputs = function_source(tasks, "validOutputReference")
-    assert "DEPOSIT_ITEMS_TO_CONTAINERS: Model.OUTPUT_REFERENCES" in valid_outputs
-
 
 def test_withdraw_and_read_do_not_open_coordinate_targets() -> None:
     editor = read("v2-task-editor.js")
-    tasks = read("tasks.js")
     target = function_source(editor, "targetReferenceTypesFor")
     outputs = function_source(editor, "outputTypesFor")
-    tasks_target = function_source(tasks, "targetReferenceTypesFor")
 
     withdraw = outputs.split('WITHDRAW_ITEMS: ["', 1)[1].split('"]', 1)[0]
     read_output = outputs.split('READ_CONTAINER: ["', 1)[1].split('"]', 1)[0]
@@ -58,13 +47,6 @@ def test_withdraw_and_read_do_not_open_coordinate_targets() -> None:
     read_target = target.split('moduleId === "READ_CONTAINER"', 1)[1]
     read_target = read_target.split("}", 1)[0]
     assert 'return ["output-marker"];' in read_target
-    output_only = tasks_target.split("const outputModules", 1)[1]
-    assert '"WITHDRAW_ITEMS"' in output_only
-    assert '"READ_CONTAINER"' in output_only
-    assert 'return outputModules.has(moduleId) ? ["output"] : ["coordinate"];' in (
-        tasks_target
-    )
-
 
 def test_reference_select_groups_output_types_and_keeps_state_handling() -> None:
     editor = read("v2-task-editor.js")

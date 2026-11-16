@@ -37,8 +37,9 @@ def test_task_launcher_removes_repeated_priority_from_task_names() -> None:
     assert "new Option(task.name, task.id)" in controls
     assert "Model.priorityLabel(task.priority)" not in controls
     assert "elements.runSelect.value = preserved" in controls
+    assert "state.tasks[0]?.id" not in controls
     actions = javascript.split("function updateRunActions()", 1)[1]
-    actions = actions.split("function uniqueName", 1)[0]
+    actions = actions.split("function isActiveRun", 1)[0]
     assert "elements.runPriority.options[0].textContent = task" in actions
     assert "跟随任务（${Model.priorityLabel(task.priority)}）" in actions
     assert "elements.runPriority.value =" not in actions

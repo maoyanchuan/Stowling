@@ -10,11 +10,13 @@ queued runs, and listening tasks visible in urgent / normal / background priorit
 order. Its lower half shows page-session task state changes, with export, clear,
 and pause-scroll controls (up to 300 entries). Pause-scroll does not pause tasks;
 reloading the page starts a new log session. Run details and interruption recovery
-remain available in a dialog. The right side contains folder-aware task cards,
-filters, launch controls, and the existing editor; no task opens automatically.
-New tasks can stage a detector before their first save. The legacy `#triggers`
-link still expands task trigger settings. Inventory query navigation and static
-web routes are temporarily removed; inventory APIs, data, and source assets remain
+remain available in a dialog. The right side starts with an intentionally blank
+task display area. Below it, folder-aware task cards, filters, and run controls let
+users select an existing task; no task is selected automatically. The task page
+does not load a task editor, module reference, creation menu, trigger editor, or
+legacy hash route. Task, trigger, folder, and editor source data remain available
+to the backend and reusable editor code. Inventory query navigation and static web
+routes are temporarily removed; inventory APIs, data, and source assets remain
 intact for later restoration.
 
 ## Task model
@@ -53,8 +55,9 @@ Container interaction selects `COLLECT`, `FIND`, `READ`, `WITHDRAW`, or `DEPOSIT
 through `operation`. Compact steps remain compact in saved configuration and
 compile into existing basic actions and loops when queued, freezing resources
 and detector configuration. There is no new monolithic workflow executor.
-`GET /v1/task-modules` retains basic actions and three listeners for old tasks;
-the editor places old actions in its advanced group.
+`GET /v1/task-modules` retains basic actions and three listeners for old tasks.
+The task page reads the catalog only to translate runtime error names and does not
+expose a module reference; reusable editor source remains in the repository.
 
 Actions:
 
@@ -164,7 +167,7 @@ IF FOOD_BELOW_THRESHOLD
         EAT_FOOD
 ```
 
-Collect and store in the task editor:
+Collect-and-store task definition:
 
 1. Add a dropped-item detector with a saved detection coordinate and queue priority.
 2. Add container interaction `COLLECT`, inheriting the detector's scope.
@@ -172,7 +175,7 @@ Collect and store in the task editor:
 
 The detector only queues work; collection begins when the task gets its turn.
 Detector inheritance requires exactly one dropped-item detector on the task and
-inherits its item filter unless overridden. An unbound draft can be saved but not run.
+inherits its item filter unless overridden. An unbound stored task can be kept but not run.
 A coordinate addresses one container; a region tries its containers; a category zone
 matches items to containers (marker rules still require an existing marker cache).
 Remaining items after full or unmatched containers cause failure. Unmanaged inventory
@@ -255,7 +258,7 @@ A legacy `SORT_CACHE_ITEMS` without an explicit category zone keeps its original
 previous-scan semantics by starting with `MATCH_CONTAINER_CATEGORIES`; Stowling
 does not infer a destination from an unrelated category zone.
 
-Migrated category tasks receive a deterministic, editable custom cleanup task
+Migrated category tasks receive a deterministic custom cleanup task
 that returns managed items to the cache. Re-reading the configuration does not
 replace a new basic classification task's `DEFAULT` mode or duplicate the
 generated cleanup.
@@ -266,8 +269,9 @@ for legacy configuration compatibility and previous-scan migration.
 ## Task folders
 
 Task folders are persisted configuration objects with a flat one-level
-structure. A task belongs to at most one folder; moving or saving it writes the
-same folder ID atomically with the task. Deleting a folder only dissolves the
+structure. A task belongs to at most one folder; configuration/API writes keep
+the task and folder assignment together. The task page provides persisted folder
+creation, rename, and dissolve controls. Deleting a folder only dissolves the
 group: its tasks remain and their `folderId` becomes `null`. Folder selection
 combines with search and the ordinary/interruption task filters.
 
@@ -277,10 +281,11 @@ One task runs at a time. Pending work is ordered by `BACKGROUND`, `NORMAL`, and
 `URGENT` priority. Trigger-created tasks and `CREATE_TASK` steps use the same
 queue.
 
-Triggers are stored independently but bound to one saved target task. The task
-editor only lists triggers for the current task, and a task may have multiple
-triggers. Dropped items, food level, and cache updates are supported. Trigger
-intervals and cooldowns retain their existing meaning.
+Triggers are stored independently but bound to one saved target task, and a task
+may have multiple triggers. Dropped items, food level, and cache updates are
+supported. The task page reads trigger records for queue/list summaries and
+monitoring but does not create, edit, or delete them. Trigger intervals and
+cooldowns retain their existing meaning.
 
 Background tasks may requeue after completion. `requeueAfterInterruption`
 controls whether an interrupted task returns to the queue after cleanup.

@@ -2893,7 +2893,7 @@ summary::-webkit-details-marker {
     padding-block: 0.45rem;
 }
 
-/* Task selection and configuration share the right-hand workspace. */
+/* Reserve the upper workspace for display; select existing tasks below. */
 body[data-page="tasks"] .workspace {
     grid-template-columns: minmax(0, 1fr);
 }
@@ -2905,8 +2905,18 @@ body[data-page="tasks"] .workspace {
     gap: 1rem;
 }
 
-.task-workbench > .module-library {
-    grid-column: 1 / -1;
+.task-display-placeholder {
+    min-width: 0;
+    min-height: clamp(14rem, 30dvh, 22rem);
+}
+
+.task-display-placeholder .panel-heading {
+    margin-bottom: 0;
+}
+
+.task-selection-panel {
+    min-width: 0;
+    scroll-margin-top: 1rem;
 }
 
 .task-monitor-page {
@@ -4091,16 +4101,6 @@ button.rail-task-name:hover {
     color: var(--danger);
 }
 
-.task-console .task-create-actions {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
-    max-width: 32rem;
-}
-
-.task-console .task-template-menu {
-    min-width: 8rem;
-}
-
 .task-console .task-folder-list {
     display: flex;
     flex-wrap: wrap;
@@ -4187,6 +4187,10 @@ button.rail-task-name:hover {
 }
 
 @media (max-width: 779px) {
+    .task-display-placeholder {
+        min-height: 11rem;
+    }
+
     .task-console {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -4207,7 +4211,4 @@ button.rail-task-name:hover {
         height: 40rem;
     }
 
-    .task-console .task-create-actions {
-        grid-template-columns: minmax(0, 1fr);
-    }
 }

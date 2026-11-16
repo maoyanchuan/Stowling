@@ -77,17 +77,19 @@ Manual runs may override the saved priority for that run only.
 Task triggers are configured independently from tasks and automatic requeue.
 Idle triggers create no run records and do not block another task.
 
-New tasks expose seven modules. Older modules remain readable for existing
-configurations but are hidden from the module catalog when creating a step.
+New task steps expose eight action modules. Older modules remain readable for
+existing configurations but are hidden from the module catalog when creating a
+step.
 
 - `MOVE_TO_COORDINATE` navigates to one coordinate.
 - `COLLECT_DROPPED_ITEMS` collects matching drops from either a coordinate
   radius or a saved region.
 - `SCAN_CONTAINERS_IN_REGION` records usable containers from the previous scan
   in the active task run.
-- `AUTO_EAT_AT_COORDINATE` skips immediately when food is sufficient; otherwise
-  it navigates to the configured food chest, takes one food at a time, and eats
-  until the threshold is met.
+- `EAT_FOOD` consumes one configured food item already held by the player.
+- `AUTO_EAT_AT_COORDINATE` composes the food-level listener, coordinate
+  navigation, food acquisition, and `EAT_FOOD`; it skips when food is sufficient
+  and otherwise eats until the threshold is met.
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
   stores cached items whose IDs exactly match the recognized item IDs.
 - `REFRESH_CATEGORY_MARKER_CACHE` opens the category marker chests or barrels,

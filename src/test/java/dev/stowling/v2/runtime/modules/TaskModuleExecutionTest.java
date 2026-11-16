@@ -978,6 +978,44 @@ class TaskModuleExecutionTest {
         );
     }
 
+    @Test
+    void eatFoodModuleConsumesTheConfiguredInventoryFood() {
+        CoordinatePoint point = point("Eating");
+        RecordingFood food = new RecordingFood(10, 10);
+        TaskExecutionContext context = context(
+                new ArrivedNavigation(),
+                new MutableDroppedItems(),
+                new EmptyRegions(),
+                new NoCategories(),
+                new RecordingTransfers(),
+                new NoWithdrawals(),
+                new NoCategoryZones(),
+                Map.of(),
+                point,
+                region("Storage"),
+                new TaskRunWorkspace(),
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                food
+        );
+        EatFoodModule module = new EatFoodModule(
+                context,
+                step(
+                        ConfigValidator.EAT_FOOD,
+                        ConfigValidator.FOOD_ITEM_ID,
+                        "minecraft:bread"
+                )
+        );
+
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(List.of("minecraft:bread"), food.requested);
+        assertEquals(
+                List.of("eat:minecraft:bread", "eaten:minecraft:bread"),
+                food.events
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             DroppedItemObserverPort dropped,

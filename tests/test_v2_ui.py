@@ -208,6 +208,7 @@ def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
         "SORT_CACHE_ITEMS",
         "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE",
         "DEPOSIT_ITEMS_TO_CONTAINERS",
+        "EAT_FOOD",
     ):
         assert module_id in catalog
         assert module_id not in tasks

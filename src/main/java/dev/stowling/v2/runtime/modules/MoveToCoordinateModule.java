@@ -9,12 +9,24 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final CoordinatePoint target;
     private final BlockPosition position;
+    private final Integer arrivalRadius;
     private boolean navigationStarted;
 
     MoveToCoordinateModule(TaskExecutionContext context, TaskStep step) {
+        this(context, step, null);
+    }
+
+    MoveToCoordinateModule(
+            TaskExecutionContext context,
+            TaskStep step,
+            Integer arrivalRadius
+    ) {
         this.context = context;
         this.target = TaskModuleSupport.coordinate(context, step);
         this.position = new BlockPosition(target.x(), target.y(), target.z());
+        this.arrivalRadius = arrivalRadius == null
+                ? target.radius()
+                : arrivalRadius;
     }
 
     @Override
@@ -32,9 +44,11 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         NavigationStatus status;
         if (!navigationStarted) {
             navigationStarted = true;
-            status = context.navigation().start(position);
+            status = arrivalRadius == null
+                    ? context.navigation().start(position)
+                    : context.navigation().startNear(position, arrivalRadius);
         } else {
-            status = context.navigation().status(position, target.radius());
+            status = context.navigation().status(position, arrivalRadius);
         }
         return switch (status) {
             case ARRIVED -> TaskModuleResult.succeeded("已到达 " + target.name());

@@ -1,28 +1,28 @@
 package dev.stowling.v2.runtime.modules;
 
-import dev.stowling.automation.ContainerTarget;
-import dev.stowling.automation.ContainerTransferState;
-import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.automation.FoodStatus;
-import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.TaskStep;
+import java.util.Map;
+import java.util.UUID;
 
 final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
     private static final int DEFAULT_ARRIVAL_RADIUS = 2;
 
     private final TaskExecutionContext context;
     private final CoordinatePoint coordinate;
-    private final BlockPosition position;
     private final int arrivalRadius;
     private final String foodItemId;
     private final int foodLevelThreshold;
-    private boolean navigationStarted;
-    private boolean acquiringActive;
-    private boolean foodReadyToEat;
-    private boolean eatingActive;
+    private final FoodStatusListener foodListener;
+    private MoveToCoordinateModule movement;
+    private FoodAcquisitionAction acquisition;
+    private EatFoodModule eating;
+    private boolean movementStarted;
+    private boolean acquisitionStarted;
+    private boolean arrived;
 
     AutoEatAtCoordinateModule(
             TaskExecutionContext context,
@@ -30,11 +30,6 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
     ) {
         this.context = context;
         this.coordinate = TaskModuleSupport.coordinate(context, step);
-        this.position = new BlockPosition(
-                coordinate.x(),
-                coordinate.y(),
-                coordinate.z()
-        );
         this.arrivalRadius = coordinate.radius() == null
                 ? DEFAULT_ARRIVAL_RADIUS
                 : coordinate.radius();
@@ -46,6 +41,7 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
                 ConfigValidator.FOOD_LEVEL_THRESHOLD,
                 18
         );
+        this.foodListener = new FoodStatusListener(context);
     }
 
     @Override
@@ -55,125 +51,136 @@ final class AutoEatAtCoordinateModule implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult tick() {
-        FoodStatus food = context.foodConsumption().observe();
+        FoodStatus food = foodListener.observe();
         if (!food.connected()) {
             return TaskModuleResult.failed("无法读取当前饱食度");
         }
         if (food.foodLevel() >= foodLevelThreshold) {
-            if (acquiringActive) {
-                context.foodConsumption().cancelAcquiringFood();
-                acquiringActive = false;
-            }
-            if (eatingActive) {
-                context.foodConsumption().cancelEating();
-                eatingActive = false;
-            }
-            if (navigationStarted) {
-                context.navigation().cancel();
-            }
-            return TaskModuleResult.succeeded(
-                    "饱食度充足，无需进食"
-            );
+            return complete("饱食度充足，无需进食");
         }
-        if (!TaskModuleSupport.dimensionMatches(context, coordinate)) {
-            return TaskModuleResult.failed("食物箱坐标维度不匹配");
+        TaskModuleResult movementResult = ensureArrived();
+        if (movementResult != null) {
+            return movementResult;
         }
-        NavigationStatus navigation = navigate();
-        if (navigation == NavigationStatus.FAILED) {
-            return TaskModuleResult.failed(
-                    "无法前往食物箱 " + coordinate.name()
-            );
-        }
-        if (navigation != NavigationStatus.ARRIVED) {
-            return TaskModuleResult.waiting(
-                    "正在前往食物箱 " + coordinate.name()
-            );
-        }
-        if (acquiringActive) {
-            FoodConsumptionResult result =
-                    context.foodConsumption().pollAcquiringFood();
-            if (result.state() == ContainerTransferState.PENDING) {
-                return TaskModuleResult.waiting(result.message());
-            }
-            acquiringActive = false;
-            if (result.state() == ContainerTransferState.FAILED) {
-                return TaskModuleResult.failed(result.message());
-            }
-            foodReadyToEat = true;
-            return TaskModuleResult.running(
-                    "已从食物箱取出一个食物，正在进食"
-            );
-        }
-        if (eatingActive) {
-            FoodConsumptionResult result =
-                    context.foodConsumption().pollEating();
-            if (result.state() == ContainerTransferState.PENDING) {
-                return TaskModuleResult.waiting(result.message());
-            }
-            eatingActive = false;
-            if (result.state() == ContainerTransferState.FAILED) {
-                return TaskModuleResult.failed(result.message());
-            }
-            return TaskModuleResult.running(
-                    "已完成一次进食，正在检查饱食度"
-            );
-        }
-        if (foodReadyToEat) {
-            foodReadyToEat = false;
-            eatingActive = true;
-            FoodConsumptionResult result =
-                    context.foodConsumption().startEating(foodItemId);
-            return handleEatingResult(result);
-        }
-        acquiringActive = true;
-        FoodConsumptionResult result = context.foodConsumption()
-                .startAcquiringFood(
-                        new ContainerTarget(position, "food-container"),
-                        foodItemId
+        if (eating != null) {
+            TaskModuleResult result = eating.tick();
+            if (result.state() == TaskModuleState.SUCCEEDED) {
+                eating = null;
+                return TaskModuleResult.running(
+                        "已完成一次进食，正在检查饱食度"
                 );
-        if (result.state() == ContainerTransferState.PENDING) {
-            return TaskModuleResult.waiting(result.message());
+            }
+            return result;
         }
-        acquiringActive = false;
-        if (result.state() == ContainerTransferState.FAILED) {
-            return TaskModuleResult.failed(result.message());
-        }
-        foodReadyToEat = true;
-        return TaskModuleResult.running(
-                "已从食物箱取出一个食物，正在进食"
-        );
+        return acquireFood();
     }
 
     @Override
     public void cancel() {
-        context.foodConsumption().cancelAcquiringFood();
-        context.foodConsumption().cancelEating();
-        context.navigation().cancel();
+        if (acquisition != null) {
+            acquisition.cancel();
+        }
+        if (eating != null) {
+            eating.cancel();
+        }
+        if (movement != null) {
+            movement.cancel();
+        }
     }
 
-    private NavigationStatus navigate() {
-        if (!navigationStarted) {
-            navigationStarted = true;
-            return context.navigation().startNear(
-                    position,
+    private TaskModuleResult ensureArrived() {
+        if (arrived) {
+            return null;
+        }
+        if (movement == null) {
+            movement = new MoveToCoordinateModule(
+                    context,
+                    moveStep(),
                     arrivalRadius
             );
         }
-        return context.navigation().status(position, arrivalRadius);
+        TaskModuleResult result = movementStarted
+                ? movement.tick()
+                : movement.start();
+        movementStarted = true;
+        if (result.state() == TaskModuleState.SUCCEEDED) {
+            movement = null;
+            movementStarted = false;
+            arrived = true;
+            return null;
+        }
+        return result;
     }
 
-    private TaskModuleResult handleEatingResult(
-            FoodConsumptionResult result
-    ) {
-        if (result.state() == ContainerTransferState.PENDING) {
-            return TaskModuleResult.waiting(result.message());
+    private TaskModuleResult acquireFood() {
+        if (acquisition == null) {
+            acquisition = new FoodAcquisitionAction(
+                    context,
+                    new BlockPosition(
+                            coordinate.x(),
+                            coordinate.y(),
+                            coordinate.z()
+                    ),
+                    foodItemId
+            );
+            acquisitionStarted = false;
         }
-        eatingActive = false;
-        if (result.state() == ContainerTransferState.FAILED) {
-            return TaskModuleResult.failed(result.message());
+        TaskModuleResult result = acquisitionStarted
+                ? acquisition.tick()
+                : acquisition.start();
+        acquisitionStarted = true;
+        if (result.state() == TaskModuleState.SUCCEEDED) {
+            acquisition = null;
+            acquisitionStarted = false;
+            return startEating();
         }
-        return TaskModuleResult.running(
-                "已完成一次进食，正在检查饱食度"
+        return result;
+    }
+
+    private TaskModuleResult startEating() {
+        eating = new EatFoodModule(context, eatStep());
+        TaskModuleResult result = eating.start();
+        if (result.state() == TaskModuleState.SUCCEEDED) {
+            eating = null;
+            return TaskModuleResult.running(
+                    "已完成一次进食，正在检查饱食度"
+            );
+        }
+        return result;
+    }
+
+    private TaskModuleResult complete(String message) {
+        if (acquisition != null) {
+            acquisition.cancel();
+            acquisition = null;
+        }
+        if (eating != null) {
+            eating.cancel();
+            eating = null;
+        }
+        if (movement != null) {
+            movement.cancel();
+            movement = null;
+        }
+        return TaskModuleResult.succeeded(message);
+    }
+
+    private TaskStep moveStep() {
+        return new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.MOVE_TO_COORDINATE,
+                Map.of(
+                        ConfigValidator.COORDINATE_ID,
+                        coordinate.id().toString()
+                )
+        );
+    }
+
+    private TaskStep eatStep() {
+        return new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.EAT_FOOD,
+                Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId)
         );
     }
 }

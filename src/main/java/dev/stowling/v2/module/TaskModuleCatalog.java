@@ -306,11 +306,25 @@ public final class TaskModuleCatalog {
                     true
             );
 
+    private static final ModuleDefinition EAT_FOOD =
+            new ModuleDefinition(
+                    ConfigValidator.EAT_FOOD,
+                    "进食",
+                    "食用当前物品栏中的指定食物；不负责寻路或从容器取食。",
+                    TaskModuleLevel.BASIC,
+                    List.of(new ModuleParameter(
+                            ConfigValidator.FOOD_ITEM_ID,
+                            "食物 ID",
+                            "text",
+                            true
+                    ))
+            );
+
     private static final ModuleDefinition AUTO_EAT_AT_COORDINATE =
             new ModuleDefinition(
                     ConfigValidator.AUTO_EAT_AT_COORDINATE,
                     "自动进食",
-                    "饱食度低于阈值时前往食物箱，每次取出一个食物并吃完。",
+                    "组合饱食度监听、移动到坐标、取食和进食模块，持续补足饱食度。",
                     TaskModuleLevel.COMPOSITE,
                     List.of(
                             new ModuleParameter(
@@ -456,6 +470,7 @@ public final class TaskModuleCatalog {
                     COLLECT_DROPPED_ITEMS,
                     SCAN_CONTAINERS_IN_REGION,
                     DEPOSIT_ITEMS_TO_CONTAINERS,
+                    EAT_FOOD,
                     AUTO_EAT_AT_COORDINATE,
                     SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
                     REFRESH_CATEGORY_MARKER_CACHE,

@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -77,6 +78,29 @@ final class TaskModuleSupport {
 
     static Set<String> containerTypes(TaskStep step) {
         return csvParameter(step, TaskModuleIds.CONTAINER_TYPES);
+    }
+
+    static Set<CategoryMarkerSource> optionalMarkerSources(TaskStep step) {
+        String value = step.parameters().get(TaskModuleIds.MARKER_SOURCES);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        Set<CategoryMarkerSource> result = new LinkedHashSet<>();
+        for (String part : value.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "markerSources contains an empty source"
+                );
+            }
+            result.add(CategoryMarkerSource.valueOf(trimmed));
+        }
+        if (result.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "markerSources must contain at least one source"
+            );
+        }
+        return Set.copyOf(result);
     }
 
     static boolean dimensionMatches(

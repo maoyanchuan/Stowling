@@ -356,6 +356,10 @@ public final class TaskRunManager {
                 .toList();
     }
 
+    public synchronized boolean hasPendingTask(UUID taskId) {
+        return isTaskPending(taskId);
+    }
+
     public synchronized void refreshTriggers(AppConfig config) {
         knownTriggers = List.copyOf(config.triggers());
         knownTasks = indexKnownTasks(config.tasks(), knownTriggers);
@@ -776,6 +780,9 @@ public final class TaskRunManager {
                     "task does not exist: " + reference
             );
         }
+        if (isTaskPending(task.id())) {
+            return;
+        }
         PreparedRun prepared = prepare(
                 task,
                 List.copyOf(run.prepared.coordinates.values()),
@@ -981,7 +988,6 @@ public final class TaskRunManager {
                 navigation,
                 registry.droppedItems(),
                 registry.containerRegions(),
-                registry.containerCategories(),
                 registry.containerTransfers(),
                 registry.containerWithdrawals(),
                 registry.containerInspections(),

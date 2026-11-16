@@ -18,6 +18,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
     private final ResourceReference targetReference;
     private final String itemSource;
     private final Map<String, Integer> requested;
+    private final boolean retryOnFailure;
     private boolean started;
     private boolean inFlight;
     private boolean stopRequested;
@@ -30,6 +31,11 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         this.targetReference = targetReference(step);
         this.target = target(context, targetReference);
         this.itemSource = itemSource(step);
+        this.retryOnFailure = TaskModuleSupport.booleanParameter(
+                step,
+                TaskModuleIds.RETRY_ON_FAILURE,
+                false
+        );
         this.requested = filterForTarget(
                 context,
                 target,
@@ -46,6 +52,12 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         }
         started = true;
         if (requested.isEmpty()) {
+            if (retryOnFailure) {
+                context.workspace().markTargetUnavailable(target);
+                return TaskModuleResult.succeeded(
+                        "目标容器不接受当前物品，尝试下一个同类容器"
+                );
+            }
             return TaskModuleResult.succeeded("没有需要存入的物品");
         }
         inFlight = true;
@@ -93,8 +105,15 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 requested,
                 result.remaining()
         );
+        recordCacheUpdate(result.remaining());
         inFlight = false;
         if (result.state() == ContainerTransferState.FAILED) {
+            context.workspace().markTargetUnavailable(target);
+            if (retryOnFailure && !itemsForSource(context, itemSource).isEmpty()) {
+                return TaskModuleResult.succeeded(
+                        "目标容器已满或不可用，尝试下一个同类容器"
+                );
+            }
             return TaskModuleResult.failed(result.message());
         }
         if (stopRequested) {
@@ -133,6 +152,28 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 TaskModuleIds.ITEM_SOURCE
         );
         return value == null ? "collected" : value;
+    }
+
+    private void recordCacheUpdate(Map<String, Integer> remaining) {
+        if (!"collected".equals(itemSource)
+                || targetReference.type() != ResourceType.OUTPUT
+                || !"container".equals(targetReference.key())) {
+            return;
+        }
+        int deposited = 0;
+        for (Map.Entry<String, Integer> entry : requested.entrySet()) {
+            int left = remaining.getOrDefault(entry.getKey(), 0);
+            deposited += Math.max(0, entry.getValue() - left);
+        }
+        final int totalDeposited = deposited;
+        if (totalDeposited > 0) {
+            context.workspace().containerScanRegionId().ifPresent(
+                    regionId -> context.workspace().recordCacheUpdate(
+                            regionId,
+                            totalDeposited
+                    )
+            );
+        }
     }
 
     private static Map<String, Integer> itemsForSource(

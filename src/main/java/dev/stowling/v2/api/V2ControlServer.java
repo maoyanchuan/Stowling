@@ -14,6 +14,10 @@ import com.sun.net.httpserver.HttpServer;
 import dev.stowling.api.BearerTokenStore;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
+import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.control.AutoClassifyDetectionRequest;
+import dev.stowling.v2.control.AutoClassifyTaskRequest;
+import dev.stowling.v2.control.AutoClassifyTaskUpdateRequest;
 import dev.stowling.v2.control.CoordinateInUseException;
 import dev.stowling.v2.control.CategoryBindingRequest;
 import dev.stowling.v2.control.CategoryContainerOverrideRequest;
@@ -345,6 +349,69 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if ("/v1/auto-classify-tasks".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.autoClassifyTasks());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                requireFieldsAny(
+                        json,
+                        autoClassifyFields(false),
+                        autoClassifyRequiredFields(false)
+                );
+                sendJson(
+                        exchange,
+                        201,
+                        service.createAutoClassifyTask(
+                                autoClassifyRequest(json)
+                        )
+                );
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/auto-classify-tasks/")) {
+            String suffix = path.substring(
+                    "/v1/auto-classify-tasks/".length()
+            );
+            if (suffix.endsWith("/start") || suffix.endsWith("/stop")) {
+                requireMethod(method, "POST");
+                boolean start = suffix.endsWith("/start");
+                String idPart = suffix.substring(
+                        0,
+                        suffix.length() - (start ? 6 : 5)
+                );
+                UUID id = uuid(idPart);
+                RevisionRequest revision = revision(body);
+                sendJson(exchange, 200, start
+                        ? service.startAutoClassifyTask(id, revision)
+                        : service.stopAutoClassifyTask(id, revision));
+                return;
+            }
+            UUID id = uuid(suffix);
+            if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFieldsAny(
+                        json,
+                        autoClassifyFields(true),
+                        autoClassifyRequiredFields(true)
+                );
+                sendJson(exchange, 200, service.updateAutoClassifyTask(
+                        id,
+                        autoClassifyUpdateRequest(json)
+                ));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteAutoClassifyTask(
+                        id,
+                        revision(body)
+                ));
+            } else {
+                throw methodNotAllowed("PUT, DELETE");
+            }
+            return;
+        }
         if ("/v1/regions".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);
@@ -659,6 +726,101 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBoolean(json, "requeueAfterInterruption"),
                 optionalUuid(json, "folderId")
         );
+    }
+
+    private static AutoClassifyTaskRequest autoClassifyRequest(
+            JsonObject json
+    ) {
+        AutoClassifyDetectionRequest detection = autoClassifyDetection(json);
+        return new AutoClassifyTaskRequest(
+                optionalString(json, "name"),
+                optionalBooleanValue(json, "enabled"),
+                detection,
+                string(json, "cacheRegionRef"),
+                string(json, "categoryZoneRef"),
+                markerSources(json),
+                optionalPriority(json, "collectionPriority")
+        );
+    }
+
+    private static AutoClassifyTaskUpdateRequest autoClassifyUpdateRequest(
+            JsonObject json
+    ) {
+        AutoClassifyDetectionRequest detection = autoClassifyDetection(json);
+        return new AutoClassifyTaskUpdateRequest(
+                string(json, "revision"),
+                optionalString(json, "name"),
+                optionalBooleanValue(json, "enabled"),
+                detection,
+                string(json, "cacheRegionRef"),
+                string(json, "categoryZoneRef"),
+                markerSources(json),
+                optionalPriority(json, "collectionPriority")
+        );
+    }
+
+    private static AutoClassifyDetectionRequest autoClassifyDetection(
+            JsonObject json
+    ) {
+        JsonObject detection = jsonObject(
+                json.get("detection"),
+                "detection"
+        );
+        requireFieldsAny(
+                detection,
+                Set.of("coordinateRef", "pickupRadius"),
+                Set.of("coordinateRef")
+        );
+        return new AutoClassifyDetectionRequest(
+                string(detection, "coordinateRef"),
+                optionalInteger(detection, "pickupRadius")
+        );
+    }
+
+    private static List<CategoryMarkerSource> markerSources(JsonObject json) {
+        List<CategoryMarkerSource> result = new ArrayList<>();
+        for (String value : stringArray(json, "markerSources")) {
+            try {
+                result.add(CategoryMarkerSource.valueOf(
+                        value.trim().toUpperCase(java.util.Locale.ROOT)
+                ));
+            } catch (IllegalArgumentException exception) {
+                throw invalid("markerSources contains an unknown source");
+            }
+        }
+        if (result.isEmpty()) {
+            throw invalid("markerSources must contain at least one source");
+        }
+        return List.copyOf(result);
+    }
+
+    private static Set<String> autoClassifyFields(boolean revision) {
+        Set<String> fields = new java.util.HashSet<>(Set.of(
+                "name",
+                "enabled",
+                "detection",
+                "cacheRegionRef",
+                "categoryZoneRef",
+                "markerSources",
+                "collectionPriority"
+        ));
+        if (revision) {
+            fields.add("revision");
+        }
+        return Set.copyOf(fields);
+    }
+
+    private static Set<String> autoClassifyRequiredFields(boolean revision) {
+        Set<String> fields = new java.util.HashSet<>(Set.of(
+                "detection",
+                "cacheRegionRef",
+                "categoryZoneRef",
+                "markerSources"
+        ));
+        if (revision) {
+            fields.add("revision");
+        }
+        return Set.copyOf(fields);
     }
 
     private static TaskTriggerRequest taskTriggerRequest(
@@ -1104,6 +1266,14 @@ public final class V2ControlServer implements AutoCloseable {
         return value.getAsBoolean();
     }
 
+    private static Boolean optionalBooleanValue(JsonObject json, String key) {
+        JsonElement value = json.get(key);
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        return optionalBoolean(json, key);
+    }
+
     private static TaskPriority optionalPriority(
             JsonObject json,
             String key
@@ -1370,6 +1540,14 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/move-task-model.js",
                         read("stowling-web/move-task-model.js", js)
+                ),
+                Map.entry(
+                        "/auto-classify-task-model.js",
+                        read("stowling-web/auto-classify-task-model.js", js)
+                ),
+                Map.entry(
+                        "/auto-classify-ui.js",
+                        read("stowling-web/auto-classify-ui.js", js)
                 ),
                 Map.entry(
                         "/v2-task-model.js",

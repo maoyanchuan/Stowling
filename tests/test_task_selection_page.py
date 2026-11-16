@@ -47,7 +47,11 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     assert workbench.index('id="task-display-area"') < workbench.index(
         'class="panel task-selection-panel"'
     )
-    display = between(workbench, 'id="task-display-area"', "</section>")
+    display = between(
+        workbench,
+        'id="task-display-area"',
+        '<section class="panel task-selection-panel"',
+    )
     assert 'id="task-display-title">已保存任务</h2>' in display
     for retained in (
         'id="move-task-list"',
@@ -59,6 +63,12 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
         'id="toggle-move-draft"',
         'id="move-draft-body"',
         'id="move-task-form"',
+        'id="auto-task-list"',
+        'id="auto-resources-message"',
+        'id="auto-task-draft"',
+        'id="toggle-auto-draft"',
+        'id="auto-draft-body"',
+        'id="auto-task-form"',
     ):
         assert retained in display
     assert 'id="new-move-task"' not in display
@@ -91,12 +101,17 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     )
     assert 'id="task-list-title">任务选择</h2>' in selection
     assert 'id="new-move-task"' in selection
+    assert 'id="new-auto-task"' in selection
     assert "移动到坐标" in selection
+    assert "自动分类" in selection
     for moved in (
         'id="move-task-list"',
         'id="refresh-move-tasks"',
         'id="move-resources-message"',
         'id="move-task-form"',
+        'id="auto-task-list"',
+        'id="auto-task-draft"',
+        'id="auto-task-form"',
     ):
         assert moved not in selection
     assert "添加移动任务" not in selection
@@ -153,6 +168,9 @@ def test_task_page_keeps_only_the_fixed_move_editor_and_monitor() -> None:
         'id="move-draft-body"',
         'id="move-task-form"',
         'id="move-task-list"',
+        'id="auto-task-list"',
+        'id="auto-task-draft"',
+        'id="auto-task-form"',
     ):
         assert retained in html
 
@@ -164,10 +182,15 @@ def test_task_page_loads_model_monitor_and_fixed_move_stack() -> None:
         "/v2-task-model.js",
         "/coordinate-model.js",
         "/move-task-model.js",
+        "/auto-classify-task-model.js",
         "/task-monitor-model.js",
         "/tasks.js",
+        "/auto-classify-ui.js",
     )
-    positions = [html.index(f'<script src="{script}" defer></script>') for script in scripts]
+    positions = [
+        html.index(f'<script src="{script}" defer></script>')
+        for script in scripts
+    ]
     assert positions == sorted(positions)
     assert '<script src="/common.js" defer></script>' in html
     for removed in (

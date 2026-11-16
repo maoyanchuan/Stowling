@@ -10,6 +10,8 @@ import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.AutoClassifyDefinition;
+import dev.stowling.v2.model.AutoClassifyTaskFactory;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideMode;
@@ -31,9 +33,11 @@ import dev.stowling.v2.runtime.TaskRunManager;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -106,7 +110,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -140,7 +145,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -185,7 +191,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -224,7 +231,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 regions,
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         )));
     }
 
@@ -257,7 +265,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 regions,
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         )));
     }
 
@@ -300,7 +309,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .toList(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         )));
     }
 
@@ -341,7 +351,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().regions(),
                         zones,
                         current.config().triggers(),
-                        current.config().taskFolders()
+                        current.config().taskFolders(),
+                        current.config().autoClassifyTasks()
                 )
         ));
     }
@@ -376,7 +387,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().regions(),
                         zones,
                         current.config().triggers(),
-                        current.config().taskFolders()
+                        current.config().taskFolders(),
+                        current.config().autoClassifyTasks()
                 )
         ));
     }
@@ -414,7 +426,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                                 .filter(zone -> !zone.id().equals(id))
                                 .toList(),
                         current.config().triggers(),
-                        current.config().taskFolders()
+                        current.config().taskFolders(),
+                        current.config().autoClassifyTasks()
                 )
         ));
     }
@@ -443,7 +456,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                folders
+                folders,
+                current.config().autoClassifyTasks()
         );
         return taskFolderResponse(configs.save(current.revision(), updated));
     }
@@ -471,7 +485,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                folders
+                folders,
+                current.config().autoClassifyTasks()
         );
         return taskFolderResponse(configs.save(current.revision(), updated));
     }
@@ -498,7 +513,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().triggers(),
                 current.config().taskFolders().stream()
                         .filter(folder -> !folder.id().equals(id))
-                        .toList()
+                        .toList(),
+                current.config().autoClassifyTasks()
         );
         return taskFolderResponse(configs.save(current.revision(), updated));
     }
@@ -506,6 +522,286 @@ public final class V2ControlServiceImpl implements V2ControlService {
     @Override
     public synchronized TaskListResponse tasks() {
         return taskResponse(configs.read());
+    }
+
+    @Override
+    public synchronized AutoClassifyTaskListResponse autoClassifyTasks() {
+        V2ConfigSnapshot snapshot = configs.read();
+        List<AutoClassifyTask> items = snapshot.config().autoClassifyTasks()
+                .stream()
+                .map(definition -> autoView(definition, snapshot.config()))
+                .toList();
+        return new AutoClassifyTaskListResponse(snapshot.revision(), items);
+    }
+
+    @Override
+    public synchronized AutoClassifyTaskResponse createAutoClassifyTask(
+            AutoClassifyTaskRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        String name = uniqueAutoName(
+                request.name(),
+                current.config(),
+                null
+        );
+        AutoClassifyDefinition definition = definition(
+                UUID.randomUUID(),
+                name,
+                request.enabled(),
+                request.detection(),
+                request.cacheRegionRef(),
+                request.categoryZoneRef(),
+                request.markerSources(),
+                request.collectionPriority()
+        );
+        List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
+        tasks.addAll(AutoClassifyTaskFactory.tasks(
+                definition,
+                tasks.stream().map(TaskDefinition::name).toList()
+        ));
+        List<TaskTriggerDefinition> triggers = new ArrayList<>(
+                current.config().triggers()
+        );
+        triggers.addAll(AutoClassifyTaskFactory.triggers(
+                definition,
+                triggers.stream().map(TaskTriggerDefinition::name).toList()
+        ));
+        List<AutoClassifyDefinition> definitions = new ArrayList<>(
+                current.config().autoClassifyTasks()
+        );
+        definitions.add(definition);
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                tasks,
+                current.config().regions(),
+                current.config().categoryZones(),
+                triggers,
+                current.config().taskFolders(),
+                definitions
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return new AutoClassifyTaskResponse(
+                saved.revision(),
+                autoView(definition, saved.config())
+        );
+    }
+
+    @Override
+    public synchronized AutoClassifyTaskResponse updateAutoClassifyTask(
+            UUID id,
+            AutoClassifyTaskUpdateRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        AutoClassifyDefinition existing = requireAutoClassify(
+                current.config(),
+                id
+        );
+        Set<UUID> pendingIds = AutoClassifyTaskFactory.ownedTaskIds(
+                List.of(existing)
+        );
+        for (UUID pendingId : pendingIds) {
+            if (runs.hasPendingTask(pendingId)) {
+                throw new IllegalStateException(
+                        "自动分类仍有活动或排队任务，请先取消或等待收尾完成"
+                );
+            }
+        }
+        String name = uniqueAutoName(
+                request.name(),
+                current.config(),
+                id
+        );
+        AutoClassifyDefinition replacement = definition(
+                id,
+                name,
+                request.enabled() == null
+                        ? existing.enabled()
+                        : request.enabled(),
+                request.detection(),
+                request.cacheRegionRef(),
+                request.categoryZoneRef(),
+                request.markerSources(),
+                request.collectionPriority()
+        );
+        Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
+                List.of(existing)
+        );
+        Set<UUID> oldTriggerIds = AutoClassifyTaskFactory.ownedTriggerIds(
+                List.of(existing)
+        );
+        List<TaskDefinition> tasks = current.config().tasks().stream()
+                .filter(task -> !oldTaskIds.contains(task.id()))
+                .toList();
+        List<TaskTriggerDefinition> triggers = current.config().triggers()
+                .stream()
+                .filter(trigger -> !oldTriggerIds.contains(trigger.id()))
+                .toList();
+        List<TaskDefinition> updatedTasks = new ArrayList<>(tasks);
+        updatedTasks.addAll(AutoClassifyTaskFactory.tasks(
+                replacement,
+                tasks.stream().map(TaskDefinition::name).toList()
+        ));
+        List<TaskTriggerDefinition> updatedTriggers = new ArrayList<>(triggers);
+        updatedTriggers.addAll(AutoClassifyTaskFactory.triggers(
+                replacement,
+                triggers.stream().map(TaskTriggerDefinition::name).toList()
+        ));
+        List<AutoClassifyDefinition> definitions = current.config()
+                .autoClassifyTasks().stream()
+                .map(item -> item.id().equals(id) ? replacement : item)
+                .toList();
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                updatedTasks,
+                current.config().regions(),
+                current.config().categoryZones(),
+                updatedTriggers,
+                current.config().taskFolders(),
+                definitions
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return new AutoClassifyTaskResponse(
+                saved.revision(),
+                autoView(replacement, saved.config())
+        );
+    }
+
+    @Override
+    public synchronized AutoClassifyTaskResponse startAutoClassifyTask(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        AutoClassifyDefinition existing = requireAutoClassify(
+                current.config(),
+                id
+        );
+        AutoClassifyDefinition enabled = withEnabled(existing, true);
+        List<TaskTriggerDefinition> triggers = new ArrayList<>(
+                current.config().triggers().stream()
+                        .filter(trigger -> !AutoClassifyTaskFactory.ownedTriggerIds(
+                                List.of(existing)
+                        ).contains(trigger.id()))
+                        .toList()
+        );
+        triggers.addAll(AutoClassifyTaskFactory.triggers(
+                enabled,
+                triggers.stream().map(TaskTriggerDefinition::name).toList()
+        ));
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                triggers,
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks().stream()
+                        .map(item -> item.id().equals(id) ? enabled : item)
+                        .toList()
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        TaskDefinition classification = requireTask(
+                saved.config(),
+                enabled.classificationTaskId()
+        );
+        runs.start(classification, saved.config(), TaskPriority.BACKGROUND);
+        return new AutoClassifyTaskResponse(
+                saved.revision(),
+                autoView(enabled, saved.config())
+        );
+    }
+
+    @Override
+    public synchronized AutoClassifyTaskResponse stopAutoClassifyTask(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        AutoClassifyDefinition existing = requireAutoClassify(
+                current.config(),
+                id
+        );
+        AutoClassifyDefinition disabled = withEnabled(existing, false);
+        Set<UUID> triggerIds = AutoClassifyTaskFactory.ownedTriggerIds(
+                List.of(existing)
+        );
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                current.config().triggers().stream()
+                        .filter(trigger -> !triggerIds.contains(trigger.id()))
+                        .toList(),
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks().stream()
+                        .map(item -> item.id().equals(id) ? disabled : item)
+                        .toList()
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return new AutoClassifyTaskResponse(
+                saved.revision(),
+                autoView(disabled, saved.config())
+        );
+    }
+
+    @Override
+    public synchronized AutoClassifyTaskResponse deleteAutoClassifyTask(
+            UUID id,
+            RevisionRequest request
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        AutoClassifyDefinition existing = requireAutoClassify(
+                current.config(),
+                id
+        );
+        Set<UUID> taskIds = AutoClassifyTaskFactory.ownedTaskIds(
+                List.of(existing)
+        );
+        for (UUID taskId : taskIds) {
+            if (runs.hasPendingTask(taskId)) {
+                throw new IllegalStateException(
+                        "自动分类仍有活动或排队任务，请先取消或等待收尾完成"
+                );
+            }
+        }
+        Set<UUID> triggerIds = AutoClassifyTaskFactory.ownedTriggerIds(
+                List.of(existing)
+        );
+        AppConfig updated = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                current.config().coordinates(),
+                current.config().tasks().stream()
+                        .filter(task -> !taskIds.contains(task.id()))
+                        .toList(),
+                current.config().regions(),
+                current.config().categoryZones(),
+                current.config().triggers().stream()
+                        .filter(trigger -> !triggerIds.contains(trigger.id()))
+                        .toList(),
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks().stream()
+                        .filter(item -> !item.id().equals(id))
+                        .toList()
+        );
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return new AutoClassifyTaskResponse(
+                saved.revision(),
+                autoView(withEnabled(existing, false), saved.config())
+        );
     }
 
     @Override
@@ -537,14 +833,16 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
+        TaskListResponse response = taskResponse(saved);
         return new TaskListResponse(
-                saved.revision(),
+                response.revision(),
                 task.id(),
-                saved.config().tasks()
+                response.tasks()
         );
     }
 
@@ -578,7 +876,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 current.config().triggers(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -620,7 +919,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().triggers().stream()
                         .filter(trigger -> !trigger.targetTaskId().equals(id))
                         .toList(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -666,7 +966,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 triggers,
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -707,7 +1008,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().regions(),
                 current.config().categoryZones(),
                 triggers,
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -731,7 +1033,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().triggers().stream()
                         .filter(trigger -> !trigger.id().equals(id))
                         .toList(),
-                current.config().taskFolders()
+                current.config().taskFolders(),
+                current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -777,6 +1080,142 @@ public final class V2ControlServiceImpl implements V2ControlService {
         runs.skipInterruption(runId);
     }
 
+    private static AutoClassifyDefinition requireAutoClassify(
+            AppConfig config,
+            UUID id
+    ) {
+        return config.autoClassifyTasks().stream()
+                .filter(item -> item.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new V2NotFoundException(
+                        "auto classify task not found"
+                ));
+    }
+
+    private static AutoClassifyDefinition definition(
+            UUID id,
+            String name,
+            Boolean enabled,
+            AutoClassifyDetectionRequest detection,
+            String cacheRegionRef,
+            String categoryZoneRef,
+            List<dev.stowling.v2.category.CategoryMarkerSource> sources,
+            TaskPriority collectionPriority
+    ) {
+        if (detection == null) {
+            throw new V2ValidationException("detection is required");
+        }
+        String coordinateRef = detection.coordinateRef();
+        if (coordinateRef == null || coordinateRef.isBlank()) {
+            throw new V2ValidationException(
+                    "detection.coordinateRef is required"
+            );
+        }
+        int pickupRadius = detection.pickupRadius() == null
+                ? AutoClassifyDefinition.DEFAULT_PICKUP_RADIUS
+                : detection.pickupRadius();
+        return new AutoClassifyDefinition(
+                id,
+                name == null || name.isBlank() ? "自动分类" : name,
+                Boolean.TRUE.equals(enabled),
+                coordinateRef,
+                pickupRadius,
+                cacheRegionRef,
+                categoryZoneRef,
+                sources,
+                collectionPriority == null
+                        ? TaskPriority.NORMAL
+                        : collectionPriority
+        );
+    }
+
+    private static AutoClassifyDefinition withEnabled(
+            AutoClassifyDefinition definition,
+            boolean enabled
+    ) {
+        return new AutoClassifyDefinition(
+                definition.id(),
+                definition.name(),
+                enabled,
+                definition.detectionCoordinateRef(),
+                definition.pickupRadius(),
+                definition.cacheRegionRef(),
+                definition.categoryZoneRef(),
+                definition.markerSources(),
+                definition.collectionPriority()
+        );
+    }
+
+    private static AutoClassifyTask autoView(
+            AutoClassifyDefinition definition,
+            AppConfig config
+    ) {
+        List<UUID> triggerIds = new ArrayList<>();
+        if (definition.enabled()) {
+            triggerIds.add(definition.collectionTriggerId());
+            triggerIds.add(definition.classificationTriggerId());
+        }
+        return new AutoClassifyTask(
+                definition.id(),
+                definition.name(),
+                definition.enabled(),
+                new AutoClassifyDetection(
+                        definition.detectionCoordinateRef(),
+                        definition.pickupRadius()
+                ),
+                definition.cacheRegionRef(),
+                definition.categoryZoneRef(),
+                definition.markerSources(),
+                definition.collectionPriority(),
+                TaskPriority.BACKGROUND,
+                ResourceReference.of(ResourceType.TASK, definition.id())
+                        .encode(),
+                ResourceReference.of(
+                        ResourceType.TASK,
+                        definition.classificationTaskId()
+                ).encode(),
+                ResourceReference.of(
+                        ResourceType.TASK,
+                        definition.interruptionTaskId()
+                ).encode(),
+                triggerIds
+        );
+    }
+
+    private static String uniqueAutoName(
+            String candidate,
+            AppConfig config,
+            UUID updatingId
+    ) {
+        String requested = candidate == null || candidate.isBlank()
+                ? "自动分类"
+                : candidate.trim();
+        if (requested.length() > 80) {
+            throw new V2ValidationException(
+                    "auto classify name must contain at most 80 characters"
+            );
+        }
+        Set<String> unavailable = new LinkedHashSet<>();
+        Set<UUID> owned = updatingId == null
+                ? Set.of()
+                : config.autoClassifyTasks().stream()
+                        .filter(item -> item.id().equals(updatingId))
+                        .findFirst()
+                        .map(item -> AutoClassifyTaskFactory.ownedTaskIds(
+                                List.of(item)
+                        ))
+                        .orElseGet(Set::of);
+        config.tasks().stream()
+                .filter(task -> !owned.contains(task.id()))
+                .map(TaskDefinition::name)
+                .forEach(unavailable::add);
+        config.autoClassifyTasks().stream()
+                .filter(item -> !item.id().equals(updatingId))
+                .map(AutoClassifyDefinition::name)
+                .forEach(unavailable::add);
+        return AutoClassifyTaskFactory.uniqueName(requested, unavailable);
+    }
+
     private static CoordinateListResponse coordinateResponse(
             V2ConfigSnapshot snapshot
     ) {
@@ -787,9 +1226,14 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     private static TaskListResponse taskResponse(V2ConfigSnapshot snapshot) {
+        Set<UUID> derivedIds = AutoClassifyTaskFactory.ownedTaskIds(
+                snapshot.config().autoClassifyTasks()
+        );
         return new TaskListResponse(
                 snapshot.revision(),
-                snapshot.config().tasks()
+                snapshot.config().tasks().stream()
+                        .filter(task -> !derivedIds.contains(task.id()))
+                        .toList()
         );
     }
 
@@ -805,9 +1249,14 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private static TaskTriggerListResponse taskTriggerResponse(
             V2ConfigSnapshot snapshot
     ) {
+        Set<UUID> derivedIds = AutoClassifyTaskFactory.ownedTriggerIds(
+                snapshot.config().autoClassifyTasks()
+        );
         return new TaskTriggerListResponse(
                 snapshot.revision(),
-                snapshot.config().triggers()
+                snapshot.config().triggers().stream()
+                        .filter(trigger -> !derivedIds.contains(trigger.id()))
+                        .toList()
         );
     }
 

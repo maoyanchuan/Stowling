@@ -4,6 +4,7 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -30,11 +31,25 @@ final class MarkerContainerScanAction {
             CategoryZoneDefinition zone,
             int maxVolume
     ) {
+        return scan(context, zone, maxVolume, null);
+    }
+
+    static Plan scan(
+            TaskExecutionContext context,
+            CategoryZoneDefinition zone,
+            int maxVolume,
+            Set<CategoryMarkerSource> markerSources
+    ) {
+        if (markerSources != null && !markerSources.contains(
+                CategoryMarkerSource.CONTAINER_CONTENTS
+        )) {
+            return new Plan(Map.of(), List.of(), "");
+        }
         Map<UUID, Map<BlockPosition, Set<String>>> cache =
                 new LinkedHashMap<>();
         Map<BlockPosition, Target> byPosition = new LinkedHashMap<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
-            if (!ContainerContentsCategoryRule.ID.equals(
+            if (markerSources == null && !ContainerContentsCategoryRule.ID.equals(
                     binding.ruleId()
             )) {
                 continue;
@@ -48,7 +63,7 @@ final class MarkerContainerScanAction {
             if (!scan.succeeded()) {
                 return Plan.failure(scan.message());
             }
-            if (scan.containers().isEmpty()) {
+            if (markerSources == null && scan.containers().isEmpty()) {
                 return Plan.failure(
                         "分类物识别区没有箱子或木桶: " + zone.name()
                 );
@@ -62,7 +77,9 @@ final class MarkerContainerScanAction {
             }
         }
         if (cache.isEmpty()) {
-            return Plan.failure("分类区没有使用“分类标记容器内容”规则");
+            return Plan.failure(markerSources == null
+                    ? "分类区没有使用“分类标记容器内容”规则"
+                    : "分类区没有可扫描的分类标记容器");
         }
         return new Plan(
                 copyCache(cache),

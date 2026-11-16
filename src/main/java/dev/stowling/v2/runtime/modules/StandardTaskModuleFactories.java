@@ -73,10 +73,6 @@ public final class StandardTaskModuleFactories {
                 factory(
                         TaskModuleIds.WAIT_FOR_DROPPED_ITEMS,
                         WaitForDroppedItemsModule::new
-                ),
-                factory(
-                        TaskModuleIds.MATCH_CONTAINER_CATEGORIES,
-                        MatchContainerCategoriesModule::new
                 )
         );
     }

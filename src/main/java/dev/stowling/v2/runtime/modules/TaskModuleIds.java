@@ -24,8 +24,6 @@ public final class TaskModuleIds {
             "ASSERT_NO_MANAGED_ITEMS";
     public static final String WAIT_FOR_DROPPED_ITEMS =
             "WAIT_FOR_DROPPED_ITEMS";
-    public static final String MATCH_CONTAINER_CATEGORIES =
-            "MATCH_CONTAINER_CATEGORIES";
 
     public static final String TARGET_REF = "targetRef";
     public static final String AREA_REF = "areaRef";
@@ -44,6 +42,9 @@ public final class TaskModuleIds {
     public static final String MAX_VOLUME = "maxVolume";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
     public static final String OPERATION = "operation";
+    public static final String MARKER_SOURCES = "markerSources";
+    public static final String PICKUP_RADIUS = "pickupRadius";
+    public static final String RETRY_ON_FAILURE = "retryOnFailure";
     public static final String ALLOW_EMPTY_CONTAINER_SCAN =
             "allowEmptyContainerScan";
 

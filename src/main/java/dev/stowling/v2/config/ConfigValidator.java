@@ -2,8 +2,10 @@ package dev.stowling.v2.config;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.CategoryRuleRegistry;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -60,8 +62,6 @@ public final class ConfigValidator {
             "COLLECT_DROPPED_ITEMS_IN_REGION";
     public static final String AUTO_EAT_AT_COORDINATE =
             "AUTO_EAT_AT_COORDINATE";
-    public static final String MATCH_CONTAINER_CATEGORIES =
-            "MATCH_CONTAINER_CATEGORIES";
     public static final String SORT_CACHE_ITEMS = "SORT_CACHE_ITEMS";
     public static final String SORT_CACHE_ITEMS_BY_CATEGORY_ZONE =
             "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE";
@@ -92,6 +92,9 @@ public final class ConfigValidator {
     public static final String FILL_MODE = "fillMode";
     public static final String ALLOW_EMPTY_CONTAINER_SCAN =
             "allowEmptyContainerScan";
+    public static final String MARKER_SOURCES = "markerSources";
+    public static final String PICKUP_RADIUS = "pickupRadius";
+    public static final String RETRY_ON_FAILURE = "retryOnFailure";
     public static final String PRIORITY = "priority";
 
     private static final Set<String> MANUAL_COORDINATE_KEYS =
@@ -131,6 +134,12 @@ public final class ConfigValidator {
                         .map(TaskFolderDefinition::name)
                         .toList(),
                 "task folder"
+        );
+        requireUniqueNames(
+                config.autoClassifyTasks().stream()
+                        .map(AutoClassifyDefinition::name)
+                        .toList(),
+                "auto classify task"
         );
         Map<UUID, CoordinatePoint> coordinates = new LinkedHashMap<>();
         for (CoordinatePoint point : config.coordinates()) {
@@ -194,6 +203,110 @@ public final class ConfigValidator {
             );
         }
         validateTriggers(config.triggers(), coordinates, regions, tasks.keySet());
+        validateAutoClassifyTasks(
+                config.autoClassifyTasks(),
+                config.triggers(),
+                coordinates,
+                regions,
+                categoryZones,
+                tasks
+        );
+    }
+
+    private static void validateAutoClassifyTasks(
+            List<AutoClassifyDefinition> definitions,
+            List<TaskTriggerDefinition> triggers,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            Map<UUID, TaskDefinition> tasks
+    ) {
+        Set<UUID> ids = new HashSet<>();
+        Set<UUID> triggerIds = triggers.stream()
+                .map(TaskTriggerDefinition::id)
+                .collect(java.util.stream.Collectors.toSet());
+        for (AutoClassifyDefinition definition : definitions) {
+            if (!ids.add(definition.id())) {
+                throw new V2ValidationException(
+                        "duplicate auto classify task id"
+                );
+            }
+            ResourceReference coordinate = ResourceReference.parse(
+                    definition.detectionCoordinateRef()
+            );
+            if (!coordinates.containsKey(coordinate.uuid())) {
+                throw new V2ValidationException(
+                        "auto classify coordinate does not exist"
+                );
+            }
+            ResourceReference region = ResourceReference.parse(
+                    definition.cacheRegionRef()
+            );
+            if (!regions.containsKey(region.uuid())) {
+                throw new V2ValidationException(
+                        "auto classify cache region does not exist"
+                );
+            }
+            ResourceReference zone = ResourceReference.parse(
+                    definition.categoryZoneRef()
+            );
+            if (!categoryZones.containsKey(zone.uuid())) {
+                throw new V2ValidationException(
+                        "auto classify category zone does not exist"
+                );
+            }
+            requireAutoTask(
+                    tasks,
+                    definition.id(),
+                    TaskInterruptionMode.CUSTOM
+            );
+            requireAutoTask(
+                    tasks,
+                    definition.classificationTaskId(),
+                    TaskInterruptionMode.CUSTOM
+            );
+            requireAutoTask(
+                    tasks,
+                    definition.interruptionTaskId(),
+                    TaskInterruptionMode.NONE
+            );
+            boolean collectionTrigger = triggerIds.contains(
+                    definition.collectionTriggerId()
+            );
+            boolean classificationTrigger = triggerIds.contains(
+                    definition.classificationTriggerId()
+            );
+            if (definition.enabled()
+                    && (!collectionTrigger || !classificationTrigger)) {
+                throw new V2ValidationException(
+                        "enabled auto classify task requires both triggers"
+                );
+            }
+            if (!definition.enabled()
+                    && (collectionTrigger || classificationTrigger)) {
+                throw new V2ValidationException(
+                        "disabled auto classify task must not keep triggers"
+                );
+            }
+        }
+    }
+
+    private static void requireAutoTask(
+            Map<UUID, TaskDefinition> tasks,
+            UUID id,
+            TaskInterruptionMode interruptionMode
+    ) {
+        TaskDefinition task = tasks.get(id);
+        if (task == null) {
+            throw new V2ValidationException(
+                    "auto classify derived task is missing: " + id
+            );
+        }
+        if (task.interruptionMode() != interruptionMode) {
+            throw new V2ValidationException(
+                    "auto classify derived task has invalid interruption mode"
+            );
+        }
     }
 
     private static void requireInterruption(
@@ -512,8 +625,9 @@ public final class ConfigValidator {
                     step,
                     coordinates
             );
-            case MATCH_CONTAINER_CATEGORIES -> requireMatchStep(step);
-            case SORT_CACHE_ITEMS -> requireLegacySortStep(step, regions);
+            case SORT_CACHE_ITEMS -> throw new V2ValidationException(
+                    "SORT_CACHE_ITEMS requires an explicit category zone"
+            );
             case COLLECT_DROPPED_ITEMS_IN_REGION ->
                     requireLegacyRegionCollectStep(step, regions);
             case AUTO_EAT_AT_COORDINATE -> requireLegacyAutoEatStep(
@@ -672,13 +786,15 @@ public final class ConfigValidator {
                         CATEGORY_ZONE_ID,
                         CONTAINER_TYPES,
                         MAX_VOLUME,
-                        ALLOW_EMPTY_CONTAINER_SCAN
+                        ALLOW_EMPTY_CONTAINER_SCAN,
+                        MARKER_SOURCES
                 ),
                 Set.of()
         );
         requireCategoryZoneReference(step, categoryZones);
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
         requireOptionalBoolean(step, ALLOW_EMPTY_CONTAINER_SCAN);
+        requireOptionalMarkerSources(step);
     }
 
     private static void requireCoordinateStep(
@@ -781,13 +897,20 @@ public final class ConfigValidator {
                         COORDINATE_ID,
                         REGION_ID,
                         ITEM_FILTER,
-                        TIMEOUT_SECONDS
+                        TIMEOUT_SECONDS,
+                        PICKUP_RADIUS
                 ),
                 Set.of()
         );
         ResourceReference area = areaReference(step);
         requireAreaExists(area, coordinates, regions);
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+        requireOptionalInteger(
+                step,
+                PICKUP_RADIUS,
+                AutoClassifyDefinition.MIN_PICKUP_RADIUS,
+                AutoClassifyDefinition.MAX_PICKUP_RADIUS
+        );
     }
 
     private static void requireScanStep(
@@ -828,7 +951,7 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(TARGET_REF, ITEM_SOURCE),
+                Set.of(TARGET_REF, ITEM_SOURCE, RETRY_ON_FAILURE),
                 Set.of(TARGET_REF, ITEM_SOURCE)
         );
         requireContainerReference(step, coordinates);
@@ -894,6 +1017,7 @@ public final class ConfigValidator {
                 ITEM_SOURCE,
                 Set.of("collected", "carried", "managed")
         );
+        requireOptionalBoolean(step, RETRY_ON_FAILURE);
     }
 
     private static void requireWithdrawFoodStep(
@@ -924,11 +1048,13 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(CATEGORY_ZONE_REF, CATEGORY_ZONE_ID, MAX_VOLUME),
+                Set.of(CATEGORY_ZONE_REF, CATEGORY_ZONE_ID, MAX_VOLUME,
+                        MARKER_SOURCES),
                 Set.of()
         );
         requireCategoryZoneReference(step, categoryZones);
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+        requireOptionalMarkerSources(step);
     }
 
     private static void requireLegacyWaitStep(
@@ -942,11 +1068,6 @@ public final class ConfigValidator {
         );
         requireCoordinateReference(step, coordinates);
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
-    }
-
-    private static void requireMatchStep(TaskStep step) {
-        requireParameters(step, Set.of(SCAN_SOURCE), Set.of(SCAN_SOURCE));
-        requireChoice(step, SCAN_SOURCE, "previous-scan");
     }
 
     private static void requireLegacySortStep(
@@ -1255,6 +1376,34 @@ public final class ConfigValidator {
         String value = step.parameters().get(key);
         if (value != null && !choices.contains(value)) {
             throw new V2ValidationException(key + " is not supported");
+        }
+    }
+
+    private static void requireOptionalMarkerSources(TaskStep step) {
+        String value = step.parameters().get(MARKER_SOURCES);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        Set<CategoryMarkerSource> parsed = new HashSet<>();
+        for (String part : value.split(",")) {
+            String candidate = part.trim();
+            if (candidate.isEmpty()) {
+                throw new V2ValidationException(
+                        MARKER_SOURCES + " contains an empty source"
+                );
+            }
+            try {
+                parsed.add(CategoryMarkerSource.valueOf(candidate));
+            } catch (IllegalArgumentException exception) {
+                throw new V2ValidationException(
+                        MARKER_SOURCES + " contains an unknown source"
+                );
+            }
+        }
+        if (parsed.isEmpty()) {
+            throw new V2ValidationException(
+                    MARKER_SOURCES + " must contain at least one source"
+            );
         }
     }
 

@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.v2.config.ConfigValidator;
@@ -98,8 +99,9 @@ class TaskFlowNormalizerTest {
     }
 
     @Test
-    void expandsLegacySortWithoutZoneAndCreatesEditableCleanup() {
+    void expandsLegacySortWithExplicitZoneAndCreatesEditableCleanup() {
         UUID regionId = UUID.randomUUID();
+        UUID zoneId = UUID.randomUUID();
         RegionDefinition region = new RegionDefinition(
                 regionId,
                 "Cache",
@@ -116,13 +118,15 @@ class TaskFlowNormalizerTest {
                 Map.of(
                         ConfigValidator.CACHE_REGION_ID,
                         regionId.toString(),
+                        ConfigValidator.CATEGORY_ZONE_ID,
+                        zoneId.toString(),
                         ConfigValidator.SCAN_SOURCE,
                         "previous-scan"
                 )
         ));
-        CategoryZoneDefinition unrelatedZone = new CategoryZoneDefinition(
-                UUID.randomUUID(),
-                "Unrelated zone",
+        CategoryZoneDefinition zone = new CategoryZoneDefinition(
+                zoneId,
+                "Zone",
                 List.of(new CategoryBindingDefinition(
                         UUID.randomUUID(),
                         new AreaBounds(100, 64, 100, 104, 64, 100),
@@ -135,7 +139,7 @@ class TaskFlowNormalizerTest {
                 List.of(),
                 List.of(task),
                 List.of(region),
-                List.of(unrelatedZone)
+                List.of(zone)
         );
 
         AppConfig normalized = TaskFlowNormalizer.normalize(config);
@@ -144,15 +148,15 @@ class TaskFlowNormalizerTest {
         assertEquals(2, normalized.tasks().size());
         assertEquals(TaskInterruptionMode.CUSTOM, parent.interruptionMode());
         assertTrue(parent.interruptionTaskRef().startsWith("task:"));
-        assertEquals(ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                parent.steps().get(0).moduleId());
         assertEquals(ConfigValidator.SCAN_CONTAINERS_IN_REGION,
-                parent.steps().get(1).moduleId());
-        TaskStep cacheLoop = parent.steps().get(2).steps().get(1);
-        assertEquals(ConfigValidator.MOVE_TO_COORDINATE,
+                parent.steps().get(0).moduleId());
+        assertEquals(TaskStepKind.IF, parent.steps().get(1).kind());
+        assertEquals(ConfigValidator.RESOLVE_CONTAINER_CATEGORIES,
+                parent.steps().get(1).steps().get(0).moduleId());
+        TaskStep cacheLoop = parent.steps().get(1).steps().get(1);
+        assertEquals(TaskStepKind.REPEAT, cacheLoop.kind());
+        assertEquals(ConfigValidator.SELECT_CONTAINER,
                 cacheLoop.steps().getFirst().moduleId());
-        assertEquals(ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
-                parent.steps().getLast().moduleId());
         assertEquals(ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
                 normalized.tasks().get(1).steps().getLast().moduleId());
         AppConfig normalizedAgain = TaskFlowNormalizer.normalize(normalized);
@@ -176,8 +180,43 @@ class TaskFlowNormalizerTest {
     }
 
     @Test
+    void rejectsLegacySortWithoutExplicitCategoryZone() {
+        RegionDefinition region = new RegionDefinition(
+                UUID.randomUUID(),
+                "Cache",
+                0,
+                64,
+                0,
+                8,
+                70,
+                8
+        );
+        TaskDefinition task = task(new TaskStep(
+                UUID.randomUUID(),
+                ConfigValidator.SORT_CACHE_ITEMS,
+                Map.of(
+                        ConfigValidator.CACHE_REGION_ID,
+                        region.id().toString(),
+                        ConfigValidator.SCAN_SOURCE,
+                        "previous-scan"
+                )
+        ));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TaskFlowNormalizer.normalize(new AppConfig(
+                        AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(),
+                        List.of(task),
+                        List.of(region)
+                ))
+        );
+    }
+
+    @Test
     void keepsFoldersAndAssignmentsForGeneratedLegacyCleanup() {
         UUID regionId = UUID.randomUUID();
+        UUID zoneId = UUID.randomUUID();
         UUID folderId = UUID.randomUUID();
         TaskFolderDefinition folder = new TaskFolderDefinition(
                 folderId,
@@ -203,7 +242,9 @@ class TaskFlowNormalizerTest {
                         ConfigValidator.SORT_CACHE_ITEMS,
                         Map.of(
                                 ConfigValidator.CACHE_REGION_ID,
-                                regionId.toString()
+                                regionId.toString(),
+                                ConfigValidator.CATEGORY_ZONE_ID,
+                                zoneId.toString()
                         )
                 )),
                 TaskInterruptionMode.DEFAULT,
@@ -217,7 +258,16 @@ class TaskFlowNormalizerTest {
                 List.of(),
                 List.of(task),
                 List.of(region),
-                List.of(),
+                List.of(new CategoryZoneDefinition(
+                        zoneId,
+                        "Zone",
+                        List.of(new CategoryBindingDefinition(
+                                UUID.randomUUID(),
+                                new AreaBounds(20, 64, 20, 24, 64, 24),
+                                new AreaBounds(20, 64, 18, 24, 64, 18),
+                                "DIRECT_BLOCK_ID"
+                        ))
+                )),
                 List.of(),
                 List.of(folder)
         );

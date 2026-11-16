@@ -80,6 +80,32 @@ public interface V2ControlService {
 
     TaskListResponse deleteTask(UUID id, RevisionRequest request);
 
+    AutoClassifyTaskListResponse autoClassifyTasks();
+
+    AutoClassifyTaskResponse createAutoClassifyTask(
+            AutoClassifyTaskRequest request
+    );
+
+    AutoClassifyTaskResponse updateAutoClassifyTask(
+            UUID id,
+            AutoClassifyTaskUpdateRequest request
+    );
+
+    AutoClassifyTaskResponse startAutoClassifyTask(
+            UUID id,
+            RevisionRequest request
+    );
+
+    AutoClassifyTaskResponse stopAutoClassifyTask(
+            UUID id,
+            RevisionRequest request
+    );
+
+    AutoClassifyTaskResponse deleteAutoClassifyTask(
+            UUID id,
+            RevisionRequest request
+    );
+
     TaskTriggerListResponse taskTriggers();
 
     TaskTriggerDefinition taskTrigger(UUID id);

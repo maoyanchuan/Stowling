@@ -1,14 +1,17 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
+import java.util.Set;
 
 final class ScanCategoryMarkersModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final CategoryZoneDefinition zone;
     private final int maxVolume;
+    private final Set<CategoryMarkerSource> markerSources;
 
     ScanCategoryMarkersModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
@@ -24,6 +27,7 @@ final class ScanCategoryMarkersModule implements TaskModuleExecutor {
                 TaskModuleIds.MAX_VOLUME,
                 TaskModuleSupport.DEFAULT_SCAN_VOLUME
         );
+        this.markerSources = TaskModuleSupport.optionalMarkerSources(step);
     }
 
     @Override
@@ -31,7 +35,8 @@ final class ScanCategoryMarkersModule implements TaskModuleExecutor {
         MarkerContainerScanAction.Plan plan = MarkerContainerScanAction.scan(
                 context,
                 zone,
-                maxVolume
+                maxVolume,
+                markerSources
         );
         if (!plan.error().isEmpty()) {
             return TaskModuleResult.failed(plan.error());

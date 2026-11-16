@@ -39,8 +39,15 @@ public final class ConfigStore {
                 V2ConfigSnapshot current = read();
                 ConfigValidator.requireValid(current.config());
                 return current;
-            } catch (RuntimeException ignored) {
-                backup();
+            } catch (RuntimeException exception) {
+                String detail = exception.getMessage() == null
+                        ? exception.getClass().getSimpleName()
+                        : exception.getMessage();
+                throw new V2ValidationException(
+                        "existing configuration is invalid and was preserved: "
+                                + detail,
+                        exception
+                );
             }
         }
         AppConfig empty = AppConfig.empty();
@@ -72,6 +79,7 @@ public final class ConfigStore {
                 throw new V2ValidationException("configuration must be an object");
             }
             JsonObject root = parsed.getAsJsonObject();
+            upgradeSchema(root);
             requireFields(
                     root,
                     Set.of(
@@ -81,7 +89,8 @@ public final class ConfigStore {
                             "regions",
                             "categoryZones",
                             "triggers",
-                            "taskFolders"
+                            "taskFolders",
+                            "autoClassifyTasks"
                     ),
                     Set.of("schemaVersion", "coordinates", "tasks")
             );
@@ -97,6 +106,9 @@ public final class ConfigStore {
             }
             if (root.has("taskFolders")) {
                 requireTaskFolderObjects(root.get("taskFolders"));
+            }
+            if (root.has("autoClassifyTasks")) {
+                requireAutoClassifyObjects(root.get("autoClassifyTasks"));
             }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
@@ -122,6 +134,20 @@ public final class ConfigStore {
             return GSON.fromJson(root, AppConfig.class);
         } catch (JsonParseException exception) {
             throw new V2ValidationException("configuration cannot be read");
+        }
+    }
+
+    private static void upgradeSchema(JsonObject root) {
+        JsonElement value = root.get("schemaVersion");
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+            return;
+        }
+        int version = value.getAsInt();
+        if (version == 7) {
+            root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
+            if (!root.has("autoClassifyTasks")) {
+                root.add("autoClassifyTasks", new JsonArray());
+            }
         }
     }
 
@@ -166,7 +192,8 @@ public final class ConfigStore {
                             "coordinateId",
                             "itemFilter",
                             "foodLevelThreshold",
-                            "cacheRegionId"
+                            "cacheRegionId",
+                            "radius"
                     ),
                     Set.of(
                             "id",
@@ -177,6 +204,32 @@ public final class ConfigStore {
                             "intervalTicks",
                             "cooldownTicks"
                     )
+            );
+        }
+    }
+
+    private static void requireAutoClassifyObjects(JsonElement value) {
+        Set<String> fields = Set.of(
+                "id",
+                "name",
+                "enabled",
+                "detectionCoordinateRef",
+                "pickupRadius",
+                "cacheRegionRef",
+                "categoryZoneRef",
+                "markerSources",
+                "collectionPriority"
+        );
+        for (JsonElement item
+                : requireArray(value, "autoClassifyTasks")) {
+            JsonObject definition = requireObject(
+                    item,
+                    "auto classify task"
+            );
+            requireExactFields(definition, fields);
+            requireStringArray(
+                    definition.get("markerSources"),
+                    "markerSources"
             );
         }
     }

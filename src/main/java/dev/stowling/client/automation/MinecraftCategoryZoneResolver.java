@@ -7,16 +7,18 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.category.CategoryMarker;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.category.CategoryRule;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryRuleResult;
-import dev.stowling.v2.category.CategoryMarker;
-import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.category.DirectBlockIdCategoryRule;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,8 @@ public final class MinecraftCategoryZoneResolver
             "minecraft:trapped_chest",
             "minecraft:barrel"
     );
+    private static final Set<CategoryMarkerSource> ALL_MARKER_SOURCES =
+            Set.copyOf(EnumSet.allOf(CategoryMarkerSource.class));
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
@@ -77,7 +81,49 @@ public final class MinecraftCategoryZoneResolver
             int maxVolume,
             Map<BlockPosition, Set<String>> markerContainerContents
     ) {
+        return resolveZone(
+                zone,
+                containerTypes,
+                maxVolume,
+                markerContainerContents,
+                null
+        );
+    }
+
+    @Override
+    public CategoryZoneResult resolve(
+            CategoryZoneDefinition zone,
+            Set<String> containerTypes,
+            int maxVolume,
+            Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources
+    ) {
+        Objects.requireNonNull(markerSources, "markerSources");
+        if (markerSources.isEmpty()) {
+            return CategoryZoneResult.failure("未选择分类标记来源");
+        }
+        return resolveZone(
+                zone,
+                containerTypes,
+                maxVolume,
+                markerContainerContents,
+                Set.copyOf(markerSources)
+        );
+    }
+
+    private CategoryZoneResult resolveZone(
+            CategoryZoneDefinition zone,
+            Set<String> containerTypes,
+            int maxVolume,
+            Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources
+    ) {
         Objects.requireNonNull(zone, "zone");
+        Objects.requireNonNull(containerTypes, "containerTypes");
+        Objects.requireNonNull(
+                markerContainerContents,
+                "markerContainerContents"
+        );
         if (!scheduler.isClientThread()) {
             return CategoryZoneResult.failure("分类区解析必须在客户端线程执行");
         }
@@ -91,7 +137,8 @@ public final class MinecraftCategoryZoneResolver
                     zone,
                     containerTypes,
                     maxVolume,
-                    markerContainerContents
+                    markerContainerContents,
+                    markerSources
             );
         } catch (RuntimeException exception) {
             return CategoryZoneResult.failure(
@@ -105,8 +152,12 @@ public final class MinecraftCategoryZoneResolver
             CategoryZoneDefinition zone,
             Set<String> containerTypes,
             int maxVolume,
-            Map<BlockPosition, Set<String>> markerContainerContents
+            Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources
     ) {
+        Set<CategoryMarkerSource> effectiveSources = markerSources == null
+                ? ALL_MARKER_SOURCES
+                : markerSources;
         Map<String, List<ContainerTarget>> categories =
                 new LinkedHashMap<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
@@ -120,7 +171,8 @@ public final class MinecraftCategoryZoneResolver
                     level,
                     binding.markerArea(),
                     Set.copyOf(binding.ignoredMarkerBlockIds()),
-                    markerContainerContents
+                    markerContainerContents,
+                    effectiveSources
             );
             ContainerScanResult storageScan = containerRegions.scan(
                     asRegion(binding),
@@ -130,14 +182,11 @@ public final class MinecraftCategoryZoneResolver
             if (!storageScan.succeeded()) {
                 return CategoryZoneResult.failure(storageScan.message());
             }
-            CategoryRule rule = rules.require(binding.ruleId());
-            List<CategoryMarker> acceptedMarkers = markers.stream()
-                    .filter(rule::accepts)
-                    .toList();
-            CategoryRuleResult resolved = rule.resolve(
-                    acceptedMarkers,
+            CategoryRuleResult resolved = resolveBinding(
+                    binding,
+                    markers,
                     storageScan.containers(),
-                    binding.containerOverrides()
+                    markerSources
             );
             if (!resolved.succeeded()) {
                 return CategoryZoneResult.failure(resolved.message());
@@ -145,11 +194,54 @@ public final class MinecraftCategoryZoneResolver
             mergeCategories(categories, resolved.categories());
         }
         if (categories.isEmpty()) {
+            if (markerSources == null) {
+                return CategoryZoneResult.failure(
+                        "分类区 " + zone.name() + " 没有识别出分类"
+                );
+            }
             return CategoryZoneResult.failure(
-                    "分类区 " + zone.name() + " 没有识别出分类"
+                    "分类区 " + zone.name() + " 在选中的分类标记来源 "
+                            + sourceNames(markerSources)
+                            + " 中没有识别出分类"
             );
         }
         return CategoryZoneResult.success(categories);
+    }
+
+    private CategoryRuleResult resolveBinding(
+            CategoryBindingDefinition binding,
+            List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers,
+            Set<CategoryMarkerSource> markerSources
+    ) {
+        if (markerSources != null) {
+            return DirectBlockIdCategoryRule.resolveExplicitSources(
+                    markers,
+                    storageContainers,
+                    binding.containerOverrides()
+            );
+        }
+        CategoryRule rule = rules.require(binding.ruleId());
+        List<CategoryMarker> acceptedMarkers = markers.stream()
+                .filter(rule::accepts)
+                .toList();
+        return rule.resolve(
+                acceptedMarkers,
+                storageContainers,
+                binding.containerOverrides()
+        );
+    }
+
+    private static String sourceNames(
+            Set<CategoryMarkerSource> markerSources
+    ) {
+        List<String> names = new ArrayList<>();
+        for (CategoryMarkerSource source : CategoryMarkerSource.values()) {
+            if (markerSources.contains(source)) {
+                names.add(source.name());
+            }
+        }
+        return String.join(",", names);
     }
 
     private static void mergeCategories(
@@ -175,7 +267,8 @@ public final class MinecraftCategoryZoneResolver
             ClientLevel level,
             AreaBounds area,
             Set<String> ignoredBlockIds,
-            Map<BlockPosition, Set<String>> markerContainerContents
+            Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources
     ) {
         List<CategoryMarker> result = new ArrayList<>();
         for (long x = area.minX(); x <= area.maxX(); x++) {
@@ -194,12 +287,15 @@ public final class MinecraftCategoryZoneResolver
                             position,
                             ignoredBlockIds,
                             markerContainerContents,
+                            markerSources,
                             result
                     );
                 }
             }
         }
-        appendItemFrameMarkers(level, area, result);
+        if (markerSources.contains(CategoryMarkerSource.ITEM_FRAME)) {
+            appendItemFrameMarkers(level, area, result);
+        }
         return List.copyOf(result);
     }
 
@@ -208,6 +304,7 @@ public final class MinecraftCategoryZoneResolver
             BlockPos position,
             Set<String> ignoredBlockIds,
             Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources,
             List<CategoryMarker> result
     ) {
         BlockState state = level.getBlockState(position);
@@ -217,34 +314,29 @@ public final class MinecraftCategoryZoneResolver
         String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock())
                 .toString();
         BlockPosition markerPosition = blockPosition(position);
-        if (MARKER_CONTAINER_TYPES.contains(blockId)
-                && markerContainerContents.containsKey(markerPosition)) {
-            int slot = 0;
-            for (String itemId
-                    : markerContainerContents.get(markerPosition)) {
-                result.add(new CategoryMarker(
+        if (markerContainerContents.containsKey(markerPosition)) {
+            if (markerSources.contains(
+                    CategoryMarkerSource.CONTAINER_CONTENTS
+            )) {
+                appendContainerContents(
                         markerPosition,
-                        itemId,
-                        CategoryMarkerSource.CONTAINER_CONTENTS,
-                        slot++
-                ));
-            }
-            return;
-        }
-        if (level.getBlockEntity(position) instanceof ShelfBlockEntity shelf) {
-            List<ItemStack> items = shelf.getItems();
-            for (int slot = 0; slot < items.size(); slot++) {
-                appendItemMarker(
-                        result,
-                        position,
-                        items.get(slot),
-                        CategoryMarkerSource.SHELF,
-                        slot
+                        markerContainerContents.get(markerPosition),
+                        result
                 );
             }
             return;
         }
-        if (ignoredBlockIds.contains(blockId)) {
+        if (MARKER_CONTAINER_TYPES.contains(blockId)) {
+            return;
+        }
+        if (level.getBlockEntity(position) instanceof ShelfBlockEntity shelf) {
+            if (markerSources.contains(CategoryMarkerSource.SHELF)) {
+                appendShelfItems(position, shelf, result);
+            }
+            return;
+        }
+        if (!markerSources.contains(CategoryMarkerSource.PLACED_ITEM)
+                || ignoredBlockIds.contains(blockId)) {
             return;
         }
         appendItemMarker(
@@ -254,6 +346,39 @@ public final class MinecraftCategoryZoneResolver
                 CategoryMarkerSource.PLACED_ITEM,
                 -1
         );
+    }
+
+    private static void appendContainerContents(
+            BlockPosition position,
+            Set<String> itemIds,
+            List<CategoryMarker> result
+    ) {
+        int slot = 0;
+        for (String itemId : itemIds) {
+            result.add(new CategoryMarker(
+                    position,
+                    itemId,
+                    CategoryMarkerSource.CONTAINER_CONTENTS,
+                    slot++
+            ));
+        }
+    }
+
+    private static void appendShelfItems(
+            BlockPos position,
+            ShelfBlockEntity shelf,
+            List<CategoryMarker> result
+    ) {
+        List<ItemStack> items = shelf.getItems();
+        for (int slot = 0; slot < items.size(); slot++) {
+            appendItemMarker(
+                    result,
+                    position,
+                    items.get(slot),
+                    CategoryMarkerSource.SHELF,
+                    slot
+            );
+        }
     }
 
     private static void appendItemFrameMarkers(

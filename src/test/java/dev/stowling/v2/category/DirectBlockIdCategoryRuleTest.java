@@ -206,4 +206,204 @@ class DirectBlockIdCategoryRuleTest {
         );
         assertFalse(result.categories().containsKey("minecraft:torch"));
     }
+
+    @Test
+    void explicitTaskSourcesMergeAllSelectedMarkerKinds() {
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        BlockPosition column = new BlockPosition(7, -40, 2);
+
+        CategoryRuleResult result =
+                DirectBlockIdCategoryRule.resolveExplicitSources(
+                        List.of(
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.PLACED_ITEM,
+                                        -1
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.ITEM_FRAME,
+                                        -1
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.SHELF,
+                                        0
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.CONTAINER_CONTENTS,
+                                        0
+                                )
+                        ),
+                        List.of(chest),
+                        List.of()
+                );
+
+        assertTrue(result.succeeded());
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:torch")
+        );
+    }
+
+    @Test
+    void explicitTaskSourcesMergeMultipleShelfSlotsInOneColumn() {
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        BlockPosition column = new BlockPosition(7, -40, 2);
+
+        CategoryRuleResult result =
+                DirectBlockIdCategoryRule.resolveExplicitSources(
+                        List.of(
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.SHELF,
+                                        0
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:lantern",
+                                        CategoryMarkerSource.SHELF,
+                                        1
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:oak_sign",
+                                        CategoryMarkerSource.CONTAINER_CONTENTS,
+                                        0
+                                )
+                        ),
+                        List.of(chest),
+                        List.of()
+                );
+
+        assertTrue(result.succeeded());
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:torch")
+        );
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:lantern")
+        );
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:oak_sign")
+        );
+    }
+    @Test
+    void explicitTaskSourcesMergeDifferentItemsInOneColumn() {
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        BlockPosition column = new BlockPosition(7, -40, 2);
+
+        CategoryRuleResult result =
+                DirectBlockIdCategoryRule.resolveExplicitSources(
+                        List.of(
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.PLACED_ITEM,
+                                        -1
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:oak_fence",
+                                        CategoryMarkerSource.ITEM_FRAME,
+                                        -1
+                                )
+                        ),
+                        List.of(chest),
+                        List.of()
+                );
+
+        assertTrue(result.succeeded());
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:torch")
+        );
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:oak_fence")
+        );
+    }
+
+    @Test
+    void explicitTaskSourcesApplyReplaceOverrideOnce() {
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+        BlockPosition column = new BlockPosition(7, -40, 2);
+
+        CategoryRuleResult result =
+                DirectBlockIdCategoryRule.resolveExplicitSources(
+                        List.of(
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
+                                        CategoryMarkerSource.PLACED_ITEM,
+                                        -1
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:quartz_block",
+                                        CategoryMarkerSource.CONTAINER_CONTENTS,
+                                        0
+                                )
+                        ),
+                        List.of(chest),
+                        List.of(new CategoryContainerOverrideDefinition(
+                                UUID.randomUUID(),
+                                chest.position(),
+                                CategoryContainerOverrideMode.REPLACE,
+                                List.of(
+                                        "minecraft:quartz_block",
+                                        "minecraft:quartz_slab"
+                                )
+                        ))
+                );
+
+        assertTrue(result.succeeded());
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:quartz_block")
+        );
+        assertEquals(
+                List.of(chest),
+                result.categories().get("minecraft:quartz_slab")
+        );
+        assertFalse(result.categories().containsKey("minecraft:torch"));
+    }
+
+    @Test
+    void explicitTaskSourcesReturnEmptyWhenBindingHasNoMarkers() {
+        ContainerTarget chest = new ContainerTarget(
+                new BlockPosition(7, -40, 1),
+                "minecraft:chest"
+        );
+
+        CategoryRuleResult result =
+                DirectBlockIdCategoryRule.resolveExplicitSources(
+                        List.of(),
+                        List.of(chest),
+                        List.of()
+                );
+
+        assertTrue(result.succeeded());
+        assertTrue(result.categories().isEmpty());
+    }
 }

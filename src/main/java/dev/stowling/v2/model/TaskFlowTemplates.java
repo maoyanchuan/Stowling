@@ -65,42 +65,52 @@ public final class TaskFlowTemplates {
             String categoryZoneRef,
             Map<String, String> scanParameters
     ) {
-        Map<String, String> scan = new LinkedHashMap<>(scanParameters);
-        scan.put(ConfigValidator.REGION_REF, cacheRegionRef);
-        List<TaskStep> prefix = new ArrayList<>();
-        prefix.add(TaskStep.action(
-                UUID.randomUUID(),
-                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
-                scan
-        ));
-        prefix.add(TaskStep.action(
-                UUID.randomUUID(),
-                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES,
-                Map.of(ConfigValidator.CATEGORY_ZONE_REF, categoryZoneRef)
-        ));
-        prefix.addAll(sortTail());
-        return List.copyOf(prefix);
+        return sortByCategoryZone(
+                cacheRegionRef,
+                categoryZoneRef,
+                scanParameters,
+                List.of()
+        );
     }
 
-    public static List<TaskStep> sortFromPreviousScan(
+    public static List<TaskStep> sortByCategoryZone(
             String cacheRegionRef,
-            Map<String, String> scanParameters
+            String categoryZoneRef,
+            Map<String, String> scanParameters,
+            List<TaskStep> preResolveSteps
     ) {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
+        scan.remove(ConfigValidator.MARKER_SOURCES);
+        scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
         scan.put(ConfigValidator.REGION_REF, cacheRegionRef);
-        List<TaskStep> prefix = new ArrayList<>();
-        prefix.add(TaskStep.action(
-                UUID.randomUUID(),
-                ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                Map.of(ConfigValidator.SCAN_SOURCE, "previous-scan")
-        ));
-        prefix.add(TaskStep.action(
+        TaskStep scanStep = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                 scan
-        ));
-        prefix.addAll(sortTail());
-        return List.copyOf(prefix);
+        );
+        Map<String, String> resolve = new LinkedHashMap<>(scanParameters);
+        resolve.remove(ConfigValidator.REGION_REF);
+        resolve.put(ConfigValidator.CATEGORY_ZONE_REF, categoryZoneRef);
+        TaskStep resolveStep = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES,
+                resolve
+        );
+        List<TaskStep> classify = new ArrayList<>(preResolveSteps);
+        classify.add(resolveStep);
+        classify.addAll(sortTail());
+        return List.of(
+                scanStep,
+                TaskStep.conditional(
+                        UUID.randomUUID(),
+                        conditionParameters(
+                                TaskCondition.HAS_CONTAINERS,
+                                Map.of()
+                        ),
+                        classify,
+                        List.of()
+                )
+        );
     }
 
     public static List<TaskStep> collect(
@@ -149,8 +159,8 @@ public final class TaskFlowTemplates {
                 Map.of(
                         ConfigValidator.TARGET_REF,
                         ResourceReference.output("container").encode(),
-                        ConfigValidator.ITEM_SOURCE,
-                        "collected"
+                        ConfigValidator.ITEM_SOURCE, "collected",
+                        ConfigValidator.RETRY_ON_FAILURE, "true"
                 )
         );
         TaskStep depositCollected = TaskStep.repeat(
@@ -217,10 +227,21 @@ public final class TaskFlowTemplates {
             String categoryZoneRef,
             String maxVolume
     ) {
+        return refreshMarkers(categoryZoneRef, maxVolume, null);
+    }
+
+    public static List<TaskStep> refreshMarkers(
+            String categoryZoneRef,
+            String maxVolume,
+            String markerSources
+    ) {
         Map<String, String> scan = new LinkedHashMap<>();
         scan.put(ConfigValidator.CATEGORY_ZONE_REF, categoryZoneRef);
         if (maxVolume != null && !maxVolume.isBlank()) {
             scan.put(ConfigValidator.MAX_VOLUME, maxVolume);
+        }
+        if (markerSources != null && !markerSources.isBlank()) {
+            scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
         }
         TaskStep scanStep = TaskStep.action(
                 UUID.randomUUID(),
@@ -289,7 +310,8 @@ public final class TaskFlowTemplates {
                 Map.of(
                         ConfigValidator.TARGET_REF,
                         ResourceReference.output("container").encode(),
-                        ConfigValidator.ITEM_SOURCE, "managed"
+                        ConfigValidator.ITEM_SOURCE, "managed",
+                        ConfigValidator.RETRY_ON_FAILURE, "true"
                 )
         );
         TaskStep depositManaged = TaskStep.repeat(
@@ -347,7 +369,8 @@ public final class TaskFlowTemplates {
                 Map.of(
                         ConfigValidator.TARGET_REF,
                         ResourceReference.output("storage").encode(),
-                        ConfigValidator.ITEM_SOURCE, "carried"
+                        ConfigValidator.ITEM_SOURCE, "carried",
+                        ConfigValidator.RETRY_ON_FAILURE, "true"
                 )
         );
         TaskStep depositCarried = TaskStep.repeat(

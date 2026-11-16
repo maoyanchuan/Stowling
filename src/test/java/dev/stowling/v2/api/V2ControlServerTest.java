@@ -58,6 +58,27 @@ class V2ControlServerTest {
                     "window.StowlingTriggerModel"
             ));
 
+            for (String path : List.of(
+                    "/auto-classify-task-model.js",
+                    "/auto-classify-ui.js"
+            )) {
+                HttpResponse<String> asset = fixture.send(
+                        path,
+                        "GET",
+                        null,
+                        false
+                );
+                assertEquals(200, asset.statusCode(), path);
+            }
+            HttpResponse<String> autoClassify = fixture.send(
+                    "/v1/auto-classify-tasks",
+                    "GET",
+                    null,
+                    true
+            );
+            assertEquals(200, autoClassify.statusCode());
+            assertTrue(autoClassify.body().contains("\"items\""));
+
             HttpResponse<String> unauthorized = fixture.send(
                     "/v1/status",
                     "GET",
@@ -78,6 +99,13 @@ class V2ControlServerTest {
                     false
             );
             assertEquals(401, unauthorizedFolders.statusCode());
+            HttpResponse<String> unauthorizedAutoClassify = fixture.send(
+                    "/v1/auto-classify-tasks",
+                    "POST",
+                    "{}",
+                    false
+            );
+            assertEquals(401, unauthorizedAutoClassify.statusCode());
 
             HttpResponse<String> wrongMethod = fixture.send(
                     "/v1/coordinates",

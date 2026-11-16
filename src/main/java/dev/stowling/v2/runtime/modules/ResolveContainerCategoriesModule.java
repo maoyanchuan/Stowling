@@ -5,6 +5,7 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.ResourceReference;
@@ -24,6 +25,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
     private final Set<String> containerTypes;
     private final int maxVolume;
     private final boolean allowEmptyContainerScan;
+    private final Set<CategoryMarkerSource> markerSources;
 
     ResolveContainerCategoriesModule(
             TaskExecutionContext context,
@@ -48,6 +50,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 TaskModuleIds.ALLOW_EMPTY_CONTAINER_SCAN,
                 false
         );
+        this.markerSources = TaskModuleSupport.optionalMarkerSources(step);
     }
 
     @Override
@@ -61,27 +64,34 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
             return TaskModuleResult.failed(cacheScan.message());
         }
         Map<BlockPosition, Set<String>> markerContents = new LinkedHashMap<>();
-        for (CategoryBindingDefinition binding : zone.bindings()) {
-            if (!ContainerContentsCategoryRule.ID.equals(binding.ruleId())) {
-                continue;
+        if (requiresContainerContents()) {
+            for (CategoryBindingDefinition binding : zone.bindings()) {
+                Map<BlockPosition, Set<String>> cached = context
+                        .categoryMarkerCache()
+                        .contents(binding.id())
+                        .orElse(null);
+                if (cached == null) {
+                    return TaskModuleResult.failed(
+                            "缺少分类容器缓存，请先执行分类标记流程"
+                    );
+                }
+                markerContents.putAll(cached);
             }
-            Map<BlockPosition, Set<String>> cached = context
-                    .categoryMarkerCache()
-                    .contents(binding.id())
-                    .orElse(null);
-            if (cached == null) {
-                return TaskModuleResult.failed(
-                        "缺少分类容器缓存，请先执行分类标记流程"
-                );
-            }
-            markerContents.putAll(cached);
         }
-        CategoryZoneResult result = context.categoryZonesPort().resolve(
-                zone,
-                containerTypes,
-                maxVolume,
-                markerContents
-        );
+        CategoryZoneResult result = markerSources == null
+                ? context.categoryZonesPort().resolve(
+                        zone,
+                        containerTypes,
+                        maxVolume,
+                        markerContents
+                )
+                : context.categoryZonesPort().resolve(
+                        zone,
+                        containerTypes,
+                        maxVolume,
+                        markerContents,
+                        markerSources
+                );
         if (!result.succeeded()) {
             return TaskModuleResult.failed(result.message());
         }
@@ -119,5 +129,16 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
 
     @Override
     public void cancel() {
+    }
+
+    private boolean requiresContainerContents() {
+        if (markerSources != null) {
+            return markerSources.contains(
+                    CategoryMarkerSource.CONTAINER_CONTENTS
+            );
+        }
+        return zone.bindings().stream().anyMatch(binding ->
+                ContainerContentsCategoryRule.ID.equals(binding.ruleId())
+        );
     }
 }

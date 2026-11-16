@@ -4,4 +4,8 @@ public final class V2ValidationException extends IllegalArgumentException {
     public V2ValidationException(String message) {
         super(message);
     }
+
+    public V2ValidationException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

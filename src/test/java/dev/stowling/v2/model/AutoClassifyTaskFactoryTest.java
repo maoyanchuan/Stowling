@@ -1,0 +1,168 @@
+package dev.stowling.v2.model;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.config.ConfigValidator;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+
+class AutoClassifyTaskFactoryTest {
+    @Test
+    void buildsTwoIndependentStagesAndSharedInterruptionCleanup() {
+        AutoClassifyDefinition definition = definition(false);
+
+        List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(
+                definition,
+                List.of()
+        );
+
+        assertEquals(3, tasks.size());
+        TaskDefinition collection = tasks.get(0);
+        TaskDefinition classification = tasks.get(1);
+        TaskDefinition cleanup = tasks.get(2);
+        assertEquals(definition.id(), collection.id());
+        assertEquals(
+                definition.classificationTaskId(),
+                classification.id()
+        );
+        assertEquals(TaskPriority.BACKGROUND, classification.priority());
+        assertTrue(classification.requeueAfterInterruption());
+        assertEquals(false, collection.requeueAfterInterruption());
+        assertEquals(
+                collection.interruptionTaskRef(),
+                classification.interruptionTaskRef()
+        );
+        assertEquals(
+                cleanup.id(),
+                ResourceReference.parse(
+                        collection.interruptionTaskRef()
+                ).uuid()
+        );
+        TaskStep createTask = collection.steps().getLast();
+        assertEquals(TaskStepKind.CREATE_TASK, createTask.kind());
+        assertEquals(
+                "task:" + classification.id(),
+                createTask.parameters().get(ConfigValidator.TASK_REF)
+        );
+        assertEquals(
+                TaskPriority.BACKGROUND.name(),
+                createTask.parameters().get(ConfigValidator.PRIORITY)
+        );
+        assertEquals(
+                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                classification.steps().getFirst().moduleId()
+        );
+        assertEquals(TaskStepKind.IF, classification.steps().get(1).kind());
+        assertEquals(
+                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES,
+                classification.steps().get(1).steps().getFirst().moduleId()
+        );
+    }
+
+    @Test
+    void allSourcesScanCacheBeforeRefreshingMarkersInsideHasContainersBranch() {
+        AutoClassifyDefinition definition = definition(
+                false,
+                List.of(
+                        CategoryMarkerSource.PLACED_ITEM,
+                        CategoryMarkerSource.ITEM_FRAME,
+                        CategoryMarkerSource.SHELF,
+                        CategoryMarkerSource.CONTAINER_CONTENTS
+                )
+        );
+
+        TaskDefinition classification = AutoClassifyTaskFactory.tasks(
+                definition,
+                List.of()
+        ).get(1);
+
+        assertEquals(2, classification.steps().size());
+        TaskStep cacheScan = classification.steps().getFirst();
+        assertEquals(
+                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                cacheScan.moduleId()
+        );
+        assertEquals(
+                definition.cacheRegionRef(),
+                cacheScan.parameters().get(ConfigValidator.REGION_REF)
+        );
+        TaskStep hasContainers = classification.steps().get(1);
+        assertEquals(TaskStepKind.IF, hasContainers.kind());
+        assertEquals(
+                TaskCondition.HAS_CONTAINERS.name(),
+                hasContainers.parameters().get(TaskFlowTemplates.CONDITION)
+        );
+        assertTrue(hasContainers.otherwise().isEmpty());
+        List<TaskStep> classify = hasContainers.steps();
+        TaskStep markerScan = classify.getFirst();
+        assertEquals(ConfigValidator.SCAN_CATEGORY_MARKERS, markerScan.moduleId());
+        assertEquals(
+                definition.categoryZoneRef(),
+                markerScan.parameters().get(ConfigValidator.CATEGORY_ZONE_REF)
+        );
+        assertEquals(TaskStepKind.REPEAT, classify.get(1).kind());
+        assertEquals(
+                ConfigValidator.SAVE_CATEGORY_MARKER_CACHE,
+                classify.get(2).moduleId()
+        );
+        TaskStep resolve = classify.get(3);
+        assertEquals(ConfigValidator.RESOLVE_CONTAINER_CATEGORIES, resolve.moduleId());
+        assertEquals(
+                markerScan.parameters().get(ConfigValidator.MARKER_SOURCES),
+                resolve.parameters().get(ConfigValidator.MARKER_SOURCES)
+        );
+    }
+
+    @Test
+    void disabledDefinitionHasNoTriggers() {
+        assertTrue(AutoClassifyTaskFactory.triggers(
+                definition(false),
+                List.of()
+        ).isEmpty());
+    }
+
+    @Test
+    void enabledDefinitionUsesConfiguredRadiusAndBackgroundClassifier() {
+        AutoClassifyDefinition definition = definition(true);
+
+        List<TaskTriggerDefinition> triggers =
+                AutoClassifyTaskFactory.triggers(definition, List.of());
+
+        assertEquals(2, triggers.size());
+        TaskTriggerDefinition collection = triggers.get(0);
+        TaskTriggerDefinition classification = triggers.get(1);
+        assertEquals(TaskTriggerType.DROPPED_ITEMS, collection.type());
+        assertEquals(definition.id(), collection.targetTaskId());
+        assertEquals(16, collection.radius());
+        assertEquals(TaskTriggerType.CACHE_UPDATED, classification.type());
+        assertEquals(
+                definition.classificationTaskId(),
+                classification.targetTaskId()
+        );
+        assertEquals(TaskPriority.BACKGROUND, classification.priority());
+    }
+
+    private static AutoClassifyDefinition definition(boolean enabled) {
+        return definition(enabled, List.of(CategoryMarkerSource.PLACED_ITEM));
+    }
+
+    private static AutoClassifyDefinition definition(
+            boolean enabled,
+            List<CategoryMarkerSource> markerSources
+    ) {
+        return new AutoClassifyDefinition(
+                UUID.randomUUID(),
+                "自动分类",
+                enabled,
+                "coordinate:" + UUID.randomUUID(),
+                16,
+                "region:" + UUID.randomUUID(),
+                "category-zone:" + UUID.randomUUID(),
+                markerSources,
+                TaskPriority.NORMAL
+        );
+    }
+}

@@ -310,6 +310,9 @@ final class TaskTriggerManager {
         int radius = coordinate.radius() == null
                 ? DEFAULT_RADIUS
                 : coordinate.radius();
+        if (trigger.radius() != null) {
+            radius = trigger.radius();
+        }
         List<DroppedItem> matches = droppedItems.observe(center, radius)
                 .stream()
                 .filter(item -> trigger.matches(item.itemId()))

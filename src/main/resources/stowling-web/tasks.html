@@ -12,8 +12,10 @@
     <script src="/v2-task-model.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
     <script src="/move-task-model.js" defer></script>
+    <script src="/auto-classify-task-model.js" defer></script>
     <script src="/task-monitor-model.js" defer></script>
     <script src="/tasks.js" defer></script>
+    <script src="/auto-classify-ui.js" defer></script>
 </head>
 <body data-page="tasks">
     <header class="topbar">
@@ -21,7 +23,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>任务管理 · 移动任务与运行队列</p>
+                <p>任务管理 · 已保存任务与运行队列</p>
             </div>
         </div>
         <div class="connection-state">
@@ -91,6 +93,10 @@
                         </p>
                         <div id="move-task-list" class="move-task-list"
                              aria-label="已保存的移动任务"></div>
+                        <p id="auto-resources-message" class="field-message"
+                           role="status" hidden></p>
+                        <div id="auto-task-list" class="move-task-list"
+                             aria-label="已保存的自动分类任务"></div>
                         <div id="move-task-draft" class="move-saved-task is-draft" hidden>
                             <button id="toggle-move-draft" class="move-task-summary"
                                     type="button" aria-expanded="false"
@@ -172,6 +178,112 @@
                                 </form>
                             </div>
                         </div>
+                        <article id="auto-task-draft" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-auto-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="auto-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">⇄</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 自动分类</strong>
+                                    <span>收集入缓存，空闲时分类</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
+                            <div id="auto-draft-body" class="move-task-body" hidden>
+                                <form id="auto-task-form" class="auto-task-form" hidden novalidate>
+                                    <fieldset id="auto-task-fields" disabled>
+                                        <label class="move-field" for="auto-task-name">
+                                            <span>任务名称</span>
+                                            <input id="auto-task-name" maxlength="80" required
+                                                   autocomplete="off" value="自动分类">
+                                        </label>
+                                        <ol class="auto-phase-preview" aria-label="任务的两段流程">
+                                            <li><b>收集入缓存</b><span>检测 → 拾取 → 存入缓存</span></li>
+                                            <li><b>后台分类</b><span>扫描缓存 → 识别分类 → 分批入库</span></li>
+                                        </ol>
+                                        <section class="auto-config-section"
+                                                 aria-labelledby="auto-collect-title">
+                                            <h3 id="auto-collect-title">1 · 收集入缓存</h3>
+                                            <div class="auto-field-grid">
+                                                <label class="move-field" for="auto-detection-point">
+                                                    <span>掉落物检测点</span>
+                                                    <select id="auto-detection-point" required>
+                                                        <option value="">请选择坐标点</option>
+                                                    </select>
+                                                </label>
+                                                <label class="move-field" for="auto-pickup-radius">
+                                                    <span>检测与拾取半径（格）</span>
+                                                    <input id="auto-pickup-radius" type="number"
+                                                           min="1" max="64" step="1" value="8">
+                                                </label>
+                                            </div>
+                                            <label class="move-field" for="auto-cache-region">
+                                                <span>缓存区域</span>
+                                                <select id="auto-cache-region" required>
+                                                    <option value="">请选择包含缓存箱子的区域</option>
+                                                </select>
+                                            </label>
+                                            <p class="auto-config-note">扫描区域内的多个箱子，
+                                                只存入本次拾取的物品，不动原有工具和食物。</p>
+                                            <label class="move-field move-priority"
+                                                   for="auto-collect-priority">
+                                                <span>收集优先级</span>
+                                                <select id="auto-collect-priority">
+                                                    <option value="NORMAL">普通</option>
+                                                    <option value="URGENT">紧急</option>
+                                                </select>
+                                            </label>
+                                        </section>
+                                        <section class="auto-config-section"
+                                                 aria-labelledby="auto-sort-title">
+                                            <h3 id="auto-sort-title">2 · 后台分类</h3>
+                                            <label class="move-field" for="auto-category-zone">
+                                                <span>分类区</span>
+                                                <select id="auto-category-zone" required>
+                                                    <option value="">请选择分类区</option>
+                                                </select>
+                                            </label>
+                                            <fieldset class="auto-marker-options">
+                                                <legend>分类物识别方式 · 可多选</legend>
+                                                <label><input type="checkbox" checked
+                                                    name="markerSources" value="ITEM_FRAME">
+                                                    <span>展示框</span></label>
+                                                <label><input type="checkbox" checked
+                                                    name="markerSources" value="SHELF">
+                                                    <span>展示架</span></label>
+                                                <label><input type="checkbox" checked
+                                                    name="markerSources" value="PLACED_ITEM">
+                                                    <span>摆放方块</span></label>
+                                                <label><input type="checkbox" checked
+                                                    name="markerSources" value="CONTAINER_CONTENTS">
+                                                    <span>标记箱 / 木桶</span></label>
+                                            </fieldset>
+                                            <p class="auto-config-note">按分类区的识别区与储存区匹配，
+                                                不使用附近展示框匹配。分类为后台优先级，
+                                                未识别物品留在缓存，满箱会尝试同类其他箱子。</p>
+                                        </section>
+                                        <div class="auto-interruption-note">
+                                            <b>中断收尾</b>
+                                            <span>优先处理收集任务；分类被中断时，把本次取出的
+                                                物品归还缓存，再重新排队。</span>
+                                        </div>
+                                        <p id="auto-task-message" class="field-message"
+                                           role="status" aria-live="polite"></p>
+                                        <div class="move-form-actions">
+                                            <button id="save-auto-task" class="secondary"
+                                                    type="button">保存任务</button>
+                                            <button id="start-auto-task" class="primary"
+                                                    type="submit">保存并开始监听</button>
+                                            <button id="stop-auto-task" class="ghost"
+                                                    type="button" hidden>停止监听</button>
+                                            <button id="delete-auto-task" class="ghost"
+                                                    type="button" hidden>删除任务</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </article>
                     </section>
                     <section class="panel task-selection-panel"
                              aria-labelledby="task-list-title">
@@ -183,6 +295,11 @@
                                     type="button" disabled>
                                 <strong>＋ 移动到坐标</strong>
                                 <span>设置目标坐标，保存或运行</span>
+                            </button>
+                            <button id="new-auto-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 自动分类</strong>
+                                <span>检测掉落物入缓存，空闲时分类入库</span>
                             </button>
                         </div>
                     </section>

@@ -10,9 +10,10 @@ public record AppConfig(
         List<RegionDefinition> regions,
         List<CategoryZoneDefinition> categoryZones,
         List<TaskTriggerDefinition> triggers,
-        List<TaskFolderDefinition> taskFolders
+        List<TaskFolderDefinition> taskFolders,
+        List<AutoClassifyDefinition> autoClassifyTasks
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 7;
+    public static final int CURRENT_SCHEMA_VERSION = 8;
 
     public AppConfig {
         if (schemaVersion != CURRENT_SCHEMA_VERSION) {
@@ -30,6 +31,30 @@ public record AppConfig(
         taskFolders = taskFolders == null
                 ? List.of()
                 : List.copyOf(taskFolders);
+        autoClassifyTasks = autoClassifyTasks == null
+                ? List.of()
+                : List.copyOf(autoClassifyTasks);
+    }
+
+    public AppConfig(
+            int schemaVersion,
+            List<CoordinatePoint> coordinates,
+            List<TaskDefinition> tasks,
+            List<RegionDefinition> regions,
+            List<CategoryZoneDefinition> categoryZones,
+            List<TaskTriggerDefinition> triggers,
+            List<TaskFolderDefinition> taskFolders
+    ) {
+        this(
+                schemaVersion,
+                coordinates,
+                tasks,
+                regions,
+                categoryZones,
+                triggers,
+                taskFolders,
+                List.of()
+        );
     }
 
     public AppConfig(
@@ -47,6 +72,7 @@ public record AppConfig(
                 regions,
                 categoryZones,
                 triggers,
+                List.of(),
                 List.of()
         );
     }
@@ -64,6 +90,7 @@ public record AppConfig(
                 tasks,
                 regions,
                 categoryZones,
+                List.of(),
                 List.of(),
                 List.of()
         );
@@ -89,6 +116,7 @@ public record AppConfig(
     public static AppConfig empty() {
         return new AppConfig(
                 CURRENT_SCHEMA_VERSION,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of(),

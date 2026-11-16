@@ -15,6 +15,8 @@
         logScrollPaused: false,
         moveRevision: "",
         moveTasks: [],
+        autoTaskCount: 0,
+        autoDraftActive: false,
         moveAllTasks: [],
         coordinates: [],
         moveDraft: Move.newDraft(),
@@ -201,8 +203,9 @@
             newDraft && state.moveFormOpen
         ));
         elements.moveForm.hidden = !state.moveFormOpen;
-        elements.movePlaceholder.hidden = state.moveTasks.length > 0 || newDraft;
-        elements.moveCount.textContent = String(state.moveTasks.length);
+        elements.movePlaceholder.hidden = state.moveTasks.length + state.autoTaskCount > 0
+            || newDraft || state.autoDraftActive;
+        elements.moveCount.textContent = String(state.moveTasks.length + state.autoTaskCount);
         for (const [id, row] of moveRows) {
             const selected = state.moveDraft.id === id;
             const expanded = selected && state.moveFormOpen;
@@ -424,6 +427,7 @@
                         ? { ...payload, revision: state.moveRevision } : payload)
                 });
                 applyMoveSave(response, task.id);
+                document.dispatchEvent(new Event("stowling:tasks-changed"));
             }
             showMoveMessage("任务已保存");
             if (enqueue) {
@@ -861,6 +865,16 @@
         }
     }
 
+    document.addEventListener("stowling:auto-task-count", (event) => {
+        state.autoTaskCount = Number(event.detail?.count || 0);
+        state.autoDraftActive = event.detail?.draftActive === true;
+        syncMoveDisclosure();
+    });
+    document.addEventListener("stowling:auto-tasks-changed", () => {
+        void loadMoveResources();
+        void loadRuns();
+    });
+    document.addEventListener("stowling:monitor-refresh", () => void loadRuns());
     elements.newMove.addEventListener("click", () => selectMoveTask());
     elements.moveDraftToggle.addEventListener("click", toggleMoveDraft);
     elements.refreshMove.addEventListener("click", () => void loadMoveResources());

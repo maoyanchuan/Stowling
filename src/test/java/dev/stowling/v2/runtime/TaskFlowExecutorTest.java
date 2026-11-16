@@ -375,7 +375,6 @@ class TaskFlowExecutorTest {
                 navigation,
                 registry.droppedItems(),
                 registry.containerRegions(),
-                registry.containerCategories(),
                 registry.containerTransfers(),
                 registry.containerWithdrawals(),
                 registry.containerInspections(),

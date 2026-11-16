@@ -1,0 +1,217 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WEB = ROOT / "src" / "main" / "resources" / "stowling-web"
+MARKER_SOURCES = (
+    "ITEM_FRAME",
+    "SHELF",
+    "PLACED_ITEM",
+    "CONTAINER_CONTENTS",
+)
+
+
+def read(name: str) -> str:
+    return (WEB / name).read_text(encoding="utf-8")
+
+
+def between(source: str, start: str, end: str) -> str:
+    start_index = source.index(start)
+    content_start = start_index + len(start)
+    return source[content_start:source.index(end, content_start)]
+
+
+def test_task_page_places_auto_tasks_above_the_single_template() -> None:
+    html = read("tasks.html")
+    display = between(
+        html,
+        'id="task-display-area"',
+        '<section class="panel task-selection-panel"',
+    )
+
+    assert display.index('id="auto-task-list"') < display.index(
+        'id="auto-task-draft"'
+    )
+    for element_id in (
+        "auto-task-list",
+        "auto-task-draft",
+        "toggle-auto-draft",
+        "auto-draft-body",
+        "auto-task-form",
+        "auto-task-fields",
+        "auto-task-name",
+        "auto-detection-point",
+        "auto-pickup-radius",
+        "auto-cache-region",
+        "auto-collect-priority",
+        "auto-category-zone",
+        "auto-task-message",
+        "save-auto-task",
+        "start-auto-task",
+        "stop-auto-task",
+        "delete-auto-task",
+    ):
+        assert f'id="{element_id}"' in display
+    assert 'id="new-auto-task"' not in display
+    assert 'id="new-auto-task"' in html
+    assert "自动分类" in display
+    assert '<input id="auto-task-name" maxlength="80"' in display
+    assert 'id="auto-pickup-radius" type="number"' in display
+    assert 'min="1" max="64" step="1" value="8"' in display
+
+
+def test_marker_sources_are_four_checked_multiselect_inputs_in_the_form() -> None:
+    html = read("tasks.html")
+    form = between(html, 'id="auto-task-form"', "</form>")
+
+    assert form.count('name="markerSources"') == 4
+    for source in MARKER_SOURCES:
+        assert f'name="markerSources" value="{source}"' in form
+    assert form.count("type=\"checkbox\" checked") == 4
+    assert "分类物识别方式 · 可多选" in form
+    assert 'value="BACKGROUND"' not in form
+    assert '<option value="NORMAL">普通</option>' in form
+    assert '<option value="URGENT">紧急</option>' in form
+
+
+def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
+    javascript = read("auto-classify-ui.js")
+    loading = between(
+        javascript,
+        "async function loadResources()",
+        "function populateSelect",
+    )
+
+    for route in (
+        '"/v1/auto-classify-tasks"',
+        '"/v1/coordinates"',
+        '"/v1/regions"',
+        '"/v1/category-zones"',
+        '"/v1/tasks"',
+    ):
+        assert route in loading
+    assert "Array.isArray(tasks.items) ? tasks.items : []" in loading
+    assert "Array.isArray(coordinates.coordinates)" in loading
+    assert "Array.isArray(regions.regions)" in loading
+    assert "Array.isArray(zones.categoryZones)" in loading
+    assert "Array.isArray(allTasks.tasks) ? allTasks.tasks : []" in loading
+    assert "state.revision = String(tasks.revision || \"\");" in loading
+
+
+def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:
+    javascript = read("auto-classify-ui.js")
+
+    assert "const Auto = window.StowlingAutoClassifyTaskModel;" in javascript
+    for call in (
+        "Auto.newDraft(",
+        "Auto.draftFromTask(",
+        "Auto.payload(",
+    ):
+        assert call in javascript
+    assert "detection: {" not in javascript
+    assert "coordinateRef:" not in javascript
+    assert "cacheRegionRef:" not in javascript
+    assert "categoryZoneRef:" not in javascript
+    assert "classificationPriority" not in javascript
+
+    form_reader = between(
+        javascript,
+        "function readForm()",
+        "function renderList()",
+    )
+    assert "...state.draft" in form_reader
+    assert "elements.sources.filter((input) => input.checked)" in form_reader
+    assert ".map((input) => input.value)" in form_reader
+    assert "length ?" not in form_reader
+    assert "enabled:" not in form_reader
+
+
+def test_auto_ui_posts_new_disabled_drafts_and_puts_with_revision() -> None:
+    javascript = read("auto-classify-ui.js")
+    save = between(javascript, "async function saveTask(", "async function stopTask(")
+
+    assert "payload = Auto.payload(" in save
+    assert "state.draft, state.resources, state.items, state.allTasks" in save
+    assert "? `/v1/auto-classify-tasks/${encodeURIComponent(id)}`" in save
+    assert ': "/v1/auto-classify-tasks"' in save
+    assert 'method: id ? "PUT" : "POST"' in save
+    assert "...payload, revision: state.revision" in save
+    assert "? { ...payload, revision: state.revision } : payload" in save
+    assert "/start" in save
+    assert "const item = response.item;" in javascript
+    assert "state.revision = String(response.revision || \"\");" in javascript
+
+
+def test_auto_ui_stop_delete_and_saved_task_count_contracts() -> None:
+    javascript = read("auto-classify-ui.js")
+    tasks = read("tasks.js")
+    stop = between(javascript, "async function stopTask(", "elements.newTask")
+
+    assert "/stop" in stop
+    assert 'method: remove ? "DELETE" : "POST"' in stop
+    assert "body: JSON.stringify({ revision: state.revision })" in stop
+    assert "const item = response.item;" in javascript
+    assert "state.revision = String(response.revision || \"\");" in javascript
+    assert 'new CustomEvent("stowling:auto-task-count"' in javascript
+    count_event = between(
+        javascript,
+        'new CustomEvent("stowling:auto-task-count", {',
+        "}));",
+    )
+    assert "detail:" in count_event
+    assert "count: state.items.length" in count_event
+    assert "draftActive: state.active && !state.draft.id" in count_event
+    assert 'document.addEventListener("stowling:auto-task-count"' in tasks
+    assert "state.autoTaskCount = Number(event.detail?.count || 0);" in tasks
+    assert "state.moveTasks.length + state.autoTaskCount" in tasks
+
+
+def test_auto_draft_hides_the_empty_task_placeholder() -> None:
+    tasks = read("tasks.js")
+    listener = between(
+        tasks,
+        'document.addEventListener("stowling:auto-task-count", (event) => {',
+        "});",
+    )
+    disclosure = between(
+        tasks,
+        "function syncMoveDisclosure()",
+        "function selectMoveTask(",
+    )
+    placeholder = between(disclosure, "elements.movePlaceholder.hidden =", ";")
+
+    assert "autoDraftActive: false" in tasks
+    assert "state.autoDraftActive = event.detail?.draftActive === true;" in listener
+    assert "syncMoveDisclosure();" in listener
+    assert " ".join(placeholder.split()) == (
+        "state.moveTasks.length + state.autoTaskCount > 0"
+        " || newDraft || state.autoDraftActive"
+    )
+
+
+def test_stopping_a_dirty_auto_task_warns_before_discarding_edits() -> None:
+    javascript = read("auto-classify-ui.js")
+    stop = between(javascript, "async function stopTask(", "elements.newTask")
+    warning = 'const warning = state.dirty ? "未保存修改将被丢弃。" : "";'
+    confirmation = 'window.confirm(`${prompt}${warning}`)'
+
+    assert "停止掉落物监听？" in stop
+    assert warning in stop
+    assert confirmation in stop
+    assert stop.index(warning) < stop.index(confirmation) < stop.index("Stowling.request(")
+    assert "if (!window.confirm(`${prompt}${warning}`)) {\n            return;" in stop
+
+
+def test_task_page_loads_model_before_ui_and_ui_after_shared_styles() -> None:
+    html = read("tasks.html")
+    model = '<script src="/auto-classify-task-model.js" defer></script>'
+    ui = '<script src="/auto-classify-ui.js" defer></script>'
+    tasks = '<script src="/tasks.js" defer></script>'
+
+    assert html.index(model) < html.index(ui)
+    assert html.index(tasks) < html.index(ui)
+    assert '<link rel="stylesheet" href="/styles.css">' in html
+    assert ".auto-task-form" in read("styles.css")
+    assert "auto-task-form[hidden]" in read("styles.css")
+
+

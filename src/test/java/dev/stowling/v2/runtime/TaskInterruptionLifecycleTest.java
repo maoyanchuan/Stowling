@@ -7,8 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.stowling.automation.CategoryMarkerCachePort;
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
-import dev.stowling.automation.ContainerCategoryPort;
-import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerInspectionPort;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
@@ -56,7 +54,7 @@ class TaskInterruptionLifecycleTest {
     private static final String FLAKY_CLEANUP = "TEST_FLAKY_CLEANUP";
 
     @Test
-    void createTaskAlwaysQueuesIndependentRunsAndKeepsTargetPriority() {
+    void createTaskDeduplicatesIndependentRunsAndKeepsTargetPriority() {
         UUID coordinateId = UUID.randomUUID();
         TaskDefinition child = task(
                 "Child",
@@ -91,7 +89,7 @@ class TaskInterruptionLifecycleTest {
         TaskRunSnapshot parentRun = manager.start(parent, config, null);
         manager.tick();
 
-        assertEquals(2, manager.queued().size());
+        assertEquals(1, manager.queued().size());
         assertTrue(manager.queued().stream().allMatch(
                 run -> run.priority() == TaskPriority.BACKGROUND
         ));
@@ -217,6 +215,59 @@ class TaskInterruptionLifecycleTest {
                 run -> run.taskName().equals("Urgent")
                         && run.state() == TaskRunState.SUCCEEDED
         ));
+    }
+
+    @Test
+    void preemptedBackgroundTaskRequeuesAfterSharedCleanup() {
+        UUID cleanupPoint = UUID.randomUUID();
+        UUID urgentPoint = UUID.randomUUID();
+        RecordingNavigation navigation = new RecordingNavigation();
+        TaskRunManager manager = new TaskRunManager(
+                navigation,
+                registry(navigation)
+        );
+        TaskDefinition cleanup = task(
+                "Shared cleanup",
+                TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE,
+                actionStep(CLEAR_MANAGED)
+        );
+        TaskDefinition background = withCleanup(task(
+                "Classifier",
+                TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE,
+                actionStep(ADD_MANAGED),
+                actionStep(SLOW)
+        ), cleanup, true);
+        TaskDefinition urgent = task(
+                "Collector",
+                TaskPriority.URGENT,
+                TaskInterruptionMode.NONE,
+                moveStep(urgentPoint)
+        );
+        AppConfig config = config(
+                List.of(
+                        coordinate(cleanupPoint),
+                        coordinate(urgentPoint)
+                ),
+                List.of(background, cleanup, urgent)
+        );
+
+        TaskRunSnapshot backgroundRun = manager.start(background, config, null);
+        manager.tick();
+        manager.start(urgent, config, null);
+        for (int tick = 0; tick < 8; tick++) {
+            manager.tick();
+        }
+
+        assertEquals(
+                TaskRunState.PREEMPTED,
+                runState(manager, backgroundRun.runId())
+        );
+        assertTrue(manager.hasPendingTask(background.id()));
+        assertTrue(manager.queued().stream()
+                .filter(run -> run.taskId().equals(background.id()))
+                .count() <= 1);
     }
 
     @Test
@@ -741,7 +792,6 @@ class TaskInterruptionLifecycleTest {
                 new EmptyDroppedItems(),
                 (region, types, volume) ->
                         ContainerScanResult.failure("unused"),
-                containers -> ContainerCategoryResult.failure("unused"),
                 new FailedTransfers(),
                 new FailedWithdrawals(),
                 ContainerInspectionPort.UNAVAILABLE,

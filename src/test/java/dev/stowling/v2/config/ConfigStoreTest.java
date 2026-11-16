@@ -18,21 +18,16 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
-    void resetsOldSchemaAndCreatesEmptySchemaSevenConfig() throws Exception {
+    void rejectsOldSchemaWithoutOverwritingTheFile() throws Exception {
         Path path = directory.resolve("stowling.json");
-        Files.writeString(path, "{\"schemaVersion\":6,\"pickupRegions\":[]}");
+        String content = "{\"schemaVersion\":6,\"pickupRegions\":[]}";
+        Files.writeString(path, content);
         ConfigStore store = new ConfigStore(path);
 
-        V2ConfigSnapshot snapshot = store.loadOrReset();
+        assertThrows(V2ValidationException.class, store::loadOrReset);
 
-        assertEquals(7, snapshot.config().schemaVersion());
-        assertTrue(snapshot.config().coordinates().isEmpty());
-        assertTrue(snapshot.config().tasks().isEmpty());
-        assertTrue(Files.isRegularFile(directory.resolve("stowling.json.bak")));
-        assertEquals(
-                "{\"schemaVersion\":6,\"pickupRegions\":[]}",
-                Files.readString(directory.resolve("stowling.json.bak"))
-        );
+        assertEquals(content, Files.readString(path));
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
     }
 
     @Test
@@ -141,7 +136,7 @@ class ConfigStoreTest {
     }
 
     @Test
-    void expandsLegacyClassificationWithoutClearingSchemaSevenResources()
+    void expandsLegacyClassificationWithExplicitZone()
             throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
@@ -157,6 +152,8 @@ class ConfigStoreTest {
                             "parameters": {
                                 "cacheRegionId":
                                     "00000000-0000-0000-0000-000000000012",
+                                "categoryZoneId":
+                                    "00000000-0000-0000-0000-000000000013",
                                 "scanSource": "previous-scan"
                             }
                         }]
@@ -170,6 +167,22 @@ class ConfigStoreTest {
                         "secondX": 8,
                         "secondY": 70,
                         "secondZ": 8
+                    }],
+                    "categoryZones": [{
+                        "id": "00000000-0000-0000-0000-000000000013",
+                        "name": "Zone",
+                        "bindings": [{
+                            "id": "00000000-0000-0000-0000-000000000014",
+                            "markerArea": {
+                                "firstX": 20, "firstY": 64, "firstZ": 20,
+                                "secondX": 24, "secondY": 64, "secondZ": 24
+                            },
+                            "storageArea": {
+                                "firstX": 20, "firstY": 64, "firstZ": 18,
+                                "secondX": 24, "secondY": 64, "secondZ": 18
+                            },
+                            "ruleId": "DIRECT_BLOCK_ID"
+                        }]
                     }]
                 }
                 """);
@@ -177,7 +190,7 @@ class ConfigStoreTest {
 
         V2ConfigSnapshot snapshot = store.loadOrReset();
 
-        assertEquals(7, snapshot.config().schemaVersion());
+        assertEquals(8, snapshot.config().schemaVersion());
         assertEquals(1, snapshot.config().regions().size());
         assertEquals(2, snapshot.config().tasks().size());
         assertEquals(
@@ -280,22 +293,58 @@ class ConfigStoreTest {
     }
 
     @Test
-    void resetsSchemaSevenThatContainsLegacyFields() throws Exception {
+    void rejectsInvalidCurrentSchemaWithoutOverwritingTheFile() throws Exception {
         Path path = directory.resolve("stowling.json");
-        Files.writeString(path, """
+        String content = """
                 {
                     "schemaVersion": 7,
                     "coordinates": [],
                     "tasks": [],
                     "radius": 8
                 }
-                """);
+                """;
+        Files.writeString(path, content);
         ConfigStore store = new ConfigStore(path);
 
-        V2ConfigSnapshot snapshot = store.loadOrReset();
+        assertThrows(V2ValidationException.class, store::loadOrReset);
 
-        assertEquals(7, snapshot.config().schemaVersion());
-        assertTrue(snapshot.config().coordinates().isEmpty());
-        assertTrue(Files.isRegularFile(directory.resolve("stowling.json.bak")));
+        assertEquals(content, Files.readString(path));
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
+    }
+
+    @Test
+    void preservesCoordinatesWhenLegacySortHasNoCategoryZone() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        String content = """
+                {
+                    "schemaVersion": 7,
+                    "coordinates": [{
+                        "id": "00000000-0000-0000-0000-000000000001",
+                        "name": "Home",
+                        "x": 0,
+                        "y": 64,
+                        "z": 0
+                    }],
+                    "tasks": [{
+                        "id": "00000000-0000-0000-0000-000000000002",
+                        "name": "Legacy sort",
+                        "steps": [{
+                            "id": "00000000-0000-0000-0000-000000000003",
+                            "moduleId": "SORT_CACHE_ITEMS",
+                            "parameters": {
+                                "cacheRegionId":
+                                    "00000000-0000-0000-0000-000000000004"
+                            }
+                        }]
+                    }]
+                }
+                """;
+        Files.writeString(path, content);
+        ConfigStore store = new ConfigStore(path);
+
+        assertThrows(V2ValidationException.class, store::loadOrReset);
+        assertEquals(content, Files.readString(path));
+        assertTrue(content.contains("\"name\": \"Home\""));
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
     }
 }

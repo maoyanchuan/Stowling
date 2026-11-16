@@ -4423,3 +4423,130 @@ button:active:not(:disabled) {
         padding: 0.85rem;
     }
 }
+
+
+/* One saved task, two queue phases; configuration stays narrow and grouped. */
+.auto-task-form {
+    max-width: 38rem;
+    margin: 0;
+}
+
+.auto-task-form [hidden],
+.auto-task-form[hidden] {
+    display: none !important;
+}
+
+.auto-task-form > fieldset {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+
+.auto-phase-preview {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.auto-phase-preview li {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.8rem;
+    border-radius: 9px;
+    background: var(--accent-soft);
+}
+
+.auto-phase-preview b {
+    color: var(--accent-strong);
+    font-size: 0.8rem;
+}
+
+.auto-phase-preview span,
+.auto-config-note,
+.auto-interruption-note {
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.6;
+}
+
+.auto-config-section {
+    display: grid;
+    gap: 0.8rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+}
+
+.auto-config-section h3 {
+    margin: 0;
+    font-size: 0.84rem;
+}
+
+.auto-config-note {
+    margin: -0.25rem 0 0;
+}
+
+.auto-field-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(8rem, 1fr);
+    gap: 0.75rem;
+}
+
+.auto-marker-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+
+.auto-marker-options legend {
+    margin-bottom: 0.65rem;
+    font-size: 0.82rem;
+}
+
+.auto-marker-options label {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.auto-marker-options label:has(input:checked) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.auto-marker-options input {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.auto-interruption-note {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.75rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 8px 8px 0;
+}
+
+@media (max-width: 520px) {
+    .auto-field-grid,
+    .auto-phase-preview {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

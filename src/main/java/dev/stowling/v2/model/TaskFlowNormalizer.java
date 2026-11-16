@@ -115,7 +115,8 @@ public final class TaskFlowNormalizer {
                     config.regions(),
                     config.categoryZones(),
                     config.triggers(),
-                    config.taskFolders()
+                    config.taskFolders(),
+                    config.autoClassifyTasks()
             );
         }
         List<TaskDefinition> replaced = tasks.stream()
@@ -130,7 +131,8 @@ public final class TaskFlowNormalizer {
                 config.regions(),
                 config.categoryZones(),
                 config.triggers(),
-                config.taskFolders()
+                config.taskFolders(),
+                config.autoClassifyTasks()
         );
     }
 
@@ -224,25 +226,6 @@ public final class TaskFlowNormalizer {
         };
     }
 
-    private static List<TaskStep> normalizeLegacySort(
-            TaskStep step,
-            Map<String, String> parameters
-    ) {
-        String zone = parameters.get(ConfigValidator.CATEGORY_ZONE_REF);
-        String region = parameter(parameters, ConfigValidator.REGION_REF);
-        List<TaskStep> template = zone == null
-                ? TaskFlowTemplates.sortFromPreviousScan(
-                        region,
-                        scanParameters(parameters)
-                )
-                : TaskFlowTemplates.sortByCategoryZone(
-                        region,
-                        zone,
-                        scanParameters(parameters)
-                );
-        return remapStepIds(template, step.id());
-    }
-
     private static List<TaskStep> normalizeLegacyRegionCollect(
             TaskStep step,
             Map<String, String> parameters
@@ -255,6 +238,26 @@ public final class TaskFlowNormalizer {
         copyIfPresent(parameters, collect, ConfigValidator.MAX_VOLUME);
         return remapStepIds(
                 TaskFlowTemplates.collect(region, region, collect),
+                step.id()
+        );
+    }
+
+    private static List<TaskStep> normalizeLegacySort(
+            TaskStep step,
+            Map<String, String> parameters
+    ) {
+        String zone = parameters.get(ConfigValidator.CATEGORY_ZONE_REF);
+        if (zone == null || zone.isBlank()) {
+            throw new IllegalArgumentException(
+                    "SORT_CACHE_ITEMS requires categoryZoneRef"
+            );
+        }
+        return remapStepIds(
+                TaskFlowTemplates.sortByCategoryZone(
+                        parameter(parameters, ConfigValidator.REGION_REF),
+                        zone,
+                        scanParameters(parameters)
+                ),
                 step.id()
         );
     }
@@ -619,6 +622,7 @@ public final class TaskFlowNormalizer {
         Map<String, String> result = new LinkedHashMap<>();
         copyIfPresent(parameters, result, ConfigValidator.CONTAINER_TYPES);
         copyIfPresent(parameters, result, ConfigValidator.MAX_VOLUME);
+        copyIfPresent(parameters, result, ConfigValidator.MARKER_SOURCES);
         return Map.copyOf(result);
     }
 

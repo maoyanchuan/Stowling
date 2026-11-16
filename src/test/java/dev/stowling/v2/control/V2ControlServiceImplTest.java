@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
@@ -14,6 +15,9 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStepKind;
@@ -152,6 +156,131 @@ class V2ControlServiceImplTest {
                         " travel ",
                         point.id().toString()
                 ))
+        );
+    }
+
+    @Test
+    void createsDraftAutoClassifyAndHidesDerivedTasks() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Drops");
+        RegionDefinition region = service.createRegion(new RegionRequest(
+                "Cache",
+                0,
+                64,
+                0,
+                8,
+                70,
+                8
+        )).regions().getFirst();
+        CategoryZoneDefinition zone = service.createCategoryZone(
+                new CategoryZoneRequest(
+                        "Classification",
+                        List.of(new CategoryBindingRequest(
+                                20,
+                                64,
+                                20,
+                                24,
+                                64,
+                                24,
+                                20,
+                                64,
+                                18,
+                                24,
+                                64,
+                                18,
+                                "DIRECT_BLOCK_ID",
+                                List.of(),
+                                List.of()
+                        ))
+                )
+        ).categoryZones().getFirst();
+
+        AutoClassifyTaskResponse created = service.createAutoClassifyTask(
+                new AutoClassifyTaskRequest(
+                        "自动分类",
+                        false,
+                        new AutoClassifyDetectionRequest(
+                                "coordinate:" + point.id(),
+                                8
+                        ),
+                        "region:" + region.id(),
+                        "category-zone:" + zone.id(),
+                        List.of(CategoryMarkerSource.PLACED_ITEM),
+                        TaskPriority.NORMAL
+                )
+        );
+
+        assertEquals(0, service.tasks().tasks().size());
+        assertEquals(1, service.autoClassifyTasks().items().size());
+        assertEquals(false, created.item().enabled());
+        assertTrue(created.item().triggerIds().isEmpty());
+
+        AutoClassifyTaskResponse collision = service.createAutoClassifyTask(
+                new AutoClassifyTaskRequest(
+                        "自动分类 分类",
+                        false,
+                        new AutoClassifyDetectionRequest(
+                                "coordinate:" + point.id(),
+                                8
+                        ),
+                        "region:" + region.id(),
+                        "category-zone:" + zone.id(),
+                        List.of(CategoryMarkerSource.PLACED_ITEM),
+                        TaskPriority.NORMAL
+                )
+        );
+        assertTrue(!collision.item().name().equals("自动分类 分类"));
+        assertEquals(2, service.autoClassifyTasks().items().size());
+
+        TaskListResponse manual = service.createTask(task(
+                "普通任务",
+                point.id().toString()
+        ));
+        TaskFolderListResponse temporaryFolder = service.createTaskFolder(
+                new TaskFolderRequest("临时")
+        );
+        TaskFolderListResponse folderRemoved = service.deleteTaskFolder(
+                temporaryFolder.folders().getLast().id(),
+                new RevisionRequest(temporaryFolder.revision())
+        );
+        TaskListResponse manualRemoved = service.deleteTask(
+                manual.taskId(),
+                new RevisionRequest(folderRemoved.revision())
+        );
+        assertEquals(2, service.autoClassifyTasks().items().size());
+
+        AutoClassifyTaskResponse started = service.startAutoClassifyTask(
+                created.item().id(),
+                new RevisionRequest(manualRemoved.revision())
+        );
+        assertTrue(started.item().enabled());
+        assertEquals(2, started.item().triggerIds().size());
+        assertEquals(0, service.tasks().tasks().size());
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.updateAutoClassifyTask(
+                        created.item().id(),
+                        new AutoClassifyTaskUpdateRequest(
+                                started.revision(),
+                                "改名",
+                                true,
+                                new AutoClassifyDetectionRequest(
+                                        "coordinate:" + point.id(),
+                                        8
+                                ),
+                                "region:" + region.id(),
+                                "category-zone:" + zone.id(),
+                                List.of(CategoryMarkerSource.PLACED_ITEM),
+                                TaskPriority.NORMAL
+                        )
+                )
+        );
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.deleteAutoClassifyTask(
+                        created.item().id(),
+                        new RevisionRequest(started.revision())
+                )
         );
     }
 

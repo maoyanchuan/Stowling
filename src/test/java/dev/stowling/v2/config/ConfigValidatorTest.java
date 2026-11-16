@@ -384,14 +384,6 @@ class ConfigValidatorTest {
                         ),
                         new TaskStep(
                                 UUID.randomUUID(),
-                                ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                                Map.of(
-                                        ConfigValidator.SCAN_SOURCE,
-                                        "previous-scan"
-                                )
-                        ),
-                        new TaskStep(
-                                UUID.randomUUID(),
                                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
                                 Map.of(
                                         ConfigValidator.SCAN_SOURCE,
@@ -475,31 +467,7 @@ class ConfigValidatorTest {
     }
 
     @Test
-    void validatesContainerCategoryModuleContract() {
-        TaskStep valid = new TaskStep(
-                UUID.randomUUID(),
-                ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                Map.of(ConfigValidator.SCAN_SOURCE, "previous-scan")
-        );
-        TaskStep invalid = new TaskStep(
-                UUID.randomUUID(),
-                ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                Map.of(ConfigValidator.SCAN_SOURCE, "rescan")
-        );
-
-        ConfigValidator.requireValidStep(valid, Map.of(), Map.of());
-        assertThrows(
-                V2ValidationException.class,
-                () -> ConfigValidator.requireValidStep(
-                        invalid,
-                        Map.of(),
-                        Map.of()
-                )
-        );
-    }
-
-    @Test
-    void validatesRegionCollectionAndCacheSortContracts() {
+    void rejectsLegacyCacheSortWithoutExpandedCategoryZone() {
         RegionDefinition source = region("Source");
         RegionDefinition cache = region("Cache");
         TaskStep collect = new TaskStep(
@@ -525,23 +493,9 @@ class ConfigValidatorTest {
         );
 
         ConfigValidator.requireValidStep(collect, Map.of(), regions);
-        ConfigValidator.requireValidStep(sort, Map.of(), regions);
         assertThrows(
                 V2ValidationException.class,
-                () -> ConfigValidator.requireValidStep(
-                        new TaskStep(
-                                UUID.randomUUID(),
-                                ConfigValidator.SORT_CACHE_ITEMS,
-                                Map.of(
-                                        ConfigValidator.CACHE_REGION_ID,
-                                        UUID.randomUUID().toString(),
-                                        ConfigValidator.SCAN_SOURCE,
-                                        "previous-scan"
-                                )
-                        ),
-                        Map.of(),
-                        regions
-                )
+                () -> ConfigValidator.requireValidStep(sort, Map.of(), regions)
         );
     }
 

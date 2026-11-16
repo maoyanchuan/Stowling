@@ -9,8 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.stowling.automation.CategoryMarkerCachePort;
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
-import dev.stowling.automation.ContainerCategoryPort;
-import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerInspectionPort;
 import dev.stowling.automation.ContainerInspectionResult;
 import dev.stowling.automation.ContainerRegionPort;
@@ -35,6 +33,7 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
@@ -42,6 +41,7 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.TaskStep;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -496,7 +496,6 @@ class BasicModuleSemanticsTest {
                 context.navigation(),
                 context.droppedItems(),
                 context.containerRegions(),
-                context.containerCategories(),
                 context.containerTransfers(),
                 context.containerWithdrawals(),
                 context.containerInspections(),
@@ -558,7 +557,6 @@ class BasicModuleSemanticsTest {
                 base.navigation(),
                 base.droppedItems(),
                 base.containerRegions(),
-                base.containerCategories(),
                 base.containerTransfers(),
                 base.containerWithdrawals(),
                 base.containerInspections(),
@@ -594,6 +592,128 @@ class BasicModuleSemanticsTest {
         assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
         assertEquals(expected, inspection.observedTarget());
         assertEquals(0, workspace.markerReadCount());
+    }
+
+    @Test
+    void explicitAllMarkerSourcesAllowBindingsWithoutMarkerContainers() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        CategoryZoneDefinition zone = new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                "Display markers",
+                List.of(
+                        new CategoryBindingDefinition(
+                                UUID.randomUUID(),
+                                new AreaBounds(0, 64, 0, 3, 66, 3),
+                                new AreaBounds(5, 64, 0, 8, 66, 3),
+                                "test-rule"
+                        ),
+                        new CategoryBindingDefinition(
+                                UUID.randomUUID(),
+                                new AreaBounds(12, 64, 0, 15, 66, 3),
+                                new AreaBounds(17, 64, 0, 20, 66, 3),
+                                "test-rule"
+                        )
+                )
+        );
+        TaskExecutionContext base = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        TaskExecutionContext context = new TaskExecutionContext(
+                base.navigation(),
+                base.droppedItems(),
+                (region, types, volume) ->
+                        ContainerScanResult.success(List.of()),
+                base.containerTransfers(),
+                base.containerWithdrawals(),
+                base.containerInspections(),
+                base.categoryMarkerCache(),
+                base.foodConsumption(),
+                base.categoryZonesPort(),
+                base.coordinates(),
+                base.regions(),
+                base.categoryZones(),
+                workspace
+        );
+
+        MarkerContainerScanAction.Plan plan = MarkerContainerScanAction.scan(
+                context,
+                zone,
+                100,
+                Set.copyOf(EnumSet.allOf(CategoryMarkerSource.class))
+        );
+
+        assertEquals("", plan.error());
+        assertTrue(plan.targets().isEmpty());
+        assertEquals(2, plan.cache().size());
+        assertTrue(plan.cache().values().stream().allMatch(Map::isEmpty));
+    }
+
+    @Test
+    void explicitSourcesKeepEmptyCacheForBindingWithoutMarkerContainer() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        CategoryBindingDefinition withContainer = new CategoryBindingDefinition(
+                UUID.randomUUID(),
+                new AreaBounds(0, 64, 0, 3, 66, 3),
+                new AreaBounds(5, 64, 0, 8, 66, 3),
+                "test-rule"
+        );
+        CategoryBindingDefinition withoutContainer =
+                new CategoryBindingDefinition(
+                        UUID.randomUUID(),
+                        new AreaBounds(12, 64, 0, 15, 66, 3),
+                        new AreaBounds(17, 64, 0, 20, 66, 3),
+                        "test-rule"
+                );
+        CategoryZoneDefinition zone = new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                "Mixed markers",
+                List.of(withContainer, withoutContainer)
+        );
+        TaskExecutionContext base = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        TaskExecutionContext context = new TaskExecutionContext(
+                base.navigation(),
+                base.droppedItems(),
+                (region, types, volume) -> region.id().equals(
+                        withContainer.id()
+                )
+                        ? ContainerScanResult.success(List.of(
+                                target(1, 64, 1, "marker")
+                        ))
+                        : ContainerScanResult.success(List.of()),
+                base.containerTransfers(),
+                base.containerWithdrawals(),
+                base.containerInspections(),
+                base.categoryMarkerCache(),
+                base.foodConsumption(),
+                base.categoryZonesPort(),
+                base.coordinates(),
+                base.regions(),
+                base.categoryZones(),
+                workspace
+        );
+
+        MarkerContainerScanAction.Plan plan = MarkerContainerScanAction.scan(
+                context,
+                zone,
+                100,
+                Set.copyOf(EnumSet.allOf(CategoryMarkerSource.class))
+        );
+
+        assertEquals("", plan.error());
+        assertEquals(1, plan.targets().size());
+        assertEquals(2, plan.cache().size());
+        assertTrue(plan.cache().get(withoutContainer.id()).isEmpty());
+        assertTrue(plan.cache().get(withContainer.id()).isEmpty());
     }
 
     @Test
@@ -635,6 +755,112 @@ class BasicModuleSemanticsTest {
                 workspace.selectStorageTarget("collected").orElseThrow()
         );
         assertTrue(workspace.selectStorageTarget("carried").isEmpty());
+    }
+
+    @Test
+    void fullStorageTargetIsSkippedWhenSwitchingSameCategory() {
+        ContainerTarget first = target(5, 64, 5, "storage-a");
+        ContainerTarget second = target(7, 64, 7, "storage-b");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(first, second),
+                Map.of(
+                        first, Set.of("minecraft:iron_ingot"),
+                        second, Set.of("minecraft:iron_ingot")
+                ),
+                List.of()
+        );
+        workspace.recordWithdrawn("minecraft:iron_ingot", 2);
+        workspace.selectStorageTarget("carried").orElseThrow();
+        workspace.markTargetUnavailable(first);
+        workspace.resetStorageSelection();
+
+        assertEquals(second, workspace.selectStorageTarget("carried")
+                .orElseThrow());
+    }
+
+    @Test
+    void storageSelectionSkipsTheCurrentCacheContainerPosition() {
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget samePosition = target(1, 64, 1, "storage");
+        ContainerTarget other = target(5, 64, 5, "storage-other");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(samePosition, other),
+                Map.of(
+                        samePosition, Set.of("minecraft:iron_ingot"),
+                        other, Set.of("minecraft:iron_ingot")
+                ),
+                List.of(cache)
+        );
+        workspace.recordWithdrawn("minecraft:iron_ingot", 1);
+        workspace.selectNextContainer().orElseThrow();
+
+        assertEquals(other, workspace.selectStorageTarget("carried")
+                .orElseThrow());
+    }
+
+    @Test
+    void unmatchedCacheItemsAreNotSelectedForWithdrawal() {
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:iron_ingot")),
+                List.of(cache)
+        );
+
+        assertEquals(
+                Set.of("minecraft:iron_ingot"),
+                workspace.withdrawItemIdsFor(cache)
+        );
+    }
+
+    @Test
+    void retryDepositMarksFullTargetAndKeepsRemainingItemsInLedger() {
+        String itemId = "minecraft:iron_ingot";
+        ContainerTarget first = target(5, 64, 5, "storage-a");
+        ContainerTarget second = target(7, 64, 7, "storage-b");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(first, second),
+                Map.of(first, Set.of(itemId), second, Set.of(itemId)),
+                List.of()
+        );
+        workspace.recordWithdrawn(itemId, 2);
+        workspace.selectStorageTarget("carried").orElseThrow();
+        TaskExecutionContext context = contextWithTransfers(
+                context(
+                        new ForbiddenNavigation(),
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        workspace
+                ),
+                new FixedTransfers(ContainerTransferResult.failed(
+                        "full",
+                        Map.of(itemId, 2)
+                ))
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF, "output:storage",
+                                TaskModuleIds.ITEM_SOURCE, "carried",
+                                TaskModuleIds.RETRY_ON_FAILURE, "true"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(Map.of(itemId, 2), workspace.carriedItems());
+        workspace.resetStorageSelection();
+        assertEquals(second, workspace.selectStorageTarget("carried")
+                .orElseThrow());
     }
 
     @Test
@@ -701,6 +927,111 @@ class BasicModuleSemanticsTest {
         assertEquals(Map.of("minecraft:iron_ingot", 2),
                 workspace.collectedItems());
         assertTrue(workspace.carriedItems().isEmpty());
+    }
+
+    @Test
+    void depositOnlyConsumesTheSelectedThisRunLedger() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordCollected("minecraft:iron_ingot", 5);
+        workspace.recordWithdrawn("minecraft:diamond_pickaxe", 1);
+        workspace.recordWithdrawn("minecraft:bread", 3);
+
+        workspace.consumeDeposit(
+                "collected",
+                Map.of("minecraft:iron_ingot", 5),
+                Map.of()
+        );
+
+        assertTrue(workspace.collectedItems().isEmpty());
+        assertEquals(
+                Map.of("minecraft:diamond_pickaxe", 1, "minecraft:bread", 3),
+                workspace.carriedItems()
+        );
+        assertEquals(
+                Map.of("minecraft:diamond_pickaxe", 1, "minecraft:bread", 3),
+                workspace.managedItems()
+        );
+    }
+
+    @Test
+    void collectedCacheDepositPublishesCacheUpdate() {
+        UUID regionId = UUID.randomUUID();
+        String itemId = "minecraft:iron_ingot";
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(
+                regionId,
+                ContainerScanResult.success(List.of(target(1, 64, 1, "cache")))
+        );
+        workspace.recordCollected(itemId, 2);
+        workspace.selectNextContainer().orElseThrow();
+        TaskExecutionContext context = contextWithTransfers(
+                context(
+                        new ForbiddenNavigation(),
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        workspace
+                ),
+                new FixedTransfers(ContainerTransferResult.succeeded(
+                        "stored",
+                        Map.of()
+                ))
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF, "output:container",
+                                TaskModuleIds.ITEM_SOURCE, "collected"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(Map.of(regionId, 2), workspace.consumeCacheUpdates());
+    }
+
+    @Test
+    void managedCleanupReturnDoesNotPublishCacheUpdate() {
+        UUID regionId = UUID.randomUUID();
+        String itemId = "minecraft:iron_ingot";
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(
+                regionId,
+                ContainerScanResult.success(List.of(target(1, 64, 1, "cache")))
+        );
+        workspace.recordManagedAcquired(itemId, 2);
+        workspace.selectNextContainer().orElseThrow();
+        TaskExecutionContext context = contextWithTransfers(
+                context(
+                        new ForbiddenNavigation(),
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        workspace
+                ),
+                new FixedTransfers(ContainerTransferResult.succeeded(
+                        "returned",
+                        Map.of()
+                ))
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF, "output:container",
+                                TaskModuleIds.ITEM_SOURCE, "managed",
+                                TaskModuleIds.RETRY_ON_FAILURE, "true"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertTrue(workspace.consumeCacheUpdates().isEmpty());
     }
 
     @Test
@@ -1207,7 +1538,6 @@ class BasicModuleSemanticsTest {
                 base.navigation(),
                 base.droppedItems(),
                 base.containerRegions(),
-                base.containerCategories(),
                 base.containerTransfers(),
                 base.containerWithdrawals(),
                 inspection,
@@ -1237,7 +1567,6 @@ class BasicModuleSemanticsTest {
                 base.navigation(),
                 base.droppedItems(),
                 base.containerRegions(),
-                base.containerCategories(),
                 base.containerTransfers(),
                 base.containerWithdrawals(),
                 base.containerInspections(),
@@ -1316,7 +1645,6 @@ class BasicModuleSemanticsTest {
                 context.navigation(),
                 context.droppedItems(),
                 context.containerRegions(),
-                context.containerCategories(),
                 transfers,
                 context.containerWithdrawals(),
                 context.containerInspections(),
@@ -1368,15 +1696,12 @@ class BasicModuleSemanticsTest {
         };
         ContainerRegionPort regions = (region, types, volume) ->
                 ContainerScanResult.failure("unused");
-        ContainerCategoryPort categories = containers ->
-                ContainerCategoryResult.failure("unused");
         CategoryZonePort zones = (zone, types, volume) ->
                 CategoryZoneResult.failure("unused");
         return new TaskExecutionContext(
                 navigation,
                 dropped,
                 regions,
-                categories,
                 transfers,
                 withdrawals,
                 ContainerInspectionPort.UNAVAILABLE,

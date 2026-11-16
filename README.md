@@ -12,19 +12,43 @@ and pause-scroll controls (up to 300 entries). Pause-scroll does not pause tasks
 reloading the page starts a new log session. Run details and interruption recovery
 remain available in a dialog.
 
-The right side is a fixed single-action move task workbench. Saved tasks appear
+The right side offers fixed Move to Coordinate and Auto Classification tasks. Saved tasks appear
 at the top as compact rows showing their name, target, and priority, collapsed
 by default. Opening a row reveals its name, manual XYZ or saved coordinate, and
 priority controls, with save and enqueue actions. Collapsing and reopening keeps
 unsaved inputs; switching to another task asks before discarding changes. The
 lower task-selection area contains only task templates. Selecting a template
-opens an unsaved draft above; saving turns it into a saved task row. Only tasks
-whose full definition is one `ACTION` step with module `MOVE_TO_COORDINATE` are
-editable here; complex workflows and unsupported move configurations are not
+opens an unsaved draft above; saving turns it into a saved task row. The move form edits only tasks
+whose full definition is one `ACTION` step with module `MOVE_TO_COORDINATE`; complex workflows and unsupported move configurations are not
 partially rewritten. Manual and saved inputs are retained while switching source,
 but only the active source is serialized. Default names for new tasks avoid all
 saved task names, including hidden complex tasks, by adding a numeric suffix.
 A manually entered duplicate name prompts for a change without overwriting tasks.
+
+Auto Classification is one saved row containing two independent queued phases:
+
+1. Listen for dropped items around a saved coordinate, collect them, and deposit
+   only the collected items into the selected multi-container cache region.
+2. At background priority, scan the cache, identify the selected category zone,
+   and transfer classified items in inventory-sized batches. Unmatched items stay
+   in the cache. Original inventory items are not part of the task ledger.
+
+The task form provides four independent marker-source checkboxes: item frames,
+shelves, placed blocks, and marker chest/barrel contents. Sources are selected in
+this task, not selected again per category binding. Marker-container contents are
+read before resolving categories only when that source is selected. Matching uses
+the category zone's marker/storage geometry and exact item IDs, not nearby frames.
+Selected sources merge their item-to-container mappings; container overrides are
+applied once. Higher-priority collection can interrupt background sorting, which
+returns managed items to the cache through a reusable cleanup task before requeue.
+Cleanup failure remains visible and blocks unsafe continuation.
+
+`/v1/auto-classify-tasks` manages each task group atomically. Its collection,
+classification, cleanup, and listener definitions remain internal; only one
+saved row is displayed. Save keeps the configured listener state; Start Listening
+also schedules an initial background pass for existing cache items. Stop Listening
+stops future triggers without canceling queued or running work. Editing or deleting a task group
+is rejected while any of its phases is queued or running.
 
 Move tasks check arrival using the player's block position. Manual XYZ and all
 saved coordinates require the target block. A coordinate resource radius is no
@@ -39,7 +63,8 @@ uses `POST /v1/tasks`, editing uses `PUT /v1/tasks/{id}` with the loaded snapsho
 revision, and enqueueing uses `POST /v1/tasks/{id}/runs` with `{}`. The create
 response supplies an exact `taskId` while retaining `revision` and `tasks`, so the
 page never guesses the new task by name or by diffing IDs. The page never creates a
-saved coordinate. Folder and trigger configuration APIs are not restored.
+saved coordinate. Folder editing and free-form trigger editing are not restored; auto-classification
+listeners are configured through their owning task.
 
 Persisted task, trigger, folder, and reusable editor source data remain available
 to the backend and editor code. Inventory query navigation and static web routes
@@ -272,8 +297,8 @@ ASSERT_NO_MANAGED_ITEMS
 
 ## Legacy migration
 
-Saved schema 7 configurations remain valid. These legacy module IDs are
-expanded on load into tree steps:
+Supported schema 7 task configurations migrate without discarding saved resources.
+These legacy module IDs are expanded on load into tree steps:
 
 - `AUTO_EAT_AT_COORDINATE`
 - `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE`
@@ -282,17 +307,19 @@ expanded on load into tree steps:
 - `COLLECT_DROPPED_ITEMS_IN_REGION`
 - parameterless or prior-scan `DEPOSIT_ITEMS_TO_CONTAINERS`
 
-A legacy `SORT_CACHE_ITEMS` without an explicit category zone keeps its original
-previous-scan semantics by starting with `MATCH_CONTAINER_CATEGORIES`; Stowling
-does not infer a destination from an unrelated category zone.
+A legacy `SORT_CACHE_ITEMS` without an explicit category zone is rejected with
+a configuration error. Select a category zone before using that task; Stowling
+does not infer a destination or fall back to nearby-frame matching. An unsupported
+configuration reports an error and preserves the original file instead of
+resetting resources.
 
 Migrated category tasks receive a deterministic custom cleanup task
 that returns managed items to the cache. Re-reading the configuration does not
 replace a new basic classification task's `DEFAULT` mode or duplicate the
 generated cleanup.
 
-`WAIT_FOR_DROPPED_ITEMS` and `MATCH_CONTAINER_CATEGORIES` remain accepted only
-for legacy configuration compatibility and previous-scan migration.
+The old nearby-frame matcher and `MATCH_CONTAINER_CATEGORIES` module are removed.
+`WAIT_FOR_DROPPED_ITEMS` remains accepted for legacy configuration compatibility.
 
 ## Task folders
 
@@ -320,17 +347,19 @@ controls whether an interrupted task returns to the queue after cleanup.
 
 ## Configuration
 
-The active file is `config/stowling.json` with schema version 7:
+The active file is `config/stowling.json` with schema version 8. Existing schema 7
+files retain their resources and are upgraded on load:
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "coordinates": [],
   "tasks": [],
   "regions": [],
   "categoryZones": [],
   "triggers": [],
-  "taskFolders": []
+  "taskFolders": [],
+  "autoClassifyTasks": []
 }
 ```
 
@@ -344,5 +373,5 @@ checked, and API mutations preserve the existing revision-conflict protection.
 Use Java 25 and the checked-in Gradle wrapper:
 
 ```powershell
-.\gradlew.bat build
+.\gradlew.bat assemble
 ```

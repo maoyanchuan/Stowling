@@ -1,6 +1,5 @@
 package dev.stowling.v2.runtime.modules;
 
-import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.domain.BlockPosition;
@@ -23,12 +22,13 @@ public final class TaskRunWorkspace {
     private final List<ContainerTarget> targetContainers = new ArrayList<>();
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
+    private final Set<ContainerTarget> unavailableTargets =
+            new LinkedHashSet<>();
     private Set<String> classifiedItemIds = Set.of();
     private final List<MarkerContainerScanAction.Target> markerTargets =
             new ArrayList<>();
     private ContainerScanResult containerScan;
     private UUID containerScanRegionId;
-    private ContainerCategoryResult containerCategories;
     private Map<UUID, Map<BlockPosition, Set<String>>> markerCache = Map.of();
     private ContainerTarget selectedContainer;
     private ContainerTarget selectedStorageTarget;
@@ -140,6 +140,7 @@ public final class TaskRunWorkspace {
         containerScanRegionId = regionId;
         containerScan = scan;
         cacheContainers.clear();
+        unavailableTargets.clear();
         containerCandidates.clear();
         if (scan != null) {
             containerCandidates.addAll(scan.containers());
@@ -159,16 +160,6 @@ public final class TaskRunWorkspace {
         return Optional.ofNullable(containerScanRegionId);
     }
 
-    public synchronized void setContainerCategories(
-            ContainerCategoryResult categories
-    ) {
-        containerCategories = categories;
-    }
-
-    public synchronized Optional<ContainerCategoryResult> containerCategories() {
-        return Optional.ofNullable(containerCategories);
-    }
-
     public synchronized void setCategoryMatch(
             List<ContainerTarget> targets,
             Map<ContainerTarget, Set<String>> accepted
@@ -185,6 +176,7 @@ public final class TaskRunWorkspace {
             itemIds.addAll(entry.getValue());
         }
         classifiedItemIds = Set.copyOf(itemIds);
+        unavailableTargets.clear();
         storageCursor = 0;
         selectedStorageTarget = null;
     }
@@ -210,6 +202,7 @@ public final class TaskRunWorkspace {
             itemIds.addAll(entry.getValue());
         }
         classifiedItemIds = Set.copyOf(itemIds);
+        unavailableTargets.clear();
         containerCursor = 0;
         storageCursor = 0;
         selectedContainer = null;
@@ -296,6 +289,13 @@ public final class TaskRunWorkspace {
         }
         while (storageCursor < targetContainers.size()) {
             ContainerTarget candidate = targetContainers.get(storageCursor++);
+            if (isUnavailable(candidate)
+                    || selectedContainer != null
+                    && selectedContainer.position().equals(
+                            candidate.position()
+                    )) {
+                continue;
+            }
             Set<String> accepted = acceptedItemsByContainer.getOrDefault(
                     candidate,
                     Set.of()
@@ -318,6 +318,18 @@ public final class TaskRunWorkspace {
     public synchronized void resetStorageSelection() {
         storageCursor = 0;
         selectedStorageTarget = null;
+    }
+
+    public synchronized void markTargetUnavailable(ContainerTarget target) {
+        if (target != null) {
+            unavailableTargets.add(target);
+        }
+    }
+
+    private boolean isUnavailable(ContainerTarget target) {
+        return unavailableTargets.stream().anyMatch(unavailable ->
+                unavailable.position().equals(target.position())
+        );
     }
 
     public synchronized void setMarkerPlan(

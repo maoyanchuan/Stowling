@@ -20,6 +20,11 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                 TaskModuleSupport.DEFAULT_COLLECT_TIMEOUT_SECONDS
         );
         Set<String> itemFilter = TaskModuleSupport.itemFilter(step);
+        int pickupRadius = TaskModuleSupport.integerParameter(
+                step,
+                TaskModuleIds.PICKUP_RADIUS,
+                -1
+        );
         ResourceReference reference = ResourceReferenceSupport.reference(
                 step,
                 TaskModuleIds.AREA_REF,
@@ -32,13 +37,15 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                         context,
                         ResourceReferenceSupport.region(context, reference),
                         timeoutSeconds,
-                        itemFilter
+                        itemFilter,
+                        pickupRadius
                 )
                 : coordinateEngine(
                         context,
                         ResourceReferenceSupport.coordinate(context, reference),
                         timeoutSeconds,
-                        itemFilter
+                        itemFilter,
+                        pickupRadius
                 );
     }
 
@@ -71,14 +78,17 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
             TaskExecutionContext context,
             CoordinatePoint coordinate,
             int timeoutSeconds,
-            Set<String> itemFilter
+            Set<String> itemFilter,
+            int pickupRadius
     ) {
         BlockPosition center = new BlockPosition(
                 coordinate.x(),
                 coordinate.y(),
                 coordinate.z()
         );
-        int radius = TaskModuleSupport.dropRadius(coordinate);
+        int radius = pickupRadius > 0
+                ? pickupRadius
+                : TaskModuleSupport.dropRadius(coordinate);
         return new DroppedItemCollectionEngine(
                 context,
                 new DroppedItemCollectionEngine.Source() {
@@ -104,7 +114,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
             TaskExecutionContext context,
             RegionDefinition region,
             int timeoutSeconds,
-            Set<String> itemFilter
+            Set<String> itemFilter,
+            int pickupRadius
     ) {
         return new DroppedItemCollectionEngine(
                 context,

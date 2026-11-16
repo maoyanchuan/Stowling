@@ -1,6 +1,7 @@
 package dev.stowling.v2.module;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.v2.config.ConfigValidator;
@@ -95,6 +96,16 @@ class TaskModuleCatalogTest {
                         ConfigValidator.ITEM_SOURCE
                 ).options()
         );
+        ModuleParameter assertionSource = parameter(
+                modules.get(ConfigValidator.ASSERT_NO_MANAGED_ITEMS),
+                ConfigValidator.ITEM_SOURCE
+        );
+        assertEquals(
+                List.of("collected", "carried", "managed"),
+                assertionSource.options()
+        );
+        assertFalse(assertionSource.required());
+        assertEquals("managed", assertionSource.defaultValue());
     }
 
     @Test

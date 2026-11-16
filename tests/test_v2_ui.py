@@ -157,7 +157,7 @@ def test_task_templates_use_recursive_basic_actions() -> None:
     assert "INTERNAL" not in model
     assert 'repeatStep("FOOD_BELOW_THRESHOLD"' in model
     assert 'repeatStep("HAS_MARKER_CONTAINERS"' in model
-    assert 'itemSource: "managed"' in model
+    assert 'depositToRegionSteps("", "managed")' in model
     assert "Model.collectTask(state.modules)" in tasks
     assert "Model.sortTask(state.modules)" in tasks
     assert "Model.eatTask(" in tasks
@@ -342,6 +342,10 @@ def test_task_target_outputs_match_runtime_contract() -> None:
     assert 'return ["coordinate", ...OUTPUT_TYPES]' in target_types
     assert 'moduleId === "READ_CONTAINER"' in target_types
     assert 'return ["output-marker"]' in target_types
+    assert (
+        'return ["coordinate", "region", ...outputTypesFor(moduleId)];'
+        in target_types
+    )
     assert "DEPOSIT_ITEMS_TO_CONTAINERS: Model.OUTPUT_REFERENCES" in tasks
     assert 'READ_CONTAINER: ["output:marker"]' in tasks
 

@@ -444,8 +444,16 @@ public final class ConfigValidator {
                     Set.of()
             );
             case WITHDRAW_ITEMS -> requireWithdrawStep(step, coordinates);
-            case SELECT_STORAGE_TARGET, ASSERT_NO_MANAGED_ITEMS ->
+            case SELECT_STORAGE_TARGET ->
                     requireParameters(step, Set.of(), Set.of());
+            case ASSERT_NO_MANAGED_ITEMS -> {
+                requireParameters(step, Set.of(ITEM_SOURCE), Set.of());
+                requireOptionalChoiceIn(
+                        step,
+                        ITEM_SOURCE,
+                        Set.of("collected", "carried", "managed")
+                );
+            }
             case DEPOSIT_ITEMS_TO_CONTAINERS ->
                     requireDepositStep(step, coordinates, regions);
             case WITHDRAW_FOOD -> requireWithdrawFoodStep(step, coordinates);
@@ -991,6 +999,17 @@ public final class ConfigValidator {
             String expected
     ) {
         if (!expected.equals(step.parameters().get(key))) {
+            throw new V2ValidationException(key + " is not supported");
+        }
+    }
+
+    private static void requireOptionalChoiceIn(
+            TaskStep step,
+            String key,
+            Set<String> choices
+    ) {
+        String value = step.parameters().get(key);
+        if (value != null && !choices.contains(value)) {
             throw new V2ValidationException(key + " is not supported");
         }
     }

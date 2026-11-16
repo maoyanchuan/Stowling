@@ -259,9 +259,15 @@ public final class TaskModuleCatalog {
             ),
             action(
                     ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
-                    "确认无托管物品",
-                    "确认没有遗留的移动中物品。",
-                    List.of()
+                    "确认物品已处理",
+                    "确认指定来源的物品已全部处理，默认检查受管物品。",
+                    List.of(select(
+                            ConfigValidator.ITEM_SOURCE,
+                            "校验来源",
+                            false,
+                            List.of("collected", "carried", "managed"),
+                            "managed"
+                    ))
             )
     );
 
@@ -393,6 +399,26 @@ public final class TaskModuleCatalog {
             List<String> options
     ) {
         return new ModuleParameter(key, label, "select", required, options);
+    }
+
+    private static ModuleParameter select(
+            String key,
+            String label,
+            boolean required,
+            List<String> options,
+            String defaultValue
+    ) {
+        return new ModuleParameter(
+                key,
+                label,
+                "select",
+                required,
+                options,
+                null,
+                null,
+                null,
+                defaultValue
+        );
     }
 
     private static ModuleParameter booleanParameter(

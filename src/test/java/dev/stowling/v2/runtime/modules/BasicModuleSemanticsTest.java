@@ -272,6 +272,166 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void assertModuleDefaultsToManagedAndUsesTheRequestedLedger() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        TaskStep defaultStep = TaskStep.action(
+                UUID.randomUUID(),
+                TaskModuleIds.ASSERT_NO_MANAGED_ITEMS,
+                Map.of()
+        );
+        TaskStep collectedStep = TaskStep.action(
+                UUID.randomUUID(),
+                TaskModuleIds.ASSERT_NO_MANAGED_ITEMS,
+                Map.of(TaskModuleIds.ITEM_SOURCE, "collected")
+        );
+
+        assertEquals(
+                TaskModuleState.SUCCEEDED,
+                new AssertNoManagedItemsModule(context, defaultStep)
+                        .start()
+                        .state()
+        );
+        workspace.recordManagedAcquired("minecraft:iron_ingot", 1);
+        TaskModuleResult managedFailure = new AssertNoManagedItemsModule(
+                context,
+                defaultStep
+        ).start();
+        assertEquals(TaskModuleState.FAILED, managedFailure.state());
+        assertEquals(
+                "任务结束仍有受管物品: {minecraft:iron_ingot=1}",
+                managedFailure.message()
+        );
+        assertEquals(
+                TaskModuleState.SUCCEEDED,
+                new AssertNoManagedItemsModule(context, collectedStep)
+                        .start()
+                        .state()
+        );
+
+        workspace.consumeManaged("minecraft:iron_ingot", 1);
+        workspace.recordCollected("minecraft:gold_ingot", 2);
+        TaskModuleResult collectedFailure = new AssertNoManagedItemsModule(
+                context,
+                collectedStep
+        ).start();
+        assertEquals(TaskModuleState.FAILED, collectedFailure.state());
+        assertTrue(collectedFailure.message().contains("已收集物品"));
+
+        TaskRunWorkspace carriedWorkspace = new TaskRunWorkspace();
+        carriedWorkspace.recordWithdrawn("minecraft:diamond", 1);
+        TaskExecutionContext carriedContext = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                carriedWorkspace
+        );
+        assertEquals(
+                TaskModuleState.SUCCEEDED,
+                new AssertNoManagedItemsModule(carriedContext, collectedStep)
+                        .start()
+                        .state()
+        );
+        TaskModuleResult carriedFailure = new AssertNoManagedItemsModule(
+                carriedContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.ASSERT_NO_MANAGED_ITEMS,
+                        Map.of(TaskModuleIds.ITEM_SOURCE, "carried")
+                )
+        ).start();
+        assertEquals(TaskModuleState.FAILED, carriedFailure.state());
+        assertTrue(carriedFailure.message().contains("已取出物品"));
+    }
+
+    @Test
+    void capacityLimitedDepositKeepsLedgerForTheNextContainer() {
+        String itemId = "minecraft:iron_ingot";
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordManagedAcquired(itemId, 5);
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace,
+                Map.of(
+                        firstId,
+                        new CoordinatePoint(firstId, "Full", 1, 64, 1),
+                        secondId,
+                        new CoordinatePoint(secondId, "Next", 2, 64, 1)
+                )
+        );
+        ContainerTransferResult capacityLimited = ContainerTransferResult
+                .succeeded("容器容量不足", Map.of(itemId, 5));
+        DepositItemsActionModule firstAttempt = depositModule(
+                context,
+                firstId,
+                capacityLimited
+        );
+
+        TaskModuleResult firstResult = firstAttempt.start();
+
+        assertEquals(TaskModuleState.SUCCEEDED, firstResult.state());
+        assertEquals(Map.of(itemId, 5), workspace.managedItems());
+        DepositItemsActionModule secondAttempt = depositModule(
+                context,
+                secondId,
+                ContainerTransferResult.succeeded("deposited", Map.of())
+        );
+        assertEquals(TaskModuleState.SUCCEEDED, secondAttempt.start().state());
+        assertTrue(workspace.managedItems().isEmpty());
+    }
+
+    @Test
+    void failedTransferStillFailsWithoutConsumingTheLedger() {
+        String itemId = "minecraft:iron_ingot";
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordManagedAcquired(itemId, 5);
+        UUID coordinateId = UUID.randomUUID();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace,
+                Map.of(
+                        coordinateId,
+                        new CoordinatePoint(
+                                coordinateId,
+                                "Failure",
+                                1,
+                                64,
+                                1
+                        )
+                )
+        );
+        DepositItemsActionModule module = depositModule(
+                context,
+                coordinateId,
+                ContainerTransferResult.failed(
+                        "服务器拒绝存入",
+                        Map.of(itemId, 5)
+                )
+        );
+
+        TaskModuleResult result = module.start();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertEquals("服务器拒绝存入", result.message());
+        assertEquals(Map.of(itemId, 5), workspace.managedItems());
+    }
+
+    @Test
     void storageDepositFiltersCarriedItemsToTheSelectedCategory() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget cache = target(1, 64, 1, "cache");
@@ -544,6 +704,53 @@ class BasicModuleSemanticsTest {
         );
     }
 
+    private static DepositItemsActionModule depositModule(
+            TaskExecutionContext context,
+            UUID coordinateId,
+            ContainerTransferResult result
+    ) {
+        FixedTransfers transfers = new FixedTransfers(result);
+        TaskExecutionContext transferContext = contextWithTransfers(
+                context,
+                transfers
+        );
+        return new DepositItemsActionModule(
+                transferContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId,
+                                TaskModuleIds.ITEM_SOURCE,
+                                "managed"
+                        )
+                )
+        );
+    }
+
+    private static TaskExecutionContext contextWithTransfers(
+            TaskExecutionContext context,
+            ContainerTransferPort transfers
+    ) {
+        return new TaskExecutionContext(
+                context.navigation(),
+                context.droppedItems(),
+                context.containerRegions(),
+                context.containerCategories(),
+                transfers,
+                context.containerWithdrawals(),
+                context.containerInspections(),
+                context.categoryMarkerCache(),
+                context.foodConsumption(),
+                context.categoryZonesPort(),
+                context.coordinates(),
+                context.regions(),
+                context.categoryZones(),
+                context.workspace()
+        );
+    }
+
     private static TaskExecutionContext context(
             NavigationPort navigation,
             ContainerTransferPort transfers,
@@ -680,6 +887,31 @@ class BasicModuleSemanticsTest {
         @Override
         public StopOutcome requestStop() {
             return StopOutcome.CLEAN;
+        }
+    }
+
+    private static final class FixedTransfers implements ContainerTransferPort {
+        private final ContainerTransferResult result;
+
+        private FixedTransfers(ContainerTransferResult result) {
+            this.result = result;
+        }
+
+        @Override
+        public ContainerTransferResult startDeposit(
+                ContainerTarget target,
+                Map<String, Integer> items
+        ) {
+            return result;
+        }
+
+        @Override
+        public ContainerTransferResult pollDeposit() {
+            return result;
+        }
+
+        @Override
+        public void cancelDeposit() {
         }
     }
 

@@ -62,6 +62,11 @@
         "output:storage",
         "output:marker"
     ]);
+    const DEPOSIT_ITEM_SOURCES = Object.freeze([
+        "collected",
+        "carried",
+        "managed"
+    ]);
 
     /**
      * @param {unknown} value
@@ -457,26 +462,39 @@
     }
 
     /**
+     * @param {string} regionRef
+     * @param {"collected" | "carried" | "managed"} [itemSource="collected"]
+     * @returns {Array<object>}
+     */
+    function depositToRegionSteps(regionRef, itemSource = "collected") {
+        if (!DEPOSIT_ITEM_SOURCES.includes(itemSource)) {
+            throw new RangeError(`不支持的物品来源：${itemSource}`);
+        }
+        const targetRef = "output:container";
+        return [
+            actionStep("SCAN_CONTAINERS_IN_REGION", { regionRef }),
+            repeatStep("HAS_CONTAINERS", [
+                actionStep("SELECT_CONTAINER", {
+                    resetCacheHasMore: "true"
+                }),
+                actionStep("MOVE_TO_COORDINATE", { targetRef }),
+                actionStep("DEPOSIT_ITEMS_TO_CONTAINERS", {
+                    targetRef,
+                    itemSource
+                })
+            ]),
+            actionStep("ASSERT_NO_MANAGED_ITEMS", { itemSource })
+        ];
+    }
+
+    /**
      * @param {Array<object>} modules
      * @returns {object}
      */
     function collectTask(modules) {
         const steps = [
             actionStep("COLLECT_DROPPED_ITEMS", { areaRef: "" }),
-            actionStep("SCAN_CONTAINERS_IN_REGION", { regionRef: "" }),
-            repeatStep("HAS_CONTAINERS", [
-                actionStep("SELECT_CONTAINER", {
-                    resetCacheHasMore: "true"
-                }),
-                actionStep("MOVE_TO_COORDINATE", {
-                    targetRef: "output:container"
-                }),
-                actionStep("DEPOSIT_ITEMS_TO_CONTAINERS", {
-                    targetRef: "output:container",
-                    itemSource: "collected"
-                })
-            ]),
-            actionStep("ASSERT_NO_MANAGED_ITEMS", {})
+            ...depositToRegionSteps("", "collected")
         ];
         return taskTemplate("收集入缓存", "NORMAL", steps);
     }
@@ -593,22 +611,11 @@
      * @returns {object}
      */
     function interruptionTask(modules) {
-        return taskTemplate("中断收尾", "BACKGROUND", [
-            actionStep("SCAN_CONTAINERS_IN_REGION", { regionRef: "" }),
-            repeatStep("HAS_CONTAINERS", [
-                actionStep("SELECT_CONTAINER", {
-                    resetCacheHasMore: "true"
-                }),
-                actionStep("MOVE_TO_COORDINATE", {
-                    targetRef: "output:container"
-                }),
-                actionStep("DEPOSIT_ITEMS_TO_CONTAINERS", {
-                    targetRef: "output:container",
-                    itemSource: "managed"
-                })
-            ]),
-            actionStep("ASSERT_NO_MANAGED_ITEMS", {})
-        ]);
+        return taskTemplate(
+            "中断收尾",
+            "BACKGROUND",
+            depositToRegionSteps("", "managed")
+        );
     }
 
     /**
@@ -738,6 +745,7 @@
         ACTION_MODULE_IDS,
         CONDITIONS,
         DEFAULT_REPEAT_ITERATIONS,
+        DEPOSIT_ITEM_SOURCES,
         INTERRUPTION_MODES,
         MAX_REPEAT_ITERATIONS,
         MAX_ROOT_STEPS,
@@ -758,6 +766,7 @@
         conditionNeedsThreshold,
         coordinateRef,
         defaultModule,
+        depositToRegionSteps,
         eatTask,
         ifStep,
         interruptionModeLabel,

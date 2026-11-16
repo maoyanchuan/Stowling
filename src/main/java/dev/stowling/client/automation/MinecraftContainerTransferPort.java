@@ -142,6 +142,9 @@ public final class MinecraftContainerTransferPort
         AbstractContainerMenu menu = screen.getMenu();
         Candidate candidate = findCandidate(menu, active.remaining);
         if (candidate == null) {
+            if (hasRequestedStack(menu, active.remaining)) {
+                return succeed("当前容器容量不足，仍有物品待存入");
+            }
             return fail("当前容器没有可安全转移的完整物品堆");
         }
         active.phase = Phase.CONFIRMING;
@@ -199,13 +202,14 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult complete() {
+        return succeed("拾取物品已存入容器");
+    }
+
+    private ContainerTransferResult succeed(String message) {
         Map<String, Integer> remaining = remaining();
         closeContainer();
         active = null;
-        return ContainerTransferResult.succeeded(
-                "拾取物品已存入容器",
-                remaining
-        );
+        return ContainerTransferResult.succeeded(message, remaining);
     }
 
     private ContainerTransferResult fail(String message) {
@@ -226,20 +230,42 @@ public final class MinecraftContainerTransferPort
         for (int slotIndex : playerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
-            if (stack.isEmpty()) {
-                continue;
-            }
-            String itemId = itemId(stack);
-            int wanted = remaining.getOrDefault(itemId, 0);
-            if (stack.getCount() > wanted) {
+            if (!matchesRequest(stack, remaining)) {
                 continue;
             }
             if (destinationCapacity(menu, stack) < stack.getCount()) {
                 continue;
             }
-            return new Candidate(slotIndex, itemId, stack.getCount());
+            return new Candidate(
+                    slotIndex,
+                    itemId(stack),
+                    stack.getCount()
+            );
         }
         return null;
+    }
+
+    private static boolean hasRequestedStack(
+            AbstractContainerMenu menu,
+            Map<String, Integer> remaining
+    ) {
+        for (int slotIndex : playerSlots(menu)) {
+            if (matchesRequest(menu.getSlot(slotIndex).getItem(), remaining)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean matchesRequest(
+            ItemStack stack,
+            Map<String, Integer> remaining
+    ) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+        int wanted = remaining.getOrDefault(itemId(stack), 0);
+        return wanted > 0 && stack.getCount() <= wanted;
     }
 
     private static int destinationCapacity(

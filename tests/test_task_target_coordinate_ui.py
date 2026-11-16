@@ -22,7 +22,7 @@ def test_deposit_target_matches_editor_and_save_validation() -> None:
 
     assert 'moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"' in editor_target
     assert (
-        'return ["coordinate", ...outputTypesFor(moduleId)];'
+        'return ["coordinate", "region", ...outputTypesFor(moduleId)];'
         in editor_target
     )
     assert 'moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"' in tasks_target

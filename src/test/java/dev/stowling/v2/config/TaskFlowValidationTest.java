@@ -61,6 +61,62 @@ class TaskFlowValidationTest {
     }
 
     @Test
+    void assertItemSourceAcceptsOnlyExplicitSupportedLedgers() {
+        TaskStep defaultAssertion = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
+                Map.of()
+        );
+        assertDoesNotThrow(() -> ConfigValidator.requireValidStep(
+                defaultAssertion,
+                Map.of(),
+                Map.of()
+        ));
+        for (String source : List.of("collected", "carried", "managed")) {
+            TaskStep assertion = TaskStep.action(
+                    UUID.randomUUID(),
+                    ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
+                    Map.of(ConfigValidator.ITEM_SOURCE, source)
+            );
+            assertDoesNotThrow(() -> ConfigValidator.requireValidStep(
+                    assertion,
+                    Map.of(),
+                    Map.of()
+            ));
+        }
+
+        TaskStep unknown = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
+                Map.of(ConfigValidator.ITEM_SOURCE, "inventory")
+        );
+        TaskStep blank = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
+                Map.of(ConfigValidator.ITEM_SOURCE, "")
+        );
+        TaskStep storageSelection = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.SELECT_STORAGE_TARGET,
+                Map.of(ConfigValidator.ITEM_SOURCE, "managed")
+        );
+
+        assertThrows(V2ValidationException.class, () ->
+                ConfigValidator.requireValidStep(unknown, Map.of(), Map.of())
+        );
+        assertThrows(V2ValidationException.class, () ->
+                ConfigValidator.requireValidStep(blank, Map.of(), Map.of())
+        );
+        assertThrows(V2ValidationException.class, () ->
+                ConfigValidator.requireValidStep(
+                        storageSelection,
+                        Map.of(),
+                        Map.of()
+                )
+        );
+    }
+
+    @Test
     void acceptsFoodThresholdZeroInsideNestedCondition() {
         TaskStep move = TaskStep.action(
                 UUID.randomUUID(),

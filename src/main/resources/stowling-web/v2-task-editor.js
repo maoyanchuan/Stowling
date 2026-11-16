@@ -170,7 +170,11 @@
 
         const body = Stowling.element("div", "workflow-node-body");
         if (kind === "ACTION") {
-            body.append(actionEditor(context, step, module));
+            body.append(actionEditor(
+                { ...context, siblings, stepIndex: index },
+                step,
+                module
+            ));
         } else if (kind === "CREATE_TASK") {
             body.append(createTaskEditor(context, step));
         } else {
@@ -250,8 +254,12 @@
         ));
         const parameters = Stowling.element("div", "step-fields");
         for (const parameter of module?.parameters || []) {
+            const label = step.moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
+                && parameter.key === "targetRef"
+                ? "存入位置"
+                : parameter.label;
             parameters.append(field(
-                `${parameter.label}${parameter.required ? " *" : ""}`,
+                `${label}${parameter.required ? " *" : ""}`,
                 parameterControl(context, step, parameter)
             ));
         }
@@ -923,7 +931,7 @@
             return ["output-marker"];
         }
         if (moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS") {
-            return ["coordinate", ...outputTypesFor(moduleId)];
+            return ["coordinate", "region", ...outputTypesFor(moduleId)];
         }
         const outputs = outputTypesFor(moduleId);
         return outputs.length > 0 ? outputs : ["coordinate"];
@@ -987,6 +995,8 @@
         select.required = Boolean(parameter.required);
         select.setAttribute("aria-label", parameter.label || "资源引用");
         select.append(new Option("请选择已保存资源或前序选择结果", ""));
+        const isRegionDeposit = step.moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS"
+            && parameter.key === "targetRef";
         const current = normalizeLegacyReference(context, step, parameter, types);
         let found = false;
         const groups = new Map();
@@ -1001,7 +1011,9 @@
                 group = document.createElement("optgroup");
                 group.label = groupType === "coordinate"
                     ? "已保存坐标"
-                    : referenceTypeLabel(groupType);
+                    : groupType === "region" && isRegionDeposit
+                        ? "已保存区域 · 多箱存入"
+                        : referenceTypeLabel(groupType);
                 groups.set(groupType, group);
                 select.append(group);
             }
@@ -1044,11 +1056,57 @@
         };
         updateHint();
         select.addEventListener("change", () => {
+            if (isRegionDeposit && Model.referenceType(select.value) === "region") {
+                const error = replaceDepositWithRegion(context, step, select.value);
+                if (error) {
+                    select.value = String(step.parameters[parameter.key] || "");
+                    hint.textContent = error;
+                    hint.hidden = false;
+                }
+                return;
+            }
             updateHint();
             setParameter(step, parameter.key, select.value, context.changed);
         });
         wrapper.append(select, hint);
+        if (isRegionDeposit) {
+            wrapper.append(Stowling.element(
+                "p",
+                "muted compact-help",
+                "单个箱子选坐标；多箱缓存选区域。选区域会将本步骤展开为扫描、逐箱存入和结果确认，"
+                    + "保留物品来源，生成后可继续编辑基础步骤。"
+            ));
+        }
         return wrapper;
+    }
+
+    /**
+     * @param {object} context
+     * @param {object} step
+     * @param {string} regionRef
+     * @returns {string}
+     */
+    function replaceDepositWithRegion(context, step, regionRef) {
+        const regionId = Model.referenceId(regionRef);
+        if (!context.regions.some((region) => region.id === regionId)) {
+            return "所选区域已不存在，请重新选择。";
+        }
+        const itemSource = step.parameters.itemSource || "collected";
+        if (!Model.DEPOSIT_ITEM_SOURCES.includes(itemSource)) {
+            return "请先选择有效的物品来源，再选择缓存区域。";
+        }
+        const replacement = Model.depositToRegionSteps(regionRef, itemSource);
+        const missing = Model.missingModules(
+            context.modules,
+            Model.taskModuleIds({ steps: replacement })
+        );
+        if (missing.length > 0) {
+            return "当前版本缺少区域存入所需的基础动作，请更新后再选择区域。";
+        }
+        forgetStepState(step);
+        context.siblings.splice(context.stepIndex, 1, ...replacement);
+        context.changed(true);
+        return "";
     }
 
     /**
@@ -1199,8 +1257,15 @@
         for (const option of choices) {
             select.append(new Option(labels[option] || String(option), option));
         }
-        select.value = String(step.parameters[parameter.key] || "");
+        select.value = String(
+            step.parameters[parameter.key] ?? defaultValue(parameter) ?? ""
+        );
         select.addEventListener("change", () => {
+            if (!select.value && !parameter.required) {
+                delete step.parameters[parameter.key];
+                changed();
+                return;
+            }
             setParameter(step, parameter.key, select.value, changed);
         });
         return select;

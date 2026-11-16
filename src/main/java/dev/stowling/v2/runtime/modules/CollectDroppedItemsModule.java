@@ -2,13 +2,13 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.domain.BlockPosition;
-import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 final class CollectDroppedItemsModule implements TaskModuleExecutor {
     private final DroppedItemCollectionEngine engine;
@@ -16,21 +16,27 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
     CollectDroppedItemsModule(TaskExecutionContext context, TaskStep step) {
         int timeoutSeconds = TaskModuleSupport.integerParameter(
                 step,
-                ConfigValidator.TIMEOUT_SECONDS,
+                TaskModuleIds.TIMEOUT_SECONDS,
                 TaskModuleSupport.DEFAULT_COLLECT_TIMEOUT_SECONDS
         );
         Set<String> itemFilter = TaskModuleSupport.itemFilter(step);
-        String area = step.parameters().get(ConfigValidator.AREA_REFERENCE);
-        this.engine = area == null
-                ? coordinateEngine(
+        ResourceReference reference = ResourceReferenceSupport.reference(
+                step,
+                TaskModuleIds.AREA_REF,
+                ResourceType.COORDINATE,
+                TaskModuleIds.AREA_REFERENCE,
+                TaskModuleIds.COORDINATE_ID
+        );
+        this.engine = reference.type() == ResourceType.REGION
+                ? regionEngine(
                         context,
-                        TaskModuleSupport.coordinate(context, step),
+                        ResourceReferenceSupport.region(context, reference),
                         timeoutSeconds,
                         itemFilter
                 )
-                : areaEngine(
+                : coordinateEngine(
                         context,
-                        area,
+                        ResourceReferenceSupport.coordinate(context, reference),
                         timeoutSeconds,
                         itemFilter
                 );
@@ -44,6 +50,16 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
     @Override
     public TaskModuleResult tick() {
         return engine.tick();
+    }
+
+    @Override
+    public void requestStop() {
+        engine.requestStop();
+    }
+
+    @Override
+    public boolean safeToStop() {
+        return engine.safeToStop();
     }
 
     @Override
@@ -84,60 +100,27 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
         );
     }
 
-    private static DroppedItemCollectionEngine areaEngine(
+    private static DroppedItemCollectionEngine regionEngine(
             TaskExecutionContext context,
-            String area,
+            RegionDefinition region,
             int timeoutSeconds,
             Set<String> itemFilter
     ) {
-        int separator = area.indexOf(
-                ConfigValidator.AREA_REFERENCE_SEPARATOR
-        );
-        if (separator <= 0 || separator == area.length() - 1) {
-            throw new IllegalArgumentException("invalid area reference");
-        }
-        String type = area.substring(0, separator);
-        UUID id = UUID.fromString(area.substring(separator + 1));
-        if ("coordinate".equals(type)) {
-            CoordinatePoint coordinate = context.coordinates().get(id);
-            if (coordinate == null) {
-                throw new IllegalArgumentException(
-                        "coordinate does not exist: " + id
-                );
-            }
-            return coordinateEngine(
-                    context,
-                    coordinate,
-                    timeoutSeconds,
-                    itemFilter
-            );
-        }
-        if ("region".equals(type)) {
-            RegionDefinition region = context.regions().get(id);
-            if (region == null) {
-                throw new IllegalArgumentException(
-                        "region does not exist: " + id
-                );
-            }
-            return new DroppedItemCollectionEngine(
-                    context,
-                    new DroppedItemCollectionEngine.Source() {
-                        @Override
-                        public boolean dimensionMatches() {
-                            return true;
-                        }
+        return new DroppedItemCollectionEngine(
+                context,
+                new DroppedItemCollectionEngine.Source() {
+                    @Override
+                    public boolean dimensionMatches() {
+                        return true;
+                    }
 
-                        @Override
-                        public List<DroppedItem> observe() {
-                            return context.droppedItems().observe(region);
-                        }
-                    },
-                    timeoutSeconds,
-                    itemFilter
-            );
-        }
-        throw new IllegalArgumentException(
-                "area reference must use coordinate or region"
+                    @Override
+                    public List<DroppedItem> observe() {
+                        return context.droppedItems().observe(region);
+                    }
+                },
+                timeoutSeconds,
+                itemFilter
         );
     }
 }

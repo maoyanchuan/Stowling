@@ -16,9 +16,14 @@ import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskFlowNormalizer;
+import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.module.TaskModuleCatalog;
 import dev.stowling.v2.runtime.TaskRunManager;
@@ -149,8 +154,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
         requireCoordinate(current.config(), id);
         String coordinateId = id.toString();
         List<String> references = new ArrayList<>();
+        ResourceReference reference = ResourceReference.of(
+                ResourceType.COORDINATE,
+                id
+        );
         references.addAll(current.config().tasks().stream()
-                .filter(task -> referencesCoordinate(task, coordinateId))
+                .filter(task -> TaskFlowNormalizer.references(task, reference))
                 .map(TaskDefinition::name)
                 .toList());
         references.addAll(current.config().triggers().stream()
@@ -254,6 +263,28 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
         requireRegion(current.config(), id);
+        ResourceReference reference = ResourceReference.of(
+                ResourceType.REGION,
+                id
+        );
+        List<String> references = new ArrayList<>(
+                current.config().tasks().stream()
+                        .filter(task -> TaskFlowNormalizer.references(
+                                task,
+                                reference
+                        ))
+                        .map(TaskDefinition::name)
+                        .toList()
+        );
+        references.addAll(current.config().triggers().stream()
+                .filter(trigger -> id.equals(trigger.cacheRegionId()))
+                .map(TaskTriggerDefinition::name)
+                .toList());
+        if (!references.isEmpty()) {
+            throw new V2ValidationException(
+                    "region is used by: " + String.join(", ", references)
+            );
+        }
         return regionResponse(configs.save(current.revision(), new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
@@ -349,12 +380,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
         requireCategoryZone(current.config(), id);
-        String zoneId = id.toString();
+        ResourceReference reference = ResourceReference.of(
+                ResourceType.CATEGORY_ZONE,
+                id
+        );
         List<String> references = current.config().tasks().stream()
-                .filter(task -> task.steps().stream().anyMatch(step ->
-                        zoneId.equals(step.parameters().get(
-                                ConfigValidator.CATEGORY_ZONE_ID
-                        ))))
+                .filter(task -> TaskFlowNormalizer.references(task, reference))
                 .map(TaskDefinition::name)
                 .toList();
         if (!references.isEmpty()) {
@@ -396,7 +427,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps())
+                steps(request.steps()),
+                request.interruptionMode(),
+                request.interruptionTaskRef(),
+                request.defaultInterruptionFlow(),
+                request.requeueAfterInterruption()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.add(task);
@@ -426,7 +461,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps())
+                steps(request.steps()),
+                request.interruptionMode(),
+                request.interruptionTaskRef(),
+                request.defaultInterruptionFlow(),
+                request.requeueAfterInterruption()
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
                 .map(task -> task.id().equals(id) ? updatedTask : task)
@@ -451,13 +490,28 @@ public final class V2ControlServiceImpl implements V2ControlService {
     ) {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
-        requireTask(current.config(), id);
-        List<String> triggerNames = current.config().triggers().stream()
-                .filter(trigger -> trigger.targetTaskId().equals(id))
-                .map(TaskTriggerDefinition::name)
-                .toList();
-        if (!triggerNames.isEmpty()) {
-            throw new TaskInUseException(triggerNames);
+        TaskDefinition existing = requireTask(current.config(), id);
+        ResourceReference taskReference = ResourceReference.of(
+                ResourceType.TASK,
+                id
+        );
+        List<String> references = new ArrayList<>(
+                current.config().triggers().stream()
+                        .filter(trigger -> trigger.targetTaskId().equals(id))
+                        .map(TaskTriggerDefinition::name)
+                        .toList()
+        );
+        references.addAll(current.config().tasks().stream()
+                .filter(task -> !task.id().equals(id))
+                .filter(task -> TaskFlowNormalizer.references(
+                        task,
+                        taskReference
+                ) || (existing.defaultInterruptionFlow()
+                        && task.interruptionMode() == TaskInterruptionMode.DEFAULT))
+                .map(TaskDefinition::name)
+                .toList());
+        if (!references.isEmpty()) {
+            throw new TaskInUseException(references);
         }
         AppConfig updated = new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
@@ -594,13 +648,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
     ) {
         V2ConfigSnapshot current = configs.read();
         TaskDefinition task = requireTask(current.config(), id);
-        return runs.start(
-                task,
-                current.config().coordinates(),
-                current.config().regions(),
-                current.config().categoryZones(),
-                priorityOverride
-        );
+        return runs.start(task, current.config(), priorityOverride);
     }
 
     @Override
@@ -615,6 +663,16 @@ public final class V2ControlServiceImpl implements V2ControlService {
     @Override
     public void cancelRun(UUID runId) {
         runs.cancel(runId);
+    }
+
+    @Override
+    public void retryInterruption(UUID runId) {
+        runs.retryInterruption(runId);
+    }
+
+    @Override
+    public void skipInterruption(UUID runId) {
+        runs.skipInterruption(runId);
     }
 
     private static CoordinateListResponse coordinateResponse(
@@ -633,16 +691,6 @@ public final class V2ControlServiceImpl implements V2ControlService {
         );
     }
 
-    private static boolean referencesCoordinate(
-            TaskDefinition task,
-            String coordinateId
-    ) {
-        return task.steps().stream().anyMatch(step ->
-                coordinateId.equals(
-                        step.parameters().get(ConfigValidator.COORDINATE_ID)
-                )
-        );
-    }
 
     private static TaskTriggerListResponse taskTriggerResponse(
             V2ConfigSnapshot snapshot
@@ -729,16 +777,31 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     private static List<TaskStep> steps(List<TaskStepRequest> requestedSteps) {
-        if (requestedSteps.isEmpty()) {
-            throw new V2ValidationException("tasks require at least one step");
+        List<TaskStep> result = new ArrayList<>();
+        for (TaskStepRequest step : requestedSteps) {
+            TaskStepKind kind = step.kind();
+            String moduleId = kind == TaskStepKind.ACTION
+                    ? requireText(step.moduleId(), "moduleId")
+                    : "";
+            result.add(new TaskStep(
+                    stepId(step.id()),
+                    kind,
+                    moduleId,
+                    step.parameters(),
+                    stepsAllowEmpty(step.steps()),
+                    stepsAllowEmpty(step.otherwise())
+            ));
         }
-        return requestedSteps.stream()
-                .map(step -> new TaskStep(
-                        stepId(step.id()),
-                        requireText(step.moduleId(), "moduleId"),
-                        step.parameters()
-                ))
-                .toList();
+        return List.copyOf(result);
+    }
+
+    private static List<TaskStep> stepsAllowEmpty(
+            List<TaskStepRequest> requestedSteps
+    ) {
+        if (requestedSteps.isEmpty()) {
+            return List.of();
+        }
+        return steps(requestedSteps);
     }
 
     private List<CategoryBindingDefinition> bindings(

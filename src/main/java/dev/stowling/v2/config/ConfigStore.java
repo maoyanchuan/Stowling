@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.TaskFlowNormalizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -50,10 +51,13 @@ public final class ConfigStore {
     public synchronized V2ConfigSnapshot read() {
         try {
             byte[] bytes = Files.readAllBytes(path);
-            AppConfig config = parseConfig(new String(bytes, StandardCharsets.UTF_8));
-            if (config == null) {
+            AppConfig parsed = parseConfig(
+                    new String(bytes, StandardCharsets.UTF_8)
+            );
+            if (parsed == null) {
                 throw new V2ValidationException("configuration is empty");
             }
+            AppConfig config = TaskFlowNormalizer.normalize(parsed);
             ConfigValidator.requireValid(config);
             return new V2ConfigSnapshot(revision(bytes), config);
         } catch (IOException | JsonParseException exception) {
@@ -100,22 +104,44 @@ public final class ConfigStore {
                                 "priority",
                                 "repeatWhenIdle",
                                 "steps",
-                                "trigger"
+                                "trigger",
+                                "interruptionMode",
+                                "interruptionTaskRef",
+                                "defaultInterruptionFlow",
+                                "requeueAfterInterruption"
                         ),
                         Set.of("id", "name", "steps")
                 );
-                for (JsonElement step : requireArray(taskObject.get("steps"), "steps")) {
-                    JsonObject stepObject = requireObject(step, "step");
-                    requireExactFields(
-                            stepObject,
-                            Set.of("id", "moduleId", "parameters")
-                    );
-                    requireStringParameters(stepObject.get("parameters"));
-                }
+                requireStepObjects(taskObject.get("steps"));
             }
             return GSON.fromJson(root, AppConfig.class);
         } catch (JsonParseException exception) {
             throw new V2ValidationException("configuration cannot be read");
+        }
+    }
+
+    private static void requireStepObjects(JsonElement value) {
+        for (JsonElement item : requireArray(value, "steps")) {
+            JsonObject step = requireObject(item, "step");
+            requireFields(
+                    step,
+                    Set.of(
+                            "id",
+                            "kind",
+                            "moduleId",
+                            "parameters",
+                            "steps",
+                            "otherwise"
+                    ),
+                    Set.of("id", "parameters")
+            );
+            requireStringParameters(step.get("parameters"));
+            if (step.has("steps")) {
+                requireStepObjects(step.get("steps"));
+            }
+            if (step.has("otherwise")) {
+                requireStepObjects(step.get("otherwise"));
+            }
         }
     }
 
@@ -321,12 +347,13 @@ public final class ConfigStore {
             AppConfig config
     ) {
         Objects.requireNonNull(expectedRevision, "expectedRevision");
-        ConfigValidator.requireValid(config);
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+        ConfigValidator.requireValid(normalized);
         if (!read().revision().equals(expectedRevision)) {
             throw new V2RevisionConflictException();
         }
         backup();
-        write(config);
+        write(normalized);
         return read();
     }
 

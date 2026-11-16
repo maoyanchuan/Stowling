@@ -12,7 +12,9 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.model.TaskTriggerType;
 import dev.stowling.v2.runtime.TaskRunManager;
@@ -69,11 +71,11 @@ class V2ControlServiceImplTest {
         CoordinatePoint renamed = service.coordinate(point.id());
         assertEquals("Base", renamed.name());
         assertEquals(
-                point.id().toString(),
+                "coordinate:" + point.id(),
                 service.tasks().tasks().getFirst()
                         .steps().getFirst()
                         .parameters()
-                        .get(ConfigValidator.COORDINATE_ID)
+                        .get(ConfigValidator.TARGET_REF)
         );
     }
 
@@ -318,6 +320,122 @@ class V2ControlServiceImplTest {
         );
 
         assertEquals(List.of("Hunger"), exception.triggerNames());
+    }
+
+    @Test
+    void protectsCoordinateReferencedByNestedConditionalStep() {
+        V2ControlService service = service();
+        CoordinatePoint point = createPoint(service, "Home");
+        TaskListResponse tasks = service.createTask(new TaskRequest(
+                "Nested",
+                TaskPriority.NORMAL,
+                false,
+                List.of(new TaskStepRequest(
+                        null,
+                        TaskStepKind.IF,
+                        "",
+                        Map.of("condition", "ALWAYS"),
+                        List.of(new TaskStepRequest(
+                                null,
+                                ConfigValidator.MOVE_TO_COORDINATE,
+                                Map.of(
+                                        ConfigValidator.COORDINATE_ID,
+                                        point.id().toString()
+                                )
+                        )),
+                        List.of()
+                )),
+                TaskInterruptionMode.DEFAULT,
+                null,
+                false,
+                false
+        ));
+
+        assertThrows(
+                CoordinateInUseException.class,
+                () -> service.deleteCoordinate(
+                        point.id(),
+                        new RevisionRequest(tasks.revision())
+                )
+        );
+    }
+
+    @Test
+    void protectsCreateTaskAndDefaultInterruptionReferences() {
+        V2ControlService service = service();
+        TaskListResponse target = service.createTask(new TaskRequest(
+                "Target",
+                List.of(moveOutputStep())
+        ));
+        var targetTask = target.tasks().getFirst();
+        TaskListResponse withParent = service.createTask(new TaskRequest(
+                "Parent",
+                TaskPriority.NORMAL,
+                false,
+                List.of(new TaskStepRequest(
+                        null,
+                        TaskStepKind.CREATE_TASK,
+                        "",
+                        Map.of(
+                                ConfigValidator.TASK_REF,
+                                "task:" + targetTask.id(),
+                                ConfigValidator.PRIORITY,
+                                "BACKGROUND"
+                        ),
+                        List.of(),
+                        List.of()
+                )),
+                TaskInterruptionMode.DEFAULT,
+                null,
+                false,
+                false
+        ));
+
+        assertThrows(
+                TaskInUseException.class,
+                () -> service.deleteTask(
+                        targetTask.id(),
+                        new RevisionRequest(withParent.revision())
+                )
+        );
+
+        TaskListResponse cleanup = service.createTask(new TaskRequest(
+                "Default cleanup",
+                TaskPriority.NORMAL,
+                false,
+                List.of(moveOutputStep()),
+                TaskInterruptionMode.NONE,
+                null,
+                true,
+                false
+        ));
+        var cleanupTask = cleanup.tasks().stream()
+                .filter(task -> task.name().equals("Default cleanup"))
+                .findFirst()
+                .orElseThrow();
+        TaskListResponse defaultTask = service.createTask(new TaskRequest(
+                "Default user",
+                List.of(moveOutputStep())
+        ));
+
+        assertThrows(
+                TaskInUseException.class,
+                () -> service.deleteTask(
+                        cleanupTask.id(),
+                        new RevisionRequest(defaultTask.revision())
+                )
+        );
+    }
+
+    private static TaskStepRequest moveOutputStep() {
+        return new TaskStepRequest(
+                null,
+                ConfigValidator.MOVE_TO_COORDINATE,
+                Map.of(
+                        ConfigValidator.TARGET_REF,
+                        "output:container"
+                )
+        );
     }
 
     private V2ControlService service() {

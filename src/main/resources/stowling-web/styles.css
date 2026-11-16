@@ -2827,6 +2827,70 @@ body[data-page="tasks"] .task-sidebar {
     margin-left: auto;
 }
 
+.step-heading-actions,
+.step-branch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+
+.step-branch {
+    margin-top: 0.75rem;
+    padding: 0.7rem;
+    border-left: 3px solid var(--accent-soft);
+    border-radius: 0 10px 10px 0;
+    background: rgba(38, 112, 75, 0.025);
+}
+
+.step-branch-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.55rem;
+}
+
+.step-branch-heading strong {
+    font-size: 0.78rem;
+}
+
+.step-branch-actions .step-add-button {
+    padding: 0.28rem 0.42rem;
+    font-size: 0.68rem;
+}
+
+.nested-step-list {
+    padding-left: 0.15rem;
+}
+
+.nested-step-list .step-card {
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.step-kind-if,
+.step-kind-repeat {
+    border-left: 3px solid #b38b2f;
+}
+
+.step-kind-create_task {
+    border-left: 3px solid #3979a8;
+}
+
+.step-kind-hint {
+    margin-top: 0.65rem;
+}
+
+.empty-branch {
+    padding: 0.35rem 0;
+}
+
+.interruption-notice {
+    border-color: #b38b2f;
+    background: rgba(179, 139, 47, 0.09);
+}
+
 .task-monitor {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

@@ -1,187 +1,243 @@
 # Stowling
 
-Stowling is a Fabric client mod for Minecraft 26.2. It provides named
-coordinates, corner-defined regions, and manually started linear tasks backed
-by Baritone.
+Stowling is a Fabric client mod for Minecraft 26.2. It provides saved
+coordinates, regions, category zones, queued tasks, and condition listeners.
+Movement and container interaction are delegated through the existing game
+ports and Baritone integration.
 
-## Features
+## Task model
 
-- Coordinate entries contain a name and X/Y/Z, with optional dimension and
-  arrival-radius fields.
-- Regions contain a name and two full X/Y/Z corner points.
-- Tasks contain a name, priority, optional background repeat mode, and one or
-  more ordered module steps.
-- Executable action modules are `BASIC`; multi-action workflows are task
-  presets that compose reusable small modules. Existing composite step IDs
-  remain compatible with saved tasks.
-- Task modules cover movement, dropped-item collection, region collection,
-  container scanning, category identification, cached-item sorting, and
-  depositing.
-- `AUTO_EAT_AT_COORDINATE` checks hunger, moves to a configured food chest,
-  takes one selected food, and eats until the threshold is met.
-- The recommended workflow uses two independent tasks: drops to a physical
-  cache, then categorized distribution from that cache.
-- Category zones are manually configured as ordered marker-area to
-  storage-area bindings.
-- Category markers use one automatic display-item recognizer: item frames are
-  read from entities, shelves from block-entity slots, and ordinary display
-  blocks through their placement item.
-- Each storage column must resolve to exactly one item ID. Configured support
-  block IDs are ignored, and conflicting displays fail with a clear error.
-- Per-container exceptions can append extra accepted item IDs or replace the
-  automatic category entirely. Replacement rules bypass display ambiguity for
-  that container.
-- The `MARKER_CONTAINER_CONTENTS` rule reads item IDs from marker chests or
-  barrels through a user-refreshed cache, allowing a double chest to define up
-  to 54 distinct accepted item types.
-- The coarse stage stores all collected drops in cache containers. The fine
-  stage withdraws only items that have target categories and deposits them
-  into exact category matches.
-- Category identification reads item frames, shelves, and placed display
-  blocks and uses the displayed item registry ID as the category. Deposit
-  prefers a container with an exact category match.
-- Items without a category or without target capacity remain in, or are
-  returned to, the cache.
-- One task runs at a time. A single queue orders work by `BACKGROUND`, `NORMAL`,
-  and `URGENT` priority.
-- Independent task triggers poll conditions without occupying the execution
-  slot. Dropped-item, food-level, and cache-update conditions are supported.
-- A trigger submits its selected target task through the normal queue at the
-  trigger's configured priority. The queue then orders all pending work by
-  priority and request order.
-- After a triggered run completes, the trigger waits for its configured cooldown
-  before returning to idle monitoring.
-- A strictly higher-priority request preempts the active task. The interrupted
-  run is discarded, requeued, and starts again from step one when its turn
-  returns.
-- Coordinate and task IDs are generated internally and are not shown in the UI.
-- Authentication, runtime status, and read-only inventory diagnostics remain
-  available in the local Web console.
+Tasks contain ordered tree steps. Every step has one kind:
 
-The previous monolithic pickup workflow, storage routes, audits, packing,
-crafting, and scheduling APIs are intentionally not compatible.
+- `ACTION` runs one basic module.
+- `IF` evaluates a condition and runs `steps` or `otherwise`.
+- `REPEAT` evaluates a condition and runs `steps` until it becomes false or
+  `maxIterations` is reached. The default limit is `1024`.
+- `CREATE_TASK` creates an independent task in the shared priority queue. It
+  does not execute a child task inline.
 
-## Task modules
+Supported conditions are:
 
-The backend module catalog is available at `GET /v1/task-modules`; the task
-editor builds its controls from that catalog. The same catalog lists listener
-modules before executable action modules, so the module reference shows the
-event-to-task flow without making listeners selectable as task steps.
+```text
+ALWAYS
+FOOD_BELOW_THRESHOLD
+HAS_CONTAINERS
+HAS_CARRIED_ITEMS
+HAS_MANAGED_ITEMS
+CACHE_HAS_MORE
+HAS_MARKER_CONTAINERS
+```
 
-The task list and run selector distinguish basic tasks, task presets, and
-custom combinations without changing existing task configuration.
+`FOOD_BELOW_THRESHOLD` uses `foodLevelThreshold` from `0` to `20`.
+`IF` and `REPEAT` accept optional `negate=true`.
 
-Background tasks can automatically requeue five seconds after completion.
-Manual runs may override the saved priority for that run only.
+## Basic modules
 
-Task triggers are configured independently from tasks and automatic requeue.
-Idle triggers create no run records and do not block another task.
+The module catalog at `GET /v1/task-modules` exposes only real actions and the
+three existing listeners. Internal scanning, selection, and tracking are not
+declared as fake preset or composite modules.
 
-New task steps expose four action modules and four task presets. Older modules
-remain readable for existing configurations but are hidden from the module
-catalog when creating a step.
+Actions:
 
-- `MOVE_TO_COORDINATE` navigates to one coordinate.
-- `COLLECT_DROPPED_ITEMS` collects matching drops from either a coordinate
-  radius or a saved region.
-- `SCAN_CONTAINERS_IN_REGION` records usable containers from the previous scan
-  in the active task run.
-- `WITHDRAW_FOOD` removes one configured food item from a food-container
-  coordinate without navigating or eating.
-- `EAT_FOOD` consumes one configured food item already held by the player.
-- The automatic-eating task preset creates a food-level listener plus ordinary
-  steps for navigation, `WITHDRAW_FOOD`, and `EAT_FOOD`.
-- `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE` resolves automatic display markers and
-  stores cached items whose IDs exactly match the recognized item IDs.
-- `REFRESH_CATEGORY_MARKER_CACHE` opens the category marker chests or barrels,
-  reads their slots without moving items, and updates the persistent cache.
-- `DEPOSIT_ITEMS_TO_CONTAINERS` deposits only items collected during the
-  current run into containers from the previous scan. This module has no
-  configurable parameters.
-- The category-sort preset composes category planning, cache withdrawal,
-  category deposit, and cache return actions.
-- The marker-cache refresh preset composes marker-area scanning, container
-  inspection, and marker-index saving actions.
+```text
+MOVE_TO_COORDINATE
+COLLECT_DROPPED_ITEMS
+SCAN_CONTAINERS_IN_REGION
+RESOLVE_CONTAINER_CATEGORIES
+SELECT_CONTAINER
+WITHDRAW_ITEMS
+SELECT_STORAGE_TARGET
+DEPOSIT_ITEMS_TO_CONTAINERS
+WITHDRAW_FOOD
+EAT_FOOD
+SCAN_CATEGORY_MARKERS
+SELECT_MARKER_CONTAINER
+READ_CONTAINER
+SAVE_CATEGORY_MARKER_CACHE
+ASSERT_NO_MANAGED_ITEMS
+```
 
-`WAIT_FOR_DROPPED_ITEMS`, `COLLECT_DROPPED_ITEMS_IN_REGION`,
-`MATCH_CONTAINER_CATEGORIES`, and `SORT_CACHE_ITEMS` are deprecated compatibility
-modules for existing tasks. The dropped-item trigger replaces the wait module;
-the category-zone module replaces the two old category modules.
+Listeners:
 
-The coarse cache task is:
+```text
+DROPPED_ITEMS
+FOOD_LEVEL_AT_OR_BELOW
+CACHE_UPDATED
+```
+
+`WITHDRAW_ITEMS` currently supports only `itemSource=classified`.
+`DEPOSIT_ITEMS_TO_CONTAINERS` supports `collected`, `carried`, and `managed`.
+The catalog and validator do not advertise options the runtime cannot enforce.
+
+## Resource references
+
+All task references use one encoded form:
+
+```text
+coordinate:<uuid>
+region:<uuid>
+category-zone:<uuid>
+task:<uuid>
+output:container
+output:storage
+output:marker
+```
+
+Parameter keys are unified:
+
+- `targetRef` for movement, withdrawal, deposit, and food-container interaction.
+- `areaRef` for coordinate-radius or region collection.
+- `regionRef` for region scanning.
+- `categoryZoneRef` for category resolution and marker refresh.
+- `taskRef` for task creation and interruption references.
+
+On load and save, legacy keys such as `coordinateId`, `regionId`,
+`cacheRegionId`, `categoryZoneId`, `area=...`, and `previous-scan` are converted
+to the current form where the original meaning is unambiguous. Existing schema
+7 resources are retained rather than cleared.
+
+## Interruption
+
+Task interruption is configured per task:
+
+```json
+{
+  "interruptionMode": "DEFAULT",
+  "interruptionTaskRef": null,
+  "defaultInterruptionFlow": false,
+  "requeueAfterInterruption": false
+}
+```
+
+Modes:
+
+- `DEFAULT` uses the one task marked `defaultInterruptionFlow=true`, when
+  present.
+- `CUSTOM` uses `interruptionTaskRef=task:<uuid>`.
+- `NONE` skips cleanup.
+
+At most one task may be the shared default interruption flow. That task must
+use `NONE`, cannot repeat when idle, and cannot contain `CREATE_TASK`.
+
+Cleanup runs in the original execution slot with the original run workspace. It
+is not inserted into the ordinary queue. Already moved items stay recorded so a
+failed cleanup can be retried without losing item ownership. A run in
+`INTERRUPTION_FAILED` can be recovered through:
+
+```text
+POST /v1/task-runs/{runId}/retry-interruption
+POST /v1/task-runs/{runId}/skip-interruption
+```
+
+These routes use the same Bearer authentication as the rest of the control API.
+Invalid run state returns `409 invalid_state`.
+
+## Built-in workflow templates
+
+Auto eat:
+
+```text
+IF FOOD_BELOW_THRESHOLD
+    MOVE targetRef=coordinate
+    REPEAT FOOD_BELOW_THRESHOLD
+        WITHDRAW_FOOD
+        EAT_FOOD
+```
+
+Collect and store:
 
 ```text
 COLLECT_DROPPED_ITEMS
-    area=region:<drop area>
 SCAN_CONTAINERS_IN_REGION
-    regionId=<cache area>
-DEPOSIT_ITEMS_TO_CONTAINERS
-    no parameters
+REPEAT HAS_CONTAINERS
+    SELECT_CONTAINER
+    MOVE output:container
+    DEPOSIT_ITEMS_TO_CONTAINERS itemSource=collected
+ASSERT_NO_MANAGED_ITEMS
 ```
 
-The fine category-sorting task is:
+Category sort:
 
 ```text
-SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
-    cacheRegionId=<cache area>
-    categoryZoneId=<category zone>
+SCAN_CONTAINERS_IN_REGION regionRef=<cache>
+RESOLVE_CONTAINER_CATEGORIES
+REPEAT HAS_CONTAINERS
+    SELECT_CONTAINER resetCacheHasMore=true
+    REPEAT CACHE_HAS_MORE
+        MOVE output:container
+        WITHDRAW_ITEMS itemSource=classified
+        REPEAT HAS_CARRIED_ITEMS
+            SELECT_STORAGE_TARGET
+            MOVE output:storage
+            DEPOSIT_ITEMS_TO_CONTAINERS itemSource=carried
+ASSERT_NO_MANAGED_ITEMS
 ```
 
-Use `area=coordinate:<coordinate>` instead when the collection range should use
-a saved coordinate radius. The category template creates a one-shot `NORMAL`
-task; the cache-update trigger decides when it runs.
+Each `CACHE_HAS_MORE` iteration moves back to the cache container before
+withdrawing because the previous inner loop may have left the player at a
+storage container.
 
-When a category zone uses `MARKER_CONTAINER_CONTENTS`, run the following module
-before sorting whenever the sample items in the marker container change:
+Marker refresh:
 
 ```text
-REFRESH_CATEGORY_MARKER_CACHE
-    categoryZoneId=<category zone>
+SCAN_CATEGORY_MARKERS
+REPEAT HAS_MARKER_CONTAINERS
+    SELECT_MARKER_CONTAINER
+    MOVE output:marker
+    READ_CONTAINER
+SAVE_CATEGORY_MARKER_CACHE
 ```
 
-The cache is stored in `config/stowling-category-marker-cache.json`. Sorting
-never refreshes it automatically; a missing cache fails with a prompt to run the
-refresh module.
-
-The auto-eat module uses `minecraft:bread`-style item IDs and a coordinate for
-the food chest. When food is low, it opens that chest, moves exactly one food to
-the hotbar or offhand, closes the chest, and eats. It repeats until the food
-level reaches the threshold. The optional threshold defaults to 18.
-
-Example category-zone A binding:
+Default cleanup template:
 
 ```text
-marker area:  7 -34 7 through 18 -34 7
-storage area: 7 -34 6 through 18 -34 5
-rule:         automatic display item
-ignored:      minecraft:stone_bricks
-exception:    8 -34 5, ADD, minecraft:oak_planks
+SCAN_CONTAINERS_IN_REGION
+REPEAT HAS_CONTAINERS
+    SELECT_CONTAINER
+    MOVE output:container
+    DEPOSIT_ITEMS_TO_CONTAINERS itemSource=managed
+ASSERT_NO_MANAGED_ITEMS
 ```
 
-Add one binding per row or storage group. The marker area may be several blocks
-high or wide and may mix placed blocks, supported displays, item frames, and
-shelves. List shared support or background block IDs in the ignored list.
-Every storage column must contain only one distinct displayed item ID.
+## Legacy migration
 
-Container exceptions target one storage position. `ADD` keeps the automatic
-category and adds the listed item IDs. `REPLACE` ignores that container's
-automatic category and accepts only the listed IDs. This is useful for a chest
-that stores a small related group or for a column where the support material
-is also the displayed category.
+Saved schema 7 configurations remain valid. These legacy module IDs are
+expanded on load into tree steps:
 
-Detection and scanning are limited to the player's current dimension and
-loaded chunks. Supported ordinary containers are scanned; nested shulker-box
-contents are not treated as independent containers. A double chest is recorded
-once using one representative position. Categories match only the displayed
-item registry ID, so display items with the same ID but different names or
-components cannot be distinguished yet. Category mappings exist only for the
-current task run and are never written to configuration. Cache and target
-regions must not overlap.
+- `AUTO_EAT_AT_COORDINATE`
+- `SORT_CACHE_ITEMS_BY_CATEGORY_ZONE`
+- `SORT_CACHE_ITEMS`
+- `REFRESH_CATEGORY_MARKER_CACHE`
+- `COLLECT_DROPPED_ITEMS_IN_REGION`
+- parameterless or prior-scan `DEPOSIT_ITEMS_TO_CONTAINERS`
+
+A legacy `SORT_CACHE_ITEMS` without an explicit category zone keeps its original
+previous-scan semantics by starting with `MATCH_CONTAINER_CATEGORIES`; Stowling
+does not infer a destination from an unrelated category zone.
+
+Migrated category tasks receive a deterministic, editable custom cleanup task
+that returns managed items to the cache. Re-reading the configuration does not
+replace a new basic classification task's `DEFAULT` mode or duplicate the
+generated cleanup.
+
+`WAIT_FOR_DROPPED_ITEMS` and `MATCH_CONTAINER_CATEGORIES` remain accepted only
+for legacy configuration compatibility and previous-scan migration.
+
+## Queuing and triggers
+
+One task runs at a time. Pending work is ordered by `BACKGROUND`, `NORMAL`, and
+`URGENT` priority. Trigger-created tasks and `CREATE_TASK` steps use the same
+queue.
+
+Triggers are stored independently and support dropped items, food level, and
+cache updates. Trigger intervals and cooldowns retain their existing meaning.
+
+Background tasks may requeue after completion. `requeueAfterInterruption`
+controls whether an interrupted task returns to the queue after cleanup.
 
 ## Configuration
 
-The runtime file is `config/stowling.json`. Schema version 7 is the only accepted
-format:
+The active file is `config/stowling.json` with schema version 7:
 
 ```json
 {
@@ -194,158 +250,15 @@ format:
 }
 ```
 
-Triggers are stored independently from tasks and select a target task:
+New task and step fields are optional when reading old files. Unknown fields,
+duplicate step IDs, excessive nesting, dangling typed references, and invalid
+interruption references are rejected. Configuration writes remain revision
+checked, and API mutations preserve the existing revision-conflict protection.
 
-```json
-{
-  "id": "00000000-0000-0000-0000-000000000004",
-  "name": "Low hunger",
-  "type": "FOOD_LEVEL_AT_OR_BELOW",
-  "targetTaskId": "00000000-0000-0000-0000-000000000002",
-  "priority": "NORMAL",
-  "intervalTicks": 20,
-  "cooldownTicks": 100,
-  "foodLevelThreshold": 18
-}
-```
+## Build
 
-A dropped-item trigger uses a coordinate instead:
-
-```json
-{
-  "id": "00000000-0000-0000-0000-000000000004",
-  "name": "Pickup drops",
-  "type": "DROPPED_ITEMS",
-  "targetTaskId": "00000000-0000-0000-0000-000000000002",
-  "priority": "NORMAL",
-  "intervalTicks": 20,
-  "cooldownTicks": 100,
-  "coordinateId": "00000000-0000-0000-0000-000000000001",
-  "itemFilter": "minecraft:oak_log,minecraft:birch_log"
-}
-```
-
-The item filter is optional and accepts comma-separated full item IDs or item
-paths. An empty filter matches every dropped item. Dropped-item triggers use the
-coordinate's configured dimension and radius, falling back to radius 16 when
-radius is disabled.
-
-A cache-update trigger starts only after `DEPOSIT_ITEMS_TO_CONTAINERS` actually
-moves at least one item into the selected cache region:
-
-```json
-{
-  "id": "00000000-0000-0000-0000-000000000004",
-  "name": "Sort cache after deposit",
-  "type": "CACHE_UPDATED",
-  "targetTaskId": "00000000-0000-0000-0000-000000000002",
-  "priority": "NORMAL",
-  "intervalTicks": 40,
-  "cooldownTicks": 100,
-  "cacheRegionId": "00000000-0000-0000-0000-000000000003"
-}
-```
-
-`intervalTicks` is the debounce window for this trigger type. Consecutive
-deposits in the same region therefore create one sort run. If that task is
-already queued or running, the trigger keeps one pending follow-up and schedules
-it after the current run and cooldown finish.
-
-```text
-trigger condition matches
-    -> selected task enters the shared queue
-    -> queue orders it by trigger priority
-    -> task runs
-    -> trigger cooldown
-```
-
-If the file is missing, invalid, or from an older schema, Stowling creates a
-`.bak` safety copy when possible and replaces it with an empty schema-7 file.
-Old data is never migrated.
-
-Coordinates use the player's current dimension unless an explicit dimension is
-enabled. A disabled dimension or radius is returned as `null`; dropped-item
-modules use their built-in search radius when radius is disabled. Tasks
-snapshot their steps, coordinates, regions, and run-local scan results when
-started, so editing saved resources only affects later runs.
-
-## Web console
-
-Start the game and open:
-
-```text
-http://127.0.0.1:8765/
-```
-
-Use the contents of `config/stowling-api.token` to connect.
-
-Pages:
-
-- **Status** shows the current run, trigger status, coordinate count, task count,
-  and history.
-- **Coordinates** groups points, regions, and category-zone setup in one
-  submenu. Points and regions manage reusable geometry; category zones manage
-  marker areas, storage areas, and rules.
-- **Tasks** provides task presets, manual small-module composition, and
-  independent task triggers.
-- **Inventory** displays existing read-only inventory snapshots.
-
-## HTTP API
-
-All `/v1/*` requests require the Bearer token.
-
-```text
-GET    /v1/status
-GET    /v1/inventory
-GET    /v1/task-modules
-GET    /v1/category-rules
-
-GET    /v1/coordinates
-POST   /v1/coordinates
-GET    /v1/coordinates/{uuid}
-PUT    /v1/coordinates/{uuid}
-DELETE /v1/coordinates/{uuid}
-
-GET    /v1/regions
-POST   /v1/regions
-GET    /v1/regions/{uuid}
-PUT    /v1/regions/{uuid}
-DELETE /v1/regions/{uuid}
-
-GET    /v1/category-zones
-POST   /v1/category-zones
-GET    /v1/category-zones/{uuid}
-PUT    /v1/category-zones/{uuid}
-DELETE /v1/category-zones/{uuid}
-
-GET    /v1/tasks
-POST   /v1/tasks
-GET    /v1/tasks/{uuid}
-PUT    /v1/tasks/{uuid}
-DELETE /v1/tasks/{uuid}
-POST   /v1/tasks/{uuid}/runs
-
-GET    /v1/task-triggers
-POST   /v1/task-triggers
-GET    /v1/task-triggers/{uuid}
-PUT    /v1/task-triggers/{uuid}
-DELETE /v1/task-triggers/{uuid}
-
-GET    /v1/task-runs
-POST   /v1/task-runs/{uuid}/cancel
-```
-
-`GET /v1/task-runs` returns `runs`, `queue`, and `triggers`. Trigger states are
-`IDLE`, `RUNNING`, `COOLDOWN`, and `ERROR`.
-
-Updates and deletes include the current `revision`. A stale revision returns
-`409`. Deleting a coordinate referenced by a task or trigger returns `409`.
-Deleting a task targeted by a trigger also returns `409`.
-
-## Development
+Use Java 25 and the checked-in Gradle wrapper:
 
 ```powershell
-.\gradlew.bat assemble --console=plain --no-daemon
+.\gradlew.bat build
 ```
-
-The main JAR is under `build/libs/` and does not contain `-sources` in its name.

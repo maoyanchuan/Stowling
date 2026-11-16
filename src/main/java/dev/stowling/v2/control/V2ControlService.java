@@ -89,4 +89,8 @@ public interface V2ControlService {
     RunListResponse taskRuns();
 
     void cancelRun(UUID runId);
+
+    void retryInterruption(UUID runId);
+
+    void skipInterruption(UUID runId);
 }

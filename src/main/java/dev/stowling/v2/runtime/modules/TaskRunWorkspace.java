@@ -2,23 +2,49 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerScanResult;
+import dev.stowling.automation.ContainerTarget;
+import dev.stowling.domain.BlockPosition;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
     private final Map<String, Integer> collectedItems = new LinkedHashMap<>();
+    private final Map<String, Integer> carriedItems = new LinkedHashMap<>();
+    private final Map<String, Integer> managedItems = new LinkedHashMap<>();
     private final Map<UUID, Integer> cacheUpdates = new LinkedHashMap<>();
+    private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer =
+            new LinkedHashMap<>();
+    private final List<ContainerTarget> targetContainers = new ArrayList<>();
+    private final List<ContainerTarget> containerCandidates = new ArrayList<>();
+    private final List<ContainerTarget> cacheContainers = new ArrayList<>();
+    private final List<MarkerContainerScanAction.Target> markerTargets =
+            new ArrayList<>();
     private ContainerScanResult containerScan;
     private UUID containerScanRegionId;
     private ContainerCategoryResult containerCategories;
+    private Map<UUID, Map<BlockPosition, Set<String>>> markerCache = Map.of();
+    private ContainerTarget selectedContainer;
+    private ContainerTarget selectedStorageTarget;
+    private ContainerTarget selectedMarkerContainer;
+    private int containerCursor;
+    private int storageCursor;
+    private int markerCursor;
+    private UUID markerZoneId;
+    private final Set<BlockPosition> readMarkerPositions =
+            new LinkedHashSet<>();
+    private Set<String> classifiedItemIds = Set.of();
+    private boolean cacheHasMore;
+    private String lastContainerRead = "";
 
     public synchronized void recordCollected(String itemId, int count) {
-        if (count <= 0) {
-            throw new IllegalArgumentException("count must be positive");
-        }
-        collectedItems.merge(itemId, count, Math::addExact);
+        add(collectedItems, itemId, count);
+        add(managedItems, itemId, count);
     }
 
     public synchronized Map<String, Integer> collectedItems() {
@@ -26,12 +52,80 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized void removeCollected(String itemId, int count) {
-        int current = collectedItems.getOrDefault(itemId, 0);
-        int remaining = Math.max(0, current - count);
-        if (remaining == 0) {
-            collectedItems.remove(itemId);
-        } else {
-            collectedItems.put(itemId, remaining);
+        remove(collectedItems, itemId, count);
+    }
+
+    public synchronized void recordWithdrawn(String itemId, int count) {
+        add(carriedItems, itemId, count);
+        add(managedItems, itemId, count);
+    }
+
+    public synchronized void recordManagedAcquired(String itemId, int count) {
+        add(managedItems, itemId, count);
+    }
+
+    public synchronized void consumeManaged(String itemId, int count) {
+        remove(managedItems, itemId, count);
+    }
+
+    public synchronized Map<String, Integer> carriedItems() {
+        return Map.copyOf(carriedItems);
+    }
+
+    public synchronized Map<String, Integer> managedItems() {
+        return Map.copyOf(managedItems);
+    }
+
+    public synchronized int managedItemCount() {
+        return total(managedItems);
+    }
+
+    public synchronized boolean hasManagedItems() {
+        return !managedItems.isEmpty();
+    }
+
+    public synchronized boolean hasCarriedItems() {
+        return !carriedItems.isEmpty();
+    }
+
+    public synchronized Map<String, Integer> itemsForSource(String source) {
+        return switch (source) {
+            case "collected" -> Map.copyOf(collectedItems);
+            case "carried" -> Map.copyOf(carriedItems);
+            case "managed" -> Map.copyOf(managedItems);
+            default -> Map.of();
+        };
+    }
+
+    public synchronized void consumeDeposit(
+            String source,
+            Map<String, Integer> requested,
+            Map<String, Integer> remaining
+    ) {
+        Map<String, Integer> deposited = new LinkedHashMap<>(requested);
+        for (Map.Entry<String, Integer> entry : remaining.entrySet()) {
+            decrement(deposited, entry.getKey(), entry.getValue());
+        }
+        switch (source) {
+            case "collected" -> {
+                subtract(collectedItems, deposited);
+                subtract(managedItems, deposited);
+            }
+            case "carried" -> {
+                subtract(carriedItems, deposited);
+                subtract(managedItems, deposited);
+            }
+            case "managed" -> {
+                Map<String, Integer> allocated = new LinkedHashMap<>(deposited);
+                subtract(managedItems, deposited);
+                subtractUpTo(carriedItems, allocated);
+                subtractUpTo(collectedItems, allocated);
+            }
+            case "inventory" -> {
+            }
+            default -> throw new IllegalArgumentException(
+                    "unsupported item source: " + source
+            );
         }
     }
 
@@ -45,7 +139,16 @@ public final class TaskRunWorkspace {
     ) {
         containerScanRegionId = regionId;
         containerScan = scan;
-        containerCategories = null;
+        cacheContainers.clear();
+        containerCandidates.clear();
+        if (scan != null) {
+            containerCandidates.addAll(scan.containers());
+        }
+        containerCursor = 0;
+        storageCursor = 0;
+        selectedContainer = null;
+        selectedStorageTarget = null;
+        cacheHasMore = false;
     }
 
     public synchronized Optional<ContainerScanResult> containerScan() {
@@ -56,10 +159,228 @@ public final class TaskRunWorkspace {
         return Optional.ofNullable(containerScanRegionId);
     }
 
-    public synchronized void recordCacheUpdate(
-            UUID regionId,
-            int itemCount
+    public synchronized void setContainerCategories(
+            ContainerCategoryResult categories
     ) {
+        containerCategories = categories;
+    }
+
+    public synchronized Optional<ContainerCategoryResult> containerCategories() {
+        return Optional.ofNullable(containerCategories);
+    }
+
+    public synchronized void setCategoryMatch(
+            List<ContainerTarget> targets,
+            Map<ContainerTarget, Set<String>> accepted
+    ) {
+        targetContainers.clear();
+        targetContainers.addAll(targets);
+        acceptedItemsByContainer.clear();
+        Set<String> itemIds = new LinkedHashSet<>();
+        for (Map.Entry<ContainerTarget, Set<String>> entry : accepted.entrySet()) {
+            acceptedItemsByContainer.put(entry.getKey(), Set.copyOf(entry.getValue()));
+            itemIds.addAll(entry.getValue());
+        }
+        classifiedItemIds = Set.copyOf(itemIds);
+        storageCursor = 0;
+        selectedStorageTarget = null;
+    }
+
+    public synchronized void setResolvedCategories(
+            List<ContainerTarget> targets,
+            Map<ContainerTarget, Set<String>> accepted,
+            List<ContainerTarget> cacheTargets
+    ) {
+        targetContainers.clear();
+        targetContainers.addAll(targets);
+        containerCandidates.clear();
+        containerCandidates.addAll(cacheTargets);
+        cacheContainers.clear();
+        cacheContainers.addAll(cacheTargets);
+        acceptedItemsByContainer.clear();
+        Set<String> itemIds = new LinkedHashSet<>();
+        for (Map.Entry<ContainerTarget, Set<String>> entry : accepted.entrySet()) {
+            acceptedItemsByContainer.put(entry.getKey(), Set.copyOf(entry.getValue()));
+            itemIds.addAll(entry.getValue());
+        }
+        classifiedItemIds = Set.copyOf(itemIds);
+        containerCursor = 0;
+        storageCursor = 0;
+        selectedContainer = null;
+        selectedStorageTarget = null;
+        cacheHasMore = false;
+    }
+
+    public synchronized Map<ContainerTarget, Set<String>> acceptedItemsByContainer() {
+        Map<ContainerTarget, Set<String>> result = new LinkedHashMap<>();
+        for (Map.Entry<ContainerTarget, Set<String>> entry
+                : acceptedItemsByContainer.entrySet()) {
+            result.put(entry.getKey(), Set.copyOf(entry.getValue()));
+        }
+        return Map.copyOf(result);
+    }
+
+    public synchronized List<ContainerTarget> cacheContainers() {
+        return List.copyOf(cacheContainers);
+    }
+
+    public synchronized boolean hasContainers() {
+        return containerCursor < containerCandidates.size();
+    }
+
+    public synchronized Optional<ContainerTarget> selectNextContainer() {
+        if (!hasContainers()) {
+            selectedContainer = null;
+            return Optional.empty();
+        }
+        selectedContainer = containerCandidates.get(containerCursor++);
+        storageCursor = 0;
+        selectedStorageTarget = null;
+        cacheHasMore = true;
+        return Optional.of(selectedContainer);
+    }
+
+    public synchronized Optional<ContainerTarget> selectedContainer() {
+        return Optional.ofNullable(selectedContainer);
+    }
+
+    public synchronized Set<String> selectedContainerItemIds() {
+        if (selectedContainer == null) {
+            return Set.of();
+        }
+        if (!acceptedItemsByContainer.containsKey(selectedContainer)) {
+            return classifiedItemIds;
+        }
+        return acceptedItemsByContainer.getOrDefault(
+                selectedContainer,
+                Set.of()
+        );
+    }
+
+    public synchronized void setCacheHasMore(boolean value) {
+        cacheHasMore = value;
+    }
+
+    public synchronized boolean cacheHasMore() {
+        return cacheHasMore;
+    }
+
+    public synchronized Optional<ContainerTarget> selectStorageTarget() {
+        if (carriedItems.isEmpty()) {
+            selectedStorageTarget = null;
+            return Optional.empty();
+        }
+        while (storageCursor < targetContainers.size()) {
+            ContainerTarget candidate = targetContainers.get(storageCursor++);
+            Set<String> accepted = acceptedItemsByContainer.getOrDefault(
+                    candidate,
+                    Set.of()
+            );
+            for (String itemId : carriedItems.keySet()) {
+                if (accepted.contains(itemId)) {
+                    selectedStorageTarget = candidate;
+                    return Optional.of(candidate);
+                }
+            }
+        }
+        selectedStorageTarget = null;
+        return Optional.empty();
+    }
+
+    public synchronized Optional<ContainerTarget> selectedStorageTarget() {
+        return Optional.ofNullable(selectedStorageTarget);
+    }
+
+    public synchronized void resetStorageSelection() {
+        storageCursor = 0;
+        selectedStorageTarget = null;
+    }
+
+    public synchronized void setMarkerPlan(
+            UUID zoneId,
+            MarkerContainerScanAction.Plan plan
+    ) {
+        markerZoneId = zoneId;
+        markerTargets.clear();
+        markerTargets.addAll(plan.targets());
+        markerCache = copyMarkerCache(plan.cache());
+        markerCursor = 0;
+        selectedMarkerContainer = null;
+        readMarkerPositions.clear();
+    }
+
+    public synchronized Optional<UUID> markerZoneId() {
+        return Optional.ofNullable(markerZoneId);
+    }
+
+    public synchronized int markerTargetCount() {
+        return markerTargets.size();
+    }
+
+    public synchronized int markerReadCount() {
+        return readMarkerPositions.size();
+    }
+
+    public synchronized boolean allMarkerContainersRead() {
+        for (MarkerContainerScanAction.Target target : markerTargets) {
+            if (!readMarkerPositions.contains(target.target().position())) {
+                return false;
+            }
+        }
+        return !markerTargets.isEmpty();
+    }
+
+    public synchronized boolean hasMarkerContainers() {
+        return markerCursor < markerTargets.size();
+    }
+
+    public synchronized Optional<MarkerContainerScanAction.Target> selectMarker() {
+        if (!hasMarkerContainers()) {
+            selectedMarkerContainer = null;
+            return Optional.empty();
+        }
+        MarkerContainerScanAction.Target target = markerTargets.get(markerCursor++);
+        selectedMarkerContainer = target.target();
+        return Optional.of(target);
+    }
+
+    public synchronized Optional<ContainerTarget> selectedMarkerContainer() {
+        return Optional.ofNullable(selectedMarkerContainer);
+    }
+
+    public synchronized void recordContainerRead(
+            ContainerTarget target,
+            Set<String> itemIds
+    ) {
+        MarkerContainerScanAction.Target marker = markerTargets.stream()
+                .filter(candidate -> candidate.target().equals(target))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "read target is not part of the active marker plan"
+                ));
+        for (UUID bindingId : marker.bindingIds()) {
+            markerCache.computeIfAbsent(
+                    bindingId,
+                    ignored -> new LinkedHashMap<>()
+            ).put(target.position(), Set.copyOf(itemIds));
+        }
+        readMarkerPositions.add(target.position());
+        lastContainerRead = String.join(",", itemIds);
+    }
+
+    public synchronized String lastContainerRead() {
+        return lastContainerRead;
+    }
+
+    public synchronized void saveMarkerCache() {
+        markerCache = copyMarkerCache(markerCache);
+    }
+
+    public synchronized Map<UUID, Map<BlockPosition, Set<String>>> markerCache() {
+        return copyMarkerCache(markerCache);
+    }
+
+    public synchronized void recordCacheUpdate(UUID regionId, int itemCount) {
         if (regionId == null || itemCount <= 0) {
             return;
         }
@@ -72,13 +393,85 @@ public final class TaskRunWorkspace {
         return result;
     }
 
-    public synchronized void setContainerCategories(
-            ContainerCategoryResult categories
-    ) {
-        containerCategories = categories;
+    public synchronized Map<String, Integer> copyLedger(String source) {
+        return itemsForSource(source);
     }
 
-    public synchronized Optional<ContainerCategoryResult> containerCategories() {
-        return Optional.ofNullable(containerCategories);
+    private static void add(Map<String, Integer> ledger, String itemId, int count) {
+        if (itemId == null || itemId.isBlank() || count <= 0) {
+            throw new IllegalArgumentException("item id and count must be positive");
+        }
+        ledger.merge(itemId.trim(), count, Math::addExact);
+    }
+
+    private static void remove(
+            Map<String, Integer> ledger,
+            String itemId,
+            int count
+    ) {
+        if (count <= 0) {
+            throw new IllegalArgumentException("count must be positive");
+        }
+        decrement(ledger, itemId, count);
+    }
+
+    private static void subtractUpTo(
+            Map<String, Integer> ledger,
+            Map<String, Integer> remaining
+    ) {
+        for (Map.Entry<String, Integer> entry
+                : Map.copyOf(remaining).entrySet()) {
+            int available = ledger.getOrDefault(entry.getKey(), 0);
+            int amount = Math.min(available, entry.getValue());
+            if (amount <= 0) {
+                continue;
+            }
+            decrement(ledger, entry.getKey(), amount);
+            decrement(remaining, entry.getKey(), amount);
+        }
+    }
+
+    private static void subtract(
+            Map<String, Integer> ledger,
+            Map<String, Integer> amounts
+    ) {
+        for (Map.Entry<String, Integer> entry : amounts.entrySet()) {
+            decrement(ledger, entry.getKey(), entry.getValue());
+        }
+    }
+
+    private static void decrement(
+            Map<String, Integer> ledger,
+            String itemId,
+            int amount
+    ) {
+        int remaining = ledger.getOrDefault(itemId, 0) - amount;
+        if (remaining <= 0) {
+            ledger.remove(itemId);
+        } else {
+            ledger.put(itemId, remaining);
+        }
+    }
+
+    private static int total(Map<String, Integer> ledger) {
+        int result = 0;
+        for (int count : ledger.values()) {
+            result = Math.addExact(result, count);
+        }
+        return result;
+    }
+
+    private static Map<UUID, Map<BlockPosition, Set<String>>> copyMarkerCache(
+            Map<UUID, Map<BlockPosition, Set<String>>> source
+    ) {
+        Map<UUID, Map<BlockPosition, Set<String>>> result = new LinkedHashMap<>();
+        for (Map.Entry<UUID, Map<BlockPosition, Set<String>>> entry
+                : source.entrySet()) {
+            result.put(entry.getKey(), new LinkedHashMap<>(entry.getValue()));
+        }
+        return result;
     }
 }
+
+
+

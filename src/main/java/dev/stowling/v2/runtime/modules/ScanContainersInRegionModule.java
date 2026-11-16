@@ -1,8 +1,9 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerScanResult;
-import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
 import java.util.Set;
 
@@ -14,11 +15,17 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
 
     ScanContainersInRegionModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
-        this.region = TaskModuleSupport.region(context, step);
+        ResourceReference reference = ResourceReferenceSupport.reference(
+                step,
+                TaskModuleIds.REGION_REF,
+                ResourceType.REGION,
+                TaskModuleIds.REGION_ID
+        );
+        this.region = ResourceReferenceSupport.region(context, reference);
         this.containerTypes = TaskModuleSupport.containerTypes(step);
         this.maxVolume = TaskModuleSupport.integerParameter(
                 step,
-                ConfigValidator.MAX_VOLUME,
+                TaskModuleIds.MAX_VOLUME,
                 TaskModuleSupport.DEFAULT_SCAN_VOLUME
         );
     }

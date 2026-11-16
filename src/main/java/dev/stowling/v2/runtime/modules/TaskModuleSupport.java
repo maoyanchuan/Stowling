@@ -1,6 +1,5 @@
 package dev.stowling.v2.runtime.modules;
 
-import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskStep;
@@ -22,7 +21,7 @@ final class TaskModuleSupport {
             TaskStep step
     ) {
         UUID id = UUID.fromString(
-                step.parameters().get(ConfigValidator.COORDINATE_ID)
+                step.parameters().get(TaskModuleIds.COORDINATE_ID)
         );
         return Objects.requireNonNull(
                 context.coordinates().get(id),
@@ -34,7 +33,7 @@ final class TaskModuleSupport {
             TaskExecutionContext context,
             TaskStep step
     ) {
-        return region(context, step, ConfigValidator.REGION_ID);
+        return region(context, step, TaskModuleIds.REGION_ID);
     }
 
     static RegionDefinition region(
@@ -62,11 +61,11 @@ final class TaskModuleSupport {
     }
 
     static Set<String> itemFilter(TaskStep step) {
-        return csvParameter(step, ConfigValidator.ITEM_FILTER);
+        return csvParameter(step, TaskModuleIds.ITEM_FILTER);
     }
 
     static Set<String> containerTypes(TaskStep step) {
-        return csvParameter(step, ConfigValidator.CONTAINER_TYPES);
+        return csvParameter(step, TaskModuleIds.CONTAINER_TYPES);
     }
 
     static boolean dimensionMatches(

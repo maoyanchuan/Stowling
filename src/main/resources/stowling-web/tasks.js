@@ -31,6 +31,10 @@
         newTask: document.querySelector("#new-task-button"),
         newCacheTask: document.querySelector("#new-cache-task-button"),
         newSortTask: document.querySelector("#new-sort-task-button"),
+        newMarkerTask: document.querySelector("#new-marker-task-button"),
+        newInterruptionTask: document.querySelector(
+            "#new-interruption-task-button"
+        ),
         newAutoEatTask: document.querySelector("#new-auto-eat-task-button"),
         autoEatForm: document.querySelector("#auto-eat-preset-form"),
         autoEatCoordinate: document.querySelector("#auto-eat-coordinate"),
@@ -49,8 +53,24 @@
         name: document.querySelector("#task-name"),
         priority: document.querySelector("#task-priority"),
         repeat: document.querySelector("#task-repeat"),
+        interruptionMode: document.querySelector("#task-interruption-mode"),
+        interruptionTaskRef: document.querySelector(
+            "#task-interruption-task-ref"
+        ),
+        interruptionDefaultHint: document.querySelector(
+            "#interruption-default-hint"
+        ),
+        defaultInterruption: document.querySelector(
+            "#task-default-interruption"
+        ),
+        requeueAfterInterruption: document.querySelector(
+            "#task-requeue-after-interruption"
+        ),
         steps: document.querySelector("#task-steps"),
         addStep: document.querySelector("#add-step-button"),
+        addIfStep: document.querySelector("#add-if-step-button"),
+        addRepeatStep: document.querySelector("#add-repeat-step-button"),
+        addCreateTaskStep: document.querySelector("#add-create-task-step"),
         moduleCatalog: document.querySelector("#task-module-catalog"),
         moduleCount: document.querySelector("#task-module-count"),
         errors: document.querySelector("#task-errors"),
@@ -154,9 +174,11 @@
     function renderTaskList() {
         elements.list.replaceChildren();
         elements.taskCount.textContent = String(state.tasks.length);
-        const matches = state.tasks.filter(
-            (task) => task.name.toLocaleLowerCase().includes(state.query)
-        );
+        const matches = state.tasks
+            .filter((task) => (
+                task.name.toLocaleLowerCase().includes(state.query)
+            ))
+            .sort(compareTasks);
         if (matches.length === 0 && state.tasks.length > 0) {
             elements.list.append(Stowling.emptyState("没有匹配的任务"));
             return;
@@ -165,58 +187,55 @@
             elements.list.append(Stowling.emptyState("尚未创建任务"));
             return;
         }
-        const groups = [
-            ["BASIC", "基础任务"],
-            ["PRESET", "任务预设"],
-            ["COMPOSITE", "组合任务"]
-        ];
-        for (const [level, label] of groups) {
-            const tasks = matches.filter(
-                (task) => Model.taskLevel(task, state.modules) === level
+        for (const task of matches) {
+            const button = Stowling.element(
+                "button",
+                "task-card task-select"
             );
-            if (tasks.length === 0) {
-                continue;
-            }
-            const group = Stowling.element("section", "task-group");
-            const heading = Stowling.element("div", "task-group-heading");
-            heading.append(
-                Stowling.element("strong", "", label),
+            button.type = "button";
+            const identity = Stowling.element("div", "task-select-identity");
+            identity.append(
+                Stowling.element("strong", "", task.name),
                 Stowling.element(
                     "span",
-                    "muted compact-help",
-                    `${tasks.length} 个`
+                    "compact-help",
+                    `${task.steps.length} 个根步骤`
+                ),
+                ...(task.defaultInterruptionFlow
+                    ? [Stowling.element(
+                        "span",
+                        "muted compact-help",
+                        "全局默认中断收尾"
+                    )]
+                    : [])
+            );
+            button.setAttribute(
+                "aria-pressed",
+                String(task.id === state.selectedId)
+            );
+            button.append(
+                identity,
+                Stowling.element(
+                    "span",
+                    "module-level-tag",
+                    Model.priorityLabel(task.priority)
                 )
             );
-            group.append(heading);
-            for (const task of tasks) {
-                const button = Stowling.element(
-                    "button",
-                    "task-card task-select"
-                );
-                button.type = "button";
-                const identity = Stowling.element("div", "task-select-identity");
-                identity.append(
-                    Stowling.element("strong", "", task.name),
-                    Stowling.element("span", "compact-help", `${task.steps.length} 个步骤`)
-                );
-                button.setAttribute("aria-pressed", String(task.id === state.selectedId));
-                button.append(
-                    identity,
-                    Stowling.element(
-                        "span",
-                        "module-level-tag",
-                        Model.priorityLabel(task.priority)
-                    )
-                );
-                button.classList.toggle(
-                    "active",
-                    task.id === state.selectedId
-                );
-                button.addEventListener("click", () => selectTask(task));
-                group.append(button);
-            }
-            elements.list.append(group);
+            button.classList.toggle("active", task.id === state.selectedId);
+            button.addEventListener("click", () => selectTask(task));
+            elements.list.append(button);
         }
+    }
+
+    /**
+     * @param {object} left
+     * @param {object} right
+     * @returns {number}
+     */
+    function compareTasks(left, right) {
+        const priority = Model.priorityRank(left.priority)
+            - Model.priorityRank(right.priority);
+        return priority || left.name.localeCompare(right.name, "zh-CN");
     }
 
     /**
@@ -565,22 +584,17 @@
         elements.moduleCount.textContent = `${visibleModules.length} 个`;
         if (visibleModules.length === 0) {
             elements.moduleCatalog.append(
-                Stowling.emptyState("当前没有可用模块")
+                Stowling.emptyState("当前没有可用基础动作")
             );
             return;
         }
-        const groups = [
-            ["LISTENER", "监听器"],
-            ["BASIC", "基础模块"],
-            ["PRESET", "任务预设"]
-        ];
-        for (const [groupKey, label] of groups) {
-            const modules = visibleModules.filter((module) => (
-                groupKey === "BASIC"
-                    ? Model.moduleKind(module) === "ACTION"
-                        && module.level === groupKey
-                    : Model.moduleKind(module) === groupKey
-            ));
+        for (const [kind, label] of [
+            ["ACTION", "基础动作"],
+            ["LISTENER", "监听器"]
+        ]) {
+            const modules = visibleModules.filter(
+                (module) => Model.moduleKind(module) === kind
+            );
             if (modules.length === 0) {
                 continue;
             }
@@ -607,14 +621,9 @@
      * @returns {string}
      */
     function moduleTag(module) {
-        const kind = Model.moduleKind(module);
-        if (kind === "LISTENER") {
-            return "监听";
-        }
-        if (kind === "PRESET") {
-            return "预设";
-        }
-        return module.level === "BASIC" ? "基础" : "复合";
+        return Model.moduleKind(module) === "LISTENER"
+            ? "监听"
+            : "基础动作";
     }
 
     /**
@@ -639,29 +648,13 @@
             }).join("、");
         card.append(
             summary,
-            Stowling.element("p", "", module.description || "")
-        );
-        const composedOf = Array.isArray(module.composedOf)
-            ? module.composedOf
-            : [];
-        if (composedOf.length > 0) {
-            const names = composedOf.map((moduleId) => {
-                const called = state.modules.find(
-                    (candidate) => candidate.id === moduleId
-                );
-                return called?.name || moduleId;
-            });
-            card.append(Stowling.element(
+            Stowling.element("p", "", module.description || ""),
+            Stowling.element(
                 "p",
                 "compact-help",
-                `调用：${names.join(" → ")}`
-            ));
-        }
-        card.append(Stowling.element(
-            "p",
-            "compact-help",
-            `参数：${parameterText}`
-        ));
+                `参数：${parameterText}`
+            )
+        );
         return card;
     }
 
@@ -692,23 +685,11 @@
     function renderRunControls() {
         const current = state.runTaskId;
         elements.runSelect.replaceChildren(new Option("请选择任务", ""));
-        const groups = [
-            ["BASIC", "基础任务"],
-            ["PRESET", "任务预设"],
-            ["COMPOSITE", "组合任务"]
-        ];
-        for (const [level, label] of groups) {
-            const group = document.createElement("optgroup");
-            group.label = label;
-            for (const task of state.tasks.filter(
-                (candidate) => Model.taskLevel(candidate, state.modules)
-                    === level
-            )) {
-                group.append(new Option(task.name, task.id));
-            }
-            if (group.children.length > 0) {
-                elements.runSelect.append(group);
-            }
+        for (const task of [...state.tasks].sort(compareTasks)) {
+            elements.runSelect.append(new Option(
+                `${Model.priorityLabel(task.priority)} · ${task.name}`,
+                task.id
+            ));
         }
         const preserved = state.tasks.some((task) => task.id === current)
             ? current
@@ -765,29 +746,16 @@
         elements.autoEatErrors.replaceChildren();
         state.presetMode = true;
         state.selectedId = "";
-        state.draft = {
-            id: "",
-            name: uniqueName(
-                "自动进食",
-                state.tasks.map((task) => task.name)
-            ),
-            priority: "NORMAL",
-            repeatWhenIdle: false,
-            steps: [
-                {
-                    moduleId: "MOVE_TO_COORDINATE",
-                    parameters: { coordinateId: "" }
-                },
-                {
-                    moduleId: "WITHDRAW_FOOD",
-                    parameters: { coordinateId: "", foodItemId: "" }
-                },
-                {
-                    moduleId: "EAT_FOOD",
-                    parameters: { foodItemId: "" }
-                }
-            ]
-        };
+        state.draft = Model.eatTask(
+            state.modules,
+            "",
+            "minecraft:bread",
+            18
+        );
+        state.draft.name = uniqueName(
+            "自动进食",
+            state.tasks.map((task) => task.name)
+        );
         state.dirty = true;
         elements.autoEatForm.hidden = false;
         syncAutoEatDraft();
@@ -897,7 +865,7 @@
      * @returns {void}
      */
     function startCacheTask() {
-        startTaskTemplate("cache");
+        startTaskTemplate("collect");
     }
 
     /**
@@ -905,6 +873,20 @@
      */
     function startSortTask() {
         startTaskTemplate("sort");
+    }
+
+    /**
+     * @returns {void}
+     */
+    function startMarkerTask() {
+        startTaskTemplate("marker");
+    }
+
+    /**
+     * @returns {void}
+     */
+    function startInterruptionTask() {
+        startTaskTemplate("interruption");
     }
 
     /**
@@ -920,12 +902,16 @@
             return;
         }
         if (state.modules.length === 0) {
-            Stowling.showToast("任务模块尚未加载", true);
+            Stowling.showToast("任务动作尚未加载", true);
             return;
         }
         const draft = switchTaskTemplate(template);
-        if (!draft) {
-            Stowling.showToast("任务模板所需模块尚未加载", true);
+        const missing = Model.missingModules(
+            state.modules,
+            Model.taskModuleIds(draft)
+        );
+        if (missing.length > 0) {
+            Stowling.showToast("任务模板所需基础动作尚未加载", true);
             return;
         }
         state.selectedId = "";
@@ -940,14 +926,20 @@
 
     /**
      * @param {string} template
-     * @returns {object | null}
+     * @returns {object}
      */
     function switchTaskTemplate(template) {
-        if (template === "cache") {
-            return Model.cacheTask(state.modules);
+        if (template === "collect") {
+            return Model.collectTask(state.modules);
         }
         if (template === "sort") {
             return Model.sortTask(state.modules);
+        }
+        if (template === "marker") {
+            return Model.markerTask(state.modules);
+        }
+        if (template === "interruption") {
+            return Model.interruptionTask(state.modules);
         }
         return Model.newTask(state.modules);
     }
@@ -959,17 +951,34 @@
         if (!state.presetMode || !state.draft) {
             return;
         }
-        const coordinateId = elements.autoEatCoordinate.value;
+        const targetRef = Model.coordinateRef(elements.autoEatCoordinate.value);
         const foodItemId = elements.autoEatFood.value.trim();
-        for (const step of state.draft.steps) {
+        const threshold = Number(elements.autoEatThreshold.value);
+        visitSteps(state.draft.steps, (step) => {
             if (step.moduleId === "MOVE_TO_COORDINATE") {
-                step.parameters.coordinateId = coordinateId;
+                step.parameters.targetRef = targetRef;
             } else if (step.moduleId === "WITHDRAW_FOOD") {
-                step.parameters.coordinateId = coordinateId;
+                step.parameters.targetRef = targetRef;
                 step.parameters.foodItemId = foodItemId;
             } else if (step.moduleId === "EAT_FOOD") {
                 step.parameters.foodItemId = foodItemId;
             }
+            if (step.parameters.condition === "FOOD_BELOW_THRESHOLD") {
+                step.parameters.foodLevelThreshold = String(threshold);
+            }
+        });
+    }
+
+    /**
+     * @param {Array<object>} steps
+     * @param {(step: object) => void} visitor
+     * @returns {void}
+     */
+    function visitSteps(steps, visitor) {
+        for (const step of Array.isArray(steps) ? steps : []) {
+            visitor(step);
+            visitSteps(step.steps, visitor);
+            visitSteps(step.otherwise, visitor);
         }
     }
 
@@ -999,9 +1008,11 @@
         }
         elements.name.value = state.draft.name;
         elements.priority.value = state.draft.priority;
-        updateSettingsLabel();
         elements.repeat.checked = state.draft.repeatWhenIdle;
-        elements.repeat.disabled = state.draft.priority !== "BACKGROUND";
+        elements.repeat.disabled = state.draft.priority !== "BACKGROUND"
+            || state.draft.defaultInterruptionFlow;
+        renderInterruptionControls();
+        updateSettingsLabel();
         elements.revision.textContent = state.selectedId
             ? Stowling.revisionLabel(state.revision)
             : "新任务";
@@ -1012,9 +1023,67 @@
             state.coordinates,
             state.regions,
             state.categoryZones,
-            rerenderEditor
+            rerenderEditor,
+            state.tasks
         );
         updateActions();
+    }
+
+    /**
+     * @returns {void}
+     */
+    function renderInterruptionControls() {
+        const draft = state.draft;
+        elements.interruptionMode.value = draft.interruptionMode;
+        elements.interruptionMode.disabled = draft.defaultInterruptionFlow;
+        elements.defaultInterruption.checked = draft.defaultInterruptionFlow;
+        elements.requeueAfterInterruption.checked =
+            draft.requeueAfterInterruption;
+        elements.requeueAfterInterruption.disabled =
+            draft.interruptionMode === "NONE"
+            && !draft.defaultInterruptionFlow;
+        elements.interruptionTaskRef.replaceChildren(
+            new Option("请选择收尾任务", "")
+        );
+        for (const task of [...state.tasks].sort(compareTasks)) {
+            if (task.id === state.selectedId) {
+                continue;
+            }
+            elements.interruptionTaskRef.append(new Option(
+                `${Model.priorityLabel(task.priority)} · ${task.name}`,
+                Model.taskRef(task.id)
+            ));
+        }
+        const currentRef = String(draft.interruptionTaskRef || "");
+        if (currentRef && ![...elements.interruptionTaskRef.options].some(
+            (option) => option.value === currentRef
+        )) {
+            elements.interruptionTaskRef.append(new Option(
+                "已失效的收尾任务",
+                currentRef
+            ));
+        }
+        elements.interruptionTaskRef.value = currentRef;
+        elements.interruptionTaskRef.disabled =
+            draft.defaultInterruptionFlow || draft.interruptionMode !== "CUSTOM";
+        const defaultTask = state.tasks.find(
+            (task) => task.defaultInterruptionFlow
+            && task.id !== state.selectedId
+        );
+        const selfDefault = state.tasks.some((task) => (
+            task.id === state.selectedId
+            && task.defaultInterruptionFlow
+        ));
+        if (defaultTask) {
+            elements.interruptionDefaultHint.textContent =
+                `当前全局默认收尾：${defaultTask.name}`;
+        } else if (draft.defaultInterruptionFlow || selfDefault) {
+            elements.interruptionDefaultHint.textContent =
+                "当前任务已标记为全局默认中断收尾";
+        } else {
+            elements.interruptionDefaultHint.textContent =
+                "当前尚未标记全局默认收尾任务";
+        }
     }
 
     /**
@@ -1024,8 +1093,28 @@
         const behavior = state.draft.repeatWhenIdle
             ? " · 自动重排"
             : " · 执行一次";
+        const interruption = state.draft.defaultInterruptionFlow
+            ? " · 默认收尾"
+            : ` · ${Model.interruptionModeLabel(
+                state.draft.interruptionMode
+            )}`;
         elements.settingsLabel.textContent =
-            Model.priorityLabel(state.draft.priority) + behavior;
+            Model.priorityLabel(state.draft.priority) + behavior + interruption;
+    }
+
+    /**
+     * @param {string} kind
+     * @returns {void}
+     */
+    function addRootStep(kind) {
+        if (!state.draft) {
+            return;
+        }
+        state.draft.steps.push(Model.newStep(
+            Model.defaultModule(state.modules),
+            kind
+        ));
+        markDirty(true);
     }
 
     /**
@@ -1080,89 +1169,363 @@
         if (draft.repeatWhenIdle && draft.priority !== "BACKGROUND") {
             errors.push("只有后台任务可以自动重新排队");
         }
-        if (draft.steps.length === 0) {
-            errors.push("任务至少需要一个步骤");
+        if (!Array.isArray(draft.steps) || draft.steps.length === 0) {
+            errors.push("任务至少需要一个根步骤");
+        } else {
+            if (draft.steps.length > Model.MAX_ROOT_STEPS) {
+                errors.push(
+                    `根步骤不能超过 ${Model.MAX_ROOT_STEPS} 个`
+                );
+            }
+            const stats = taskStepStats(draft.steps);
+            if (stats.total > Model.MAX_TOTAL_STEPS) {
+                errors.push(`递归步骤总数不能超过 ${Model.MAX_TOTAL_STEPS} 个`);
+            }
+            if (stats.depth > Model.MAX_STEP_DEPTH) {
+                errors.push(`递归步骤深度不能超过 ${Model.MAX_STEP_DEPTH} 层`);
+            }
+            errors.push(...validateStepList(draft.steps, "步骤"));
         }
-        for (const [index, step] of draft.steps.entries()) {
-            const module = state.modules.find(
-                (candidate) => candidate.id === step.moduleId
-            );
-            if (!module) {
-                errors.push(`步骤 ${index + 1} 使用了未知模块`);
+        errors.push(...validateInterruption(draft));
+        return errors;
+    }
+
+    /**
+     * @param {Array<object>} steps
+     * @returns {{total: number, depth: number}}
+     */
+    function taskStepStats(steps) {
+        const stats = { total: 0, depth: 0 };
+        const visit = (current, depth) => {
+            for (const step of Array.isArray(current) ? current : []) {
+                stats.total++;
+                stats.depth = Math.max(stats.depth, depth);
+                visit(step.steps, depth + 1);
+                visit(step.otherwise, depth + 1);
+            }
+        };
+        visit(steps, 1);
+        return stats;
+    }
+
+    /**
+     * @param {Array<object>} steps
+     * @param {string} prefix
+     * @returns {Array<string>}
+     */
+    function validateStepList(steps, prefix) {
+        const errors = [];
+        if (!Array.isArray(steps)) {
+            return [`${prefix}必须是步骤列表`];
+        }
+        steps.forEach((step, index) => {
+            const label = `${prefix} ${index + 1}`;
+            const kind = step?.kind || "ACTION";
+            if (!Model.STEP_KINDS.includes(kind)) {
+                errors.push(`${label}的步骤类型无效`);
+                return;
+            }
+            if ((kind === "ACTION" || kind === "CREATE_TASK")
+                    && ((step.steps || []).length > 0
+                        || (step.otherwise || []).length > 0)) {
+                errors.push(`${label}不能包含子步骤`);
+            }
+            if ((kind === "IF" || kind === "REPEAT")
+                    && (step.steps || []).length === 0) {
+                errors.push(`${label}至少需要一个子步骤`);
+            }
+            if (kind === "REPEAT" && (step.otherwise || []).length > 0) {
+                errors.push(`${label}的循环步骤不能配置否则分支`);
+            }
+            if (kind === "ACTION") {
+                errors.push(...validateActionStep(step, label));
+            } else if (kind === "CREATE_TASK") {
+                errors.push(...validateCreateTaskStep(step, label));
+            } else {
+                errors.push(...validateControlStep(step, label));
+            }
+            errors.push(...validateStepList(step.steps || [], `${label} 子步骤`));
+            errors.push(...validateStepList(
+                step.otherwise || [],
+                `${label} 否则分支`
+            ));
+        });
+        return errors;
+    }
+
+    /**
+     * @param {object} step
+     * @param {string} label
+     * @returns {Array<string>}
+     */
+    function validateActionStep(step, label) {
+        const errors = [];
+        const module = state.modules.find(
+            (candidate) => candidate.id === step.moduleId
+        );
+        if (!module || Model.moduleKind(module) !== "ACTION") {
+            errors.push(`${label}必须选择一个基础动作`);
+            return errors;
+        }
+        const parameters = step.parameters || {};
+        for (const parameter of module.parameters || []) {
+            const value = String(parameters[parameter.key] ?? "").trim();
+            if (parameter.required && !value) {
+                errors.push(`${label}必须填写“${parameter.label}”`);
                 continue;
             }
-            for (const parameter of module.parameters || []) {
-                const value = String(
-                    step.parameters[parameter.key] ?? ""
-                ).trim();
-                if (parameter.required && !value) {
-                    errors.push(
-                        `步骤 ${index + 1} 必须填写“${parameter.label}”`
-                    );
-                    continue;
+            if (!value) {
+                continue;
+            }
+            if (parameterExpectsReference(parameter)) {
+                if (!validateReference(parameter, value, step.moduleId)) {
+                    errors.push(`${label}的“${parameter.label}”引用不可用`);
                 }
-                if (!value) {
-                    continue;
+            }
+            if (parameter.kind === "integer") {
+                const integerError = validateInteger(parameter, value);
+                if (integerError) {
+                    errors.push(`${label}的“${parameter.label}”${integerError}`);
                 }
-                const exists = validateReference(parameter.kind, value);
-                if (exists === false) {
-                    errors.push(
-                        `步骤 ${index + 1} 的“${parameter.label}”不存在`
-                    );
-                }
-                if (parameter.kind === "integer") {
-                    const integerError = validateInteger(parameter, value);
-                    if (integerError) {
-                        errors.push(
-                            `步骤 ${index + 1} 的“${parameter.label}”`
-                                + integerError
-                        );
-                    }
-                }
-                if (
-                    parameter.kind === "select"
-                    && !selectOptions(parameter).includes(value)
-                ) {
-                    errors.push(
-                        `步骤 ${index + 1} 的“${parameter.label}”不是有效选项`
-                    );
-                }
+            }
+            if (parameter.kind === "select"
+                    && !selectOptions(parameter).includes(value)) {
+                errors.push(`${label}的“${parameter.label}”不是有效选项`);
             }
         }
         return errors;
     }
 
     /**
-     * @param {string} kind
-     * @param {string} value
-     * @returns {boolean | null}
+     * @param {object} step
+     * @param {string} label
+     * @returns {Array<string>}
      */
-    function validateReference(kind, value) {
-        if (kind === "coordinate-point") {
-            return state.coordinates.some((point) => point.id === value);
+    function validateCreateTaskStep(step, label) {
+        const errors = [];
+        const reference = String(step.parameters?.taskRef || "");
+        const parsed = Model.parseReference(reference);
+        if (!parsed || parsed.type !== "task") {
+            errors.push(`${label}必须选择一个任务`);
+        } else if (parsed.id === state.selectedId) {
+            errors.push(`${label}不能创建当前任务自身`);
+        } else if (!state.tasks.some((task) => task.id === parsed.id)) {
+            errors.push(`${label}引用的任务不存在`);
         }
-        if (kind === "region-point") {
-            return state.regions.some((region) => region.id === value);
+        const priority = String(step.parameters?.priority || "");
+        if (priority && !Model.PRIORITIES.includes(priority)) {
+            errors.push(`${label}的新任务优先级无效`);
         }
-        if (kind === "category-zone-point") {
-            return state.categoryZones.some((zone) => zone.id === value);
+        return errors;
+    }
+
+    /**
+     * @param {object} step
+     * @param {string} label
+     * @returns {Array<string>}
+     */
+    function validateControlStep(step, label) {
+        const errors = [];
+        const condition = String(step.parameters?.condition || "");
+        if (!Model.CONDITIONS.includes(condition)) {
+            errors.push(`${label}的条件无效`);
         }
-        if (kind === "area-reference") {
-            const separator = value.indexOf(":");
-            if (separator <= 0) {
-                return false;
+        if (Model.conditionNeedsThreshold(condition)) {
+            const threshold = Number(step.parameters?.foodLevelThreshold);
+            if (!Number.isInteger(threshold)
+                    || threshold < 0
+                    || threshold > 20) {
+                errors.push(`${label}的饱食度阈值必须是 0 到 20 的整数`);
             }
-            const type = value.slice(0, separator);
-            const id = value.slice(separator + 1);
-            if (type === "coordinate") {
-                return state.coordinates.some((point) => point.id === id);
+        }
+        if ((step.kind || "ACTION") === "REPEAT") {
+            const maximum = Number(step.parameters?.maxIterations);
+            if (!Number.isInteger(maximum)
+                    || maximum < 1
+                    || maximum > Model.MAX_REPEAT_ITERATIONS) {
+                errors.push(
+                    `${label}的最大循环次数必须是 1 到 `
+                    + `${Model.MAX_REPEAT_ITERATIONS} 的整数`
+                );
             }
-            if (type === "region") {
-                return state.regions.some((region) => region.id === id);
+        }
+        return errors;
+    }
+
+    /**
+     * @param {object} task
+     * @returns {Array<string>}
+     */
+    function validateInterruption(task) {
+        const errors = [];
+        if (!Model.INTERRUPTION_MODES.includes(task.interruptionMode)) {
+            errors.push("中断收尾模式无效");
+        }
+        if (task.defaultInterruptionFlow && task.interruptionMode !== "NONE") {
+            errors.push("默认中断收尾任务不能同时选择其他收尾模式");
+        }
+        if (task.defaultInterruptionFlow && task.repeatWhenIdle) {
+            errors.push("默认中断收尾任务不能自动重新排队");
+        }
+        if (task.defaultInterruptionFlow && containsCreateTask(task.steps)) {
+            errors.push("默认中断收尾任务不能创建其他任务");
+        }
+        const otherDefault = state.tasks.find((candidate) => (
+            candidate.defaultInterruptionFlow
+            && candidate.id !== state.selectedId
+        ));
+        if (task.defaultInterruptionFlow && otherDefault) {
+            errors.push(`已有默认中断收尾任务“${otherDefault.name}”`);
+        }
+        if (task.interruptionMode === "CUSTOM") {
+            const parsed = Model.parseReference(task.interruptionTaskRef);
+            if (!parsed || parsed.type !== "task" || !parsed.id) {
+                errors.push("指定中断收尾时必须选择一个任务");
+            } else if (parsed.id === state.selectedId) {
+                errors.push("中断收尾不能引用当前任务自身");
+            } else if (!state.tasks.some((candidate) => candidate.id === parsed.id)) {
+                errors.push("中断收尾引用的任务不存在");
             }
+        }
+        return errors;
+    }
+
+    /**
+     * @param {Array<object>} steps
+     * @returns {boolean}
+     */
+    function containsCreateTask(steps) {
+        return (Array.isArray(steps) ? steps : []).some((step) => (
+            (step.kind || "ACTION") === "CREATE_TASK"
+            || containsCreateTask(step.steps)
+            || containsCreateTask(step.otherwise)
+        ));
+    }
+
+    /**
+     * @param {object} parameter
+     * @returns {boolean}
+     */
+    function parameterExpectsReference(parameter) {
+        return parameterReferenceTypes(parameter).length > 0;
+    }
+
+    /**
+     * @param {object} parameter
+     * @returns {Array<string>}
+     */
+    function parameterReferenceTypes(parameter) {
+        const key = String(parameter.key || "");
+        if (key === "taskRef" || parameter.kind === "task-reference") {
+            return ["task"];
+        }
+        if (key === "regionRef" || parameter.kind === "region-point") {
+            return ["region"];
+        }
+        if (key === "categoryZoneRef"
+                || parameter.kind === "category-zone-point") {
+            return ["category-zone"];
+        }
+        if (key === "areaRef" || parameter.kind === "area-reference") {
+            return ["coordinate", "region"];
+        }
+        if (key === "targetRef") {
+            return ["coordinate", "output"];
+        }
+        if (
+            parameter.kind === "coordinate-point"
+            || parameter.kind === "coordinate-reference"
+        ) {
+            return ["coordinate"];
+        }
+        if (
+            parameter.kind === "region-point"
+            || parameter.kind === "region-reference"
+        ) {
+            return ["region"];
+        }
+        if (
+            parameter.kind === "category-zone-point"
+            || parameter.kind === "category-zone-reference"
+        ) {
+            return ["category-zone"];
+        }
+        if (parameter.kind === "container-reference") {
+            return ["output"];
+        }
+        if (parameter.kind === "resource-reference") {
+            return ["coordinate", "region", "category-zone", "task"];
+        }
+        return [];
+    }
+
+    /**
+     * @param {object} parameter
+     * @param {string} value
+     * @param {string} moduleId
+     * @returns {boolean}
+     */
+    function validateReference(parameter, value, moduleId) {
+        if (parameter.key === "targetRef" && Model.isOutputReference(value)) {
+            return validOutputReference(moduleId, value);
+        }
+        const parsed = Model.parseReference(value);
+        const allowed = parameter.key === "targetRef"
+            ? targetReferenceTypesFor(moduleId)
+            : parameterReferenceTypes(parameter);
+        if (!parsed || !allowed.includes(parsed.type)) {
             return false;
         }
-        return null;
+        if (parsed.type === "output") {
+            return Model.OUTPUT_REFERENCES.includes(value);
+        }
+        if (parsed.type === "coordinate") {
+            return state.coordinates.some((point) => point.id === parsed.id);
+        }
+        if (parsed.type === "region") {
+            return state.regions.some((region) => region.id === parsed.id);
+        }
+        if (parsed.type === "category-zone") {
+            return state.categoryZones.some((zone) => zone.id === parsed.id);
+        }
+        if (parsed.type === "task") {
+            return state.tasks.some((task) => task.id === parsed.id);
+        }
+        return false;
+    }
+
+    /**
+     * @param {string} moduleId
+     * @returns {Array<string>}
+     */
+    function targetReferenceTypesFor(moduleId) {
+        if (moduleId === "MOVE_TO_COORDINATE") {
+            return ["coordinate", "output"];
+        }
+        if (moduleId === "WITHDRAW_FOOD") {
+            return ["coordinate"];
+        }
+        const outputModules = new Set([
+            "WITHDRAW_ITEMS",
+            "DEPOSIT_ITEMS_TO_CONTAINERS",
+            "READ_CONTAINER"
+        ]);
+        return outputModules.has(moduleId) ? ["output"] : ["coordinate"];
+    }
+
+    /**
+     * @param {string} moduleId
+     * @param {string} value
+     * @returns {boolean}
+     */
+    function validOutputReference(moduleId, value) {
+        const allowed = {
+            MOVE_TO_COORDINATE: Model.OUTPUT_REFERENCES,
+            WITHDRAW_ITEMS: ["output:container"],
+            DEPOSIT_ITEMS_TO_CONTAINERS: Model.OUTPUT_REFERENCES,
+            READ_CONTAINER: ["output:marker"]
+        };
+        return (allowed[moduleId] || []).includes(value);
     }
 
     /**
@@ -1201,7 +1564,12 @@
      * @returns {boolean}
      */
     function isActiveRun(run) {
-        return run.state === "RUNNING" || run.state === "WAITING";
+        return [
+            "RUNNING",
+            "WAITING",
+            "INTERRUPTING",
+            "INTERRUPTION_FAILED"
+        ].includes(run.state);
     }
 
     /**
@@ -1212,12 +1580,29 @@
         const labels = {
             RUNNING: "运行中",
             WAITING: "等待中",
+            INTERRUPTING: "正在执行中断收尾",
+            INTERRUPTION_FAILED: "中断收尾失败，队列暂停",
             SUCCEEDED: "已完成",
             FAILED: "失败",
             PREEMPTED: "已中断",
             CANCELLED: "已取消"
         };
         return labels[state] || String(state || "");
+    }
+
+    /**
+     * @param {object} run
+     * @returns {string}
+     */
+    function runStateMessage(run) {
+        if (run.state === "INTERRUPTING") {
+            return "正在执行中断收尾，队列暂停";
+        }
+        if (run.state === "INTERRUPTION_FAILED") {
+            return "中断收尾失败，队列暂停；请重试，或先确认导航停止"
+                + "并处理完受管物品后跳过";
+        }
+        return String(run.message || "");
     }
 
     /**
@@ -1444,7 +1829,7 @@
                     "muted compact-help",
                     `${runStateLabel(run.state)} · `
                         + `${run.completedSteps}/${run.totalSteps} · `
-                        + run.message
+                        + runStateMessage(run)
                 ),
                 Stowling.element(
                     "span",
@@ -1453,7 +1838,27 @@
                 )
             );
             card.append(content);
-            if (isActiveRun(run)) {
+            if (run.state === "INTERRUPTION_FAILED") {
+                const retry = Stowling.element(
+                    "button",
+                    "primary compact",
+                    "重试收尾"
+                );
+                retry.type = "button";
+                retry.addEventListener("click", () => {
+                    void retryInterruption(run.runId);
+                });
+                const skip = Stowling.element(
+                    "button",
+                    "secondary compact",
+                    "尝试跳过收尾"
+                );
+                skip.type = "button";
+                skip.addEventListener("click", () => {
+                    void skipInterruption(run.runId);
+                });
+                card.append(retry, skip);
+            } else if (isActiveRun(run)) {
                 const cancel = Stowling.element(
                     "button",
                     "secondary compact",
@@ -1474,6 +1879,29 @@
      */
     function renderQueue() {
         elements.queueList.replaceChildren();
+        const interruption = state.runs.find((run) => (
+            run.state === "INTERRUPTING"
+            || run.state === "INTERRUPTION_FAILED"
+        ));
+        if (interruption) {
+            const notice = Stowling.element(
+                "article",
+                "task-card interruption-notice"
+            );
+            notice.append(
+                Stowling.element(
+                    "strong",
+                    "",
+                    runStateLabel(interruption.state)
+                ),
+                Stowling.element(
+                    "span",
+                    "muted compact-help",
+                    runStateMessage(interruption)
+                )
+            );
+            elements.queueList.append(notice);
+        }
         if (state.queue.length === 0) {
             elements.queueList.append(
                 Stowling.emptyState("当前没有等待任务")
@@ -1518,6 +1946,50 @@
      * @param {string} runId
      * @returns {Promise<void>}
      */
+    async function retryInterruption(runId) {
+        try {
+            await Stowling.request(
+                `/v1/task-runs/${encodeURIComponent(runId)}`
+                    + "/retry-interruption",
+                { method: "POST" }
+            );
+            await loadRuns();
+            Stowling.showToast("正在重新执行中断收尾");
+        } catch (error) {
+            Stowling.handleError(error, "重试中断收尾失败");
+        }
+    }
+
+    /**
+     * @param {string} runId
+     * @returns {Promise<void>}
+     */
+    async function skipInterruption(runId) {
+        const confirmed = window.confirm(
+            "只有确认导航已停止，且任务管理物品已处理完毕，"
+            + "后端才允许跳过中断收尾。跳过不会再次自动收尾。"
+            + "确认现在尝试跳过？"
+        );
+        if (!confirmed) {
+            return;
+        }
+        try {
+            await Stowling.request(
+                `/v1/task-runs/${encodeURIComponent(runId)}`
+                    + "/skip-interruption",
+                { method: "POST" }
+            );
+            await loadRuns();
+            Stowling.showToast("已跳过中断收尾");
+        } catch (error) {
+            Stowling.handleError(error, "跳过中断收尾失败");
+        }
+    }
+
+    /**
+     * @param {string} runId
+     * @returns {Promise<void>}
+     */
     async function cancelRun(runId) {
         try {
             await Stowling.request(
@@ -1537,12 +2009,31 @@
     elements.newTask.addEventListener("click", startNewTask);
     elements.newCacheTask.addEventListener("click", startCacheTask);
     elements.newSortTask.addEventListener("click", startSortTask);
+    elements.newMarkerTask.addEventListener("click", startMarkerTask);
+    elements.newInterruptionTask.addEventListener(
+        "click",
+        startInterruptionTask
+    );
     elements.newAutoEatTask.addEventListener("click", showAutoEatPresetForm);
     elements.cancelAutoEatPreset.addEventListener("click", hideAutoEatPresetForm);
     elements.autoEatForm.addEventListener("submit", (event) => {
         event.preventDefault();
         void createAutoEatPreset();
     });
+    for (const control of [
+        elements.autoEatCoordinate,
+        elements.autoEatFood,
+        elements.autoEatThreshold
+    ]) {
+        control.addEventListener("input", () => {
+            syncAutoEatDraft();
+            renderEditor();
+        });
+        control.addEventListener("change", () => {
+            syncAutoEatDraft();
+            renderEditor();
+        });
+    }
     elements.name.addEventListener("input", () => {
         state.draft.name = elements.name.value;
         markDirty();
@@ -1557,6 +2048,38 @@
     elements.repeat.addEventListener("change", () => {
         state.draft.repeatWhenIdle = elements.repeat.checked;
         updateSettingsLabel();
+        markDirty();
+    });
+    elements.interruptionMode.addEventListener("change", () => {
+        state.draft.interruptionMode = elements.interruptionMode.value;
+        if (state.draft.interruptionMode !== "CUSTOM") {
+            state.draft.interruptionTaskRef = "";
+        }
+        if (state.draft.interruptionMode === "NONE") {
+            state.draft.requeueAfterInterruption = false;
+        }
+        renderEditor();
+        markDirty();
+    });
+    elements.interruptionTaskRef.addEventListener("change", () => {
+        state.draft.interruptionTaskRef =
+            elements.interruptionTaskRef.value;
+        markDirty();
+    });
+    elements.defaultInterruption.addEventListener("change", () => {
+        state.draft.defaultInterruptionFlow =
+            elements.defaultInterruption.checked;
+        if (state.draft.defaultInterruptionFlow) {
+            state.draft.interruptionMode = "NONE";
+            state.draft.interruptionTaskRef = "";
+            state.draft.repeatWhenIdle = false;
+        }
+        renderEditor();
+        markDirty();
+    });
+    elements.requeueAfterInterruption.addEventListener("change", () => {
+        state.draft.requeueAfterInterruption =
+            elements.requeueAfterInterruption.checked;
         markDirty();
     });
     elements.newTrigger.addEventListener("click", startNewTrigger);
@@ -1608,12 +2131,13 @@
         );
         markTriggerDirty();
     });
-    elements.addStep.addEventListener("click", () => {
-        state.draft.steps.push(Model.newStep(
-            Model.defaultModule(state.modules)
-        ));
-        markDirty(true);
-    });
+    elements.addStep.addEventListener("click", () => addRootStep("ACTION"));
+    elements.addIfStep.addEventListener("click", () => addRootStep("IF"));
+    elements.addRepeatStep.addEventListener("click", () => addRootStep("REPEAT"));
+    elements.addCreateTaskStep.addEventListener(
+        "click",
+        () => addRootStep("CREATE_TASK")
+    );
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
         void saveTask();

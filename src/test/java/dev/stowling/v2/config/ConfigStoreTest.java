@@ -139,6 +139,53 @@ class ConfigStoreTest {
     }
 
     @Test
+    void expandsLegacyClassificationWithoutClearingSchemaSevenResources()
+            throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 7,
+                    "coordinates": [],
+                    "tasks": [{
+                        "id": "00000000-0000-0000-0000-000000000010",
+                        "name": "Legacy sort",
+                        "steps": [{
+                            "id": "00000000-0000-0000-0000-000000000011",
+                            "moduleId": "SORT_CACHE_ITEMS",
+                            "parameters": {
+                                "cacheRegionId":
+                                    "00000000-0000-0000-0000-000000000012",
+                                "scanSource": "previous-scan"
+                            }
+                        }]
+                    }],
+                    "regions": [{
+                        "id": "00000000-0000-0000-0000-000000000012",
+                        "name": "Cache",
+                        "firstX": 0,
+                        "firstY": 64,
+                        "firstZ": 0,
+                        "secondX": 8,
+                        "secondY": 70,
+                        "secondZ": 8
+                    }]
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        V2ConfigSnapshot snapshot = store.loadOrReset();
+
+        assertEquals(7, snapshot.config().schemaVersion());
+        assertEquals(1, snapshot.config().regions().size());
+        assertEquals(2, snapshot.config().tasks().size());
+        assertEquals(
+                dev.stowling.v2.model.TaskInterruptionMode.CUSTOM,
+                snapshot.config().tasks().getFirst().interruptionMode()
+        );
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
+    }
+
+    @Test
     void storesIndependentTaskTriggerConfiguration() throws Exception {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """

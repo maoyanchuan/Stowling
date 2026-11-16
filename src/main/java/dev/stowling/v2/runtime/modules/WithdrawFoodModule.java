@@ -1,47 +1,102 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerTransferState;
+import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.domain.BlockPosition;
-import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
+import java.util.Map;
 
 final class WithdrawFoodModule implements TaskModuleExecutor {
-    private final FoodAcquisitionAction acquisition;
+    private final TaskExecutionContext context;
+    private final ContainerTarget target;
+    private final String foodItemId;
+    private boolean started;
+    private boolean inFlight;
 
-    WithdrawFoodModule(
-            TaskExecutionContext context,
-            TaskStep step
-    ) {
-        CoordinatePoint coordinate = TaskModuleSupport.coordinate(
-                context,
-                step
+    WithdrawFoodModule(TaskExecutionContext context, TaskStep step) {
+        this.context = context;
+        ResourceReference reference = ResourceReferenceSupport.reference(
+                step,
+                TaskModuleIds.TARGET_REF,
+                ResourceType.COORDINATE,
+                TaskModuleIds.COORDINATE_ID
         );
-        String foodItemId = step.parameters()
-                .get(ConfigValidator.FOOD_ITEM_ID)
-                .trim();
-        acquisition = new FoodAcquisitionAction(
+        CoordinatePoint coordinate = ResourceReferenceSupport.coordinate(
                 context,
+                reference
+        );
+        this.target = new ContainerTarget(
                 new BlockPosition(
                         coordinate.x(),
                         coordinate.y(),
                         coordinate.z()
                 ),
-                foodItemId
+                "food-container"
+        );
+        this.foodItemId = ResourceReferenceSupport.parameter(
+                step,
+                TaskModuleIds.FOOD_ITEM_ID
         );
     }
 
     @Override
     public TaskModuleResult start() {
-        return acquisition.start();
+        if (started) {
+            return tick();
+        }
+        started = true;
+        inFlight = true;
+        return handle(context.foodConsumption().startAcquiringFood(
+                target,
+                foodItemId
+        ));
     }
 
     @Override
     public TaskModuleResult tick() {
-        return acquisition.tick();
+        if (!started) {
+            return start();
+        }
+        if (!inFlight) {
+            return TaskModuleResult.succeeded("食物获取已完成");
+        }
+        return handle(context.foodConsumption().pollAcquiringFood());
+    }
+
+    @Override
+    public void requestStop() {
+    }
+
+    @Override
+    public boolean safeToStop() {
+        return !inFlight;
     }
 
     @Override
     public void cancel() {
-        acquisition.cancel();
+        if (inFlight) {
+            context.foodConsumption().cancelAcquiringFood();
+        }
+        inFlight = false;
+    }
+
+    private TaskModuleResult handle(FoodConsumptionResult result) {
+        if (result.state() == ContainerTransferState.PENDING) {
+            return TaskModuleResult.waiting(result.message());
+        }
+        inFlight = false;
+        for (Map.Entry<String, Integer> entry : result.items().entrySet()) {
+            context.workspace().recordManagedAcquired(
+                    entry.getKey(),
+                    entry.getValue()
+            );
+        }
+        return result.state() == ContainerTransferState.FAILED
+                ? TaskModuleResult.failed(result.message())
+                : TaskModuleResult.succeeded(result.message());
     }
 }

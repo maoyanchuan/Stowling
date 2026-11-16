@@ -24,12 +24,17 @@ class V2ModelContractTest {
                         "name",
                         "priority",
                         "repeatWhenIdle",
-                        "steps"
+                        "steps",
+                        "interruptionMode",
+                        "interruptionTaskRef",
+                        "defaultInterruptionFlow",
+                        "requeueAfterInterruption"
                 ),
                 components(TaskDefinition.class)
         );
         assertEquals(
-                List.of("id", "moduleId", "parameters"),
+                List.of("id", "kind", "moduleId", "parameters", "steps",
+                        "otherwise"),
                 components(TaskStep.class)
         );
         assertEquals(
@@ -105,6 +110,9 @@ class V2ModelContractTest {
         assertEquals("Travel", task.name());
         assertEquals(TaskPriority.NORMAL, task.priority());
         assertEquals(false, task.repeatWhenIdle());
+        assertEquals(TaskInterruptionMode.DEFAULT, task.interruptionMode());
+        assertEquals(false, task.defaultInterruptionFlow());
+        assertEquals(false, task.requeueAfterInterruption());
     }
 
     private static List<String> components(Class<?> type) {

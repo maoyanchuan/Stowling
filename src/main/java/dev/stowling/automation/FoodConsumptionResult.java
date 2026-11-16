@@ -1,34 +1,69 @@
 package dev.stowling.automation;
 
+import java.util.Map;
 import java.util.Objects;
 
 public record FoodConsumptionResult(
         ContainerTransferState state,
-        String message
+        String message,
+        Map<String, Integer> items
 ) {
     public FoodConsumptionResult {
         state = Objects.requireNonNull(state, "state");
         message = Objects.requireNonNull(message, "message");
+        items = Map.copyOf(Objects.requireNonNull(items, "items"));
+        for (Map.Entry<String, Integer> entry : items.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()
+                    || entry.getValue() == null || entry.getValue() <= 0) {
+                throw new IllegalArgumentException(
+                        "food result items must be positive"
+                );
+            }
+        }
+    }
+
+    public FoodConsumptionResult(
+            ContainerTransferState state,
+            String message
+    ) {
+        this(state, message, Map.of());
     }
 
     public static FoodConsumptionResult pending(String message) {
         return new FoodConsumptionResult(
                 ContainerTransferState.PENDING,
-                message
+                message,
+                Map.of()
         );
     }
 
     public static FoodConsumptionResult succeeded(String message) {
+        return succeeded(message, Map.of());
+    }
+
+    public static FoodConsumptionResult succeeded(
+            String message,
+            Map<String, Integer> items
+    ) {
         return new FoodConsumptionResult(
                 ContainerTransferState.SUCCEEDED,
-                message
+                message,
+                items
         );
     }
 
     public static FoodConsumptionResult failed(String message) {
+        return failed(message, Map.of());
+    }
+
+    public static FoodConsumptionResult failed(
+            String message,
+            Map<String, Integer> items
+    ) {
         return new FoodConsumptionResult(
                 ContainerTransferState.FAILED,
-                message
+                message,
+                items
         );
     }
 }

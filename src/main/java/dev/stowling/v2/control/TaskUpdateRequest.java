@@ -1,5 +1,6 @@
 package dev.stowling.v2.control;
 
+import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import java.util.List;
 
@@ -8,7 +9,11 @@ public record TaskUpdateRequest(
         String name,
         TaskPriority priority,
         boolean repeatWhenIdle,
-        List<TaskStepRequest> steps
+        List<TaskStepRequest> steps,
+        TaskInterruptionMode interruptionMode,
+        String interruptionTaskRef,
+        boolean defaultInterruptionFlow,
+        boolean requeueAfterInterruption
 ) {
     public TaskUpdateRequest {
         steps = List.copyOf(steps);
@@ -17,14 +22,28 @@ public record TaskUpdateRequest(
     public TaskUpdateRequest(
             String revision,
             String name,
+            TaskPriority priority,
+            boolean repeatWhenIdle,
             List<TaskStepRequest> steps
     ) {
         this(
                 revision,
                 name,
-                TaskPriority.NORMAL,
+                priority,
+                repeatWhenIdle,
+                steps,
+                TaskInterruptionMode.DEFAULT,
+                null,
                 false,
-                steps
+                false
         );
+    }
+
+    public TaskUpdateRequest(
+            String revision,
+            String name,
+            List<TaskStepRequest> steps
+    ) {
+        this(revision, name, TaskPriority.NORMAL, false, steps);
     }
 }

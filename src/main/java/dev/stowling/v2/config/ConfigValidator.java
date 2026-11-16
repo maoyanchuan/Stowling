@@ -9,8 +9,14 @@ import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
+import dev.stowling.v2.model.TaskCondition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskFlowTemplates;
+import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -23,18 +29,33 @@ import java.util.UUID;
 
 public final class ConfigValidator {
     public static final String MOVE_TO_COORDINATE = "MOVE_TO_COORDINATE";
+    public static final String COLLECT_DROPPED_ITEMS = "COLLECT_DROPPED_ITEMS";
+    public static final String SCAN_CONTAINERS_IN_REGION =
+            "SCAN_CONTAINERS_IN_REGION";
+    public static final String RESOLVE_CONTAINER_CATEGORIES =
+            "RESOLVE_CONTAINER_CATEGORIES";
+    public static final String SELECT_CONTAINER = "SELECT_CONTAINER";
+    public static final String WITHDRAW_ITEMS = "WITHDRAW_ITEMS";
+    public static final String SELECT_STORAGE_TARGET = "SELECT_STORAGE_TARGET";
+    public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
+            "DEPOSIT_ITEMS_TO_CONTAINERS";
+    public static final String WITHDRAW_FOOD = "WITHDRAW_FOOD";
+    public static final String EAT_FOOD = "EAT_FOOD";
+    public static final String SCAN_CATEGORY_MARKERS = "SCAN_CATEGORY_MARKERS";
+    public static final String SELECT_MARKER_CONTAINER =
+            "SELECT_MARKER_CONTAINER";
+    public static final String READ_CONTAINER = "READ_CONTAINER";
+    public static final String SAVE_CATEGORY_MARKER_CACHE =
+            "SAVE_CATEGORY_MARKER_CACHE";
+    public static final String ASSERT_NO_MANAGED_ITEMS =
+            "ASSERT_NO_MANAGED_ITEMS";
+
     public static final String WAIT_FOR_DROPPED_ITEMS =
             "WAIT_FOR_DROPPED_ITEMS";
-    public static final String COLLECT_DROPPED_ITEMS =
-            "COLLECT_DROPPED_ITEMS";
     public static final String COLLECT_DROPPED_ITEMS_IN_REGION =
             "COLLECT_DROPPED_ITEMS_IN_REGION";
     public static final String AUTO_EAT_AT_COORDINATE =
             "AUTO_EAT_AT_COORDINATE";
-    public static final String EAT_FOOD = "EAT_FOOD";
-    public static final String WITHDRAW_FOOD = "WITHDRAW_FOOD";
-    public static final String SCAN_CONTAINERS_IN_REGION =
-            "SCAN_CONTAINERS_IN_REGION";
     public static final String MATCH_CONTAINER_CATEGORIES =
             "MATCH_CONTAINER_CATEGORIES";
     public static final String SORT_CACHE_ITEMS = "SORT_CACHE_ITEMS";
@@ -42,17 +63,19 @@ public final class ConfigValidator {
             "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE";
     public static final String REFRESH_CATEGORY_MARKER_CACHE =
             "REFRESH_CATEGORY_MARKER_CACHE";
-    public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
-            "DEPOSIT_ITEMS_TO_CONTAINERS";
+
+    public static final String TARGET_REF = "targetRef";
+    public static final String AREA_REF = "areaRef";
+    public static final String REGION_REF = "regionRef";
+    public static final String CATEGORY_ZONE_REF = "categoryZoneRef";
+    public static final String TASK_REF = "taskRef";
     public static final String COORDINATE_ID = "coordinateId";
-    public static final String FOOD_ITEM_ID = "foodItemId";
-    public static final String FOOD_LEVEL_THRESHOLD =
-            "foodLevelThreshold";
     public static final String REGION_ID = "regionId";
     public static final String CACHE_REGION_ID = "cacheRegionId";
     public static final String CATEGORY_ZONE_ID = "categoryZoneId";
     public static final String AREA_REFERENCE = "area";
-    public static final String AREA_REFERENCE_SEPARATOR = ":";
+    public static final String FOOD_ITEM_ID = "foodItemId";
+    public static final String FOOD_LEVEL_THRESHOLD = "foodLevelThreshold";
     public static final String ITEM_FILTER = "itemFilter";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
     public static final String CONTAINER_TYPES = "containerTypes";
@@ -60,6 +83,8 @@ public final class ConfigValidator {
     public static final String SCAN_SOURCE = "scanSource";
     public static final String ITEM_SOURCE = "itemSource";
     public static final String FILL_MODE = "fillMode";
+    public static final String PRIORITY = "priority";
+
 
     private ConfigValidator() {
     }
@@ -103,21 +128,73 @@ public final class ConfigValidator {
         }
         Map<UUID, CategoryZoneDefinition> categoryZones =
                 validateCategoryZones(config.categoryZones());
-        Set<UUID> taskIds = new HashSet<>();
+        Map<UUID, TaskDefinition> tasks = new LinkedHashMap<>();
         for (TaskDefinition task : config.tasks()) {
-            if (!taskIds.add(task.id())) {
+            if (tasks.putIfAbsent(task.id(), task) != null) {
                 throw new V2ValidationException("duplicate task id");
             }
+        }
+        int defaultInterruptionFlows = 0;
+        for (TaskDefinition task : config.tasks()) {
+            if (task.defaultInterruptionFlow()) {
+                defaultInterruptionFlows++;
+            }
+            requireInterruption(task, tasks);
             for (TaskStep step : task.steps()) {
                 requireValidStep(
                         step,
                         coordinates,
                         regions,
-                        categoryZones
+                        categoryZones,
+                        tasks.keySet()
                 );
             }
         }
-        validateTriggers(config.triggers(), coordinates, regions, taskIds);
+        if (defaultInterruptionFlows > 1) {
+            throw new V2ValidationException(
+                    "only one default interruption flow is allowed"
+            );
+        }
+        validateTriggers(config.triggers(), coordinates, regions, tasks.keySet());
+    }
+
+    private static void requireInterruption(
+            TaskDefinition task,
+            Map<UUID, TaskDefinition> tasks
+    ) {
+        if (task.interruptionMode() != TaskInterruptionMode.CUSTOM) {
+            return;
+        }
+        ResourceReference reference = ResourceReference.parse(
+                task.interruptionTaskRef()
+        );
+        if (reference.type() != ResourceType.TASK) {
+            throw new V2ValidationException(
+                    "interruption reference must target a task: " + reference
+            );
+        }
+        TaskDefinition interruptionTask = tasks.get(reference.uuid());
+        if (interruptionTask == null) {
+            throw new V2ValidationException(
+                    "interruption task does not exist: " + reference
+            );
+        }
+        if (containsTaskCreation(interruptionTask.steps())) {
+            throw new V2ValidationException(
+                    "interruption tasks cannot create tasks: " + reference
+            );
+        }
+    }
+
+    private static boolean containsTaskCreation(List<TaskStep> steps) {
+        for (TaskStep step : steps) {
+            if (step.kind() == TaskStepKind.CREATE_TASK
+                    || containsTaskCreation(step.steps())
+                    || containsTaskCreation(step.otherwise())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void validateTriggers(
@@ -158,7 +235,7 @@ public final class ConfigValidator {
             TaskStep step,
             Map<UUID, CoordinatePoint> coordinates
     ) {
-        requireValidStep(step, coordinates, Map.of());
+        requireValidStep(step, coordinates, Map.of(), Map.of(), Set.of());
     }
 
     public static void requireValidStep(
@@ -166,7 +243,7 @@ public final class ConfigValidator {
             Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions
     ) {
-        requireValidStep(step, coordinates, regions, Map.of());
+        requireValidStep(step, coordinates, regions, Map.of(), Set.of());
     }
 
     public static void requireValidStep(
@@ -175,43 +252,213 @@ public final class ConfigValidator {
             Map<UUID, RegionDefinition> regions,
             Map<UUID, CategoryZoneDefinition> categoryZones
     ) {
+        requireValidStep(step, coordinates, regions, categoryZones, Set.of());
+    }
+
+    private static void requireValidStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            Set<UUID> taskIds
+    ) {
+        switch (step.kind()) {
+            case IF -> requireConditionalStep(
+                    step,
+                    coordinates,
+                    regions,
+                    categoryZones,
+                    taskIds,
+                    false
+            );
+            case REPEAT -> requireConditionalStep(
+                    step,
+                    coordinates,
+                    regions,
+                    categoryZones,
+                    taskIds,
+                    true
+            );
+            case CREATE_TASK -> requireCreateTaskStep(step, taskIds);
+            case ACTION -> requireActionStep(
+                    step,
+                    coordinates,
+                    regions,
+                    categoryZones
+            );
+        }
+    }
+
+    private static void requireConditionalStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            Set<UUID> taskIds,
+            boolean repeat
+    ) {
+        Set<String> allowed = repeat
+                ? Set.of(
+                        TaskFlowTemplates.CONDITION,
+                        TaskFlowTemplates.NEGATE,
+                        FOOD_LEVEL_THRESHOLD,
+                        TaskFlowTemplates.MAX_ITERATIONS
+                )
+                : Set.of(
+                        TaskFlowTemplates.CONDITION,
+                        TaskFlowTemplates.NEGATE,
+                        FOOD_LEVEL_THRESHOLD
+                );
+        requireParameters(step, allowed, Set.of(TaskFlowTemplates.CONDITION));
+        TaskCondition condition;
+        try {
+            condition = TaskCondition.parse(
+                    step.parameters().get(TaskFlowTemplates.CONDITION)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException("task condition is not supported");
+        }
+        if (condition == TaskCondition.FOOD_BELOW_THRESHOLD) {
+            requireRequiredInteger(step, FOOD_LEVEL_THRESHOLD, 0, 20);
+        } else if (step.parameters().containsKey(FOOD_LEVEL_THRESHOLD)) {
+            throw new V2ValidationException(
+                    FOOD_LEVEL_THRESHOLD + " only applies to food conditions"
+            );
+        }
+        requireOptionalBoolean(step, TaskFlowTemplates.NEGATE);
+        if (repeat) {
+            requireOptionalInteger(
+                    step,
+                    TaskFlowTemplates.MAX_ITERATIONS,
+                    1,
+                    1_000_000
+            );
+            if (!step.otherwise().isEmpty()) {
+                throw new V2ValidationException(
+                        "repeat steps cannot define otherwise"
+                );
+            }
+        }
+        if (step.steps().isEmpty()) {
+            throw new V2ValidationException("conditional steps require a body");
+        }
+        for (TaskStep nested : step.steps()) {
+            requireValidStep(
+                    nested,
+                    coordinates,
+                    regions,
+                    categoryZones,
+                    taskIds
+            );
+        }
+        for (TaskStep nested : step.otherwise()) {
+            requireValidStep(
+                    nested,
+                    coordinates,
+                    regions,
+                    categoryZones,
+                    taskIds
+            );
+        }
+    }
+
+    private static void requireCreateTaskStep(
+            TaskStep step,
+            Set<UUID> taskIds
+    ) {
+        if (!step.steps().isEmpty() || !step.otherwise().isEmpty()) {
+            throw new V2ValidationException(
+                    "create-task steps cannot contain nested steps"
+            );
+        }
+        requireParameters(
+                step,
+                Set.of(TASK_REF, PRIORITY),
+                Set.of(TASK_REF)
+        );
+        ResourceReference reference = requireReference(
+                step,
+                TASK_REF,
+                ResourceType.TASK
+        );
+        if (!taskIds.isEmpty() && !taskIds.contains(reference.uuid())) {
+            throw new V2ValidationException(
+                    "task reference does not exist: " + reference
+            );
+        }
+        String priority = step.parameters().get(PRIORITY);
+        if (priority != null
+                && !Set.of("BACKGROUND", "NORMAL", "URGENT").contains(priority)) {
+            throw new V2ValidationException("task priority is not supported");
+        }
+    }
+
+    private static void requireActionStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        if (!step.steps().isEmpty() || !step.otherwise().isEmpty()) {
+            throw new V2ValidationException(
+                    "action steps cannot contain nested steps"
+            );
+        }
         switch (step.moduleId()) {
-            case MOVE_TO_COORDINATE -> requireCoordinateStep(
-                    step,
-                    coordinates,
-                    Set.of(COORDINATE_ID),
-                    Set.of(COORDINATE_ID)
-            );
-            case WAIT_FOR_DROPPED_ITEMS -> requireCoordinateStep(
-                    step,
-                    coordinates,
-                    Set.of(COORDINATE_ID, ITEM_FILTER, TIMEOUT_SECONDS),
-                    Set.of(COORDINATE_ID)
-            );
+            case MOVE_TO_COORDINATE -> requireMoveStep(step, coordinates);
             case COLLECT_DROPPED_ITEMS -> requireCollectStep(
                     step,
                     coordinates,
                     regions
             );
-            case COLLECT_DROPPED_ITEMS_IN_REGION ->
-                    requireRegionCollectStep(step, regions);
-            case AUTO_EAT_AT_COORDINATE ->
-                    requireAutoEatStep(step, coordinates);
+            case SCAN_CONTAINERS_IN_REGION -> requireScanStep(
+                    step,
+                    regions
+            );
+            case RESOLVE_CONTAINER_CATEGORIES -> requireCategoryZoneStep(
+                    step,
+                    categoryZones
+            );
+            case SELECT_CONTAINER -> requireParameters(
+                    step,
+                    Set.of(TaskFlowTemplates.RESET_CACHE_HAS_MORE),
+                    Set.of()
+            );
+            case WITHDRAW_ITEMS -> requireWithdrawStep(step, coordinates);
+            case SELECT_STORAGE_TARGET, ASSERT_NO_MANAGED_ITEMS ->
+                    requireParameters(step, Set.of(), Set.of());
+            case DEPOSIT_ITEMS_TO_CONTAINERS ->
+                    requireDepositStep(step, coordinates, regions);
+            case WITHDRAW_FOOD -> requireWithdrawFoodStep(step, coordinates);
             case EAT_FOOD -> requireEatFoodStep(step);
-            case WITHDRAW_FOOD ->
-                    requireWithdrawFoodStep(step, coordinates);
-            case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, regions);
-            case MATCH_CONTAINER_CATEGORIES -> requireCategoryStep(step);
-            case SORT_CACHE_ITEMS -> requireCacheSortStep(step, regions);
+            case SCAN_CATEGORY_MARKERS, SAVE_CATEGORY_MARKER_CACHE ->
+                    requireMarkerZoneStep(step, categoryZones);
+            case SELECT_MARKER_CONTAINER ->
+                    requireParameters(step, Set.of(), Set.of());
+            case READ_CONTAINER -> {
+                requireParameters(step, Set.of(TARGET_REF), Set.of(TARGET_REF));
+                requireReference(step, TARGET_REF, ResourceType.OUTPUT);
+            }
+            case WAIT_FOR_DROPPED_ITEMS -> requireLegacyWaitStep(
+                    step,
+                    coordinates
+            );
+            case MATCH_CONTAINER_CATEGORIES -> requireMatchStep(step);
+            case SORT_CACHE_ITEMS -> requireLegacySortStep(step, regions);
+            case COLLECT_DROPPED_ITEMS_IN_REGION ->
+                    requireLegacyRegionCollectStep(step, regions);
+            case AUTO_EAT_AT_COORDINATE -> requireLegacyAutoEatStep(
+                    step,
+                    coordinates
+            );
             case SORT_CACHE_ITEMS_BY_CATEGORY_ZONE ->
-                    requireCategoryZoneSortStep(
+                    requireLegacyCategoryZoneSortStep(
                             step,
                             regions,
                             categoryZones
                     );
             case REFRESH_CATEGORY_MARKER_CACHE ->
-                    requireRefreshMarkerCacheStep(step, categoryZones);
-            case DEPOSIT_ITEMS_TO_CONTAINERS -> requireDepositStep(step);
+                    requireMarkerZoneStep(step, categoryZones);
             default -> throw new V2ValidationException(
                     "unknown task module: " + step.moduleId()
             );
@@ -225,15 +472,73 @@ public final class ConfigValidator {
             Set<String> required
     ) {
         requireParameters(step, allowed, required);
-        UUID coordinateId = requireUuid(
-                step.parameters().get(COORDINATE_ID),
+        requireCoordinateReference(step, coordinates);
+        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+    }
+
+    private static void requireMoveStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        requireParameters(
+                step,
+                Set.of(TARGET_REF, COORDINATE_ID),
+                Set.of()
+        );
+        ResourceReference reference = referenceParameter(
+                step,
+                ResourceType.COORDINATE,
+                TARGET_REF,
                 COORDINATE_ID
         );
-        if (!coordinates.containsKey(coordinateId)) {
+        if (reference.type() == ResourceType.OUTPUT) {
+            return;
+        }
+        if (reference.type() != ResourceType.COORDINATE
+                || !coordinates.containsKey(reference.uuid())) {
             throw new V2ValidationException(
-                    "coordinate does not exist: " + coordinateId
+                    "move target does not exist: " + reference
             );
         }
+    }
+
+    private static void requireCoordinateReference(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        ResourceReference reference = referenceParameter(
+                step,
+                ResourceType.COORDINATE,
+                TARGET_REF,
+                COORDINATE_ID
+        );
+        if (reference.type() != ResourceType.COORDINATE
+                || !coordinates.containsKey(reference.uuid())) {
+            throw new V2ValidationException(
+                    "coordinate does not exist: " + reference
+            );
+        }
+    }
+
+    private static void requireCollectStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        requireParameters(
+                step,
+                Set.of(
+                        AREA_REF,
+                        AREA_REFERENCE,
+                        COORDINATE_ID,
+                        REGION_ID,
+                        ITEM_FILTER,
+                        TIMEOUT_SECONDS
+                ),
+                Set.of()
+        );
+        ResourceReference area = areaReference(step);
+        requireAreaExists(area, coordinates, regions);
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
     }
 
@@ -243,108 +548,94 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(REGION_ID, CONTAINER_TYPES, MAX_VOLUME),
-                Set.of(REGION_ID)
+                Set.of(REGION_REF, REGION_ID, CACHE_REGION_ID,
+                        CONTAINER_TYPES, MAX_VOLUME),
+                Set.of()
         );
-        UUID regionId = requireUuid(
-                step.parameters().get(REGION_ID),
-                REGION_ID
+        requireRegionReference(
+                step,
+                regions,
+                REGION_REF,
+                REGION_ID,
+                CACHE_REGION_ID
         );
-        if (!regions.containsKey(regionId)) {
-            throw new V2ValidationException("region does not exist: " + regionId);
-        }
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
     }
 
-    private static void requireRegionCollectStep(
+    private static void requireCategoryZoneStep(
             TaskStep step,
-            Map<UUID, RegionDefinition> regions
+            Map<UUID, CategoryZoneDefinition> categoryZones
     ) {
         requireParameters(
                 step,
-                Set.of(REGION_ID, ITEM_FILTER, TIMEOUT_SECONDS),
-                Set.of(REGION_ID)
+                Set.of(CATEGORY_ZONE_REF, CATEGORY_ZONE_ID),
+                Set.of()
         );
-        requireRegion(step, regions, REGION_ID);
-        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+        requireCategoryZoneReference(step, categoryZones);
     }
 
-    private static void requireCollectStep(
-            TaskStep step,
-            Map<UUID, CoordinatePoint> coordinates,
-            Map<UUID, RegionDefinition> regions
-    ) {
-        if (step.parameters().containsKey(AREA_REFERENCE)) {
-            requireParameters(
-                    step,
-                    Set.of(AREA_REFERENCE, ITEM_FILTER, TIMEOUT_SECONDS),
-                    Set.of(AREA_REFERENCE)
-            );
-            requireAreaReference(step, coordinates, regions);
-        } else {
-            requireCoordinateStep(
-                    step,
-                    coordinates,
-                    Set.of(COORDINATE_ID, ITEM_FILTER, TIMEOUT_SECONDS),
-                    Set.of(COORDINATE_ID)
-            );
-        }
-        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
-    }
-
-    private static void requireAreaReference(
-            TaskStep step,
-            Map<UUID, CoordinatePoint> coordinates,
-            Map<UUID, RegionDefinition> regions
-    ) {
-        String value = step.parameters().get(AREA_REFERENCE);
-        int separator = value.indexOf(AREA_REFERENCE_SEPARATOR);
-        if (separator <= 0 || separator == value.length() - 1) {
-            throw new V2ValidationException(
-                    AREA_REFERENCE + " must reference a coordinate or region"
-            );
-        }
-        String type = value.substring(0, separator);
-        UUID id = requireUuid(
-                value.substring(separator + 1),
-                AREA_REFERENCE
-        );
-        boolean valid = switch (type) {
-            case "coordinate" -> coordinates.containsKey(id);
-            case "region" -> regions.containsKey(id);
-            default -> false;
-        };
-        if (!valid) {
-            throw new V2ValidationException(
-                    AREA_REFERENCE + " resource does not exist: " + value
-            );
-        }
-    }
-
-    private static void requireAutoEatStep(
+    private static void requireWithdrawStep(
             TaskStep step,
             Map<UUID, CoordinatePoint> coordinates
     ) {
         requireParameters(
                 step,
-                Set.of(
-                        COORDINATE_ID,
-                        FOOD_ITEM_ID,
-                        FOOD_LEVEL_THRESHOLD
-                ),
-                Set.of(COORDINATE_ID, FOOD_ITEM_ID)
+                Set.of(TARGET_REF, ITEM_SOURCE),
+                Set.of(TARGET_REF, ITEM_SOURCE)
         );
-        UUID coordinateId = requireUuid(
-                step.parameters().get(COORDINATE_ID),
-                COORDINATE_ID
-        );
-        if (!coordinates.containsKey(coordinateId)) {
-            throw new V2ValidationException(
-                    "coordinate does not exist: " + coordinateId
+        requireContainerReference(step, coordinates);
+        requireChoice(step, ITEM_SOURCE, "classified");
+    }
+
+    private static void requireDepositStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        if (!step.parameters().containsKey(TARGET_REF)) {
+            requireParameters(
+                    step,
+                    Set.of(SCAN_SOURCE, REGION_REF, REGION_ID,
+                            CACHE_REGION_ID, ITEM_SOURCE, FILL_MODE),
+                    Set.of()
             );
+            if (step.parameters().containsKey(REGION_REF)
+                    || step.parameters().containsKey(REGION_ID)
+                    || step.parameters().containsKey(CACHE_REGION_ID)) {
+                requireRegionReference(
+                        step,
+                        regions,
+                        REGION_REF,
+                        REGION_ID,
+                        CACHE_REGION_ID
+                );
+            }
+            return;
         }
+        requireParameters(
+                step,
+                Set.of(TARGET_REF, ITEM_SOURCE),
+                Set.of(TARGET_REF, ITEM_SOURCE)
+        );
+        requireContainerReference(step, coordinates);
+        requireChoiceIn(
+                step,
+                ITEM_SOURCE,
+                Set.of("collected", "carried", "managed")
+        );
+    }
+
+    private static void requireWithdrawFoodStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        requireParameters(
+                step,
+                Set.of(TARGET_REF, COORDINATE_ID, FOOD_ITEM_ID),
+                Set.of(FOOD_ITEM_ID)
+        );
+        requireCoordinateReference(step, coordinates);
         requireFoodItemId(step);
-        requireOptionalInteger(step, FOOD_LEVEL_THRESHOLD, 1, 20);
     }
 
     private static void requireEatFoodStep(TaskStep step) {
@@ -356,25 +647,98 @@ public final class ConfigValidator {
         requireFoodItemId(step);
     }
 
-    private static void requireWithdrawFoodStep(
+    private static void requireMarkerZoneStep(
+            TaskStep step,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        requireParameters(
+                step,
+                Set.of(CATEGORY_ZONE_REF, CATEGORY_ZONE_ID, MAX_VOLUME),
+                Set.of()
+        );
+        requireCategoryZoneReference(step, categoryZones);
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static void requireLegacyWaitStep(
             TaskStep step,
             Map<UUID, CoordinatePoint> coordinates
     ) {
         requireParameters(
                 step,
-                Set.of(COORDINATE_ID, FOOD_ITEM_ID),
-                Set.of(COORDINATE_ID, FOOD_ITEM_ID)
+                Set.of(TARGET_REF, COORDINATE_ID, ITEM_FILTER, TIMEOUT_SECONDS),
+                Set.of()
         );
-        UUID coordinateId = requireUuid(
-                step.parameters().get(COORDINATE_ID),
-                COORDINATE_ID
+        requireCoordinateReference(step, coordinates);
+        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+    }
+
+    private static void requireMatchStep(TaskStep step) {
+        requireParameters(step, Set.of(SCAN_SOURCE), Set.of(SCAN_SOURCE));
+        requireChoice(step, SCAN_SOURCE, "previous-scan");
+    }
+
+    private static void requireLegacySortStep(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        requireParameters(
+                step,
+                Set.of(REGION_REF, CACHE_REGION_ID, SCAN_SOURCE,
+                        CONTAINER_TYPES, MAX_VOLUME),
+                Set.of()
         );
-        if (!coordinates.containsKey(coordinateId)) {
-            throw new V2ValidationException(
-                    "coordinate does not exist: " + coordinateId
-            );
+        requireRegionReference(step, regions, REGION_REF, CACHE_REGION_ID);
+        if (step.parameters().containsKey(SCAN_SOURCE)) {
+            requireChoice(step, SCAN_SOURCE, "previous-scan");
         }
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static void requireLegacyRegionCollectStep(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions
+    ) {
+        requireParameters(
+                step,
+                Set.of(REGION_REF, REGION_ID, ITEM_FILTER, TIMEOUT_SECONDS,
+                        CONTAINER_TYPES, MAX_VOLUME),
+                Set.of()
+        );
+        requireRegionReference(step, regions, REGION_REF, REGION_ID);
+        requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static void requireLegacyAutoEatStep(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        requireParameters(
+                step,
+                Set.of(TARGET_REF, COORDINATE_ID, FOOD_ITEM_ID,
+                        FOOD_LEVEL_THRESHOLD),
+                Set.of(FOOD_ITEM_ID)
+        );
+        requireCoordinateReference(step, coordinates);
         requireFoodItemId(step);
+        requireOptionalInteger(step, FOOD_LEVEL_THRESHOLD, 0, 20);
+    }
+
+    private static void requireLegacyCategoryZoneSortStep(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        requireParameters(
+                step,
+                Set.of(REGION_REF, CACHE_REGION_ID, CATEGORY_ZONE_REF,
+                        CATEGORY_ZONE_ID, CONTAINER_TYPES, MAX_VOLUME),
+                Set.of()
+        );
+        requireRegionReference(step, regions, REGION_REF, CACHE_REGION_ID);
+        requireCategoryZoneReference(step, categoryZones);
+        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
     }
 
     private static void requireFoodItemId(TaskStep step) {
@@ -386,114 +750,230 @@ public final class ConfigValidator {
         }
     }
 
-    private static void requireDepositStep(TaskStep step) {
-        if (step.parameters().isEmpty()) {
-            return;
-        }
-        requireParameters(
-                step,
-                Set.of(SCAN_SOURCE, ITEM_SOURCE, FILL_MODE),
-                Set.of(SCAN_SOURCE, ITEM_SOURCE, FILL_MODE)
-        );
-        requireChoice(step, SCAN_SOURCE, "previous-scan");
-        requireChoice(step, ITEM_SOURCE, "collected-this-run");
-        requireChoice(step, FILL_MODE, "nearest-first");
-    }
-
-    private static void requireCategoryStep(TaskStep step) {
-        requireParameters(
-                step,
-                Set.of(SCAN_SOURCE),
-                Set.of(SCAN_SOURCE)
-        );
-        requireChoice(step, SCAN_SOURCE, "previous-scan");
-    }
-
-    private static void requireCacheSortStep(
-            TaskStep step,
+    private static void requireAreaExists(
+            ResourceReference area,
+            Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions
     ) {
-        requireParameters(
-                step,
-                Set.of(
-                        CACHE_REGION_ID,
-                        SCAN_SOURCE,
-                        CONTAINER_TYPES,
-                        MAX_VOLUME
-                ),
-                Set.of(CACHE_REGION_ID, SCAN_SOURCE)
-        );
-        requireRegion(step, regions, CACHE_REGION_ID);
-        requireChoice(step, SCAN_SOURCE, "previous-scan");
-        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
-    }
-
-    private static void requireCategoryZoneSortStep(
-            TaskStep step,
-            Map<UUID, RegionDefinition> regions,
-            Map<UUID, CategoryZoneDefinition> categoryZones
-    ) {
-        requireParameters(
-                step,
-                Set.of(
-                        CACHE_REGION_ID,
-                        CATEGORY_ZONE_ID,
-                        CONTAINER_TYPES,
-                        MAX_VOLUME
-                ),
-                Set.of(CACHE_REGION_ID, CATEGORY_ZONE_ID)
-        );
-        UUID cacheId = requireUuid(
-                step.parameters().get(CACHE_REGION_ID),
-                CACHE_REGION_ID
-        );
-        RegionDefinition cacheRegion = regions.get(cacheId);
-        if (cacheRegion == null) {
-            throw new V2ValidationException(
-                    "region does not exist: " + cacheId
-            );
-        }
-        UUID zoneId = requireUuid(
-                step.parameters().get(CATEGORY_ZONE_ID),
-                CATEGORY_ZONE_ID
-        );
-        CategoryZoneDefinition zone = categoryZones.get(zoneId);
-        if (zone == null) {
-            throw new V2ValidationException(
-                    "category zone does not exist: " + zoneId
-            );
-        }
-        AreaBounds cache = bounds(cacheRegion);
-        for (CategoryBindingDefinition binding : zone.bindings()) {
-            if (areasOverlap(cache, binding.markerArea())
-                    || areasOverlap(cache, binding.storageArea())) {
+        if (area.type() == ResourceType.COORDINATE) {
+            if (!coordinates.containsKey(area.uuid())) {
                 throw new V2ValidationException(
-                        "cache region must not overlap category zone " + zone.name()
+                        "coordinate does not exist: " + area
                 );
             }
+        } else if (area.type() == ResourceType.REGION) {
+            if (!regions.containsKey(area.uuid())) {
+                throw new V2ValidationException("region does not exist: " + area);
+            }
+        } else {
+            throw new V2ValidationException(
+                    "collection area must be a coordinate or region"
+            );
         }
-        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
     }
 
-    private static void requireRefreshMarkerCacheStep(
+    private static ResourceReference areaReference(TaskStep step) {
+        String area = step.parameters().get(AREA_REF);
+        if (area == null) {
+            area = step.parameters().get(AREA_REFERENCE);
+        }
+        if (area != null) {
+            ResourceReference reference = ResourceReference.parse(area);
+            if (reference.type() != ResourceType.COORDINATE
+                    && reference.type() != ResourceType.REGION) {
+                throw new V2ValidationException(
+                        "area must reference a coordinate or region"
+                );
+            }
+            return reference;
+        }
+        String coordinate = step.parameters().get(COORDINATE_ID);
+        if (coordinate != null) {
+            return reference(ResourceType.COORDINATE, coordinate);
+        }
+        String region = step.parameters().get(REGION_ID);
+        if (region != null) {
+            return reference(ResourceType.REGION, region);
+        }
+        throw new V2ValidationException("collection area is required");
+    }
+
+    private static void requireRegionReference(
+            TaskStep step,
+            Map<UUID, RegionDefinition> regions,
+            String... keys
+    ) {
+        ResourceReference reference = referenceParameter(
+                step,
+                ResourceType.REGION,
+                keys
+        );
+        if (reference.type() != ResourceType.REGION
+                || !regions.containsKey(reference.uuid())) {
+            throw new V2ValidationException(
+                    "region does not exist: " + reference
+            );
+        }
+    }
+
+    private static void requireCategoryZoneReference(
             TaskStep step,
             Map<UUID, CategoryZoneDefinition> categoryZones
     ) {
-        requireParameters(
+        ResourceReference reference = referenceParameter(
                 step,
-                Set.of(CATEGORY_ZONE_ID, MAX_VOLUME),
-                Set.of(CATEGORY_ZONE_ID)
-        );
-        UUID zoneId = requireUuid(
-                step.parameters().get(CATEGORY_ZONE_ID),
+                ResourceType.CATEGORY_ZONE,
+                CATEGORY_ZONE_REF,
                 CATEGORY_ZONE_ID
         );
-        if (!categoryZones.containsKey(zoneId)) {
+        if (reference.type() != ResourceType.CATEGORY_ZONE
+                || !categoryZones.containsKey(reference.uuid())) {
             throw new V2ValidationException(
-                    "category zone does not exist: " + zoneId
+                    "category zone does not exist: " + reference
             );
         }
-        requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+    }
+
+    private static ResourceReference requireReference(
+            TaskStep step,
+            String key,
+            ResourceType expected
+    ) {
+        String value = step.parameters().get(key);
+        if (value == null || value.isBlank()) {
+            throw new V2ValidationException(key + " is required");
+        }
+        ResourceReference reference = ResourceReference.parse(value);
+        if (reference.type() != expected) {
+            throw new V2ValidationException(
+                    key + " must reference " + expected
+            );
+        }
+        return reference;
+    }
+
+    private static void requireContainerReference(
+            TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        String value = step.parameters().get(TARGET_REF);
+        if (value == null || value.isBlank()) {
+            throw new V2ValidationException(TARGET_REF + " is required");
+        }
+        ResourceReference reference = ResourceReference.parse(value);
+        if (reference.type() == ResourceType.OUTPUT) {
+            return;
+        }
+        if (reference.type() != ResourceType.COORDINATE
+                || !coordinates.containsKey(reference.uuid())) {
+            throw new V2ValidationException(
+                    "container reference must be a coordinate or output"
+            );
+        }
+    }
+
+    private static ResourceReference referenceParameter(
+            TaskStep step,
+            ResourceType fallback,
+            String... keys
+    ) {
+        for (String key : keys) {
+            String value = step.parameters().get(key);
+            if (value != null && !value.isBlank()) {
+                return reference(fallback, value);
+            }
+        }
+        throw new V2ValidationException(keys[0] + " is required");
+    }
+
+    private static ResourceReference reference(
+            ResourceType fallback,
+            String value
+    ) {
+        try {
+            return value.contains(":")
+                    ? ResourceReference.parse(value)
+                    : new ResourceReference(fallback, value);
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException("invalid resource reference");
+        }
+    }
+
+    private static void requireParameters(
+            TaskStep step,
+            Set<String> allowed,
+            Set<String> required
+    ) {
+        if (!allowed.containsAll(step.parameters().keySet())
+                || !step.parameters().keySet().containsAll(required)) {
+            throw new V2ValidationException(
+                    step.moduleId() + " has invalid parameters"
+            );
+        }
+    }
+
+    private static void requireRequiredInteger(
+            TaskStep step,
+            String key,
+            int minimum,
+            int maximum
+    ) {
+        if (!step.parameters().containsKey(key)) {
+            throw new V2ValidationException(key + " is required");
+        }
+        requireOptionalInteger(step, key, minimum, maximum);
+    }
+
+    private static void requireOptionalInteger(
+            TaskStep step,
+            String key,
+            int minimum,
+            int maximum
+    ) {
+        String value = step.parameters().get(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < minimum || parsed > maximum) {
+                throw new V2ValidationException(
+                        key + " is outside the supported range"
+                );
+            }
+        } catch (NumberFormatException exception) {
+            throw new V2ValidationException(key + " must be an integer");
+        }
+    }
+
+    private static void requireOptionalBoolean(TaskStep step, String key) {
+        String value = step.parameters().get(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
+            throw new V2ValidationException(key + " must be a boolean");
+        }
+    }
+
+    private static void requireChoiceIn(
+            TaskStep step,
+            String key,
+            Set<String> choices
+    ) {
+        if (!choices.contains(step.parameters().get(key))) {
+            throw new V2ValidationException(key + " is not supported");
+        }
+    }
+
+    private static void requireChoice(
+            TaskStep step,
+            String key,
+            String expected
+    ) {
+        if (!expected.equals(step.parameters().get(key))) {
+            throw new V2ValidationException(key + " is not supported");
+        }
     }
 
     private static Map<UUID, CategoryZoneDefinition> validateCategoryZones(
@@ -554,17 +1034,6 @@ public final class ConfigValidator {
         return Map.copyOf(result);
     }
 
-    private static AreaBounds bounds(RegionDefinition region) {
-        return new AreaBounds(
-                region.firstX(),
-                region.firstY(),
-                region.firstZ(),
-                region.secondX(),
-                region.secondY(),
-                region.secondZ()
-        );
-    }
-
     private static boolean areasOverlap(AreaBounds first, AreaBounds second) {
         return first.minX() <= second.maxX()
                 && first.maxX() >= second.minX()
@@ -584,72 +1053,6 @@ public final class ConfigValidator {
                 && position.y() <= area.maxY()
                 && position.z() >= area.minZ()
                 && position.z() <= area.maxZ();
-    }
-
-    private static void requireRegion(
-            TaskStep step,
-            Map<UUID, RegionDefinition> regions,
-            String key
-    ) {
-        UUID regionId = requireUuid(step.parameters().get(key), key);
-        if (!regions.containsKey(regionId)) {
-            throw new V2ValidationException(
-                    "region does not exist: " + regionId
-            );
-        }
-    }
-
-    private static void requireParameters(
-            TaskStep step,
-            Set<String> allowed,
-            Set<String> required
-    ) {
-        if (!allowed.containsAll(step.parameters().keySet())
-                || !step.parameters().keySet().containsAll(required)) {
-            throw new V2ValidationException(
-                    step.moduleId() + " has invalid parameters"
-            );
-        }
-    }
-
-    private static UUID requireUuid(String value, String field) {
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException exception) {
-            throw new V2ValidationException(field + " must be a UUID");
-        }
-    }
-
-    private static void requireOptionalInteger(
-            TaskStep step,
-            String key,
-            int minimum,
-            int maximum
-    ) {
-        String value = step.parameters().get(key);
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        try {
-            int parsed = Integer.parseInt(value);
-            if (parsed < minimum || parsed > maximum) {
-                throw new V2ValidationException(
-                        key + " is outside the supported range"
-                );
-            }
-        } catch (NumberFormatException exception) {
-            throw new V2ValidationException(key + " must be an integer");
-        }
-    }
-
-    private static void requireChoice(
-            TaskStep step,
-            String key,
-            String expected
-    ) {
-        if (!expected.equals(step.parameters().get(key))) {
-            throw new V2ValidationException(key + " is not supported");
-        }
     }
 
     private static void requireUniqueNames(

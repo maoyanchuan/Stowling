@@ -25,6 +25,9 @@ final class DroppedItemCollectionEngine {
     private final Instant startedAt = Instant.now();
     private DroppedItem current;
     private boolean navigationStarted;
+    private boolean arrivedAtCurrent;
+    private boolean stopping;
+    private boolean pickupConfirmed;
     private int emptyTicks;
     private Optional<Map<String, Integer>> previousInventory = Optional.empty();
     private boolean inventoryTracking;
@@ -46,10 +49,15 @@ final class DroppedItemCollectionEngine {
     }
 
     TaskModuleResult tick() {
+        if (stopping) {
+            return tickWhileStopping();
+        }
         if (!source.dimensionMatches()) {
             return TaskModuleResult.failed("拾取区域维度不匹配");
         }
-        recordInventoryDelta();
+        if (recordInventoryDelta() > 0) {
+            pickupConfirmed = true;
+        }
         List<DroppedItem> drops = matches();
         if (current != null) {
             return continueCurrent(drops);
@@ -63,12 +71,54 @@ final class DroppedItemCollectionEngine {
         }
         current = drops.getFirst();
         navigationStarted = false;
+        arrivedAtCurrent = false;
+        pickupConfirmed = false;
         emptyTicks = 0;
         return tick();
     }
 
-    void cancel() {
+    void requestStop() {
+        stopping = true;
         context.navigation().cancel();
+    }
+
+    boolean safeToStop() {
+        return !stopping
+                || current == null
+                || !arrivedAtCurrent
+                || pickupConfirmed;
+    }
+
+    void cancel() {
+        requestStop();
+    }
+
+    private TaskModuleResult tickWhileStopping() {
+        stopping = true;
+        context.navigation().cancel();
+        int recorded = recordInventoryDelta();
+        pickupConfirmed = pickupConfirmed || recorded > 0;
+        if (current == null || pickupConfirmed || !arrivedAtCurrent) {
+            current = null;
+            return TaskModuleResult.succeeded("拾取已停止");
+        }
+        List<DroppedItem> drops = matches();
+        DroppedItem observed = drops.stream()
+                .filter(item -> item.entityId().equals(current.entityId()))
+                .findFirst()
+                .orElse(null);
+        if (observed == null) {
+            if (!inventoryTracking) {
+                context.workspace().recordCollected(
+                        current.itemId(),
+                        current.count()
+                );
+            }
+            current = null;
+            return TaskModuleResult.succeeded("最后一次拾取已记账");
+        }
+        current = observed;
+        return TaskModuleResult.waiting("等待最后一次拾取确认");
     }
 
     private TaskModuleResult continueCurrent(List<DroppedItem> drops) {
@@ -88,6 +138,8 @@ final class DroppedItemCollectionEngine {
             }
             current = null;
             navigationStarted = false;
+            arrivedAtCurrent = false;
+            pickupConfirmed = false;
             emptyTicks = 0;
             return TaskModuleResult.running("已拾取一组掉落物");
         }
@@ -100,9 +152,12 @@ final class DroppedItemCollectionEngine {
             status = context.navigation().status(observed.position(), 1);
         }
         return switch (status) {
-            case ARRIVED -> TaskModuleResult.running(
-                    "等待拾取 " + observed.itemId()
-            );
+            case ARRIVED -> {
+                arrivedAtCurrent = true;
+                yield TaskModuleResult.running(
+                        "等待拾取 " + observed.itemId()
+                );
+            }
             case NAVIGATING -> TaskModuleResult.running("正在前往掉落物");
             case FAILED -> TaskModuleResult.failed("无法前往掉落物");
         };
@@ -117,19 +172,20 @@ final class DroppedItemCollectionEngine {
                 .toList();
     }
 
-    private void recordInventoryDelta() {
+    private int recordInventoryDelta() {
         Optional<Map<String, Integer>> observed =
                 context.droppedItems().playerItemCounts();
         if (observed.isEmpty()) {
-            return;
+            return 0;
         }
         Map<String, Integer> currentInventory = observed.orElseThrow();
         if (!inventoryTracking) {
             previousInventory = observed;
             inventoryTracking = true;
-            return;
+            return 0;
         }
         Map<String, Integer> previous = previousInventory.orElseThrow();
+        int recorded = 0;
         for (Map.Entry<String, Integer> entry : currentInventory.entrySet()) {
             int added = entry.getValue()
                     - previous.getOrDefault(entry.getKey(), 0);
@@ -138,9 +194,11 @@ final class DroppedItemCollectionEngine {
                     itemFilter
             )) {
                 context.workspace().recordCollected(entry.getKey(), added);
+                recorded += added;
             }
         }
         previousInventory = observed;
+        return recorded;
     }
 
     private boolean timedOut() {

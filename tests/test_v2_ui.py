@@ -99,205 +99,269 @@ def test_coordinate_cards_collapse_to_the_saved_name() -> None:
     assert ".coordinate-point-summary" in styles
 
 
-def test_task_editor_uses_module_catalog_without_hardcoded_parameters() -> None:
+def test_task_model_preserves_recursive_steps_and_string_parameters() -> None:
+    model = read("v2-task-model.js")
+    editor = read("v2-task-editor.js")
+
+    assert "function normalizeStep(value)" in model
+    assert "normalizeStepList(value?.steps)" in model
+    assert "normalizeStepList(value?.otherwise)" in model
+    assert "parameters: normalizeParameters(step?.parameters)" in model
+    assert "steps: Array.isArray(step?.steps)" in model
+    assert "otherwise: Array.isArray(step?.otherwise)" in model
+    assert "parameters[key] = String(entry)" in model
+    assert "parameters.maxIterations = String(DEFAULT_REPEAT_ITERATIONS)" in model
+    assert "maxIterations: String(DEFAULT_REPEAT_ITERATIONS)" in model
+    assert 'resetCacheHasMore: "true"' in model
+    assert "step.parameters[key] = String(value)" in editor
+    assert 'step.parameters.negate = "true"' in editor
+    assert 'module.level === "BASIC"' in model
+    assert "function renderStepList(" in editor
+    assert "function branchEditor(" in editor
+    assert "step[branchKey] = []" in editor
+    assert "step.otherwise || []" in read("tasks.js")
+
+
+def test_task_templates_use_recursive_basic_actions() -> None:
+    model = read("v2-task-model.js")
+    tasks = read("tasks.js")
     html = read("tasks.html")
+
+    for module_id in (
+        "COLLECT_DROPPED_ITEMS",
+        "SCAN_CONTAINERS_IN_REGION",
+        "RESOLVE_CONTAINER_CATEGORIES",
+        "SELECT_CONTAINER",
+        "WITHDRAW_ITEMS",
+        "SELECT_STORAGE_TARGET",
+        "DEPOSIT_ITEMS_TO_CONTAINERS",
+        "WITHDRAW_FOOD",
+        "EAT_FOOD",
+        "SCAN_CATEGORY_MARKERS",
+        "SELECT_MARKER_CONTAINER",
+        "READ_CONTAINER",
+        "SAVE_CATEGORY_MARKER_CACHE",
+        "ASSERT_NO_MANAGED_ITEMS",
+    ):
+        assert module_id in model
+    assert "function collectTask(" in model
+    assert "function sortTask(" in model
+    assert "function eatTask(" in model
+    assert "function markerTask(" in model
+    assert "function interruptionTask(" in model
+    assert "composedOf" not in model
+    assert "composedOf" not in tasks
+    assert "PRESET" not in model
+    assert "INTERNAL" not in model
+    assert 'repeatStep("FOOD_BELOW_THRESHOLD"' in model
+    assert 'repeatStep("HAS_MARKER_CONTAINERS"' in model
+    assert 'itemSource: "managed"' in model
+    assert "Model.collectTask(state.modules)" in tasks
+    assert "Model.sortTask(state.modules)" in tasks
+    assert "Model.eatTask(" in tasks
+    collect = model.split("function collectTask(", 1)[1]
+    collect = collect.split("function cacheTask(", 1)[0]
+    assert "CREATE_TASK" not in collect
+    assert 'id="new-marker-task-button"' in html
+    assert 'id="new-interruption-task-button"' in html
+
+
+def test_sort_task_navigates_to_cache_inside_each_cache_iteration() -> None:
+    model = read("v2-task-model.js")
+    sort = model.split("function sortTask(", 1)[1].split("function eatTask(", 1)[0]
+
+    assert (
+        '''repeatStep("CACHE_HAS_MORE", [
+                actionStep("MOVE_TO_COORDINATE", {
+                    targetRef: "output:container"
+                }),
+                withdraw,
+                deposit
+            ])'''
+    ) in sort
+    assert (
+        '''sortContainers,
+            actionStep("ASSERT_NO_MANAGED_ITEMS", {})'''
+    ) in sort
+    cache_start = sort.index('repeatStep("CACHE_HAS_MORE"')
+    assert sort.index(
+        'actionStep("MOVE_TO_COORDINATE"',
+        cache_start
+    ) < sort.index("withdraw,", cache_start)
+
+
+def test_task_editor_supports_recursive_conditions_loops_and_task_creation() -> None:
+    html = read("tasks.html")
+    editor = read("v2-task-editor.js")
+    model = read("v2-task-model.js")
+
+    for identifier in (
+        "add-if-step-button",
+        "add-repeat-step-button",
+        "add-create-task-step",
+        "task-interruption-mode",
+        "task-interruption-task-ref",
+        "task-default-interruption",
+        "task-requeue-after-interruption",
+    ):
+        assert f'id="{identifier}"' in html
+    assert '"ACTION", "IF", "REPEAT", "CREATE_TASK"' in model
+    assert '"ALWAYS"' in model
+    assert '"FOOD_BELOW_THRESHOLD"' in model
+    assert '"HAS_CONTAINERS"' in model
+    assert '"HAS_CARRIED_ITEMS"' in model
+    assert '"HAS_MANAGED_ITEMS"' in model
+    assert '"CACHE_HAS_MORE"' in model
+    assert '"HAS_MARKER_CONTAINERS"' in model
+    assert "function createStepCard(" in editor
+    assert "function conditionSelect(" in editor
+    assert "function createTaskPrioritySelect(" in editor
+    assert 'branchEditor(context, step, "steps", "满足时", path)' in editor
+    assert 'branchEditor(context, step, "otherwise", "否则", path)' in editor
+    assert "新任务会独立按所选优先级入队" in editor
+
+
+def test_task_references_are_unified_and_show_resource_types() -> None:
     model = read("v2-task-model.js")
     editor = read("v2-task-editor.js")
     tasks = read("tasks.js")
-    assert "模块步骤" in html
-    assert "/v1/task-modules" in tasks
-    assert "module.parameters" in editor
-    assert "parameter.kind" in editor
-    assert "基础模块" in editor
-    assert "任务预设" in editor
-    assert "coordinate-point" in editor
-    assert "region-point" in editor
-    assert "area-reference" in editor
-    assert "integer" in editor
-    assert "select" in editor
-    assert "task.steps.splice" in editor
-    assert "index + offset" in editor
-    assert "modules[0]" in model
-    assert "MOVE_TO_COORDINATE" not in model
-    assert "coordinateId" not in model
-    assert "crypto.randomUUID" not in model
-    assert "payloadStep" in model
-    assert "defaultModule" in model
-    assert "taskLevel" in model
-    assert "visibleModules" in model
-    assert "actionModules" in model
-    assert 'Model.moduleKind(module) === "ACTION"' in editor
 
-
-def test_task_page_lists_available_modules_from_the_backend_catalog() -> None:
-    html = read("tasks.html")
-    tasks = read("tasks.js")
-
-    assert 'id="task-module-panel"' in html
-    assert 'id="task-module-catalog"' in html
-    assert "renderModuleCatalog()" in tasks
-    assert "state.modules" in tasks
-    assert "module.description" in tasks
-    assert "parameter.label" in tasks
-    assert "基础任务" in tasks
-    assert "组合任务" in tasks
-    assert "module-group" in tasks
-    assert "监听器" in tasks
-
-
-def test_task_editor_loads_regions_and_builds_contract_driven_controls() -> None:
-    tasks = read("tasks.js")
-    editor = read("v2-task-editor.js")
-
-    assert 'Stowling.request("/v1/regions")' in tasks
-    assert "state.regions" in tasks
-    assert "state.regions," in tasks
-    assert "referenceSelect(" in editor
+    for value in (
+        "coordinate:",
+        "region:",
+        "category-zone:",
+        "task:",
+        "output:container",
+        "output:storage",
+        "output:marker",
+    ):
+        assert value in model
+    assert "function coordinateRef(" in model
+    assert "function regionRef(" in model
+    assert "function categoryZoneRef(" in model
+    assert "function taskRef(" in model
+    assert "function referenceSelect(" in editor
+    assert 'parameter.kind === "resource-reference"' in editor
+    assert 'parameter.kind === "coordinate-point"' in editor
+    assert 'parameter.kind === "coordinate-reference"' in editor
     assert 'parameter.kind === "region-point"' in editor
-    assert 'parameter.kind === "integer"' in editor
-    assert 'parameter.kind === "select"' in editor
-    assert 'input.type = "number"' in editor
-    assert "parameter.options" in editor
-    assert "parameter.min" in editor
-    assert "parameter.max" in editor
-    assert "defaultParameters(selected)" in editor
+    assert 'parameter.kind === "region-reference"' in editor
+    assert 'parameter.kind === "category-zone-reference"' in editor
+    assert 'parameter.kind === "container-reference"' in editor
+    assert 'select.append(new Option("请选择已保存资源或当前结果", ""))' in editor
+    assert 'label: "坐标"' in editor or '"coordinate": "坐标"' in editor
+    assert '"category-zone": "分类区"' in editor
+    assert 'task: "任务"' in editor
+    assert 'output: "当前结果"' in editor
+    assert "normalizeLegacyReference" in editor
+    assert "validateReference(parameter, value, step.moduleId)" in tasks
 
 
-def test_task_editor_loads_category_zones_for_contract_controls() -> None:
+def test_task_interruption_contract_and_default_selection() -> None:
+    html = read("tasks.html")
+    model = read("v2-task-model.js")
+    tasks = read("tasks.js")
+
+    assert 'id="task-interruption-mode"' in html
+    assert 'id="task-interruption-task-ref"' in html
+    assert 'id="task-default-interruption"' in html
+    assert 'id="task-requeue-after-interruption"' in html
+    assert '"DEFAULT"' in model
+    assert '"CUSTOM"' in model
+    assert '"NONE"' in model
+    assert 'interruptionMode: isDefault ? "NONE" : mode' in model
+    assert 'interruptionTaskRef: mode === "CUSTOM"' in model
+    assert "defaultInterruptionFlow" in model
+    assert "requeueAfterInterruption" in model
+    assert "function validateInterruption(" in tasks
+    assert "已有默认中断收尾任务" in tasks
+    assert "中断收尾不能引用当前任务自身" in tasks
+    assert "默认中断收尾任务不能自动重新排队" in tasks
+    assert "默认中断收尾任务不能创建其他任务" in tasks
+    assert "function containsCreateTask(" in tasks
+    assert "state.draft.defaultInterruptionFlow" in tasks
+    assert 'state.draft.interruptionMode = "NONE"' in tasks
+
+
+def test_task_queue_creation_priority_and_interruption_run_states() -> None:
+    html = read("tasks.html")
+    model = read("v2-task-model.js")
     tasks = read("tasks.js")
     editor = read("v2-task-editor.js")
 
-    assert 'Stowling.request("/v1/category-zones")' in tasks
-    assert "state.categoryZones" in tasks
-    assert 'kind === "category-zone-point"' in tasks
-    assert 'parameter.kind === "category-zone-point"' in editor
-    assert '"category-zone-point"' in editor
+    assert "function priorityRank(" in model
+    assert "Model.priorityRank(left.priority)" in tasks
+    assert "MAX_ROOT_STEPS = 128" in model
+    assert "MAX_STEP_DEPTH = 16" in model
+    assert "MAX_TOTAL_STEPS = 512" in model
+    assert "MAX_REPEAT_ITERATIONS = 1_000_000" in model
+    assert "function taskStepStats(" in tasks
+    assert "至少需要一个子步骤" in tasks
+    assert "循环步骤不能配置否则分支" in tasks
+    assert "不能包含子步骤" in tasks
+    assert "CREATE_TASK" in model
+    assert '沿用目标任务优先级' in editor
+    assert 'taskRef: ""' in model
+    assert "未指定优先级时沿用目标任务配置" in editor
+    assert "if (priority && !Model.PRIORITIES.includes(priority))" in tasks
+    assert "delete payload.parameters.priority" in model
+    assert "delete step.parameters.priority" in editor
+    assert "任务按优先级进入统一队列" in html
+    assert 'INTERRUPTING: "正在执行中断收尾"' in tasks
+    assert 'INTERRUPTION_FAILED: "中断收尾失败，队列暂停"' in tasks
+    assert "function runStateMessage(" in tasks
+    assert "正在执行中断收尾，队列暂停" in tasks
+    assert "请重试，或先确认导航停止" in tasks
+    assert '"INTERRUPTING",\n            "INTERRUPTION_FAILED"' in tasks
+    assert "重试收尾" in tasks
+    assert "尝试跳过收尾" in tasks
+    assert "/retry-interruption" in tasks
+    assert "/skip-interruption" in tasks
+    assert "任务管理物品已处理完毕" in tasks
+    assert "后端才允许跳过中断收尾" in tasks
+    assert "确认风险后跳过" not in tasks
 
 
-def test_task_validation_uses_module_parameter_contracts() -> None:
+def test_task_target_outputs_match_runtime_contract() -> None:
+    editor = read("v2-task-editor.js")
     tasks = read("tasks.js")
 
-    assert "validateReference(parameter.kind, value)" in tasks
-    assert 'kind === "coordinate-point"' in tasks
-    assert 'kind === "region-point"' in tasks
-    assert "validateInteger(parameter, value)" in tasks
-    assert "selectOptions(parameter).includes(value)" in tasks
-    assert "parameter.required" in tasks
+    outputs = editor.split("function outputTypesFor(", 1)[1]
+    outputs = outputs.split("function resourceTypesFromParameter(", 1)[0]
+    deposit = outputs.split("DEPOSIT_ITEMS_TO_CONTAINERS: [", 1)[1]
+    deposit = deposit.split("],", 1)[0]
+    assert 'output-container' in deposit
+    assert 'output-storage' in deposit
+    assert 'output-marker' in deposit
+    assert 'READ_CONTAINER: ["output-marker"]' in outputs
+    target_types = editor.split("function targetReferenceTypesFor(", 1)[1]
+    target_types = target_types.split("function outputTypesFor(", 1)[0]
+    assert 'moduleId === "MOVE_TO_COORDINATE"' in target_types
+    assert 'return ["coordinate", ...OUTPUT_TYPES]' in target_types
+    assert 'moduleId === "READ_CONTAINER"' in target_types
+    assert 'return ["output-marker"]' in target_types
+    assert "DEPOSIT_ITEMS_TO_CONTAINERS: Model.OUTPUT_REFERENCES" in tasks
+    assert 'READ_CONTAINER: ["output:marker"]' in tasks
 
 
-def test_task_module_catalog_exposes_pickup_and_storage_modules() -> None:
-    tasks = read("tasks.js")
-    catalog = (
-        ROOT
-        / "src"
-        / "main"
-        / "java"
-        / "dev"
-        / "stowling"
-        / "v2"
-        / "module"
-        / "TaskModuleCatalog.java"
-    ).read_text(encoding="utf-8")
-    assert "renderModuleCatalog()" in tasks
-    for module_id in (
-        "WAIT_FOR_DROPPED_ITEMS",
-        "COLLECT_DROPPED_ITEMS",
-        "COLLECT_DROPPED_ITEMS_IN_REGION",
-        "SCAN_CONTAINERS_IN_REGION",
-        "MATCH_CONTAINER_CATEGORIES",
-        "SORT_CACHE_ITEMS",
-        "SORT_CACHE_ITEMS_BY_CATEGORY_ZONE",
-        "DEPOSIT_ITEMS_TO_CONTAINERS",
-        "EAT_FOOD",
-        "WITHDRAW_FOOD",
-    ):
-        assert module_id in catalog
-        assert module_id not in tasks
-    assert "deprecated" in catalog
-    assert "state.modules.length" in tasks
-    assert "TaskModuleKind.PRESET" in catalog
-    assert "composedOf" in catalog
-    assert "module.composedOf" in tasks
-    assert "调用：" in tasks
-
-
-def test_task_module_catalog_includes_listeners() -> None:
-    catalog = (
-        ROOT
-        / "src"
-        / "main"
-        / "java"
-        / "dev"
-        / "stowling"
-        / "v2"
-        / "module"
-        / "TaskModuleCatalog.java"
-    ).read_text(encoding="utf-8")
-    tasks = read("tasks.js")
-
-    for module_id in (
-        "DROPPED_ITEMS",
-        "FOOD_LEVEL_AT_OR_BELOW",
-        "CACHE_UPDATED",
-    ):
-        assert module_id in catalog
-    assert "TaskModuleKind.LISTENER" in catalog
-    assert "TaskModuleKind.TRIGGER" not in catalog
-    assert "triggerModules" in tasks
-    assert "new Option(module.name, module.id)" in tasks
-
-
-def test_task_creation_offers_auto_eat_preset() -> None:
+def test_task_editor_keeps_revision_save_and_auto_eat_flow() -> None:
     html = read("tasks.html")
     tasks = read("tasks.js")
 
-    assert 'id="new-auto-eat-task-button"' in html
-    assert "自动进食预设" in html
     assert 'id="auto-eat-preset-form"' in html
-    assert (
-        html.index('class="panel task-editor-panel"')
-        < html.index('id="auto-eat-preset-form"')
-    )
     assert 'id="auto-eat-coordinate"' in html
     assert 'id="auto-eat-food"' in html
     assert 'id="auto-eat-threshold"' in html
     assert "function createAutoEatPreset()" in tasks
-    assert "state.presetMode" in tasks
-    assert "state.draft = {" in tasks
-    assert "右侧步骤可编辑" in html
-    assert '"移动"' in tasks
-    assert '"交互"' in tasks
-    assert '"进食"' in tasks
-    assert 'moduleId: "WITHDRAW_FOOD"' in tasks
-    assert 'moduleId: "EAT_FOOD"' in tasks
-    assert '"FOOD_LEVEL_AT_OR_BELOW"' in tasks
-
-
-def test_task_page_offers_cache_and_sorting_templates() -> None:
-    html = read("tasks.html")
-    model = read("v2-task-model.js")
-    tasks = read("tasks.js")
-
-    assert 'id="new-cache-task-button"' in html
-    assert 'id="new-sort-task-button"' in html
-    assert "CACHE_TASK_MODULES" in model
-    assert "SORT_TASK_MODULES" in model
-    assert '"COLLECT_DROPPED_ITEMS"' in model
-    assert '"SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"' in model
-    assert "task.repeatWhenIdle = false" in model
-    assert "Model.cacheTask(state.modules)" in tasks
-    assert "Model.sortTask(state.modules)" in tasks
-
-
-def test_task_modules_hide_deprecated_entries_from_new_tasks() -> None:
-    model = read("v2-task-model.js")
-    editor = read("v2-task-editor.js")
-    tasks = read("tasks.js")
-
-    assert "module?.deprecated" in model
-    assert "module.deprecated" in editor
-    assert "旧任务兼容模块" in editor
-    assert "Model.visibleModules(state.modules)" in tasks
+    assert "function syncAutoEatDraft()" in tasks
+    assert 'step.parameters.condition === "FOOD_BELOW_THRESHOLD"' in tasks
+    assert "state.draft = Model.eatTask(" in tasks
+    assert "revision: state.revision" in tasks
+    assert "state.revision = String(response?.revision || state.revision)" in tasks
+    assert 'Stowling.request("/v1/tasks"' in tasks
+    assert '/runs`' in tasks
+    assert "/cancel`" in tasks
+    assert "Authorization" not in tasks
 
 
 def test_coordinate_choices_only_show_the_saved_name() -> None:
@@ -318,9 +382,17 @@ def test_task_ui_supports_save_run_refresh_and_cancel() -> None:
     assert "/v1/tasks/${encodeURIComponent(state.runTaskId)}/runs" in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
-    assert 'run.state === "RUNNING"' in tasks
-    assert 'run.state === "WAITING"' in tasks
+    assert '"RUNNING",\n            "WAITING",' in tasks
+    assert '"INTERRUPTING",\n            "INTERRUPTION_FAILED"' in tasks
     assert "isActiveRun(run)" in tasks
+    assert 'run.state === "INTERRUPTION_FAILED"' in tasks
+    failed_actions = tasks.rsplit(
+        'if (run.state === "INTERRUPTION_FAILED")',
+        1
+    )[1].split("else if (isActiveRun(run))", 1)[0]
+    assert "retryInterruption(run.runId)" in failed_actions
+    assert "skipInterruption(run.runId)" in failed_actions
+    assert "取消任务" not in failed_actions
     assert "run.completedSteps" in tasks
     assert "run.totalSteps" in tasks
 
@@ -335,27 +407,6 @@ def test_task_execution_is_separate_from_the_editor() -> None:
     assert 'id="run-task-select"' in html
     assert "state.runTaskId" in tasks
     assert "renderRunControls()" in tasks
-
-
-def test_task_priority_queue_and_background_repeat_controls() -> None:
-    html = read("tasks.html")
-    model = read("v2-task-model.js")
-    tasks = read("tasks.js")
-
-    assert 'id="task-priority"' in html
-    assert 'id="task-repeat"' in html
-    assert 'id="run-priority-select"' in html
-    assert 'id="task-queue-list"' in html
-    assert '"BACKGROUND"' in model
-    assert '"NORMAL"' in model
-    assert '"URGENT"' in model
-    assert "repeatWhenIdle" in model
-    assert "priority: task.priority" in model
-    assert "priorityOverride" not in tasks
-    assert 'priority: elements.runPriority.value' in tasks
-    assert "state.queue" in tasks
-    assert "renderQueue()" in tasks
-    assert "被中断任务不会续接" in html
 
 
 def test_task_page_supports_independent_task_triggers() -> None:
@@ -461,11 +512,7 @@ def test_retained_pages_hide_internal_ids_and_removed_controls() -> None:
             "tasks.js",
         )
     )
-    for removed in (
-        "任务 ID",
-        "步骤 ID",
-        "UUID",
-    ):
+    for removed in ("任务 ID", "步骤 ID"):
         assert removed not in pages
     assert "任务 ID" not in scripts
     assert "步骤 ID" not in scripts

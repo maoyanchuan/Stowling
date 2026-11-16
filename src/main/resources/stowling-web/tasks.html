@@ -21,7 +21,7 @@
             <span class="brand-mark" aria-hidden="true">S</span>
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>任务管理 · 基础任务、任务预设与自定义组合</p>
+                <p>任务管理 · 基础动作、递归流程与独立任务队列</p>
             </div>
         </div>
         <div class="connection-state">
@@ -49,9 +49,15 @@
                                 type="button">＋ 新建任务</button>
                         <div class="task-template-actions">
                             <button id="new-cache-task-button" class="secondary compact"
-                                    type="button">缓存任务</button>
+                                    type="button">收集入缓存</button>
                             <button id="new-sort-task-button" class="secondary compact"
-                                    type="button">分类任务</button>
+                                    type="button">缓存分类</button>
+                            <button id="new-marker-task-button" class="secondary compact"
+                                    type="button">刷新分类标记</button>
+                            <button id="new-interruption-task-button"
+                                    class="secondary compact" type="button">
+                                新建中断收尾
+                            </button>
                             <button id="new-auto-eat-task-button" class="secondary compact"
                                     type="button">自动进食预设</button>
                         </div>
@@ -199,8 +205,8 @@
                                         <select id="trigger-cache-region"></select>
                                     </div>
                                     <p class="muted compact-help">
-                                        物品成功存入该区域后触发。连续存入会先防抖，
-                                        已排队的分类任务不会重复创建。
+                                        物品成功存入该区域后触发。连续存入会先防抖；
+                                        分类任务由任务流程按低优先级独立创建。
                                     </p>
                                 </div>
                                 <div id="trigger-errors" class="config-errors"
@@ -231,11 +237,11 @@
                     <form id="auto-eat-preset-form"
                           class="task-preset-form" hidden>
                         <div>
-                            <p class="eyebrow">任务预设</p>
+                            <p class="eyebrow">快捷模板</p>
                             <h3>自动进食</h3>
                             <p class="muted compact-help">
-                                监听饱食度，并生成“移动到坐标 → 取出食物 → 进食”
-                                的普通任务步骤。
+                                生成包含条件、循环和基础动作的任务；饱食度监听器
+                                仍负责在条件命中时独立入队。
                             </p>
                         </div>
                         <div class="editor-fields">
@@ -284,7 +290,7 @@
                             </div>
                             <details class="task-settings">
                                 <summary>调度设置 <span
-                                    id="task-settings-label">优先级与自动重排</span></summary>
+                                    id="task-settings-label">优先级、重排与中断</span></summary>
                                 <div class="editor-fields task-scheduling-fields">
                                     <div class="editor-field">
                                         <label for="task-priority">默认优先级</label>
@@ -299,20 +305,74 @@
                                         <span>完成后自动重新排队</span>
                                     </label>
                                 </div>
+                                <div class="editor-fields task-scheduling-fields">
+                                    <div class="editor-field">
+                                        <label for="task-interruption-mode">
+                                            中断收尾模式
+                                        </label>
+                                        <select id="task-interruption-mode">
+                                            <option value="DEFAULT">
+                                                引用全局默认收尾
+                                            </option>
+                                            <option value="CUSTOM">
+                                                引用指定收尾任务
+                                            </option>
+                                            <option value="NONE">
+                                                不执行收尾
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="editor-field">
+                                        <label for="task-interruption-task-ref">
+                                            收尾任务
+                                        </label>
+                                        <select id="task-interruption-task-ref"></select>
+                                    </div>
+                                    <label class="checkbox-field" for="task-default-interruption">
+                                        <input id="task-default-interruption" type="checkbox">
+                                        <span>标记为全局默认收尾任务</span>
+                                    </label>
+                                    <label class="checkbox-field"
+                                           for="task-requeue-after-interruption">
+                                        <input id="task-requeue-after-interruption"
+                                               type="checkbox">
+                                        <span>收尾完成后重新排队当前任务</span>
+                                    </label>
+                                </div>
+                                <p id="interruption-default-hint"
+                                   class="muted compact-help"></p>
                                 <p class="muted compact-help">
-                                    只有后台任务可以自动重排。重排前等待 5 秒；
-                                    普通和紧急任务只在被抢占时从头重新排队。
+                                    只有后台任务可以自动重排。默认收尾任务由所有
+                                    DEFAULT 模式任务共享；指定收尾任务必须独立保存。
                                 </p>
                             </details>
                             <div class="step-heading">
                                 <div>
-                                    <h3>模块步骤</h3>
+                                    <h3>任务流程</h3>
                                     <p class="muted compact-help">
-                                        基础模块执行单个动作，任务预设组合多个默认模块。
+                                        任务只组合基础动作。条件、循环和创建任务都
+                                        在这里递归编辑；创建的任务独立排队。收集入缓存后
+                                        可添加“创建任务”并选择低优先级分类任务。
                                     </p>
                                 </div>
-                                <button id="add-step-button" class="secondary compact"
-                                        type="button">添加步骤</button>
+                                <div class="step-heading-actions">
+                                    <button id="add-step-button"
+                                            class="secondary compact" type="button">
+                                        添加动作
+                                    </button>
+                                    <button id="add-if-step-button"
+                                            class="secondary compact" type="button">
+                                        添加条件
+                                    </button>
+                                    <button id="add-repeat-step-button"
+                                            class="secondary compact" type="button">
+                                        添加循环
+                                    </button>
+                                    <button id="add-create-task-step"
+                                            class="secondary compact" type="button">
+                                        创建任务
+                                    </button>
+                                </div>
                             </div>
                             <div id="task-steps" class="step-list"></div>
                             <div id="task-errors" class="config-errors" role="alert"></div>
@@ -350,8 +410,10 @@
                                     <p class="eyebrow">等待队列</p>
                                     <h2 id="queue-title">等待任务</h2>
                                     <p class="muted section-help queue-help">
-                                        高优先级任务会中断当前任务；被中断任务不会续接，
-                                        结束排队后从第一步重新运行。
+                                        任务按优先级进入统一队列。高优先级任务先执行
+                                        可配置的中断收尾，收尾完成后才让位；收尾失败时
+                                        队列暂停，必须先重试，或在确认导航停止并处理完
+                                        受管物品后跳过。
                                     </p>
                                 </div>
                             </div>
@@ -378,7 +440,7 @@
                 <summary class="module-library-heading">
                     <div>
                         <h2 id="task-module-title">模块参考</h2>
-                        <p class="compact-help">需要了解模块用途时再展开，不影响任务编辑。</p>
+                        <p class="compact-help">基础动作和监听器参考；复杂流程由任务编排。</p>
                     </div>
                     <span id="task-module-count" class="count-label">--</span>
                 </summary>

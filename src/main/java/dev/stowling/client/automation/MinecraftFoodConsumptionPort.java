@@ -7,6 +7,7 @@ import dev.stowling.automation.FoodStatus;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -148,6 +149,7 @@ public final class MinecraftFoodConsumptionPort
         }
         active.ticks++;
         if (active.ticks >= EATING_TIMEOUT_TICKS) {
+            Map<String, Integer> consumed = consumedItems(player, active);
             player.stopUsingItem();
             releaseUseKey();
             restoreSelected(
@@ -156,7 +158,7 @@ public final class MinecraftFoodConsumptionPort
                     active.hotbar
             );
             active = null;
-            return FoodConsumptionResult.failed("进食超时");
+            return FoodConsumptionResult.failed("进食超时", consumed);
         }
         if (player.isUsingItem()) {
             return FoodConsumptionResult.pending("正在进食 " + active.itemId);
@@ -171,6 +173,7 @@ public final class MinecraftFoodConsumptionPort
         boolean consumed = foodAfter > active.foodLevelBefore
                 || countAfter < active.itemCountBefore;
         if (consumed) {
+            Map<String, Integer> consumedItems = consumedItems(player, active);
             releaseUseKey();
             restoreSelected(
                     player,
@@ -178,7 +181,10 @@ public final class MinecraftFoodConsumptionPort
                     active.hotbar
             );
             active = null;
-            return FoodConsumptionResult.succeeded("已完成一次进食");
+            return FoodConsumptionResult.succeeded(
+                    "已完成一次进食",
+                    consumedItems
+            );
         }
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         if (canRetryEating(player, gameMode)) {
@@ -320,7 +326,10 @@ public final class MinecraftFoodConsumptionPort
         }
         acquiring.sourceSlot = sourceSlot;
         acquiring.destinationSlot = destinationSlot;
-        acquiring.playerBefore = playerItemCount(menu, acquiring.itemId);
+        acquiring.playerBefore = playerItemCount(
+                minecraft.player,
+                acquiring.itemId
+        );
         acquiring.containerBefore = containerItemCount(
                 menu,
                 acquiring.itemId
@@ -395,13 +404,17 @@ public final class MinecraftFoodConsumptionPort
         }
         AbstractContainerMenu menu = screen.getMenu();
         acquiring.confirmationPolls++;
-        int playerAfter = playerItemCount(menu, acquiring.itemId);
+        int playerAfter = playerItemCount(
+                minecraft.player,
+                acquiring.itemId
+        );
         int containerAfter = containerItemCount(menu, acquiring.itemId);
         boolean confirmed = playerAfter == acquiring.playerBefore + 1
                 && containerAfter == acquiring.containerBefore - 1;
         if (acquiring.confirmationPolls >= CONFIRM_POLLS
                 && confirmed
                 && menu.getCarried().isEmpty()) {
+            acquiring.acquiredCount = 1;
             closeContainer();
             acquiring.phase = AcquisitionPhase.CLOSING;
             acquiring.deadline = Instant.now().plus(CLOSING_TIMEOUT);
@@ -414,17 +427,33 @@ public final class MinecraftFoodConsumptionPort
         if (currentContainerScreen() != null) {
             return FoodConsumptionResult.pending("等待食物箱关闭");
         }
+        String itemId = acquiring.itemId;
+        int acquired = acquiring.acquiredCount;
         acquiring = null;
         return FoodConsumptionResult.succeeded(
-                "已从食物箱取出一个食物"
+                "已从食物箱取出一个食物",
+                acquired > 0 ? Map.of(itemId, acquired) : Map.of()
         );
     }
 
     private FoodConsumptionResult failAcquiring(String message) {
+        String itemId = acquiring.itemId;
+        int acquired = acquiring.acquiredCount;
+        if (acquiring.sourceSlot >= 0) {
+            int current = playerItemCount(minecraft.player, itemId);
+            int observed = Math.max(
+                    0,
+                    current - acquiring.playerBefore
+            );
+            acquired = Math.max(acquired, observed);
+        }
         returnCarriedToSource();
         closeContainer();
         acquiring = null;
-        return FoodConsumptionResult.failed(message);
+        return FoodConsumptionResult.failed(
+                message,
+                acquired > 0 ? Map.of(itemId, acquired) : Map.of()
+        );
     }
 
     private void returnCarriedToSource() {
@@ -576,6 +605,36 @@ public final class MinecraftFoodConsumptionPort
 
     private static int itemCount(LocalPlayer player, ActiveEating eating) {
         return player.getInventory().getItem(eating.slotIndex).getCount();
+    }
+
+    private static Map<String, Integer> consumedItems(
+            LocalPlayer player,
+            ActiveEating eating
+    ) {
+        int countAfter = itemCount(player, eating);
+        int consumed = Math.max(0, eating.itemCountBefore - countAfter);
+        if (consumed == 0
+                && player.getFoodData().getFoodLevel()
+                        > eating.foodLevelBefore) {
+            consumed = 1;
+        }
+        return consumed > 0
+                ? Map.of(eating.itemId, consumed)
+                : Map.of();
+    }
+
+    private static int playerItemCount(LocalPlayer player, String itemId) {
+        if (player == null) {
+            return 0;
+        }
+        Inventory inventory = player.getInventory();
+        int count = 0;
+        for (ItemStack stack : inventory.getNonEquipmentItems()) {
+            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+                count = Math.addExact(count, stack.getCount());
+            }
+        }
+        return count;
     }
 
     private boolean canRetryEating(
@@ -736,6 +795,7 @@ public final class MinecraftFoodConsumptionPort
         private int playerBefore;
         private int containerBefore;
         private int pickedCount;
+        private int acquiredCount;
         private int confirmationPolls;
 
         private ActiveAcquiringFood(

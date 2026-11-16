@@ -1,6 +1,5 @@
 package dev.stowling.v2.runtime.modules;
 
-import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.TaskStep;
 import java.util.List;
 import java.util.function.BiFunction;
@@ -12,56 +11,72 @@ public final class StandardTaskModuleFactories {
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
                 factory(
-                        ConfigValidator.MOVE_TO_COORDINATE,
+                        TaskModuleIds.MOVE_TO_COORDINATE,
                         MoveToCoordinateModule::new
                 ),
                 factory(
-                        ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
-                        WaitForDroppedItemsModule::new
-                ),
-                factory(
-                        ConfigValidator.COLLECT_DROPPED_ITEMS,
+                        TaskModuleIds.COLLECT_DROPPED_ITEMS,
                         CollectDroppedItemsModule::new
                 ),
                 factory(
-                        ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
-                        CollectDroppedItemsInRegionModule::new
-                ),
-                factory(
-                        ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                        TaskModuleIds.SCAN_CONTAINERS_IN_REGION,
                         ScanContainersInRegionModule::new
                 ),
                 factory(
-                        ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                        MatchContainerCategoriesModule::new
+                        TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
+                        ResolveContainerCategoriesModule::new
                 ),
                 factory(
-                        ConfigValidator.EAT_FOOD,
-                        EatFoodModule::new
+                        TaskModuleIds.SELECT_CONTAINER,
+                        SelectContainerModule::new
                 ),
                 factory(
-                        ConfigValidator.WITHDRAW_FOOD,
+                        TaskModuleIds.WITHDRAW_ITEMS,
+                        WithdrawItemsModule::new
+                ),
+                factory(
+                        TaskModuleIds.SELECT_STORAGE_TARGET,
+                        SelectStorageTargetModule::new
+                ),
+                factory(
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        DepositItemsActionModule::new
+                ),
+                factory(
+                        TaskModuleIds.WITHDRAW_FOOD,
                         WithdrawFoodModule::new
                 ),
                 factory(
-                        ConfigValidator.AUTO_EAT_AT_COORDINATE,
-                        AutoEatAtCoordinateModule::new
+                        TaskModuleIds.EAT_FOOD,
+                        EatFoodModule::new
                 ),
                 factory(
-                        ConfigValidator.SORT_CACHE_ITEMS,
-                        SortCacheItemsModule::new
+                        TaskModuleIds.SCAN_CATEGORY_MARKERS,
+                        ScanCategoryMarkersModule::new
                 ),
                 factory(
-                        ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
-                        SortCacheItemsByCategoryZoneModule::new
+                        TaskModuleIds.SELECT_MARKER_CONTAINER,
+                        SelectMarkerContainerModule::new
                 ),
                 factory(
-                        ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
-                        RefreshCategoryMarkerCacheModule::new
+                        TaskModuleIds.READ_CONTAINER,
+                        ReadContainerModule::new
                 ),
                 factory(
-                        ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
-                        DepositItemsToContainersModule::new
+                        TaskModuleIds.SAVE_CATEGORY_MARKER_CACHE,
+                        SaveCategoryMarkerCacheModule::new
+                ),
+                factory(
+                        TaskModuleIds.ASSERT_NO_MANAGED_ITEMS,
+                        AssertNoManagedItemsModule::new
+                ),
+                factory(
+                        TaskModuleIds.WAIT_FOR_DROPPED_ITEMS,
+                        WaitForDroppedItemsModule::new
+                ),
+                factory(
+                        TaskModuleIds.MATCH_CONTAINER_CATEGORIES,
+                        MatchContainerCategoriesModule::new
                 )
         );
     }

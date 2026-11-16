@@ -6,4 +6,12 @@ public interface TaskModuleExecutor {
     TaskModuleResult tick();
 
     void cancel();
+
+    default void requestStop() {
+        cancel();
+    }
+
+    default boolean safeToStop() {
+        return true;
+    }
 }

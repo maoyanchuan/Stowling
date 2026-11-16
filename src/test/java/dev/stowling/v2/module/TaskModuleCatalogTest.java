@@ -7,7 +7,6 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.ModuleDefinition;
 import dev.stowling.v2.model.ModuleParameter;
 import dev.stowling.v2.model.TaskModuleKind;
-import dev.stowling.v2.model.TaskModuleLevel;
 import dev.stowling.v2.model.TaskTriggerType;
 import java.util.List;
 import java.util.Map;
@@ -17,44 +16,10 @@ import org.junit.jupiter.api.Test;
 
 class TaskModuleCatalogTest {
     @Test
-    void exposesAllSupportedModulesInBuildOrder() {
+    void exposesOnlyRealActionsAndListeners() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 
-        assertEquals(
-                List.of(
-                        TaskTriggerType.DROPPED_ITEMS.name(),
-                        TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW.name(),
-                        TaskTriggerType.CACHE_UPDATED.name(),
-                        ConfigValidator.MOVE_TO_COORDINATE,
-                        ConfigValidator.COLLECT_DROPPED_ITEMS,
-                        ConfigValidator.SCAN_CONTAINERS_IN_REGION,
-                        ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
-                        ConfigValidator.EAT_FOOD,
-                        ConfigValidator.WITHDRAW_FOOD,
-                        ConfigValidator.AUTO_EAT_AT_COORDINATE,
-                        ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE,
-                        ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE,
-                        "CATEGORY_SORT_PLAN",
-                        "CACHE_WITHDRAWAL",
-                        "CATEGORY_DEPOSIT",
-                        "CACHE_RETURN",
-                        "MARKER_CONTAINER_SCAN",
-                        "MARKER_CONTAINER_INSPECT",
-                        "MARKER_CACHE_SAVE",
-                        ConfigValidator.WAIT_FOR_DROPPED_ITEMS,
-                        ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION,
-                        ConfigValidator.MATCH_CONTAINER_CATEGORIES,
-                        ConfigValidator.SORT_CACHE_ITEMS
-                ),
-                modules.stream().map(ModuleDefinition::id).toList()
-        );
-        assertEquals(
-                12,
-                modules.stream()
-                        .filter(module -> !module.deprecated())
-                        .filter(module -> module.kind() != TaskModuleKind.INTERNAL)
-                        .count()
-        );
+        assertEquals(18, modules.size());
         assertEquals(
                 3,
                 modules.stream()
@@ -62,116 +27,94 @@ class TaskModuleCatalogTest {
                         .count()
         );
         assertEquals(
-                4,
+                15,
                 modules.stream()
-                        .filter(module -> !module.deprecated())
-                        .filter(module -> module.kind() == TaskModuleKind.PRESET)
+                        .filter(module -> module.kind() == TaskModuleKind.ACTION)
                         .count()
+        );
+        assertTrue(modules.stream().allMatch(module ->
+                module.composedOf().isEmpty()
+        ));
+        assertTrue(modules.stream().noneMatch(module ->
+                module.kind() == TaskModuleKind.PRESET
+                        || module.kind() == TaskModuleKind.INTERNAL
+        ));
+    }
+
+    @Test
+    void exposesUnifiedReferenceParameters() {
+        Map<String, ModuleDefinition> modules = TaskModuleCatalog.modules().stream()
+                .collect(Collectors.toMap(
+                        ModuleDefinition::id,
+                        Function.identity()
+                ));
+
+        assertEquals(
+                "coordinate-reference",
+                parameter(
+                        modules.get(ConfigValidator.MOVE_TO_COORDINATE),
+                        ConfigValidator.TARGET_REF
+                ).kind()
+        );
+        assertEquals(
+                "area-reference",
+                parameter(
+                        modules.get(ConfigValidator.COLLECT_DROPPED_ITEMS),
+                        ConfigValidator.AREA_REF
+                ).kind()
+        );
+        assertEquals(
+                "region-reference",
+                parameter(
+                        modules.get(ConfigValidator.SCAN_CONTAINERS_IN_REGION),
+                        ConfigValidator.REGION_REF
+                ).kind()
+        );
+        assertEquals(
+                "category-zone-reference",
+                parameter(
+                        modules.get(
+                                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES
+                        ),
+                        ConfigValidator.CATEGORY_ZONE_REF
+                ).kind()
+        );
+        assertEquals(
+                List.of("collected", "carried", "managed"),
+                parameter(
+                        modules.get(
+                                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
+                        ),
+                        ConfigValidator.ITEM_SOURCE
+                ).options()
+        );
+        assertEquals(
+                List.of("classified"),
+                parameter(
+                        modules.get(ConfigValidator.WITHDRAW_ITEMS),
+                        ConfigValidator.ITEM_SOURCE
+                ).options()
         );
     }
 
     @Test
-    void exposesCoordinateRegionCategoryAndCacheParameterContracts() {
-        Map<String, ModuleDefinition> modules = TaskModuleCatalog.modules().stream()
-                .collect(Collectors.toMap(ModuleDefinition::id, Function.identity()));
+    void keepsExistingListeners() {
+        List<String> listenerIds = TaskModuleCatalog.modules().stream()
+                .filter(module -> module.kind() == TaskModuleKind.LISTENER)
+                .map(ModuleDefinition::id)
+                .toList();
 
-        ModuleParameter coordinate = moduleParameter(
-                modules.get(ConfigValidator.COLLECT_DROPPED_ITEMS),
-                ConfigValidator.AREA_REFERENCE
-        );
-        assertEquals("area-reference", coordinate.kind());
-        assertTrue(coordinate.required());
-        assertTrue(
-                modules.get(ConfigValidator.WAIT_FOR_DROPPED_ITEMS).deprecated()
-        );
         assertEquals(
-                TaskModuleLevel.BASIC,
-                modules.get(ConfigValidator.MOVE_TO_COORDINATE).level()
+                List.of(
+                        TaskTriggerType.DROPPED_ITEMS.name(),
+                        TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW.name(),
+                        TaskTriggerType.CACHE_UPDATED.name()
+                ),
+                listenerIds
         );
-
-        ModuleParameter region = moduleParameter(
-                modules.get(ConfigValidator.SCAN_CONTAINERS_IN_REGION),
-                ConfigValidator.REGION_ID
-        );
-        assertEquals("region-point", region.kind());
-        assertTrue(region.required());
-
-        ModuleParameter collectRegion = moduleParameter(
-                modules.get(ConfigValidator.COLLECT_DROPPED_ITEMS_IN_REGION),
-                ConfigValidator.REGION_ID
-        );
-        assertEquals("region-point", collectRegion.kind());
-        assertTrue(collectRegion.required());
-
-        ModuleDefinition category = modules.get(
-                ConfigValidator.MATCH_CONTAINER_CATEGORIES
-        );
-        assertTrue(category.deprecated());
-        assertEquals(
-                List.of("previous-scan"),
-                moduleParameter(
-                        category,
-                        ConfigValidator.SCAN_SOURCE
-                ).options()
-        );
-
-        ModuleDefinition autoEat = modules.get(
-                ConfigValidator.AUTO_EAT_AT_COORDINATE
-        );
-        ModuleParameter eatCoordinate = moduleParameter(
-                autoEat,
-                ConfigValidator.COORDINATE_ID
-        );
-        assertEquals("coordinate-point", eatCoordinate.kind());
-        assertTrue(eatCoordinate.required());
-        ModuleParameter threshold = moduleParameter(
-                autoEat,
-                ConfigValidator.FOOD_LEVEL_THRESHOLD
-        );
-        assertEquals("integer", threshold.kind());
-        assertEquals("18", threshold.defaultValue());
-
-        ModuleDefinition sort = modules.get(ConfigValidator.SORT_CACHE_ITEMS);
-        assertEquals(TaskModuleLevel.COMPOSITE, sort.level());
-        assertTrue(sort.deprecated());
-        ModuleParameter cacheRegion = moduleParameter(
-                sort,
-                ConfigValidator.CACHE_REGION_ID
-        );
-        assertEquals("region-point", cacheRegion.kind());
-        assertTrue(cacheRegion.required());
-        assertEquals(
-                List.of("previous-scan"),
-                moduleParameter(sort, ConfigValidator.SCAN_SOURCE).options()
-        );
-
-        ModuleDefinition zoneSort = modules.get(
-                ConfigValidator.SORT_CACHE_ITEMS_BY_CATEGORY_ZONE
-        );
-        ModuleParameter zone = moduleParameter(
-                zoneSort,
-                ConfigValidator.CATEGORY_ZONE_ID
-        );
-        assertEquals("category-zone-point", zone.kind());
-        assertTrue(zone.required());
-
-        ModuleDefinition refresh = modules.get(
-                ConfigValidator.REFRESH_CATEGORY_MARKER_CACHE
-        );
-        ModuleParameter refreshZone = moduleParameter(
-                refresh,
-                ConfigValidator.CATEGORY_ZONE_ID
-        );
-        assertEquals("category-zone-point", refreshZone.kind());
-        assertTrue(refreshZone.required());
-
-        ModuleDefinition deposit = modules.get(
-                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS
-        );
-        assertTrue(deposit.parameters().isEmpty());
     }
 
-    private static ModuleParameter moduleParameter(
+    private static ModuleParameter parameter(
             ModuleDefinition module,
             String key
     ) {

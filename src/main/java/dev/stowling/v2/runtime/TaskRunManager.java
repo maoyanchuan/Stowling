@@ -2,12 +2,14 @@ package dev.stowling.v2.runtime;
 
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.schedule.StopOutcome;
-import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
@@ -37,6 +39,7 @@ public final class TaskRunManager {
     private final TaskTriggerManager triggers;
     private final Deque<TaskRunSnapshot> history = new ArrayDeque<>();
     private final List<QueuedRun> queue = new ArrayList<>();
+    private Map<UUID, TaskDefinition> knownTasks = Map.of();
     private ActiveRun active;
     private long nextSequence;
     private long ticks;
@@ -62,11 +65,9 @@ public final class TaskRunManager {
                             TaskPriority priority,
                             AppConfig config
                     ) {
-                        return TaskRunManager.this.start(
+                        return startFromConfig(
                                 task,
-                                config.coordinates(),
-                                config.regions(),
-                                config.categoryZones(),
+                                config,
                                 priority,
                                 false
                         );
@@ -111,48 +112,76 @@ public final class TaskRunManager {
             List<CategoryZoneDefinition> categoryZones,
             TaskPriority priorityOverride
     ) {
-        return start(
+        return enqueueStart(
                 task,
                 coordinates,
                 regions,
                 categoryZones,
+                knownTasks,
                 priorityOverride,
+                true,
                 true
         );
     }
 
-    private TaskRunSnapshot start(
+    public synchronized TaskRunSnapshot start(
+            TaskDefinition task,
+            AppConfig config,
+            TaskPriority priorityOverride
+    ) {
+        return startFromConfig(task, config, priorityOverride, true);
+    }
+
+    private TaskRunSnapshot startFromConfig(
+            TaskDefinition task,
+            AppConfig config,
+            TaskPriority priorityOverride,
+            boolean allowRepeat
+    ) {
+        Objects.requireNonNull(config, "config");
+        return enqueueStart(
+                task,
+                config.coordinates(),
+                config.regions(),
+                config.categoryZones(),
+                indexTasks(config.tasks()),
+                priorityOverride,
+                allowRepeat,
+                true
+        );
+    }
+
+    private TaskRunSnapshot enqueueStart(
             TaskDefinition task,
             List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
+            Map<UUID, TaskDefinition> tasks,
             TaskPriority priorityOverride,
-            boolean allowRepeat
+            boolean allowRepeat,
+            boolean deduplicate
     ) {
         PreparedRun prepared = prepare(
                 task,
                 coordinates,
                 regions,
                 categoryZones,
+                tasks,
                 priorityOverride,
                 allowRepeat
         );
-        if (active != null && active.prepared.task.id().equals(task.id())) {
-            return active.snapshot;
+        if (deduplicate) {
+            if (active != null && active.prepared.task.id().equals(task.id())) {
+                return active.snapshot;
+            }
+            Optional<QueuedRun> existing = queue.stream()
+                    .filter(run -> run.prepared.task.id().equals(task.id()))
+                    .findFirst();
+            if (existing.isPresent()) {
+                return existing.get().snapshot;
+            }
         }
-        Optional<QueuedRun> existing = queue.stream()
-                .filter(run -> run.prepared.task.id().equals(task.id()))
-                .findFirst();
-        if (existing.isPresent()) {
-            return existing.get().snapshot;
-        }
-        QueuedRun queued = new QueuedRun(
-                UUID.randomUUID(),
-                prepared,
-                Instant.now(),
-                nextSequence++,
-                ticks
-        );
+        QueuedRun queued = newQueuedRun(prepared, ticks, "排队等待");
         queue.add(queued);
         retain(queued.snapshot);
         if (active == null) {
@@ -162,52 +191,53 @@ public final class TaskRunManager {
                     ? started
                     : queued.snapshot;
         }
-        if (prepared.priority.preempts(active.prepared.priority)) {
-            requestPreemption(queued);
-        }
+        requestPreemptionIfNeeded(queued);
         return queued.snapshot;
     }
 
     public synchronized void tick() {
         ticks++;
         triggers.tick();
-        if (active != null) {
-            if (active.cancelRequested) {
-                finishCancellation();
-                startNextQueued();
-                return;
-            }
-            if (active.snapshot.completedSteps() >= active.prepared.steps.size()) {
-                finish(TaskRunState.SUCCEEDED, "任务已完成");
-                startNextQueued();
-                return;
-            }
-            TaskModuleResult result;
-            try {
-                TaskModuleExecutor executor = executor();
-                result = active.executorStarted
-                        ? executor.tick()
-                        : startExecutor(executor);
-            } catch (RuntimeException exception) {
-                requestCancel();
-                finish(
-                        TaskRunState.FAILED,
-                        "模块执行失败: " + safeMessage(exception)
-                );
-                startNextQueued();
-                return;
-            }
-            apply(result);
+        if (active == null) {
+            startNextQueued();
         }
-        startNextQueued();
+        if (active == null) {
+            return;
+        }
+        if (!active.interruptionFailed) {
+            if (active.stopRequested) {
+                tickInterrupting();
+            } else {
+                tickFlow();
+            }
+        }
+        if (active == null) {
+            startNextQueued();
+        }
     }
 
     public synchronized void cancel(UUID runId) {
         if (active != null && active.snapshot.runId().equals(runId)) {
+            if (active.interruptionFailed) {
+                throw new IllegalStateException(
+                        "中断收尾失败，请重试或显式跳过"
+                );
+            }
             active.userCancelRequested = true;
-            active.cancelRequested = true;
-            requestCancel();
-            update(active.snapshot.state(), "正在取消任务");
+            if (active.stopRequested) {
+                active.terminalState = TaskRunState.CANCELLED;
+                active.terminalMessage = "任务已取消";
+                update(
+                        active.interruptionRunning
+                                ? TaskRunState.INTERRUPTING
+                                : TaskRunState.INTERRUPTING,
+                        active.interruptionRunning
+                                ? "正在完成中断收尾后取消"
+                                : "正在取消任务"
+                );
+                return;
+            }
+            startTermination(TaskRunState.CANCELLED, "任务已取消");
             return;
         }
         for (QueuedRun queued : List.copyOf(queue)) {
@@ -215,17 +245,71 @@ public final class TaskRunManager {
                 continue;
             }
             queue.remove(queued);
-            TaskRunSnapshot cancelled = snapshot(
+            replaceRetained(snapshot(
                     queued,
                     TaskRunState.CANCELLED,
                     0,
                     "排队任务已取消",
                     Instant.now()
-            );
-            replaceRetained(cancelled);
+            ));
             return;
         }
         throw new TaskRunNotFoundException();
+    }
+
+    public synchronized void retryInterruption(UUID runId) {
+        if (active == null || !active.snapshot.runId().equals(runId)) {
+            throw new TaskRunNotFoundException();
+        }
+        if (!active.interruptionFailed) {
+            throw new IllegalStateException("当前运行没有失败的收尾流程");
+        }
+        if (active.prepared.interruptionTask == null
+                && !active.stopFailurePending) {
+            throw new IllegalStateException("当前运行没有可重试的收尾流程");
+        }
+        active.interruptionFailed = false;
+        active.stopRequested = true;
+        active.interruptionRunning = false;
+        active.interruptionRecovery = true;
+        active.retryAfterRecovery = true;
+        active.navigationStopConfirmed = false;
+        active.navigationStopRequested = false;
+        if (active.interruptionFlow != null) {
+            active.interruptionFlow.requestStop();
+        }
+        update(
+                TaskRunState.INTERRUPTING,
+                "正在安全停止旧收尾动作并重新确认导航"
+        );
+    }
+
+    public synchronized void skipInterruption(UUID runId) {
+        if (active == null || !active.snapshot.runId().equals(runId)) {
+            throw new TaskRunNotFoundException();
+        }
+        if (!active.interruptionFailed) {
+            throw new IllegalStateException("当前运行没有失败的收尾流程");
+        }
+        if (active.flow != null && !active.flow.safeToStop()) {
+            throw new IllegalStateException("仍有在途动作，不能跳过中断收尾");
+        }
+        if (active.interruptionFlow != null
+                && !active.interruptionFlow.safeToStop()) {
+            throw new IllegalStateException("收尾动作仍在途，不能跳过");
+        }
+        if (!active.navigationStopConfirmed) {
+            throw new IllegalStateException("导航停止尚未确认，不能跳过中断收尾");
+        }
+        if (active.workspace.hasManagedItems()) {
+            throw new IllegalStateException(
+                    "仍有受管物品，不能跳过中断收尾"
+            );
+        }
+        finishRun(
+                TaskRunState.FAILED,
+                "用户显式跳过失败的中断收尾，无受管物品残留"
+        );
     }
 
     public synchronized Optional<TaskRunSnapshot> status() {
@@ -266,6 +350,7 @@ public final class TaskRunManager {
     }
 
     public synchronized void refreshTriggers(AppConfig config) {
+        knownTasks = indexTasks(config.tasks());
         triggers.refresh(config);
     }
 
@@ -274,7 +359,7 @@ public final class TaskRunManager {
     }
 
     public synchronized boolean busy() {
-        return isActive();
+        return active != null;
     }
 
     public synchronized void cancelAll() {
@@ -289,12 +374,424 @@ public final class TaskRunManager {
             replaceRetained(cancelled);
         }
         queue.clear();
-        if (active == null) {
+        if (active == null || active.interruptionFailed) {
             return;
         }
-        active.userCancelRequested = true;
-        requestCancel();
-        finish(TaskRunState.CANCELLED, "任务已取消");
+        cancel(active.snapshot.runId());
+    }
+
+    private void tickFlow() {
+        try {
+            TaskFlowExecutor currentFlow = flow();
+            TaskModuleResult result = currentFlow.tick();
+            active.completedSteps = currentFlow.completedTopLevelSteps();
+            if (active.stopRequested) {
+                return;
+            }
+            switch (result.state()) {
+                case RUNNING, WAITING -> update(
+                        result.state() == TaskModuleState.WAITING
+                                ? TaskRunState.WAITING
+                                : TaskRunState.RUNNING,
+                        result.message()
+                );
+                case FAILED -> {
+                    if (active.prepared.interruptionTask == null) {
+                        finishRun(
+                                TaskRunState.FAILED,
+                                withManagedWarning(result.message())
+                        );
+                    } else {
+                        startTermination(
+                                TaskRunState.FAILED,
+                                result.message()
+                        );
+                    }
+                }
+                case SUCCEEDED -> finishRun(
+                        TaskRunState.SUCCEEDED,
+                        active.workspace.hasManagedItems()
+                                ? "任务已完成，但仍有受管物品"
+                                : "任务已完成"
+                );
+            }
+        } catch (RuntimeException exception) {
+            String message = "流程执行失败: " + safeMessage(exception);
+            if (active.prepared.interruptionTask == null) {
+                finishRun(
+                        TaskRunState.FAILED,
+                        withManagedWarning(message)
+                );
+            } else {
+                startTermination(TaskRunState.FAILED, message);
+            }
+        }
+    }
+
+    private void startTermination(TaskRunState state, String message) {
+        if (active.stopRequested) {
+            return;
+        }
+        active.userCancelRequested = active.userCancelRequested
+                || state == TaskRunState.CANCELLED;
+        active.terminalState = state;
+        active.terminalMessage = message;
+        active.stopRequested = true;
+        active.navigationStopConfirmed = false;
+        if (active.flow != null) {
+            active.completedSteps = active.flow.completedTopLevelSteps();
+            active.flow.requestStop();
+        }
+        update(
+                TaskRunState.INTERRUPTING,
+                state == TaskRunState.PREEMPTED
+                        ? message
+                        : "正在停止当前动作并准备收尾"
+        );
+    }
+
+    private void tickInterrupting() {
+        if (active.interruptionRecovery) {
+            tickInterruptionRecovery();
+            return;
+        }
+        if (active.interruptionRunning) {
+            tickInterruptionFlow();
+            return;
+        }
+        if (active.flow != null && !active.flow.safeToStop()) {
+            try {
+                TaskModuleResult result = active.flow.tickWhileStopping();
+                if (result.state() == TaskModuleState.RUNNING
+                        || result.state() == TaskModuleState.WAITING) {
+                    update(TaskRunState.INTERRUPTING, result.message());
+                    return;
+                }
+                if (result.state() == TaskModuleState.FAILED) {
+                    active.stopWarning = result.message();
+                }
+            } catch (RuntimeException exception) {
+                active.stopWarning = "停止当前动作失败: "
+                        + safeMessage(exception);
+            }
+        }
+        if (active.flow != null && !active.flow.safeToStop()) {
+            update(TaskRunState.INTERRUPTING, "等待在途操作确认");
+            return;
+        }
+        StopOutcome outcome;
+        try {
+            outcome = active.navigationStopRequested
+                    ? navigation.pollStop()
+                    : navigation.requestStop();
+        } catch (RuntimeException exception) {
+            active.stopWarning = "停止导航失败: " + safeMessage(exception);
+            outcome = StopOutcome.UNSAFE;
+        }
+        if (outcome == StopOutcome.PENDING) {
+            active.navigationStopRequested = true;
+            update(TaskRunState.INTERRUPTING, "正在停止导航");
+            return;
+        }
+        if (outcome == StopOutcome.UNSAFE) {
+            markInterruptionFailed(
+                    "导航停止状态未知，已保留执行槽位",
+                    true
+            );
+            return;
+        }
+        active.navigationStopConfirmed = true;
+        if (active.flow != null) {
+            active.flow.cancel();
+            active.flow = null;
+        }
+        beginInterruption();
+    }
+
+    private void beginInterruption() {
+        TaskDefinition cleanup = active.prepared.interruptionTask;
+        if (cleanup == null) {
+            finishTerminated();
+            return;
+        }
+        active.navigationStopRequested = false;
+        active.navigationStopConfirmed = false;
+        try {
+            active.interruptionFlow = newFlow(active, cleanup, false);
+            active.interruptionRunning = true;
+            update(TaskRunState.INTERRUPTING, "正在执行中断收尾");
+        } catch (RuntimeException exception) {
+            failInterruption("无法启动中断收尾: " + safeMessage(exception));
+        }
+    }
+
+    private void tickInterruptionFlow() {
+        try {
+            TaskModuleResult result = active.interruptionFlow.tick();
+            switch (result.state()) {
+                case RUNNING, WAITING -> update(
+                        TaskRunState.INTERRUPTING,
+                        result.message()
+                );
+                case FAILED -> failInterruption(
+                        "中断收尾失败: " + result.message()
+                );
+                case SUCCEEDED -> {
+                    if (active.workspace.hasManagedItems()) {
+                        failInterruption(
+                                "中断收尾结束但仍有 "
+                                        + active.workspace.managedItemCount()
+                                        + " 个受管物品"
+                        );
+                    } else {
+                        finishTerminated();
+                    }
+                }
+            }
+        } catch (RuntimeException exception) {
+            failInterruption(
+                    "中断收尾异常: " + safeMessage(exception)
+            );
+        }
+    }
+
+    private void failInterruption(String message) {
+        active.interruptionRunning = false;
+        active.interruptionRecovery = true;
+        active.retryAfterRecovery = false;
+        active.stopFailurePending = false;
+        active.interruptionFailureMessage = message;
+        active.stopRequested = true;
+        active.navigationStopRequested = false;
+        active.navigationStopConfirmed = false;
+        if (active.interruptionFlow != null) {
+            active.interruptionFlow.requestStop();
+        }
+        update(TaskRunState.INTERRUPTING, "正在安全停止中断收尾动作");
+    }
+
+    private void markInterruptionFailed(
+            String message,
+            boolean stopFailure
+    ) {
+        active.interruptionRunning = false;
+        active.interruptionRecovery = false;
+        active.interruptionFailed = true;
+        active.stopFailurePending = stopFailure;
+        String warning = active.stopWarning == null || active.stopWarning.isBlank()
+                ? ""
+                : "；" + active.stopWarning;
+        update(TaskRunState.INTERRUPTION_FAILED, message + warning);
+    }
+
+    private void tickInterruptionRecovery() {
+        if (active.interruptionFlow != null
+                && !active.interruptionFlow.safeToStop()) {
+            try {
+                TaskModuleResult result = active.interruptionFlow
+                        .tickWhileStopping();
+                if (result.state() == TaskModuleState.RUNNING
+                        || result.state() == TaskModuleState.WAITING) {
+                    update(TaskRunState.INTERRUPTING, result.message());
+                    return;
+                }
+                if (result.state() == TaskModuleState.FAILED) {
+                    active.interruptionFailureMessage = result.message();
+                }
+            } catch (RuntimeException exception) {
+                active.interruptionFailureMessage =
+                        "停止中断收尾动作失败: " + safeMessage(exception);
+            }
+        }
+        if (active.interruptionFlow != null
+                && !active.interruptionFlow.safeToStop()) {
+            update(TaskRunState.INTERRUPTING, "等待收尾动作确认");
+            return;
+        }
+        StopOutcome outcome;
+        try {
+            outcome = active.navigationStopRequested
+                    ? navigation.pollStop()
+                    : navigation.requestStop();
+        } catch (RuntimeException exception) {
+            active.stopWarning = "停止导航失败: " + safeMessage(exception);
+            outcome = StopOutcome.UNSAFE;
+        }
+        if (outcome == StopOutcome.PENDING) {
+            active.navigationStopRequested = true;
+            update(TaskRunState.INTERRUPTING, "正在重新确认导航停止");
+            return;
+        }
+        if (outcome == StopOutcome.UNSAFE) {
+            markInterruptionFailed(
+                    active.interruptionFailureMessage
+                            + "；导航停止状态未知",
+                    true
+            );
+            return;
+        }
+        active.navigationStopConfirmed = true;
+        active.interruptionRecovery = false;
+        active.navigationStopRequested = false;
+        active.stopFailurePending = false;
+        if (active.interruptionFlow != null) {
+            active.interruptionFlow.cancel();
+        }
+        if (active.retryAfterRecovery) {
+            active.retryAfterRecovery = false;
+            active.interruptionFailureMessage = "";
+            active.interruptionRunning = false;
+            beginInterruption();
+            return;
+        }
+        markInterruptionFailed(
+                active.interruptionFailureMessage,
+                false
+        );
+    }
+
+    private void finishTerminated() {
+        String message = withManagedWarning(active.terminalMessage);
+        if (active.stopWarning != null && !active.stopWarning.isBlank()) {
+            message += "；" + active.stopWarning;
+        }
+        finishRun(active.terminalState, message);
+    }
+
+    private String withManagedWarning(String message) {
+        if (active == null || !active.workspace.hasManagedItems()) {
+            return message;
+        }
+        return message + "；未执行清理，仍有 "
+                + active.workspace.managedItemCount()
+                + " 个受管物品";
+    }
+
+    private void finishRun(TaskRunState state, String message) {
+        publishWorkspaceEvents();
+        PreparedRun completed = active.prepared;
+        boolean hadManagedItems = active.workspace.hasManagedItems();
+        TaskRunSnapshot old = active.snapshot;
+        int completedSteps = state == TaskRunState.SUCCEEDED
+                ? old.totalSteps()
+                : active.completedSteps;
+        TaskRunSnapshot finished = new TaskRunSnapshot(
+                old.runId(),
+                old.taskId(),
+                old.taskName(),
+                old.priority(),
+                old.repeating(),
+                state,
+                completedSteps,
+                old.totalSteps(),
+                message,
+                old.startedAt(),
+                Instant.now()
+        );
+        replaceRetained(finished);
+        active = null;
+        if (state == TaskRunState.SUCCEEDED
+                && completed.repeating
+                && !hadManagedItems) {
+            enqueuePrepared(
+                    completed,
+                    BACKGROUND_REPEAT_DELAY_TICKS,
+                    "等待后台任务冷却",
+                    true
+            );
+        }
+        if (state == TaskRunState.PREEMPTED
+                && !hadManagedItems
+                && completed.task.requeueAfterInterruption()) {
+            enqueuePrepared(
+                    completed,
+                    0,
+                    "被中断，等待重新运行",
+                    true
+            );
+        }
+    }
+
+    private TaskFlowExecutor flow() {
+        if (active.flow == null) {
+            active.flow = newFlow(active, active.prepared.task, true);
+        }
+        return active.flow;
+    }
+
+    private TaskFlowExecutor newFlow(
+            ActiveRun run,
+            TaskDefinition task,
+            boolean allowTaskCreation
+    ) {
+        Objects.requireNonNull(task, "task");
+        return new TaskFlowExecutor(
+                task.steps(),
+                run.context,
+                new TaskFlowExecutor.Host() {
+                    @Override
+                    public TaskModuleExecutor createAction(TaskStep step) {
+                        return registry.create(step, run.context);
+                    }
+
+                    @Override
+                    public void createTask(
+                            String taskRef,
+                            TaskPriority priority
+                    ) {
+                        createIndependentTask(run, taskRef, priority);
+                    }
+                },
+                allowTaskCreation
+        );
+    }
+
+    private void createIndependentTask(
+            ActiveRun run,
+            String taskRef,
+            TaskPriority priority
+    ) {
+        ResourceReference reference = ResourceReference.parse(taskRef);
+        if (reference.type() != ResourceType.TASK) {
+            throw new IllegalArgumentException("taskRef must reference a task");
+        }
+        TaskDefinition task = run.prepared.tasks.get(reference.uuid());
+        if (task == null) {
+            throw new IllegalArgumentException(
+                    "task does not exist: " + reference
+            );
+        }
+        PreparedRun prepared = prepare(
+                task,
+                List.copyOf(run.prepared.coordinates.values()),
+                List.copyOf(run.prepared.regions.values()),
+                List.copyOf(run.prepared.categoryZones.values()),
+                run.prepared.tasks,
+                priority,
+                false
+        );
+        QueuedRun created = newQueuedRun(prepared, ticks, "由任务创建，排队等待");
+        queue.add(created);
+        retain(created.snapshot);
+        requestPreemptionIfNeeded(created);
+    }
+
+    private void requestPreemptionIfNeeded(QueuedRun queued) {
+        if (active == null || active.userCancelRequested) {
+            return;
+        }
+        if (active.interruptionRunning || active.interruptionFailed) {
+            return;
+        }
+        if (!queued.prepared.priority.preempts(active.prepared.priority)) {
+            return;
+        }
+        active.preemptedByRunId = queued.snapshot.runId();
+        String message = "被“" + queued.prepared.task.name()
+                + "”中断，正在安全停止";
+        if (!active.stopRequested) {
+            startTermination(TaskRunState.PREEMPTED, message);
+        }
     }
 
     private PreparedRun prepare(
@@ -302,6 +799,7 @@ public final class TaskRunManager {
             List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
+            Map<UUID, TaskDefinition> tasks,
             TaskPriority priorityOverride,
             boolean allowRepeat
     ) {
@@ -312,29 +810,59 @@ public final class TaskRunManager {
         Map<UUID, RegionDefinition> frozenRegions = indexRegions(regions);
         Map<UUID, CategoryZoneDefinition> frozenCategoryZones =
                 indexCategoryZones(categoryZones);
-        for (TaskStep step : task.steps()) {
-            ConfigValidator.requireValidStep(
-                    step,
-                    frozenCoordinates,
-                    frozenRegions,
-                    frozenCategoryZones
-            );
-        }
+        Map<UUID, TaskDefinition> frozenTasks = Map.copyOf(tasks);
         TaskPriority priority = priorityOverride == null
                 ? task.priority()
                 : priorityOverride;
         boolean repeating = allowRepeat
                 && priority == TaskPriority.BACKGROUND
                 && task.repeatWhenIdle();
+        TaskDefinition interruptionTask = interruptionTask(
+                task,
+                frozenTasks
+        );
         return new PreparedRun(
                 task,
                 List.copyOf(task.steps()),
-                Map.copyOf(frozenCoordinates),
-                Map.copyOf(frozenRegions),
-                Map.copyOf(frozenCategoryZones),
+                frozenCoordinates,
+                frozenRegions,
+                frozenCategoryZones,
+                frozenTasks,
                 priority,
-                repeating
+                repeating,
+                interruptionTask
         );
+    }
+
+    private static TaskDefinition interruptionTask(
+            TaskDefinition task,
+            Map<UUID, TaskDefinition> tasks
+    ) {
+        TaskInterruptionMode mode = task.interruptionMode();
+        if (mode == TaskInterruptionMode.NONE) {
+            return null;
+        }
+        if (mode == TaskInterruptionMode.CUSTOM) {
+            ResourceReference reference = ResourceReference.parse(
+                    task.interruptionTaskRef()
+            );
+            TaskDefinition cleanup = tasks.get(reference.uuid());
+            if (cleanup == null) {
+                throw new IllegalArgumentException(
+                        "interruption task does not exist: " + reference
+                );
+            }
+            return cleanup;
+        }
+        List<TaskDefinition> defaults = tasks.values().stream()
+                .filter(TaskDefinition::defaultInterruptionFlow)
+                .toList();
+        if (defaults.size() > 1) {
+            throw new IllegalArgumentException(
+                    "only one default interruption flow is allowed"
+            );
+        }
+        return defaults.isEmpty() ? null : defaults.getFirst();
     }
 
     private TaskRunSnapshot startQueued(QueuedRun queued) {
@@ -346,7 +874,13 @@ public final class TaskRunManager {
                 "正在运行",
                 Instant.now()
         );
-        active = new ActiveRun(running, queued.prepared);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        active = new ActiveRun(
+                running,
+                queued.prepared,
+                workspace,
+                executionContext(queued.prepared, workspace)
+        );
         replaceRetained(running);
         return running;
     }
@@ -359,123 +893,81 @@ public final class TaskRunManager {
                 .filter(run -> run.readyAtTick <= ticks)
                 .min(queueOrder())
                 .orElse(null);
-        if (next != null) {
-            return startQueued(next);
-        }
-        return null;
+        return next == null ? null : startQueued(next);
     }
 
-    private void requestPreemption(QueuedRun queued) {
-        if (active.userCancelRequested) {
-            return;
-        }
-        active.preemptedByRunId = queued.snapshot.runId();
-        active.cancelRequested = true;
-        requestCancel();
-        update(
-                active.snapshot.state(),
-                "正在停止任务，准备让位给“"
-                        + queued.prepared.task.name()
-                        + "”"
-        );
-    }
-
-    private TaskModuleResult startExecutor(TaskModuleExecutor executor) {
-        active.executorStarted = true;
-        return executor.start();
-    }
-
-    private TaskModuleExecutor executor() {
-        if (active.executor == null) {
-            TaskStep step = active.prepared.steps.get(
-                    active.snapshot.completedSteps()
-            );
-            TaskExecutionContext context = new TaskExecutionContext(
-                    navigation,
-                    registry.droppedItems(),
-                    registry.containerRegions(),
-                    registry.containerCategories(),
-                    registry.containerTransfers(),
-                    registry.containerWithdrawals(),
-                    registry.containerInspections(),
-                    registry.categoryMarkerCache(),
-                    registry.foodConsumption(),
-                    registry.categoryZones(),
-                    active.prepared.coordinates,
-                    active.prepared.regions,
-                    active.prepared.categoryZones,
-                    active.workspace
-            );
-            active.executor = registry.create(step, context);
-            active.executorStarted = false;
-        }
-        return active.executor;
-    }
-
-    private void apply(TaskModuleResult result) {
-        switch (result.state()) {
-            case RUNNING -> update(TaskRunState.RUNNING, result.message());
-            case WAITING -> update(TaskRunState.WAITING, result.message());
-            case SUCCEEDED -> completeCurrentStep(result.message());
-            case FAILED -> {
-                requestCancel();
-                publishWorkspaceEvents();
-                finish(TaskRunState.FAILED, result.message());
+    private void enqueuePrepared(
+            PreparedRun prepared,
+            int delayTicks,
+            String message,
+            boolean deduplicate
+    ) {
+        if (deduplicate) {
+            if (active != null
+                    && active.prepared.task.id().equals(prepared.task.id())) {
+                return;
+            }
+            if (queue.stream().anyMatch(
+                    run -> run.prepared.task.id().equals(prepared.task.id())
+            )) {
+                return;
             }
         }
-    }
-
-    private void completeCurrentStep(String message) {
-        publishWorkspaceEvents();
-        active.executor = null;
-        active.executorStarted = false;
-        int completed = active.snapshot.completedSteps() + 1;
-        update(TaskRunState.RUNNING, completed, message);
-        if (completed >= active.prepared.steps.size()) {
-            finish(TaskRunState.SUCCEEDED, "任务已完成");
-        }
-    }
-
-    private void requestCancel() {
-        if (active.executor != null && !active.executorCancelled) {
-            active.executor.cancel();
-            active.executorCancelled = true;
-        }
-    }
-
-    private void finishCancellation() {
-        requestCancel();
-        StopOutcome outcome = navigation.requestStop();
-        if (outcome == StopOutcome.PENDING) {
-            update(TaskRunState.WAITING, "正在停止导航");
-            return;
-        }
-        boolean preempted = active.preemptedByRunId != null
-                && !active.userCancelRequested;
-        PreparedRun interrupted = active.prepared;
-        String interruptedBy = queue.stream()
-                .filter(run -> run.snapshot.runId()
-                        .equals(active.preemptedByRunId))
-                .map(run -> run.prepared.task.name())
-                .findFirst()
-                .orElse("更高优先级任务");
-        String message = preempted
-                ? "被“" + interruptedBy + "”中断，将从开始处重新排队"
-                : outcome == StopOutcome.CLEAN
-                        ? "任务已取消"
-                        : "任务已取消，但导航停止状态未知";
-        publishWorkspaceEvents();
-        finish(
-                preempted ? TaskRunState.PREEMPTED : TaskRunState.CANCELLED,
+        QueuedRun queued = newQueuedRun(
+                prepared,
+                ticks + delayTicks,
                 message
         );
-        if (preempted) {
-            enqueuePrepared(interrupted, 0, "被中断，等待从头重新运行");
-        }
+        queue.add(queued);
+        retain(snapshot(
+                queued,
+                TaskRunState.QUEUED,
+                0,
+                message,
+                Instant.now()
+        ));
+    }
+
+    private QueuedRun newQueuedRun(
+            PreparedRun prepared,
+            long readyAtTick,
+            String message
+    ) {
+        Instant now = Instant.now();
+        return new QueuedRun(
+                UUID.randomUUID(),
+                prepared,
+                now,
+                nextSequence++,
+                readyAtTick,
+                message
+        );
+    }
+
+    private TaskExecutionContext executionContext(
+            PreparedRun prepared,
+            TaskRunWorkspace workspace
+    ) {
+        return new TaskExecutionContext(
+                navigation,
+                registry.droppedItems(),
+                registry.containerRegions(),
+                registry.containerCategories(),
+                registry.containerTransfers(),
+                registry.containerWithdrawals(),
+                registry.containerInspections(),
+                registry.categoryMarkerCache(),
+                registry.foodConsumption(),
+                registry.categoryZones(),
+                prepared.coordinates,
+                prepared.regions,
+                prepared.categoryZones,
+                workspace
+        );
     }
 
     private void update(TaskRunState state, String message) {
-        update(state, active.snapshot.completedSteps(), message);
+        update(state, active.completedSteps, message);
     }
 
     private void update(
@@ -500,68 +992,23 @@ public final class TaskRunManager {
         replaceRetained(active.snapshot);
     }
 
-    private void finish(TaskRunState state, String message) {
-        publishWorkspaceEvents();
-        TaskRunSnapshot old = active.snapshot;
-        TaskRunSnapshot finished = new TaskRunSnapshot(
-                old.runId(),
-                old.taskId(),
-                old.taskName(),
-                old.priority(),
-                old.repeating(),
-                state,
-                state == TaskRunState.SUCCEEDED
-                        ? old.totalSteps()
-                        : old.completedSteps(),
-                old.totalSteps(),
-                message,
-                old.startedAt(),
-                Instant.now()
-        );
-        PreparedRun completed = active.prepared;
-        replaceRetained(finished);
-        active = null;
-        if (completed.repeating
-                && (state == TaskRunState.SUCCEEDED
-                || state == TaskRunState.FAILED)) {
-            enqueuePrepared(
-                    completed,
-                    BACKGROUND_REPEAT_DELAY_TICKS,
-                    "等待后台任务冷却"
-            );
+    private void publishWorkspaceEvents() {
+        if (active == null) {
+            return;
+        }
+        Map<UUID, Integer> updates = active.workspace.consumeCacheUpdates();
+        for (Map.Entry<UUID, Integer> update : updates.entrySet()) {
+            triggers.cacheUpdated(update.getKey());
         }
     }
 
-    private void enqueuePrepared(
-            PreparedRun prepared,
-            int delayTicks,
-            String message
-    ) {
-        if (active != null
-                && active.prepared.task.id().equals(prepared.task.id())) {
-            return;
+    private boolean isTaskPending(UUID taskId) {
+        if (active != null && active.prepared.task.id().equals(taskId)) {
+            return true;
         }
-        if (queue.stream().anyMatch(
-                run -> run.prepared.task.id().equals(prepared.task.id())
-        )) {
-            return;
-        }
-        Instant now = Instant.now();
-        QueuedRun queued = new QueuedRun(
-                UUID.randomUUID(),
-                prepared,
-                now,
-                nextSequence++,
-                ticks + delayTicks
+        return queue.stream().anyMatch(
+                run -> run.prepared.task.id().equals(taskId)
         );
-        queue.add(queued);
-        retain(snapshot(
-                queued,
-                TaskRunState.QUEUED,
-                0,
-                message,
-                now
-        ));
     }
 
     private static Comparator<QueuedRun> queueOrder() {
@@ -617,32 +1064,6 @@ public final class TaskRunManager {
         }
     }
 
-    private boolean isActive() {
-        return active != null
-                && (active.snapshot.state() == TaskRunState.RUNNING
-                || active.snapshot.state() == TaskRunState.WAITING);
-    }
-
-    private boolean isTaskPending(UUID taskId) {
-        if (active != null && active.prepared.task.id().equals(taskId)) {
-            return true;
-        }
-        return queue.stream().anyMatch(
-                run -> run.prepared.task.id().equals(taskId)
-        );
-    }
-
-    private void publishWorkspaceEvents() {
-        if (active == null) {
-            return;
-        }
-        Map<UUID, Integer> updates = active.workspace
-                .consumeCacheUpdates();
-        for (Map.Entry<UUID, Integer> update : updates.entrySet()) {
-            triggers.cacheUpdated(update.getKey());
-        }
-    }
-
     private static Map<UUID, CoordinatePoint> indexCoordinates(
             List<CoordinatePoint> coordinates
     ) {
@@ -673,6 +1094,18 @@ public final class TaskRunManager {
         return result;
     }
 
+    private static Map<UUID, TaskDefinition> indexTasks(
+            List<TaskDefinition> tasks
+    ) {
+        Map<UUID, TaskDefinition> result = new LinkedHashMap<>();
+        for (TaskDefinition task : tasks) {
+            if (result.putIfAbsent(task.id(), task) != null) {
+                throw new IllegalArgumentException("duplicate task id");
+            }
+        }
+        return Map.copyOf(result);
+    }
+
     private static String safeMessage(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank()
@@ -686,12 +1119,15 @@ public final class TaskRunManager {
             Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions,
             Map<UUID, CategoryZoneDefinition> categoryZones,
+            Map<UUID, TaskDefinition> tasks,
             TaskPriority priority,
-            boolean repeating
+            boolean repeating,
+            TaskDefinition interruptionTask
     ) {
     }
 
     private static final class QueuedRun {
+        private final UUID runId;
         private final PreparedRun prepared;
         private final long sequence;
         private final long readyAtTick;
@@ -702,8 +1138,10 @@ public final class TaskRunManager {
                 PreparedRun prepared,
                 Instant requestedAt,
                 long sequence,
-                long readyAtTick
+                long readyAtTick,
+                String message
         ) {
+            this.runId = runId;
             this.prepared = prepared;
             this.sequence = sequence;
             this.readyAtTick = readyAtTick;
@@ -716,7 +1154,7 @@ public final class TaskRunManager {
                     TaskRunState.QUEUED,
                     0,
                     prepared.steps.size(),
-                    "排队等待",
+                    message,
                     requestedAt,
                     requestedAt
             );
@@ -726,20 +1164,36 @@ public final class TaskRunManager {
     private static final class ActiveRun {
         private TaskRunSnapshot snapshot;
         private final PreparedRun prepared;
-        private final TaskRunWorkspace workspace = new TaskRunWorkspace();
-        private TaskModuleExecutor executor;
-        private boolean executorStarted;
-        private boolean executorCancelled;
-        private boolean cancelRequested;
-        private boolean userCancelRequested;
+        private final TaskRunWorkspace workspace;
+        private final TaskExecutionContext context;
+        private TaskFlowExecutor flow;
+        private TaskFlowExecutor interruptionFlow;
+        private TaskRunState terminalState = TaskRunState.CANCELLED;
+        private String terminalMessage = "任务已取消";
+        private String stopWarning = "";
         private UUID preemptedByRunId;
+        private boolean stopRequested;
+        private boolean userCancelRequested;
+        private boolean interruptionRunning;
+        private boolean interruptionRecovery;
+        private boolean retryAfterRecovery;
+        private boolean stopFailurePending;
+        private boolean interruptionFailed;
+        private String interruptionFailureMessage = "";
+        private boolean navigationStopRequested;
+        private boolean navigationStopConfirmed;
+        private int completedSteps;
 
         private ActiveRun(
                 TaskRunSnapshot snapshot,
-                PreparedRun prepared
+                PreparedRun prepared,
+                TaskRunWorkspace workspace,
+                TaskExecutionContext context
         ) {
             this.snapshot = snapshot;
             this.prepared = prepared;
+            this.workspace = workspace;
+            this.context = context;
         }
     }
 }

@@ -347,7 +347,11 @@ class TaskRunManagerTest {
                 name,
                 priority,
                 repeatWhenIdle,
-                List.of(steps)
+                List.of(steps),
+                null,
+                null,
+                false,
+                true
         );
     }
 

@@ -748,6 +748,57 @@ class V2ControlServerTest {
         }
     }
 
+    @Test
+    void exposesInterruptionRecoveryAndRejectsInvalidState() throws Exception {
+        try (Fixture fixture = fixture()) {
+            HttpResponse<String> created = fixture.send(
+                    "/v1/tasks",
+                    "POST",
+                    """
+                            {"name":"Output move","steps":[{
+                            "moduleId":"MOVE_TO_COORDINATE",
+                            "parameters":{"targetRef":"output:container"}}]}
+                            """,
+                    true
+            );
+            assertEquals(201, created.statusCode());
+            String taskId = object(created).getAsJsonArray("tasks")
+                    .get(0)
+                    .getAsJsonObject()
+                    .get("id")
+                    .getAsString();
+            JsonObject run = object(fixture.send(
+                    "/v1/tasks/" + taskId + "/runs",
+                    "POST",
+                    "{}",
+                    true
+            ));
+            String runId = run.get("runId").getAsString();
+
+            HttpResponse<String> retry = fixture.send(
+                    "/v1/task-runs/" + runId + "/retry-interruption",
+                    "POST",
+                    "",
+                    true
+            );
+            HttpResponse<String> skip = fixture.send(
+                    "/v1/task-runs/" + runId + "/skip-interruption",
+                    "POST",
+                    "",
+                    true
+            );
+
+            assertEquals(409, retry.statusCode());
+            assertEquals(409, skip.statusCode());
+            assertEquals(
+                    "invalid_state",
+                    object(retry).getAsJsonObject("error")
+                            .get("code")
+                            .getAsString()
+            );
+        }
+    }
+
     private Fixture fixture() throws IOException {
         ConfigStore store = new ConfigStore(directory.resolve("stowling.json"));
         store.loadOrReset();

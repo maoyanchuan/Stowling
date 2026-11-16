@@ -4,6 +4,8 @@ public enum TaskRunState {
     QUEUED,
     RUNNING,
     WAITING,
+    INTERRUPTING,
+    INTERRUPTION_FAILED,
     SUCCEEDED,
     FAILED,
     PREEMPTED,

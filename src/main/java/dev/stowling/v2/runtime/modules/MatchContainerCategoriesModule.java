@@ -1,8 +1,16 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerCategory;
 import dev.stowling.automation.ContainerCategoryResult;
 import dev.stowling.automation.ContainerScanResult;
+import dev.stowling.automation.ContainerTarget;
 import dev.stowling.v2.model.TaskStep;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 final class MatchContainerCategoriesModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
@@ -29,7 +37,21 @@ final class MatchContainerCategoriesModule implements TaskModuleExecutor {
         if (!categories.succeeded()) {
             return TaskModuleResult.failed(categories.message());
         }
+        Map<ContainerTarget, Set<String>> accepted = new LinkedHashMap<>();
+        for (ContainerCategory category : categories.categories()) {
+            accepted.computeIfAbsent(
+                    category.container(),
+                    ignored -> new LinkedHashSet<>()
+            ).add(category.itemId());
+        }
+        List<ContainerTarget> targets = new ArrayList<>();
+        for (ContainerTarget container : scan.containers()) {
+            if (accepted.containsKey(container)) {
+                targets.add(container);
+            }
+        }
         context.workspace().setContainerCategories(categories);
+        context.workspace().setCategoryMatch(targets, accepted);
         return TaskModuleResult.succeeded(categories.message());
     }
 

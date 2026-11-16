@@ -1,0 +1,666 @@
+package dev.stowling.v2.runtime.modules;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.stowling.automation.CategoryMarkerCachePort;
+import dev.stowling.automation.CategoryZonePort;
+import dev.stowling.automation.CategoryZoneResult;
+import dev.stowling.automation.ContainerCategoryPort;
+import dev.stowling.automation.ContainerCategoryResult;
+import dev.stowling.automation.ContainerInspectionPort;
+import dev.stowling.automation.ContainerRegionPort;
+import dev.stowling.automation.ContainerScanResult;
+import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerTransferPort;
+import dev.stowling.automation.ContainerTransferResult;
+import dev.stowling.automation.ContainerTransferState;
+import dev.stowling.automation.ContainerWithdrawalPort;
+import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.DroppedItem;
+import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.FoodConsumptionPort;
+import dev.stowling.automation.FoodConsumptionResult;
+import dev.stowling.automation.FoodStatus;
+import dev.stowling.automation.NavigationPort;
+import dev.stowling.automation.NavigationStatus;
+import dev.stowling.domain.BlockPosition;
+import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.TaskStep;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+
+class BasicModuleSemanticsTest {
+
+    @Test
+    void legacyCompositeExecutorsAreNotRegistered() {
+        Set<String> ids = StandardTaskModuleFactories.create().stream()
+                .map(factory -> factory.moduleId())
+                .collect(java.util.stream.Collectors.toSet());
+
+        assertFalse(ids.contains("AUTO_EAT_AT_COORDINATE"));
+        assertFalse(ids.contains("SORT_CACHE_ITEMS"));
+        assertFalse(ids.contains("SORT_CACHE_ITEMS_BY_CATEGORY_ZONE"));
+        assertFalse(ids.contains("REFRESH_CATEGORY_MARKER_CACHE"));
+        assertFalse(ids.contains("COLLECT_DROPPED_ITEMS_IN_REGION"));
+    }
+
+
+    @Test
+    void markerSaveRequiresSameZoneAndEveryTargetRead() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        CategoryZoneDefinition zoneA = zone("A");
+        CategoryZoneDefinition zoneB = zone("B");
+        ContainerTarget markerA = target(1, 64, 1, "marker");
+        ContainerTarget markerB = target(2, 64, 2, "marker");
+        workspace.setMarkerPlan(
+                zoneA.id(),
+                new MarkerContainerScanAction.Plan(
+                        Map.of(),
+                        List.of(
+                                new MarkerContainerScanAction.Target(markerA),
+                                new MarkerContainerScanAction.Target(markerB)
+                        ),
+                        ""
+                )
+        );
+        RecordingMarkerCache cache = new RecordingMarkerCache();
+        TaskExecutionContext context = contextWithMarker(
+                workspace,
+                Map.of(zoneA.id(), zoneA, zoneB.id(), zoneB),
+                cache
+        );
+
+        SaveCategoryMarkerCacheModule wrongZone = new SaveCategoryMarkerCacheModule(
+                context,
+                markerSaveStep(zoneB)
+        );
+        assertEquals(TaskModuleState.FAILED, wrongZone.start().state());
+
+        SaveCategoryMarkerCacheModule incomplete =
+                new SaveCategoryMarkerCacheModule(
+                        context,
+                        markerSaveStep(zoneA)
+                );
+        assertEquals(TaskModuleState.FAILED, incomplete.start().state());
+
+        workspace.recordContainerRead(markerA, Set.of("minecraft:iron_ingot"));
+        assertEquals(TaskModuleState.FAILED, incomplete.start().state());
+
+        workspace.recordContainerRead(markerB, Set.of("minecraft:gold_ingot"));
+        assertEquals(TaskModuleState.SUCCEEDED, incomplete.start().state());
+        assertTrue(cache.saved);
+    }
+
+    @Test
+    void readContainerRejectsTargetThatIsNotTheSelectedMarker() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget marker = target(1, 64, 1, "marker");
+        workspace.setMarkerPlan(
+                UUID.randomUUID(),
+                new MarkerContainerScanAction.Plan(
+                        Map.of(),
+                        List.of(new MarkerContainerScanAction.Target(marker)),
+                        ""
+                )
+        );
+        workspace.selectMarker();
+        UUID coordinateId = UUID.randomUUID();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace,
+                Map.of(
+                        coordinateId,
+                        new CoordinatePoint(
+                                coordinateId,
+                                "Wrong",
+                                9,
+                                64,
+                                9
+                        )
+                )
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ReadContainerModule(
+                        context,
+                        TaskStep.action(
+                                UUID.randomUUID(),
+                                TaskModuleIds.READ_CONTAINER,
+                                Map.of(
+                                        TaskModuleIds.TARGET_REF,
+                                        "coordinate:" + coordinateId
+                                )
+                        )
+                )
+        );
+    }
+
+    @Test
+    void cacheScanRemainsTheContainerSourceWhenCategoriesTargetOtherContainers() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        workspace.setContainerScan(
+                UUID.randomUUID(),
+                ContainerScanResult.success(List.of(cache))
+        );
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:iron_ingot")),
+                List.of(cache)
+        );
+
+        assertEquals(cache, workspace.selectNextContainer().orElseThrow());
+        assertEquals(
+                Set.of("minecraft:iron_ingot"),
+                workspace.selectedContainerItemIds()
+        );
+        assertFalse(workspace.hasContainers());
+    }
+
+    @Test
+    void managedDepositAllocatesActualDepositedItemsBetweenLedgers() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.recordCollected("minecraft:iron_ingot", 3);
+        workspace.recordWithdrawn("minecraft:iron_ingot", 2);
+
+        workspace.consumeDeposit(
+                "managed",
+                Map.of("minecraft:iron_ingot", 5),
+                Map.of("minecraft:iron_ingot", 2)
+        );
+
+        assertEquals(2, workspace.managedItemCount());
+        assertEquals(Map.of("minecraft:iron_ingot", 2),
+                workspace.collectedItems());
+        assertTrue(workspace.carriedItems().isEmpty());
+    }
+
+    @Test
+    void storageDepositFiltersCarriedItemsToTheSelectedCategory() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storageA = target(5, 64, 5, "storage-a");
+        ContainerTarget storageB = target(7, 64, 7, "storage-b");
+        workspace.setContainerScan(
+                UUID.randomUUID(),
+                ContainerScanResult.success(List.of(cache))
+        );
+        workspace.setResolvedCategories(
+                List.of(storageA, storageB),
+                Map.of(
+                        storageA, Set.of("minecraft:iron_ingot"),
+                        storageB, Set.of("minecraft:gold_ingot")
+                ),
+                List.of(cache)
+        );
+        workspace.recordWithdrawn("minecraft:iron_ingot", 2);
+        workspace.recordWithdrawn("minecraft:gold_ingot", 3);
+        workspace.selectStorageTarget();
+
+        RecordingTransfers transfers = new RecordingTransfers();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                transfers,
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF, "output:storage",
+                                TaskModuleIds.ITEM_SOURCE, "carried"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(
+                Map.of("minecraft:iron_ingot", 2),
+                transfers.requested
+        );
+        assertEquals(
+                Map.of("minecraft:gold_ingot", 3),
+                workspace.carriedItems()
+        );
+    }
+
+    @Test
+    void withdrawalStopDrainsActualPartialResultWithoutNavigation() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        workspace.setContainerScan(
+                UUID.randomUUID(),
+                ContainerScanResult.success(List.of(cache))
+        );
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:iron_ingot")),
+                List.of(cache)
+        );
+        workspace.selectNextContainer();
+        PartialWithdrawal withdrawal = new PartialWithdrawal();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                withdrawal,
+                new FoodPort(),
+                workspace
+        );
+        WithdrawItemsModule module = new WithdrawItemsModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.WITHDRAW_ITEMS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF, "output:container",
+                                TaskModuleIds.ITEM_SOURCE, "classified"
+                        )
+                )
+        );
+
+        module.start();
+        module.requestStop();
+        assertFalse(module.safeToStop());
+        TaskModuleResult result = module.tick();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertTrue(module.safeToStop());
+        assertEquals(2, workspace.carriedItems()
+                .get("minecraft:iron_ingot"));
+        assertEquals(2, workspace.managedItems()
+                .get("minecraft:iron_ingot"));
+    }
+
+
+    @Test
+    void acquiredFoodIsManagedAndConsumedWithoutTouchingOriginalInventory() {
+        UUID coordinateId = UUID.randomUUID();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        AcquiringFoodPort food = new AcquiringFoodPort();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                food,
+                workspace,
+                Map.of(
+                        coordinateId,
+                        new CoordinatePoint(
+                                coordinateId,
+                                "Food",
+                                1,
+                                64,
+                                1
+                        )
+                )
+        );
+        WithdrawFoodModule withdraw = new WithdrawFoodModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.WITHDRAW_FOOD,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "coordinate:" + coordinateId,
+                                TaskModuleIds.FOOD_ITEM_ID,
+                                "minecraft:bread"
+                        )
+                )
+        );
+        EatFoodModule eat = new EatFoodModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.EAT_FOOD,
+                        Map.of(
+                                TaskModuleIds.FOOD_ITEM_ID,
+                                "minecraft:bread"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.WAITING, withdraw.start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, withdraw.tick().state());
+        assertEquals(1, workspace.managedItems().get("minecraft:bread"));
+        assertTrue(workspace.carriedItems().isEmpty());
+        eat.start();
+        eat.requestStop();
+        assertFalse(eat.safeToStop());
+        assertEquals(TaskModuleState.SUCCEEDED, eat.tick().state());
+        assertTrue(eat.safeToStop());
+        assertTrue(workspace.managedItems().isEmpty());
+    }
+
+
+    private static TaskExecutionContext contextWithMarker(
+            TaskRunWorkspace workspace,
+            Map<UUID, CategoryZoneDefinition> zones,
+            CategoryMarkerCachePort cache
+    ) {
+        TaskExecutionContext base = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        return new TaskExecutionContext(
+                base.navigation(),
+                base.droppedItems(),
+                base.containerRegions(),
+                base.containerCategories(),
+                base.containerTransfers(),
+                base.containerWithdrawals(),
+                base.containerInspections(),
+                cache,
+                base.foodConsumption(),
+                base.categoryZonesPort(),
+                base.coordinates(),
+                base.regions(),
+                zones,
+                workspace
+        );
+    }
+
+    private static CategoryZoneDefinition zone(String name) {
+        return new CategoryZoneDefinition(
+                UUID.randomUUID(),
+                name,
+                List.of(new CategoryBindingDefinition(
+                        UUID.randomUUID(),
+                        new AreaBounds(0, 0, 0, 1, 1, 1),
+                        new AreaBounds(2, 0, 0, 3, 1, 1),
+                        "test-rule"
+                ))
+        );
+    }
+
+    private static TaskStep markerSaveStep(CategoryZoneDefinition zone) {
+        return TaskStep.action(
+                UUID.randomUUID(),
+                TaskModuleIds.SAVE_CATEGORY_MARKER_CACHE,
+                Map.of(
+                        TaskModuleIds.CATEGORY_ZONE_REF,
+                        "category-zone:" + zone.id()
+                )
+        );
+    }
+
+    private static TaskExecutionContext context(
+            NavigationPort navigation,
+            ContainerTransferPort transfers,
+            ContainerWithdrawalPort withdrawals,
+            FoodConsumptionPort food,
+            TaskRunWorkspace workspace
+    ) {
+        return context(
+                navigation,
+                transfers,
+                withdrawals,
+                food,
+                workspace,
+                Map.of()
+        );
+    }
+
+    private static TaskExecutionContext context(
+            NavigationPort navigation,
+            ContainerTransferPort transfers,
+            ContainerWithdrawalPort withdrawals,
+            FoodConsumptionPort food,
+            TaskRunWorkspace workspace,
+            Map<UUID, CoordinatePoint> coordinates
+    ) {
+        DroppedItemObserverPort dropped = new DroppedItemObserverPort() {
+            @Override
+            public List<DroppedItem> observe(BlockPosition center, int radius) {
+                return List.of();
+            }
+
+            @Override
+            public List<DroppedItem> observe(RegionDefinition region) {
+                return List.of();
+            }
+        };
+        ContainerRegionPort regions = (region, types, volume) ->
+                ContainerScanResult.failure("unused");
+        ContainerCategoryPort categories = containers ->
+                ContainerCategoryResult.failure("unused");
+        CategoryZonePort zones = (zone, types, volume) ->
+                CategoryZoneResult.failure("unused");
+        return new TaskExecutionContext(
+                navigation,
+                dropped,
+                regions,
+                categories,
+                transfers,
+                withdrawals,
+                ContainerInspectionPort.UNAVAILABLE,
+                CategoryMarkerCachePort.UNAVAILABLE,
+                food,
+                zones,
+                coordinates,
+                Map.of(),
+                Map.of(),
+                workspace
+        );
+    }
+
+    private static ContainerTarget target(int x, int y, int z, String type) {
+        return new ContainerTarget(new BlockPosition(x, y, z), type);
+    }
+
+    private static final class RecordingMarkerCache
+            implements CategoryMarkerCachePort {
+        private boolean saved;
+
+        @Override
+        public Optional<Map<BlockPosition, Set<String>>> contents(UUID bindingId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void replaceBindings(
+                Map<UUID, Map<BlockPosition, Set<String>>> contents
+        ) {
+            saved = true;
+        }
+    }
+
+    private static final class ForbiddenNavigation implements NavigationPort {
+        @Override
+        public NavigationStatus start(BlockPosition target) {
+            throw new AssertionError("basic transfer actions must not navigate");
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target) {
+            throw new AssertionError("basic transfer actions must not navigate");
+        }
+
+        @Override
+        public void cancel() {
+        }
+
+        @Override
+        public StopOutcome requestStop() {
+            return StopOutcome.CLEAN;
+        }
+    }
+
+    private static final class RecordingTransfers implements ContainerTransferPort {
+        private Map<String, Integer> requested = Map.of();
+
+        @Override
+        public ContainerTransferResult startDeposit(
+                ContainerTarget target,
+                Map<String, Integer> items
+        ) {
+            requested = Map.copyOf(items);
+            return ContainerTransferResult.succeeded("deposited", Map.of());
+        }
+
+        @Override
+        public ContainerTransferResult pollDeposit() {
+            return ContainerTransferResult.succeeded("deposited", Map.of());
+        }
+
+        @Override
+        public void cancelDeposit() {
+        }
+    }
+
+    private static final class PartialWithdrawal
+            implements ContainerWithdrawalPort {
+        private boolean started;
+
+        @Override
+        public ContainerWithdrawalResult startWithdrawal(
+                ContainerTarget target,
+                Set<String> matchingItemIds
+        ) {
+            started = true;
+            return ContainerWithdrawalResult.pending("pending");
+        }
+
+        @Override
+        public ContainerWithdrawalResult pollWithdrawal() {
+            if (!started) {
+                return ContainerWithdrawalResult.failed("not started", Map.of(),
+                        false);
+            }
+            started = false;
+            return ContainerWithdrawalResult.failed(
+                    "partial",
+                    Map.of("minecraft:iron_ingot", 2),
+                    false
+            );
+        }
+
+        @Override
+        public void cancelWithdrawal() {
+            throw new AssertionError("in-flight withdrawal must be drained");
+        }
+    }
+
+    private static final class FailedWithdrawals
+            implements ContainerWithdrawalPort {
+        @Override
+        public ContainerWithdrawalResult startWithdrawal(
+                ContainerTarget target,
+                Set<String> matchingItemIds
+        ) {
+            return ContainerWithdrawalResult.failed(
+                    "unused",
+                    Map.of(),
+                    false
+            );
+        }
+
+        @Override
+        public ContainerWithdrawalResult pollWithdrawal() {
+            return ContainerWithdrawalResult.failed(
+                    "unused",
+                    Map.of(),
+                    false
+            );
+        }
+
+        @Override
+        public void cancelWithdrawal() {
+        }
+    }
+
+    private static final class AcquiringFoodPort
+            implements FoodConsumptionPort {
+        private boolean acquiring;
+
+        @Override
+        public FoodStatus observe() {
+            return new FoodStatus(true, 10, 0);
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId) {
+            return FoodConsumptionResult.pending("eating");
+        }
+
+        @Override
+        public FoodConsumptionResult pollEating() {
+            return FoodConsumptionResult.succeeded("eaten");
+        }
+
+        @Override
+        public void cancelEating() {
+        }
+
+        @Override
+        public FoodConsumptionResult startAcquiringFood(
+                ContainerTarget target,
+                String itemId
+        ) {
+            acquiring = true;
+            return FoodConsumptionResult.pending("acquiring");
+        }
+
+        @Override
+        public FoodConsumptionResult pollAcquiringFood() {
+            if (!acquiring) {
+                return FoodConsumptionResult.failed("not acquiring");
+            }
+            acquiring = false;
+            return FoodConsumptionResult.succeeded(
+                    "acquired",
+                    Map.of("minecraft:bread", 1)
+            );
+        }
+
+        @Override
+        public void cancelAcquiringFood() {
+            acquiring = false;
+        }
+    }
+
+    private static final class FoodPort implements FoodConsumptionPort {
+        @Override
+        public FoodStatus observe() {
+            return new FoodStatus(true, 10, 0);
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId) {
+            return FoodConsumptionResult.pending("eating");
+        }
+
+        @Override
+        public FoodConsumptionResult pollEating() {
+            return FoodConsumptionResult.succeeded("eaten");
+        }
+
+        @Override
+        public void cancelEating() {
+        }
+    }
+}

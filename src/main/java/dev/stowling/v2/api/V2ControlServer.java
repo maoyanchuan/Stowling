@@ -32,7 +32,9 @@ import dev.stowling.v2.control.TaskTriggerUpdateRequest;
 import dev.stowling.v2.control.TaskUpdateRequest;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2NotFoundException;
+import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerType;
 import dev.stowling.v2.runtime.TaskRunNotFoundException;
 import java.io.ByteArrayOutputStream;
@@ -197,6 +199,13 @@ public final class V2ControlServer implements AutoCloseable {
             )));
         } catch (V2NotFoundException exception) {
             sendErrorQuietly(exchange, 404, "not_found", exception.getMessage());
+        } catch (IllegalStateException exception) {
+            sendErrorQuietly(
+                    exchange,
+                    409,
+                    "invalid_state",
+                    exception.getMessage()
+            );
         } catch (IllegalArgumentException exception) {
             sendErrorQuietly(exchange, 400, "invalid_request", exception.getMessage());
         } catch (Exception exception) {
@@ -300,7 +309,11 @@ public final class V2ControlServer implements AutoCloseable {
                                 "name",
                                 "priority",
                                 "repeatWhenIdle",
-                                "steps"
+                                "steps",
+                                "interruptionMode",
+                                "interruptionTaskRef",
+                                "defaultInterruptionFlow",
+                                "requeueAfterInterruption"
                         ),
                         Set.of("name", "steps")
                 );
@@ -485,7 +498,11 @@ public final class V2ControlServer implements AutoCloseable {
                                 "name",
                                 "priority",
                                 "repeatWhenIdle",
-                                "steps"
+                                "steps",
+                                "interruptionMode",
+                                "interruptionTaskRef",
+                                "defaultInterruptionFlow",
+                                "requeueAfterInterruption"
                         ),
                         Set.of("revision", "name", "steps")
                 );
@@ -495,7 +512,11 @@ public final class V2ControlServer implements AutoCloseable {
                                 string(json, "name"),
                                 optionalPriority(json, "priority"),
                                 optionalBoolean(json, "repeatWhenIdle"),
-                                steps(json)
+                                steps(json),
+                                optionalInterruptionMode(json),
+                                optionalString(json, "interruptionTaskRef"),
+                                optionalBoolean(json, "defaultInterruptionFlow"),
+                                optionalBoolean(json, "requeueAfterInterruption")
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteTask(id, revision(body)));
@@ -513,6 +534,34 @@ public final class V2ControlServer implements AutoCloseable {
             );
             service.cancelRun(uuid(value));
             sendJson(exchange, 200, Map.of("cancelled", true));
+            return;
+        }
+        if (path.startsWith("/v1/task-runs/")
+                && path.endsWith("/retry-interruption")) {
+            requireMethod(method, "POST");
+            requireEmpty(body);
+            String prefix = "/v1/task-runs/";
+            String suffix = "/retry-interruption";
+            String value = path.substring(
+                    prefix.length(),
+                    path.length() - suffix.length()
+            );
+            service.retryInterruption(uuid(value));
+            sendJson(exchange, 200, Map.of("retried", true));
+            return;
+        }
+        if (path.startsWith("/v1/task-runs/")
+                && path.endsWith("/skip-interruption")) {
+            requireMethod(method, "POST");
+            requireEmpty(body);
+            String prefix = "/v1/task-runs/";
+            String suffix = "/skip-interruption";
+            String value = path.substring(
+                    prefix.length(),
+                    path.length() - suffix.length()
+            );
+            service.skipInterruption(uuid(value));
+            sendJson(exchange, 200, Map.of("skipped", true));
             return;
         }
         if (path.startsWith("/v1/task-triggers/")) {
@@ -557,7 +606,11 @@ public final class V2ControlServer implements AutoCloseable {
                 string(json, "name"),
                 optionalPriority(json, "priority"),
                 optionalBoolean(json, "repeatWhenIdle"),
-                steps(json)
+                steps(json),
+                optionalInterruptionMode(json),
+                optionalString(json, "interruptionTaskRef"),
+                optionalBoolean(json, "defaultInterruptionFlow"),
+                optionalBoolean(json, "requeueAfterInterruption")
         );
     }
 
@@ -750,19 +803,78 @@ public final class V2ControlServer implements AutoCloseable {
     }
 
     private static List<TaskStepRequest> steps(JsonObject json) {
-        JsonArray values = array(json, "steps");
+        return taskStepList(json, "steps");
+    }
+
+    private static List<TaskStepRequest> taskStepList(
+            JsonObject json,
+            String key
+    ) {
+        JsonElement value = json.get(key);
+        if (value == null || value.isJsonNull()) {
+            return List.of();
+        }
+        if (!value.isJsonArray()) {
+            throw invalid(key + " must be an array");
+        }
         List<TaskStepRequest> result = new ArrayList<>();
-        for (JsonElement value : values) {
-            JsonObject step = jsonObject(value, "step");
-            Set<String> allowed = Set.of("id", "moduleId", "parameters");
-            requireFieldsAny(step, allowed, Set.of("moduleId", "parameters"));
+        for (JsonElement item : value.getAsJsonArray()) {
+            JsonObject step = jsonObject(item, "step");
+            validateTaskStep(step);
+            TaskStepKind kind = optionalStepKind(step);
+            String moduleId = kind == TaskStepKind.ACTION
+                    ? string(step, "moduleId")
+                    : "";
             result.add(new TaskStepRequest(
                     optionalString(step, "id"),
-                    string(step, "moduleId"),
-                    parameters(step)
+                    kind,
+                    moduleId,
+                    parameters(step),
+                    taskStepList(step, "steps"),
+                    taskStepList(step, "otherwise")
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static void validateTaskStep(JsonObject step) {
+        requireFieldsAny(
+                step,
+                Set.of("id", "kind", "moduleId", "parameters", "steps", "otherwise"),
+                Set.of("parameters")
+        );
+        if (step.has("kind")
+                && !step.get("kind").isJsonPrimitive()) {
+            throw invalid("kind must be a string");
+        }
+    }
+
+    private static TaskStepKind optionalStepKind(JsonObject step) {
+        String value = optionalString(step, "kind");
+        if (value == null || value.isBlank()) {
+            return TaskStepKind.ACTION;
+        }
+        try {
+            return TaskStepKind.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw invalid("kind must be ACTION, IF, REPEAT, or CREATE_TASK");
+        }
+    }
+
+    private static TaskInterruptionMode optionalInterruptionMode(
+            JsonObject json
+    ) {
+        String value = optionalString(json, "interruptionMode");
+        if (value == null || value.isBlank()) {
+            return TaskInterruptionMode.DEFAULT;
+        }
+        try {
+            return TaskInterruptionMode.valueOf(
+                    value.trim().toUpperCase(Locale.ROOT)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw invalid("interruptionMode must be DEFAULT, CUSTOM, or NONE");
+        }
     }
 
     private static Map<String, String> parameters(JsonObject step) {

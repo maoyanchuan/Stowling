@@ -147,6 +147,7 @@ def test_task_templates_use_recursive_basic_actions() -> None:
         "READ_CONTAINER",
         "SAVE_CATEGORY_MARKER_CACHE",
         "ASSERT_NO_MANAGED_ITEMS",
+        "ASSERT_PLAYER_INVENTORY_RESTORED",
     ):
         assert module_id in model
     assert "function collectTask(" in model

@@ -51,7 +51,8 @@
         "SELECT_MARKER_CONTAINER",
         "READ_CONTAINER",
         "SAVE_CATEGORY_MARKER_CACHE",
-        "ASSERT_NO_MANAGED_ITEMS"
+        "ASSERT_NO_MANAGED_ITEMS",
+        "ASSERT_PLAYER_INVENTORY_RESTORED"
     ]);
     const INTERACTION_OPERATIONS = Object.freeze([
         "COLLECT",
@@ -855,7 +856,8 @@
             interactionStep("DEPOSIT", {
                 targetRef: "",
                 itemSource: "collected"
-            })
+            }),
+            actionStep("ASSERT_PLAYER_INVENTORY_RESTORED", {})
         ];
         return taskTemplate("拾取并存入", "NORMAL", steps);
     }

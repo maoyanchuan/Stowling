@@ -71,6 +71,10 @@ public final class StandardTaskModuleFactories {
                         AssertNoManagedItemsModule::new
                 ),
                 factory(
+                        TaskModuleIds.ASSERT_PLAYER_INVENTORY_RESTORED,
+                        AssertPlayerInventoryRestoredModule::new
+                ),
+                factory(
                         TaskModuleIds.WAIT_FOR_DROPPED_ITEMS,
                         WaitForDroppedItemsModule::new
                 )

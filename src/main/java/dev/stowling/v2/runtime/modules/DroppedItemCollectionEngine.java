@@ -18,7 +18,7 @@ final class DroppedItemCollectionEngine {
         List<DroppedItem> observe();
     }
 
-    private static final int STABLE_CONFIRM_TICKS = 40;
+    private static final int INVENTORY_SETTLE_TICKS = 20;
 
     private final TaskExecutionContext context;
     private final Source source;
@@ -27,12 +27,13 @@ final class DroppedItemCollectionEngine {
     private final PlayerInventoryManager inventory;
     private final Clock clock;
     private Instant lastProgressAt;
+    private PlayerInventorySnapshot startInventory;
+    private PlayerInventorySnapshot currentInventory;
     private DroppedItem current;
     private boolean navigationStarted;
     private boolean arrivedAtCurrent;
     private boolean stopping;
     private boolean pickupConfirmed;
-    private boolean inventoryAvailable;
     private boolean drainChecked;
     private int stableTicks;
     private Set<DroppedItem> observedDrops = Set.of();
@@ -85,7 +86,12 @@ final class DroppedItemCollectionEngine {
         }
         List<DroppedItem> drops = matches();
         recordDropProgress(drops);
-        recordInventoryProgress();
+        PlayerInventoryManager.Observation observation = inventory.observe()
+                .orElse(null);
+        if (observation == null) {
+            return TaskModuleResult.failed("无法创建任务前背包快照");
+        }
+        recordInventoryObservation(observation);
         if (timedOut()) {
             return TaskModuleResult.failed("拾取掉落物超时");
         }
@@ -122,8 +128,13 @@ final class DroppedItemCollectionEngine {
     private TaskModuleResult tickWhileStopping() {
         stopping = true;
         context.navigation().cancel();
-        recordInventoryProgress();
+        PlayerInventoryManager.Observation observation = inventory.observe()
+                .orElse(null);
+        if (observation != null) {
+            recordInventoryObservation(observation);
+        }
         if (current == null || pickupConfirmed || !arrivedAtCurrent) {
+            recordCollectedFromSnapshot();
             current = null;
             return TaskModuleResult.succeeded("拾取已停止");
         }
@@ -133,7 +144,7 @@ final class DroppedItemCollectionEngine {
                 .findFirst()
                 .orElse(null);
         if (observed == null) {
-            recordUnobservedPickup(current);
+            recordCollectedFromSnapshot();
             current = null;
             return TaskModuleResult.succeeded("最后一次拾取已记账");
         }
@@ -147,7 +158,6 @@ final class DroppedItemCollectionEngine {
                 .findFirst()
                 .orElse(null);
         if (observed == null) {
-            recordUnobservedPickup(current);
             current = null;
             navigationStarted = false;
             arrivedAtCurrent = false;
@@ -194,25 +204,52 @@ final class DroppedItemCollectionEngine {
         lastProgressAt = clock.instant();
     }
 
-    private void recordInventoryProgress() {
-        PlayerInventoryManager.Observation observation =
-                inventory.observe().orElse(null);
-        if (observation == null) {
+    private void recordInventoryObservation(
+            PlayerInventoryManager.Observation observation
+    ) {
+        PlayerInventorySnapshot snapshot = observation.snapshot();
+        if (startInventory == null) {
+            startInventory = context.workspace().initialInventory()
+                    .orElse(snapshot);
+            context.workspace().captureInitialInventory(
+                    startInventory.itemCounts()
+            );
+            currentInventory = snapshot;
             return;
         }
-        inventoryAvailable = true;
-        PlayerInventoryDelta delta = observation.delta();
-        if (observation.baseline() || !delta.changed()) {
+        if (snapshot.equals(currentInventory)) {
             return;
         }
-        int recorded = recordFilteredAdditions(delta);
-        pickupConfirmed = pickupConfirmed || recorded > 0;
+        currentInventory = snapshot;
+        pickupConfirmed = true;
         resetStableConfirmation();
         lastProgressAt = clock.instant();
     }
 
-    private int recordFilteredAdditions(PlayerInventoryDelta delta) {
-        int recordedCount = 0;
+    private TaskModuleResult confirmEmpty() {
+        if (stableTicks < INVENTORY_SETTLE_TICKS) {
+            stableTicks++;
+            return TaskModuleResult.running(
+                    "等待拾取区域和背包稳定 " + stableTicks + "/"
+                            + INVENTORY_SETTLE_TICKS
+            );
+        }
+        if (!drainChecked) {
+            drainChecked = true;
+            return TaskModuleResult.running("再次确认拾取区域为空");
+        }
+        recordCollectedFromSnapshot();
+        return TaskModuleResult.succeeded("掉落物已拾取完毕");
+    }
+
+    private void recordCollectedFromSnapshot() {
+        if (startInventory == null || currentInventory == null) {
+            return;
+        }
+        PlayerInventoryDelta delta = PlayerInventoryDelta.between(
+                startInventory,
+                currentInventory
+        );
         for (Map.Entry<String, Integer> entry : delta.added().entrySet()) {
             if (!TaskModuleSupport.itemMatches(
                     entry.getKey(),
@@ -220,35 +257,11 @@ final class DroppedItemCollectionEngine {
             )) {
                 continue;
             }
-            context.workspace().recordCollected(entry.getKey(), entry.getValue());
-            recordedCount = Math.addExact(recordedCount, entry.getValue());
-        }
-        return recordedCount;
-    }
-
-    private TaskModuleResult confirmEmpty() {
-        if (stableTicks < STABLE_CONFIRM_TICKS) {
-            stableTicks++;
-            return TaskModuleResult.running(
-                    "等待掉落物和背包稳定 " + stableTicks + "/"
-                            + STABLE_CONFIRM_TICKS
+            context.workspace().recordCollected(
+                    entry.getKey(),
+                    entry.getValue()
             );
         }
-        if (!drainChecked) {
-            drainChecked = true;
-            return TaskModuleResult.running("再次确认拾取区域为空");
-        }
-        return TaskModuleResult.succeeded("掉落物已拾取完毕，背包已稳定");
-    }
-
-    private void recordUnobservedPickup(DroppedItem pickup) {
-        if (inventoryAvailable) {
-            return;
-        }
-        context.workspace().recordCollected(
-                pickup.itemId(),
-                pickup.count()
-        );
     }
 
     private void resetStableConfirmation() {

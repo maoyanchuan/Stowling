@@ -22,6 +22,8 @@ public final class TaskModuleIds {
             "SAVE_CATEGORY_MARKER_CACHE";
     public static final String ASSERT_NO_MANAGED_ITEMS =
             "ASSERT_NO_MANAGED_ITEMS";
+    public static final String ASSERT_PLAYER_INVENTORY_RESTORED =
+            "ASSERT_PLAYER_INVENTORY_RESTORED";
     public static final String WAIT_FOR_DROPPED_ITEMS =
             "WAIT_FOR_DROPPED_ITEMS";
 

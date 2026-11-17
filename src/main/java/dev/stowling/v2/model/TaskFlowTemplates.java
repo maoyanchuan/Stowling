@@ -175,7 +175,18 @@ public final class TaskFlowTemplates {
                 ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
                 Map.of()
         );
-        return List.of(collectStep, scanStep, depositCollected, assertClean);
+        TaskStep assertInventory = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                Map.of()
+        );
+        return List.of(
+                collectStep,
+                scanStep,
+                depositCollected,
+                assertClean,
+                assertInventory
+        );
     }
 
     public static List<TaskStep> depositCollected(

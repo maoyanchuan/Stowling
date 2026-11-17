@@ -52,6 +52,11 @@ class AutoClassifyTaskFactoryTest {
                 createTask.parameters().get(ConfigValidator.PRIORITY)
         );
         assertEquals(
+                ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                collection.steps().get(collection.steps().size() - 2)
+                        .moduleId()
+        );
+        assertEquals(
                 ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                 classification.steps().getFirst().moduleId()
         );

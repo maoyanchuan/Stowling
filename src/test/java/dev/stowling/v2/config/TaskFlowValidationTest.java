@@ -163,6 +163,16 @@ class TaskFlowValidationTest {
                 Map.of(),
                 Map.of()
         ));
+        TaskStep inventoryAssertion = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                Map.of()
+        );
+        assertDoesNotThrow(() -> ConfigValidator.requireValidStep(
+                inventoryAssertion,
+                Map.of(),
+                Map.of()
+        ));
         for (String source : List.of("collected", "carried", "managed")) {
             TaskStep assertion = TaskStep.action(
                     UUID.randomUUID(),

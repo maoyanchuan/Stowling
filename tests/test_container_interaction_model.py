@@ -567,7 +567,7 @@ def test_compact_templates_and_legacy_deposit_helper_are_compatible() -> None:
 
     collect = result["collect"]
     assert collect["name"] == "拾取并存入"
-    assert len(collect["steps"]) == 2
+    assert len(collect["steps"]) == 3
     assert collect["steps"][0]["parameters"] == {
         "areaRef": "detector",
         "operation": "COLLECT",
@@ -577,7 +577,10 @@ def test_compact_templates_and_legacy_deposit_helper_are_compatible() -> None:
         "itemSource": "collected",
         "operation": "DEPOSIT",
     }
-    assert len(result["collectPayload"]["steps"]) == 2
+    assert collect["steps"][2]["moduleId"] == (
+        "ASSERT_PLAYER_INVENTORY_RESTORED"
+    )
+    assert len(result["collectPayload"]["steps"]) == 3
 
     interruption = result["interruption"]
     assert len(interruption["steps"]) == 1

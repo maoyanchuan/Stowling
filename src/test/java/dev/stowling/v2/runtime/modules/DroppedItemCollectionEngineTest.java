@@ -33,9 +33,32 @@ import org.junit.jupiter.api.Test;
 
 class DroppedItemCollectionEngineTest {
     private static final String GOLD = "minecraft:gold_ingot";
+    private static final String IRON = "minecraft:iron_ingot";
 
     @Test
-    void recordsDelayedInventoryAdditionOnceAndWaitsForStableState() {
+    void capturesTheTaskStartInventoryBeforeNavigating() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        entries(drops, item(10, GOLD, 1));
+        inventory.set(Map.of(IRON, 4));
+        DroppedItemCollectionEngine engine = engine(
+                drops,
+                inventory,
+                workspace,
+                new MutableClock()
+        );
+
+        assertEquals(TaskModuleState.RUNNING, engine.start().state());
+
+        assertEquals(
+                Map.of(IRON, 4),
+                workspace.initialInventory().orElseThrow().itemCounts()
+        );
+    }
+
+    @Test
+    void recordsInventoryDifferenceOnceAfterTheCollectionSettles() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();
         TaskRunWorkspace workspace = new TaskRunWorkspace();
@@ -58,7 +81,7 @@ class DroppedItemCollectionEngineTest {
 
         inventory.set(Map.of(GOLD, 3));
         assertEquals(TaskModuleState.RUNNING, engine.tick().state());
-        assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
+        assertTrue(workspace.collectedItems().isEmpty());
 
         TaskModuleResult settled = tickUntilFinished(engine, 45);
 
@@ -81,7 +104,7 @@ class DroppedItemCollectionEngineTest {
         );
 
         assertEquals(TaskModuleState.RUNNING, engine.start().state());
-        for (int tick = 0; tick < 38; tick++) {
+        for (int tick = 0; tick < 18; tick++) {
             assertEquals(TaskModuleState.RUNNING, engine.tick().state());
         }
 
@@ -90,7 +113,7 @@ class DroppedItemCollectionEngineTest {
 
         assertEquals(TaskModuleState.RUNNING, interrupted.state());
         assertNotEquals(
-                "掉落物已拾取完毕，背包已稳定",
+                "掉落物已拾取完毕",
                 interrupted.message()
         );
     }
@@ -166,7 +189,7 @@ class DroppedItemCollectionEngineTest {
     }
 
     @Test
-    void unavailableInventoryFallsBackToEntityCountOnce() {
+    void unavailableInventoryFailsBecauseNoTaskSnapshotExists() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();
         TaskRunWorkspace workspace = new TaskRunWorkspace();
@@ -179,14 +202,12 @@ class DroppedItemCollectionEngineTest {
                 new MutableClock()
         );
 
-        engine.start();
-        engine.tick();
-        drops.clear();
-        engine.tick();
+        TaskModuleResult result = engine.start();
 
-        assertEquals(Map.of(GOLD, 2), workspace.collectedItems());
-        tickUntilFinished(engine, 45);
-        assertEquals(Map.of(GOLD, 2), workspace.collectedItems());
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertTrue(result.message().contains("背包快照"));
+        assertTrue(workspace.initialInventory().isEmpty());
+        assertTrue(workspace.collectedItems().isEmpty());
     }
 
     private static DroppedItemCollectionEngine engine(

@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.domain.BlockPosition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,6 +30,7 @@ public final class TaskRunWorkspace {
             new ArrayList<>();
     private ContainerScanResult containerScan;
     private UUID containerScanRegionId;
+    private PlayerInventorySnapshot initialInventory;
     private Map<UUID, Map<BlockPosition, Set<String>>> markerCache = Map.of();
     private ContainerTarget selectedContainer;
     private ContainerTarget selectedStorageTarget;
@@ -50,6 +52,18 @@ public final class TaskRunWorkspace {
 
     public synchronized Map<String, Integer> collectedItems() {
         return Map.copyOf(collectedItems);
+    }
+
+    public synchronized void captureInitialInventory(
+            Map<String, Integer> itemCounts
+    ) {
+        if (initialInventory == null) {
+            initialInventory = new PlayerInventorySnapshot(itemCounts);
+        }
+    }
+
+    public synchronized Optional<PlayerInventorySnapshot> initialInventory() {
+        return Optional.ofNullable(initialInventory);
     }
 
     public synchronized void removeCollected(String itemId, int count) {

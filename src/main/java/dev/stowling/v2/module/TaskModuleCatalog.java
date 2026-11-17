@@ -362,6 +362,12 @@ public final class TaskModuleCatalog {
                             List.of("collected", "carried", "managed"),
                             "managed"
                     ))
+            ),
+            action(
+                    ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                    "确认背包已恢复",
+                    "确认任务结束时的玩家背包与任务开始前的快照一致。",
+                    List.of()
             )
     );
 

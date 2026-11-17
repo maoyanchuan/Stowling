@@ -124,7 +124,9 @@
             categoryZoneId: "",
             markerSources: [...MARKER_SOURCES],
             collectionPriority: "NORMAL",
-            enabled: false
+            enabled: false,
+            collectionEnabled: true,
+            classificationEnabled: true
         };
     }
 
@@ -151,7 +153,9 @@
             ),
             markerSources: markerSourceText(item?.markerSources),
             collectionPriority: String(item?.collectionPriority ?? ""),
-            enabled: item?.enabled === true
+            enabled: item?.enabled === true,
+            collectionEnabled: item?.collectionEnabled === true,
+            classificationEnabled: item?.classificationEnabled === true
         };
     }
 
@@ -251,6 +255,12 @@
         if (typeof draft?.enabled !== "boolean") {
             errors.push("启用状态需为布尔值");
         }
+        if (typeof draft?.collectionEnabled !== "boolean") {
+            errors.push("启用缓存需为布尔值");
+        }
+        if (typeof draft?.classificationEnabled !== "boolean") {
+            errors.push("后台分类需为布尔值");
+        }
         return errors;
     }
 
@@ -269,6 +279,8 @@
         return {
             name: String(draft.name).trim(),
             enabled: draft.enabled,
+            collectionEnabled: draft.collectionEnabled,
+            classificationEnabled: draft.classificationEnabled,
             detection: {
                 coordinateRef: reference(
                     "coordinate",

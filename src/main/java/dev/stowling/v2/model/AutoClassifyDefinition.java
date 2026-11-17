@@ -10,6 +10,8 @@ public record AutoClassifyDefinition(
         UUID id,
         String name,
         boolean enabled,
+        boolean collectionEnabled,
+        boolean classificationEnabled,
         String detectionCoordinateRef,
         int pickupRadius,
         String cacheRegionRef,

@@ -190,7 +190,10 @@ class ConfigStoreTest {
 
         V2ConfigSnapshot snapshot = store.loadOrReset();
 
-        assertEquals(8, snapshot.config().schemaVersion());
+        assertEquals(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                snapshot.config().schemaVersion()
+        );
         assertEquals(1, snapshot.config().regions().size());
         assertEquals(2, snapshot.config().tasks().size());
         assertEquals(

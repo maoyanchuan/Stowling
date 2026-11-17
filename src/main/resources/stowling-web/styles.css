@@ -4477,14 +4477,162 @@ button:active:not(:disabled) {
 
 .auto-config-section {
     display: grid;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.48);
+}
+
+.auto-phase-header {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.auto-phase-toggle {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.75rem;
+    border: 0;
+    border-radius: 0;
+    color: var(--text);
+    background: transparent;
+    text-align: left;
+}
+
+.auto-phase-toggle:hover:not(:disabled),
+.auto-phase-toggle[aria-expanded="true"] {
+    background: var(--accent-soft);
+    transform: none;
+}
+
+.auto-phase-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -3px;
+}
+
+.auto-phase-title {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+.auto-phase-index {
+    display: grid;
+    place-items: center;
+    flex: 0 0 1.7rem;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 7px;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.auto-phase-copy {
+    display: grid;
+    min-width: 0;
+    gap: 0.12rem;
+}
+
+.auto-phase-copy strong,
+.auto-phase-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.auto-phase-copy strong {
+    font-size: 0.84rem;
+}
+
+.auto-phase-copy small {
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.auto-phase-toggle[aria-expanded="true"] .move-task-chevron {
+    transform: rotate(180deg);
+}
+
+.auto-phase-switch {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 0 0.85rem;
+    border-left: 1px solid var(--line);
+    cursor: pointer;
+}
+
+.auto-phase-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.auto-switch-track {
+    position: relative;
+    display: block;
+    width: 2.45rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    background: #a6aca8;
+    transition: background 140ms ease;
+}
+
+.auto-switch-track::after {
+    position: absolute;
+    top: 0.18rem;
+    left: 0.18rem;
+    width: 0.99rem;
+    height: 0.99rem;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(24, 35, 28, 0.22);
+    content: "";
+    transition: transform 140ms ease;
+}
+
+.auto-phase-switch input:checked + .auto-switch-track {
+    background: var(--accent);
+}
+
+.auto-phase-switch input:checked + .auto-switch-track::after {
+    transform: translateX(1.1rem);
+}
+
+.auto-phase-switch input:focus-visible + .auto-switch-track {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
+.auto-phase-switch:has(input:disabled) {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.auto-phase-body {
+    display: grid;
     gap: 0.8rem;
-    padding-top: 1rem;
+    padding: 0.9rem;
     border-top: 1px solid var(--line);
 }
 
-.auto-config-section h3 {
-    margin: 0;
-    font-size: 0.84rem;
+.auto-phase-body[hidden] {
+    display: none !important;
 }
 
 .auto-config-note {
@@ -4548,5 +4696,13 @@ button:active:not(:disabled) {
     .auto-field-grid,
     .auto-phase-preview {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .auto-phase-toggle {
+        gap: 0.5rem;
+    }
+
+    .auto-phase-copy small {
+        display: none;
     }
 }

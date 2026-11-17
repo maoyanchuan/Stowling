@@ -7,6 +7,8 @@ import java.util.List;
 public record AutoClassifyTaskRequest(
         String name,
         Boolean enabled,
+        Boolean collectionEnabled,
+        Boolean classificationEnabled,
         AutoClassifyDetectionRequest detection,
         String cacheRegionRef,
         String categoryZoneRef,

@@ -9,6 +9,8 @@ public record AutoClassifyTask(
         UUID id,
         String name,
         boolean enabled,
+        boolean collectionEnabled,
+        boolean classificationEnabled,
         AutoClassifyDetection detection,
         String cacheRegionRef,
         String categoryZoneRef,

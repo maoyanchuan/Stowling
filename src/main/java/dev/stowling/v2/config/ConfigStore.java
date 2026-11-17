@@ -143,10 +143,30 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version == 7) {
-            root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
+        if (version == 7 || version == 8) {
             if (!root.has("autoClassifyTasks")) {
                 root.add("autoClassifyTasks", new JsonArray());
+            }
+            ensureAutoClassifyPhaseFlags(root);
+            root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
+        }
+    }
+
+    private static void ensureAutoClassifyPhaseFlags(JsonObject root) {
+        JsonElement value = root.get("autoClassifyTasks");
+        if (value == null || !value.isJsonArray()) {
+            return;
+        }
+        for (JsonElement item : value.getAsJsonArray()) {
+            if (item == null || !item.isJsonObject()) {
+                continue;
+            }
+            JsonObject definition = item.getAsJsonObject();
+            if (!definition.has("collectionEnabled")) {
+                definition.addProperty("collectionEnabled", true);
+            }
+            if (!definition.has("classificationEnabled")) {
+                definition.addProperty("classificationEnabled", true);
             }
         }
     }
@@ -213,6 +233,8 @@ public final class ConfigStore {
                 "id",
                 "name",
                 "enabled",
+                "collectionEnabled",
+                "classificationEnabled",
                 "detectionCoordinateRef",
                 "pickupRadius",
                 "cacheRegionRef",

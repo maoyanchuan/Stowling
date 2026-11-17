@@ -548,6 +548,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 UUID.randomUUID(),
                 name,
                 request.enabled(),
+                request.collectionEnabled() == null || request.collectionEnabled(),
+                request.classificationEnabled() == null || request.classificationEnabled(),
                 request.detection(),
                 request.cacheRegionRef(),
                 request.categoryZoneRef(),
@@ -620,6 +622,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.enabled() == null
                         ? existing.enabled()
                         : request.enabled(),
+                request.collectionEnabled() == null
+                        ? existing.collectionEnabled()
+                        : request.collectionEnabled(),
+                request.classificationEnabled() == null
+                        ? existing.classificationEnabled()
+                        : request.classificationEnabled(),
                 request.detection(),
                 request.cacheRegionRef(),
                 request.categoryZoneRef(),
@@ -1096,6 +1104,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             UUID id,
             String name,
             Boolean enabled,
+            Boolean collectionEnabled,
+            Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection,
             String cacheRegionRef,
             String categoryZoneRef,
@@ -1118,6 +1128,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 id,
                 name == null || name.isBlank() ? "自动分类" : name,
                 Boolean.TRUE.equals(enabled),
+                Boolean.TRUE.equals(collectionEnabled),
+                Boolean.TRUE.equals(classificationEnabled),
                 coordinateRef,
                 pickupRadius,
                 cacheRegionRef,
@@ -1137,6 +1149,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.id(),
                 definition.name(),
                 enabled,
+                definition.collectionEnabled(),
+                definition.classificationEnabled(),
                 definition.detectionCoordinateRef(),
                 definition.pickupRadius(),
                 definition.cacheRegionRef(),
@@ -1152,13 +1166,19 @@ public final class V2ControlServiceImpl implements V2ControlService {
     ) {
         List<UUID> triggerIds = new ArrayList<>();
         if (definition.enabled()) {
-            triggerIds.add(definition.collectionTriggerId());
-            triggerIds.add(definition.classificationTriggerId());
+            if (definition.collectionEnabled()) {
+                triggerIds.add(definition.collectionTriggerId());
+            }
+            if (definition.classificationEnabled()) {
+                triggerIds.add(definition.classificationTriggerId());
+            }
         }
         return new AutoClassifyTask(
                 definition.id(),
                 definition.name(),
                 definition.enabled(),
+                definition.collectionEnabled(),
+                definition.classificationEnabled(),
                 new AutoClassifyDetection(
                         definition.detectionCoordinateRef(),
                         definition.pickupRadius()

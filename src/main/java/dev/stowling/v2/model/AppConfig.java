@@ -13,7 +13,7 @@ public record AppConfig(
         List<TaskFolderDefinition> taskFolders,
         List<AutoClassifyDefinition> autoClassifyTasks
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 8;
+    public static final int CURRENT_SCHEMA_VERSION = 9;
 
     public AppConfig {
         if (schemaVersion != CURRENT_SCHEMA_VERSION) {

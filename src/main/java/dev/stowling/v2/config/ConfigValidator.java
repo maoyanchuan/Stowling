@@ -276,16 +276,16 @@ public final class ConfigValidator {
             boolean classificationTrigger = triggerIds.contains(
                     definition.classificationTriggerId()
             );
-            if (definition.enabled()
-                    && (!collectionTrigger || !classificationTrigger)) {
+            boolean expectCollection = definition.enabled()
+                    && definition.collectionEnabled();
+            boolean expectClassification = definition.enabled()
+                    && definition.classificationEnabled();
+            if ((expectCollection && !collectionTrigger)
+                    || (expectClassification && !classificationTrigger)
+                    || (!expectCollection && collectionTrigger)
+                    || (!expectClassification && classificationTrigger)) {
                 throw new V2ValidationException(
-                        "enabled auto classify task requires both triggers"
-                );
-            }
-            if (!definition.enabled()
-                    && (collectionTrigger || classificationTrigger)) {
-                throw new V2ValidationException(
-                        "disabled auto classify task must not keep triggers"
+                        "auto classify task triggers do not match enabled phases"
                 );
             }
         }

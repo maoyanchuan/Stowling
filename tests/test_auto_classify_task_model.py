@@ -79,6 +79,8 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "markerSources": MARKER_SOURCES,
         "collectionPriority": "NORMAL",
         "enabled": False,
+        "collectionEnabled": True,
+        "classificationEnabled": True,
     }
     assert result["gap"] == "自动分类 2"
     assert result["continuous"] == "自动分类 4"
@@ -93,6 +95,8 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
                 id: "auto-1",
                 name: "收集矿石",
                 enabled: true,
+                collectionEnabled: false,
+                classificationEnabled: true,
                 detection: {
                     coordinateRef: "coordinate:coordinate-1",
                     pickupRadius: 12,
@@ -121,6 +125,8 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "markerSources": ["SHELF", "PLACED_ITEM"],
         "collectionPriority": "URGENT",
         "enabled": True,
+        "collectionEnabled": False,
+        "classificationEnabled": True,
     }
 
 
@@ -133,6 +139,8 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
                 id: "auto-2",
                 name: "引用容错",
                 enabled: false,
+                collectionEnabled: true,
+                classificationEnabled: false,
                 detection: {
                     coordinateRef: "coordinate-1",
                     pickupRadius: 8,
@@ -156,6 +164,8 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "markerSources": ["SHELF"],
         "collectionPriority": "NORMAL",
         "enabled": False,
+        "collectionEnabled": True,
+        "classificationEnabled": False,
     }
 
 
@@ -185,6 +195,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 ],
                 collectionPriority: "URGENT",
                 enabled: false,
+                collectionEnabled: false,
+                classificationEnabled: true,
             };
             const body = model.payload(draft, resources, items);
             const enabledDraft = { ...draft, name: "自动收集 2", enabled: true };
@@ -213,6 +225,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert body == {
         "name": "自动收集",
         "enabled": False,
+        "collectionEnabled": False,
+        "classificationEnabled": True,
         "detection": {
             "coordinateRef": "coordinate:coordinate-1",
             "pickupRadius": 8,
@@ -225,6 +239,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert result["bodyKeys"] == [
         "name",
         "enabled",
+        "collectionEnabled",
+        "classificationEnabled",
         "detection",
         "cacheRegionRef",
         "categoryZoneRef",
@@ -243,6 +259,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "markerSources": MARKER_SOURCES,
         "collectionPriority": "URGENT",
         "enabled": False,
+        "collectionEnabled": False,
+        "classificationEnabled": True,
     }
 
 
@@ -271,6 +289,8 @@ def test_marker_sources_accept_multi_select_but_reject_empty_or_unknown() -> Non
                 ],
                 collectionPriority: "NORMAL",
                 enabled: false,
+                collectionEnabled: true,
+                classificationEnabled: true,
             };
             const payloadError = (markerSources) => {
                 try {
@@ -330,6 +350,8 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
                 markerSources: ["PLACED_ITEM"],
                 collectionPriority: "NORMAL",
                 enabled: false,
+                collectionEnabled: true,
+                classificationEnabled: true,
             };
             return model.validateDraft({
                 ...base,
@@ -385,6 +407,8 @@ def test_pickup_radius_accepts_only_integer_range(
                 markerSources: ["PLACED_ITEM"],
                 collectionPriority: "NORMAL",
                 enabled: false,
+                collectionEnabled: true,
+                classificationEnabled: true,
             }};
             return model.validateDraft(draft, resources, []);
         }})()
@@ -417,6 +441,8 @@ def test_name_validation_trims_case_folds_and_excludes_current_id() -> None:
                 markerSources: ["PLACED_ITEM"],
                 collectionPriority: "NORMAL",
                 enabled: false,
+                collectionEnabled: true,
+                classificationEnabled: true,
             };
             return {
                 self: model.validateDraft(base, resources, [
@@ -469,6 +495,8 @@ def test_collection_priority_and_enabled_are_strictly_validated() -> None:
                 markerSources: ["PLACED_ITEM"],
                 collectionPriority: "BACKGROUND",
                 enabled: "false",
+                collectionEnabled: true,
+                classificationEnabled: true,
             };
             return model.validateDraft(draft, resources, []);
         })()
@@ -479,5 +507,54 @@ def test_collection_priority_and_enabled_are_strictly_validated() -> None:
         "收集优先级只能为普通或紧急",
         "启用状态需为布尔值",
     ]
+
+
+def test_phase_enable_flags_are_strict_and_round_trip() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingAutoClassifyTaskModel;
+            const resources = {
+                coordinates: [{ id: "coordinate-1" }],
+                regions: [{ id: "region-1" }],
+                categoryZones: [{ id: "zone-1" }],
+            };
+            const draft = {
+                id: "",
+                name: "按阶段启用",
+                coordinateId: "coordinate-1",
+                pickupRadius: "8",
+                cacheRegionId: "region-1",
+                categoryZoneId: "zone-1",
+                markerSources: ["PLACED_ITEM"],
+                collectionPriority: "NORMAL",
+                enabled: false,
+                collectionEnabled: false,
+                classificationEnabled: true,
+            };
+            return {
+                body: model.payload(draft, resources, []),
+                invalid: model.validateDraft({
+                    ...draft,
+                    collectionEnabled: "false",
+                    classificationEnabled: 1,
+                }, resources, []),
+                roundTrip: model.draftFromTask({
+                    id: "auto-1",
+                    ...model.payload(draft, resources, []),
+                }),
+            };
+        })()
+        """
+    )
+
+    assert result["body"]["collectionEnabled"] is False
+    assert result["body"]["classificationEnabled"] is True
+    assert result["invalid"] == [
+        "启用缓存需为布尔值",
+        "后台分类需为布尔值",
+    ]
+    assert result["roundTrip"]["collectionEnabled"] is False
+    assert result["roundTrip"]["classificationEnabled"] is True
 
 

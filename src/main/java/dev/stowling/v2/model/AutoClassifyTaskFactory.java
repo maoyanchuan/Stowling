@@ -53,15 +53,17 @@ public final class AutoClassifyTaskFactory {
                         )
                 )
         );
-        collectionSteps.add(TaskStep.createTask(
-                UUID.randomUUID(),
-                Map.of(
-                        ConfigValidator.TASK_REF,
-                        classificationRef,
-                        ConfigValidator.PRIORITY,
-                        TaskPriority.BACKGROUND.name()
-                )
-        ));
+        if (definition.classificationEnabled()) {
+            collectionSteps.add(TaskStep.createTask(
+                    UUID.randomUUID(),
+                    Map.of(
+                            ConfigValidator.TASK_REF,
+                            classificationRef,
+                            ConfigValidator.PRIORITY,
+                            TaskPriority.BACKGROUND.name()
+                    )
+            ));
+        }
         String markerSources = markerSources(definition.markerSources());
         Map<String, String> scan = new LinkedHashMap<>();
         scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
@@ -132,50 +134,58 @@ public final class AutoClassifyTaskFactory {
             return List.of();
         }
         Set<String> names = normalizedNames(unavailableNames);
-        String collectionName = uniqueName(
-                definition.name() + " 掉落监听",
-                names
-        );
-        String classificationName = uniqueName(
-                definition.name() + " 缓存监听",
-                names
-        );
-        ResourceReference coordinate = ResourceReference.parse(
-                definition.detectionCoordinateRef()
-        );
-        ResourceReference region = ResourceReference.parse(
-                definition.cacheRegionRef()
-        );
-        return List.of(
-                new TaskTriggerDefinition(
-                        definition.collectionTriggerId(),
-                        collectionName,
-                        TaskTriggerType.DROPPED_ITEMS,
-                        definition.id(),
-                        definition.collectionPriority(),
-                        TRIGGER_INTERVAL_TICKS,
-                        TRIGGER_COOLDOWN_TICKS,
-                        coordinate.uuid(),
-                        null,
-                        null,
-                        null,
-                        definition.pickupRadius()
-                ),
-                new TaskTriggerDefinition(
-                        definition.classificationTriggerId(),
-                        classificationName,
-                        TaskTriggerType.CACHE_UPDATED,
-                        definition.classificationTaskId(),
-                        TaskPriority.BACKGROUND,
-                        TRIGGER_INTERVAL_TICKS,
-                        TRIGGER_COOLDOWN_TICKS,
-                        null,
-                        null,
-                        null,
-                        region.uuid(),
-                        null
-                )
-        );
+        List<TaskTriggerDefinition> triggers = new ArrayList<>();
+        if (definition.collectionEnabled()) {
+            String collectionName = uniqueName(
+                    definition.name() + " 掉落监听",
+                    names
+            );
+            ResourceReference coordinate = ResourceReference.parse(
+                    definition.detectionCoordinateRef()
+            );
+            triggers.add(
+                    new TaskTriggerDefinition(
+                            definition.collectionTriggerId(),
+                            collectionName,
+                            TaskTriggerType.DROPPED_ITEMS,
+                            definition.id(),
+                            definition.collectionPriority(),
+                            TRIGGER_INTERVAL_TICKS,
+                            TRIGGER_COOLDOWN_TICKS,
+                            coordinate.uuid(),
+                            null,
+                            null,
+                            null,
+                            definition.pickupRadius()
+                    )
+            );
+        }
+        if (definition.classificationEnabled()) {
+            String classificationName = uniqueName(
+                    definition.name() + " 缓存监听",
+                    names
+            );
+            ResourceReference region = ResourceReference.parse(
+                    definition.cacheRegionRef()
+            );
+            triggers.add(
+                    new TaskTriggerDefinition(
+                            definition.classificationTriggerId(),
+                            classificationName,
+                            TaskTriggerType.CACHE_UPDATED,
+                            definition.classificationTaskId(),
+                            TaskPriority.BACKGROUND,
+                            TRIGGER_INTERVAL_TICKS,
+                            TRIGGER_COOLDOWN_TICKS,
+                            null,
+                            null,
+                            null,
+                            region.uuid(),
+                            null
+                    )
+            );
+        }
+        return List.copyOf(triggers);
     }
 
     public static Set<UUID> ownedTaskIds(

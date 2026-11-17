@@ -14,7 +14,8 @@
         busy: false,
         dirty: false,
         active: false,
-        expanded: false
+        expanded: false,
+        phase: { collection: false, classification: false }
     };
     const elements = {
         list: document.querySelector("#auto-task-list"),
@@ -28,6 +29,12 @@
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
         zone: document.querySelector("#auto-category-zone"),
+        collectHeader: document.querySelector("#auto-collect-toggle"),
+        collectBody: document.querySelector("#auto-collect-body"),
+        collectEnabled: document.querySelector("#auto-collect-enabled"),
+        classifyHeader: document.querySelector("#auto-sort-toggle"),
+        classifyBody: document.querySelector("#auto-sort-body"),
+        classifyEnabled: document.querySelector("#auto-classify-enabled"),
         sources: [...document.querySelectorAll('input[name="markerSources"]')],
         priority: document.querySelector("#auto-collect-priority"),
         message: document.querySelector("#auto-task-message"),
@@ -145,6 +152,8 @@
         for (const input of elements.sources) {
             input.checked = draft.markerSources.includes(input.value);
         }
+        elements.collectEnabled.checked = draft.collectionEnabled;
+        elements.classifyEnabled.checked = draft.classificationEnabled;
         updateControls();
     }
 
@@ -159,7 +168,9 @@
             categoryZoneId: elements.zone.value,
             markerSources: elements.sources.filter((input) => input.checked)
                 .map((input) => input.value),
-            collectionPriority: elements.priority.value
+            collectionPriority: elements.priority.value,
+            collectionEnabled: elements.collectEnabled.checked,
+            classificationEnabled: elements.classifyEnabled.checked
         };
     }
 
@@ -180,7 +191,9 @@
             icon.setAttribute("aria-hidden", "true");
             const overview = Stowling.element("span", "move-task-overview");
             overview.append(Stowling.element("strong", "", item.name));
-            const cache = state.resources.regions.find((region) => region.id === draft.cacheRegionId);
+            const cache = state.resources.regions.find(
+                (region) => region.id === draft.cacheRegionId
+            );
             const zone = state.resources.categoryZones.find(
                 (value) => value.id === draft.categoryZoneId
             );
@@ -235,6 +248,17 @@
             row.status.textContent = selected && state.dirty ? "未保存修改"
                 : (item?.enabled ? "监听中" : "已保存");
         }
+        const phaseStates = [
+            ["collection", elements.collectHeader, elements.collectBody],
+            ["classification", elements.classifyHeader, elements.classifyBody]
+        ];
+        for (const [phase, header, body] of phaseStates) {
+            if (!header || !body) {
+                continue;
+            }
+            header.setAttribute("aria-expanded", String(state.phase[phase]));
+            body.hidden = !state.phase[phase];
+        }
     }
 
     /**
@@ -258,10 +282,24 @@
         state.active = !item;
         state.expanded = true;
         state.dirty = false;
+        state.phase.collection = false;
+        state.phase.classification = false;
         syncForm();
         renderList();
         showMessage(item ? "已保存；监听时自动收集，分类以后台优先级排队。"
             : "配置检测点、缓存区域与分类区后，保存或开始监听。");
+    }
+
+    /**
+     * @param {"collection" | "classification"} phase
+     * @returns {void}
+     */
+    function togglePhase(phase) {
+        if (unavailable()) {
+            return;
+        }
+        state.phase[phase] = !state.phase[phase];
+        updateControls();
     }
 
     /**
@@ -402,6 +440,8 @@
             updateControls();
         }
     });
+    elements.collectHeader.addEventListener("click", () => togglePhase("collection"));
+    elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
     elements.refresh.addEventListener("click", () => void loadResources());
     elements.form.addEventListener("input", () => {
         readForm();

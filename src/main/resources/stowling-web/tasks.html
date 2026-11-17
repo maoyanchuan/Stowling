@@ -185,7 +185,7 @@
                                 <span class="move-task-kind" aria-hidden="true">⇄</span>
                                 <span class="move-task-overview">
                                     <strong>新建 · 自动分类</strong>
-                                    <span>收集入缓存，空闲时分类</span>
+                                    <span>启用缓存，空闲时分类</span>
                                 </span>
                                 <span class="move-task-state">未保存</span>
                                 <span class="move-task-chevron" aria-hidden="true">⌄</span>
@@ -199,69 +199,143 @@
                                                    autocomplete="off" value="自动分类">
                                         </label>
                                         <ol class="auto-phase-preview" aria-label="任务的两段流程">
-                                            <li><b>收集入缓存</b><span>检测 → 拾取 → 存入缓存</span></li>
+                                            <li><b>启用缓存</b><span>检测 → 拾取 → 存入缓存</span></li>
                                             <li><b>后台分类</b><span>扫描缓存 → 识别分类 → 分批入库</span></li>
                                         </ol>
                                         <section class="auto-config-section"
                                                  aria-labelledby="auto-collect-title">
-                                            <h3 id="auto-collect-title">1 · 收集入缓存</h3>
-                                            <div class="auto-field-grid">
-                                                <label class="move-field" for="auto-detection-point">
-                                                    <span>掉落物检测点</span>
-                                                    <select id="auto-detection-point" required>
-                                                        <option value="">请选择坐标点</option>
-                                                    </select>
-                                                </label>
-                                                <label class="move-field" for="auto-pickup-radius">
-                                                    <span>检测与拾取半径（格）</span>
-                                                    <input id="auto-pickup-radius" type="number"
-                                                           min="1" max="64" step="1" value="8">
+                                            <div class="auto-phase-header">
+                                                <button id="auto-collect-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="auto-collect-body">
+                                                    <span class="auto-phase-title">
+                                                        <span class="auto-phase-index"
+                                                              aria-hidden="true">1</span>
+                                                        <span class="auto-phase-copy">
+                                                            <strong id="auto-collect-title">
+                                                                启用缓存
+                                                            </strong>
+                                                            <small>检测、拾取并放入缓存</small>
+                                                        </span>
+                                                    </span>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true">⌄</span>
+                                                </button>
+                                                <label class="auto-phase-switch"
+                                                       for="auto-collect-enabled">
+                                                    <span class="visually-hidden">
+                                                        启用缓存
+                                                    </span>
+                                                    <input id="auto-collect-enabled"
+                                                           type="checkbox" role="switch">
+                                                    <span class="auto-switch-track"
+                                                          aria-hidden="true"></span>
                                                 </label>
                                             </div>
-                                            <label class="move-field" for="auto-cache-region">
-                                                <span>缓存区域</span>
-                                                <select id="auto-cache-region" required>
-                                                    <option value="">请选择包含缓存箱子的区域</option>
-                                                </select>
-                                            </label>
-                                            <p class="auto-config-note">扫描区域内的多个箱子，
-                                                只存入本次拾取的物品，不动原有工具和食物。</p>
-                                            <label class="move-field move-priority"
-                                                   for="auto-collect-priority">
-                                                <span>收集优先级</span>
-                                                <select id="auto-collect-priority">
-                                                    <option value="NORMAL">普通</option>
-                                                    <option value="URGENT">紧急</option>
-                                                </select>
-                                            </label>
+                                            <div id="auto-collect-body"
+                                                 class="auto-phase-body" hidden>
+                                                <div class="auto-field-grid">
+                                                    <label class="move-field"
+                                                           for="auto-detection-point">
+                                                        <span>掉落物检测点</span>
+                                                        <select id="auto-detection-point" required>
+                                                            <option value="">请选择坐标点</option>
+                                                        </select>
+                                                    </label>
+                                                    <label class="move-field"
+                                                           for="auto-pickup-radius">
+                                                        <span>检测与拾取半径（格）</span>
+                                                        <input id="auto-pickup-radius"
+                                                               type="number" min="1" max="64"
+                                                               step="1" value="8">
+                                                    </label>
+                                                </div>
+                                                <label class="move-field"
+                                                       for="auto-cache-region">
+                                                    <span>缓存区域</span>
+                                                    <select id="auto-cache-region" required>
+                                                        <option value="">
+                                                            请选择包含缓存箱子的区域
+                                                        </option>
+                                                    </select>
+                                                </label>
+                                                <p class="auto-config-note">
+                                                    扫描区域内的多个箱子，只存入本次拾取的物品，
+                                                    不动原有工具和食物。
+                                                </p>
+                                                <label class="move-field move-priority"
+                                                       for="auto-collect-priority">
+                                                    <span>收集优先级</span>
+                                                    <select id="auto-collect-priority">
+                                                        <option value="NORMAL">普通</option>
+                                                        <option value="URGENT">紧急</option>
+                                                    </select>
+                                                </label>
+                                            </div>
                                         </section>
                                         <section class="auto-config-section"
                                                  aria-labelledby="auto-sort-title">
-                                            <h3 id="auto-sort-title">2 · 后台分类</h3>
-                                            <label class="move-field" for="auto-category-zone">
-                                                <span>分类区</span>
-                                                <select id="auto-category-zone" required>
-                                                    <option value="">请选择分类区</option>
-                                                </select>
-                                            </label>
-                                            <fieldset class="auto-marker-options">
-                                                <legend>分类物识别方式 · 可多选</legend>
-                                                <label><input type="checkbox" checked
-                                                    name="markerSources" value="ITEM_FRAME">
-                                                    <span>展示框</span></label>
-                                                <label><input type="checkbox" checked
-                                                    name="markerSources" value="SHELF">
-                                                    <span>展示架</span></label>
-                                                <label><input type="checkbox" checked
-                                                    name="markerSources" value="PLACED_ITEM">
-                                                    <span>摆放方块</span></label>
-                                                <label><input type="checkbox" checked
-                                                    name="markerSources" value="CONTAINER_CONTENTS">
-                                                    <span>标记箱 / 木桶</span></label>
-                                            </fieldset>
-                                            <p class="auto-config-note">按分类区的识别区与储存区匹配，
-                                                不使用附近展示框匹配。分类为后台优先级，
-                                                未识别物品留在缓存，满箱会尝试同类其他箱子。</p>
+                                            <div class="auto-phase-header">
+                                                <button id="auto-sort-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="auto-sort-body">
+                                                    <span class="auto-phase-title">
+                                                        <span class="auto-phase-index"
+                                                              aria-hidden="true">2</span>
+                                                        <span class="auto-phase-copy">
+                                                            <strong id="auto-sort-title">
+                                                                后台分类
+                                                            </strong>
+                                                            <small>扫描缓存并分批入库</small>
+                                                        </span>
+                                                    </span>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true">⌄</span>
+                                                </button>
+                                                <label class="auto-phase-switch"
+                                                       for="auto-classify-enabled">
+                                                    <span class="visually-hidden">
+                                                        后台分类
+                                                    </span>
+                                                    <input id="auto-classify-enabled"
+                                                           type="checkbox" role="switch">
+                                                    <span class="auto-switch-track"
+                                                          aria-hidden="true"></span>
+                                                </label>
+                                            </div>
+                                            <div id="auto-sort-body"
+                                                 class="auto-phase-body" hidden>
+                                                <label class="move-field"
+                                                       for="auto-category-zone">
+                                                    <span>分类区</span>
+                                                    <select id="auto-category-zone" required>
+                                                        <option value="">请选择分类区</option>
+                                                    </select>
+                                                </label>
+                                                <fieldset class="auto-marker-options">
+                                                    <legend>分类物识别方式 · 可多选</legend>
+                                                    <label><input type="checkbox" checked
+                                                        name="markerSources" value="ITEM_FRAME">
+                                                        <span>展示框</span></label>
+                                                    <label><input type="checkbox" checked
+                                                        name="markerSources" value="SHELF">
+                                                        <span>展示架</span></label>
+                                                    <label><input type="checkbox" checked
+                                                        name="markerSources" value="PLACED_ITEM">
+                                                        <span>摆放方块</span></label>
+                                                    <label><input type="checkbox" checked
+                                                        name="markerSources"
+                                                        value="CONTAINER_CONTENTS">
+                                                        <span>标记箱 / 木桶</span></label>
+                                                </fieldset>
+                                                <p class="auto-config-note">
+                                                    按分类区的识别区与储存区匹配，不使用附近展示框匹配。
+                                                    分类为后台优先级，未识别物品留在缓存，
+                                                    满箱会尝试同类其他箱子。
+                                                </p>
+                                            </div>
                                         </section>
                                         <div class="auto-interruption-note">
                                             <b>中断收尾</b>

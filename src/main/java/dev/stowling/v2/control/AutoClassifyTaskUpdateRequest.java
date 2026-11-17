@@ -8,6 +8,8 @@ public record AutoClassifyTaskUpdateRequest(
         String revision,
         String name,
         Boolean enabled,
+        Boolean collectionEnabled,
+        Boolean classificationEnabled,
         AutoClassifyDetectionRequest detection,
         String cacheRegionRef,
         String categoryZoneRef,

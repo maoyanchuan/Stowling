@@ -145,18 +145,84 @@ class AutoClassifyTaskFactoryTest {
         assertEquals(TaskPriority.BACKGROUND, classification.priority());
     }
 
+    @Test
+    void enabledPhasesCreateIndependentTriggers() {
+        List<TaskTriggerDefinition> collectionOnly =
+                AutoClassifyTaskFactory.triggers(
+                        definition(true, true, false),
+                        List.of()
+                );
+        List<TaskTriggerDefinition> classificationOnly =
+                AutoClassifyTaskFactory.triggers(
+                        definition(true, false, true),
+                        List.of()
+                );
+
+        assertEquals(1, collectionOnly.size());
+        assertEquals(
+                TaskTriggerType.DROPPED_ITEMS,
+                collectionOnly.getFirst().type()
+        );
+        assertEquals(1, classificationOnly.size());
+        assertEquals(
+                TaskTriggerType.CACHE_UPDATED,
+                classificationOnly.getFirst().type()
+        );
+    }
+
+    @Test
+    void disabledClassificationPhaseSkipsFollowUpQueueStep() {
+        TaskDefinition collection = AutoClassifyTaskFactory.tasks(
+                definition(false, true, false),
+                List.of()
+        ).getFirst();
+
+        assertTrue(collection.steps().stream().noneMatch(
+                step -> step.kind() == TaskStepKind.CREATE_TASK
+        ));
+    }
+
     private static AutoClassifyDefinition definition(boolean enabled) {
         return definition(enabled, List.of(CategoryMarkerSource.PLACED_ITEM));
     }
 
     private static AutoClassifyDefinition definition(
             boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled
+    ) {
+        return definition(
+                enabled,
+                collectionEnabled,
+                classificationEnabled,
+                List.of(CategoryMarkerSource.PLACED_ITEM)
+        );
+    }
+
+    private static AutoClassifyDefinition definition(
+            boolean enabled,
+            List<CategoryMarkerSource> markerSources
+    ) {
+        return definition(
+                enabled,
+                true,
+                true,
+                markerSources
+        );
+    }
+
+    private static AutoClassifyDefinition definition(
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
             List<CategoryMarkerSource> markerSources
     ) {
         return new AutoClassifyDefinition(
                 UUID.randomUUID(),
                 "自动分类",
                 enabled,
+                collectionEnabled,
+                classificationEnabled,
                 "coordinate:" + UUID.randomUUID(),
                 16,
                 "region:" + UUID.randomUUID(),

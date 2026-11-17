@@ -199,6 +199,8 @@ class V2ControlServiceImplTest {
                 new AutoClassifyTaskRequest(
                         "自动分类",
                         false,
+                        true,
+                        true,
                         new AutoClassifyDetectionRequest(
                                 "coordinate:" + point.id(),
                                 8
@@ -213,12 +215,16 @@ class V2ControlServiceImplTest {
         assertEquals(0, service.tasks().tasks().size());
         assertEquals(1, service.autoClassifyTasks().items().size());
         assertEquals(false, created.item().enabled());
+        assertTrue(created.item().collectionEnabled());
+        assertTrue(created.item().classificationEnabled());
         assertTrue(created.item().triggerIds().isEmpty());
 
         AutoClassifyTaskResponse collision = service.createAutoClassifyTask(
                 new AutoClassifyTaskRequest(
                         "自动分类 分类",
                         false,
+                        null,
+                        null,
                         new AutoClassifyDetectionRequest(
                                 "coordinate:" + point.id(),
                                 8
@@ -230,6 +236,8 @@ class V2ControlServiceImplTest {
                 )
         );
         assertTrue(!collision.item().name().equals("自动分类 分类"));
+        assertTrue(collision.item().collectionEnabled());
+        assertTrue(collision.item().classificationEnabled());
         assertEquals(2, service.autoClassifyTasks().items().size());
 
         TaskListResponse manual = service.createTask(task(
@@ -263,6 +271,8 @@ class V2ControlServiceImplTest {
                         new AutoClassifyTaskUpdateRequest(
                                 started.revision(),
                                 "改名",
+                                true,
+                                false,
                                 true,
                                 new AutoClassifyDetectionRequest(
                                         "coordinate:" + point.id(),

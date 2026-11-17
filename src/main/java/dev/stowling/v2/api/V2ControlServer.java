@@ -735,6 +735,8 @@ public final class V2ControlServer implements AutoCloseable {
         return new AutoClassifyTaskRequest(
                 optionalString(json, "name"),
                 optionalBooleanValue(json, "enabled"),
+                optionalBooleanValue(json, "collectionEnabled"),
+                optionalBooleanValue(json, "classificationEnabled"),
                 detection,
                 string(json, "cacheRegionRef"),
                 string(json, "categoryZoneRef"),
@@ -751,6 +753,8 @@ public final class V2ControlServer implements AutoCloseable {
                 string(json, "revision"),
                 optionalString(json, "name"),
                 optionalBooleanValue(json, "enabled"),
+                optionalBooleanValue(json, "collectionEnabled"),
+                optionalBooleanValue(json, "classificationEnabled"),
                 detection,
                 string(json, "cacheRegionRef"),
                 string(json, "categoryZoneRef"),
@@ -798,6 +802,8 @@ public final class V2ControlServer implements AutoCloseable {
         Set<String> fields = new java.util.HashSet<>(Set.of(
                 "name",
                 "enabled",
+                "collectionEnabled",
+                "classificationEnabled",
                 "detection",
                 "cacheRegionRef",
                 "categoryZoneRef",

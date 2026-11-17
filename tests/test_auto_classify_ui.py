@@ -45,6 +45,12 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-cache-region",
         "auto-collect-priority",
         "auto-category-zone",
+        "auto-collect-toggle",
+        "auto-collect-body",
+        "auto-collect-enabled",
+        "auto-sort-toggle",
+        "auto-sort-body",
+        "auto-classify-enabled",
         "auto-task-message",
         "save-auto-task",
         "start-auto-task",
@@ -58,6 +64,64 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
     assert '<input id="auto-task-name" maxlength="80"' in display
     assert 'id="auto-pickup-radius" type="number"' in display
     assert 'min="1" max="64" step="1" value="8"' in display
+
+
+def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
+    html = read("tasks.html")
+    javascript = read("auto-classify-ui.js")
+    form = between(html, 'id="auto-task-form"', "</form>")
+
+    assert "收集入缓存" not in html
+    for phase, title in (("collect", "启用缓存"), ("sort", "后台分类")):
+        toggle_id = f'id="auto-{phase}-toggle"'
+        body_id = f'id="auto-{phase}-body"'
+        assert toggle_id in form
+        assert body_id in form
+        assert title in form
+    collect_header = between(
+        form,
+        'id="auto-collect-toggle"',
+        'id="auto-collect-body"',
+    )
+    sort_header = between(
+        form,
+        'id="auto-sort-toggle"',
+        'id="auto-sort-body"',
+    )
+    collect_body = between(
+        form,
+        'id="auto-collect-body"',
+        'id="auto-collect-priority"',
+    )
+    sort_body = between(
+        form,
+        'id="auto-sort-body"',
+        'id="auto-category-zone"',
+    )
+
+    assert 'aria-expanded="false"' in collect_header
+    assert 'aria-controls="auto-collect-body"' in collect_header
+    assert 'id="auto-collect-enabled"' in collect_header
+    assert 'role="switch"' in collect_header
+    assert "hidden" in collect_body
+    assert 'aria-expanded="false"' in sort_header
+    assert 'aria-controls="auto-sort-body"' in sort_header
+    assert 'id="auto-classify-enabled"' in sort_header
+    assert 'role="switch"' in sort_header
+    assert "hidden" in sort_body
+
+    for selector in (
+        '#auto-collect-toggle',
+        '#auto-collect-body',
+        '#auto-collect-enabled',
+        '#auto-sort-toggle',
+        '#auto-sort-body',
+        '#auto-classify-enabled',
+    ):
+        assert selector in javascript
+    assert 'togglePhase("collection")' in javascript
+    assert 'togglePhase("classification")' in javascript
+    assert "body.hidden = !state.phase[phase];" in javascript
 
 
 def test_marker_sources_are_four_checked_multiselect_inputs_in_the_form() -> None:
@@ -122,6 +186,8 @@ def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:
     assert "...state.draft" in form_reader
     assert "elements.sources.filter((input) => input.checked)" in form_reader
     assert ".map((input) => input.value)" in form_reader
+    assert "collectionEnabled: elements.collectEnabled.checked" in form_reader
+    assert "classificationEnabled: elements.classifyEnabled.checked" in form_reader
     assert "length ?" not in form_reader
     assert "enabled:" not in form_reader
 

@@ -184,10 +184,16 @@ body[data-page] :is(.rail-queue-list, .rail-log-list) {
     background: #151619;
 }
 
-body[data-page] :is(.rail-queue-card, .metric, .task-run-card) {
+body[data-page] :is(.rail-queue-card, .metric, .task-run-card, .task-card) {
     border: 1px solid var(--line);
+    color: var(--text);
     background: #232428;
     box-shadow: none;
+}
+
+body[data-page] .task-card .module-level-tag {
+    color: var(--text);
+    background: #303535;
 }
 
 body[data-page] .task-workbench {
@@ -441,7 +447,7 @@ body[data-page] .move-form-actions {
     border-top: 1px solid #3a3b40;
 }
 
-.move-form-actions > .move-delete-action {
+.move-form-actions > .task-delete-action {
     margin-right: auto;
 }
 

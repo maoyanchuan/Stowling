@@ -160,6 +160,50 @@ class AssertPlayerInventoryRestoredModuleTest {
     }
 
     @Test
+    void syncFindsSameItemPickupsHiddenByACompletedDeposit() {
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of(GOLD, 5));
+        TaskRunWorkspace workspace = workspace(dropped.counts());
+        workspace.recordCollected(GOLD, 10);
+        workspace.observeInventory(Map.of(GOLD, 15));
+        workspace.consumeDeposit("collected", Map.of(GOLD, 10), Map.of());
+        dropped.set(Map.of(GOLD, 8));
+
+        TaskModuleResult result = syncModule(dropped, workspace).start();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
+        assertEquals(Map.of(GOLD, 3), workspace.managedItems());
+        assertEquals(Map.of(GOLD, 5), workspace.initialInventory().orElseThrow().itemCounts());
+    }
+
+    @Test
+    void syncFindsPickupsEvenWhenTheSnapshotCountIsUnchanged() {
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of(GOLD, 4));
+        TaskRunWorkspace workspace = workspace(Map.of());
+        workspace.recordCollected(GOLD, 4);
+        workspace.observeInventory(dropped.counts());
+        workspace.consumeDeposit("collected", Map.of(GOLD, 4), Map.of());
+
+        assertEquals(TaskModuleState.SUCCEEDED, syncModule(dropped, workspace).start().state());
+        assertEquals(Map.of(GOLD, 4), workspace.collectedItems());
+    }
+
+    @Test
+    void syncDoesNotDoubleCountManagedItemsAfterAPartialDeposit() {
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of(GOLD, 7));
+        TaskRunWorkspace workspace = workspace(Map.of(GOLD, 2));
+        workspace.recordCollected(GOLD, 10);
+        workspace.observeInventory(Map.of(GOLD, 12));
+        workspace.consumeDeposit("collected", Map.of(GOLD, 10), Map.of(GOLD, 3));
+
+        assertEquals(TaskModuleState.SUCCEEDED, syncModule(dropped, workspace).start().state());
+        assertEquals(Map.of(GOLD, 5), workspace.collectedItems());
+        assertEquals(Map.of(GOLD, 5), workspace.managedItems());
+        assertEquals(TaskModuleState.WAITING, syncModule(dropped, workspace).start().state());
+        assertEquals(Map.of(GOLD, 5), workspace.managedItems());
+    }
+
+    @Test
     void syncWaitsForFortyStableBaselineTicks() {
         MutableDroppedItems dropped = new MutableDroppedItems(
                 Map.of("minecraft:iron_ingot", 5)

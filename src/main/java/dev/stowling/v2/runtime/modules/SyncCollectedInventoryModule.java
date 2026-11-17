@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.PlayerInventoryDelta;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.v2.model.TaskStep;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -44,11 +45,12 @@ final class SyncCollectedInventoryModule implements TaskModuleExecutor {
         PlayerInventorySnapshot current = new PlayerInventorySnapshot(
                 observed.orElseThrow()
         );
-        PlayerInventorySnapshot previous = context.workspace()
-                .lastInventory()
-                .orElse(initial);
+        Map<String, Integer> expected = new LinkedHashMap<>(initial.itemCounts());
+        context.workspace().managedItems().forEach((itemId, count) ->
+                expected.merge(itemId, count, Math::addExact)
+        );
         PlayerInventoryDelta delta = PlayerInventoryDelta.between(
-                previous,
+                new PlayerInventorySnapshot(expected),
                 current
         );
         int recorded = recordAdditions(delta);

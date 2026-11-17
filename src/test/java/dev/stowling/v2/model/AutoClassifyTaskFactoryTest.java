@@ -5,11 +5,72 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.config.ConfigValidator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class AutoClassifyTaskFactoryTest {
+    @Test
+    void upgradesPersistedCollectionWithoutReplacingItsHandoffOrFolder() {
+        AutoClassifyDefinition definition = definition(true);
+        List<TaskDefinition> tasks = new ArrayList<>(
+                AutoClassifyTaskFactory.tasks(definition, List.of())
+        );
+        TaskDefinition collection = tasks.getFirst();
+        List<TaskStep> oldSteps = List.of(
+                collection.steps().get(0),
+                collection.steps().get(1),
+                collection.steps().get(2),
+                collection.steps().get(collection.steps().size() - 3),
+                collection.steps().getLast()
+        );
+        UUID folderId = UUID.randomUUID();
+        TaskDefinition legacy = new TaskDefinition(
+                collection.id(),
+                collection.name(),
+                collection.priority(),
+                false,
+                oldSteps,
+                collection.interruptionMode(),
+                collection.interruptionTaskRef(),
+                false,
+                false,
+                folderId
+        );
+        tasks.set(0, legacy);
+        AppConfig config = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(),
+                tasks,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new TaskFolderDefinition(folderId, "Items")),
+                List.of(definition)
+        );
+
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+        TaskDefinition upgraded = normalized.tasks().getFirst();
+
+        assertEquals(8, upgraded.steps().size());
+        assertEquals(oldSteps.subList(0, 3), upgraded.steps().subList(0, 3));
+        assertEquals(ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                upgraded.steps().get(3).moduleId());
+        assertEquals(TaskStepKind.REPEAT, upgraded.steps().get(4).kind());
+        assertEquals(ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                upgraded.steps().get(6).moduleId());
+        assertEquals(oldSteps.getLast(), upgraded.steps().getLast());
+        assertEquals(folderId, upgraded.folderId());
+        assertEquals(collection.interruptionTaskRef(), upgraded.interruptionTaskRef());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+        AppConfig standalone = new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks
+        );
+        assertEquals(oldSteps, TaskFlowNormalizer.normalize(standalone)
+                .tasks().getFirst().steps());
+    }
+
     @Test
     void buildsTwoIndependentStagesAndSharedInterruptionCleanup() {
         AutoClassifyDefinition definition = definition(false);

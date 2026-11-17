@@ -25,12 +25,17 @@ public final class TaskFlowNormalizer {
     }
 
     public static AppConfig normalize(AppConfig config) {
+        Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
+        for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
+            autoCollections.put(definition.id(), definition);
+        }
         Map<UUID, TaskDefinition> originalTasks = new LinkedHashMap<>();
         for (TaskDefinition task : config.tasks()) {
             originalTasks.put(task.id(), task);
         }
         List<TaskDefinition> baseTasks = config.tasks().stream()
                 .map(TaskFlowNormalizer::normalizeTask)
+                .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
                 .toList();
         List<TaskDefinition> tasks = new ArrayList<>(baseTasks);
         Set<UUID> taskIds = new HashSet<>();
@@ -133,6 +138,51 @@ public final class TaskFlowNormalizer {
                 config.triggers(),
                 config.taskFolders(),
                 config.autoClassifyTasks()
+        );
+    }
+
+    private static TaskDefinition upgradeAutoCollection(
+            TaskDefinition task,
+            AutoClassifyDefinition definition
+    ) {
+        if (definition == null
+                || task.steps().size() < 4
+                || task.steps().size() > 5) {
+            return task;
+        }
+        List<TaskStep> steps = task.steps();
+        if (!ConfigValidator.COLLECT_DROPPED_ITEMS.equals(steps.get(0).moduleId())
+                || !ConfigValidator.SCAN_CONTAINERS_IN_REGION.equals(steps.get(1).moduleId())
+                || steps.get(2).kind() != TaskStepKind.REPEAT
+                || steps.size() == 5 && steps.getLast().kind() != TaskStepKind.CREATE_TASK
+                || !ConfigValidator.ASSERT_NO_MANAGED_ITEMS.equals(steps.get(3).moduleId())) {
+            return task;
+        }
+        // Keep persisted actions and the classification handoff; upgrade only the old tail.
+        Map<String, String> parameters = new LinkedHashMap<>(steps.get(0).parameters());
+        parameters.putAll(steps.get(1).parameters());
+        List<TaskStep> collection = TaskFlowTemplates.collect(
+                definition.detectionCoordinateRef(),
+                definition.cacheRegionRef(),
+                parameters
+        );
+        List<TaskStep> upgraded = new ArrayList<>(steps.subList(0, 3));
+        upgraded.addAll(remapStepIds(
+                collection.subList(3, collection.size()),
+                steps.get(3).id()
+        ));
+        upgraded.addAll(steps.subList(4, steps.size()));
+        return new TaskDefinition(
+                task.id(),
+                task.name(),
+                task.priority(),
+                task.repeatWhenIdle(),
+                upgraded,
+                task.interruptionMode(),
+                task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(),
+                task.requeueAfterInterruption(),
+                task.folderId()
         );
     }
 

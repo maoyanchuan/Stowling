@@ -31,6 +31,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class AssertPlayerInventoryRestoredModuleTest {
+    private static final String GOLD = "minecraft:gold_ingot";
+
     @Test
     void succeedsWhenTheFinalSnapshotMatchesTheTaskStart() {
         MutableDroppedItems dropped = new MutableDroppedItems(
@@ -102,6 +104,78 @@ class AssertPlayerInventoryRestoredModuleTest {
         assertTrue(result.message().contains("开始前"));
     }
 
+    @Test
+    void syncRecordsLateInventoryAdditionsForAnotherDeposit() {
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
+        TaskRunWorkspace workspace = workspace(Map.of());
+        SyncCollectedInventoryModule module = syncModule(dropped, workspace);
+        dropped.set(Map.of(GOLD, 3));
+
+        TaskModuleResult result = module.start();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
+        assertEquals(Map.of(GOLD, 3), workspace.managedItems());
+    }
+
+    @Test
+    void syncDoesNotRecordAnItemAlreadyDeposited() {
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
+        TaskRunWorkspace workspace = workspace(Map.of());
+        SyncCollectedInventoryModule initialSync = syncModule(
+                dropped,
+                workspace
+        );
+        dropped.set(Map.of(GOLD, 3));
+        initialSync.start();
+        workspace.consumeDeposit(
+                "collected",
+                Map.of(GOLD, 3),
+                Map.of()
+        );
+        dropped.set(Map.of());
+
+        SyncCollectedInventoryModule afterDeposit = syncModule(
+                dropped,
+                workspace
+        );
+        TaskModuleResult result = afterDeposit.start();
+        for (int tick = 1; tick < 40; tick++) {
+            assertEquals(TaskModuleState.WAITING, result.state());
+            result = afterDeposit.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertTrue(workspace.collectedItems().isEmpty());
+        dropped.set(Map.of(GOLD, 1));
+        SyncCollectedInventoryModule lateSync = syncModule(
+                dropped,
+                workspace
+        );
+        assertEquals(
+                TaskModuleState.SUCCEEDED,
+                lateSync.start().state()
+        );
+        assertEquals(Map.of(GOLD, 1), workspace.collectedItems());
+    }
+
+    @Test
+    void syncWaitsForFortyStableBaselineTicks() {
+        MutableDroppedItems dropped = new MutableDroppedItems(
+                Map.of("minecraft:iron_ingot", 5)
+        );
+        TaskRunWorkspace workspace = workspace(dropped.counts());
+        SyncCollectedInventoryModule module = syncModule(dropped, workspace);
+
+        TaskModuleResult result = module.start();
+        for (int tick = 1; tick < 40; tick++) {
+            assertEquals(TaskModuleState.WAITING, result.state());
+            result = module.tick();
+        }
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+    }
+
     private static TaskRunWorkspace workspace(
             Map<String, Integer> counts
     ) {
@@ -120,6 +194,20 @@ class AssertPlayerInventoryRestoredModuleTest {
                 TaskStep.action(
                         UUID.randomUUID(),
                         TaskModuleIds.ASSERT_PLAYER_INVENTORY_RESTORED,
+                        Map.of()
+                )
+        );
+    }
+
+    private static SyncCollectedInventoryModule syncModule(
+            MutableDroppedItems dropped,
+            TaskRunWorkspace workspace
+    ) {
+        return new SyncCollectedInventoryModule(
+                context(dropped, workspace),
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.SYNC_COLLECTED_INVENTORY,
                         Map.of()
                 )
         );

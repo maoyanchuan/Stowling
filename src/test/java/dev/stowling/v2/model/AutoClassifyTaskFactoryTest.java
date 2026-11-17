@@ -56,6 +56,19 @@ class AutoClassifyTaskFactoryTest {
                 collection.steps().get(collection.steps().size() - 2)
                         .moduleId()
         );
+        TaskStep latePickupLoop = collection.steps().get(
+                collection.steps().size() - 4
+        );
+        assertEquals(TaskStepKind.REPEAT, latePickupLoop.kind());
+        assertEquals(
+                TaskCondition.HAS_MANAGED_ITEMS.name(),
+                latePickupLoop.parameters().get(TaskFlowTemplates.CONDITION)
+        );
+        assertEquals(
+                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                collection.steps().get(collection.steps().size() - 5)
+                        .moduleId()
+        );
         assertEquals(
                 ConfigValidator.SCAN_CONTAINERS_IN_REGION,
                 classification.steps().getFirst().moduleId()

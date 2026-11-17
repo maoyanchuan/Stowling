@@ -368,6 +368,16 @@ public final class TaskModuleCatalog {
                     "确认背包已恢复",
                     "确认任务结束时的玩家背包与任务开始前的快照一致。",
                     List.of()
+            ),
+            action(
+                    ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                    "同步延迟拾取物品",
+                    "检查任务期间延迟进入背包的物品，并加入缓存存入队列。",
+                    List.of(text(
+                            ConfigValidator.ITEM_FILTER,
+                            "物品过滤",
+                            false
+                    ))
             )
     );
 

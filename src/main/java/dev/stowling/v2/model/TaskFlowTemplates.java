@@ -170,6 +170,68 @@ public final class TaskFlowTemplates {
                 conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
                 List.of(selectContainer, move, deposit)
         );
+        Map<String, String> syncParameters = new LinkedHashMap<>();
+        copyIfPresent(
+                collectParameters,
+                syncParameters,
+                ConfigValidator.ITEM_FILTER
+        );
+        TaskStep syncInventory = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                syncParameters
+        );
+        TaskStep reconcileScan = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                scan
+        );
+        TaskStep reconcileSelect = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.SELECT_CONTAINER,
+                Map.of(RESET_CACHE_HAS_MORE, "true")
+        );
+        TaskStep reconcileMove = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.MOVE_TO_COORDINATE,
+                Map.of(
+                        ConfigValidator.TARGET_REF,
+                        ResourceReference.output("container").encode()
+                )
+        );
+        TaskStep reconcileDeposit = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
+                Map.of(
+                        ConfigValidator.TARGET_REF,
+                        ResourceReference.output("container").encode(),
+                        ConfigValidator.ITEM_SOURCE, "collected",
+                        ConfigValidator.RETRY_ON_FAILURE, "true"
+                )
+        );
+        TaskStep reconcileDeposits = TaskStep.repeat(
+                UUID.randomUUID(),
+                conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
+                List.of(
+                        reconcileSelect,
+                        reconcileMove,
+                        reconcileDeposit
+                )
+        );
+        TaskStep reconcileSync = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                syncParameters
+        );
+        TaskStep reconcileLatePickups = TaskStep.repeat(
+                UUID.randomUUID(),
+                conditionParameters(TaskCondition.HAS_MANAGED_ITEMS, Map.of()),
+                List.of(
+                        reconcileScan,
+                        reconcileDeposits,
+                        reconcileSync
+                )
+        );
         TaskStep assertClean = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
@@ -184,6 +246,8 @@ public final class TaskFlowTemplates {
                 collectStep,
                 scanStep,
                 depositCollected,
+                syncInventory,
+                reconcileLatePickups,
                 assertClean,
                 assertInventory
         );

@@ -24,6 +24,8 @@ public final class TaskModuleIds {
             "ASSERT_NO_MANAGED_ITEMS";
     public static final String ASSERT_PLAYER_INVENTORY_RESTORED =
             "ASSERT_PLAYER_INVENTORY_RESTORED";
+    public static final String SYNC_COLLECTED_INVENTORY =
+            "SYNC_COLLECTED_INVENTORY";
     public static final String WAIT_FOR_DROPPED_ITEMS =
             "WAIT_FOR_DROPPED_ITEMS";
 

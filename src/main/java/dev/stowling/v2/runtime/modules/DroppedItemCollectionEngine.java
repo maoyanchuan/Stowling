@@ -246,8 +246,11 @@ final class DroppedItemCollectionEngine {
         if (startInventory == null || currentInventory == null) {
             return;
         }
+        PlayerInventorySnapshot previous = context.workspace()
+                .lastInventory()
+                .orElse(startInventory);
         PlayerInventoryDelta delta = PlayerInventoryDelta.between(
-                startInventory,
+                previous,
                 currentInventory
         );
         for (Map.Entry<String, Integer> entry : delta.added().entrySet()) {
@@ -262,6 +265,9 @@ final class DroppedItemCollectionEngine {
                     entry.getValue()
             );
         }
+        context.workspace().observeInventory(
+                currentInventory.itemCounts()
+        );
     }
 
     private void resetStableConfirmation() {

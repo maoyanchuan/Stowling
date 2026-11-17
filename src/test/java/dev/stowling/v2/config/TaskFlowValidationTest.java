@@ -173,6 +173,16 @@ class TaskFlowValidationTest {
                 Map.of(),
                 Map.of()
         ));
+        TaskStep inventorySync = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                Map.of(ConfigValidator.ITEM_FILTER, "minecraft:oak_sapling")
+        );
+        assertDoesNotThrow(() -> ConfigValidator.requireValidStep(
+                inventorySync,
+                Map.of(),
+                Map.of()
+        ));
         for (String source : List.of("collected", "carried", "managed")) {
             TaskStep assertion = TaskStep.action(
                     UUID.randomUUID(),

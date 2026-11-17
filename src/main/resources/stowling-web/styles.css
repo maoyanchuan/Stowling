@@ -4735,44 +4735,6 @@ button:active:not(:disabled) {
     gap: 0.65rem;
 }
 
-.auto-area-marker-options {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.6rem;
-    min-width: 0;
-    padding: 0;
-    margin: 0;
-    border: 0;
-}
-
-.auto-area-marker-options legend {
-    margin-bottom: 0.65rem;
-    font-size: 0.82rem;
-}
-
-.auto-area-marker-options label {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    font-size: 0.8rem;
-    cursor: pointer;
-}
-
-.auto-area-marker-options label:has(input:checked) {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-}
-
-.auto-area-marker-options input {
-    width: 1rem;
-    height: 1rem;
-    margin: 0;
-    accent-color: var(--accent);
-}
-
 .auto-interruption-note {
     display: grid;
     gap: 0.3rem;

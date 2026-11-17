@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import java.util.List;
 import java.util.Objects;
 
@@ -11,7 +12,7 @@ public record AutoClassifyAreaDefinition(
 ) {
     public AutoClassifyAreaDefinition {
         categoryZoneRef = requireZoneReference(categoryZoneRef);
-        ruleId = requireText(ruleId, "ruleId");
+        ruleId = normalizeRuleId(requireText(ruleId, "ruleId"));
         markerSources = List.copyOf(
                 Objects.requireNonNull(markerSources, "markerSources")
         );
@@ -47,5 +48,11 @@ public record AutoClassifyAreaDefinition(
             throw new IllegalArgumentException(field + " must not be blank");
         }
         return trimmed;
+    }
+
+    private static String normalizeRuleId(String value) {
+        return "CONTAINER_CONTENTS".equals(value)
+                ? ContainerContentsCategoryRule.ID
+                : value;
     }
 }

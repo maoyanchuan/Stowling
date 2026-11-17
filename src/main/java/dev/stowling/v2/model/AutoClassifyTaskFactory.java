@@ -67,7 +67,11 @@ public final class AutoClassifyTaskFactory {
         }
         List<TaskStep> classificationSteps = new ArrayList<>();
         for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
-            String markerSources = markerSources(area.markerSources());
+            String markerSources = markerSources(
+                    ContainerContentsCategoryRule.ID.equals(area.ruleId())
+                            ? List.of(CategoryMarkerSource.CONTAINER_CONTENTS)
+                            : CategoryMarkerSource.SMART_SOURCES
+            );
             Map<String, String> scan = new LinkedHashMap<>();
             scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
             scan.put(ConfigValidator.CATEGORY_RULE_ID, area.ruleId());

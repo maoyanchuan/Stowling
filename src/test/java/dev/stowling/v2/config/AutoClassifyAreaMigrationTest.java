@@ -150,7 +150,7 @@ class AutoClassifyAreaMigrationTest {
                 migrated.classificationAreas().getFirst().ruleId()
         );
         assertEquals(
-                List.of(CategoryMarkerSource.PLACED_ITEM),
+                CategoryMarkerSource.SMART_SOURCES,
                 migrated.classificationAreas().getFirst().markerSources()
         );
         assertEquals(

@@ -72,7 +72,12 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "classificationAreas": [{
             "categoryZoneId": "",
             "ruleId": "DIRECT_BLOCK_ID",
-            "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
+            "markerSources": [
+                "PLACED_ITEM",
+                "ITEM_FRAME",
+                "SHELF",
+                "FLOWER_POT",
+            ],
         }],
         "collectionPriority": "NORMAL",
         "enabled": False,
@@ -306,7 +311,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     }
 
 
-def test_marker_sources_accept_multi_select_but_reject_empty_or_unknown() -> None:
+def test_marker_sources_reject_empty_or_unknown_legacy_values() -> None:
     result = _run(
         """
         (() => {
@@ -746,11 +751,12 @@ def test_classification_areas_require_unique_bindings_and_compatible_rules() -> 
     )
 
     assert result["duplicate"] == ["同一个分类选区不能重复添加"]
-    assert result["incompatible"] == ["分类方法与所选识别方式不兼容"]
+    assert result["incompatible"] == ["分类物识别方式配置无效"]
     assert result["defaults"]["direct"] == [
         "PLACED_ITEM",
         "ITEM_FRAME",
         "SHELF",
+        "FLOWER_POT",
     ]
     assert result["defaults"]["container"] == ["CONTAINER_CONTENTS"]
 

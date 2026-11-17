@@ -239,6 +239,12 @@ class DirectBlockIdCategoryRuleTest {
                                 new CategoryMarker(
                                         column,
                                         "minecraft:torch",
+                                        CategoryMarkerSource.FLOWER_POT,
+                                        -1
+                                ),
+                                new CategoryMarker(
+                                        column,
+                                        "minecraft:torch",
                                         CategoryMarkerSource.CONTAINER_CONTENTS,
                                         0
                                 )

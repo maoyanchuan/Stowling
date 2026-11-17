@@ -4,11 +4,11 @@
     const DEFAULT_NAME = "自动分类";
     const DEFAULT_PICKUP_RADIUS = "8";
     const DIRECT_RULE_ID = "DIRECT_BLOCK_ID";
-    const CONTAINER_RULE_ID = "CONTAINER_CONTENTS";
     const MARKER_SOURCES = Object.freeze([
         "PLACED_ITEM",
         "ITEM_FRAME",
         "SHELF",
+        "FLOWER_POT",
         "CONTAINER_CONTENTS"
     ]);
     const COLLECTION_PRIORITIES = Object.freeze([
@@ -22,9 +22,17 @@
      * @returns {Array<string>}
      */
     function defaultMarkerSources(ruleId) {
-        return ruleId === CONTAINER_RULE_ID
+        return isContainerRuleId(ruleId)
             ? ["CONTAINER_CONTENTS"]
-            : ["PLACED_ITEM", "ITEM_FRAME", "SHELF"];
+            : ["PLACED_ITEM", "ITEM_FRAME", "SHELF", "FLOWER_POT"];
+    }
+
+    /**
+     * @param {string} ruleId
+     * @returns {boolean}
+     */
+    function isContainerRuleId(ruleId) {
+        return String(ruleId ?? "").includes("CONTAINER_CONTENTS");
     }
 
     /**
@@ -33,7 +41,7 @@
      * @returns {boolean}
      */
     function ruleSupportsSources(ruleId, sources) {
-        if (ruleId === CONTAINER_RULE_ID) {
+        if (isContainerRuleId(ruleId)) {
             return sources.length === 1
                 && sources[0] === "CONTAINER_CONTENTS";
         }
@@ -357,7 +365,7 @@
             }
             const ruleId = String(area?.ruleId ?? "").trim();
             if (!ruleIds.includes(ruleId)) {
-                errors.push("所选分类方法不存在，请刷新后重试");
+                errors.push("所选分类物识别方式不存在，请刷新后重试");
             }
             const sources = area?.markerSources;
             if (!Array.isArray(sources) || sources.length === 0) {
@@ -368,7 +376,7 @@
                 errors.push("分类物识别方式包含未知选项");
             } else if (ruleIds.includes(ruleId)
                     && !ruleSupportsSources(ruleId, sources)) {
-                errors.push("分类方法与所选识别方式不兼容");
+                errors.push("分类物识别方式配置无效");
             }
         }
     }
@@ -376,6 +384,7 @@
     window.StowlingAutoClassifyTaskModel = Object.freeze({
         defaultMarkerSources,
         draftFromTask,
+        isContainerRuleId,
         newArea,
         newDraft,
         payload,

@@ -7,12 +7,17 @@ MARKER_SOURCES = (
     "ITEM_FRAME",
     "SHELF",
     "PLACED_ITEM",
+    "FLOWER_POT",
     "CONTAINER_CONTENTS",
 )
 
 
 def read(name: str) -> str:
     return (WEB / name).read_text(encoding="utf-8")
+
+
+def read_java(relative_path: str) -> str:
+    return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
 def between(source: str, start: str, end: str) -> str:
@@ -125,7 +130,7 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "body.hidden = !state.phase[phase];" in javascript
 
 
-def test_marker_sources_are_rendered_inside_each_classification_area() -> None:
+def test_recognition_uses_two_consolidated_modes_in_each_area() -> None:
     html = read("tasks.html")
     javascript = read("auto-classify-ui.js")
     model = read("auto-classify-task-model.js")
@@ -135,10 +140,11 @@ def test_marker_sources_are_rendered_inside_each_classification_area() -> None:
     assert 'id="add-auto-classification-area"' in form
     assert 'name="markerSources"' not in form
     for source in MARKER_SOURCES:
-        assert f'["{source}",' in javascript
-    assert "markerInputs" in javascript
+        assert source in model
     assert "Auto.defaultMarkerSources(" in javascript
-    assert "分类物识别方式 · 可多选" in javascript
+    assert 'new Option("智能识别", smartRuleId)' in javascript
+    assert 'new Option("标记箱/木桶", containerRuleId)' in javascript
+    assert "分类物识别方式 · 可多选" not in javascript
     assert "classificationAreas: [newArea()]" in model
     assert "function addClassificationArea()" in javascript
     assert "function removeClassificationArea(index)" in javascript
@@ -148,7 +154,10 @@ def test_marker_sources_are_rendered_inside_each_classification_area() -> None:
     assert "分类区中的范围" not in javascript
     assert "bindingId:" not in model
     assert "labeledControl(\"分类范围\", range)" in javascript
-    assert "labeledControl(\"分类方法\", method)" in javascript
+    assert "labeledControl(\"分类物识别方式\", recognition)" in javascript
+    assert "labeledControl(\"分类方法\", method)" not in javascript
+    assert "自动读取展示框、展示架和摆放方块" not in javascript
+    assert "花盆内物品" in read("category-zones.js")
     assert "elements.addArea.addEventListener" in javascript
     assert 'value="BACKGROUND"' not in form
     assert '<option value="NORMAL">普通</option>' in form
@@ -179,6 +188,17 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
     assert "Array.isArray(rules.rules)" in loading
     assert "Array.isArray(allTasks.tasks) ? allTasks.tasks : []" in loading
     assert "state.revision = String(tasks.revision || \"\");" in loading
+
+
+def test_smart_recognition_reads_the_item_inside_a_flower_pot() -> None:
+    resolver = read_java(
+        "src/main/java/dev/stowling/client/automation/"
+        "MinecraftCategoryZoneResolver.java"
+    )
+
+    assert "instanceof FlowerPotBlock flowerPot" in resolver
+    assert "flowerPot.getPotted().asItem()" in resolver
+    assert "CategoryMarkerSource.FLOWER_POT" in resolver
 
 
 def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:

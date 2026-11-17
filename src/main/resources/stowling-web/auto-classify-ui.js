@@ -223,36 +223,23 @@
         }
         range.value = area.categoryZoneId;
 
-        const method = document.createElement("select");
-        for (const rule of state.resources.categoryRules) {
-            method.append(new Option(rule.name, rule.id));
-        }
-        method.value = area.ruleId || "DIRECT_BLOCK_ID";
-
-        const recognition = Stowling.element(
-            "fieldset",
-            "auto-area-marker-options"
+        const recognition = document.createElement("select");
+        const smartRuleId = categoryRuleId(
+            ["DIRECT_BLOCK_ID"],
+            "DIRECT_BLOCK_ID"
         );
-        recognition.append(Stowling.element(
-            "legend",
-            "",
-            "分类物识别方式 · 可多选"
-        ));
-        const markerInputs = [
-            ["ITEM_FRAME", "展示框"],
-            ["SHELF", "展示架"],
-            ["PLACED_ITEM", "摆放方块"],
-            ["CONTAINER_CONTENTS", "标记箱 / 木桶"]
-        ].map(([value, label]) => {
-            const input = document.createElement("input");
-            input.type = "checkbox";
-            input.value = value;
-            input.checked = area.markerSources.includes(value);
-            const wrapper = Stowling.element("label", "");
-            wrapper.append(input, Stowling.element("span", "", label));
-            recognition.append(wrapper);
-            return input;
-        });
+        const containerRuleId = categoryRuleId(
+            ["MARKER_CONTAINER_CONTENTS", "CONTAINER_CONTENTS"],
+            "MARKER_CONTAINER_CONTENTS"
+        );
+        recognition.append(
+            new Option("智能识别", smartRuleId),
+            new Option("标记箱/木桶", containerRuleId)
+        );
+        recognition.value = Auto.isContainerRuleId(area.ruleId)
+                || area.markerSources.includes("CONTAINER_CONTENTS")
+            ? containerRuleId
+            : smartRuleId;
 
         /**
          * @param {Event} event
@@ -264,46 +251,44 @@
             }
             const option = range.selectedOptions[0];
             if (option?.dataset.ruleId) {
-                method.value = option.dataset.ruleId;
-                const defaults = Auto.defaultMarkerSources(method.value);
-                for (const input of markerInputs) {
-                    input.checked = defaults.includes(input.value);
-                }
-            }
-        }
-
-        /**
-         * @param {Event} event
-         * @returns {void}
-         */
-        function syncMethod(event) {
-            if (event.target !== method) {
-                return;
-            }
-            const defaults = Auto.defaultMarkerSources(method.value);
-            for (const input of markerInputs) {
-                input.checked = defaults.includes(input.value);
+                recognition.value = Auto.isContainerRuleId(
+                    option.dataset.ruleId
+                )
+                    ? containerRuleId
+                    : smartRuleId;
             }
         }
 
         range.addEventListener("input", syncRange);
-        method.addEventListener("input", syncMethod);
         const fields = Stowling.element("div", "auto-area-fields");
         fields.append(
             labeledControl("分类范围", range),
-            labeledControl("分类方法", method)
+            labeledControl("分类物识别方式", recognition)
         );
-        card.append(heading, fields, recognition);
+        card.append(heading, fields);
         elements.areas.append(card);
         return {
             read: () => ({
                 categoryZoneId: range.value,
-                ruleId: method.value,
-                markerSources: markerInputs
-                    .filter((input) => input.checked)
-                    .map((input) => input.value)
+                ruleId: recognition.value,
+                markerSources: Auto.defaultMarkerSources(recognition.value)
             })
         };
+    }
+
+    /**
+     * @param {Array<string>} preferredIds
+     * @param {string} fallback
+     * @returns {string}
+     */
+    function categoryRuleId(preferredIds, fallback) {
+        const rules = state.resources.categoryRules;
+        for (const id of preferredIds) {
+            if (rules.some((rule) => rule.id === id)) {
+                return id;
+            }
+        }
+        return fallback;
     }
 
     /**

@@ -203,7 +203,8 @@
             Stowling.element(
                 "p",
                 "muted compact-help",
-                "自动读取展示框、展示架和摆放方块，每列只识别一个物品。"
+                "智能识别会读取摆放方块、展示框、展示架和花盆内物品，"
+                    + "每列只识别一个物品。"
             )
         );
         wrapper.append(text);
@@ -764,7 +765,7 @@
             "category-recognition-fields"
         );
         recognition.append(
-            field("自动识别规则", rule),
+            field("分类物识别方式", rule),
             field("忽略支撑方块（每行一个）", ignored)
         );
         const overrideHeading = Stowling.element(

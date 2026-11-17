@@ -85,9 +85,10 @@ class AutoClassifyTaskFactoryTest {
                         CategoryMarkerSource.PLACED_ITEM,
                         CategoryMarkerSource.ITEM_FRAME,
                         CategoryMarkerSource.SHELF,
+                        CategoryMarkerSource.FLOWER_POT,
                         CategoryMarkerSource.CONTAINER_CONTENTS
                 ),
-                "CONTAINER_CONTENTS"
+                "MARKER_CONTAINER_CONTENTS"
         );
 
         TaskDefinition classification = AutoClassifyTaskFactory.tasks(
@@ -199,7 +200,7 @@ class AutoClassifyTaskFactoryTest {
                 ),
                 new AutoClassifyAreaDefinition(
                         secondZoneRef,
-                        "CONTAINER_CONTENTS",
+                        "MARKER_CONTAINER_CONTENTS",
                         List.of(CategoryMarkerSource.CONTAINER_CONTENTS)
                 )
         ));
@@ -241,10 +242,14 @@ class AutoClassifyTaskFactoryTest {
                 )
         );
         assertEquals(
-                "CONTAINER_CONTENTS",
+                "MARKER_CONTAINER_CONTENTS",
                 secondResolve.parameters().get(
                         ConfigValidator.CATEGORY_RULE_ID
                 )
+        );
+        assertEquals(
+                "PLACED_ITEM,ITEM_FRAME,SHELF,FLOWER_POT",
+                firstResolve.parameters().get(ConfigValidator.MARKER_SOURCES)
         );
     }
 

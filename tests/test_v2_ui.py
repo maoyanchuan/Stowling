@@ -455,7 +455,7 @@ def test_category_zone_page_uses_automatic_display_bindings() -> None:
 
     assert "分类物识别区" in javascript
     assert "储存区" in javascript
-    assert "自动读取展示框、展示架和摆放方块" in javascript
+    assert "摆放方块、展示框、展示架和花盆内物品" in javascript
     assert "忽略支撑方块" in javascript
     assert "容器例外规则" in javascript
     assert "追加允许物品" in javascript

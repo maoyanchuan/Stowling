@@ -11,7 +11,7 @@ public final class ContainerContentsCategoryRule implements CategoryRule {
     public CategoryRuleDefinition definition() {
         return new CategoryRuleDefinition(
                 ID,
-                "分类标记容器内容",
+                "标记箱/木桶",
                 "读取识别区内箱子或木桶的全部物品槽位，并把每种物品分配给同一列储存区。"
         );
     }

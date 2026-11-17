@@ -30,6 +30,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.entity.ShelfBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.entity.EntityTypeTest;
@@ -327,6 +328,18 @@ public final class MinecraftCategoryZoneResolver
             return;
         }
         if (MARKER_CONTAINER_TYPES.contains(blockId)) {
+            return;
+        }
+        if (state.getBlock() instanceof FlowerPotBlock flowerPot) {
+            if (markerSources.contains(CategoryMarkerSource.FLOWER_POT)) {
+                appendItemMarker(
+                        result,
+                        position,
+                        new ItemStack(flowerPot.getPotted().asItem()),
+                        CategoryMarkerSource.FLOWER_POT,
+                        -1
+                );
+            }
             return;
         }
         if (level.getBlockEntity(position) instanceof ShelfBlockEntity shelf) {

@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.TaskFlowNormalizer;
 import java.io.IOException;
@@ -274,11 +275,6 @@ public final class ConfigStore {
             String zoneId = categoryZoneRef.contains(":")
                     ? categoryZoneRef.substring(categoryZoneRef.indexOf(':') + 1)
                     : "";
-            JsonElement sourcesValue = definition.get("markerSources");
-            JsonArray markerSources = sourcesValue != null
-                    && sourcesValue.isJsonArray()
-                    ? sourcesValue.getAsJsonArray().deepCopy()
-                    : new JsonArray();
             JsonArray areas = new JsonArray();
             for (JsonElement zoneItem : zones) {
                 if (zoneItem == null || !zoneItem.isJsonObject()) {
@@ -295,8 +291,7 @@ public final class ConfigStore {
                 String ruleId = firstRuleId(bindings.getAsJsonArray());
                 areas.add(classificationArea(
                         categoryZoneRef,
-                        ruleId,
-                        markerSources
+                        ruleId
                 ));
             }
             definition.add("classificationAreas", areas);
@@ -322,13 +317,9 @@ public final class ConfigStore {
             if (zoneRef.isBlank() || byZone.containsKey(zoneRef)) {
                 continue;
             }
-            JsonArray markerSources = existing.has("markerSources")
-                    ? existing.get("markerSources").getAsJsonArray().deepCopy()
-                    : new JsonArray();
             byZone.put(zoneRef, classificationArea(
                     zoneRef,
-                    stringValue(existing.get("ruleId")),
-                    markerSources
+                    stringValue(existing.get("ruleId"))
             ));
         }
         JsonArray consolidated = new JsonArray();
@@ -338,17 +329,23 @@ public final class ConfigStore {
 
     private static JsonObject classificationArea(
             String categoryZoneRef,
-            String ruleId,
-            JsonArray markerSources
+            String ruleId
     ) {
         JsonObject area = new JsonObject();
         area.addProperty("categoryZoneRef", categoryZoneRef);
-        area.addProperty("ruleId", ruleId);
+        String normalizedRuleId = normalizeCategoryRuleId(ruleId);
+        area.addProperty("ruleId", normalizedRuleId);
         area.add(
                 "markerSources",
-                compatibleMarkerSources(ruleId, markerSources)
+                compatibleMarkerSources(normalizedRuleId)
         );
         return area;
+    }
+
+    private static String normalizeCategoryRuleId(String ruleId) {
+        return "CONTAINER_CONTENTS".equals(ruleId)
+                ? "MARKER_CONTAINER_CONTENTS"
+                : ruleId;
     }
 
     private static String firstRuleId(JsonArray bindings) {
@@ -369,27 +366,16 @@ public final class ConfigStore {
         return value == null || value.isJsonNull() ? "" : value.getAsString();
     }
 
-    private static JsonArray compatibleMarkerSources(
-            String ruleId,
-            JsonArray configured
-    ) {
+    private static JsonArray compatibleMarkerSources(String ruleId) {
         JsonArray result = new JsonArray();
-        for (JsonElement source : configured) {
-            if (source == null || source.isJsonNull()) {
-                continue;
-            }
-            String value = source.getAsString();
-            if (("CONTAINER_CONTENTS".equals(ruleId)
-                    && "CONTAINER_CONTENTS".equals(value))
-                    || ("DIRECT_BLOCK_ID".equals(ruleId)
-                    && !"CONTAINER_CONTENTS".equals(value))) {
-                result.add(value);
-            }
+        if ("CONTAINER_CONTENTS".equals(ruleId)
+                || "MARKER_CONTAINER_CONTENTS".equals(ruleId)) {
+            result.add("CONTAINER_CONTENTS");
+            return result;
         }
-        if (result.isEmpty()) {
-            result.add("CONTAINER_CONTENTS".equals(ruleId)
-                    ? "CONTAINER_CONTENTS"
-                    : "PLACED_ITEM");
+        for (CategoryMarkerSource source
+                : CategoryMarkerSource.SMART_SOURCES) {
+            result.add(source.name());
         }
         return result;
     }

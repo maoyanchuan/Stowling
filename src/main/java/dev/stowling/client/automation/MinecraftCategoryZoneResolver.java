@@ -13,6 +13,7 @@ import dev.stowling.v2.category.CategoryRule;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryRuleResult;
 import dev.stowling.v2.category.DirectBlockIdCategoryRule;
+import dev.stowling.v2.category.PottedBlockItems;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -330,15 +331,18 @@ public final class MinecraftCategoryZoneResolver
         if (MARKER_CONTAINER_TYPES.contains(blockId)) {
             return;
         }
-        if (state.getBlock() instanceof FlowerPotBlock flowerPot) {
-            if (markerSources.contains(CategoryMarkerSource.FLOWER_POT)) {
-                appendItemMarker(
-                        result,
-                        position,
-                        new ItemStack(flowerPot.getPotted().asItem()),
+        String pottedItemId = pottedItemId(state, blockId);
+        if (pottedItemId != null) {
+            if (markerSources.contains(CategoryMarkerSource.FLOWER_POT)
+                    || markerSources.contains(
+                            CategoryMarkerSource.PLACED_ITEM
+                    )) {
+                result.add(new CategoryMarker(
+                        markerPosition,
+                        pottedItemId,
                         CategoryMarkerSource.FLOWER_POT,
                         -1
-                );
+                ));
             }
             return;
         }
@@ -359,6 +363,25 @@ public final class MinecraftCategoryZoneResolver
                 CategoryMarkerSource.PLACED_ITEM,
                 -1
         );
+    }
+
+    private static String pottedItemId(
+            BlockState state,
+            String blockId
+    ) {
+        if (!blockId.substring(blockId.indexOf(':') + 1)
+                .startsWith("potted_")) {
+            return null;
+        }
+        if (state.getBlock() instanceof FlowerPotBlock flowerPot) {
+            String itemId = BuiltInRegistries.ITEM.getKey(
+                    flowerPot.getPotted().asItem()
+            ).toString();
+            if (!"minecraft:air".equals(itemId)) {
+                return itemId;
+            }
+        }
+        return PottedBlockItems.itemId(blockId).orElse(null);
     }
 
     private static void appendContainerContents(

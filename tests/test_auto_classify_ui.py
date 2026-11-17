@@ -198,6 +198,8 @@ def test_smart_recognition_reads_the_item_inside_a_flower_pot() -> None:
 
     assert "instanceof FlowerPotBlock flowerPot" in resolver
     assert "flowerPot.getPotted().asItem()" in resolver
+    assert "PottedBlockItems.itemId(blockId)" in resolver
+    assert "CategoryMarkerSource.PLACED_ITEM" in resolver
     assert "CategoryMarkerSource.FLOWER_POT" in resolver
 
 

@@ -142,7 +142,11 @@ def test_marker_sources_are_rendered_inside_each_classification_area() -> None:
     assert "classificationAreas: [newArea()]" in model
     assert "function addClassificationArea()" in javascript
     assert "function removeClassificationArea(index)" in javascript
-    assert "option.dataset.ruleId = binding.ruleId;" in javascript
+    assert "new Option(" in javascript
+    assert "zone.name || \"未命名分类区\"" in javascript
+    assert "option.dataset.ruleId = zone.bindings?.[0]?.ruleId" in javascript
+    assert "分类区中的范围" not in javascript
+    assert "bindingId:" not in model
     assert "labeledControl(\"分类范围\", range)" in javascript
     assert "labeledControl(\"分类方法\", method)" in javascript
     assert "elements.addArea.addEventListener" in javascript

@@ -30,7 +30,7 @@ class AutoClassifyAreaMigrationTest {
     Path directory;
 
     @Test
-    void expandsLegacySingleZoneIntoBindingLevelAreas() throws Exception {
+    void consolidatesBindingLevelSelectionsIntoOneLargeZone() throws Exception {
         UUID coordinateId = UUID.randomUUID();
         UUID regionId = UUID.randomUUID();
         UUID zoneId = UUID.randomUUID();
@@ -83,7 +83,6 @@ class AutoClassifyAreaMigrationTest {
                 "region:" + regionId,
                 List.of(new AutoClassifyAreaDefinition(
                         zoneRef,
-                        bindingId,
                         "DIRECT_BLOCK_ID",
                         List.of(CategoryMarkerSource.PLACED_ITEM)
                 )),
@@ -107,15 +106,23 @@ class AutoClassifyAreaMigrationTest {
         JsonObject root = JsonParser.parseString(
                 Files.readString(path)
         ).getAsJsonObject();
-        root.addProperty("schemaVersion", 9);
+        root.addProperty("schemaVersion", 10);
         JsonObject autoTask = root.getAsJsonArray("autoClassifyTasks")
                 .get(0)
                 .getAsJsonObject();
-        autoTask.remove("classificationAreas");
-        autoTask.addProperty("categoryZoneRef", zoneRef);
-        JsonArray markerSources = new JsonArray();
-        markerSources.add("PLACED_ITEM");
-        autoTask.add("markerSources", markerSources);
+        JsonArray areas = autoTask.getAsJsonArray("classificationAreas");
+        areas.get(0).getAsJsonObject().addProperty(
+                "bindingId",
+                bindingId.toString()
+        );
+        JsonObject secondArea = new JsonObject();
+        secondArea.addProperty("categoryZoneRef", zoneRef);
+        secondArea.addProperty("bindingId", secondBindingId.toString());
+        secondArea.addProperty("ruleId", "CONTAINER_CONTENTS");
+        JsonArray containerSources = new JsonArray();
+        containerSources.add("CONTAINER_CONTENTS");
+        secondArea.add("markerSources", containerSources);
+        areas.add(secondArea);
         Files.writeString(path, root.toString());
 
         AutoClassifyDefinition migrated = store.loadOrReset()
@@ -125,26 +132,14 @@ class AutoClassifyAreaMigrationTest {
 
         assertEquals(AppConfig.CURRENT_SCHEMA_VERSION, store.read()
                 .config().schemaVersion());
-        assertEquals(2, migrated.classificationAreas().size());
-        assertEquals(
-                bindingId,
-                migrated.classificationAreas().getFirst().bindingId()
-        );
+        assertEquals(1, migrated.classificationAreas().size());
         assertEquals(
                 "DIRECT_BLOCK_ID",
                 migrated.classificationAreas().getFirst().ruleId()
         );
         assertEquals(
-                secondBindingId,
-                migrated.classificationAreas().get(1).bindingId()
-        );
-        assertEquals(
-                "CONTAINER_CONTENTS",
-                migrated.classificationAreas().get(1).ruleId()
-        );
-        assertEquals(
-                List.of(CategoryMarkerSource.CONTAINER_CONTENTS),
-                migrated.classificationAreas().get(1).markerSources()
+                List.of(CategoryMarkerSource.PLACED_ITEM),
+                migrated.classificationAreas().getFirst().markerSources()
         );
     }
 }

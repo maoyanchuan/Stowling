@@ -70,8 +70,6 @@ public final class AutoClassifyTaskFactory {
             String markerSources = markerSources(area.markerSources());
             Map<String, String> scan = new LinkedHashMap<>();
             scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
-            scan.put(ConfigValidator.CATEGORY_BINDING_ID,
-                    area.bindingId().toString());
             scan.put(ConfigValidator.CATEGORY_RULE_ID, area.ruleId());
             scan.put(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true");
             List<TaskStep> preResolveSteps = List.of();
@@ -83,7 +81,7 @@ public final class AutoClassifyTaskFactory {
                         area.categoryZoneRef(),
                         null,
                         markerSources,
-                        area.bindingId().toString(),
+                        null,
                         area.ruleId()
                 );
             }

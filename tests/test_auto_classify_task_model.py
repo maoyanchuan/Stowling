@@ -71,7 +71,6 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "cacheRegionId": "",
         "classificationAreas": [{
             "categoryZoneId": "",
-            "bindingId": "",
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }],
@@ -102,12 +101,10 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
                 cacheRegionRef: "region:cache-1",
                 classificationAreas: [{
                     categoryZoneRef: "category-zone:ore-zone",
-                    bindingId: "binding-ore",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["SHELF", "PLACED_ITEM"],
                 }, {
-                    categoryZoneRef: "category-zone:ore-zone",
-                    bindingId: "binding-storage",
+                    categoryZoneRef: "category-zone:storage-zone",
                     ruleId: "CONTAINER_CONTENTS",
                     markerSources: ["CONTAINER_CONTENTS"],
                 }],
@@ -130,12 +127,10 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "cacheRegionId": "cache-1",
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
-            "bindingId": "binding-ore",
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["SHELF", "PLACED_ITEM"],
         }, {
-            "categoryZoneId": "ore-zone",
-            "bindingId": "binding-storage",
+            "categoryZoneId": "storage-zone",
             "ruleId": "CONTAINER_CONTENTS",
             "markerSources": ["CONTAINER_CONTENTS"],
         }],
@@ -164,7 +159,6 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
                 cacheRegionRef: "coordinate:region-1",
                 classificationAreas: [{
                     categoryZoneRef: "category-zone:",
-                    bindingId: "binding-1",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["SHELF"],
                 }],
@@ -182,7 +176,6 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "cacheRegionId": "",
         "classificationAreas": [{
             "categoryZoneId": "",
-            "bindingId": "binding-1",
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["SHELF"],
         }],
@@ -203,10 +196,10 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 regions: [{ id: "region-1" }],
                 categoryZones: [{
                     id: "zone-1",
-                    bindings: [
-                        { id: "binding-1", ruleId: "DIRECT_BLOCK_ID" },
-                        { id: "binding-2", ruleId: "CONTAINER_CONTENTS" },
-                    ],
+                    bindings: [{ id: "binding-1", ruleId: "DIRECT_BLOCK_ID" }],
+                }, {
+                    id: "zone-2",
+                    bindings: [{ id: "binding-2", ruleId: "CONTAINER_CONTENTS" }],
                 }],
                 categoryRules: [
                     { id: "DIRECT_BLOCK_ID", name: "展示物精确匹配" },
@@ -222,12 +215,10 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 cacheRegionId: "region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
-                    bindingId: "binding-1",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
                 }, {
-                    categoryZoneId: "zone-1",
-                    bindingId: "binding-2",
+                    categoryZoneId: "zone-2",
                     ruleId: "CONTAINER_CONTENTS",
                     markerSources: ["CONTAINER_CONTENTS"],
                 }],
@@ -272,12 +263,10 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cacheRegionRef": "region:region-1",
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
-            "bindingId": "binding-1",
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }, {
-            "categoryZoneRef": "category-zone:zone-1",
-            "bindingId": "binding-2",
+            "categoryZoneRef": "category-zone:zone-2",
             "ruleId": "CONTAINER_CONTENTS",
             "markerSources": ["CONTAINER_CONTENTS"],
         }],
@@ -303,12 +292,10 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cacheRegionId": "region-1",
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
-            "bindingId": "binding-1",
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }, {
-            "categoryZoneId": "zone-1",
-            "bindingId": "binding-2",
+            "categoryZoneId": "zone-2",
             "ruleId": "CONTAINER_CONTENTS",
             "markerSources": ["CONTAINER_CONTENTS"],
         }],
@@ -341,7 +328,6 @@ def test_marker_sources_accept_multi_select_but_reject_empty_or_unknown() -> Non
             };
             const area = {
                 categoryZoneId: "zone-1",
-                bindingId: "binding-1",
                 ruleId: "DIRECT_BLOCK_ID",
                 markerSources: ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
             };
@@ -423,7 +409,6 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
             };
             const area = {
                 categoryZoneId: "zone-1",
-                bindingId: "binding-1",
                 ruleId: "DIRECT_BLOCK_ID",
                 markerSources: ["PLACED_ITEM"],
             };
@@ -503,7 +488,6 @@ def test_pickup_radius_accepts_only_integer_range(
                 cacheRegionId: "region-1",
                 classificationAreas: [{{
                     categoryZoneId: "zone-1",
-                    bindingId: "binding-1",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["PLACED_ITEM"],
                 }}],
@@ -545,7 +529,6 @@ def test_name_validation_trims_case_folds_and_excludes_current_id() -> None:
             };
             const area = {
                 categoryZoneId: "zone-1",
-                bindingId: "binding-1",
                 ruleId: "DIRECT_BLOCK_ID",
                 markerSources: ["PLACED_ITEM"],
             };
@@ -620,7 +603,6 @@ def test_collection_priority_and_enabled_are_strictly_validated() -> None:
                 cacheRegionId: "region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
-                    bindingId: "binding-1",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["PLACED_ITEM"],
                 }],
@@ -668,7 +650,6 @@ def test_phase_enable_flags_are_strict_and_round_trip() -> None:
                 cacheRegionId: "region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
-                    bindingId: "binding-1",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["PLACED_ITEM"],
                 }],
@@ -731,7 +712,6 @@ def test_classification_areas_require_unique_bindings_and_compatible_rules() -> 
                 cacheRegionId: "region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
-                    bindingId: "binding-1",
                     ruleId: "DIRECT_BLOCK_ID",
                     markerSources: ["PLACED_ITEM"],
                 }],
@@ -752,7 +732,6 @@ def test_classification_areas_require_unique_bindings_and_compatible_rules() -> 
                     ...base,
                     classificationAreas: [{
                         categoryZoneId: "zone-1",
-                        bindingId: "binding-2",
                         ruleId: "CONTAINER_CONTENTS",
                         markerSources: ["PLACED_ITEM"],
                     }],
@@ -766,7 +745,7 @@ def test_classification_areas_require_unique_bindings_and_compatible_rules() -> 
         """
     )
 
-    assert result["duplicate"] == ["同一个识别与储存范围不能重复添加"]
+    assert result["duplicate"] == ["同一个分类选区不能重复添加"]
     assert result["incompatible"] == ["分类方法与所选识别方式不兼容"]
     assert result["defaults"]["direct"] == [
         "PLACED_ITEM",

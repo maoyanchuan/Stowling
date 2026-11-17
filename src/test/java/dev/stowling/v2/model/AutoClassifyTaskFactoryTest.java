@@ -186,20 +186,17 @@ class AutoClassifyTaskFactoryTest {
     }
 
     @Test
-    void buildsAnIndependentClassificationFlowForEachSelectedArea() {
-        String zoneRef = "category-zone:" + UUID.randomUUID();
-        UUID firstBinding = UUID.randomUUID();
-        UUID secondBinding = UUID.randomUUID();
+    void buildsAnIndependentClassificationFlowForEachSelectedZone() {
+        String firstZoneRef = "category-zone:" + UUID.randomUUID();
+        String secondZoneRef = "category-zone:" + UUID.randomUUID();
         AutoClassifyDefinition definition = definition(List.of(
                 new AutoClassifyAreaDefinition(
-                        zoneRef,
-                        firstBinding,
+                        firstZoneRef,
                         "DIRECT_BLOCK_ID",
                         List.of(CategoryMarkerSource.PLACED_ITEM)
                 ),
                 new AutoClassifyAreaDefinition(
-                        zoneRef,
-                        secondBinding,
+                        secondZoneRef,
                         "CONTAINER_CONTENTS",
                         List.of(CategoryMarkerSource.CONTAINER_CONTENTS)
                 )
@@ -224,9 +221,9 @@ class AutoClassifyTaskFactoryTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals(
-                firstBinding.toString(),
+                firstZoneRef,
                 firstResolve.parameters().get(
-                        ConfigValidator.CATEGORY_BINDING_ID
+                        ConfigValidator.CATEGORY_ZONE_REF
                 )
         );
         assertEquals(
@@ -236,9 +233,9 @@ class AutoClassifyTaskFactoryTest {
                 )
         );
         assertEquals(
-                secondBinding.toString(),
+                secondZoneRef,
                 secondResolve.parameters().get(
-                        ConfigValidator.CATEGORY_BINDING_ID
+                        ConfigValidator.CATEGORY_ZONE_REF
                 )
         );
         assertEquals(
@@ -305,7 +302,6 @@ class AutoClassifyTaskFactoryTest {
         return definition(
                 List.of(new AutoClassifyAreaDefinition(
                         zoneRef,
-                        UUID.randomUUID(),
                         ruleId,
                         markerSources
                 )),

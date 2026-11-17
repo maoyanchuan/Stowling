@@ -1125,7 +1125,6 @@ public final class V2ControlServiceImpl implements V2ControlService {
         List<AutoClassifyAreaDefinition> areas = requestedAreas.stream()
                 .map(area -> new AutoClassifyAreaDefinition(
                         area.categoryZoneRef(),
-                        area.bindingId(),
                         area.ruleId(),
                         area.markerSources()
                 ))

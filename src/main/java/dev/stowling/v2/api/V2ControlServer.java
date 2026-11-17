@@ -770,13 +770,11 @@ public final class V2ControlServer implements AutoCloseable {
             JsonObject area = jsonObject(value, "classification area");
             requireFields(area, Set.of(
                     "categoryZoneRef",
-                    "bindingId",
                     "ruleId",
                     "markerSources"
             ));
             result.add(new AutoClassifyAreaRequest(
                     string(area, "categoryZoneRef"),
-                    uuid(string(area, "bindingId")),
                     string(area, "ruleId"),
                     markerSources(area)
             ));

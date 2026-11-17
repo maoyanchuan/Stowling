@@ -18,6 +18,8 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -143,7 +145,7 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version >= 7 && version <= 9) {
+        if (version >= 7 && version <= 10) {
             if (!root.has("autoClassifyTasks")) {
                 root.add("autoClassifyTasks", new JsonArray());
             }
@@ -187,6 +189,7 @@ public final class ConfigStore {
             }
             JsonObject definition = item.getAsJsonObject();
             if (definition.has("classificationAreas")) {
+                consolidateClassificationAreas(definition);
                 definition.remove("categoryZoneRef");
                 definition.remove("markerSources");
                 continue;
@@ -215,30 +218,77 @@ public final class ConfigStore {
                 if (bindings == null || !bindings.isJsonArray()) {
                     continue;
                 }
-                for (JsonElement bindingItem : bindings.getAsJsonArray()) {
-                    if (bindingItem == null || !bindingItem.isJsonObject()) {
-                        continue;
-                    }
-                    JsonObject binding = bindingItem.getAsJsonObject();
-                    String ruleId = stringValue(binding.get("ruleId"));
-                    JsonObject area = new JsonObject();
-                    area.addProperty("categoryZoneRef", categoryZoneRef);
-                    area.addProperty(
-                            "bindingId",
-                            stringValue(binding.get("id"))
-                    );
-                    area.addProperty("ruleId", ruleId);
-                    area.add(
-                            "markerSources",
-                            compatibleMarkerSources(ruleId, markerSources)
-                    );
-                    areas.add(area);
-                }
+                String ruleId = firstRuleId(bindings.getAsJsonArray());
+                areas.add(classificationArea(
+                        categoryZoneRef,
+                        ruleId,
+                        markerSources
+                ));
             }
             definition.add("classificationAreas", areas);
             definition.remove("categoryZoneRef");
             definition.remove("markerSources");
         }
+    }
+
+    private static void consolidateClassificationAreas(
+            JsonObject definition
+    ) {
+        JsonElement value = definition.get("classificationAreas");
+        if (value == null || !value.isJsonArray()) {
+            return;
+        }
+        Map<String, JsonObject> byZone = new LinkedHashMap<>();
+        for (JsonElement item : value.getAsJsonArray()) {
+            if (item == null || !item.isJsonObject()) {
+                continue;
+            }
+            JsonObject existing = item.getAsJsonObject();
+            String zoneRef = stringValue(existing.get("categoryZoneRef"));
+            if (zoneRef.isBlank() || byZone.containsKey(zoneRef)) {
+                continue;
+            }
+            JsonArray markerSources = existing.has("markerSources")
+                    ? existing.get("markerSources").getAsJsonArray().deepCopy()
+                    : new JsonArray();
+            byZone.put(zoneRef, classificationArea(
+                    zoneRef,
+                    stringValue(existing.get("ruleId")),
+                    markerSources
+            ));
+        }
+        JsonArray consolidated = new JsonArray();
+        byZone.values().forEach(consolidated::add);
+        definition.add("classificationAreas", consolidated);
+    }
+
+    private static JsonObject classificationArea(
+            String categoryZoneRef,
+            String ruleId,
+            JsonArray markerSources
+    ) {
+        JsonObject area = new JsonObject();
+        area.addProperty("categoryZoneRef", categoryZoneRef);
+        area.addProperty("ruleId", ruleId);
+        area.add(
+                "markerSources",
+                compatibleMarkerSources(ruleId, markerSources)
+        );
+        return area;
+    }
+
+    private static String firstRuleId(JsonArray bindings) {
+        for (JsonElement item : bindings) {
+            if (item != null && item.isJsonObject()) {
+                String ruleId = stringValue(
+                        item.getAsJsonObject().get("ruleId")
+                );
+                if (!ruleId.isBlank()) {
+                    return ruleId;
+                }
+            }
+        }
+        return "DIRECT_BLOCK_ID";
     }
 
     private static String stringValue(JsonElement value) {
@@ -356,7 +406,6 @@ public final class ConfigStore {
             JsonObject area = requireObject(item, "classification area");
             requireExactFields(area, Set.of(
                     "categoryZoneRef",
-                    "bindingId",
                     "ruleId",
                     "markerSources"
             ));

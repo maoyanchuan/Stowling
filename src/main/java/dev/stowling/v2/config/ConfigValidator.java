@@ -252,7 +252,7 @@ public final class ConfigValidator {
                         "auto classify cache region does not exist"
                 );
             }
-            Set<UUID> selectedBindings = new HashSet<>();
+            Set<UUID> selectedZones = new HashSet<>();
             CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
             for (AutoClassifyAreaDefinition area
                     : definition.classificationAreas()) {
@@ -267,15 +267,9 @@ public final class ConfigValidator {
                             "auto classify category zone does not exist"
                     );
                 }
-                CategoryBindingDefinition binding = zone.bindings().stream()
-                        .filter(value -> value.id().equals(area.bindingId()))
-                        .findFirst()
-                        .orElseThrow(() -> new V2ValidationException(
-                                "auto classify category binding does not exist"
-                        ));
-                if (!selectedBindings.add(binding.id())) {
+                if (!selectedZones.add(zone.id())) {
                     throw new V2ValidationException(
-                            "auto classify bindings must be unique"
+                            "auto classify zones must be unique"
                     );
                 }
                 rules.require(area.ruleId());
@@ -1060,7 +1054,7 @@ public final class ConfigValidator {
         }
         requireParameters(
                 step,
-                Set.of(TARGET_REF, ITEM_SOURCE),
+                Set.of(TARGET_REF, ITEM_SOURCE, RETRY_ON_FAILURE),
                 Set.of(TARGET_REF, ITEM_SOURCE)
         );
         requireContainerReference(step, coordinates);

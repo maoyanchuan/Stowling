@@ -48,6 +48,40 @@ class TaskModuleSupportTest {
         );
     }
 
+    @Test
+    void appliesRuleOverrideToTheWholeSelectedZone() {
+        UUID zoneId = UUID.randomUUID();
+        CategoryZoneDefinition zone = new CategoryZoneDefinition(
+                zoneId,
+                "Zone",
+                List.of(
+                        binding(UUID.randomUUID(), "DIRECT_BLOCK_ID"),
+                        binding(UUID.randomUUID(), "DIRECT_BLOCK_ID")
+                )
+        );
+        TaskStep step = TaskStep.action(
+                UUID.randomUUID(),
+                TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
+                Map.of(
+                        TaskModuleIds.CATEGORY_RULE_ID,
+                        "CONTAINER_CONTENTS"
+                )
+        );
+
+        CategoryZoneDefinition selected = TaskModuleSupport.categoryZoneSelection(
+                step,
+                zone
+        );
+
+        assertEquals(2, selected.bindings().size());
+        assertEquals(
+                List.of("CONTAINER_CONTENTS", "CONTAINER_CONTENTS"),
+                selected.bindings().stream()
+                        .map(CategoryBindingDefinition::ruleId)
+                        .toList()
+        );
+    }
+
     private static CategoryBindingDefinition binding(
             UUID id,
             String ruleId

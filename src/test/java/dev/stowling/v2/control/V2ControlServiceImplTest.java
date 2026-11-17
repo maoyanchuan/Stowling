@@ -210,6 +210,28 @@ class V2ControlServiceImplTest {
                         ))
                 )
         ).categoryZones().getFirst();
+        CategoryZoneDefinition containerZone = service.createCategoryZone(
+                new CategoryZoneRequest(
+                        "Container classification",
+                        List.of(new CategoryBindingRequest(
+                                40,
+                                64,
+                                20,
+                                44,
+                                64,
+                                20,
+                                40,
+                                64,
+                                18,
+                                44,
+                                64,
+                                18,
+                                "CONTAINER_CONTENTS",
+                                List.of(),
+                                List.of()
+                        ))
+                )
+        ).categoryZones().getFirst();
 
         AutoClassifyTaskResponse created = service.createAutoClassifyTask(
                 new AutoClassifyTaskRequest(
@@ -224,12 +246,10 @@ class V2ControlServiceImplTest {
                         "region:" + region.id(),
                         List.of(new AutoClassifyAreaRequest(
                                 "category-zone:" + zone.id(),
-                                zone.bindings().getFirst().id(),
                                 "DIRECT_BLOCK_ID",
                                 List.of(CategoryMarkerSource.PLACED_ITEM)
                         ), new AutoClassifyAreaRequest(
-                                "category-zone:" + zone.id(),
-                                zone.bindings().get(1).id(),
+                                "category-zone:" + containerZone.id(),
                                 "CONTAINER_CONTENTS",
                                 List.of(
                                         CategoryMarkerSource.CONTAINER_CONTENTS
@@ -260,7 +280,6 @@ class V2ControlServiceImplTest {
                         "region:" + region.id(),
                         List.of(new AutoClassifyAreaRequest(
                                 "category-zone:" + zone.id(),
-                                zone.bindings().getFirst().id(),
                                 "DIRECT_BLOCK_ID",
                                 List.of(CategoryMarkerSource.PLACED_ITEM)
                         )),
@@ -313,7 +332,6 @@ class V2ControlServiceImplTest {
                                 "region:" + region.id(),
                                 List.of(new AutoClassifyAreaRequest(
                                         "category-zone:" + zone.id(),
-                                        zone.bindings().getFirst().id(),
                                         "DIRECT_BLOCK_ID",
                                         List.of(
                                                 CategoryMarkerSource.PLACED_ITEM

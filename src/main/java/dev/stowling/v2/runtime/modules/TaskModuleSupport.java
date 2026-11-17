@@ -113,8 +113,18 @@ final class TaskModuleSupport {
         String bindingValue = step.parameters().get(
                 TaskModuleIds.CATEGORY_BINDING_ID
         );
+        String ruleId = step.parameters().get(TaskModuleIds.CATEGORY_RULE_ID);
         if (bindingValue == null || bindingValue.isBlank()) {
-            return zone;
+            if (ruleId == null || ruleId.isBlank()) {
+                return zone;
+            }
+            return new CategoryZoneDefinition(
+                    zone.id(),
+                    zone.name(),
+                    zone.bindings().stream()
+                            .map(binding -> withRule(binding, ruleId))
+                            .toList()
+            );
         }
         UUID bindingId = UUID.fromString(bindingValue.trim());
         CategoryBindingDefinition binding = zone.bindings().stream()
@@ -123,22 +133,32 @@ final class TaskModuleSupport {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "category binding does not exist"
                 ));
-        String ruleId = step.parameters().get(TaskModuleIds.CATEGORY_RULE_ID);
         if (ruleId != null && !ruleId.isBlank()
                 && !ruleId.trim().equals(binding.ruleId())) {
-            binding = new CategoryBindingDefinition(
-                    binding.id(),
-                    binding.markerArea(),
-                    binding.storageArea(),
-                    ruleId,
-                    binding.ignoredMarkerBlockIds(),
-                    binding.containerOverrides()
-            );
+            binding = withRule(binding, ruleId);
         }
         return new CategoryZoneDefinition(
                 zone.id(),
                 zone.name(),
                 List.of(binding)
+        );
+    }
+
+    private static CategoryBindingDefinition withRule(
+            CategoryBindingDefinition binding,
+            String ruleId
+    ) {
+        if (ruleId == null || ruleId.isBlank()
+                || ruleId.trim().equals(binding.ruleId())) {
+            return binding;
+        }
+        return new CategoryBindingDefinition(
+                binding.id(),
+                binding.markerArea(),
+                binding.storageArea(),
+                ruleId,
+                binding.ignoredMarkerBlockIds(),
+                binding.containerOverrides()
         );
     }
 

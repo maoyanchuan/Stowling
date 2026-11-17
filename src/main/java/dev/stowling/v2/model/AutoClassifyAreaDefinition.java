@@ -3,17 +3,14 @@ package dev.stowling.v2.model;
 import dev.stowling.v2.category.CategoryMarkerSource;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 public record AutoClassifyAreaDefinition(
         String categoryZoneRef,
-        UUID bindingId,
         String ruleId,
         List<CategoryMarkerSource> markerSources
 ) {
     public AutoClassifyAreaDefinition {
         categoryZoneRef = requireZoneReference(categoryZoneRef);
-        bindingId = Objects.requireNonNull(bindingId, "bindingId");
         ruleId = requireText(ruleId, "ruleId");
         markerSources = List.copyOf(
                 Objects.requireNonNull(markerSources, "markerSources")

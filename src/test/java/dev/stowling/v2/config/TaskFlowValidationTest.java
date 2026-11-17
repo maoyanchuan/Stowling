@@ -17,6 +17,28 @@ import org.junit.jupiter.api.Test;
 
 class TaskFlowValidationTest {
     @Test
+    void acceptsRetryOnFailureForOutputDeposits() {
+        TaskStep deposit = TaskStep.action(
+                UUID.randomUUID(),
+                ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
+                Map.of(
+                        ConfigValidator.TARGET_REF,
+                        ResourceReference.output("container").encode(),
+                        ConfigValidator.ITEM_SOURCE,
+                        "carried",
+                        ConfigValidator.RETRY_ON_FAILURE,
+                        "true"
+                )
+        );
+
+        assertDoesNotThrow(() -> ConfigValidator.requireValidStep(
+                deposit,
+                Map.of(),
+                Map.of()
+        ));
+    }
+
+    @Test
     void allowsOutputTargetsForMoveAndRejectsFakeItemSources() {
         TaskStep move = TaskStep.action(
                 UUID.randomUUID(),

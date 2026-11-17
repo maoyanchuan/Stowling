@@ -50,7 +50,6 @@
     function newArea() {
         return {
             categoryZoneId: "",
-            bindingId: "",
             ruleId: DIRECT_RULE_ID,
             markerSources: defaultMarkerSources(DIRECT_RULE_ID)
         };
@@ -193,7 +192,6 @@
                         area?.categoryZoneRef,
                         "category-zone"
                     ),
-                    bindingId: String(area?.bindingId ?? ""),
                     ruleId: String(area?.ruleId ?? DIRECT_RULE_ID),
                     markerSources: markerSourceText(area?.markerSources)
                 }))
@@ -324,7 +322,6 @@
                     "category-zone",
                     area.categoryZoneId
                 ),
-                bindingId: String(area.bindingId),
                 ruleId: String(area.ruleId),
                 markerSources: [...area.markerSources]
             })),
@@ -344,7 +341,7 @@
             errors.push("请至少添加一个分类选区");
             return;
         }
-        const bindingIds = new Set();
+        const zoneIds = new Set();
         const ruleIds = resourceList(resources, "categoryRules")
             .map((rule) => String(rule?.id ?? ""));
         for (const area of areas) {
@@ -355,13 +352,8 @@
                 errors.push("分类选区引用的分类区不存在，请刷新后重试");
                 continue;
             }
-            const bindingId = String(area?.bindingId ?? "").trim();
-            if (!Array.isArray(zone.bindings) || !zone.bindings.some(
-                (binding) => String(binding?.id ?? "") === bindingId
-            )) {
-                errors.push(`分类区“${zone.name || zoneId}”中的范围不存在`);
-            } else if (!bindingIds.add(bindingId)) {
-                errors.push("同一个识别与储存范围不能重复添加");
+            if (!zoneIds.add(zoneId)) {
+                errors.push("同一个分类选区不能重复添加");
             }
             const ruleId = String(area?.ruleId ?? "").trim();
             if (!ruleIds.includes(ruleId)) {

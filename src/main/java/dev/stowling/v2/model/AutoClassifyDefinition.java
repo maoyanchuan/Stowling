@@ -53,13 +53,13 @@ public record AutoClassifyDefinition(
                     "classificationAreas must contain at least one area"
             );
         }
-        long uniqueBindings = classificationAreas.stream()
-                .map(AutoClassifyAreaDefinition::bindingId)
+        long uniqueZones = classificationAreas.stream()
+                .map(AutoClassifyAreaDefinition::categoryZoneRef)
                 .distinct()
                 .count();
-        if (uniqueBindings != classificationAreas.size()) {
+        if (uniqueZones != classificationAreas.size()) {
             throw new IllegalArgumentException(
-                    "classificationAreas must use unique bindings"
+                    "classificationAreas must use unique zones"
             );
         }
         collectionPriority = Objects.requireNonNull(

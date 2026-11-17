@@ -154,17 +154,6 @@
         select.value = selected;
     }
 
-    /**
-     * @param {string} ruleId
-     * @returns {string}
-     */
-    function ruleName(ruleId) {
-        const rule = state.resources.categoryRules.find(
-            (value) => value.id === ruleId
-        );
-        return rule?.name || ruleId || "未选择分类方法";
-    }
-
     /** @returns {void} */
     function renderClassificationAreas() {
         elements.areas.replaceChildren();
@@ -197,7 +186,7 @@
             Stowling.element(
                 "span",
                 "",
-                "一个识别区与储存区范围使用一种分类方法"
+                "大选区内的识别与储存范围在坐标管理中维护"
             )
         );
         const remove = Stowling.element(
@@ -213,38 +202,26 @@
 
         const range = document.createElement("select");
         range.required = true;
-        const empty = new Option("请选择分类区中的范围", "");
+        const empty = new Option("请选择分类选区", "");
         range.append(empty);
         for (const zone of state.resources.categoryZones) {
-            if (!Array.isArray(zone.bindings) || zone.bindings.length === 0) {
-                continue;
-            }
-            const group = document.createElement("optgroup");
-            group.label = zone.name || "未命名分类区";
-            zone.bindings.forEach((binding, bindingIndex) => {
-                const number = String(bindingIndex + 1).padStart(2, "0");
-                const option = new Option(
-                    `范围 ${number} · ${ruleName(binding.ruleId)}`,
-                    binding.id
-                );
-                option.dataset.zoneId = zone.id;
-                option.dataset.ruleId = binding.ruleId;
-                group.append(option);
-            });
-            range.append(group);
+            const option = new Option(
+                zone.name || "未命名分类区",
+                zone.id
+            );
+            option.dataset.ruleId = zone.bindings?.[0]?.ruleId
+                || "DIRECT_BLOCK_ID";
+            range.append(option);
         }
-        const selectedBinding = state.resources.categoryZones.flatMap(
-            (zone) => (zone.bindings || []).map((binding) => ({
-                zone,
-                binding
-            }))
-        ).find((value) => value.binding.id === area.bindingId);
-        if (!selectedBinding && area.bindingId) {
-            const missing = new Option("原分类范围已删除，请重新选择", "");
+        const selectedZone = state.resources.categoryZones.find(
+            (zone) => zone.id === area.categoryZoneId
+        );
+        if (!selectedZone && area.categoryZoneId) {
+            const missing = new Option("原分类选区已删除，请重新选择", "");
             missing.disabled = true;
             range.append(missing);
         }
-        range.value = area.bindingId;
+        range.value = area.categoryZoneId;
 
         const method = document.createElement("select");
         for (const rule of state.resources.categoryRules) {
@@ -319,17 +296,13 @@
         card.append(heading, fields, recognition);
         elements.areas.append(card);
         return {
-            read: () => {
-                const option = range.selectedOptions[0];
-                return {
-                    categoryZoneId: option?.dataset.zoneId || "",
-                    bindingId: range.value,
-                    ruleId: method.value,
-                    markerSources: markerInputs
-                        .filter((input) => input.checked)
-                        .map((input) => input.value)
-                };
-            }
+            read: () => ({
+                categoryZoneId: range.value,
+                ruleId: method.value,
+                markerSources: markerInputs
+                    .filter((input) => input.checked)
+                    .map((input) => input.value)
+            })
         };
     }
 

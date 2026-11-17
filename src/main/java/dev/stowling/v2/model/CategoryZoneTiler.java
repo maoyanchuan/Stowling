@@ -15,53 +15,69 @@ public final class CategoryZoneTiler {
 
     public static List<CategoryBindingDefinition> expand(
             CategoryZoneExpansionDefinition expansion,
-            CategoryBindingDefinition template
+            List<CategoryBindingDefinition> templates
     ) {
         Objects.requireNonNull(expansion, "expansion");
-        Objects.requireNonNull(template, "template");
-        int markerSpan = span(template.markerArea(), expansion.direction());
-        int storageSpan = span(template.storageArea(), expansion.direction());
-        if (markerSpan != storageSpan) {
+        Objects.requireNonNull(templates, "templates");
+        if (templates.size() != expansion.templateCount()) {
             throw new IllegalArgumentException(
-                    "分类物识别区和储存区在展开方向上的长度必须一致"
+                    "单片母版分类物数量与配置不一致"
             );
         }
-        if (expansion.step() < markerSpan) {
+        int maximumSpan = 1;
+        for (CategoryBindingDefinition template : templates) {
+            int markerSpan = span(template.markerArea(), expansion.direction());
+            int storageSpan = span(template.storageArea(), expansion.direction());
+            if (markerSpan != storageSpan) {
+                throw new IllegalArgumentException(
+                        "每个分类物的识别区和储存区在展开方向上的长度必须一致"
+                );
+            }
+            if (!expansion.area().contains(template.markerArea())
+                    || !expansion.area().contains(template.storageArea())) {
+                throw new IllegalArgumentException(
+                        "单片母版必须完整位于总选区内"
+                );
+            }
+            maximumSpan = Math.max(maximumSpan, markerSpan);
+        }
+        if (expansion.step() < maximumSpan) {
             throw new IllegalArgumentException(
                     "单片步长不能小于单片在该方向上的长度"
             );
         }
-        if (!expansion.area().contains(template.markerArea())
-                || !expansion.area().contains(template.storageArea())) {
-            throw new IllegalArgumentException(
-                    "单片母版必须完整位于总选区内"
-            );
-        }
         List<CategoryBindingDefinition> result = new ArrayList<>();
-        int index = 0;
-        while (index < MAX_SLICES) {
+        for (int index = 0; ; index++) {
             int delta = offset(expansion, index);
-            CategoryBindingDefinition shifted = shift(template, expansion, delta);
-            if (!expansion.area().contains(shifted.markerArea())
-                    || !expansion.area().contains(shifted.storageArea())) {
+            List<CategoryBindingDefinition> shifted = templates.stream()
+                    .map(template -> shift(template, expansion, delta))
+                    .toList();
+            if (shifted.stream().anyMatch(binding ->
+                    !expansion.area().contains(binding.markerArea())
+                            || !expansion.area().contains(
+                                    binding.storageArea()
+                            ))) {
                 break;
             }
-            result.add(index == 0
-                    ? template
-                    : copyForOffset(template, shifted, expansion, delta));
-            index++;
-        }
-        if (index == MAX_SLICES) {
-            CategoryBindingDefinition overflow = shift(
-                    template,
-                    expansion,
-                    offset(expansion, MAX_SLICES)
-            );
-            if (expansion.area().contains(overflow.markerArea())
-                    && expansion.area().contains(overflow.storageArea())) {
+            if (index >= MAX_SLICES) {
                 throw new IllegalArgumentException(
                         "自动铺满最多生成 " + MAX_SLICES + " 个单片"
                 );
+            }
+            for (int templateIndex = 0;
+                    templateIndex < templates.size();
+                    templateIndex++) {
+                CategoryBindingDefinition template = templates.get(templateIndex);
+                CategoryBindingDefinition shiftedBinding =
+                        shifted.get(templateIndex);
+                result.add(index == 0
+                        ? template
+                        : copyForOffset(
+                                template,
+                                shiftedBinding,
+                                expansion,
+                                delta
+                        ));
             }
         }
         return List.copyOf(result);

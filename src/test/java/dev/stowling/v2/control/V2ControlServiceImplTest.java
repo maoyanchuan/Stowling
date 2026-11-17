@@ -352,7 +352,7 @@ class V2ControlServiceImplTest {
     }
 
     @Test
-    void createsAutoFillCategoryZoneFromSingleTemplate() {
+    void createsAutoFillCategoryZoneFromMultipleTemplates() {
         V2ControlService service = service();
         CategoryZoneDefinition zone = service.createCategoryZone(
                 new CategoryZoneRequest(
@@ -373,27 +373,44 @@ class V2ControlServiceImplTest {
                                 "DIRECT_BLOCK_ID",
                                 List.of(),
                                 List.of()
+                        ), new CategoryBindingRequest(
+                                0,
+                                64,
+                                24,
+                                4,
+                                64,
+                                24,
+                                0,
+                                64,
+                                22,
+                                4,
+                                64,
+                                22,
+                                "DIRECT_BLOCK_ID",
+                                List.of(),
+                                List.of()
                         )),
                         new CategoryZoneExpansionRequest(
                                 0,
                                 63,
                                 17,
-                                24,
+                                14,
                                 65,
-                                21,
+                                25,
                                 "X_POSITIVE",
                                 10
                         )
                 )
         ).categoryZones().getFirst();
 
-        assertEquals(3, zone.bindings().size());
+        assertEquals(4, zone.bindings().size());
+        assertEquals(2, zone.expansion().templateCount());
         assertEquals(
                 CategoryZoneExpansionAxis.X_POSITIVE,
                 zone.expansion().direction()
         );
         assertEquals(10, zone.expansion().step());
-        assertEquals(20, zone.bindings().get(2).markerArea().minX());
+        assertEquals(10, zone.bindings().get(3).markerArea().minX());
     }
 
     @Test

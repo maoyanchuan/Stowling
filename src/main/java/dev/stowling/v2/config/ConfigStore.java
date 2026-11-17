@@ -146,7 +146,7 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version >= 7 && version <= 12) {
+        if (version >= 7 && version <= 13) {
             if (version <= 11) {
                 if (!root.has("autoClassifyTasks")) {
                     root.add("autoClassifyTasks", new JsonArray());
@@ -155,7 +155,30 @@ public final class ConfigStore {
                 migrateAutoClassifyAreas(root);
                 removeAutoClassifyClassificationTriggers(root);
             }
+            migrateCategoryZoneExpansionTemplates(root);
             root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
+        }
+    }
+
+    private static void migrateCategoryZoneExpansionTemplates(JsonObject root) {
+        JsonElement zonesValue = root.get("categoryZones");
+        if (zonesValue == null || !zonesValue.isJsonArray()) {
+            return;
+        }
+        for (JsonElement zoneValue : zonesValue.getAsJsonArray()) {
+            if (zoneValue == null || !zoneValue.isJsonObject()) {
+                continue;
+            }
+            JsonObject zone = zoneValue.getAsJsonObject();
+            JsonElement expansionValue = zone.get("expansion");
+            if (expansionValue == null || !expansionValue.isJsonObject()) {
+                continue;
+            }
+            JsonObject expansion = expansionValue.getAsJsonObject();
+            if (expansion.has("templateCount")) {
+                continue;
+            }
+            expansion.addProperty("templateCount", 1);
         }
     }
 
@@ -530,7 +553,8 @@ public final class ConfigStore {
                         Set.of(
                                 "area",
                                 "direction",
-                                "step"
+                                "step",
+                                "templateCount"
                         )
                 );
                 requireArea(

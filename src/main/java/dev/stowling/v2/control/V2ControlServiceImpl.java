@@ -1436,31 +1436,30 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     )
             );
         }
-        if (requestedBindings.size() != 1) {
-            throw new V2ValidationException(
-                    "自动铺满分类区只能提交一个单片母版"
-            );
-        }
         List<CategoryBindingDefinition> prior;
         if (existing == null) {
             prior = List.of();
         } else if (existing.expansion() == null) {
             prior = existing.bindings();
         } else {
-            prior = List.of(existing.bindings().getFirst());
+            prior = existing.bindings().subList(
+                    0,
+                    existing.expansion().templateCount()
+            );
         }
-        CategoryBindingDefinition template = bindings(
+        List<CategoryBindingDefinition> templates = bindings(
                 requestedBindings,
                 prior
-        ).getFirst();
+        );
         CategoryZoneExpansionDefinition expansion = expansion(
-                requestedExpansion
+                requestedExpansion,
+                templates.size()
         );
         try {
             return new CategoryZoneDefinition(
                     id,
                     name,
-                    CategoryZoneTiler.expand(expansion, template),
+                    CategoryZoneTiler.expand(expansion, templates),
                     expansion
             );
         } catch (IllegalArgumentException exception) {
@@ -1469,7 +1468,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     private static CategoryZoneExpansionDefinition expansion(
-            CategoryZoneExpansionRequest request
+            CategoryZoneExpansionRequest request,
+            int templateCount
     ) {
         if (request.direction() == null || request.direction().isBlank()) {
             throw new V2ValidationException("请选择自动铺满方向");
@@ -1493,7 +1493,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             request.secondZ()
                     ),
                     direction,
-                    request.step()
+                    request.step(),
+                    templateCount
             );
         } catch (IllegalArgumentException exception) {
             throw new V2ValidationException(exception.getMessage(), exception);

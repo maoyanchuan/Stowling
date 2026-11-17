@@ -1562,9 +1562,15 @@ public final class ConfigValidator {
             return;
         }
         try {
+            int templateCount = zone.expansion().templateCount();
+            if (templateCount > zone.bindings().size()) {
+                throw new V2ValidationException(
+                        "单片母版分类物数量超过现有分类范围"
+                );
+            }
             List<CategoryBindingDefinition> expected = CategoryZoneTiler.expand(
                     zone.expansion(),
-                    zone.bindings().getFirst()
+                    zone.bindings().subList(0, templateCount)
             );
             if (!expected.equals(zone.bindings())) {
                 throw new V2ValidationException(

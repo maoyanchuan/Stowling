@@ -69,7 +69,8 @@
             areaSecondY: Number(area.secondY ?? 64),
             areaSecondZ: Number(area.secondZ ?? 0),
             direction: String(value.direction || "X_POSITIVE"),
-            step: Number(value.step ?? 1)
+            step: Number(value.step ?? 1),
+            templateCount: Number(value.templateCount ?? 1)
         };
     }
 

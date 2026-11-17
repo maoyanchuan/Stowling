@@ -335,6 +335,52 @@ class ConfigStoreTest {
     }
 
     @Test
+    void upgradesSchemaThirteenSingleTemplateExpansion() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 13,
+                    "coordinates": [],
+                    "tasks": [],
+                    "categoryZones": [{
+                        "id": "00000000-0000-0000-0000-000000000002",
+                        "name": "Existing auto",
+                        "bindings": [{
+                            "id": "00000000-0000-0000-0000-000000000003",
+                            "markerArea": {
+                                "firstX": 0, "firstY": 64, "firstZ": 20,
+                                "secondX": 4, "secondY": 64, "secondZ": 20
+                            },
+                            "storageArea": {
+                                "firstX": 0, "firstY": 64, "firstZ": 18,
+                                "secondX": 4, "secondY": 64, "secondZ": 18
+                            },
+                            "ruleId": "DIRECT_BLOCK_ID"
+                        }],
+                        "expansion": {
+                            "area": {
+                                "firstX": 0, "firstY": 63, "firstZ": 17,
+                                "secondX": 4, "secondY": 65, "secondZ": 21
+                            },
+                            "direction": "X_POSITIVE",
+                            "step": 5
+                        }
+                    }]
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        var snapshot = store.loadOrReset();
+
+        assertEquals(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                snapshot.config().schemaVersion()
+        );
+        assertEquals(1, snapshot.config().categoryZones()
+                .getFirst().expansion().templateCount());
+    }
+
+    @Test
     void rejectsInvalidCurrentSchemaWithoutOverwritingTheFile() throws Exception {
         Path path = directory.resolve("stowling.json");
         String content = """

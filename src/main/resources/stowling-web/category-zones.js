@@ -226,8 +226,6 @@
         let expansionValue = initialExpansion;
         let readers = [];
         let expansionReader = null;
-        const expandedFromSaved = Boolean(initialExpansion)
-            && initialBindings.length > 1;
 
         const modeControl = document.createElement("select");
         modeControl.append(
@@ -253,16 +251,39 @@
             "添加绑定"
         );
         addBinding.type = "button";
+        /**
+         * @param {object} binding
+         * @param {boolean} expanded
+         * @returns {() => object}
+         */
+        function appendTemplate(binding, expanded) {
+            let reader;
+            reader = appendBinding(
+                bindingsHost,
+                binding,
+                expanded,
+                mode === "AUTO" ? "单片分类物" : "",
+                () => {
+                    const index = readers.indexOf(reader);
+                    if (index >= 0) {
+                        readers.splice(index, 1);
+                    }
+                    if (readers.length === 0) {
+                        appendTemplate(Model.normalizeBinding({}), true);
+                    }
+                    refreshExpansionPreview();
+                }
+            );
+            readers.push(reader);
+            return reader;
+        }
+
         addBinding.addEventListener("click", () => {
             const card = addBinding.closest(".coordinate-point-editor");
             if (card instanceof HTMLElement) {
                 card.dataset.dirty = "true";
             }
-            readers.push(appendBinding(
-                bindingsHost,
-                Model.normalizeBinding({}),
-                true
-            ));
+            appendTemplate(Model.normalizeBinding({}), true);
             refreshExpansionPreview();
         });
         const addBindingRow = Stowling.element(
@@ -272,10 +293,10 @@
         addBindingRow.append(addBinding);
 
         /**
-         * @returns {object}
+         * @returns {Array<object>}
          */
-        function currentTemplate() {
-            return readers[0]?.() || Model.normalizeBinding({});
+        function currentTemplates() {
+            return readers.map((reader) => reader());
         }
 
         /**
@@ -291,12 +312,13 @@
          */
         function renderBindings(bindings) {
             bindingsHost.replaceChildren();
-            readers = bindings.map((binding) => appendBinding(
-                bindingsHost,
-                binding,
-                mode === "AUTO" || expandBindings,
-                mode === "AUTO" ? "单片母版" : ""
-            ));
+            readers = [];
+            for (const binding of bindings) {
+                appendTemplate(
+                    binding,
+                    mode === "AUTO" || expandBindings
+                );
+            }
         }
 
         /**
@@ -308,21 +330,22 @@
             if (mode !== "AUTO") {
                 expansionHost.hidden = true;
                 addBinding.hidden = false;
+                addBinding.textContent = "添加绑定";
                 modeHelp.textContent = "每一片分别填写识别区和储存区。";
                 return;
             }
-            const template = currentTemplate();
             if (!expansionValue) {
-                expansionValue = defaultExpansion(template);
+                expansionValue = defaultExpansion(currentTemplates());
             }
             expansionReader = appendExpansionEditor(
                 expansionHost,
                 expansionValue,
-                currentTemplate
+                currentTemplates
             );
             expansionHost.hidden = false;
-            addBinding.hidden = true;
-            modeHelp.textContent = "只填写一片母版，系统按方向和步长铺满总选区。";
+            addBinding.hidden = false;
+            addBinding.textContent = "添加分类物";
+            modeHelp.textContent = "单片母版可添加多个分类物，整组内容会一起复制。";
         }
 
         /**
@@ -333,18 +356,9 @@
             if (nextMode === mode) {
                 return;
             }
-            if (nextMode === "AUTO" && readers.length > 1
-                    && !window.confirm(
-                        "自动铺满只保留第一组范围作为母版，"
-                        + "其他手动绑定会从当前编辑中移除。继续？"
-                    )) {
-                modeControl.value = mode;
-                return;
-            }
             if (nextMode === "MANUAL" && mode === "AUTO"
-                    && expandedFromSaved
                     && !window.confirm(
-                        "转回手动模式只保留单片母版，"
+                        "转回手动模式只保留单片母版中的分类物，"
                         + "自动生成的其他单片会被移除。继续？"
                     )) {
                 modeControl.value = mode;
@@ -353,9 +367,9 @@
             if (mode === "AUTO" && expansionReader) {
                 expansionValue = expansionReader.read();
             }
-            const template = currentTemplate();
+            const templates = currentTemplates();
             mode = nextMode;
-            renderBindings([template]);
+            renderBindings(templates);
             renderExpansion();
         }
 
@@ -366,7 +380,14 @@
         expansionHost.addEventListener("input", refreshExpansionPreview);
 
         renderBindings(mode === "AUTO"
-            ? [initialBindings[0] || Model.normalizeBinding({})]
+            ? initialBindings.slice(
+                0,
+                Math.max(
+                    1,
+                    initialExpansion?.templateCount
+                        ?? initialBindings.length
+                )
+            )
             : initialBindings);
         root.append(
             modeField,
@@ -382,6 +403,7 @@
             read: () => {
                 if (mode === "AUTO" && expansionReader) {
                     expansionValue = expansionReader.read();
+                    expansionValue.templateCount = readers.length;
                 }
                 return {
                     bindings: readers.map((reader) => reader()),
@@ -394,7 +416,7 @@
     /**
      * @param {HTMLElement} host
      * @param {object} expansion
-     * @param {() => object} templateReader
+     * @param {() => Array<object>} templateReader
      * @returns {{root: HTMLElement, read: () => object, refresh: () => void}}
      */
     function appendExpansionEditor(host, expansion, templateReader) {
@@ -405,7 +427,8 @@
             Stowling.element(
                 "p",
                 "muted compact-help",
-                "母版为第 1 片；母版必须完整位于总选区内。"
+                "单片母版中的全部分类物会作为一组复制，"
+                    + "并且必须完整位于总选区内。"
             )
         );
         const area = cornerFields("总选区", "area", expansion);
@@ -421,7 +444,10 @@
         step.min = "1";
         let stepTouched = false;
         const preview = Stowling.element("p", "category-expansion-preview", "");
-        const controls = Stowling.element("div", "auto-area-fields");
+        const controls = Stowling.element(
+            "div",
+            "auto-area-fields"
+        );
         controls.append(
             field("拓展方向", direction),
             field("单片步长", step)
@@ -433,11 +459,13 @@
          * @returns {void}
          */
         function refresh() {
-            const template = templateReader();
+            const templates = templateReader();
             if (!stepTouched) {
-                step.value = String(axisSpan(template, direction.value));
+                step.value = String(
+                    maximumAxisSpan(templates, direction.value)
+                );
             }
-            const stats = expansionStats(template, {
+            const stats = expansionStats(templates, {
                 ...area.read(),
                 direction: direction.value,
                 step: Number(step.value)
@@ -449,7 +477,7 @@
         direction.addEventListener("change", () => {
             if (!stepTouched) {
                 step.value = String(
-                    axisSpan(templateReader(), direction.value)
+                    maximumAxisSpan(templateReader(), direction.value)
                 );
             }
             refresh();
@@ -471,16 +499,19 @@
     }
 
     /**
-     * @param {object} template
+     * @param {Array<object>} templates
      * @returns {object}
      */
-    function defaultExpansion(template) {
-        const values = [
-            [template.markerFirstX, template.markerFirstY, template.markerFirstZ],
-            [template.markerSecondX, template.markerSecondY, template.markerSecondZ],
-            [template.storageFirstX, template.storageFirstY, template.storageFirstZ],
-            [template.storageSecondX, template.storageSecondY, template.storageSecondZ]
-        ];
+    function defaultExpansion(templates) {
+        const values = [];
+        for (const template of templates) {
+            values.push(
+                [template.markerFirstX, template.markerFirstY, template.markerFirstZ],
+                [template.markerSecondX, template.markerSecondY, template.markerSecondZ],
+                [template.storageFirstX, template.storageFirstY, template.storageFirstZ],
+                [template.storageSecondX, template.storageSecondY, template.storageSecondZ]
+            );
+        }
         const xs = values.map((value) => Number(value[0]));
         const ys = values.map((value) => Number(value[1]));
         const zs = values.map((value) => Number(value[2]));
@@ -492,8 +523,21 @@
             areaSecondY: Math.max(...ys),
             areaSecondZ: Math.max(...zs),
             direction: "X_POSITIVE",
-            step: axisSpan(template, "X_POSITIVE")
+            step: maximumAxisSpan(templates, "X_POSITIVE"),
+            templateCount: templates.length
         };
+    }
+
+    /**
+     * @param {Array<object>} templates
+     * @param {string} direction
+     * @returns {number}
+     */
+    function maximumAxisSpan(templates, direction) {
+        return Math.max(
+            1,
+            ...templates.map((template) => axisSpan(template, direction))
+        );
     }
 
     /**
@@ -509,46 +553,52 @@
     }
 
     /**
-     * @param {object} template
+     * @param {Array<object>} templates
      * @param {object} expansion
      * @returns {{valid: boolean, message: string}}
      */
-    function expansionStats(template, expansion) {
-        const markerSpan = axisSpan(template, expansion.direction);
-        const storageSpan = axisSpan(
-            {
-                markerFirstX: template.storageFirstX,
-                markerSecondX: template.storageSecondX,
-                markerFirstZ: template.storageFirstZ,
-                markerSecondZ: template.storageSecondZ
-            },
-            expansion.direction
-        );
-        if (markerSpan !== storageSpan) {
-            return {
-                valid: false,
-                message: "识别区和储存区在展开方向上的长度必须一致"
-            };
+    function expansionStats(templates, expansion) {
+        let span = 1;
+        for (const template of templates) {
+            const markerSpan = axisSpan(template, expansion.direction);
+            const storageSpan = axisSpan(
+                {
+                    markerFirstX: template.storageFirstX,
+                    markerSecondX: template.storageSecondX,
+                    markerFirstZ: template.storageFirstZ,
+                    markerSecondZ: template.storageSecondZ
+                },
+                expansion.direction
+            );
+            if (markerSpan !== storageSpan) {
+                return {
+                    valid: false,
+                    message: "每个分类物的识别区和储存区在展开方向上的长度必须一致"
+                };
+            }
+            span = Math.max(span, markerSpan);
         }
         if (!Number.isInteger(expansion.step)
-                || expansion.step < markerSpan) {
+                || expansion.step < span) {
             return {
                 valid: false,
                 message: "单片步长不能小于单片长度"
             };
         }
-        if (!areaContainsBounds(expansion, template.markerFirstX,
-                template.markerFirstY, template.markerFirstZ,
-                template.markerSecondX, template.markerSecondY,
-                template.markerSecondZ)
-                || !areaContainsBounds(expansion, template.storageFirstX,
-                    template.storageFirstY, template.storageFirstZ,
-                    template.storageSecondX, template.storageSecondY,
-                    template.storageSecondZ)) {
-            return {
-                valid: false,
-                message: "单片母版必须完整位于总选区内"
-            };
+        for (const template of templates) {
+            if (!areaContainsBounds(expansion, template.markerFirstX,
+                    template.markerFirstY, template.markerFirstZ,
+                    template.markerSecondX, template.markerSecondY,
+                    template.markerSecondZ)
+                    || !areaContainsBounds(expansion, template.storageFirstX,
+                        template.storageFirstY, template.storageFirstZ,
+                        template.storageSecondX, template.storageSecondY,
+                        template.storageSecondZ)) {
+                return {
+                    valid: false,
+                    message: "单片母版必须完整位于总选区内"
+                };
+            }
         }
         let count = 0;
         for (let index = 0; index <= 256; index++) {
@@ -557,29 +607,36 @@
             const xAxis = expansion.direction.startsWith("X_");
             const x = xAxis ? delta : 0;
             const z = xAxis ? 0 : delta;
-            const markerInside = areaContainsBounds(
-                expansion,
-                template.markerFirstX + x,
-                template.markerFirstY,
-                template.markerFirstZ + z,
-                template.markerSecondX + x,
-                template.markerSecondY,
-                template.markerSecondZ + z
+            const inside = templates.every((template) =>
+                areaContainsBounds(
+                    expansion,
+                    template.markerFirstX + x,
+                    template.markerFirstY,
+                    template.markerFirstZ + z,
+                    template.markerSecondX + x,
+                    template.markerSecondY,
+                    template.markerSecondZ + z
+                ) && areaContainsBounds(
+                    expansion,
+                    template.storageFirstX + x,
+                    template.storageFirstY,
+                    template.storageFirstZ + z,
+                    template.storageSecondX + x,
+                    template.storageSecondY,
+                    template.storageSecondZ + z
+                )
             );
-            const storageInside = areaContainsBounds(
-                expansion,
-                template.storageFirstX + x,
-                template.storageFirstY,
-                template.storageFirstZ + z,
-                template.storageSecondX + x,
-                template.storageSecondY,
-                template.storageSecondZ + z
-            );
-            if (!markerInside || !storageInside) {
+            if (!inside) {
+                if (index > 256) {
+                    return {
+                        valid: false,
+                        message: "自动铺满最多生成 256 个单片"
+                    };
+                }
                 break;
             }
             count++;
-            if (count > 256) {
+            if (index === 256) {
                 return {
                     valid: false,
                     message: "自动铺满最多生成 256 个单片"
@@ -588,7 +645,8 @@
         }
         return {
             valid: true,
-            message: `预计生成 ${count} 片，母版为第 1 片`
+            message: `将生成 ${count} 片，单片母版含 `
+                + `${templates.length} 个分类物`
         };
     }
 
@@ -646,7 +704,8 @@
         return `总选区 ${expansion.areaFirstX}, ${expansion.areaFirstY}, `
             + `${expansion.areaFirstZ} 至 ${expansion.areaSecondX}, `
             + `${expansion.areaSecondY}, ${expansion.areaSecondZ}`
-            + ` · ${direction} · 步长 ${expansion.step}`;
+            + ` · ${direction} · 步长 ${expansion.step}`
+            + ` · 母版分类物 ${expansion.templateCount}`;
     }
 
     /**
@@ -664,9 +723,16 @@
      * @param {object} binding
      * @param {boolean} [expanded]
      * @param {string} [title]
+     * @param {() => void} [onRemove]
      * @returns {() => object}
      */
-    function appendBinding(host, binding, expanded = false, title = "") {
+    function appendBinding(
+            host,
+            binding,
+            expanded = false,
+            title = "",
+            onRemove = null
+    ) {
         const card = Stowling.element("details", "category-binding-card");
         card.open = expanded;
         const summary = Stowling.element("summary", "category-binding-summary");
@@ -767,7 +833,22 @@
             Stowling.element("summary", "", "识别规则与容器例外"),
             settingsBody
         );
-        body.append(ranges, settings);
+        const footer = Stowling.element("div", "category-binding-actions");
+        if (onRemove) {
+            const remove = Stowling.element(
+                "button",
+                "ghost compact danger-action",
+                "移除此分类物"
+            );
+            remove.type = "button";
+            remove.addEventListener("click", () => {
+                markContainingZoneDirty(remove);
+                card.remove();
+                onRemove();
+            });
+            footer.append(remove);
+        }
+        body.append(ranges, settings, footer);
         card.append(summary, body);
         host.append(card);
         return () => ({

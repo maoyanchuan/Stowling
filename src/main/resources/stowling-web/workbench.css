@@ -441,6 +441,10 @@ body[data-page] .move-form-actions {
     border-top: 1px solid #3a3b40;
 }
 
+.move-form-actions > .move-delete-action {
+    margin-right: auto;
+}
+
 body[data-page] .task-selection-panel {
     padding: 16px 0;
     border: 0;

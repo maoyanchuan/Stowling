@@ -52,6 +52,7 @@
         moveList: document.querySelector("#move-task-list"),
         refreshMove: document.querySelector("#refresh-move-tasks"),
         saveMove: document.querySelector("#save-move-task"),
+        removeMove: document.querySelector("#delete-move-task"),
         runMove: document.querySelector("#run-move-task"),
         runtime: document.querySelector("#runtime-list"),
         queueList: document.querySelector("#task-queue-list"),
@@ -338,6 +339,8 @@
         }
         elements.runMove.textContent = state.moveDraft.id && !state.moveDirty
             ? "加入运行队列" : "保存并加入队列";
+        elements.removeMove.hidden = !state.moveDraft.id;
+        elements.removeMove.disabled = disabled;
         syncMoveDisclosure();
     }
 
@@ -463,6 +466,63 @@
         } finally {
             state.moveBusy = false;
             updateMoveControls();
+        }
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function deleteMoveTask() {
+        if (state.moveBusy || state.moveLoading || !state.moveResourcesReady
+                || !Stowling.isConnected() || !state.moveFormOpen || !state.moveDraft.id) {
+            return;
+        }
+        const original = state.moveTasks.find((task) => task.id === state.moveDraft.id);
+        if (!original || !Move.isMoveTask(original)) {
+            showMoveMessage("任务已不存在或流程已更改，请刷新任务列表。", true);
+            return;
+        }
+        const warning = state.moveDirty ? "未保存的修改也会丢弃。" : "";
+        if (!window.confirm(`删除移动任务“${original.name}”？${warning}`
+                + "已排队或正在运行的任务不会被取消。")) {
+            return;
+        }
+        state.moveBusy = true;
+        updateMoveControls();
+        let deleted = false;
+        try {
+            const response = await Stowling.request(
+                `/v1/tasks/${encodeURIComponent(original.id)}`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ revision: state.moveRevision })
+                }
+            );
+            if (!Array.isArray(response?.tasks) || !response.revision
+                    || response.tasks.some((task) => task.id === original.id)) {
+                throw new Error("删除响应不完整，请刷新任务列表确认结果");
+            }
+            state.moveRevision = String(response.revision);
+            state.moveAllTasks = response.tasks.map(Model.normalizeTask);
+            state.moveTasks = state.moveAllTasks.filter(Move.isMoveTask);
+            state.moveDraft = Move.newDraft(state.moveAllTasks);
+            state.moveDirty = false;
+            state.moveDraftActive = false;
+            state.moveFormOpen = false;
+            syncMoveForm();
+            renderMoveTaskList();
+            deleted = true;
+            Stowling.showToast("移动任务已删除");
+        } catch (error) {
+            showMoveMessage(String(error.message || "删除失败，请刷新重试"), true);
+            Stowling.handleError(error, "删除移动任务失败");
+        } finally {
+            state.moveBusy = false;
+            updateMoveControls();
+            if (deleted) {
+                elements.newMove.focus();
+                document.dispatchEvent(new Event("stowling:tasks-changed"));
+            }
         }
     }
 
@@ -899,6 +959,7 @@
         });
     }
     elements.saveMove.addEventListener("click", () => void saveMoveTask());
+    elements.removeMove.addEventListener("click", () => void deleteMoveTask());
     elements.moveForm.addEventListener("submit", (event) => {
         event.preventDefault();
         void saveMoveTask(true);

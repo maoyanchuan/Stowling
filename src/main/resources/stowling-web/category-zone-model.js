@@ -68,7 +68,7 @@
             areaSecondX: Number(area.secondX ?? 0),
             areaSecondY: Number(area.secondY ?? 64),
             areaSecondZ: Number(area.secondZ ?? 0),
-            direction: String(value.direction || "X_POSITIVE"),
+            direction: String(value.direction || "AUTO"),
             step: Number(value.step ?? 1),
             templateCount: Number(value.templateCount ?? 1)
         };
@@ -100,6 +100,9 @@
      * @returns {object}
      */
     function payload(zone) {
+        if (zone.expansion?.direction === "AUTO") {
+            zone = { ...zone, ...inferExpansion(zone.bindings, zone.expansion) };
+        }
         const result = {
             name: String(zone.name || "").trim(),
             bindings: zone.bindings.map((binding) => ({
@@ -143,11 +146,124 @@
         return result;
     }
 
+    /**
+     * @param {Array<object>} bindings
+     * @param {object} expansion
+     * @returns {{bindings: Array<object>, expansion: object, count: number, collapsed: boolean}}
+     */
+    function inferExpansion(bindings, expansion) {
+        if (bindings.length === 0) {
+            throw new RangeError("请先填写单片母版");
+        }
+        const limits = {};
+        for (const axis of ["X", "Y", "Z"]) {
+            const first = Number(expansion[`areaFirst${axis}`]);
+            const second = Number(expansion[`areaSecond${axis}`]);
+            requireCoordinate(first);
+            requireCoordinate(second);
+            limits[axis] = [Math.min(first, second), Math.max(first, second)];
+            for (const binding of bindings) {
+                for (const kind of ["marker", "storage"]) {
+                    const bounds = bindingBounds(binding, kind, axis);
+                    if (bounds[0] < limits[axis][0] || bounds[1] > limits[axis][1]) {
+                        throw new RangeError("单片母版必须完整位于总选区内");
+                    }
+                }
+            }
+        }
+        const candidates = ["X", "Z"].filter((axis) => {
+            const expected = bindingBounds(bindings[0], "marker", axis);
+            return bindings.every((binding) => ["marker", "storage"].every((kind) => {
+                const bounds = bindingBounds(binding, kind, axis);
+                return bounds[0] === expected[0] && bounds[1] === expected[1];
+            }));
+        }).sort((left, right) => axisLength(limits[right]) - axisLength(limits[left]));
+        if (candidates.length === 0 || (candidates.length > 1
+                && axisLength(limits[candidates[0]]) === axisLength(limits[candidates[1]]))) {
+            throw new RangeError("无法唯一识别拓展方向，请手动选择方向和步长");
+        }
+        const axis = candidates[0];
+        const count = axisLength(limits[axis]);
+        if (count > 256) {
+            throw new RangeError("自动铺满最多生成 256 个单片");
+        }
+        const [minimum, maximum] = bindingBounds(bindings[0], "marker", axis);
+        const [lower, upper] = limits[axis];
+        const positive = minimum === lower && maximum < upper
+            ? true
+            : maximum === upper && minimum > lower
+                ? false
+                : Number(expansion[`areaFirst${axis}`]) <= Number(
+                    expansion[`areaSecond${axis}`]
+                );
+        const anchor = positive ? lower : upper;
+        const collapsed = maximum > minimum;
+        const templates = bindings.map((binding) => {
+            if (collapsed && binding.containerOverrides.length > 0) {
+                throw new RangeError("整排母版包含容器例外，请保留手动模式或先填写一片母版");
+            }
+            const result = { ...binding };
+            for (const kind of ["marker", "storage"]) {
+                result[`${kind}First${axis}`] = anchor;
+                result[`${kind}Second${axis}`] = anchor;
+            }
+            result.containerOverrides = binding.containerOverrides.map((override) => ({
+                ...override,
+                [`storage${axis}`]: Number(override[`storage${axis}`]) + anchor - minimum
+            }));
+            return result;
+        });
+        return {
+            bindings: templates,
+            expansion: {
+                ...expansion,
+                direction: `${axis}_${positive ? "POSITIVE" : "NEGATIVE"}`,
+                step: 1,
+                templateCount: templates.length
+            },
+            count,
+            collapsed
+        };
+    }
+
+    /**
+     * @param {object} binding
+     * @param {string} kind
+     * @param {string} axis
+     * @returns {Array<number>}
+     */
+    function bindingBounds(binding, kind, axis) {
+        const first = Number(binding[`${kind}First${axis}`]);
+        const second = Number(binding[`${kind}Second${axis}`]);
+        requireCoordinate(first);
+        requireCoordinate(second);
+        return [Math.min(first, second), Math.max(first, second)];
+    }
+
+    /**
+     * @param {Array<number>} bounds
+     * @returns {number}
+     */
+    function axisLength(bounds) {
+        return bounds[1] - bounds[0] + 1;
+    }
+
+    /**
+     * @param {number} value
+     * @returns {void}
+     */
+    function requireCoordinate(value) {
+        if (!Number.isInteger(value) || value < -2147483648 || value > 2147483647) {
+            throw new RangeError("请填写有效的整数坐标");
+        }
+    }
+
     window.StowlingCategoryZoneModel = Object.freeze({
         normalizeBinding,
         normalizeContainerOverride,
         normalizeExpansion,
         normalizeCategoryZones,
-        payload
+        payload,
+        inferExpansion
     });
 })();

@@ -146,7 +146,7 @@
                 "span",
                 "resource-summary-meta",
                 zone.expansion
-                    ? `自动铺满 · ${zone.bindings.length} 片`
+                    ? `自动铺满 · ${zone.bindings.length / zone.expansion.templateCount} 片`
                     : `${zone.bindings.length} 组范围绑定`
             )
         );
@@ -429,12 +429,14 @@
                 "p",
                 "muted compact-help",
                 "单片母版中的全部分类物会作为一组复制，"
-                    + "并且必须完整位于总选区内。"
+                    + "并且必须完整位于总选区内。自动识别会将整排范围提取为一片，"
+                    + "沿总选区连续铺满；特殊间距可手动设置。"
             )
         );
         const area = cornerFields("总选区", "area", expansion);
         const direction = document.createElement("select");
         direction.append(
+            new Option("自动识别并铺满", "AUTO"),
             new Option("X 正方向", "X_POSITIVE"),
             new Option("X 负方向", "X_NEGATIVE"),
             new Option("Z 正方向", "Z_POSITIVE"),
@@ -443,7 +445,6 @@
         direction.value = expansion.direction;
         const step = numberInput(expansion.step);
         step.min = "1";
-        let stepTouched = false;
         const preview = Stowling.element("p", "category-expansion-preview", "");
         const controls = Stowling.element(
             "div",
@@ -461,30 +462,42 @@
          */
         function refresh() {
             const templates = templateReader();
-            if (!stepTouched) {
-                step.value = String(
-                    maximumAxisSpan(templates, direction.value)
-                );
-            }
-            const stats = expansionStats(templates, {
+            const automatic = direction.value === "AUTO";
+            step.disabled = automatic;
+            const value = {
                 ...area.read(),
                 direction: direction.value,
                 step: Number(step.value)
-            });
-            preview.textContent = stats.message;
-            preview.classList.toggle("error", !stats.valid);
+            };
+            try {
+                const inferred = automatic ? Model.inferExpansion(templates, value) : null;
+                if (inferred) {
+                    step.value = String(inferred.expansion.step);
+                }
+                const stats = expansionStats(
+                    inferred?.bindings || templates,
+                    inferred?.expansion || value
+                );
+                const axis = inferred?.expansion.direction.startsWith("X_") ? "X" : "Z";
+                const sign = inferred?.expansion.direction.endsWith("POSITIVE") ? "正" : "负";
+                preview.textContent = inferred
+                    ? `自动识别 ${axis} ${sign}方向 · 步长 1 · ${stats.message}`
+                        + (inferred.collapsed ? " · 整排母版已提取为单片" : "")
+                    : stats.message;
+                preview.classList.toggle("error", !stats.valid);
+            } catch (error) {
+                preview.textContent = error.message;
+                preview.classList.add("error");
+            }
         }
 
         direction.addEventListener("change", () => {
-            if (!stepTouched) {
+            if (direction.value !== "AUTO") {
                 step.value = String(
                     maximumAxisSpan(templateReader(), direction.value)
                 );
             }
             refresh();
-        });
-        step.addEventListener("input", () => {
-            stepTouched = true;
         });
         host.addEventListener("input", refresh);
         refresh();
@@ -523,8 +536,8 @@
             areaSecondX: Math.max(...xs),
             areaSecondY: Math.max(...ys),
             areaSecondZ: Math.max(...zs),
-            direction: "X_POSITIVE",
-            step: maximumAxisSpan(templates, "X_POSITIVE"),
+            direction: "AUTO",
+            step: 1,
             templateCount: templates.length
         };
     }

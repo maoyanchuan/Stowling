@@ -3,6 +3,7 @@
 
     const Stowling = window.Stowling;
     const Model = window.StowlingCategoryZoneModel;
+    const Settings = window.StowlingSettings;
     const TAB_EVENT = "stowling:resource-tab-change";
     const state = {
         revision: "",
@@ -314,10 +315,10 @@
         function renderBindings(bindings) {
             bindingsHost.replaceChildren();
             readers = [];
-            for (const binding of bindings) {
+            for (const [index, binding] of bindings.entries()) {
                 appendTemplate(
                     binding,
-                    mode === "AUTO" || expandBindings
+                    expandBindings || (mode === "AUTO" && index === 0)
                 );
             }
         }
@@ -776,27 +777,10 @@
             }
         }
         const standing = cornerFields("操作站位区域", "standing", standingValues);
-        const standingSection = Stowling.element("div", "category-standing-area");
-        const standingControl = field("启用操作站位区域（可选）", standingToggle);
-        standingControl.classList.add("checkbox-field");
-        standingSection.append(
-            standingControl,
-            Stowling.element("p", "muted compact-help",
-                "填写玩家脚下位置，可选一格或台阶范围。随单片一起平移；"
-                    + "储存箱只从此区域访问，区域可在总选区外。"),
-            standing.root
-        );
-        /**
-         * @returns {void}
-         */
-        function updateStandingVisibility() {
-            standing.root.hidden = !standingToggle.checked;
-            for (const input of standing.root.querySelectorAll("input")) {
-                input.disabled = !standingToggle.checked;
-            }
-        }
-        standingToggle.addEventListener("change", updateStandingVisibility);
-        updateStandingVisibility();
+        const standingSection = Settings.optionalSection(
+            "操作站位区域", "指定台阶或操作位置，随单片平移；允许位于总选区外。",
+            standingToggle, standing.content
+        ).root;
         const rule = document.createElement("select");
         for (const definition of state.rules) {
             rule.append(new Option(definition.name, definition.id));
@@ -873,13 +857,10 @@
         overrideActions.append(addOverride);
         const ranges = Stowling.element("div", "category-range-pair");
         ranges.append(marker.root, storage.root);
-        const settings = Stowling.element("details", "category-binding-settings");
         const settingsBody = Stowling.element("div", "category-settings-body");
         settingsBody.append(recognition, overrideHeading, overrides, overrideActions);
-        settings.append(
-            Stowling.element("summary", "", "识别规则与容器例外"),
-            settingsBody
-        );
+        const settings = Settings.disclosure("识别规则与容器例外",
+            "识别方式、忽略支撑方块与指定箱子的例外规则", settingsBody).root;
         const footer = Stowling.element("div", "category-binding-actions");
         if (onRemove) {
             const remove = Stowling.element(
@@ -1024,7 +1005,7 @@
      * @returns {object}
      */
     function cornerFields(label, prefix, binding) {
-        const root = Stowling.element("div", "category-binding-section");
+        const content = Stowling.element("div", "category-binding-section");
         const first = axisFields(
             "角点 1",
             `${prefix}First`,
@@ -1035,18 +1016,26 @@
             `${prefix}Second`,
             binding
         );
-        root.append(
-            Stowling.element("h4", "", label),
-            first.root,
-            second.root
-        );
-        return {
-            root,
-            read: () => ({
+        content.append(first.root, second.root);
+        /** @returns {object} */
+        function read() {
+            return {
                 ...first.read(),
                 ...second.read()
-            })
-        };
+            };
+        }
+        /** @returns {string} */
+        function description() {
+            const values = read();
+            const start = ["X", "Y", "Z"].map((axis) => values[`${prefix}First${axis}`]);
+            const end = ["X", "Y", "Z"].map((axis) => values[`${prefix}Second${axis}`]);
+            return `${start.join(", ")} → ${end.join(", ")}`;
+        }
+        const section = Settings.disclosure(label, description(), content);
+        content.addEventListener("input", () => {
+            section.description.textContent = description();
+        });
+        return { root: section.root, content, read };
     }
 
     /**

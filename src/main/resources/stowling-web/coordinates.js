@@ -687,6 +687,7 @@
      * @returns {HTMLElement}
      */
     function optionalField(label, toggle, control) {
+        window.StowlingSettings.switchControl(toggle, label);
         const wrapper = Stowling.element(
             "div",
             "editor-field coordinate-optional-field"

@@ -1649,6 +1649,14 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/styles.css", "text/css; charset=utf-8")
                 ),
                 Map.entry(
+                        "/workbench.css",
+                        read("stowling-web/workbench.css", "text/css; charset=utf-8")
+                ),
+                Map.entry(
+                        "/settings-ui.js",
+                        read("stowling-web/settings-ui.js", js)
+                ),
+                Map.entry(
                         "/icon.svg",
                         read("assets/stowling/icon.svg", "image/svg+xml")
                 ),

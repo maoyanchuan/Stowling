@@ -408,9 +408,18 @@
             if (state.draft.id === item.id) {
                 body.append(elements.form);
             }
-            card.append(button, body);
+            const header = Stowling.element("div", "task-card-header");
+            const listening = window.StowlingSettings.switchControl(
+                document.createElement("input"), `监听任务：${item.name}`
+            );
+            listening.checked = item.enabled;
+            listening.addEventListener("change", () => {
+                void setListening(item, listening.checked);
+            });
+            header.append(button, listening);
+            card.append(header, body);
             elements.list.append(card);
-            rows.set(item.id, { button, body, status });
+            rows.set(item.id, { button, body, status, listening });
         }
         document.dispatchEvent(new CustomEvent("stowling:auto-task-count", {
             detail: {
@@ -440,6 +449,8 @@
             const selected = state.draft.id === id;
             const expanded = selected && state.expanded;
             row.button.disabled = disabled;
+            row.listening.disabled = disabled || (selected && state.dirty);
+            row.listening.title = selected && state.dirty ? "先保存当前修改，再切换监听" : "启用监听";
             row.button.setAttribute("aria-expanded", String(expanded));
             row.body.hidden = !expanded;
             const item = state.items.find((value) => value.id === id);
@@ -456,6 +467,10 @@
             }
             header.setAttribute("aria-expanded", String(state.phase[phase]));
             body.hidden = !state.phase[phase];
+            header.closest(".auto-config-section").dataset.enabled = String(
+                phase === "collection"
+                    ? elements.collectEnabled.checked : elements.classifyEnabled.checked
+            );
         }
     }
 
@@ -499,6 +514,45 @@
         }
         state.phase[phase] = !state.phase[phase];
         updateControls();
+    }
+
+    /**
+     * @param {object} item
+     * @param {boolean} enabled
+     * @returns {Promise<void>}
+     */
+    async function setListening(item, enabled) {
+        if (unavailable()) {
+            renderList();
+            return;
+        }
+        state.busy = true;
+        updateControls();
+        try {
+            const operation = enabled ? "start" : "stop";
+            const response = await Stowling.request(
+                `/v1/auto-classify-tasks/${encodeURIComponent(item.id)}/${operation}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ revision: state.revision })
+                }
+            );
+            if (!response.item?.id) {
+                throw new Error("任务状态未返回，请刷新重试");
+            }
+            state.revision = String(response.revision || "");
+            state.items = state.items.map((task) => task.id === item.id ? response.item : task);
+            if (state.draft.id === item.id) {
+                state.draft.enabled = response.item.enabled;
+            }
+            Stowling.showToast(enabled ? "已开始监听" : "已停止监听，已排队任务会继续执行");
+        } catch (error) {
+            Stowling.handleError(error, "切换任务监听失败");
+        } finally {
+            state.busy = false;
+            renderList();
+            document.dispatchEvent(new Event("stowling:auto-tasks-changed"));
+        }
     }
 
     /**
@@ -644,7 +698,20 @@
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
     elements.addArea.addEventListener("click", addClassificationArea);
     elements.refresh.addEventListener("click", () => void loadResources());
-    elements.form.addEventListener("input", () => {
+    elements.form.addEventListener("input", (event) => {
+        if (event.target === elements.classifyEnabled) {
+            state.phase.classification = elements.classifyEnabled.checked;
+            if (elements.classifyEnabled.checked) {
+                elements.collectEnabled.checked = true;
+            }
+        }
+        if (event.target === elements.collectEnabled) {
+            state.phase.collection = elements.collectEnabled.checked;
+            if (!elements.collectEnabled.checked) {
+                elements.classifyEnabled.checked = false;
+                state.phase.classification = false;
+            }
+        }
         readForm();
         state.dirty = true;
         showMessage("未保存修改");

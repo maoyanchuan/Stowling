@@ -107,6 +107,10 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         );
         recordCacheUpdate(result.remaining());
         inFlight = false;
+        if (result.state() == ContainerTransferState.SUCCEEDED
+                && !madeProgress(requested, result.remaining())) {
+            context.workspace().markTargetUnavailable(target);
+        }
         if (result.state() == ContainerTransferState.FAILED) {
             context.workspace().markTargetUnavailable(target);
             if (retryOnFailure && !itemsForSource(context, itemSource).isEmpty()) {
@@ -122,6 +126,18 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         return TaskModuleResult.succeeded(result.message());
     }
 
+    private static boolean madeProgress(
+            Map<String, Integer> requested,
+            Map<String, Integer> remaining
+    ) {
+        for (Map.Entry<String, Integer> entry : requested.entrySet()) {
+            if (remaining.getOrDefault(entry.getKey(), 0) < entry.getValue()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static Map<String, Integer> filterForTarget(
             TaskExecutionContext context,
             ContainerTarget target,
@@ -131,7 +147,8 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
     ) {
         if ("inventory".equals(source)
                 || reference.type() != ResourceType.OUTPUT
-                || !"storage".equals(reference.key())) {
+                || !"storage".equals(reference.key())
+                || context.workspace().selectedStorageUsesCacheFallback()) {
             return items;
         }
         Set<String> accepted = context.workspace()

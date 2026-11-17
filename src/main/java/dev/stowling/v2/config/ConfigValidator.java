@@ -101,6 +101,8 @@ public final class ConfigValidator {
     public static final String MARKER_SOURCES = "markerSources";
     public static final String PICKUP_RADIUS = "pickupRadius";
     public static final String RETRY_ON_FAILURE = "retryOnFailure";
+    public static final String ALLOW_CACHE_FALLBACK =
+            "allowCacheFallback";
     public static final String PRIORITY = "priority";
 
     private static final Set<String> MANUAL_COORDINATE_KEYS =
@@ -641,12 +643,17 @@ public final class ConfigValidator {
             );
             case WITHDRAW_ITEMS -> requireWithdrawStep(step, coordinates);
             case SELECT_STORAGE_TARGET -> {
-                requireParameters(step, Set.of(ITEM_SOURCE), Set.of());
+                requireParameters(
+                        step,
+                        Set.of(ITEM_SOURCE, ALLOW_CACHE_FALLBACK),
+                        Set.of()
+                );
                 requireOptionalChoiceIn(
                         step,
                         ITEM_SOURCE,
                         Set.of("collected", "carried", "managed")
                 );
+                requireOptionalBoolean(step, ALLOW_CACHE_FALLBACK);
             }
             case ASSERT_NO_MANAGED_ITEMS -> {
                 requireParameters(step, Set.of(ITEM_SOURCE), Set.of());

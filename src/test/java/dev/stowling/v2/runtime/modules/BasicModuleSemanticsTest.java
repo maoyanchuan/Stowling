@@ -801,6 +801,30 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void storageSelectionFallsBackToTheCurrentCacheContainer() {
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:gold_ingot")),
+                List.of(cache)
+        );
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn("minecraft:iron_ingot", 2);
+
+        assertEquals(
+                cache,
+                workspace.selectStorageTarget("carried", true).orElseThrow()
+        );
+        assertTrue(workspace.selectedStorageUsesCacheFallback());
+        workspace.markTargetUnavailable(cache);
+        assertTrue(workspace
+                .selectStorageTarget("carried", true)
+                .isEmpty());
+    }
+
+    @Test
     void unmatchedCacheItemsAreNotSelectedForWithdrawal() {
         ContainerTarget cache = target(1, 64, 1, "cache");
         ContainerTarget storage = target(5, 64, 5, "storage");
@@ -1306,6 +1330,98 @@ class BasicModuleSemanticsTest {
                 Map.of("minecraft:gold_ingot", 3),
                 workspace.carriedItems()
         );
+    }
+
+    @Test
+    void cacheFallbackDepositKeepsTheWholeCarriedLedger() {
+        String itemId = "minecraft:iron_ingot";
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:gold_ingot")),
+                List.of(cache)
+        );
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn(itemId, 2);
+        workspace.selectStorageTarget("carried", true).orElseThrow();
+        RecordingTransfers transfers = new RecordingTransfers();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                transfers,
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                context,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "output:storage",
+                                TaskModuleIds.ITEM_SOURCE,
+                                "carried"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(Map.of(itemId, 2), transfers.requested);
+        assertTrue(workspace.carriedItems().isEmpty());
+        assertTrue(workspace.managedItems().isEmpty());
+    }
+
+    @Test
+    void noMovementDepositSkipsAnUnusableCacheFallbackNextTime() {
+        String itemId = "minecraft:iron_ingot";
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(
+                List.of(storage),
+                Map.of(storage, Set.of("minecraft:gold_ingot")),
+                List.of(cache)
+        );
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn(itemId, 2);
+        workspace.selectStorageTarget("carried", true).orElseThrow();
+        TaskExecutionContext context = context(
+                new ForbiddenNavigation(),
+                new RecordingTransfers(),
+                new FailedWithdrawals(),
+                new FoodPort(),
+                workspace
+        );
+        TaskExecutionContext transferContext = contextWithTransfers(
+                context,
+                new FixedTransfers(ContainerTransferResult.succeeded(
+                        "缓存容器容量不足",
+                        Map.of(itemId, 2)
+                ))
+        );
+        DepositItemsActionModule module = new DepositItemsActionModule(
+                transferContext,
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "output:storage",
+                                TaskModuleIds.ITEM_SOURCE,
+                                "carried",
+                                TaskModuleIds.RETRY_ON_FAILURE,
+                                "true"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertTrue(workspace
+                .selectStorageTarget("carried", true)
+                .isEmpty());
     }
 
     @Test

@@ -47,6 +47,8 @@ public final class TaskModuleIds {
     public static final String MARKER_SOURCES = "markerSources";
     public static final String PICKUP_RADIUS = "pickupRadius";
     public static final String RETRY_ON_FAILURE = "retryOnFailure";
+    public static final String ALLOW_CACHE_FALLBACK =
+            "allowCacheFallback";
     public static final String ALLOW_EMPTY_CONTAINER_SCAN =
             "allowEmptyContainerScan";
 

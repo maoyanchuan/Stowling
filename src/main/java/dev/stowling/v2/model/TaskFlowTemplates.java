@@ -377,7 +377,7 @@ public final class TaskFlowTemplates {
         TaskStep selectStorage = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.SELECT_STORAGE_TARGET,
-                Map.of()
+                Map.of(ConfigValidator.ALLOW_CACHE_FALLBACK, "true")
         );
         TaskStep moveToStorage = TaskStep.action(
                 UUID.randomUUID(),

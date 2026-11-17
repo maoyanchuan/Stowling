@@ -33,6 +33,7 @@ public final class TaskRunWorkspace {
     private ContainerTarget selectedContainer;
     private ContainerTarget selectedStorageTarget;
     private ContainerTarget selectedMarkerContainer;
+    private boolean storageUsesCacheFallback;
     private int containerCursor;
     private int storageCursor;
     private int markerCursor;
@@ -149,6 +150,7 @@ public final class TaskRunWorkspace {
         storageCursor = 0;
         selectedContainer = null;
         selectedStorageTarget = null;
+        storageUsesCacheFallback = false;
         cacheHasMore = false;
     }
 
@@ -179,6 +181,7 @@ public final class TaskRunWorkspace {
         unavailableTargets.clear();
         storageCursor = 0;
         selectedStorageTarget = null;
+        storageUsesCacheFallback = false;
     }
 
     public synchronized void setResolvedCategories(
@@ -207,6 +210,7 @@ public final class TaskRunWorkspace {
         storageCursor = 0;
         selectedContainer = null;
         selectedStorageTarget = null;
+        storageUsesCacheFallback = false;
         cacheHasMore = false;
     }
 
@@ -230,11 +234,13 @@ public final class TaskRunWorkspace {
     public synchronized Optional<ContainerTarget> selectNextContainer() {
         if (!hasContainers()) {
             selectedContainer = null;
+            storageUsesCacheFallback = false;
             return Optional.empty();
         }
         selectedContainer = containerCandidates.get(containerCursor++);
         storageCursor = 0;
         selectedStorageTarget = null;
+        storageUsesCacheFallback = false;
         cacheHasMore = true;
         return Optional.of(selectedContainer);
     }
@@ -282,9 +288,17 @@ public final class TaskRunWorkspace {
     public synchronized Optional<ContainerTarget> selectStorageTarget(
             String itemSource
     ) {
+        return selectStorageTarget(itemSource, false);
+    }
+
+    public synchronized Optional<ContainerTarget> selectStorageTarget(
+            String itemSource,
+            boolean allowCacheFallback
+    ) {
         Map<String, Integer> items = itemsForSource(itemSource);
         if (items.isEmpty()) {
             selectedStorageTarget = null;
+            storageUsesCacheFallback = false;
             return Optional.empty();
         }
         while (storageCursor < targetContainers.size()) {
@@ -303,11 +317,23 @@ public final class TaskRunWorkspace {
             for (String itemId : items.keySet()) {
                 if (accepted.contains(itemId)) {
                     selectedStorageTarget = candidate;
+                    storageUsesCacheFallback = false;
                     return Optional.of(candidate);
                 }
             }
         }
+        if (allowCacheFallback
+                && selectedContainer != null
+                && !isUnavailable(selectedContainer)
+                && cacheContainers.stream().anyMatch(target ->
+                        target.position().equals(selectedContainer.position())
+                )) {
+            selectedStorageTarget = selectedContainer;
+            storageUsesCacheFallback = true;
+            return Optional.of(selectedContainer);
+        }
         selectedStorageTarget = null;
+        storageUsesCacheFallback = false;
         return Optional.empty();
     }
 
@@ -315,9 +341,14 @@ public final class TaskRunWorkspace {
         return Optional.ofNullable(selectedStorageTarget);
     }
 
+    public synchronized boolean selectedStorageUsesCacheFallback() {
+        return storageUsesCacheFallback;
+    }
+
     public synchronized void resetStorageSelection() {
         storageCursor = 0;
         selectedStorageTarget = null;
+        storageUsesCacheFallback = false;
     }
 
     public synchronized void markTargetUnavailable(ContainerTarget target) {

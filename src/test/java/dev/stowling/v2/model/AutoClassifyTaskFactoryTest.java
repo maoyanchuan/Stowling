@@ -63,6 +63,19 @@ class AutoClassifyTaskFactoryTest {
     }
 
     @Test
+    void interruptionDepositLoopStopsOnceManagedItemsAreGone() {
+        TaskStep depositLoop = TaskFlowTemplates.interruption(
+                "region:" + UUID.randomUUID()
+        ).get(1);
+
+        assertEquals(TaskStepKind.REPEAT, depositLoop.kind());
+        assertEquals(
+                TaskCondition.HAS_MANAGED_ITEMS.name(),
+                depositLoop.parameters().get(TaskFlowTemplates.CONDITION)
+        );
+    }
+
+    @Test
     void allSourcesScanCacheBeforeRefreshingMarkersInsideHasContainersBranch() {
         AutoClassifyDefinition definition = definition(
                 false,

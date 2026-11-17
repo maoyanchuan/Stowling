@@ -523,7 +523,7 @@ public final class TaskRunManager {
 
     private void beginInterruption() {
         TaskDefinition cleanup = active.prepared.interruptionTask;
-        if (cleanup == null) {
+        if (cleanup == null || !active.workspace.hasManagedItems()) {
             finishTerminated();
             return;
         }

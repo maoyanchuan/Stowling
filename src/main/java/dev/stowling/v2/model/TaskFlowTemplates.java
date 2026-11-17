@@ -340,7 +340,7 @@ public final class TaskFlowTemplates {
         );
         TaskStep depositManaged = TaskStep.repeat(
                 UUID.randomUUID(),
-                conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
+                conditionParameters(TaskCondition.HAS_MANAGED_ITEMS, Map.of()),
                 List.of(select, move, deposit)
         );
         TaskStep assertClean = TaskStep.action(

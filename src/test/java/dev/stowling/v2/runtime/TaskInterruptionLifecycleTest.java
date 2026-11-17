@@ -218,6 +218,62 @@ class TaskInterruptionLifecycleTest {
     }
 
     @Test
+    void preemptionWithoutManagedItemsSkipsCustomCleanup() {
+        UUID cleanupPoint = UUID.randomUUID();
+        UUID urgentPoint = UUID.randomUUID();
+        RecordingNavigation navigation = new RecordingNavigation();
+        TaskRunManager manager = new TaskRunManager(
+                navigation,
+                registry(navigation)
+        );
+        TaskDefinition cleanup = task(
+                "Cleanup",
+                TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE,
+                moveStep(cleanupPoint)
+        );
+        TaskDefinition background = withCleanup(task(
+                "Background",
+                TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE,
+                actionStep(SLOW)
+        ), cleanup, false);
+        TaskDefinition urgent = task(
+                "Urgent",
+                TaskPriority.URGENT,
+                TaskInterruptionMode.NONE,
+                moveStep(urgentPoint)
+        );
+        AppConfig config = config(
+                List.of(
+                        coordinate(cleanupPoint, 10),
+                        coordinate(urgentPoint, 20)
+                ),
+                List.of(background, cleanup, urgent)
+        );
+
+        TaskRunSnapshot backgroundRun = manager.start(background, config, null);
+        manager.tick();
+        manager.start(urgent, config, null);
+        for (int tick = 0; tick < 5; tick++) {
+            manager.tick();
+        }
+
+        assertEquals(
+                List.of(new BlockPosition(20, 64, 10)),
+                navigation.positions()
+        );
+        assertEquals(
+                TaskRunState.PREEMPTED,
+                runState(manager, backgroundRun.runId())
+        );
+        assertTrue(manager.runs().stream().anyMatch(
+                run -> run.taskName().equals("Urgent")
+                        && run.state() == TaskRunState.SUCCEEDED
+        ));
+    }
+
+    @Test
     void preemptedBackgroundTaskRequeuesAfterSharedCleanup() {
         UUID cleanupPoint = UUID.randomUUID();
         UUID urgentPoint = UUID.randomUUID();

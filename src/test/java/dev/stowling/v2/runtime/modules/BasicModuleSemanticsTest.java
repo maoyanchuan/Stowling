@@ -283,6 +283,37 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void containerMoveSucceedsImmediatelyInsideInteractionRange() {
+        ContainerTarget container = target(8, 60, -4, "container");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setContainerScan(ContainerScanResult.success(List.of(container)));
+        workspace.selectNextContainer().orElseThrow();
+        RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+        navigation.interactionTarget = container.position();
+        MoveToCoordinateModule module = new MoveToCoordinateModule(
+                context(
+                        navigation,
+                        new RecordingTransfers(),
+                        new FailedWithdrawals(),
+                        new FoodPort(),
+                        workspace
+                ),
+                TaskStep.action(
+                        UUID.randomUUID(),
+                        TaskModuleIds.MOVE_TO_COORDINATE,
+                        Map.of(
+                                TaskModuleIds.TARGET_REF,
+                                "output:container"
+                        )
+                )
+        );
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertTrue(navigation.containerPositions().isEmpty());
+        assertEquals(1, navigation.interactionChecks());
+    }
+
+    @Test
     void savedCoordinateRadiusSevenDoesNotArriveTwoBlocksAway() {
         UUID coordinateId = UUID.randomUUID();
         CoordinatePoint point = new CoordinatePoint(
@@ -1959,6 +1990,8 @@ class BasicModuleSemanticsTest {
         private final List<BlockPosition> statusPositions = new ArrayList<>();
         private final List<Integer> statusRadii = new ArrayList<>();
         private final List<String> dimensionChecks = new ArrayList<>();
+        private BlockPosition interactionTarget;
+        private int interactionChecks;
         private int cancellations;
 
         @Override
@@ -1997,6 +2030,12 @@ class BasicModuleSemanticsTest {
         public boolean isInDimension(String dimension) {
             dimensionChecks.add(dimension);
             return true;
+        }
+
+        @Override
+        public boolean isWithinInteractionRange(BlockPosition target) {
+            interactionChecks++;
+            return target.equals(interactionTarget);
         }
 
         @Override
@@ -2040,6 +2079,10 @@ class BasicModuleSemanticsTest {
 
         private List<String> dimensionChecks() {
             return List.copyOf(dimensionChecks);
+        }
+
+        private int interactionChecks() {
+            return interactionChecks;
         }
 
         private int cancellations() {

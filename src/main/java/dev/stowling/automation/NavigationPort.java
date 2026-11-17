@@ -33,6 +33,11 @@ public interface NavigationPort {
         return true;
     }
 
+    default boolean isWithinInteractionRange(BlockPosition target) {
+        Objects.requireNonNull(target, "target");
+        return false;
+    }
+
     void cancel();
 
     default StopOutcome requestStop() {

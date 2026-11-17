@@ -155,6 +155,12 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         return world.connected() && dimension.equals(world.dimension());
     }
 
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target) {
+        Objects.requireNonNull(target, "target");
+        return navigationService.isWithinInteractionRange(target);
+    }
+
     private static double arrivalDistanceSquared(int radius) {
         return (double) radius * radius;
     }

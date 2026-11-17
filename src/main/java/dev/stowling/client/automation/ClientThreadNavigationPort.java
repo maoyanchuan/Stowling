@@ -73,6 +73,13 @@ public final class ClientThreadNavigationPort implements NavigationPort {
     }
 
     @Override
+    public boolean isWithinInteractionRange(BlockPosition target) {
+        Objects.requireNonNull(target, "target");
+        return scheduler.isClientThread()
+                && delegate.isWithinInteractionRange(target);
+    }
+
+    @Override
     public void cancel() {
         if (scheduler.isClientThread()) {
             delegate.cancel();

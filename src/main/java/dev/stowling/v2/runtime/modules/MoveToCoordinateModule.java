@@ -48,6 +48,12 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
                     "无法前往 " + coordinate.name() + "：维度不匹配"
             );
         }
+        if (container != null
+                && context.navigation().isWithinInteractionRange(position)) {
+            return TaskModuleResult.succeeded(
+                    "已在容器交互范围内 " + position
+            );
+        }
         NavigationStatus status;
         if (!navigationStarted) {
             navigationStarted = true;
@@ -58,7 +64,14 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         return switch (status) {
             case ARRIVED -> TaskModuleResult.succeeded("已到达 " + targetName);
             case NAVIGATING -> TaskModuleResult.running("正在前往 " + targetName);
-            case FAILED -> TaskModuleResult.failed("无法前往 " + targetName);
+            case FAILED -> container != null
+                    && context.navigation().isWithinInteractionRange(position)
+                    ? TaskModuleResult.succeeded(
+                            "已在容器交互范围内 " + position
+                    )
+                    : TaskModuleResult.failed(
+                            "无法前往 " + targetName + " " + position
+                    );
         };
     }
 

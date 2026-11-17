@@ -5,9 +5,7 @@ import baritone.api.IBaritoneProvider;
 import baritone.api.behavior.IPathingBehavior;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
-import baritone.api.pathing.goals.GoalComposite;
 import baritone.api.pathing.goals.GoalNear;
-import baritone.api.pathing.goals.GoalTwoBlocks;
 import dev.stowling.domain.BlockPosition;
 import java.util.Objects;
 import net.minecraft.client.player.LocalPlayer;
@@ -42,11 +40,9 @@ public final class BaritoneNavigationService implements NavigationService {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
-        GoalComposite goal = nearContainerGoal(
-                target,
-                nearGoalRadius(radius)
+        primaryBaritone().getCustomGoalProcess().setGoalAndPath(
+                nearContainerGoal(target, nearGoalRadius(radius))
         );
-        primaryBaritone().getCustomGoalProcess().setGoalAndPath(goal);
     }
 
     @Override
@@ -100,7 +96,7 @@ public final class BaritoneNavigationService implements NavigationService {
         return new GoalNear(targetPos, radius);
     }
 
-    static GoalComposite nearContainerGoal(
+    static Goal nearContainerGoal(
             BlockPosition target,
             int radius
     ) {
@@ -109,10 +105,8 @@ public final class BaritoneNavigationService implements NavigationService {
                 target.y(),
                 target.z()
         );
-        return new GoalComposite(
-                new GoalTwoBlocks(targetPos),
-                new GoalNear(targetPos, radius)
-        );
+        // GoalNear accepts any reachable block in the interaction radius.
+        return new GoalNear(targetPos, radius);
     }
 
     static int nearGoalRadius(
@@ -121,7 +115,7 @@ public final class BaritoneNavigationService implements NavigationService {
     ) {
         int safeRadius = Math.max(
                 1,
-                (int) Math.floor(interactionRange) - 1
+                (int) Math.floor(interactionRange)
         );
         return Math.max(1, Math.min(requestedRadius, safeRadius));
     }

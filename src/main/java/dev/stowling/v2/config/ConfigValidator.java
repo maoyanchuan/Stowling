@@ -296,14 +296,17 @@ public final class ConfigValidator {
             boolean classificationTrigger = triggerIds.contains(
                     definition.classificationTriggerId()
             );
+            if (definition.classificationEnabled()
+                    && !definition.collectionEnabled()) {
+                throw new V2ValidationException(
+                        "classification requires collection phase"
+                );
+            }
             boolean expectCollection = definition.enabled()
                     && definition.collectionEnabled();
-            boolean expectClassification = definition.enabled()
-                    && definition.classificationEnabled();
             if ((expectCollection && !collectionTrigger)
-                    || (expectClassification && !classificationTrigger)
                     || (!expectCollection && collectionTrigger)
-                    || (!expectClassification && classificationTrigger)) {
+                    || classificationTrigger) {
                 throw new V2ValidationException(
                         "auto classify task triggers do not match enabled phases"
                 );

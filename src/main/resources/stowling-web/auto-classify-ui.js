@@ -367,6 +367,9 @@
 
     /** @returns {void} */
     function readForm() {
+        if (!elements.collectEnabled.checked) {
+            elements.classifyEnabled.checked = false;
+        }
         state.draft = {
             ...state.draft,
             name: elements.name.value,
@@ -496,7 +499,8 @@
         state.phase.classification = false;
         syncForm();
         renderList();
-        showMessage(item ? "已保存；监听时自动收集，分类以后台优先级排队。"
+        showMessage(item
+            ? "已保存；拾取物存入缓存后，再创建后台分类任务。"
             : "配置检测点、缓存区域与分类选区后，保存或开始监听。");
     }
 
@@ -578,7 +582,8 @@
                 applySave(response);
             }
             const message = start
-                ? "已开始监听；已有缓存会进入后台分类队列。" : "自动分类已保存";
+                ? "已开始监听；拾取物存入缓存后会创建后台分类任务。"
+                : "自动分类已保存";
             showMessage(message);
             Stowling.showToast(message);
         } catch (error) {

@@ -75,7 +75,7 @@ class AutoClassifyAreaMigrationTest {
         AutoClassifyDefinition definition = new AutoClassifyDefinition(
                 UUID.randomUUID(),
                 "自动分类",
-                false,
+                true,
                 true,
                 true,
                 "coordinate:" + coordinateId,
@@ -94,7 +94,7 @@ class AutoClassifyAreaMigrationTest {
                 AutoClassifyTaskFactory.tasks(definition, List.of()),
                 List.of(region),
                 List.of(zone),
-                List.of(),
+                AutoClassifyTaskFactory.triggers(definition, List.of()),
                 List.of(),
                 List.of(definition)
         );
@@ -123,6 +123,18 @@ class AutoClassifyAreaMigrationTest {
         containerSources.add("CONTAINER_CONTENTS");
         secondArea.add("markerSources", containerSources);
         areas.add(secondArea);
+        JsonArray triggers = root.getAsJsonArray("triggers");
+        JsonObject legacyTrigger = new JsonObject();
+        legacyTrigger.addProperty(
+                "id",
+                definition.classificationTriggerId().toString()
+        );
+        legacyTrigger.addProperty("type", "CACHE_UPDATED");
+        legacyTrigger.addProperty(
+                "targetTaskId",
+                definition.classificationTaskId().toString()
+        );
+        triggers.add(legacyTrigger);
         Files.writeString(path, root.toString());
 
         AutoClassifyDefinition migrated = store.loadOrReset()
@@ -140,6 +152,12 @@ class AutoClassifyAreaMigrationTest {
         assertEquals(
                 List.of(CategoryMarkerSource.PLACED_ITEM),
                 migrated.classificationAreas().getFirst().markerSources()
+        );
+        assertEquals(
+                List.of(definition.collectionTriggerId()),
+                store.read().config().triggers().stream()
+                        .map(value -> value.id())
+                        .toList()
         );
     }
 }

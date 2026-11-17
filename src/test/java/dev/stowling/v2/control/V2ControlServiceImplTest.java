@@ -313,7 +313,7 @@ class V2ControlServiceImplTest {
                 new RevisionRequest(manualRemoved.revision())
         );
         assertTrue(started.item().enabled());
-        assertEquals(2, started.item().triggerIds().size());
+        assertEquals(1, started.item().triggerIds().size());
         assertEquals(0, service.tasks().tasks().size());
         assertThrows(
                 IllegalStateException.class,

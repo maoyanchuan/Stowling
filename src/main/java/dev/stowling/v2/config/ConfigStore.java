@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 public final class ConfigStore {
     private static final Gson GSON = new GsonBuilder()
@@ -145,14 +146,62 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version >= 7 && version <= 10) {
+        if (version >= 7 && version <= 11) {
             if (!root.has("autoClassifyTasks")) {
                 root.add("autoClassifyTasks", new JsonArray());
             }
             ensureAutoClassifyPhaseFlags(root);
             migrateAutoClassifyAreas(root);
+            removeAutoClassifyClassificationTriggers(root);
             root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
         }
+    }
+
+    private static void removeAutoClassifyClassificationTriggers(
+            JsonObject root
+    ) {
+        JsonElement tasksValue = root.get("autoClassifyTasks");
+        JsonElement triggersValue = root.get("triggers");
+        if (tasksValue == null || !tasksValue.isJsonArray()
+                || triggersValue == null || !triggersValue.isJsonArray()) {
+            return;
+        }
+        Set<String> ownedTriggerIds = new java.util.HashSet<>();
+        Set<String> classificationTaskIds = new java.util.HashSet<>();
+        for (JsonElement item : tasksValue.getAsJsonArray()) {
+            if (item == null || !item.isJsonObject()) {
+                continue;
+            }
+            String taskId = stringValue(item.getAsJsonObject().get("id"));
+            if (taskId.isBlank()) {
+                continue;
+            }
+            ownedTriggerIds.add(derivedId(taskId, "classification-trigger"));
+            classificationTaskIds.add(derivedId(taskId, "classification"));
+        }
+        JsonArray filtered = new JsonArray();
+        for (JsonElement item : triggersValue.getAsJsonArray()) {
+            if (item == null || !item.isJsonObject()) {
+                continue;
+            }
+            JsonObject trigger = item.getAsJsonObject();
+            String triggerId = stringValue(trigger.get("id"));
+            String targetId = stringValue(trigger.get("targetTaskId"));
+            String type = stringValue(trigger.get("type"));
+            boolean classificationTrigger = ownedTriggerIds.contains(triggerId)
+                    || "CACHE_UPDATED".equals(type)
+                    && classificationTaskIds.contains(targetId);
+            if (!classificationTrigger) {
+                filtered.add(trigger);
+            }
+        }
+        root.add("triggers", filtered);
+    }
+
+    private static String derivedId(String taskId, String role) {
+        return UUID.nameUUIDFromBytes(
+                (taskId + ":" + role).getBytes(StandardCharsets.UTF_8)
+        ).toString();
     }
 
     private static void ensureAutoClassifyPhaseFlags(JsonObject root) {

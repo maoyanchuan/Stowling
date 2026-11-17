@@ -170,31 +170,6 @@ public final class AutoClassifyTaskFactory {
                     )
             );
         }
-        if (definition.classificationEnabled()) {
-            String classificationName = uniqueName(
-                    definition.name() + " 缓存监听",
-                    names
-            );
-            ResourceReference region = ResourceReference.parse(
-                    definition.cacheRegionRef()
-            );
-            triggers.add(
-                    new TaskTriggerDefinition(
-                            definition.classificationTriggerId(),
-                            classificationName,
-                            TaskTriggerType.CACHE_UPDATED,
-                            definition.classificationTaskId(),
-                            TaskPriority.BACKGROUND,
-                            TRIGGER_INTERVAL_TICKS,
-                            TRIGGER_COOLDOWN_TICKS,
-                            null,
-                            null,
-                            null,
-                            region.uuid(),
-                            null
-                    )
-            );
-        }
         return List.copyOf(triggers);
     }
 

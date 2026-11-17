@@ -128,31 +128,24 @@ class AutoClassifyTaskFactoryTest {
     }
 
     @Test
-    void enabledDefinitionUsesConfiguredRadiusAndBackgroundClassifier() {
+    void enabledDefinitionOnlyStartsTheDropListener() {
         AutoClassifyDefinition definition = definition(true);
 
         List<TaskTriggerDefinition> triggers =
                 AutoClassifyTaskFactory.triggers(definition, List.of());
 
-        assertEquals(2, triggers.size());
+        assertEquals(1, triggers.size());
         TaskTriggerDefinition collection = triggers.get(0);
-        TaskTriggerDefinition classification = triggers.get(1);
         assertEquals(TaskTriggerType.DROPPED_ITEMS, collection.type());
         assertEquals(definition.id(), collection.targetTaskId());
         assertEquals(16, collection.radius());
-        assertEquals(TaskTriggerType.CACHE_UPDATED, classification.type());
-        assertEquals(
-                definition.classificationTaskId(),
-                classification.targetTaskId()
-        );
-        assertEquals(TaskPriority.BACKGROUND, classification.priority());
     }
 
     @Test
-    void enabledPhasesCreateIndependentTriggers() {
-        List<TaskTriggerDefinition> collectionOnly =
+    void classificationIsQueuedByCollectionInsteadOfACacheTrigger() {
+        List<TaskTriggerDefinition> bothPhases =
                 AutoClassifyTaskFactory.triggers(
-                        definition(true, true, false),
+                        definition(true, true, true),
                         List.of()
                 );
         List<TaskTriggerDefinition> classificationOnly =
@@ -161,16 +154,12 @@ class AutoClassifyTaskFactoryTest {
                         List.of()
                 );
 
-        assertEquals(1, collectionOnly.size());
+        assertEquals(1, bothPhases.size());
         assertEquals(
                 TaskTriggerType.DROPPED_ITEMS,
-                collectionOnly.getFirst().type()
+                bothPhases.getFirst().type()
         );
-        assertEquals(1, classificationOnly.size());
-        assertEquals(
-                TaskTriggerType.CACHE_UPDATED,
-                classificationOnly.getFirst().type()
-        );
+        assertTrue(classificationOnly.isEmpty());
     }
 
     @Test

@@ -1172,9 +1172,6 @@ public final class V2ControlServiceImpl implements V2ControlService {
             if (definition.collectionEnabled()) {
                 triggerIds.add(definition.collectionTriggerId());
             }
-            if (definition.classificationEnabled()) {
-                triggerIds.add(definition.classificationTriggerId());
-            }
         }
         return new AutoClassifyTask(
                 definition.id(),

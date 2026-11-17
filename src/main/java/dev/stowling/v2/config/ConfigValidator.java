@@ -63,6 +63,7 @@ public final class ConfigValidator {
             "ASSERT_PLAYER_INVENTORY_RESTORED";
     public static final String SYNC_COLLECTED_INVENTORY =
             "SYNC_COLLECTED_INVENTORY";
+    public static final String SYNC_PLAYER_INVENTORY = "SYNC_PLAYER_INVENTORY";
 
     public static final String WAIT_FOR_DROPPED_ITEMS =
             "WAIT_FOR_DROPPED_ITEMS";
@@ -669,7 +670,7 @@ public final class ConfigValidator {
             }
             case ASSERT_PLAYER_INVENTORY_RESTORED ->
                     requireParameters(step, Set.of(), Set.of());
-            case SYNC_COLLECTED_INVENTORY -> requireParameters(
+            case SYNC_COLLECTED_INVENTORY, SYNC_PLAYER_INVENTORY -> requireParameters(
                     step,
                     Set.of(ITEM_FILTER),
                     Set.of()

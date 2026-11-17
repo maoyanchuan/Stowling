@@ -28,10 +28,10 @@ final class AssertPlayerInventoryRestoredModule
     @Override
     public TaskModuleResult tick() {
         Optional<PlayerInventorySnapshot> initial =
-                context.workspace().initialInventory();
+                context.inventory().expectedInventory();
         if (initial.isEmpty()) {
             return TaskModuleResult.failed(
-                    "任务没有创建开始前的背包快照"
+                    "全局背包尚未建立基准快照"
             );
         }
         Optional<Map<String, Integer>> observed =
@@ -44,13 +44,17 @@ final class AssertPlayerInventoryRestoredModule
                 observed.orElseThrow()
         );
         if (expected.equals(current)) {
-            return TaskModuleResult.succeeded("任务结束时背包已恢复到任务前快照");
+            return TaskModuleResult.succeeded("任务结束时背包与全局账本一致");
         }
         mismatchedTicks++;
         if (mismatchedTicks >= MAX_SETTLE_TICKS) {
             PlayerInventoryDelta delta = PlayerInventoryDelta.between(
                     expected,
                     current
+            );
+            context.inventory().observe();
+            context.inventory().claimUnexpected(
+                    context.workspace().inventoryAccount(), java.util.Set.of()
             );
             return TaskModuleResult.failed(
                     "任务结束时背包不符合预期；新增="
@@ -60,7 +64,7 @@ final class AssertPlayerInventoryRestoredModule
             );
         }
         return TaskModuleResult.waiting(
-                "等待背包恢复到任务前快照 "
+                "等待背包与全局账本同步 "
                         + mismatchedTicks
                         + "/"
                         + MAX_SETTLE_TICKS

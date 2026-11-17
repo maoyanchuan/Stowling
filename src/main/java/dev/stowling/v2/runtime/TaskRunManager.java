@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
@@ -26,10 +27,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunManager {
@@ -46,6 +49,9 @@ public final class TaskRunManager {
     private ActiveRun active;
     private long nextSequence;
     private long ticks;
+    private AppConfig inventoryConfig;
+    private long nextInventoryRecoveryTick;
+    private final Set<UUID> pendingInventoryClassification = new LinkedHashSet<>();
 
     public TaskRunManager(NavigationPort navigation) {
         this(navigation, TaskModuleRuntimeRegistry.unavailablePorts(navigation));
@@ -204,7 +210,12 @@ public final class TaskRunManager {
 
     public synchronized void tick() {
         ticks++;
+        boolean inventoryAvailable = registry.inventory().observe().isPresent();
         triggers.tick();
+        if (inventoryAvailable) {
+            queueInventoryClassification();
+            recoverUnassignedInventory();
+        }
         if (active == null) {
             startNextQueued();
         }
@@ -361,9 +372,48 @@ public final class TaskRunManager {
     }
 
     public synchronized void refreshTriggers(AppConfig config) {
+        inventoryConfig = config;
         knownTriggers = List.copyOf(config.triggers());
         knownTasks = indexKnownTasks(config.tasks(), knownTriggers);
         triggers.refresh(config);
+    }
+
+    private void recoverUnassignedInventory() {
+        if (active != null || !queue.isEmpty() || inventoryConfig == null
+                || ticks < nextInventoryRecoveryTick
+                || !registry.inventory().needsRecovery()) {
+            return;
+        }
+        nextInventoryRecoveryTick = ticks + BACKGROUND_REPEAT_DELAY_TICKS;
+        for (AutoClassifyDefinition definition
+                : inventoryConfig.autoClassifyTasks()) {
+            if (definition.enabled() && definition.collectionEnabled()) {
+                TaskDefinition task = knownTasks.get(definition.id());
+                if (task != null) {
+                    startFromConfig(task, inventoryConfig, TaskPriority.BACKGROUND, false);
+                    return;
+                }
+            }
+        }
+    }
+
+    private void queueInventoryClassification() {
+        if (inventoryConfig == null) {
+            return;
+        }
+        for (UUID taskId : Set.copyOf(pendingInventoryClassification)) {
+            boolean enabled = inventoryConfig.autoClassifyTasks().stream().anyMatch(definition ->
+                    definition.enabled() && definition.classificationEnabled()
+                            && definition.classificationTaskId().equals(taskId)
+            );
+            if (enabled && !isTaskPending(taskId)) {
+                TaskDefinition task = knownTasks.get(taskId);
+                if (task != null) {
+                    startFromConfig(task, inventoryConfig, TaskPriority.BACKGROUND, false);
+                }
+            }
+            pendingInventoryClassification.remove(taskId);
+        }
     }
 
     public synchronized List<TaskTriggerSnapshot> triggerStatuses() {
@@ -702,6 +752,7 @@ public final class TaskRunManager {
                 Instant.now()
         );
         replaceRetained(finished);
+        registry.inventory().closeAccount(active.workspace.inventoryAccount());
         active = null;
         if (state == TaskRunState.SUCCEEDED
                 && completed.repeating
@@ -910,7 +961,9 @@ public final class TaskRunManager {
                 "正在运行",
                 Instant.now()
         );
-        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskRunWorkspace workspace = new TaskRunWorkspace(
+                registry.inventory().account(running.runId())
+        );
         active = new ActiveRun(
                 running,
                 queued.prepared,
@@ -997,7 +1050,8 @@ public final class TaskRunManager {
                 prepared.coordinates,
                 prepared.regions,
                 prepared.categoryZones,
-                workspace
+                workspace,
+                registry.inventory()
         );
     }
 
@@ -1034,6 +1088,14 @@ public final class TaskRunManager {
         Map<UUID, Integer> updates = active.workspace.consumeCacheUpdates();
         for (Map.Entry<UUID, Integer> update : updates.entrySet()) {
             triggers.cacheUpdated(update.getKey());
+            if (inventoryConfig != null) {
+                for (AutoClassifyDefinition definition : inventoryConfig.autoClassifyTasks()) {
+                    if (definition.enabled() && definition.classificationEnabled()
+                            && definition.cacheRegionRef().equals("region:" + update.getKey())) {
+                        pendingInventoryClassification.add(definition.classificationTaskId());
+                    }
+                }
+            }
         }
     }
 

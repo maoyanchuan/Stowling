@@ -170,6 +170,19 @@ public final class TaskFlowTemplates {
                 conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
                 List.of(selectContainer, move, deposit)
         );
+        List<TaskStep> result = new ArrayList<>(List.of(collectStep, scanStep, depositCollected));
+        result.addAll(reconcileInventory(regionRef, collectParameters));
+        return List.copyOf(result);
+    }
+
+    public static List<TaskStep> reconcileInventory(
+            String regionRef,
+            Map<String, String> collectParameters
+    ) {
+        Map<String, String> scan = new LinkedHashMap<>();
+        scan.put(ConfigValidator.REGION_REF, regionRef);
+        copyIfPresent(collectParameters, scan, ConfigValidator.CONTAINER_TYPES);
+        copyIfPresent(collectParameters, scan, ConfigValidator.MAX_VOLUME);
         Map<String, String> syncParameters = new LinkedHashMap<>();
         copyIfPresent(
                 collectParameters,
@@ -178,7 +191,7 @@ public final class TaskFlowTemplates {
         );
         TaskStep syncInventory = TaskStep.action(
                 UUID.randomUUID(),
-                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                ConfigValidator.SYNC_PLAYER_INVENTORY,
                 syncParameters
         );
         TaskStep reconcileScan = TaskStep.action(
@@ -220,7 +233,7 @@ public final class TaskFlowTemplates {
         );
         TaskStep reconcileSync = TaskStep.action(
                 UUID.randomUUID(),
-                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                ConfigValidator.SYNC_PLAYER_INVENTORY,
                 syncParameters
         );
         TaskStep reconcileLatePickups = TaskStep.repeat(
@@ -243,9 +256,6 @@ public final class TaskFlowTemplates {
                 Map.of()
         );
         return List.of(
-                collectStep,
-                scanStep,
-                depositCollected,
                 syncInventory,
                 reconcileLatePickups,
                 assertClean,

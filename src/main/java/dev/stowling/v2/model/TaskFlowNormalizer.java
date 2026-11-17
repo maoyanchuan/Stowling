@@ -26,8 +26,10 @@ public final class TaskFlowNormalizer {
 
     public static AppConfig normalize(AppConfig config) {
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
+        Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
             autoCollections.put(definition.id(), definition);
+            autoClassifications.put(definition.classificationTaskId(), definition);
         }
         Map<UUID, TaskDefinition> originalTasks = new LinkedHashMap<>();
         for (TaskDefinition task : config.tasks()) {
@@ -36,6 +38,7 @@ public final class TaskFlowNormalizer {
         List<TaskDefinition> baseTasks = config.tasks().stream()
                 .map(TaskFlowNormalizer::normalizeTask)
                 .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
+                .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
                 .toList();
         List<TaskDefinition> tasks = new ArrayList<>(baseTasks);
         Set<UUID> taskIds = new HashSet<>();
@@ -139,6 +142,26 @@ public final class TaskFlowNormalizer {
                 config.taskFolders(),
                 config.autoClassifyTasks()
         );
+    }
+
+    private static TaskDefinition upgradeAutoClassification(
+            TaskDefinition task,
+            AutoClassifyDefinition definition
+    ) {
+        if (definition == null || task.steps().stream().anyMatch(step ->
+                ConfigValidator.SYNC_PLAYER_INVENTORY.equals(step.moduleId()))) {
+            return task;
+        }
+        List<TaskStep> steps = new ArrayList<>(task.steps());
+        UUID seed = UUID.nameUUIDFromBytes(
+                (task.id() + ":global-inventory").getBytes(StandardCharsets.UTF_8)
+        );
+        steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
+                definition.cacheRegionRef(), Map.of()
+        ), seed));
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                steps, task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId());
     }
 
     private static TaskDefinition upgradeAutoCollection(
@@ -265,6 +288,9 @@ public final class TaskFlowNormalizer {
             );
             case ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS ->
                     normalizeDeposit(step, parameters, nested, otherwise);
+            case ConfigValidator.SYNC_COLLECTED_INVENTORY -> List.of(TaskStep.action(
+                    step.id(), ConfigValidator.SYNC_PLAYER_INVENTORY, parameters
+            ));
             default -> List.of(new TaskStep(
                     step.id(),
                     TaskStepKind.ACTION,

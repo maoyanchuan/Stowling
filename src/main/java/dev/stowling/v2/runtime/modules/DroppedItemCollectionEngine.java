@@ -49,9 +49,7 @@ final class DroppedItemCollectionEngine {
                 source,
                 timeoutSeconds,
                 itemFilter,
-                new PlayerInventoryManager(() -> context.droppedItems()
-                        .playerItemCounts()
-                        .map(PlayerInventorySnapshot::new)),
+                context.inventory(),
                 Clock.systemUTC()
         );
     }

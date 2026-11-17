@@ -75,8 +75,12 @@ public final class StandardTaskModuleFactories {
                         AssertPlayerInventoryRestoredModule::new
                 ),
                 factory(
+                        TaskModuleIds.SYNC_PLAYER_INVENTORY,
+                        SyncPlayerInventoryModule::new
+                ),
+                factory(
                         TaskModuleIds.SYNC_COLLECTED_INVENTORY,
-                        SyncCollectedInventoryModule::new
+                        SyncPlayerInventoryModule::new
                 ),
                 factory(
                         TaskModuleIds.WAIT_FOR_DROPPED_ITEMS,

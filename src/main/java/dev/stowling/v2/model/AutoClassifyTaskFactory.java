@@ -98,6 +98,9 @@ public final class AutoClassifyTaskFactory {
                     )
             );
         }
+        classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
+                definition.cacheRegionRef(), Map.of()
+        ));
         return List.of(
                 new TaskDefinition(
                         definition.id(),

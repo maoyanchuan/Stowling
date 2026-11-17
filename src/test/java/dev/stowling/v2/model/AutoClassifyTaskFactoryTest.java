@@ -12,6 +12,33 @@ import org.junit.jupiter.api.Test;
 
 class AutoClassifyTaskFactoryTest {
     @Test
+    void upgradesOldClassificationWithGlobalCleanupWithoutChangingSortingSteps() {
+        AutoClassifyDefinition definition = definition(true);
+        List<TaskDefinition> tasks = new ArrayList<>(
+                AutoClassifyTaskFactory.tasks(definition, List.of())
+        );
+        TaskDefinition classification = tasks.get(1);
+        List<TaskStep> sorting = classification.steps().subList(
+                0, classification.steps().size() - 4
+        );
+        tasks.set(1, new TaskDefinition(classification.id(), classification.name(),
+                classification.priority(), false, sorting, classification.interruptionMode(),
+                classification.interruptionTaskRef(), false, true));
+        AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks,
+                List.of(), List.of(), List.of(), List.of(), List.of(definition));
+
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+        TaskDefinition upgraded = normalized.tasks().get(1);
+
+        assertEquals(sorting, upgraded.steps().subList(0, sorting.size()));
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY,
+                upgraded.steps().get(sorting.size()).moduleId());
+        assertEquals(ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                upgraded.steps().getLast().moduleId());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+    }
+
+    @Test
     void upgradesPersistedCollectionWithoutReplacingItsHandoffOrFolder() {
         AutoClassifyDefinition definition = definition(true);
         List<TaskDefinition> tasks = new ArrayList<>(
@@ -55,7 +82,7 @@ class AutoClassifyTaskFactoryTest {
 
         assertEquals(8, upgraded.steps().size());
         assertEquals(oldSteps.subList(0, 3), upgraded.steps().subList(0, 3));
-        assertEquals(ConfigValidator.SYNC_COLLECTED_INVENTORY,
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY,
                 upgraded.steps().get(3).moduleId());
         assertEquals(TaskStepKind.REPEAT, upgraded.steps().get(4).kind());
         assertEquals(ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
@@ -126,7 +153,7 @@ class AutoClassifyTaskFactoryTest {
                 latePickupLoop.parameters().get(TaskFlowTemplates.CONDITION)
         );
         assertEquals(
-                ConfigValidator.SYNC_COLLECTED_INVENTORY,
+                ConfigValidator.SYNC_PLAYER_INVENTORY,
                 collection.steps().get(collection.steps().size() - 5)
                         .moduleId()
         );
@@ -175,7 +202,9 @@ class AutoClassifyTaskFactoryTest {
                 List.of()
         ).get(1);
 
-        assertEquals(2, classification.steps().size());
+        assertEquals(6, classification.steps().size());
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY,
+                classification.steps().get(2).moduleId());
         TaskStep cacheScan = classification.steps().getFirst();
         assertEquals(
                 ConfigValidator.SCAN_CONTAINERS_IN_REGION,
@@ -289,7 +318,7 @@ class AutoClassifyTaskFactoryTest {
                 List.of()
         ).get(1);
 
-        assertEquals(4, classification.steps().size());
+        assertEquals(8, classification.steps().size());
         TaskStep firstResolve = classification.steps().get(1).steps().stream()
                 .filter(step -> step.moduleId().equals(
                         ConfigValidator.RESOLVE_CONTAINER_CATEGORIES

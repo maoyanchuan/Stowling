@@ -29,7 +29,8 @@ public record TaskExecutionContext(
         Map<UUID, CoordinatePoint> coordinates,
         Map<UUID, RegionDefinition> regions,
         Map<UUID, CategoryZoneDefinition> categoryZones,
-        TaskRunWorkspace workspace
+        TaskRunWorkspace workspace,
+        PlayerInventoryManager inventory
 ) {
     public TaskExecutionContext {
         navigation = Objects.requireNonNull(navigation, "navigation");
@@ -68,6 +69,31 @@ public record TaskExecutionContext(
                 Objects.requireNonNull(categoryZones, "categoryZones")
         );
         workspace = Objects.requireNonNull(workspace, "workspace");
+        inventory = Objects.requireNonNull(inventory, "inventory");
+        inventory.register(workspace.inventoryAccount());
+        workspace.initialInventory().ifPresent(inventory::initialize);
+    }
+
+    public TaskExecutionContext(
+            NavigationPort navigation,
+            DroppedItemObserverPort droppedItems,
+            ContainerRegionPort containerRegions,
+            ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
+            ContainerInspectionPort containerInspections,
+            CategoryMarkerCachePort categoryMarkerCache,
+            FoodConsumptionPort foodConsumption,
+            CategoryZonePort categoryZonesPort,
+            Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones,
+            TaskRunWorkspace workspace
+    ) {
+        this(navigation, droppedItems, containerRegions, containerTransfers,
+                containerWithdrawals, containerInspections, categoryMarkerCache,
+                foodConsumption, categoryZonesPort, coordinates, regions, categoryZones,
+                workspace, new PlayerInventoryManager(() -> droppedItems.playerItemCounts()
+                        .map(dev.stowling.automation.PlayerInventorySnapshot::new)));
     }
 
     public TaskExecutionContext(

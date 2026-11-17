@@ -47,7 +47,7 @@ class AssertPlayerInventoryRestoredModuleTest {
         TaskModuleResult result = module.start();
 
         assertEquals(TaskModuleState.SUCCEEDED, result.state());
-        assertTrue(result.message().contains("恢复到任务前快照"));
+        assertTrue(result.message().contains("与全局账本一致"));
     }
 
     @Test
@@ -101,14 +101,14 @@ class AssertPlayerInventoryRestoredModuleTest {
         TaskModuleResult result = module.start();
 
         assertEquals(TaskModuleState.FAILED, result.state());
-        assertTrue(result.message().contains("开始前"));
+        assertTrue(result.message().contains("全局背包"));
     }
 
     @Test
     void syncRecordsLateInventoryAdditionsForAnotherDeposit() {
         MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
         TaskRunWorkspace workspace = workspace(Map.of());
-        SyncCollectedInventoryModule module = syncModule(dropped, workspace);
+        SyncPlayerInventoryModule module = syncModule(dropped, workspace);
         dropped.set(Map.of(GOLD, 3));
 
         TaskModuleResult result = module.start();
@@ -122,7 +122,7 @@ class AssertPlayerInventoryRestoredModuleTest {
     void syncDoesNotRecordAnItemAlreadyDeposited() {
         MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
         TaskRunWorkspace workspace = workspace(Map.of());
-        SyncCollectedInventoryModule initialSync = syncModule(
+        SyncPlayerInventoryModule initialSync = syncModule(
                 dropped,
                 workspace
         );
@@ -135,7 +135,7 @@ class AssertPlayerInventoryRestoredModuleTest {
         );
         dropped.set(Map.of());
 
-        SyncCollectedInventoryModule afterDeposit = syncModule(
+        SyncPlayerInventoryModule afterDeposit = syncModule(
                 dropped,
                 workspace
         );
@@ -148,7 +148,7 @@ class AssertPlayerInventoryRestoredModuleTest {
         assertEquals(TaskModuleState.SUCCEEDED, result.state());
         assertTrue(workspace.collectedItems().isEmpty());
         dropped.set(Map.of(GOLD, 1));
-        SyncCollectedInventoryModule lateSync = syncModule(
+        SyncPlayerInventoryModule lateSync = syncModule(
                 dropped,
                 workspace
         );
@@ -199,7 +199,7 @@ class AssertPlayerInventoryRestoredModuleTest {
         assertEquals(TaskModuleState.SUCCEEDED, syncModule(dropped, workspace).start().state());
         assertEquals(Map.of(GOLD, 5), workspace.collectedItems());
         assertEquals(Map.of(GOLD, 5), workspace.managedItems());
-        assertEquals(TaskModuleState.WAITING, syncModule(dropped, workspace).start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, syncModule(dropped, workspace).start().state());
         assertEquals(Map.of(GOLD, 5), workspace.managedItems());
     }
 
@@ -209,7 +209,7 @@ class AssertPlayerInventoryRestoredModuleTest {
                 Map.of("minecraft:iron_ingot", 5)
         );
         TaskRunWorkspace workspace = workspace(dropped.counts());
-        SyncCollectedInventoryModule module = syncModule(dropped, workspace);
+        SyncPlayerInventoryModule module = syncModule(dropped, workspace);
 
         TaskModuleResult result = module.start();
         for (int tick = 1; tick < 40; tick++) {
@@ -243,11 +243,11 @@ class AssertPlayerInventoryRestoredModuleTest {
         );
     }
 
-    private static SyncCollectedInventoryModule syncModule(
+    private static SyncPlayerInventoryModule syncModule(
             MutableDroppedItems dropped,
             TaskRunWorkspace workspace
     ) {
-        return new SyncCollectedInventoryModule(
+        return new SyncPlayerInventoryModule(
                 context(dropped, workspace),
                 TaskStep.action(
                         UUID.randomUUID(),

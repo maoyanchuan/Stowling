@@ -20,7 +20,7 @@ class TaskModuleCatalogTest {
     void exposesOnlyRealActionsAndListeners() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 
-        assertEquals(21, modules.size());
+        assertEquals(22, modules.size());
         assertEquals(
                 3,
                 modules.stream()
@@ -28,7 +28,7 @@ class TaskModuleCatalogTest {
                         .count()
         );
         assertEquals(
-                18,
+                19,
                 modules.stream()
                         .filter(module -> module.kind() == TaskModuleKind.ACTION)
                         .count()

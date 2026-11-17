@@ -27,6 +27,7 @@ import java.util.Set;
 public final class TaskModuleRuntimeRegistry {
     private final NavigationPort navigation;
     private final DroppedItemObserverPort droppedItems;
+    private final PlayerInventoryManager inventory;
     private final ContainerRegionPort containerRegions;
     private final ContainerTransferPort containerTransfers;
     private final ContainerWithdrawalPort containerWithdrawals;
@@ -50,6 +51,8 @@ public final class TaskModuleRuntimeRegistry {
     ) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
         this.droppedItems = Objects.requireNonNull(droppedItems, "droppedItems");
+        this.inventory = new PlayerInventoryManager(() -> this.droppedItems.playerItemCounts()
+                .map(dev.stowling.automation.PlayerInventorySnapshot::new));
         this.containerRegions = Objects.requireNonNull(
                 containerRegions,
                 "containerRegions"
@@ -209,6 +212,10 @@ public final class TaskModuleRuntimeRegistry {
 
     public DroppedItemObserverPort droppedItems() {
         return droppedItems;
+    }
+
+    public PlayerInventoryManager inventory() {
+        return inventory;
     }
 
     public ContainerRegionPort containerRegions() {

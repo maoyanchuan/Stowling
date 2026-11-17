@@ -14,9 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
-    private final Map<String, Integer> collectedItems = new LinkedHashMap<>();
-    private final Map<String, Integer> carriedItems = new LinkedHashMap<>();
-    private final Map<String, Integer> managedItems = new LinkedHashMap<>();
+    private final PlayerInventoryAccount inventoryAccount;
     private final Map<UUID, Integer> cacheUpdates = new LinkedHashMap<>();
     private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer =
             new LinkedHashMap<>();
@@ -46,13 +44,24 @@ public final class TaskRunWorkspace {
     private boolean cacheHasMore;
     private String lastContainerRead = "";
 
+    public TaskRunWorkspace() {
+        this(new PlayerInventoryAccount(UUID.randomUUID()));
+    }
+
+    public TaskRunWorkspace(PlayerInventoryAccount inventoryAccount) {
+        this.inventoryAccount = java.util.Objects.requireNonNull(inventoryAccount);
+    }
+
+    public PlayerInventoryAccount inventoryAccount() {
+        return inventoryAccount;
+    }
+
     public synchronized void recordCollected(String itemId, int count) {
-        add(collectedItems, itemId, count);
-        add(managedItems, itemId, count);
+        inventoryAccount.recordCollected(itemId, count);
     }
 
     public synchronized Map<String, Integer> collectedItems() {
-        return Map.copyOf(collectedItems);
+        return inventoryAccount.itemsForSource("collected");
     }
 
     public synchronized void captureInitialInventory(
@@ -79,49 +88,43 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized void removeCollected(String itemId, int count) {
-        remove(collectedItems, itemId, count);
+        inventoryAccount.removeCollected(itemId, count);
     }
 
     public synchronized void recordWithdrawn(String itemId, int count) {
-        add(carriedItems, itemId, count);
-        add(managedItems, itemId, count);
+        inventoryAccount.recordWithdrawn(itemId, count);
     }
 
     public synchronized void recordManagedAcquired(String itemId, int count) {
-        add(managedItems, itemId, count);
+        inventoryAccount.recordManagedAcquired(itemId, count);
     }
 
     public synchronized void consumeManaged(String itemId, int count) {
-        remove(managedItems, itemId, count);
+        inventoryAccount.consumeManaged(itemId, count);
     }
 
     public synchronized Map<String, Integer> carriedItems() {
-        return Map.copyOf(carriedItems);
+        return inventoryAccount.itemsForSource("carried");
     }
 
     public synchronized Map<String, Integer> managedItems() {
-        return Map.copyOf(managedItems);
+        return inventoryAccount.managedItems();
     }
 
     public synchronized int managedItemCount() {
-        return total(managedItems);
+        return total(inventoryAccount.managedItems());
     }
 
     public synchronized boolean hasManagedItems() {
-        return !managedItems.isEmpty();
+        return !inventoryAccount.managedItems().isEmpty();
     }
 
     public synchronized boolean hasCarriedItems() {
-        return !carriedItems.isEmpty();
+        return !inventoryAccount.itemsForSource("carried").isEmpty();
     }
 
     public synchronized Map<String, Integer> itemsForSource(String source) {
-        return switch (source) {
-            case "collected" -> Map.copyOf(collectedItems);
-            case "carried" -> Map.copyOf(carriedItems);
-            case "managed" -> Map.copyOf(managedItems);
-            default -> Map.of();
-        };
+        return inventoryAccount.itemsForSource(source);
     }
 
     public synchronized void consumeDeposit(
@@ -129,31 +132,7 @@ public final class TaskRunWorkspace {
             Map<String, Integer> requested,
             Map<String, Integer> remaining
     ) {
-        Map<String, Integer> deposited = new LinkedHashMap<>(requested);
-        for (Map.Entry<String, Integer> entry : remaining.entrySet()) {
-            decrement(deposited, entry.getKey(), entry.getValue());
-        }
-        switch (source) {
-            case "collected" -> {
-                subtract(collectedItems, deposited);
-                subtract(managedItems, deposited);
-            }
-            case "carried" -> {
-                subtract(carriedItems, deposited);
-                subtract(managedItems, deposited);
-            }
-            case "managed" -> {
-                Map<String, Integer> allocated = new LinkedHashMap<>(deposited);
-                subtract(managedItems, deposited);
-                subtractUpTo(carriedItems, allocated);
-                subtractUpTo(collectedItems, allocated);
-            }
-            case "inventory" -> {
-            }
-            default -> throw new IllegalArgumentException(
-                    "unsupported item source: " + source
-            );
-        }
+        inventoryAccount.confirmDeposit(source, requested, remaining);
     }
 
     public synchronized void setContainerScan(ContainerScanResult scan) {
@@ -488,62 +467,6 @@ public final class TaskRunWorkspace {
 
     public synchronized Map<String, Integer> copyLedger(String source) {
         return itemsForSource(source);
-    }
-
-    private static void add(Map<String, Integer> ledger, String itemId, int count) {
-        if (itemId == null || itemId.isBlank() || count <= 0) {
-            throw new IllegalArgumentException("item id and count must be positive");
-        }
-        ledger.merge(itemId.trim(), count, Math::addExact);
-    }
-
-    private static void remove(
-            Map<String, Integer> ledger,
-            String itemId,
-            int count
-    ) {
-        if (count <= 0) {
-            throw new IllegalArgumentException("count must be positive");
-        }
-        decrement(ledger, itemId, count);
-    }
-
-    private static void subtractUpTo(
-            Map<String, Integer> ledger,
-            Map<String, Integer> remaining
-    ) {
-        for (Map.Entry<String, Integer> entry
-                : Map.copyOf(remaining).entrySet()) {
-            int available = ledger.getOrDefault(entry.getKey(), 0);
-            int amount = Math.min(available, entry.getValue());
-            if (amount <= 0) {
-                continue;
-            }
-            decrement(ledger, entry.getKey(), amount);
-            decrement(remaining, entry.getKey(), amount);
-        }
-    }
-
-    private static void subtract(
-            Map<String, Integer> ledger,
-            Map<String, Integer> amounts
-    ) {
-        for (Map.Entry<String, Integer> entry : amounts.entrySet()) {
-            decrement(ledger, entry.getKey(), entry.getValue());
-        }
-    }
-
-    private static void decrement(
-            Map<String, Integer> ledger,
-            String itemId,
-            int amount
-    ) {
-        int remaining = ledger.getOrDefault(itemId, 0) - amount;
-        if (remaining <= 0) {
-            ledger.remove(itemId);
-        } else {
-            ledger.put(itemId, remaining);
-        }
     }
 
     private static int total(Map<String, Integer> ledger) {

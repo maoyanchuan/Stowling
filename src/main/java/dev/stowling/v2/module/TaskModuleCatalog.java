@@ -366,8 +366,14 @@ public final class TaskModuleCatalog {
             action(
                     ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
                     "确认背包已恢复",
-                    "确认任务结束时的玩家背包与任务开始前的快照一致。",
+                    "确认真实背包与全局保留物品及各任务账本一致。",
                     List.of()
+            ),
+            action(
+                    ConfigValidator.SYNC_PLAYER_INVENTORY,
+                    "同步全局背包",
+                    "核对全局背包，将未归属物品交给当前任务处理；保留其他任务的物品。",
+                    List.of(text(ConfigValidator.ITEM_FILTER, "物品过滤", false))
             ),
             action(
                     ConfigValidator.SYNC_COLLECTED_INVENTORY,

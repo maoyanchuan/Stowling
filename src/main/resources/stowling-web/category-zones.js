@@ -275,7 +275,7 @@
          * @returns {object}
          */
         function currentTemplate() {
-            return readers[0]?.read() || Model.normalizeBinding({});
+            return readers[0]?.() || Model.normalizeBinding({});
         }
 
         /**
@@ -384,7 +384,7 @@
                     expansionValue = expansionReader.read();
                 }
                 return {
-                    bindings: readers.map((reader) => reader.read()),
+                    bindings: readers.map((reader) => reader()),
                     expansion: mode === "AUTO" ? expansionValue : null
                 };
             }
@@ -1046,17 +1046,24 @@
      * @returns {void}
      */
     function showCreateForm() {
-        elements.form.hidden = false;
-        elements.bindings.replaceChildren();
-        newZoneEditor = createBindingEditor(
-            [Model.normalizeBinding({})],
-            Model.normalizeExpansion({}),
-            true
-        );
-        elements.bindings.append(newZoneEditor.root);
-        elements.addBinding.hidden = true;
-        clearErrors();
-        elements.name.focus();
+        try {
+            elements.bindings.replaceChildren();
+            const editor = createBindingEditor(
+                [Model.normalizeBinding({})],
+                Model.normalizeExpansion({}),
+                true
+            );
+            elements.bindings.append(editor.root);
+            newZoneEditor = editor;
+            elements.addBinding.hidden = true;
+            elements.form.hidden = false;
+            clearErrors();
+            elements.name.focus();
+        } catch (error) {
+            newZoneEditor = null;
+            elements.form.hidden = true;
+            showError(error, "无法初始化分类区编辑器");
+        }
     }
 
     /**

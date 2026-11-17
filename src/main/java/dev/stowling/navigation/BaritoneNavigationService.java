@@ -119,9 +119,10 @@ public final class BaritoneNavigationService implements NavigationService {
             int requestedRadius,
             double interactionRange
     ) {
-        return Math.max(
-                requestedRadius,
-                (int) Math.ceil(interactionRange)
+        int safeRadius = Math.max(
+                1,
+                (int) Math.floor(interactionRange) - 1
         );
+        return Math.max(1, Math.min(requestedRadius, safeRadius));
     }
 }

@@ -64,8 +64,11 @@ class BaritoneNavigationServiceTest {
     }
 
     @Test
-    void nearGoalUsesGlobalInteractionRangeWithoutShrinkingTaskRadius() {
-        assertEquals(5, BaritoneNavigationService.nearGoalRadius(4, 4.5D));
-        assertEquals(7, BaritoneNavigationService.nearGoalRadius(7, 4.5D));
+    void nearGoalStaysInsideInteractionRange() {
+        assertEquals(3, BaritoneNavigationService.nearGoalRadius(4, 4.5D));
+        assertEquals(3, BaritoneNavigationService.nearGoalRadius(7, 4.5D));
+        assertEquals(2, BaritoneNavigationService.nearGoalRadius(2, 4.5D));
+        assertEquals(1, BaritoneNavigationService.nearGoalRadius(4, 1.5D));
+        assertEquals(4, BaritoneNavigationService.nearGoalRadius(4, 8.0D));
     }
 }

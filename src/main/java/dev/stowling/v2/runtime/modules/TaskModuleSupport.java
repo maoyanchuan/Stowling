@@ -1,10 +1,13 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.category.CategoryMarkerSource;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -101,6 +104,42 @@ final class TaskModuleSupport {
             );
         }
         return Set.copyOf(result);
+    }
+
+    static CategoryZoneDefinition categoryZoneSelection(
+            TaskStep step,
+            CategoryZoneDefinition zone
+    ) {
+        String bindingValue = step.parameters().get(
+                TaskModuleIds.CATEGORY_BINDING_ID
+        );
+        if (bindingValue == null || bindingValue.isBlank()) {
+            return zone;
+        }
+        UUID bindingId = UUID.fromString(bindingValue.trim());
+        CategoryBindingDefinition binding = zone.bindings().stream()
+                .filter(value -> value.id().equals(bindingId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "category binding does not exist"
+                ));
+        String ruleId = step.parameters().get(TaskModuleIds.CATEGORY_RULE_ID);
+        if (ruleId != null && !ruleId.isBlank()
+                && !ruleId.trim().equals(binding.ruleId())) {
+            binding = new CategoryBindingDefinition(
+                    binding.id(),
+                    binding.markerArea(),
+                    binding.storageArea(),
+                    ruleId,
+                    binding.ignoredMarkerBlockIds(),
+                    binding.containerOverrides()
+            );
+        }
+        return new CategoryZoneDefinition(
+                zone.id(),
+                zone.name(),
+                List.of(binding)
+        );
     }
 
     static boolean dimensionMatches(

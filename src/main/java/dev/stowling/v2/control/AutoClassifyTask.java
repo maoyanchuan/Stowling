@@ -1,6 +1,6 @@
 package dev.stowling.v2.control;
 
-import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import java.util.List;
 import java.util.UUID;
@@ -13,8 +13,7 @@ public record AutoClassifyTask(
         boolean classificationEnabled,
         AutoClassifyDetection detection,
         String cacheRegionRef,
-        String categoryZoneRef,
-        List<CategoryMarkerSource> markerSources,
+        List<AutoClassifyAreaDefinition> classificationAreas,
         TaskPriority collectionPriority,
         TaskPriority classificationPriority,
         String collectionTaskRef,
@@ -23,7 +22,7 @@ public record AutoClassifyTask(
         List<UUID> triggerIds
 ) {
     public AutoClassifyTask {
-        markerSources = List.copyOf(markerSources);
+        classificationAreas = List.copyOf(classificationAreas);
         triggerIds = List.copyOf(triggerIds);
     }
 }

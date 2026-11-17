@@ -307,33 +307,18 @@
                                             </div>
                                             <div id="auto-sort-body"
                                                  class="auto-phase-body" hidden>
-                                                <label class="move-field"
-                                                       for="auto-category-zone">
-                                                    <span>分类区</span>
-                                                    <select id="auto-category-zone" required>
-                                                        <option value="">请选择分类区</option>
-                                                    </select>
-                                                </label>
-                                                <fieldset class="auto-marker-options">
-                                                    <legend>分类物识别方式 · 可多选</legend>
-                                                    <label><input type="checkbox" checked
-                                                        name="markerSources" value="ITEM_FRAME">
-                                                        <span>展示框</span></label>
-                                                    <label><input type="checkbox" checked
-                                                        name="markerSources" value="SHELF">
-                                                        <span>展示架</span></label>
-                                                    <label><input type="checkbox" checked
-                                                        name="markerSources" value="PLACED_ITEM">
-                                                        <span>摆放方块</span></label>
-                                                    <label><input type="checkbox" checked
-                                                        name="markerSources"
-                                                        value="CONTAINER_CONTENTS">
-                                                        <span>标记箱 / 木桶</span></label>
-                                                </fieldset>
+                                                <div id="auto-classification-areas"
+                                                     class="auto-classification-area-list">
+                                                </div>
+                                                <button id="add-auto-classification-area"
+                                                        class="secondary compact"
+                                                        type="button">
+                                                    ＋ 添加分类选区
+                                                </button>
                                                 <p class="auto-config-note">
-                                                    按分类区的识别区与储存区匹配，不使用附近展示框匹配。
-                                                    分类为后台优先级，未识别物品留在缓存，
-                                                    满箱会尝试同类其他箱子。
+                                                    每个选区单独选择识别与储存范围、分类方法和
+                                                    分类物识别方式。分类为后台优先级，未识别物品
+                                                    留在缓存，满箱会尝试同类其他箱子。
                                                 </p>
                                             </div>
                                         </section>

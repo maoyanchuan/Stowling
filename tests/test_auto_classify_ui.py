@@ -44,7 +44,8 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-pickup-radius",
         "auto-cache-region",
         "auto-collect-priority",
-        "auto-category-zone",
+        "auto-classification-areas",
+        "add-auto-classification-area",
         "auto-collect-toggle",
         "auto-collect-body",
         "auto-collect-enabled",
@@ -96,7 +97,7 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     sort_body = between(
         form,
         'id="auto-sort-body"',
-        'id="auto-category-zone"',
+        'id="add-auto-classification-area"',
     )
 
     assert 'aria-expanded="false"' in collect_header
@@ -124,15 +125,27 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "body.hidden = !state.phase[phase];" in javascript
 
 
-def test_marker_sources_are_four_checked_multiselect_inputs_in_the_form() -> None:
+def test_marker_sources_are_rendered_inside_each_classification_area() -> None:
     html = read("tasks.html")
+    javascript = read("auto-classify-ui.js")
+    model = read("auto-classify-task-model.js")
     form = between(html, 'id="auto-task-form"', "</form>")
 
-    assert form.count('name="markerSources"') == 4
+    assert 'id="auto-classification-areas"' in form
+    assert 'id="add-auto-classification-area"' in form
+    assert 'name="markerSources"' not in form
     for source in MARKER_SOURCES:
-        assert f'name="markerSources" value="{source}"' in form
-    assert form.count("type=\"checkbox\" checked") == 4
-    assert "分类物识别方式 · 可多选" in form
+        assert f'["{source}",' in javascript
+    assert "markerInputs" in javascript
+    assert "Auto.defaultMarkerSources(" in javascript
+    assert "分类物识别方式 · 可多选" in javascript
+    assert "classificationAreas: [newArea()]" in model
+    assert "function addClassificationArea()" in javascript
+    assert "function removeClassificationArea(index)" in javascript
+    assert "option.dataset.ruleId = binding.ruleId;" in javascript
+    assert "labeledControl(\"分类范围\", range)" in javascript
+    assert "labeledControl(\"分类方法\", method)" in javascript
+    assert "elements.addArea.addEventListener" in javascript
     assert 'value="BACKGROUND"' not in form
     assert '<option value="NORMAL">普通</option>' in form
     assert '<option value="URGENT">紧急</option>' in form
@@ -151,6 +164,7 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
         '"/v1/coordinates"',
         '"/v1/regions"',
         '"/v1/category-zones"',
+        '"/v1/category-rules"',
         '"/v1/tasks"',
     ):
         assert route in loading
@@ -158,6 +172,7 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
     assert "Array.isArray(coordinates.coordinates)" in loading
     assert "Array.isArray(regions.regions)" in loading
     assert "Array.isArray(zones.categoryZones)" in loading
+    assert "Array.isArray(rules.rules)" in loading
     assert "Array.isArray(allTasks.tasks) ? allTasks.tasks : []" in loading
     assert "state.revision = String(tasks.revision || \"\");" in loading
 
@@ -184,8 +199,9 @@ def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:
         "function renderList()",
     )
     assert "...state.draft" in form_reader
-    assert "elements.sources.filter((input) => input.checked)" in form_reader
-    assert ".map((input) => input.value)" in form_reader
+    assert "classificationAreas: areaReaders.map((reader) => reader.read())" in (
+        form_reader
+    )
     assert "collectionEnabled: elements.collectEnabled.checked" in form_reader
     assert "classificationEnabled: elements.classifyEnabled.checked" in form_reader
     assert "length ?" not in form_reader

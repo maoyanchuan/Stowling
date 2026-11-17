@@ -16,6 +16,7 @@ import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.control.AutoClassifyDetectionRequest;
+import dev.stowling.v2.control.AutoClassifyAreaRequest;
 import dev.stowling.v2.control.AutoClassifyTaskRequest;
 import dev.stowling.v2.control.AutoClassifyTaskUpdateRequest;
 import dev.stowling.v2.control.CoordinateInUseException;
@@ -739,8 +740,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "classificationEnabled"),
                 detection,
                 string(json, "cacheRegionRef"),
-                string(json, "categoryZoneRef"),
-                markerSources(json),
+                autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority")
         );
     }
@@ -757,10 +757,36 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "classificationEnabled"),
                 detection,
                 string(json, "cacheRegionRef"),
-                string(json, "categoryZoneRef"),
-                markerSources(json),
+                autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority")
         );
+    }
+
+    private static List<AutoClassifyAreaRequest> autoClassifyAreas(
+            JsonObject json
+    ) {
+        List<AutoClassifyAreaRequest> result = new ArrayList<>();
+        for (JsonElement value : array(json, "classificationAreas")) {
+            JsonObject area = jsonObject(value, "classification area");
+            requireFields(area, Set.of(
+                    "categoryZoneRef",
+                    "bindingId",
+                    "ruleId",
+                    "markerSources"
+            ));
+            result.add(new AutoClassifyAreaRequest(
+                    string(area, "categoryZoneRef"),
+                    uuid(string(area, "bindingId")),
+                    string(area, "ruleId"),
+                    markerSources(area)
+            ));
+        }
+        if (result.isEmpty()) {
+            throw invalid(
+                    "classificationAreas must contain at least one area"
+            );
+        }
+        return List.copyOf(result);
     }
 
     private static AutoClassifyDetectionRequest autoClassifyDetection(
@@ -806,8 +832,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "classificationEnabled",
                 "detection",
                 "cacheRegionRef",
-                "categoryZoneRef",
-                "markerSources",
+                "classificationAreas",
                 "collectionPriority"
         ));
         if (revision) {
@@ -820,8 +845,7 @@ public final class V2ControlServer implements AutoCloseable {
         Set<String> fields = new java.util.HashSet<>(Set.of(
                 "detection",
                 "cacheRegionRef",
-                "categoryZoneRef",
-                "markerSources"
+                "classificationAreas"
         ));
         if (revision) {
             fields.add("revision");

@@ -29,6 +29,8 @@ public final class TaskModuleIds {
     public static final String AREA_REF = "areaRef";
     public static final String REGION_REF = "regionRef";
     public static final String CATEGORY_ZONE_REF = "categoryZoneRef";
+    public static final String CATEGORY_BINDING_ID = "categoryBindingId";
+    public static final String CATEGORY_RULE_ID = "categoryRuleId";
     public static final String TASK_REF = "taskRef";
     public static final String CONDITION = "condition";
     public static final String NEGATE = "negate";

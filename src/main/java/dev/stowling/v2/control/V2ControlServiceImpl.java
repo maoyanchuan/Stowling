@@ -10,6 +10,7 @@ import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.AutoClassifyTaskFactory;
 import dev.stowling.v2.model.CategoryBindingDefinition;
@@ -552,8 +553,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.classificationEnabled() == null || request.classificationEnabled(),
                 request.detection(),
                 request.cacheRegionRef(),
-                request.categoryZoneRef(),
-                request.markerSources(),
+                request.classificationAreas(),
                 request.collectionPriority()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
@@ -630,8 +630,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.classificationEnabled(),
                 request.detection(),
                 request.cacheRegionRef(),
-                request.categoryZoneRef(),
-                request.markerSources(),
+                request.classificationAreas(),
                 request.collectionPriority()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
@@ -1108,8 +1107,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection,
             String cacheRegionRef,
-            String categoryZoneRef,
-            List<dev.stowling.v2.category.CategoryMarkerSource> sources,
+            List<AutoClassifyAreaRequest> requestedAreas,
             TaskPriority collectionPriority
     ) {
         if (detection == null) {
@@ -1124,6 +1122,14 @@ public final class V2ControlServiceImpl implements V2ControlService {
         int pickupRadius = detection.pickupRadius() == null
                 ? AutoClassifyDefinition.DEFAULT_PICKUP_RADIUS
                 : detection.pickupRadius();
+        List<AutoClassifyAreaDefinition> areas = requestedAreas.stream()
+                .map(area -> new AutoClassifyAreaDefinition(
+                        area.categoryZoneRef(),
+                        area.bindingId(),
+                        area.ruleId(),
+                        area.markerSources()
+                ))
+                .toList();
         return new AutoClassifyDefinition(
                 id,
                 name == null || name.isBlank() ? "自动分类" : name,
@@ -1133,8 +1139,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 coordinateRef,
                 pickupRadius,
                 cacheRegionRef,
-                categoryZoneRef,
-                sources,
+                areas,
                 collectionPriority == null
                         ? TaskPriority.NORMAL
                         : collectionPriority
@@ -1154,8 +1159,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.detectionCoordinateRef(),
                 definition.pickupRadius(),
                 definition.cacheRegionRef(),
-                definition.categoryZoneRef(),
-                definition.markerSources(),
+                definition.classificationAreas(),
                 definition.collectionPriority()
         );
     }
@@ -1184,8 +1188,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         definition.pickupRadius()
                 ),
                 definition.cacheRegionRef(),
-                definition.categoryZoneRef(),
-                definition.markerSources(),
+                definition.classificationAreas(),
                 definition.collectionPriority(),
                 TaskPriority.BACKGROUND,
                 ResourceReference.of(ResourceType.TASK, definition.id())

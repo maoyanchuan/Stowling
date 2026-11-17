@@ -82,6 +82,8 @@ public final class TaskFlowTemplates {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
         scan.remove(ConfigValidator.MARKER_SOURCES);
         scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
+        scan.remove(ConfigValidator.CATEGORY_BINDING_ID);
+        scan.remove(ConfigValidator.CATEGORY_RULE_ID);
         scan.put(ConfigValidator.REGION_REF, cacheRegionRef);
         TaskStep scanStep = TaskStep.action(
                 UUID.randomUUID(),
@@ -235,6 +237,22 @@ public final class TaskFlowTemplates {
             String maxVolume,
             String markerSources
     ) {
+        return refreshMarkers(
+                categoryZoneRef,
+                maxVolume,
+                markerSources,
+                null,
+                null
+        );
+    }
+
+    public static List<TaskStep> refreshMarkers(
+            String categoryZoneRef,
+            String maxVolume,
+            String markerSources,
+            String bindingId,
+            String ruleId
+    ) {
         Map<String, String> scan = new LinkedHashMap<>();
         scan.put(ConfigValidator.CATEGORY_ZONE_REF, categoryZoneRef);
         if (maxVolume != null && !maxVolume.isBlank()) {
@@ -242,6 +260,12 @@ public final class TaskFlowTemplates {
         }
         if (markerSources != null && !markerSources.isBlank()) {
             scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
+        }
+        if (bindingId != null && !bindingId.isBlank()) {
+            scan.put(ConfigValidator.CATEGORY_BINDING_ID, bindingId);
+        }
+        if (ruleId != null && !ruleId.isBlank()) {
+            scan.put(ConfigValidator.CATEGORY_RULE_ID, ruleId);
         }
         TaskStep scanStep = TaskStep.action(
                 UUID.randomUUID(),

@@ -38,7 +38,12 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 ResourceType.CATEGORY_ZONE,
                 TaskModuleIds.CATEGORY_ZONE_ID
         );
-        this.zone = ResourceReferenceSupport.categoryZone(context, reference);
+        CategoryZoneDefinition configuredZone =
+                ResourceReferenceSupport.categoryZone(context, reference);
+        this.zone = TaskModuleSupport.categoryZoneSelection(
+                step,
+                configuredZone
+        );
         this.containerTypes = TaskModuleSupport.containerTypes(step);
         this.maxVolume = TaskModuleSupport.integerParameter(
                 step,

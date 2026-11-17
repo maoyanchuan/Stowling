@@ -143,11 +143,12 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version == 7 || version == 8) {
+        if (version >= 7 && version <= 9) {
             if (!root.has("autoClassifyTasks")) {
                 root.add("autoClassifyTasks", new JsonArray());
             }
             ensureAutoClassifyPhaseFlags(root);
+            migrateAutoClassifyAreas(root);
             root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
         }
     }
@@ -169,6 +170,104 @@ public final class ConfigStore {
                 definition.addProperty("classificationEnabled", true);
             }
         }
+    }
+
+    private static void migrateAutoClassifyAreas(JsonObject root) {
+        JsonElement tasksValue = root.get("autoClassifyTasks");
+        if (tasksValue == null || !tasksValue.isJsonArray()) {
+            return;
+        }
+        JsonElement zonesValue = root.get("categoryZones");
+        JsonArray zones = zonesValue != null && zonesValue.isJsonArray()
+                ? zonesValue.getAsJsonArray()
+                : new JsonArray();
+        for (JsonElement item : tasksValue.getAsJsonArray()) {
+            if (item == null || !item.isJsonObject()) {
+                continue;
+            }
+            JsonObject definition = item.getAsJsonObject();
+            if (definition.has("classificationAreas")) {
+                definition.remove("categoryZoneRef");
+                definition.remove("markerSources");
+                continue;
+            }
+            String categoryZoneRef = stringValue(
+                    definition.get("categoryZoneRef")
+            );
+            String zoneId = categoryZoneRef.contains(":")
+                    ? categoryZoneRef.substring(categoryZoneRef.indexOf(':') + 1)
+                    : "";
+            JsonElement sourcesValue = definition.get("markerSources");
+            JsonArray markerSources = sourcesValue != null
+                    && sourcesValue.isJsonArray()
+                    ? sourcesValue.getAsJsonArray().deepCopy()
+                    : new JsonArray();
+            JsonArray areas = new JsonArray();
+            for (JsonElement zoneItem : zones) {
+                if (zoneItem == null || !zoneItem.isJsonObject()) {
+                    continue;
+                }
+                JsonObject zone = zoneItem.getAsJsonObject();
+                if (!zoneId.equals(stringValue(zone.get("id")))) {
+                    continue;
+                }
+                JsonElement bindings = zone.get("bindings");
+                if (bindings == null || !bindings.isJsonArray()) {
+                    continue;
+                }
+                for (JsonElement bindingItem : bindings.getAsJsonArray()) {
+                    if (bindingItem == null || !bindingItem.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject binding = bindingItem.getAsJsonObject();
+                    String ruleId = stringValue(binding.get("ruleId"));
+                    JsonObject area = new JsonObject();
+                    area.addProperty("categoryZoneRef", categoryZoneRef);
+                    area.addProperty(
+                            "bindingId",
+                            stringValue(binding.get("id"))
+                    );
+                    area.addProperty("ruleId", ruleId);
+                    area.add(
+                            "markerSources",
+                            compatibleMarkerSources(ruleId, markerSources)
+                    );
+                    areas.add(area);
+                }
+            }
+            definition.add("classificationAreas", areas);
+            definition.remove("categoryZoneRef");
+            definition.remove("markerSources");
+        }
+    }
+
+    private static String stringValue(JsonElement value) {
+        return value == null || value.isJsonNull() ? "" : value.getAsString();
+    }
+
+    private static JsonArray compatibleMarkerSources(
+            String ruleId,
+            JsonArray configured
+    ) {
+        JsonArray result = new JsonArray();
+        for (JsonElement source : configured) {
+            if (source == null || source.isJsonNull()) {
+                continue;
+            }
+            String value = source.getAsString();
+            if (("CONTAINER_CONTENTS".equals(ruleId)
+                    && "CONTAINER_CONTENTS".equals(value))
+                    || ("DIRECT_BLOCK_ID".equals(ruleId)
+                    && !"CONTAINER_CONTENTS".equals(value))) {
+                result.add(value);
+            }
+        }
+        if (result.isEmpty()) {
+            result.add("CONTAINER_CONTENTS".equals(ruleId)
+                    ? "CONTAINER_CONTENTS"
+                    : "PLACED_ITEM");
+        }
+        return result;
     }
 
     private static void requireStepObjects(JsonElement value) {
@@ -238,8 +337,7 @@ public final class ConfigStore {
                 "detectionCoordinateRef",
                 "pickupRadius",
                 "cacheRegionRef",
-                "categoryZoneRef",
-                "markerSources",
+                "classificationAreas",
                 "collectionPriority"
         );
         for (JsonElement item
@@ -249,10 +347,20 @@ public final class ConfigStore {
                     "auto classify task"
             );
             requireExactFields(definition, fields);
-            requireStringArray(
-                    definition.get("markerSources"),
+            requireAutoClassifyAreas(definition.get("classificationAreas"));
+        }
+    }
+
+    private static void requireAutoClassifyAreas(JsonElement value) {
+        for (JsonElement item : requireArray(value, "classificationAreas")) {
+            JsonObject area = requireObject(item, "classification area");
+            requireExactFields(area, Set.of(
+                    "categoryZoneRef",
+                    "bindingId",
+                    "ruleId",
                     "markerSources"
-            );
+            ));
+            requireStringArray(area.get("markerSources"), "markerSources");
         }
     }
 

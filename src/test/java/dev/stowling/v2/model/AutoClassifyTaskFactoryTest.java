@@ -66,12 +66,15 @@ class AutoClassifyTaskFactoryTest {
     void allSourcesScanCacheBeforeRefreshingMarkersInsideHasContainersBranch() {
         AutoClassifyDefinition definition = definition(
                 false,
+                true,
+                true,
                 List.of(
                         CategoryMarkerSource.PLACED_ITEM,
                         CategoryMarkerSource.ITEM_FRAME,
                         CategoryMarkerSource.SHELF,
                         CategoryMarkerSource.CONTAINER_CONTENTS
-                )
+                ),
+                "CONTAINER_CONTENTS"
         );
 
         TaskDefinition classification = AutoClassifyTaskFactory.tasks(
@@ -100,7 +103,7 @@ class AutoClassifyTaskFactoryTest {
         TaskStep markerScan = classify.getFirst();
         assertEquals(ConfigValidator.SCAN_CATEGORY_MARKERS, markerScan.moduleId());
         assertEquals(
-                definition.categoryZoneRef(),
+                definition.classificationAreas().getFirst().categoryZoneRef(),
                 markerScan.parameters().get(ConfigValidator.CATEGORY_ZONE_REF)
         );
         assertEquals(TaskStepKind.REPEAT, classify.get(1).kind());
@@ -182,6 +185,70 @@ class AutoClassifyTaskFactoryTest {
         ));
     }
 
+    @Test
+    void buildsAnIndependentClassificationFlowForEachSelectedArea() {
+        String zoneRef = "category-zone:" + UUID.randomUUID();
+        UUID firstBinding = UUID.randomUUID();
+        UUID secondBinding = UUID.randomUUID();
+        AutoClassifyDefinition definition = definition(List.of(
+                new AutoClassifyAreaDefinition(
+                        zoneRef,
+                        firstBinding,
+                        "DIRECT_BLOCK_ID",
+                        List.of(CategoryMarkerSource.PLACED_ITEM)
+                ),
+                new AutoClassifyAreaDefinition(
+                        zoneRef,
+                        secondBinding,
+                        "CONTAINER_CONTENTS",
+                        List.of(CategoryMarkerSource.CONTAINER_CONTENTS)
+                )
+        ));
+
+        TaskDefinition classification = AutoClassifyTaskFactory.tasks(
+                definition,
+                List.of()
+        ).get(1);
+
+        assertEquals(4, classification.steps().size());
+        TaskStep firstResolve = classification.steps().get(1).steps().stream()
+                .filter(step -> step.moduleId().equals(
+                        ConfigValidator.RESOLVE_CONTAINER_CATEGORIES
+                ))
+                .findFirst()
+                .orElseThrow();
+        TaskStep secondResolve = classification.steps().get(3).steps().stream()
+                .filter(step -> step.moduleId().equals(
+                        ConfigValidator.RESOLVE_CONTAINER_CATEGORIES
+                ))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                firstBinding.toString(),
+                firstResolve.parameters().get(
+                        ConfigValidator.CATEGORY_BINDING_ID
+                )
+        );
+        assertEquals(
+                "DIRECT_BLOCK_ID",
+                firstResolve.parameters().get(
+                        ConfigValidator.CATEGORY_RULE_ID
+                )
+        );
+        assertEquals(
+                secondBinding.toString(),
+                secondResolve.parameters().get(
+                        ConfigValidator.CATEGORY_BINDING_ID
+                )
+        );
+        assertEquals(
+                "CONTAINER_CONTENTS",
+                secondResolve.parameters().get(
+                        ConfigValidator.CATEGORY_RULE_ID
+                )
+        );
+    }
+
     private static AutoClassifyDefinition definition(boolean enabled) {
         return definition(enabled, List.of(CategoryMarkerSource.PLACED_ITEM));
     }
@@ -207,7 +274,8 @@ class AutoClassifyTaskFactoryTest {
                 enabled,
                 true,
                 true,
-                markerSources
+                markerSources,
+                "DIRECT_BLOCK_ID"
         );
     }
 
@@ -216,6 +284,48 @@ class AutoClassifyTaskFactoryTest {
             boolean collectionEnabled,
             boolean classificationEnabled,
             List<CategoryMarkerSource> markerSources
+    ) {
+        return definition(
+                enabled,
+                collectionEnabled,
+                classificationEnabled,
+                markerSources,
+                "DIRECT_BLOCK_ID"
+        );
+    }
+
+    private static AutoClassifyDefinition definition(
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            List<CategoryMarkerSource> markerSources,
+            String ruleId
+    ) {
+        String zoneRef = "category-zone:" + UUID.randomUUID();
+        return definition(
+                List.of(new AutoClassifyAreaDefinition(
+                        zoneRef,
+                        UUID.randomUUID(),
+                        ruleId,
+                        markerSources
+                )),
+                enabled,
+                collectionEnabled,
+                classificationEnabled
+        );
+    }
+
+    private static AutoClassifyDefinition definition(
+            List<AutoClassifyAreaDefinition> areas
+    ) {
+        return definition(areas, true, true, true);
+    }
+
+    private static AutoClassifyDefinition definition(
+            List<AutoClassifyAreaDefinition> areas,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled
     ) {
         return new AutoClassifyDefinition(
                 UUID.randomUUID(),
@@ -226,8 +336,7 @@ class AutoClassifyTaskFactoryTest {
                 "coordinate:" + UUID.randomUUID(),
                 16,
                 "region:" + UUID.randomUUID(),
-                "category-zone:" + UUID.randomUUID(),
-                markerSources,
+                areas,
                 TaskPriority.NORMAL
         );
     }

@@ -21,7 +21,12 @@ final class ScanCategoryMarkersModule implements TaskModuleExecutor {
                 ResourceType.CATEGORY_ZONE,
                 TaskModuleIds.CATEGORY_ZONE_ID
         );
-        this.zone = ResourceReferenceSupport.categoryZone(context, reference);
+        CategoryZoneDefinition configuredZone =
+                ResourceReferenceSupport.categoryZone(context, reference);
+        this.zone = TaskModuleSupport.categoryZoneSelection(
+                step,
+                configuredZone
+        );
         this.maxVolume = TaskModuleSupport.integerParameter(
                 step,
                 TaskModuleIds.MAX_VOLUME,

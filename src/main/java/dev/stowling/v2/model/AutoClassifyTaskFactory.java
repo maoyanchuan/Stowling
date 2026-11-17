@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -64,26 +65,37 @@ public final class AutoClassifyTaskFactory {
                     )
             ));
         }
-        String markerSources = markerSources(definition.markerSources());
-        Map<String, String> scan = new LinkedHashMap<>();
-        scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
-        scan.put(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true");
-        List<TaskStep> preResolveSteps = List.of();
-        if (definition.markerSources().contains(
-                CategoryMarkerSource.CONTAINER_CONTENTS
-        )) {
-            preResolveSteps = TaskFlowTemplates.refreshMarkers(
-                    definition.categoryZoneRef(),
-                    null,
-                    markerSources
+        List<TaskStep> classificationSteps = new ArrayList<>();
+        for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
+            String markerSources = markerSources(area.markerSources());
+            Map<String, String> scan = new LinkedHashMap<>();
+            scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
+            scan.put(ConfigValidator.CATEGORY_BINDING_ID,
+                    area.bindingId().toString());
+            scan.put(ConfigValidator.CATEGORY_RULE_ID, area.ruleId());
+            scan.put(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true");
+            List<TaskStep> preResolveSteps = List.of();
+            if (ContainerContentsCategoryRule.ID.equals(area.ruleId())
+                    && area.markerSources().contains(
+                            CategoryMarkerSource.CONTAINER_CONTENTS
+                    )) {
+                preResolveSteps = TaskFlowTemplates.refreshMarkers(
+                        area.categoryZoneRef(),
+                        null,
+                        markerSources,
+                        area.bindingId().toString(),
+                        area.ruleId()
+                );
+            }
+            classificationSteps.addAll(
+                    TaskFlowTemplates.sortByCategoryZone(
+                            definition.cacheRegionRef(),
+                            area.categoryZoneRef(),
+                            scan,
+                            preResolveSteps
+                    )
             );
         }
-        List<TaskStep> classificationSteps = TaskFlowTemplates.sortByCategoryZone(
-                definition.cacheRegionRef(),
-                definition.categoryZoneRef(),
-                scan,
-                preResolveSteps
-        );
         return List.of(
                 new TaskDefinition(
                         definition.id(),

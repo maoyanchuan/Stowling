@@ -7,7 +7,12 @@
         revision: "",
         items: [],
         allTasks: [],
-        resources: { coordinates: [], regions: [], categoryZones: [] },
+        resources: {
+            coordinates: [],
+            regions: [],
+            categoryZones: [],
+            categoryRules: []
+        },
         draft: Auto.newDraft([]),
         ready: false,
         loading: false,
@@ -28,14 +33,14 @@
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
-        zone: document.querySelector("#auto-category-zone"),
+        areas: document.querySelector("#auto-classification-areas"),
+        addArea: document.querySelector("#add-auto-classification-area"),
         collectHeader: document.querySelector("#auto-collect-toggle"),
         collectBody: document.querySelector("#auto-collect-body"),
         collectEnabled: document.querySelector("#auto-collect-enabled"),
         classifyHeader: document.querySelector("#auto-sort-toggle"),
         classifyBody: document.querySelector("#auto-sort-body"),
         classifyEnabled: document.querySelector("#auto-classify-enabled"),
-        sources: [...document.querySelectorAll('input[name="markerSources"]')],
         priority: document.querySelector("#auto-collect-priority"),
         message: document.querySelector("#auto-task-message"),
         resourceMessage: document.querySelector("#auto-resources-message"),
@@ -47,6 +52,7 @@
         remove: document.querySelector("#delete-auto-task")
     };
     const rows = new Map();
+    let areaReaders = [];
 
     /** @returns {boolean} */
     function unavailable() {
@@ -71,11 +77,19 @@
         state.loading = true;
         updateControls();
         try {
-            const [tasks, coordinates, regions, zones, allTasks] = await Promise.all([
+            const [
+                tasks,
+                coordinates,
+                regions,
+                zones,
+                rules,
+                allTasks
+            ] = await Promise.all([
                 Stowling.request("/v1/auto-classify-tasks"),
                 Stowling.request("/v1/coordinates"),
                 Stowling.request("/v1/regions"),
                 Stowling.request("/v1/category-zones"),
+                Stowling.request("/v1/category-rules"),
                 Stowling.request("/v1/tasks")
             ]);
             state.revision = String(tasks.revision || "");
@@ -84,7 +98,10 @@
             state.resources = {
                 coordinates: Array.isArray(coordinates.coordinates) ? coordinates.coordinates : [],
                 regions: Array.isArray(regions.regions) ? regions.regions : [],
-                categoryZones: Array.isArray(zones.categoryZones) ? zones.categoryZones : []
+                categoryZones: Array.isArray(zones.categoryZones)
+                    ? zones.categoryZones
+                    : [],
+                categoryRules: Array.isArray(rules.rules) ? rules.rules : []
             };
             state.ready = true;
             if (state.draft.id && !state.dirty) {
@@ -137,6 +154,228 @@
         select.value = selected;
     }
 
+    /**
+     * @param {string} ruleId
+     * @returns {string}
+     */
+    function ruleName(ruleId) {
+        const rule = state.resources.categoryRules.find(
+            (value) => value.id === ruleId
+        );
+        return rule?.name || ruleId || "未选择分类方法";
+    }
+
+    /** @returns {void} */
+    function renderClassificationAreas() {
+        elements.areas.replaceChildren();
+        areaReaders = [];
+        if (state.draft.classificationAreas.length === 0) {
+            state.draft.classificationAreas.push(Auto.newArea());
+        }
+        state.draft.classificationAreas.forEach((area, index) => {
+            areaReaders.push(appendClassificationArea(area, index));
+        });
+    }
+
+    /**
+     * @param {object} area
+     * @param {number} index
+     * @returns {{read: () => object}}
+     */
+    function appendClassificationArea(area, index) {
+        const card = Stowling.element("article", "auto-classification-area");
+        const heading = Stowling.element(
+            "div",
+            "auto-classification-area-heading"
+        );
+        const title = Stowling.element(
+            "div",
+            "auto-classification-area-title"
+        );
+        title.append(
+            Stowling.element("strong", "", `分类选区 ${index + 1}`),
+            Stowling.element(
+                "span",
+                "",
+                "一个识别区与储存区范围使用一种分类方法"
+            )
+        );
+        const remove = Stowling.element(
+            "button",
+            "ghost compact danger-action",
+            "移除"
+        );
+        remove.type = "button";
+        remove.addEventListener("click", () => {
+            removeClassificationArea(index);
+        });
+        heading.append(title, remove);
+
+        const range = document.createElement("select");
+        range.required = true;
+        const empty = new Option("请选择分类区中的范围", "");
+        range.append(empty);
+        for (const zone of state.resources.categoryZones) {
+            if (!Array.isArray(zone.bindings) || zone.bindings.length === 0) {
+                continue;
+            }
+            const group = document.createElement("optgroup");
+            group.label = zone.name || "未命名分类区";
+            zone.bindings.forEach((binding, bindingIndex) => {
+                const number = String(bindingIndex + 1).padStart(2, "0");
+                const option = new Option(
+                    `范围 ${number} · ${ruleName(binding.ruleId)}`,
+                    binding.id
+                );
+                option.dataset.zoneId = zone.id;
+                option.dataset.ruleId = binding.ruleId;
+                group.append(option);
+            });
+            range.append(group);
+        }
+        const selectedBinding = state.resources.categoryZones.flatMap(
+            (zone) => (zone.bindings || []).map((binding) => ({
+                zone,
+                binding
+            }))
+        ).find((value) => value.binding.id === area.bindingId);
+        if (!selectedBinding && area.bindingId) {
+            const missing = new Option("原分类范围已删除，请重新选择", "");
+            missing.disabled = true;
+            range.append(missing);
+        }
+        range.value = area.bindingId;
+
+        const method = document.createElement("select");
+        for (const rule of state.resources.categoryRules) {
+            method.append(new Option(rule.name, rule.id));
+        }
+        method.value = area.ruleId || "DIRECT_BLOCK_ID";
+
+        const recognition = Stowling.element(
+            "fieldset",
+            "auto-area-marker-options"
+        );
+        recognition.append(Stowling.element(
+            "legend",
+            "",
+            "分类物识别方式 · 可多选"
+        ));
+        const markerInputs = [
+            ["ITEM_FRAME", "展示框"],
+            ["SHELF", "展示架"],
+            ["PLACED_ITEM", "摆放方块"],
+            ["CONTAINER_CONTENTS", "标记箱 / 木桶"]
+        ].map(([value, label]) => {
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.value = value;
+            input.checked = area.markerSources.includes(value);
+            const wrapper = Stowling.element("label", "");
+            wrapper.append(input, Stowling.element("span", "", label));
+            recognition.append(wrapper);
+            return input;
+        });
+
+        /**
+         * @param {Event} event
+         * @returns {void}
+         */
+        function syncRange(event) {
+            if (event.target !== range) {
+                return;
+            }
+            const option = range.selectedOptions[0];
+            if (option?.dataset.ruleId) {
+                method.value = option.dataset.ruleId;
+                const defaults = Auto.defaultMarkerSources(method.value);
+                for (const input of markerInputs) {
+                    input.checked = defaults.includes(input.value);
+                }
+            }
+        }
+
+        /**
+         * @param {Event} event
+         * @returns {void}
+         */
+        function syncMethod(event) {
+            if (event.target !== method) {
+                return;
+            }
+            const defaults = Auto.defaultMarkerSources(method.value);
+            for (const input of markerInputs) {
+                input.checked = defaults.includes(input.value);
+            }
+        }
+
+        range.addEventListener("input", syncRange);
+        method.addEventListener("input", syncMethod);
+        const fields = Stowling.element("div", "auto-area-fields");
+        fields.append(
+            labeledControl("分类范围", range),
+            labeledControl("分类方法", method)
+        );
+        card.append(heading, fields, recognition);
+        elements.areas.append(card);
+        return {
+            read: () => {
+                const option = range.selectedOptions[0];
+                return {
+                    categoryZoneId: option?.dataset.zoneId || "",
+                    bindingId: range.value,
+                    ruleId: method.value,
+                    markerSources: markerInputs
+                        .filter((input) => input.checked)
+                        .map((input) => input.value)
+                };
+            }
+        };
+    }
+
+    /**
+     * @param {string} label
+     * @param {HTMLElement} control
+     * @returns {HTMLElement}
+     */
+    function labeledControl(label, control) {
+        const wrapper = Stowling.element("label", "move-field");
+        wrapper.append(Stowling.element("span", "", label), control);
+        return wrapper;
+    }
+
+    /** @returns {void} */
+    function addClassificationArea() {
+        if (unavailable()) {
+            return;
+        }
+        readForm();
+        state.draft.classificationAreas.push(Auto.newArea());
+        state.dirty = true;
+        showMessage("未保存修改");
+        renderClassificationAreas();
+        updateControls();
+    }
+
+    /**
+     * @param {number} index
+     * @returns {void}
+     */
+    function removeClassificationArea(index) {
+        if (unavailable()) {
+            return;
+        }
+        readForm();
+        state.draft.classificationAreas.splice(index, 1);
+        if (state.draft.classificationAreas.length === 0) {
+            state.draft.classificationAreas.push(Auto.newArea());
+        }
+        state.dirty = true;
+        showMessage("未保存修改");
+        renderClassificationAreas();
+        updateControls();
+    }
+
     /** @returns {void} */
     function syncForm() {
         const draft = state.draft;
@@ -147,13 +386,9 @@
             "请选择坐标页面的检测点");
         populateSelect(elements.cache, state.resources.regions, draft.cacheRegionId,
             "请选择包含缓存箱子的区域");
-        populateSelect(elements.zone, state.resources.categoryZones, draft.categoryZoneId,
-            "请选择分类区（识别区 + 储存区）");
-        for (const input of elements.sources) {
-            input.checked = draft.markerSources.includes(input.value);
-        }
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
+        renderClassificationAreas();
         updateControls();
     }
 
@@ -165,9 +400,7 @@
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
             cacheRegionId: elements.cache.value,
-            categoryZoneId: elements.zone.value,
-            markerSources: elements.sources.filter((input) => input.checked)
-                .map((input) => input.value),
+            classificationAreas: areaReaders.map((reader) => reader.read()),
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
             classificationEnabled: elements.classifyEnabled.checked
@@ -194,11 +427,15 @@
             const cache = state.resources.regions.find(
                 (region) => region.id === draft.cacheRegionId
             );
-            const zone = state.resources.categoryZones.find(
-                (value) => value.id === draft.categoryZoneId
-            );
+            const zoneNames = [...new Set(
+                draft.classificationAreas.map((area) => state.resources
+                    .categoryZones.find((zone) => zone.id === area.categoryZoneId)
+                    ?.name || "分类区已删除")
+            )];
             overview.append(Stowling.element("span", "",
-                `${cache?.name || "缓存区域已删除"} → ${zone?.name || "分类区已删除"}`));
+                `${cache?.name || "缓存区域已删除"} · `
+                + `${draft.classificationAreas.length} 个分类选区`
+                + (zoneNames.length > 0 ? `（${zoneNames.join("、")}）` : "")));
             const priority = window.StowlingTaskModel.priorityLabel(item.collectionPriority);
             const status = Stowling.element("span", "move-task-state",
                 item.enabled ? "监听中" : "已保存");
@@ -287,7 +524,7 @@
         syncForm();
         renderList();
         showMessage(item ? "已保存；监听时自动收集，分类以后台优先级排队。"
-            : "配置检测点、缓存区域与分类区后，保存或开始监听。");
+            : "配置检测点、缓存区域与分类选区后，保存或开始监听。");
     }
 
     /**
@@ -442,6 +679,7 @@
     });
     elements.collectHeader.addEventListener("click", () => togglePhase("collection"));
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
+    elements.addArea.addEventListener("click", addClassificationArea);
     elements.refresh.addEventListener("click", () => void loadResources());
     elements.form.addEventListener("input", () => {
         readForm();

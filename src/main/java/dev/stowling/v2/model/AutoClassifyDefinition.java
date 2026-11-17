@@ -15,8 +15,7 @@ public record AutoClassifyDefinition(
         String detectionCoordinateRef,
         int pickupRadius,
         String cacheRegionRef,
-        String categoryZoneRef,
-        List<CategoryMarkerSource> markerSources,
+        List<AutoClassifyAreaDefinition> classificationAreas,
         TaskPriority collectionPriority
 ) {
     public static final int DEFAULT_PICKUP_RADIUS = 8;
@@ -43,21 +42,25 @@ public record AutoClassifyDefinition(
                 ResourceType.REGION,
                 "cacheRegionRef"
         );
-        categoryZoneRef = requireReference(
-                categoryZoneRef,
-                ResourceType.CATEGORY_ZONE,
-                "categoryZoneRef"
+        classificationAreas = List.copyOf(
+                Objects.requireNonNull(
+                        classificationAreas,
+                        "classificationAreas"
+                )
         );
-        markerSources = List.copyOf(
-                Objects.requireNonNull(markerSources, "markerSources")
-        );
-        if (markerSources.isEmpty()) {
+        if (classificationAreas.isEmpty()) {
             throw new IllegalArgumentException(
-                    "markerSources must contain at least one source"
+                    "classificationAreas must contain at least one area"
             );
         }
-        if (markerSources.stream().distinct().count() != markerSources.size()) {
-            throw new IllegalArgumentException("markerSources must be unique");
+        long uniqueBindings = classificationAreas.stream()
+                .map(AutoClassifyAreaDefinition::bindingId)
+                .distinct()
+                .count();
+        if (uniqueBindings != classificationAreas.size()) {
+            throw new IllegalArgumentException(
+                    "classificationAreas must use unique bindings"
+            );
         }
         collectionPriority = Objects.requireNonNull(
                 collectionPriority,

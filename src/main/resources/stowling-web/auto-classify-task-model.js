@@ -3,6 +3,8 @@
 
     const DEFAULT_NAME = "自动分类";
     const DEFAULT_PICKUP_RADIUS = "8";
+    const DIRECT_RULE_ID = "DIRECT_BLOCK_ID";
+    const CONTAINER_RULE_ID = "CONTAINER_CONTENTS";
     const MARKER_SOURCES = Object.freeze([
         "PLACED_ITEM",
         "ITEM_FRAME",
@@ -14,6 +16,45 @@
         "URGENT"
     ]);
     const INTEGER_PATTERN = /^\d+$/;
+
+    /**
+     * @param {string} ruleId
+     * @returns {Array<string>}
+     */
+    function defaultMarkerSources(ruleId) {
+        return ruleId === CONTAINER_RULE_ID
+            ? ["CONTAINER_CONTENTS"]
+            : ["PLACED_ITEM", "ITEM_FRAME", "SHELF"];
+    }
+
+    /**
+     * @param {string} ruleId
+     * @param {Array<string>} sources
+     * @returns {boolean}
+     */
+    function ruleSupportsSources(ruleId, sources) {
+        if (ruleId === CONTAINER_RULE_ID) {
+            return sources.length === 1
+                && sources[0] === "CONTAINER_CONTENTS";
+        }
+        if (ruleId === DIRECT_RULE_ID) {
+            return sources.length > 0
+                && sources.every((source) => source !== "CONTAINER_CONTENTS");
+        }
+        return false;
+    }
+
+    /**
+     * @returns {object}
+     */
+    function newArea() {
+        return {
+            categoryZoneId: "",
+            bindingId: "",
+            ruleId: DIRECT_RULE_ID,
+            markerSources: defaultMarkerSources(DIRECT_RULE_ID)
+        };
+    }
 
     /**
      * @param {unknown} value
@@ -121,8 +162,7 @@
             coordinateId: "",
             pickupRadius: DEFAULT_PICKUP_RADIUS,
             cacheRegionId: "",
-            categoryZoneId: "",
-            markerSources: [...MARKER_SOURCES],
+            classificationAreas: [newArea()],
             collectionPriority: "NORMAL",
             enabled: false,
             collectionEnabled: true,
@@ -147,11 +187,17 @@
                 ? ""
                 : String(detection.pickupRadius),
             cacheRegionId: referencedId(item?.cacheRegionRef, "region"),
-            categoryZoneId: referencedId(
-                item?.categoryZoneRef,
-                "category-zone"
-            ),
-            markerSources: markerSourceText(item?.markerSources),
+            classificationAreas: Array.isArray(item?.classificationAreas)
+                ? item.classificationAreas.map((area) => ({
+                    categoryZoneId: referencedId(
+                        area?.categoryZoneRef,
+                        "category-zone"
+                    ),
+                    bindingId: String(area?.bindingId ?? ""),
+                    ruleId: String(area?.ruleId ?? DIRECT_RULE_ID),
+                    markerSources: markerSourceText(area?.markerSources)
+                }))
+                : [],
             collectionPriority: String(item?.collectionPriority ?? ""),
             enabled: item?.enabled === true,
             collectionEnabled: item?.collectionEnabled === true,
@@ -231,23 +277,7 @@
             errors.push("所选缓存区域不存在，请刷新后重试");
         }
 
-        const categoryZoneId = String(draft?.categoryZoneId ?? "").trim();
-        if (categoryZoneId === "") {
-            errors.push("请选择分类区");
-        } else if (!resourceExists(
-            resources,
-            "categoryZones",
-            categoryZoneId
-        )) {
-            errors.push("所选分类区不存在，请刷新后重试");
-        }
-
-        const sources = draft?.markerSources;
-        if (!Array.isArray(sources) || sources.length === 0) {
-            errors.push("请至少选择一种分类物识别方式");
-        } else if (sources.some((source) => !MARKER_SOURCES.includes(source))) {
-            errors.push("分类物识别方式包含未知选项");
-        }
+        validateAreas(draft, resources, errors);
 
         if (!COLLECTION_PRIORITIES.includes(draft?.collectionPriority)) {
             errors.push("收集优先级只能为普通或紧急");
@@ -289,19 +319,75 @@
                 pickupRadius: parsedRadius(draft.pickupRadius)
             },
             cacheRegionRef: reference("region", draft.cacheRegionId),
-            categoryZoneRef: reference(
-                "category-zone",
-                draft.categoryZoneId
-            ),
-            markerSources: [...draft.markerSources],
+            classificationAreas: draft.classificationAreas.map((area) => ({
+                categoryZoneRef: reference(
+                    "category-zone",
+                    area.categoryZoneId
+                ),
+                bindingId: String(area.bindingId),
+                ruleId: String(area.ruleId),
+                markerSources: [...area.markerSources]
+            })),
             collectionPriority: draft.collectionPriority
         };
     }
 
+    /**
+     * @param {object} draft
+     * @param {unknown} resources
+     * @param {Array<string>} errors
+     * @returns {void}
+     */
+    function validateAreas(draft, resources, errors) {
+        const areas = draft?.classificationAreas;
+        if (!Array.isArray(areas) || areas.length === 0) {
+            errors.push("请至少添加一个分类选区");
+            return;
+        }
+        const bindingIds = new Set();
+        const ruleIds = resourceList(resources, "categoryRules")
+            .map((rule) => String(rule?.id ?? ""));
+        for (const area of areas) {
+            const zoneId = String(area?.categoryZoneId ?? "").trim();
+            const zone = resourceList(resources, "categoryZones")
+                .find((value) => String(value?.id ?? "") === zoneId);
+            if (!zone) {
+                errors.push("分类选区引用的分类区不存在，请刷新后重试");
+                continue;
+            }
+            const bindingId = String(area?.bindingId ?? "").trim();
+            if (!Array.isArray(zone.bindings) || !zone.bindings.some(
+                (binding) => String(binding?.id ?? "") === bindingId
+            )) {
+                errors.push(`分类区“${zone.name || zoneId}”中的范围不存在`);
+            } else if (!bindingIds.add(bindingId)) {
+                errors.push("同一个识别与储存范围不能重复添加");
+            }
+            const ruleId = String(area?.ruleId ?? "").trim();
+            if (!ruleIds.includes(ruleId)) {
+                errors.push("所选分类方法不存在，请刷新后重试");
+            }
+            const sources = area?.markerSources;
+            if (!Array.isArray(sources) || sources.length === 0) {
+                errors.push("每个分类选区都需至少选择一种识别方式");
+            } else if (sources.some(
+                (source) => !MARKER_SOURCES.includes(source)
+            )) {
+                errors.push("分类物识别方式包含未知选项");
+            } else if (ruleIds.includes(ruleId)
+                    && !ruleSupportsSources(ruleId, sources)) {
+                errors.push("分类方法与所选识别方式不兼容");
+            }
+        }
+    }
+
     window.StowlingAutoClassifyTaskModel = Object.freeze({
+        defaultMarkerSources,
         draftFromTask,
+        newArea,
         newDraft,
         payload,
+        ruleSupportsSources,
         validateDraft
     });
 })();

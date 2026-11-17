@@ -3,8 +3,11 @@ package dev.stowling.v2.config;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
+import dev.stowling.v2.category.DirectBlockIdCategoryRule;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
@@ -72,6 +75,8 @@ public final class ConfigValidator {
     public static final String AREA_REF = "areaRef";
     public static final String REGION_REF = "regionRef";
     public static final String CATEGORY_ZONE_REF = "categoryZoneRef";
+    public static final String CATEGORY_BINDING_ID = "categoryBindingId";
+    public static final String CATEGORY_RULE_ID = "categoryRuleId";
     public static final String TASK_REF = "taskRef";
     public static final String COORDINATE_ID = "coordinateId";
     public static final String X = "x";
@@ -247,13 +252,34 @@ public final class ConfigValidator {
                         "auto classify cache region does not exist"
                 );
             }
-            ResourceReference zone = ResourceReference.parse(
-                    definition.categoryZoneRef()
-            );
-            if (!categoryZones.containsKey(zone.uuid())) {
-                throw new V2ValidationException(
-                        "auto classify category zone does not exist"
+            Set<UUID> selectedBindings = new HashSet<>();
+            CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
+            for (AutoClassifyAreaDefinition area
+                    : definition.classificationAreas()) {
+                ResourceReference zoneReference = ResourceReference.parse(
+                        area.categoryZoneRef()
                 );
+                CategoryZoneDefinition zone = categoryZones.get(
+                        zoneReference.uuid()
+                );
+                if (zone == null) {
+                    throw new V2ValidationException(
+                            "auto classify category zone does not exist"
+                    );
+                }
+                CategoryBindingDefinition binding = zone.bindings().stream()
+                        .filter(value -> value.id().equals(area.bindingId()))
+                        .findFirst()
+                        .orElseThrow(() -> new V2ValidationException(
+                                "auto classify category binding does not exist"
+                        ));
+                if (!selectedBindings.add(binding.id())) {
+                    throw new V2ValidationException(
+                            "auto classify bindings must be unique"
+                    );
+                }
+                rules.require(area.ruleId());
+                requireSupportedSources(area);
             }
             requireAutoTask(
                     tasks,
@@ -288,6 +314,29 @@ public final class ConfigValidator {
                         "auto classify task triggers do not match enabled phases"
                 );
             }
+        }
+    }
+
+    private static void requireSupportedSources(
+            AutoClassifyAreaDefinition area
+    ) {
+        boolean hasContainerSource = area.markerSources().contains(
+                CategoryMarkerSource.CONTAINER_CONTENTS
+        );
+        boolean hasDisplaySource = area.markerSources().stream().anyMatch(
+                source -> source != CategoryMarkerSource.CONTAINER_CONTENTS
+        );
+        if (ContainerContentsCategoryRule.ID.equals(area.ruleId())
+                && (!hasContainerSource || hasDisplaySource)) {
+            throw new V2ValidationException(
+                    "container rule requires only container marker source"
+            );
+        }
+        if (DirectBlockIdCategoryRule.ID.equals(area.ruleId())
+                && (!hasDisplaySource || hasContainerSource)) {
+            throw new V2ValidationException(
+                    "direct rule requires only display marker sources"
+            );
         }
     }
 
@@ -784,6 +833,8 @@ public final class ConfigValidator {
                 Set.of(
                         CATEGORY_ZONE_REF,
                         CATEGORY_ZONE_ID,
+                        CATEGORY_BINDING_ID,
+                        CATEGORY_RULE_ID,
                         CONTAINER_TYPES,
                         MAX_VOLUME,
                         ALLOW_EMPTY_CONTAINER_SCAN,
@@ -792,6 +843,7 @@ public final class ConfigValidator {
                 Set.of()
         );
         requireCategoryZoneReference(step, categoryZones);
+        requireCategorySelectionStep(step, categoryZones);
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
         requireOptionalBoolean(step, ALLOW_EMPTY_CONTAINER_SCAN);
         requireOptionalMarkerSources(step);
@@ -1049,10 +1101,12 @@ public final class ConfigValidator {
         requireParameters(
                 step,
                 Set.of(CATEGORY_ZONE_REF, CATEGORY_ZONE_ID, MAX_VOLUME,
-                        MARKER_SOURCES),
+                        MARKER_SOURCES, CATEGORY_BINDING_ID,
+                        CATEGORY_RULE_ID),
                 Set.of()
         );
         requireCategoryZoneReference(step, categoryZones);
+        requireCategorySelectionStep(step, categoryZones);
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
         requireOptionalMarkerSources(step);
     }
@@ -1223,6 +1277,43 @@ public final class ConfigValidator {
             throw new V2ValidationException(
                     "category zone does not exist: " + reference
             );
+        }
+    }
+
+    private static void requireCategorySelectionStep(
+            TaskStep step,
+            Map<UUID, CategoryZoneDefinition> categoryZones
+    ) {
+        String bindingValue = step.parameters().get(CATEGORY_BINDING_ID);
+        if (bindingValue != null && !bindingValue.isBlank()) {
+            UUID bindingId;
+            try {
+                bindingId = UUID.fromString(bindingValue.trim());
+            } catch (IllegalArgumentException exception) {
+                throw new V2ValidationException(
+                        "categoryBindingId must be a UUID"
+                );
+            }
+            ResourceReference zoneReference = referenceParameter(
+                    step,
+                    ResourceType.CATEGORY_ZONE,
+                    CATEGORY_ZONE_REF,
+                    CATEGORY_ZONE_ID
+            );
+            CategoryZoneDefinition zone = categoryZones.get(
+                    zoneReference.uuid()
+            );
+            if (zone == null || zone.bindings().stream().noneMatch(
+                    binding -> binding.id().equals(bindingId)
+            )) {
+                throw new V2ValidationException(
+                        "category binding does not exist"
+                );
+            }
+        }
+        String ruleId = step.parameters().get(CATEGORY_RULE_ID);
+        if (ruleId != null && !ruleId.isBlank()) {
+            CategoryRuleRegistry.standard().require(ruleId.trim());
         }
     }
 

@@ -17,6 +17,7 @@ import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.CategoryZoneExpansionAxis;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
@@ -348,6 +349,51 @@ class V2ControlServiceImplTest {
                         new RevisionRequest(started.revision())
                 )
         );
+    }
+
+    @Test
+    void createsAutoFillCategoryZoneFromSingleTemplate() {
+        V2ControlService service = service();
+        CategoryZoneDefinition zone = service.createCategoryZone(
+                new CategoryZoneRequest(
+                        "Auto fill",
+                        List.of(new CategoryBindingRequest(
+                                0,
+                                64,
+                                20,
+                                4,
+                                64,
+                                20,
+                                0,
+                                64,
+                                18,
+                                4,
+                                64,
+                                18,
+                                "DIRECT_BLOCK_ID",
+                                List.of(),
+                                List.of()
+                        )),
+                        new CategoryZoneExpansionRequest(
+                                0,
+                                63,
+                                17,
+                                24,
+                                65,
+                                21,
+                                "X_POSITIVE",
+                                10
+                        )
+                )
+        ).categoryZones().getFirst();
+
+        assertEquals(3, zone.bindings().size());
+        assertEquals(
+                CategoryZoneExpansionAxis.X_POSITIVE,
+                zone.expansion().direction()
+        );
+        assertEquals(10, zone.expansion().step());
+        assertEquals(20, zone.bindings().get(2).markerArea().minX());
     }
 
     @Test

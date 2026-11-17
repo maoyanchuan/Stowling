@@ -7,7 +7,8 @@ import java.util.UUID;
 public record CategoryZoneDefinition(
         UUID id,
         String name,
-        List<CategoryBindingDefinition> bindings
+        List<CategoryBindingDefinition> bindings,
+        CategoryZoneExpansionDefinition expansion
 ) {
     public CategoryZoneDefinition {
         id = Objects.requireNonNull(id, "id");
@@ -20,6 +21,14 @@ public record CategoryZoneDefinition(
                     "category zone must contain at least one binding"
             );
         }
+    }
+
+    public CategoryZoneDefinition(
+            UUID id,
+            String name,
+            List<CategoryBindingDefinition> bindings
+    ) {
+        this(id, name, bindings, null);
     }
 
     private static String requireName(String value) {

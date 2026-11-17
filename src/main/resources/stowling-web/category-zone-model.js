@@ -53,6 +53,27 @@
     }
 
     /**
+     * @param {object} value
+     * @returns {object | null}
+     */
+    function normalizeExpansion(value) {
+        if (!value) {
+            return null;
+        }
+        const area = value.area || {};
+        return {
+            areaFirstX: Number(area.firstX ?? 0),
+            areaFirstY: Number(area.firstY ?? 64),
+            areaFirstZ: Number(area.firstZ ?? 0),
+            areaSecondX: Number(area.secondX ?? 0),
+            areaSecondY: Number(area.secondY ?? 64),
+            areaSecondZ: Number(area.secondZ ?? 0),
+            direction: String(value.direction || "X_POSITIVE"),
+            step: Number(value.step ?? 1)
+        };
+    }
+
+    /**
      * @param {object} response
      * @returns {object}
      */
@@ -67,7 +88,8 @@
                 name: String(value?.name || ""),
                 bindings: Array.isArray(value?.bindings)
                     ? value.bindings.map(normalizeBinding)
-                    : []
+                    : [],
+                expansion: normalizeExpansion(value?.expansion)
             }))
         };
     }
@@ -77,7 +99,7 @@
      * @returns {object}
      */
     function payload(zone) {
-        return {
+        const result = {
             name: String(zone.name || "").trim(),
             bindings: zone.bindings.map((binding) => ({
                 markerFirstX: Number(binding.markerFirstX),
@@ -105,11 +127,25 @@
                 )
             }))
         };
+        if (zone.expansion) {
+            result.expansion = {
+                firstX: Number(zone.expansion.areaFirstX),
+                firstY: Number(zone.expansion.areaFirstY),
+                firstZ: Number(zone.expansion.areaFirstZ),
+                secondX: Number(zone.expansion.areaSecondX),
+                secondY: Number(zone.expansion.areaSecondY),
+                secondZ: Number(zone.expansion.areaSecondZ),
+                direction: String(zone.expansion.direction),
+                step: Number(zone.expansion.step)
+            };
+        }
+        return result;
     }
 
     window.StowlingCategoryZoneModel = Object.freeze({
         normalizeBinding,
         normalizeContainerOverride,
+        normalizeExpansion,
         normalizeCategoryZones,
         payload
     });

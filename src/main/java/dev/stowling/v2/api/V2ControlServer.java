@@ -22,6 +22,7 @@ import dev.stowling.v2.control.AutoClassifyTaskUpdateRequest;
 import dev.stowling.v2.control.CoordinateInUseException;
 import dev.stowling.v2.control.CategoryBindingRequest;
 import dev.stowling.v2.control.CategoryContainerOverrideRequest;
+import dev.stowling.v2.control.CategoryZoneExpansionRequest;
 import dev.stowling.v2.control.CategoryZoneRequest;
 import dev.stowling.v2.control.CategoryZoneUpdateRequest;
 import dev.stowling.v2.control.CoordinateRequest;
@@ -440,7 +441,11 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.categoryZones());
             } else if ("POST".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(json, Set.of("name", "bindings"));
+                requireFieldsAny(
+                        json,
+                        Set.of("name", "bindings", "expansion"),
+                        Set.of("name", "bindings")
+                );
                 sendJson(
                         exchange,
                         201,
@@ -458,8 +463,9 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.categoryZone(id));
             } else if ("PUT".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(
+                requireFieldsAny(
                         json,
+                        Set.of("revision", "name", "bindings", "expansion"),
                         Set.of("revision", "name", "bindings")
                 );
                 sendJson(exchange, 200, service.updateCategoryZone(
@@ -467,7 +473,8 @@ public final class V2ControlServer implements AutoCloseable {
                         new CategoryZoneUpdateRequest(
                                 string(json, "revision"),
                                 string(json, "name"),
-                                categoryBindings(json)
+                                categoryBindings(json),
+                                categoryExpansion(json)
                         )
                 ));
             } else if ("DELETE".equals(method)) {
@@ -943,7 +950,41 @@ public final class V2ControlServer implements AutoCloseable {
     private static CategoryZoneRequest categoryZoneRequest(JsonObject json) {
         return new CategoryZoneRequest(
                 string(json, "name"),
-                categoryBindings(json)
+                categoryBindings(json),
+                categoryExpansion(json)
+        );
+    }
+
+    private static CategoryZoneExpansionRequest categoryExpansion(
+            JsonObject json
+    ) {
+        JsonElement value = json.get("expansion");
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        JsonObject expansion = jsonObject(value, "expansion");
+        requireFields(
+                expansion,
+                Set.of(
+                        "firstX",
+                        "firstY",
+                        "firstZ",
+                        "secondX",
+                        "secondY",
+                        "secondZ",
+                        "direction",
+                        "step"
+                )
+        );
+        return new CategoryZoneExpansionRequest(
+                integer(expansion, "firstX"),
+                integer(expansion, "firstY"),
+                integer(expansion, "firstZ"),
+                integer(expansion, "secondX"),
+                integer(expansion, "secondY"),
+                integer(expansion, "secondZ"),
+                string(expansion, "direction"),
+                integer(expansion, "step")
         );
     }
 

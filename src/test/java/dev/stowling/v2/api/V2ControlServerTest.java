@@ -929,6 +929,41 @@ class V2ControlServerTest {
     }
 
     @Test
+    void createsAutoFillCategoryZoneFromExpansionPayload() throws Exception {
+        try (Fixture fixture = fixture()) {
+            HttpResponse<String> response = fixture.send(
+                    "/v1/category-zones",
+                    "POST",
+                    """
+                            {"name":"Auto","bindings":[{
+                            "markerFirstX":0,"markerFirstY":64,"markerFirstZ":20,
+                            "markerSecondX":4,"markerSecondY":64,"markerSecondZ":20,
+                            "storageFirstX":0,"storageFirstY":64,"storageFirstZ":18,
+                            "storageSecondX":4,"storageSecondY":64,"storageSecondZ":18,
+                            "ruleId":"DIRECT_BLOCK_ID"}],
+                            "expansion":{
+                            "firstX":0,"firstY":63,"firstZ":17,
+                            "secondX":24,"secondY":65,"secondZ":21,
+                            "direction":"X_POSITIVE","step":10}}
+                            """,
+                    true
+            );
+
+            assertEquals(201, response.statusCode());
+            JsonObject zone = object(response).getAsJsonArray("categoryZones")
+                    .get(0)
+                    .getAsJsonObject();
+            assertEquals(3, zone.getAsJsonArray("bindings").size());
+            assertEquals(
+                    "X_POSITIVE",
+                    zone.getAsJsonObject("expansion")
+                            .get("direction")
+                            .getAsString()
+            );
+        }
+    }
+
+    @Test
     void exposesInterruptionRecoveryAndRejectsInvalidState() throws Exception {
         try (Fixture fixture = fixture()) {
             HttpResponse<String> created = fixture.send(

@@ -146,13 +146,15 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version >= 7 && version <= 11) {
-            if (!root.has("autoClassifyTasks")) {
-                root.add("autoClassifyTasks", new JsonArray());
+        if (version >= 7 && version <= 12) {
+            if (version <= 11) {
+                if (!root.has("autoClassifyTasks")) {
+                    root.add("autoClassifyTasks", new JsonArray());
+                }
+                ensureAutoClassifyPhaseFlags(root);
+                migrateAutoClassifyAreas(root);
+                removeAutoClassifyClassificationTriggers(root);
             }
-            ensureAutoClassifyPhaseFlags(root);
-            migrateAutoClassifyAreas(root);
-            removeAutoClassifyClassificationTriggers(root);
             root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
         }
     }
@@ -512,7 +514,30 @@ public final class ConfigStore {
     private static void requireCategoryZoneObjects(JsonElement value) {
         for (JsonElement item : requireArray(value, "categoryZones")) {
             JsonObject zone = requireObject(item, "category zone");
-            requireExactFields(zone, Set.of("id", "name", "bindings"));
+            requireFields(
+                    zone,
+                    Set.of("id", "name", "bindings", "expansion"),
+                    Set.of("id", "name", "bindings")
+            );
+            JsonElement expansion = zone.get("expansion");
+            if (expansion != null && !expansion.isJsonNull()) {
+                JsonObject expansionObject = requireObject(
+                        expansion,
+                        "category expansion"
+                );
+                requireExactFields(
+                        expansionObject,
+                        Set.of(
+                                "area",
+                                "direction",
+                                "step"
+                        )
+                );
+                requireArea(
+                        expansionObject.get("area"),
+                        "category expansion area"
+                );
+            }
             for (JsonElement bindingValue
                     : requireArray(zone.get("bindings"), "bindings")) {
                 JsonObject binding = requireObject(

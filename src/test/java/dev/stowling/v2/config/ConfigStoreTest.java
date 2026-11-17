@@ -296,6 +296,45 @@ class ConfigStoreTest {
     }
 
     @Test
+    void upgradesSchemaTwelveCategoryZonesAsManualBindings() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        Files.writeString(path, """
+                {
+                    "schemaVersion": 12,
+                    "coordinates": [],
+                    "tasks": [],
+                    "categoryZones": [{
+                        "id": "00000000-0000-0000-0000-000000000002",
+                        "name": "Existing",
+                        "bindings": [{
+                            "id": "00000000-0000-0000-0000-000000000003",
+                            "markerArea": {
+                                "firstX": 7, "firstY": 64, "firstZ": 7,
+                                "secondX": 18, "secondY": 64, "secondZ": 7
+                            },
+                            "storageArea": {
+                                "firstX": 7, "firstY": 64, "firstZ": 5,
+                                "secondX": 18, "secondY": 64, "secondZ": 6
+                            },
+                            "ruleId": "DIRECT_BLOCK_ID"
+                        }]
+                    }]
+                }
+                """);
+        ConfigStore store = new ConfigStore(path);
+
+        var snapshot = store.loadOrReset();
+
+        assertEquals(
+                AppConfig.CURRENT_SCHEMA_VERSION,
+                snapshot.config().schemaVersion()
+        );
+        assertEquals(null, snapshot.config().categoryZones()
+                .getFirst().expansion());
+        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
+    }
+
+    @Test
     void rejectsInvalidCurrentSchemaWithoutOverwritingTheFile() throws Exception {
         Path path = directory.resolve("stowling.json");
         String content = """

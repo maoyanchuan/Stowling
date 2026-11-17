@@ -17,6 +17,9 @@ import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.CategoryZoneExpansionAxis;
+import dev.stowling.v2.model.CategoryZoneExpansionDefinition;
+import dev.stowling.v2.model.CategoryZoneTiler;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
@@ -338,10 +341,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
         List<CategoryZoneDefinition> zones = new ArrayList<>(
                 current.config().categoryZones()
         );
-        zones.add(new CategoryZoneDefinition(
+        zones.add(categoryZone(
                 UUID.randomUUID(),
                 request.name(),
-                bindings(request.bindings(), List.of())
+                request.bindings(),
+                request.expansion(),
+                null
         ));
         return categoryZoneResponse(configs.save(
                 current.revision(),
@@ -369,10 +374,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config(),
                 id
         );
-        CategoryZoneDefinition replacement = new CategoryZoneDefinition(
+        CategoryZoneDefinition replacement = categoryZone(
                 existing.id(),
                 request.name(),
-                bindings(request.bindings(), existing.bindings())
+                request.bindings(),
+                request.expansion(),
+                existing
         );
         List<CategoryZoneDefinition> zones = current.config()
                 .categoryZones()
@@ -1410,6 +1417,87 @@ public final class V2ControlServiceImpl implements V2ControlService {
             return List.of();
         }
         return steps(requestedSteps);
+    }
+
+    private CategoryZoneDefinition categoryZone(
+            UUID id,
+            String name,
+            List<CategoryBindingRequest> requestedBindings,
+            CategoryZoneExpansionRequest requestedExpansion,
+            CategoryZoneDefinition existing
+    ) {
+        if (requestedExpansion == null) {
+            return new CategoryZoneDefinition(
+                    id,
+                    name,
+                    bindings(
+                            requestedBindings,
+                            existing == null ? List.of() : existing.bindings()
+                    )
+            );
+        }
+        if (requestedBindings.size() != 1) {
+            throw new V2ValidationException(
+                    "自动铺满分类区只能提交一个单片母版"
+            );
+        }
+        List<CategoryBindingDefinition> prior;
+        if (existing == null) {
+            prior = List.of();
+        } else if (existing.expansion() == null) {
+            prior = existing.bindings();
+        } else {
+            prior = List.of(existing.bindings().getFirst());
+        }
+        CategoryBindingDefinition template = bindings(
+                requestedBindings,
+                prior
+        ).getFirst();
+        CategoryZoneExpansionDefinition expansion = expansion(
+                requestedExpansion
+        );
+        try {
+            return new CategoryZoneDefinition(
+                    id,
+                    name,
+                    CategoryZoneTiler.expand(expansion, template),
+                    expansion
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException(exception.getMessage(), exception);
+        }
+    }
+
+    private static CategoryZoneExpansionDefinition expansion(
+            CategoryZoneExpansionRequest request
+    ) {
+        if (request.direction() == null || request.direction().isBlank()) {
+            throw new V2ValidationException("请选择自动铺满方向");
+        }
+        CategoryZoneExpansionAxis direction;
+        try {
+            direction = CategoryZoneExpansionAxis.valueOf(
+                    request.direction().trim().toUpperCase(Locale.ROOT)
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException("自动铺满方向无效", exception);
+        }
+        try {
+            return new CategoryZoneExpansionDefinition(
+                    new AreaBounds(
+                            request.firstX(),
+                            request.firstY(),
+                            request.firstZ(),
+                            request.secondX(),
+                            request.secondY(),
+                            request.secondZ()
+                    ),
+                    direction,
+                    request.step()
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException(exception.getMessage(), exception);
+        }
     }
 
     private List<CategoryBindingDefinition> bindings(

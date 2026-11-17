@@ -12,6 +12,7 @@ import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.CategoryZoneTiler;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
@@ -1507,6 +1508,7 @@ public final class ConfigValidator {
             if (result.putIfAbsent(zone.id(), zone) != null) {
                 throw new V2ValidationException("duplicate category zone id");
             }
+            validateCategoryZoneExpansion(zone);
             for (CategoryBindingDefinition binding : zone.bindings()) {
                 if (!bindingIds.add(binding.id())) {
                     throw new V2ValidationException(
@@ -1551,6 +1553,29 @@ public final class ConfigValidator {
             }
         }
         return Map.copyOf(result);
+    }
+
+    private static void validateCategoryZoneExpansion(
+            CategoryZoneDefinition zone
+    ) {
+        if (zone.expansion() == null) {
+            return;
+        }
+        try {
+            List<CategoryBindingDefinition> expected = CategoryZoneTiler.expand(
+                    zone.expansion(),
+                    zone.bindings().getFirst()
+            );
+            if (!expected.equals(zone.bindings())) {
+                throw new V2ValidationException(
+                        "自动铺满分类区的单片数据与展开设置不一致"
+                );
+            }
+        } catch (V2ValidationException exception) {
+            throw exception;
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException(exception.getMessage(), exception);
+        }
     }
 
     private static boolean areasOverlap(AreaBounds first, AreaBounds second) {

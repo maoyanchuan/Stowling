@@ -26,7 +26,7 @@
         status: document.querySelector("#category-zone-status"),
         revision: document.querySelector("#category-zone-revision")
     };
-    const newBindingReaders = [];
+    let newZoneEditor = null;
 
     /**
      * @param {HTMLElement} host
@@ -131,6 +131,8 @@
         card.dataset.resourceId = zone.id;
         card.dataset.searchText = [
             zone.name,
+            zone.expansion ? "自动铺满" : "手动绑定",
+            zone.expansion ? expansionDescription(zone.expansion) : "",
             ...zone.bindings.map((binding) => bindingDescription(binding))
         ].join(" ");
         const summary = Stowling.element(
@@ -141,7 +143,11 @@
         identity.append(
             Stowling.element("strong", "", zone.name),
             Stowling.element(
-                "span", "resource-summary-meta", `${zone.bindings.length} 组范围绑定`
+                "span",
+                "resource-summary-meta",
+                zone.expansion
+                    ? `自动铺满 · ${zone.bindings.length} 片`
+                    : `${zone.bindings.length} 组范围绑定`
             )
         );
         summary.append(identity);
@@ -153,37 +159,13 @@
         name.maxLength = 80;
         name.required = true;
 
-        const bindingsHost = Stowling.element(
-            "div",
-            "category-binding-list category-zone-binding-list"
+        const zoneEditor = createBindingEditor(
+            zone.bindings,
+            zone.expansion
         );
-        const readers = zone.bindings.map((binding) => (
-            appendBinding(bindingsHost, binding)
-        ));
-        const addBinding = Stowling.element(
-            "button",
-            "secondary compact",
-            "添加绑定"
-        );
-        addBinding.type = "button";
-        addBinding.addEventListener("click", () => {
-            card.dataset.dirty = "true";
-            readers.push(appendBinding(
-                bindingsHost,
-                Model.normalizeBinding({}),
-                true
-            ));
-        });
-        const addBindingRow = Stowling.element(
-            "div",
-            "category-binding-actions"
-        );
-        addBindingRow.append(addBinding);
         body.append(
             categoryNameField(name),
-            bindingHeading(),
-            bindingsHost,
-            addBindingRow
+            zoneEditor.root
         );
 
         const actions = Stowling.element("div", "action-row");
@@ -192,7 +174,7 @@
         save.addEventListener("click", () => {
             void saveZone(zone, {
                 name: name.value,
-                bindings: readers.map((read) => read())
+                ...zoneEditor.read()
             }, card);
         });
         const remove = Stowling.element(
@@ -229,6 +211,445 @@
     }
 
     /**
+     * @param {Array<object>} initialBindings
+     * @param {object | null} initialExpansion
+     * @param {boolean} [expandBindings]
+     * @returns {{root: HTMLElement, read: () => object}}
+     */
+    function createBindingEditor(
+            initialBindings,
+            initialExpansion,
+            expandBindings = false
+    ) {
+        const root = Stowling.element("div", "category-binding-editor");
+        let mode = initialExpansion ? "AUTO" : "MANUAL";
+        let expansionValue = initialExpansion;
+        let readers = [];
+        let expansionReader = null;
+        const expandedFromSaved = Boolean(initialExpansion)
+            && initialBindings.length > 1;
+
+        const modeControl = document.createElement("select");
+        modeControl.append(
+            new Option("手动绑定", "MANUAL"),
+            new Option("自动铺满", "AUTO")
+        );
+        modeControl.value = mode;
+        const modeHelp = Stowling.element("p", "muted compact-help", "");
+        const modeField = field("范围模式", modeControl);
+        modeField.classList.add("category-zone-mode-field");
+
+        const expansionHost = Stowling.element(
+            "div",
+            "category-expansion-host"
+        );
+        const bindingsHost = Stowling.element(
+            "div",
+            "category-binding-list category-zone-binding-list"
+        );
+        const addBinding = Stowling.element(
+            "button",
+            "secondary compact",
+            "添加绑定"
+        );
+        addBinding.type = "button";
+        addBinding.addEventListener("click", () => {
+            const card = addBinding.closest(".coordinate-point-editor");
+            if (card instanceof HTMLElement) {
+                card.dataset.dirty = "true";
+            }
+            readers.push(appendBinding(
+                bindingsHost,
+                Model.normalizeBinding({}),
+                true
+            ));
+            refreshExpansionPreview();
+        });
+        const addBindingRow = Stowling.element(
+            "div",
+            "category-binding-actions"
+        );
+        addBindingRow.append(addBinding);
+
+        /**
+         * @returns {object}
+         */
+        function currentTemplate() {
+            return readers[0]?.read() || Model.normalizeBinding({});
+        }
+
+        /**
+         * @returns {void}
+         */
+        function refreshExpansionPreview() {
+            expansionReader?.refresh();
+        }
+
+        /**
+         * @param {Array<object>} bindings
+         * @returns {void}
+         */
+        function renderBindings(bindings) {
+            bindingsHost.replaceChildren();
+            readers = bindings.map((binding) => appendBinding(
+                bindingsHost,
+                binding,
+                mode === "AUTO" || expandBindings,
+                mode === "AUTO" ? "单片母版" : ""
+            ));
+        }
+
+        /**
+         * @returns {void}
+         */
+        function renderExpansion() {
+            expansionHost.replaceChildren();
+            expansionReader = null;
+            if (mode !== "AUTO") {
+                expansionHost.hidden = true;
+                addBinding.hidden = false;
+                modeHelp.textContent = "每一片分别填写识别区和储存区。";
+                return;
+            }
+            const template = currentTemplate();
+            if (!expansionValue) {
+                expansionValue = defaultExpansion(template);
+            }
+            expansionReader = appendExpansionEditor(
+                expansionHost,
+                expansionValue,
+                currentTemplate
+            );
+            expansionHost.hidden = false;
+            addBinding.hidden = true;
+            modeHelp.textContent = "只填写一片母版，系统按方向和步长铺满总选区。";
+        }
+
+        /**
+         * @param {string} nextMode
+         * @returns {void}
+         */
+        function changeMode(nextMode) {
+            if (nextMode === mode) {
+                return;
+            }
+            if (nextMode === "AUTO" && readers.length > 1
+                    && !window.confirm(
+                        "自动铺满只保留第一组范围作为母版，"
+                        + "其他手动绑定会从当前编辑中移除。继续？"
+                    )) {
+                modeControl.value = mode;
+                return;
+            }
+            if (nextMode === "MANUAL" && mode === "AUTO"
+                    && expandedFromSaved
+                    && !window.confirm(
+                        "转回手动模式只保留单片母版，"
+                        + "自动生成的其他单片会被移除。继续？"
+                    )) {
+                modeControl.value = mode;
+                return;
+            }
+            if (mode === "AUTO" && expansionReader) {
+                expansionValue = expansionReader.read();
+            }
+            const template = currentTemplate();
+            mode = nextMode;
+            renderBindings([template]);
+            renderExpansion();
+        }
+
+        modeControl.addEventListener("change", () => {
+            changeMode(modeControl.value);
+        });
+        bindingsHost.addEventListener("input", refreshExpansionPreview);
+        expansionHost.addEventListener("input", refreshExpansionPreview);
+
+        renderBindings(mode === "AUTO"
+            ? [initialBindings[0] || Model.normalizeBinding({})]
+            : initialBindings);
+        root.append(
+            modeField,
+            modeHelp,
+            expansionHost,
+            bindingHeading(),
+            bindingsHost,
+            addBindingRow
+        );
+        renderExpansion();
+        return {
+            root,
+            read: () => {
+                if (mode === "AUTO" && expansionReader) {
+                    expansionValue = expansionReader.read();
+                }
+                return {
+                    bindings: readers.map((reader) => reader.read()),
+                    expansion: mode === "AUTO" ? expansionValue : null
+                };
+            }
+        };
+    }
+
+    /**
+     * @param {HTMLElement} host
+     * @param {object} expansion
+     * @param {() => object} templateReader
+     * @returns {{root: HTMLElement, read: () => object, refresh: () => void}}
+     */
+    function appendExpansionEditor(host, expansion, templateReader) {
+        const root = Stowling.element("article", "category-expansion-editor");
+        const heading = Stowling.element("div", "resource-section-heading");
+        heading.append(
+            Stowling.element("h4", "", "自动铺满设置"),
+            Stowling.element(
+                "p",
+                "muted compact-help",
+                "母版为第 1 片；母版必须完整位于总选区内。"
+            )
+        );
+        const area = cornerFields("总选区", "area", expansion);
+        const direction = document.createElement("select");
+        direction.append(
+            new Option("X 正方向", "X_POSITIVE"),
+            new Option("X 负方向", "X_NEGATIVE"),
+            new Option("Z 正方向", "Z_POSITIVE"),
+            new Option("Z 负方向", "Z_NEGATIVE")
+        );
+        direction.value = expansion.direction;
+        const step = numberInput(expansion.step);
+        step.min = "1";
+        let stepTouched = false;
+        const preview = Stowling.element("p", "category-expansion-preview", "");
+        const controls = Stowling.element("div", "auto-area-fields");
+        controls.append(
+            field("拓展方向", direction),
+            field("单片步长", step)
+        );
+        root.append(heading, area.root, controls, preview);
+        host.append(root);
+
+        /**
+         * @returns {void}
+         */
+        function refresh() {
+            const template = templateReader();
+            if (!stepTouched) {
+                step.value = String(axisSpan(template, direction.value));
+            }
+            const stats = expansionStats(template, {
+                ...area.read(),
+                direction: direction.value,
+                step: Number(step.value)
+            });
+            preview.textContent = stats.message;
+            preview.classList.toggle("error", !stats.valid);
+        }
+
+        direction.addEventListener("change", () => {
+            if (!stepTouched) {
+                step.value = String(
+                    axisSpan(templateReader(), direction.value)
+                );
+            }
+            refresh();
+        });
+        step.addEventListener("input", () => {
+            stepTouched = true;
+        });
+        host.addEventListener("input", refresh);
+        refresh();
+        return {
+            root,
+            read: () => ({
+                ...area.read(),
+                direction: direction.value,
+                step: Number(step.value)
+            }),
+            refresh
+        };
+    }
+
+    /**
+     * @param {object} template
+     * @returns {object}
+     */
+    function defaultExpansion(template) {
+        const values = [
+            [template.markerFirstX, template.markerFirstY, template.markerFirstZ],
+            [template.markerSecondX, template.markerSecondY, template.markerSecondZ],
+            [template.storageFirstX, template.storageFirstY, template.storageFirstZ],
+            [template.storageSecondX, template.storageSecondY, template.storageSecondZ]
+        ];
+        const xs = values.map((value) => Number(value[0]));
+        const ys = values.map((value) => Number(value[1]));
+        const zs = values.map((value) => Number(value[2]));
+        return {
+            areaFirstX: Math.min(...xs),
+            areaFirstY: Math.min(...ys),
+            areaFirstZ: Math.min(...zs),
+            areaSecondX: Math.max(...xs),
+            areaSecondY: Math.max(...ys),
+            areaSecondZ: Math.max(...zs),
+            direction: "X_POSITIVE",
+            step: axisSpan(template, "X_POSITIVE")
+        };
+    }
+
+    /**
+     * @param {object} template
+     * @param {string} direction
+     * @returns {number}
+     */
+    function axisSpan(template, direction) {
+        const xAxis = direction.startsWith("X_");
+        const first = xAxis ? template.markerFirstX : template.markerFirstZ;
+        const second = xAxis ? template.markerSecondX : template.markerSecondZ;
+        return Math.max(1, Math.abs(Number(second) - Number(first)) + 1);
+    }
+
+    /**
+     * @param {object} template
+     * @param {object} expansion
+     * @returns {{valid: boolean, message: string}}
+     */
+    function expansionStats(template, expansion) {
+        const markerSpan = axisSpan(template, expansion.direction);
+        const storageSpan = axisSpan(
+            {
+                markerFirstX: template.storageFirstX,
+                markerSecondX: template.storageSecondX,
+                markerFirstZ: template.storageFirstZ,
+                markerSecondZ: template.storageSecondZ
+            },
+            expansion.direction
+        );
+        if (markerSpan !== storageSpan) {
+            return {
+                valid: false,
+                message: "识别区和储存区在展开方向上的长度必须一致"
+            };
+        }
+        if (!Number.isInteger(expansion.step)
+                || expansion.step < markerSpan) {
+            return {
+                valid: false,
+                message: "单片步长不能小于单片长度"
+            };
+        }
+        if (!areaContainsBounds(expansion, template.markerFirstX,
+                template.markerFirstY, template.markerFirstZ,
+                template.markerSecondX, template.markerSecondY,
+                template.markerSecondZ)
+                || !areaContainsBounds(expansion, template.storageFirstX,
+                    template.storageFirstY, template.storageFirstZ,
+                    template.storageSecondX, template.storageSecondY,
+                    template.storageSecondZ)) {
+            return {
+                valid: false,
+                message: "单片母版必须完整位于总选区内"
+            };
+        }
+        let count = 0;
+        for (let index = 0; index <= 256; index++) {
+            const delta = index * expansion.step
+                * (expansion.direction.endsWith("NEGATIVE") ? -1 : 1);
+            const xAxis = expansion.direction.startsWith("X_");
+            const x = xAxis ? delta : 0;
+            const z = xAxis ? 0 : delta;
+            const markerInside = areaContainsBounds(
+                expansion,
+                template.markerFirstX + x,
+                template.markerFirstY,
+                template.markerFirstZ + z,
+                template.markerSecondX + x,
+                template.markerSecondY,
+                template.markerSecondZ + z
+            );
+            const storageInside = areaContainsBounds(
+                expansion,
+                template.storageFirstX + x,
+                template.storageFirstY,
+                template.storageFirstZ + z,
+                template.storageSecondX + x,
+                template.storageSecondY,
+                template.storageSecondZ + z
+            );
+            if (!markerInside || !storageInside) {
+                break;
+            }
+            count++;
+            if (count > 256) {
+                return {
+                    valid: false,
+                    message: "自动铺满最多生成 256 个单片"
+                };
+            }
+        }
+        return {
+            valid: true,
+            message: `预计生成 ${count} 片，母版为第 1 片`
+        };
+    }
+
+    /**
+     * @param {object} area
+     * @param {number} firstX
+     * @param {number} firstY
+     * @param {number} firstZ
+     * @param {number} secondX
+     * @param {number} secondY
+     * @param {number} secondZ
+     * @returns {boolean}
+     */
+    function areaContainsBounds(
+            area,
+            firstX,
+            firstY,
+            firstZ,
+            secondX,
+            secondY,
+            secondZ
+    ) {
+        return Math.min(firstX, secondX) >= Math.min(
+            area.areaFirstX,
+            area.areaSecondX
+        ) && Math.max(firstX, secondX) <= Math.max(
+            area.areaFirstX,
+            area.areaSecondX
+        ) && Math.min(firstY, secondY) >= Math.min(
+            area.areaFirstY,
+            area.areaSecondY
+        ) && Math.max(firstY, secondY) <= Math.max(
+            area.areaFirstY,
+            area.areaSecondY
+        ) && Math.min(firstZ, secondZ) >= Math.min(
+            area.areaFirstZ,
+            area.areaSecondZ
+        ) && Math.max(firstZ, secondZ) <= Math.max(
+            area.areaFirstZ,
+            area.areaSecondZ
+        );
+    }
+
+    /**
+     * @param {object} expansion
+     * @returns {string}
+     */
+    function expansionDescription(expansion) {
+        const direction = {
+            X_POSITIVE: "X 正方向",
+            X_NEGATIVE: "X 负方向",
+            Z_POSITIVE: "Z 正方向",
+            Z_NEGATIVE: "Z 负方向"
+        }[expansion.direction] || expansion.direction;
+        return `总选区 ${expansion.areaFirstX}, ${expansion.areaFirstY}, `
+            + `${expansion.areaFirstZ} 至 ${expansion.areaSecondX}, `
+            + `${expansion.areaSecondY}, ${expansion.areaSecondZ}`
+            + ` · ${direction} · 步长 ${expansion.step}`;
+    }
+
+    /**
      * @param {HTMLInputElement} input
      * @returns {HTMLElement}
      */
@@ -242,16 +663,21 @@
      * @param {HTMLElement} host
      * @param {object} binding
      * @param {boolean} [expanded]
+     * @param {string} [title]
      * @returns {() => object}
      */
-    function appendBinding(host, binding, expanded = false) {
+    function appendBinding(host, binding, expanded = false, title = "") {
         const card = Stowling.element("details", "category-binding-card");
         card.open = expanded;
         const summary = Stowling.element("summary", "category-binding-summary");
         const identity = Stowling.element("div", "resource-summary-text");
         const number = String(host.children.length + 1).padStart(2, "0");
         identity.append(
-            Stowling.element("strong", "", `范围 ${number} · 识别区 → 储存区`),
+            Stowling.element(
+                "strong",
+                "",
+                title || `范围 ${number} · 识别区 → 储存区`
+            ),
             Stowling.element("span", "resource-summary-meta", bindingDescription(binding))
         );
         summary.append(identity);
@@ -594,12 +1020,15 @@
      */
     async function createZone() {
         try {
+            if (!newZoneEditor) {
+                throw new Error("分类区编辑器尚未准备完成");
+            }
             const response = await Stowling.request("/v1/category-zones", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(Model.payload({
                     name: elements.name.value,
-                    bindings: newBindingReaders.map((read) => read())
+                    ...newZoneEditor.read()
                 }))
             });
             ++loadRequest;
@@ -619,12 +1048,13 @@
     function showCreateForm() {
         elements.form.hidden = false;
         elements.bindings.replaceChildren();
-        newBindingReaders.length = 0;
-        newBindingReaders.push(appendBinding(
-            elements.bindings,
-            Model.normalizeBinding({}),
+        newZoneEditor = createBindingEditor(
+            [Model.normalizeBinding({})],
+            Model.normalizeExpansion({}),
             true
-        ));
+        );
+        elements.bindings.append(newZoneEditor.root);
+        elements.addBinding.hidden = true;
         clearErrors();
         elements.name.focus();
     }
@@ -688,13 +1118,6 @@
     elements.cancel.addEventListener("click", () => {
         elements.form.hidden = true;
         clearErrors();
-    });
-    elements.addBinding.addEventListener("click", () => {
-        newBindingReaders.push(appendBinding(
-            elements.bindings,
-            Model.normalizeBinding({}),
-            true
-        ));
     });
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();

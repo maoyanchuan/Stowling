@@ -2,6 +2,7 @@ package dev.stowling.automation;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.model.AreaBounds;
 import java.util.Objects;
 
 public interface NavigationPort {
@@ -21,6 +22,14 @@ public interface NavigationPort {
             throw new IllegalArgumentException("radius must not be negative");
         }
         return start(target);
+    }
+
+    default NavigationStatus startNear(BlockPosition target, int radius, AreaBounds standingArea) {
+        return standingArea == null ? startNear(target, radius) : NavigationStatus.FAILED;
+    }
+
+    default boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea) {
+        return standingArea == null && isWithinInteractionRange(target);
     }
 
     NavigationStatus status(BlockPosition target);

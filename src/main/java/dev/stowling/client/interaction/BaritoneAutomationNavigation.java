@@ -8,6 +8,7 @@ import dev.stowling.automation.WorldObserver;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.model.AreaBounds;
 import java.util.Objects;
 
 public final class BaritoneAutomationNavigation implements NavigationPort {
@@ -27,6 +28,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private int nearRadius;
     private int retryDelayTicks;
     private boolean stopRequested;
+    private AreaBounds standingArea;
 
     public BaritoneAutomationNavigation(
             NavigationService navigationService,
@@ -44,6 +46,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         Objects.requireNonNull(target, "target");
         coordinateRadius = DEFAULT_COORDINATE_RADIUS;
         nearNavigation = false;
+        standingArea = null;
         nearPathRetries = 0;
         retryDelayTicks = 0;
         prepareNavigation();
@@ -59,6 +62,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         coordinateRadius = radius;
         nearNavigation = false;
+        standingArea = null;
         nearPathRetries = 0;
         retryDelayTicks = 0;
         prepareNavigation();
@@ -68,17 +72,31 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public NavigationStatus startNear(BlockPosition target, int radius) {
+        return startNear(target, radius, null);
+    }
+
+    @Override
+    public NavigationStatus startNear(BlockPosition target, int radius, AreaBounds standingArea) {
         Objects.requireNonNull(target, "target");
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
         nearNavigation = true;
+        this.standingArea = standingArea;
         nearPathRetries = 0;
         nearRadius = radius;
         retryDelayTicks = 0;
         prepareNavigation();
-        navigationService.navigateToNear(target, radius);
+        navigateNear(target, radius);
         return NavigationStatus.NAVIGATING;
+    }
+
+    private void navigateNear(BlockPosition target, int radius) {
+        if (standingArea == null) {
+            navigationService.navigateToNear(target, radius);
+        } else {
+            navigationService.navigateToStandingArea(target, standingArea);
+        }
     }
 
     private void prepareNavigation() {
@@ -100,7 +118,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         if (nearNavigation
-                && navigationService.isWithinInteractionRange(target)) {
+                && isWithinInteractionRange(target, standingArea)) {
             return arrive();
         }
         BlockPosition current = world.playerPosition().orElseThrow();
@@ -118,7 +136,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (retryDelayTicks > 0) {
             retryDelayTicks--;
             if (retryDelayTicks == 0) {
-                navigationService.navigateToNear(
+                navigateNear(
                         target,
                         radius == null ? nearRadius : radius
                 );
@@ -161,6 +179,15 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         return navigationService.isWithinInteractionRange(target);
     }
 
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target, AreaBounds area) {
+        if (area != null && worldObserver.observeWorld().playerPosition()
+                .filter(area::contains).isEmpty()) {
+            return false;
+        }
+        return isWithinInteractionRange(target);
+    }
+
     private static double arrivalDistanceSquared(int radius) {
         return (double) radius * radius;
     }
@@ -174,6 +201,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         pathObserved = false;
         missingPathTicks = 0;
         nearNavigation = false;
+        standingArea = null;
         nearPathRetries = 0;
         retryDelayTicks = 0;
     }

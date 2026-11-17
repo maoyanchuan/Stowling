@@ -1542,7 +1542,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     containerOverrides(
                             binding.containerOverrides(),
                             existingBinding
-                    )
+                    ),
+                    binding.standingArea()
             ));
         }
         return List.copyOf(result);

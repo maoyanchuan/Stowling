@@ -562,12 +562,17 @@ public final class ConfigStore {
                                 "storageArea",
                                 "ruleId",
                                 "ignoredMarkerBlockIds",
-                                "containerOverrides"
+                                "containerOverrides",
+                                "standingArea"
                         ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );
                 requireArea(binding.get("markerArea"), "markerArea");
                 requireArea(binding.get("storageArea"), "storageArea");
+                JsonElement standing = binding.get("standingArea");
+                if (standing != null && !standing.isJsonNull()) {
+                    requireArea(standing, "standingArea");
+                }
                 requireContainerOverrides(binding.get("containerOverrides"));
             }
         }

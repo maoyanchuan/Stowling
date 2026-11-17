@@ -48,8 +48,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
                     "无法前往 " + coordinate.name() + "：维度不匹配"
             );
         }
-        if (container != null
-                && context.navigation().isWithinInteractionRange(position)) {
+        if (isAtContainer()) {
             return TaskModuleResult.succeeded(
                     "已在容器交互范围内 " + position
             );
@@ -61,11 +60,14 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         } else {
             status = context.navigation().status(position, arrivalRadius);
         }
+        if (status == NavigationStatus.ARRIVED && container != null
+                && container.standingArea() != null && !isAtContainer()) {
+            return TaskModuleResult.failed("未能在指定操作站位区域内到达容器交互范围");
+        }
         return switch (status) {
             case ARRIVED -> TaskModuleResult.succeeded("已到达 " + targetName);
             case NAVIGATING -> TaskModuleResult.running("正在前往 " + targetName);
-            case FAILED -> container != null
-                    && context.navigation().isWithinInteractionRange(position)
+            case FAILED -> isAtContainer()
                     ? TaskModuleResult.succeeded(
                             "已在容器交互范围内 " + position
                     )
@@ -75,11 +77,18 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         };
     }
 
+    private boolean isAtContainer() {
+        return container != null && context.navigation().isWithinInteractionRange(
+                position, container.standingArea()
+        );
+    }
+
     private NavigationStatus startNavigation() {
         if (container != null) {
             return context.navigation().startNear(
                     position,
-                    CONTAINER_NAVIGATION_RADIUS
+                    CONTAINER_NAVIGATION_RADIUS,
+                    container.standingArea()
             );
         }
         return context.navigation().start(position);

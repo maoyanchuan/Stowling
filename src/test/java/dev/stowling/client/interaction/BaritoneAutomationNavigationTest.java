@@ -7,11 +7,54 @@ import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.WorldObservation;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
+import dev.stowling.v2.model.AreaBounds;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BaritoneAutomationNavigationTest {
+    @Test
+    void configuredStandingAreaRequiresBothCorrectFeetPositionAndRealReach() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        service.withinInteractionRange = true;
+        AtomicReference<BlockPosition> player = new AtomicReference<>(new BlockPosition(0, 64, 0));
+        BaritoneAutomationNavigation navigation = navigationAt(service, player);
+        BlockPosition chest = new BlockPosition(0, 68, 0);
+        AreaBounds area = new AreaBounds(1, 64, 0, 2, 64, 0);
+
+        navigation.startNear(chest, 4, area);
+        assertEquals(area, service.standingArea);
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(chest, 4));
+        player.set(new BlockPosition(1, 64, 0));
+        service.withinInteractionRange = false;
+        assertEquals(NavigationStatus.NAVIGATING, navigation.status(chest, 4));
+        service.withinInteractionRange = true;
+        assertEquals(NavigationStatus.ARRIVED, navigation.status(chest, 4));
+        assertEquals(0, service.nearCalls);
+    }
+
+    @Test
+    void standingAreaIsRetainedWhenNavigationRetries() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BaritoneAutomationNavigation navigation = navigationAt(service,
+                new AtomicReference<>(new BlockPosition(0, 64, 0)));
+        BlockPosition chest = new BlockPosition(0, 68, 0);
+        AreaBounds area = new AreaBounds(1, 64, 0, 2, 64, 0);
+        navigation.startNear(chest, 4, area);
+        navigation.status(chest, 4);
+        service.navigating = false;
+        navigation.status(chest, 4);
+        for (int tick = 0; tick < 20; tick++) {
+            navigation.status(chest, 4);
+        }
+
+        assertEquals(2, service.standingCalls);
+        assertEquals(area, service.standingArea);
+        assertEquals(0, service.nearCalls);
+    }
+
     @Test
     void startNearUsesNearNavigationWithoutExactGoal() {
         RecordingNavigationService service = new RecordingNavigationService();
@@ -275,6 +318,14 @@ class BaritoneAutomationNavigationTest {
         private int cancellations;
         private boolean withinInteractionRange;
         private boolean navigating;
+        private AreaBounds standingArea;
+        private int standingCalls;
+
+        @Override
+        public void navigateToStandingArea(BlockPosition target, AreaBounds area) {
+            standingArea = area;
+            standingCalls++;
+        }
 
         @Override
         public void navigateTo(BlockPosition target) {

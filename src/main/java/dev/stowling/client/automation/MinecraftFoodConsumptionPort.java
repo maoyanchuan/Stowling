@@ -679,7 +679,7 @@ public final class MinecraftFoodConsumptionPort
     private void openBlock(ContainerTarget target) {
         LocalPlayer player = minecraft.player;
         MultiPlayerGameMode gameMode = minecraft.gameMode;
-        if (player == null || gameMode == null) {
+        if (player == null || gameMode == null || !ContainerStandingAccess.canOpen(player, target)) {
             return;
         }
         BlockPos position = new BlockPos(

@@ -21,6 +21,7 @@
             storageSecondX: Number(storage.secondX ?? 0),
             storageSecondY: Number(storage.secondY ?? 64),
             storageSecondZ: Number(storage.secondZ ?? 0),
+            standingArea: value?.standingArea ? normalizeArea(value.standingArea) : null,
             ruleId: String(value?.ruleId || "DIRECT_BLOCK_ID"),
             ignoredMarkerBlockIds: Array.isArray(value?.ignoredMarkerBlockIds)
                 ? value.ignoredMarkerBlockIds
@@ -31,6 +32,20 @@
                 ? value.containerOverrides.map(normalizeContainerOverride)
                 : []
         };
+    }
+
+    /**
+     * @param {object} value
+     * @returns {object}
+     */
+    function normalizeArea(value) {
+        const result = {};
+        for (const corner of ["first", "second"]) {
+            for (const axis of ["X", "Y", "Z"]) {
+                result[`${corner}${axis}`] = Number(value[`${corner}${axis}`]);
+            }
+        }
+        return result;
     }
 
     /**
@@ -118,6 +133,7 @@
                 storageSecondX: Number(binding.storageSecondX),
                 storageSecondY: Number(binding.storageSecondY),
                 storageSecondZ: Number(binding.storageSecondZ),
+                standingArea: binding.standingArea ? normalizeArea(binding.standingArea) : null,
                 ruleId: String(binding.ruleId),
                 ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
                 containerOverrides: binding.containerOverrides.map(
@@ -203,6 +219,24 @@
                 throw new RangeError("整排母版包含容器例外，请保留手动模式或先填写一片母版");
             }
             const result = { ...binding };
+            if (binding.standingArea) {
+                const standing = normalizeArea(binding.standingArea);
+                for (const value of Object.values(standing)) {
+                    requireCoordinate(value);
+                }
+                const first = standing[`first${axis}`];
+                const second = standing[`second${axis}`];
+                if (collapsed && Math.abs(second - first) === maximum - minimum) {
+                    standing[`first${axis}`] = anchor
+                        + first - (first <= second ? minimum : maximum);
+                    standing[`second${axis}`] = anchor
+                        + second - (first <= second ? maximum : minimum);
+                } else {
+                    standing[`first${axis}`] += anchor - minimum;
+                    standing[`second${axis}`] += anchor - minimum;
+                }
+                result.standingArea = standing;
+            }
             for (const kind of ["marker", "storage"]) {
                 result[`${kind}First${axis}`] = anchor;
                 result[`${kind}Second${axis}`] = anchor;

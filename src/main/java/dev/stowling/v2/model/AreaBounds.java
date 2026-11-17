@@ -1,5 +1,7 @@
 package dev.stowling.v2.model;
 
+import dev.stowling.domain.BlockPosition;
+
 public record AreaBounds(
         int firstX,
         int firstY,
@@ -39,6 +41,12 @@ public record AreaBounds(
                 && other.maxY() <= maxY()
                 && other.minZ() >= minZ()
                 && other.maxZ() <= maxZ();
+    }
+
+    public boolean contains(BlockPosition position) {
+        return position.x() >= minX() && position.x() <= maxX()
+                && position.y() >= minY() && position.y() <= maxY()
+                && position.z() >= minZ() && position.z() <= maxZ();
     }
 
     public AreaBounds shift(int x, int y, int z) {

@@ -804,6 +804,15 @@ section[id] {
     margin-top: 0.65rem;
 }
 
+.category-standing-area {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.category-standing-area .category-binding-section[hidden] {
+    display: none;
+}
+
 .checkbox-field {
     display: flex;
     min-height: 42px;

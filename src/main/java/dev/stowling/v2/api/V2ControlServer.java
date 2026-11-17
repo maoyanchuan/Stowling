@@ -1011,7 +1011,8 @@ public final class V2ControlServer implements AutoCloseable {
                             "storageSecondZ",
                             "ruleId",
                             "ignoredMarkerBlockIds",
-                            "containerOverrides"
+                            "containerOverrides",
+                            "standingArea"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -1044,10 +1045,23 @@ public final class V2ControlServer implements AutoCloseable {
                     integer(binding, "storageSecondZ"),
                     string(binding, "ruleId"),
                     stringArray(binding, "ignoredMarkerBlockIds"),
-                    containerOverrideRequests(binding)
+                    containerOverrideRequests(binding),
+                    standingArea(binding)
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static dev.stowling.v2.model.AreaBounds standingArea(JsonObject binding) {
+        JsonElement value = binding.get("standingArea");
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        JsonObject area = jsonObject(value, "standingArea");
+        requireFields(area, Set.of("firstX", "firstY", "firstZ", "secondX", "secondY", "secondZ"));
+        return new dev.stowling.v2.model.AreaBounds(integer(area, "firstX"), integer(area, "firstY"),
+                integer(area, "firstZ"), integer(area, "secondX"), integer(area, "secondY"),
+                integer(area, "secondZ"));
     }
 
     private static List<CategoryContainerOverrideRequest>

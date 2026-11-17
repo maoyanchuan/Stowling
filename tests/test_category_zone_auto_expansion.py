@@ -142,6 +142,57 @@ def test_manual_payload_preserves_custom_step_and_wide_template() -> None:
     assert result["bindings"][0]["markerSecondX"] == 92
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_whole_row_standing_strip_becomes_a_relative_single_slice(reverse: bool) -> None:
+    first, second = (92, 13) if reverse else (13, 92)
+    result = run_model(
+        f"""model.payload({{name: 'Steps', bindings: [{{...binding('X', 13, 92),
+            standingArea: {{firstX: 13, secondX: 92, firstY: 65, secondY: 65,
+                firstZ: -1, secondZ: -1}}
+        }}], expansion: area('X', {first}, {second})}})"""
+    )
+
+    standing = result["bindings"][0]["standingArea"]
+    assert standing["firstX"] == first
+    assert standing["secondX"] == first
+    assert standing["firstY"] == 65
+    assert standing["firstZ"] == -1
+
+
+def test_single_slice_standing_area_moves_with_the_selected_mother_slice() -> None:
+    result = run_model(
+        """model.inferExpansion([{...binding('X', 20, 20), standingArea: {
+            firstX: 20, secondX: 21, firstY: 65, secondY: 65, firstZ: -1, secondZ: 0
+        }}], area('X', 13, 92))"""
+    )
+
+    assert result["bindings"][0]["standingArea"] == {
+        "firstX": 13, "secondX": 14,
+        "firstY": 65, "secondY": 65,
+        "firstZ": -1, "secondZ": 0,
+    }
+
+
+def test_manual_standing_area_round_trip_and_disable() -> None:
+    result = run_model(
+        """(() => {
+            const bounds = {firstX: 1, secondX: 2, firstY: 65, secondY: 65,
+                firstZ: -1, secondZ: -1};
+            const template = {...binding('X', 0, 0), standingArea: bounds};
+            const saved = model.payload({name: 'Steps', bindings: [template],
+                expansion: {...area('X', 0, 10), direction: 'X_POSITIVE', step: 2}});
+            const restored = model.normalizeBinding({standingArea: bounds});
+            const disabled = model.payload({name: 'Steps', bindings: [{...template,
+                standingArea: null}]});
+            return {saved: saved.bindings[0].standingArea, restored: restored.standingArea,
+                disabled: disabled.bindings[0].standingArea};
+        })()"""
+    )
+
+    assert result["saved"] == result["restored"]
+    assert result["disabled"] is None
+
+
 def test_center_template_and_override_move_together_to_the_starting_edge() -> None:
     result = run_model(
         """model.inferExpansion([{...binding('X', 20, 20), containerOverrides: [{

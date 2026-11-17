@@ -11,6 +11,45 @@ import org.junit.jupiter.api.Test;
 
 class CategoryZoneTilerTest {
     @Test
+    void standingAreaOutsideTheSelectionMovesWithEverySlice() {
+        CategoryBindingDefinition original = template();
+        AreaBounds standing = new AreaBounds(0, 65, 15, 4, 65, 16);
+        CategoryBindingDefinition template = new CategoryBindingDefinition(original.id(),
+                original.markerArea(), original.storageArea(), original.ruleId(), List.of(),
+                List.of(), standing);
+        CategoryZoneExpansionDefinition expansion = new CategoryZoneExpansionDefinition(
+                new AreaBounds(0, 63, 17, 24, 65, 21),
+                CategoryZoneExpansionAxis.X_POSITIVE, 10, 1
+        );
+
+        List<CategoryBindingDefinition> result = CategoryZoneTiler.expand(expansion,
+                List.of(template));
+
+        assertEquals(3, result.size());
+        assertEquals(standing, result.get(0).standingArea());
+        assertEquals(standing.shift(10, 0, 0), result.get(1).standingArea());
+        assertEquals(standing.shift(20, 0, 0), result.get(2).standingArea());
+    }
+
+    @Test
+    void standingAreaFollowsNegativeExpansionInsteadOfRemainingAtTheMotherSlice() {
+        CategoryBindingDefinition original = template();
+        AreaBounds standing = new AreaBounds(0, 65, 15, 0, 65, 15);
+        CategoryBindingDefinition template = new CategoryBindingDefinition(original.id(),
+                original.markerArea(), original.storageArea(), original.ruleId(), List.of(),
+                List.of(), standing);
+        CategoryZoneExpansionDefinition expansion = new CategoryZoneExpansionDefinition(
+                new AreaBounds(-20, 63, 17, 4, 65, 21),
+                CategoryZoneExpansionAxis.X_NEGATIVE, 10, 1
+        );
+
+        List<CategoryBindingDefinition> result = CategoryZoneTiler.expand(expansion,
+                List.of(template));
+
+        assertEquals(standing.shift(-20, 0, 0), result.get(2).standingArea());
+    }
+
+    @Test
     void expandsAlongPositiveXWithConfiguredStep() {
         CategoryBindingDefinition template = template();
         CategoryZoneExpansionDefinition expansion =

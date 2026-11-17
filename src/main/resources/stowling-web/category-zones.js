@@ -764,6 +764,39 @@
         const body = Stowling.element("div", "category-binding-body");
         const marker = cornerFields("分类物识别区", "marker", binding);
         const storage = cornerFields("储存区", "storage", binding);
+        const standingToggle = document.createElement("input");
+        standingToggle.type = "checkbox";
+        standingToggle.checked = Boolean(binding.standingArea);
+        const standingValues = {};
+        for (const corner of ["First", "Second"]) {
+            for (const axis of ["X", "Y", "Z"]) {
+                const key = `${corner.toLowerCase()}${axis}`;
+                standingValues[`standing${corner}${axis}`] = binding.standingArea?.[key]
+                    ?? binding[`storage${corner}${axis}`];
+            }
+        }
+        const standing = cornerFields("操作站位区域", "standing", standingValues);
+        const standingSection = Stowling.element("div", "category-standing-area");
+        const standingControl = field("启用操作站位区域（可选）", standingToggle);
+        standingControl.classList.add("checkbox-field");
+        standingSection.append(
+            standingControl,
+            Stowling.element("p", "muted compact-help",
+                "填写玩家脚下位置，可选一格或台阶范围。随单片一起平移；"
+                    + "储存箱只从此区域访问，区域可在总选区外。"),
+            standing.root
+        );
+        /**
+         * @returns {void}
+         */
+        function updateStandingVisibility() {
+            standing.root.hidden = !standingToggle.checked;
+            for (const input of standing.root.querySelectorAll("input")) {
+                input.disabled = !standingToggle.checked;
+            }
+        }
+        standingToggle.addEventListener("change", updateStandingVisibility);
+        updateStandingVisibility();
         const rule = document.createElement("select");
         for (const definition of state.rules) {
             rule.append(new Option(definition.name, definition.id));
@@ -862,16 +895,31 @@
             });
             footer.append(remove);
         }
-        body.append(ranges, settings, footer);
+        body.append(ranges, standingSection, settings, footer);
         card.append(summary, body);
         host.append(card);
         return () => ({
             ...marker.read(),
             ...storage.read(),
+            standingArea: standingToggle.checked ? readStandingArea(standing.read()) : null,
             ruleId: rule.value,
             ignoredMarkerBlockIds: parseBlockIds(ignored.value),
             containerOverrides: overrideReaders.map((reader) => reader.read())
         });
+    }
+
+    /**
+     * @param {object} values
+     * @returns {object}
+     */
+    function readStandingArea(values) {
+        const result = {};
+        for (const corner of ["First", "Second"]) {
+            for (const axis of ["X", "Y", "Z"]) {
+                result[`${corner.toLowerCase()}${axis}`] = values[`standing${corner}${axis}`];
+            }
+        }
+        return result;
     }
 
     /**
@@ -895,7 +943,8 @@
         const storage = `${binding.storageFirstX}, ${binding.storageFirstY}, `
             + `${binding.storageFirstZ}`;
         const exceptions = binding.containerOverrides.length;
-        return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`;
+        return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`
+            + (binding.standingArea ? " · 已指定操作站位区域" : "");
     }
 
     /**

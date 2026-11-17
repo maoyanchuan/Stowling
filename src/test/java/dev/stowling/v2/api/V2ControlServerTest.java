@@ -940,7 +940,9 @@ class V2ControlServerTest {
                             "markerSecondX":4,"markerSecondY":64,"markerSecondZ":20,
                             "storageFirstX":0,"storageFirstY":64,"storageFirstZ":18,
                             "storageSecondX":4,"storageSecondY":64,"storageSecondZ":18,
-                            "ruleId":"DIRECT_BLOCK_ID"}],
+                            "ruleId":"DIRECT_BLOCK_ID",
+                            "standingArea":{"firstX":0,"firstY":65,"firstZ":16,
+                            "secondX":4,"secondY":65,"secondZ":16}}],
                             "expansion":{
                             "firstX":0,"firstY":63,"firstZ":17,
                             "secondX":24,"secondY":65,"secondZ":21,
@@ -954,6 +956,10 @@ class V2ControlServerTest {
                     .get(0)
                     .getAsJsonObject();
             assertEquals(3, zone.getAsJsonArray("bindings").size());
+            assertEquals(10, zone.getAsJsonArray("bindings").get(1).getAsJsonObject()
+                    .getAsJsonObject("standingArea").get("firstX").getAsInt());
+            assertEquals(16, zone.getAsJsonArray("bindings").get(1).getAsJsonObject()
+                    .getAsJsonObject("standingArea").get("firstZ").getAsInt());
             assertEquals(
                     "X_POSITIVE",
                     zone.getAsJsonObject("expansion")

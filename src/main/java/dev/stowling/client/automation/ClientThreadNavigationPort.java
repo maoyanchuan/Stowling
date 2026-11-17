@@ -5,6 +5,7 @@ import dev.stowling.automation.NavigationStatus;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.model.AreaBounds;
 import java.util.Objects;
 
 public final class ClientThreadNavigationPort implements NavigationPort {
@@ -50,6 +51,18 @@ public final class ClientThreadNavigationPort implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         return delegate.startWithinRadius(target, radius);
+    }
+
+    @Override
+    public NavigationStatus startNear(BlockPosition target, int radius, AreaBounds standingArea) {
+        return scheduler.isClientThread()
+                ? delegate.startNear(target, radius, standingArea) : NavigationStatus.FAILED;
+    }
+
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea) {
+        return scheduler.isClientThread()
+                && delegate.isWithinInteractionRange(target, standingArea);
     }
 
     @Override

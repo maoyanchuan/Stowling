@@ -187,7 +187,9 @@ public final class MinecraftCategoryZoneResolver
             CategoryRuleResult resolved = resolveBinding(
                     binding,
                     markers,
-                    storageScan.containers(),
+                    storageScan.containers().stream().map(target -> new ContainerTarget(
+                            target.position(), target.type(), binding.standingArea()
+                    )).toList(),
                     markerSources
             );
             if (!resolved.succeeded()) {

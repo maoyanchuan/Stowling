@@ -158,7 +158,8 @@ final class TaskModuleSupport {
                 binding.storageArea(),
                 ruleId,
                 binding.ignoredMarkerBlockIds(),
-                binding.containerOverrides()
+                binding.containerOverrides(),
+                binding.standingArea()
         );
     }
 

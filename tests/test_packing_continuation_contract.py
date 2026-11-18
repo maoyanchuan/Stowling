@@ -22,11 +22,15 @@ def test_packing_continues_after_storing_a_filled_box() -> None:
     assert "inspectTarget();" in store
 
 
-def test_preparation_uses_existing_box_room_and_repackable_loose_stock() -> None:
+def test_preparation_reserves_a_spare_independently_of_full_box_packing() -> None:
     source = (ROOT / "src/main/java/dev/stowling/client/automation/"
               "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
     prepare = source.split("private final class PrepareBox", 1)[1].split(
         "private final class Packing", 1
     )[0]
-    assert "RecordedStorageCapacity.existingBoxSpace(" in prepare
-    assert "Math.max(0, sameLoose - limit), boxSpace, sameLoose" in prepare
+    assert "RecordedStorageCapacity.shouldReserveBox(" in prepare
+    assert "StoragePackingPlanner.shouldBringBox(" not in prepare
+    select = (ROOT / "src/main/java/dev/stowling/v2/runtime/modules/"
+              "SelectStorageTargetModule.java").read_text(encoding="utf-8")
+    assert "if (context.workspace().isClassificationStorage(target)) {" in select
+    assert "if (allowCacheFallback) {" not in select

@@ -402,56 +402,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             && container.dimension().equals(inventory.currentDimension())
                             && container.positions().contains(target.position()))
                     .findFirst().orElse(null);
+            Map<String, Integer> stackSizes = new LinkedHashMap<>();
             for (ItemStack stack : inventoryStacks()) {
-                String key = MinecraftItemIdentity.key(stack);
-                if (ItemIdentity.isBox(key) || !items.containsKey(key)) {
-                    continue;
-                }
-                String category = ItemIdentity.category(key);
-                int stackSize = stack.getMaxStackSize();
-                int incoming = items.entrySet().stream()
-                        .filter(entry -> !ItemIdentity.isBox(entry.getKey())
-                                && category.equals(ItemIdentity.category(entry.getKey())))
-                        .mapToInt(Map.Entry::getValue).sum();
-                long sameLoose = 0;
-                long otherSlots = 0;
-                long matchingSlack = 0;
-                if (stock != null) {
-                    for (WarehouseInventory.Entry entry : stock.items()) {
-                        if (ItemIdentity.isBox(entry.key())) {
-                            continue;
-                        }
-                        if (category.equals(entry.itemId())) {
-                            sameLoose += entry.loose();
-                            long remainder = entry.loose() % entry.stackSize();
-                            if (remainder > 0 && items.containsKey(entry.key())) {
-                                matchingSlack += entry.stackSize() - remainder;
-                            }
-                        } else if (entry.loose() > 0) {
-                            otherSlots += Math.ceilDiv(entry.loose(), entry.stackSize());
-                        }
-                    }
-                }
-                if (stock == null || stock.recordedAt() == null) {
-                    if (StoragePackingPlanner.shouldBringBox(
-                            target.storagePolicy(), incoming, 0, stackSize, 0)) {
-                        return true;
-                    }
-                    continue;
-                }
-                StoragePolicy policy = target.storagePolicy();
-                long limit = Math.max(0, StoragePackingPlanner.looseLimit(
-                        policy, stock.slots(), stackSize) - otherSlots * stackSize);
-                long space = StoragePackingPlanner.looseSpace(policy, stock.slots(), stackSize,
-                        sameLoose, otherSlots, stock.occupiedSlots(), matchingSlack);
-                long boxSpace = RecordedStorageCapacity.existingBoxSpace(stock, category,
-                        items.keySet(), stackSize);
-                if (StoragePackingPlanner.shouldBringBox(policy, incoming, space, stackSize,
-                        Math.max(0, sameLoose - limit), boxSpace, sameLoose)) {
-                    return true;
-                }
+                stackSizes.put(MinecraftItemIdentity.key(stack), stack.getMaxStackSize());
             }
-            return false;
+            return RecordedStorageCapacity.shouldReserveBox(stock, target.storagePolicy(),
+                    items, stackSizes);
         }
     }
 

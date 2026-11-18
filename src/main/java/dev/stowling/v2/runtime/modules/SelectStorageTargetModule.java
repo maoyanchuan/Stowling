@@ -42,7 +42,7 @@ final class SelectStorageTargetModule implements TaskModuleExecutor {
             return TaskModuleResult.succeeded("分类目的容器不可用，物品将存回缓存 "
                     + target.position());
         }
-        if (allowCacheFallback) {
+        if (context.workspace().isClassificationStorage(target)) {
             Set<String> accepted = context.workspace().acceptedItemsByContainer()
                     .getOrDefault(target, Set.of());
             Map<String, Integer> incoming = new LinkedHashMap<>();

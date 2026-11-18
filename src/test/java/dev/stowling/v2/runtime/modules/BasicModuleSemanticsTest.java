@@ -53,6 +53,116 @@ import org.junit.jupiter.api.Test;
 class BasicModuleSemanticsTest {
 
     @Test
+    void classificationWaitsForBoxSupplyEvenWithoutTheCacheFallbackFlag() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        workspace.setResolvedCategories(List.of(storage),
+                Map.of(storage, Set.of("minecraft:birch_leaves")), List.of(cache));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn("minecraft:birch_leaves", 128);
+        workspace.recordWithdrawn("minecraft:stone", 64);
+        TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), workspace);
+        var supply = new RecordingBoxPreparation(TaskModuleResult.succeeded("box acquired"));
+        TaskExecutionContext context = contextWithStorage(base, supply);
+        var module = new SelectStorageTargetModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.SELECT_STORAGE_TARGET, Map.of()));
+
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        assertFalse(module.safeToStop());
+        assertEquals(Map.of("minecraft:birch_leaves", 128), supply.incoming);
+        assertEquals(storage, workspace.selectedStorageTarget().orElseThrow());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertTrue(module.safeToStop());
+        assertEquals(List.of("supply-started", "supply-confirmed"), supply.events);
+    }
+
+    @Test
+    void failedBoxSupplyDoesNotLetClassificationProceedToTheTarget() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        workspace.setResolvedCategories(List.of(storage),
+                Map.of(storage, Set.of("minecraft:birch_leaves")), List.of(cache));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn("minecraft:birch_leaves", 128);
+        TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), workspace);
+        var supply = new RecordingBoxPreparation(TaskModuleResult.failed("supply unavailable"));
+        var module = new SelectStorageTargetModule(contextWithStorage(base, supply),
+                TaskStep.action(UUID.randomUUID(), TaskModuleIds.SELECT_STORAGE_TARGET, Map.of()));
+
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        TaskModuleResult result = module.tick();
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertEquals("supply unavailable", result.message());
+        assertEquals(Map.of("minecraft:birch_leaves", 128), workspace.carriedItems());
+    }
+
+    private static TaskExecutionContext contextWithStorage(TaskExecutionContext base,
+            StorageAutomationPort storage) {
+        return new TaskExecutionContext(base.navigation(), base.droppedItems(),
+                base.containerRegions(), base.containerTransfers(), base.containerWithdrawals(),
+                base.containerInspections(), base.categoryMarkerCache(), base.foodConsumption(),
+                base.categoryZonesPort(), base.coordinates(), base.regions(), base.categoryZones(),
+                base.workspace(), base.inventory(), storage);
+    }
+
+    private static final class RecordingBoxPreparation implements StorageAutomationPort {
+        private final TaskModuleResult completion;
+        private final List<String> events = new ArrayList<>();
+        private Map<String, Integer> incoming = Map.of();
+
+        private RecordingBoxPreparation(TaskModuleResult completion) {
+            this.completion = completion;
+        }
+
+        @Override
+        public Optional<TaskModuleExecutor> prepareDeposit(TaskExecutionContext context,
+                ContainerTarget target, Map<String, Integer> items) {
+            incoming = Map.copyOf(items);
+            return Optional.of(new TaskModuleExecutor() {
+                private boolean confirmed;
+
+                @Override
+                public TaskModuleResult start() {
+                    events.add("supply-started");
+                    return TaskModuleResult.waiting("waiting for box supply");
+                }
+
+                @Override
+                public TaskModuleResult tick() {
+                    confirmed = true;
+                    events.add("supply-confirmed");
+                    return completion;
+                }
+
+                @Override
+                public boolean safeToStop() {
+                    return confirmed;
+                }
+
+                @Override
+                public void cancel() {
+                    events.add("supply-cancelled");
+                }
+            });
+        }
+
+        @Override
+        public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                Map<String, Integer> items) {
+            throw new AssertionError("deposit must wait for box supply");
+        }
+
+        @Override
+        public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+            throw new AssertionError("cleanup must not run during preparation");
+        }
+    }
+
+    @Test
     void completeCacheScanWaitsForAllContentsBeforeReportingSuccess() {
         ContainerTarget empty = target(1, 64, 1, "chest");
         ContainerTarget stocked = target(2, 64, 1, "chest");

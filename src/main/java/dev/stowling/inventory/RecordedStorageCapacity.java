@@ -4,11 +4,80 @@ import dev.stowling.automation.ItemIdentity;
 import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
 public final class RecordedStorageCapacity {
     private RecordedStorageCapacity() {
+    }
+
+    public static boolean shouldReserveBox(WarehouseInventory.Container stock, StoragePolicy policy,
+            Map<String, Integer> items, Map<String, Integer> stackSizes) {
+        if (policy.mode() == StorageMode.NORMAL) {
+            return false;
+        }
+        Set<String> checked = new LinkedHashSet<>();
+        for (String key : items.keySet()) {
+            if (ItemIdentity.isBox(key) || items.get(key) <= 0) {
+                continue;
+            }
+            String category = ItemIdentity.category(key);
+            if (!checked.add(category)) {
+                continue;
+            }
+            if (stock == null || stock.recordedAt() == null) {
+                return true;
+            }
+            int stackSize = stackSizes.getOrDefault(key, stock.items().stream()
+                    .filter(entry -> entry.key().equals(key))
+                    .mapToInt(WarehouseInventory.Entry::stackSize).findFirst().orElse(0));
+            if (stackSize < 1) {
+                return true;
+            }
+            long incoming = items.entrySet().stream()
+                    .filter(entry -> !ItemIdentity.isBox(entry.getKey())
+                            && category.equals(ItemIdentity.category(entry.getKey())))
+                    .mapToLong(Map.Entry::getValue).sum();
+            long loose = 0;
+            long otherSlots = 0;
+            long slack = 0;
+            for (WarehouseInventory.Entry entry : stock.items()) {
+                if (ItemIdentity.isBox(entry.key())) {
+                    continue;
+                }
+                if (category.equals(entry.itemId())) {
+                    loose += entry.loose();
+                    long remainder = entry.loose() % entry.stackSize();
+                    if (remainder > 0 && items.containsKey(entry.key())) {
+                        slack += entry.stackSize() - remainder;
+                    }
+                } else {
+                    otherSlots += Math.ceilDiv(entry.loose(), entry.stackSize());
+                }
+            }
+            long limit = Math.max(0, StoragePackingPlanner.looseLimit(policy, stock.slots(),
+                    stackSize) - otherSlots * stackSize);
+            long space = StoragePackingPlanner.looseSpace(policy, stock.slots(), stackSize,
+                    loose, otherSlots, stock.occupiedSlots(), slack);
+            // Reserving a spare is independent of permission to store a partially filled box.
+            if (loose > limit || incoming > space) {
+                return true;
+            }
+            if (stock.partialBoxes() > 0 && stock.boxes().isEmpty()) {
+                return true;
+            }
+            boolean partial = stock.boxes().stream().anyMatch(box ->
+                    category.equals(box.category())
+                            && (box.occupiedSlots() < StoragePackingPlanner.BOX_SLOTS
+                                    || box.items().stream().anyMatch(entry ->
+                                            entry.loose() < entry.stackSize())));
+            if (partial && incoming > existingBoxSpace(
+                    stock, category, items.keySet(), stackSize)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static long existingBoxSpace(WarehouseInventory.Container stock, String category,

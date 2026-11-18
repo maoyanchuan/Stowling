@@ -1,5 +1,7 @@
 package dev.stowling.v2.control;
 
+import dev.stowling.v2.model.TaskCleanupPolicy;
+
 import dev.stowling.v2.model.TaskPriority;
 import java.util.List;
 
@@ -13,8 +15,25 @@ public record AutoClassifyTaskUpdateRequest(
         String cacheRegionRef,
         List<AutoClassifyAreaRequest> classificationAreas,
         TaskPriority collectionPriority,
-        Boolean overflowEnabled
+        Boolean overflowEnabled,
+        TaskCleanupPolicy cleanupPolicy
 ) {
+    public AutoClassifyTaskUpdateRequest(
+            String revision,
+            String name,
+            Boolean enabled,
+            Boolean collectionEnabled,
+            Boolean classificationEnabled,
+            AutoClassifyDetectionRequest detection,
+            String cacheRegionRef,
+            List<AutoClassifyAreaRequest> classificationAreas,
+            TaskPriority collectionPriority,
+            Boolean overflowEnabled
+    ) {
+        this(revision, name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheRegionRef, classificationAreas, collectionPriority, overflowEnabled, null);
+    }
+
     public AutoClassifyTaskUpdateRequest(
             String revision,
             String name,

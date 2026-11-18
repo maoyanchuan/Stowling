@@ -190,7 +190,12 @@
             interruptionMode: isDefault ? "NONE" : mode,
             interruptionTaskRef: String(value?.interruptionTaskRef || ""),
             defaultInterruptionFlow: isDefault,
-            requeueAfterInterruption: Boolean(value?.requeueAfterInterruption),
+            requeueAfterInterruption: Boolean(value?.requeueAfterInterruption)
+                || value?.cleanupPolicy?.resumeMode === "CONTINUE",
+            ...(value?.cleanupPolicy ? {cleanupPolicy: {
+                destinationRef: value.cleanupPolicy.destinationRef || null,
+                resumeMode: value.cleanupPolicy.resumeMode === "CONTINUE" ? "CONTINUE" : "RESTART"
+            }} : {}),
             steps: normalizeStepList(value?.steps)
         };
     }
@@ -1042,7 +1047,9 @@
                 ? String(task.interruptionTaskRef || "")
                 : null,
             defaultInterruptionFlow: isDefault,
-            requeueAfterInterruption: Boolean(task.requeueAfterInterruption),
+            requeueAfterInterruption: Boolean(task.requeueAfterInterruption)
+                || task?.cleanupPolicy?.resumeMode === "CONTINUE",
+            ...(task?.cleanupPolicy ? {cleanupPolicy: task.cleanupPolicy} : {}),
             steps: Array.isArray(task.steps)
                 ? task.steps.map(payloadStep)
                 : []

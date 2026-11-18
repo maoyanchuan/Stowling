@@ -122,7 +122,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                             .hasRecordedClassifiableStock(target, categories))
                     .forEach(cacheTargets::add);
         }
-        for (ContainerTarget temporary : context.storageAutomation().temporaryContainers()) {
+        for (ContainerTarget temporary : context.storageAutomation().recoveryContainers(context)) {
             if (!context.workspace().hasRecordedClassifiableStock(temporary, categories)) continue;
             if (cacheTargets.stream().noneMatch(value ->
                     value.position().equals(temporary.position()))

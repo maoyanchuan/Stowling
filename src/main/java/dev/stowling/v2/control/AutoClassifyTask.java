@@ -1,5 +1,7 @@
 package dev.stowling.v2.control;
 
+import dev.stowling.v2.model.TaskCleanupPolicy;
+
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import java.util.List;
@@ -20,8 +22,32 @@ public record AutoClassifyTask(
         String classificationTaskRef,
         String interruptionTaskRef,
         List<UUID> triggerIds,
-        boolean overflowEnabled
+        boolean overflowEnabled,
+        TaskCleanupPolicy cleanupPolicy
 ) {
+    public AutoClassifyTask(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            AutoClassifyDetection detection,
+            String cacheRegionRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            TaskPriority classificationPriority,
+            String collectionTaskRef,
+            String classificationTaskRef,
+            String interruptionTaskRef,
+            List<UUID> triggerIds,
+            boolean overflowEnabled
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheRegionRef, classificationAreas, collectionPriority,
+                classificationPriority, collectionTaskRef, classificationTaskRef,
+                interruptionTaskRef, triggerIds, overflowEnabled, null);
+    }
+
     public AutoClassifyTask(
             UUID id,
             String name,

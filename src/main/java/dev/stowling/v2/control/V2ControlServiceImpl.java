@@ -633,7 +633,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cacheRegionRef(),
                 request.classificationAreas(),
                 request.collectionPriority(),
-                Boolean.TRUE.equals(request.overflowEnabled())
+                Boolean.TRUE.equals(request.overflowEnabled()),
+                request.cleanupPolicy()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -712,7 +713,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.classificationAreas(),
                 request.collectionPriority(),
                 request.overflowEnabled() == null ? existing.overflowEnabled()
-                        : request.overflowEnabled()
+                        : request.overflowEnabled(),
+                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -910,7 +912,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.interruptionTaskRef(),
                 request.defaultInterruptionFlow(),
                 request.requeueAfterInterruption(),
-                request.folderId()
+                request.folderId(),
+                request.cleanupPolicy()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.add(task);
@@ -952,7 +955,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.interruptionTaskRef(),
                 request.defaultInterruptionFlow(),
                 request.requeueAfterInterruption(),
-                request.folderId()
+                request.folderId(),
+                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy()
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
                 .map(task -> task.id().equals(id) ? updatedTask : task)
@@ -1190,7 +1194,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             String cacheRegionRef,
             List<AutoClassifyAreaRequest> requestedAreas,
             TaskPriority collectionPriority,
-            boolean overflowEnabled
+            boolean overflowEnabled,
+            dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy
     ) {
         if (detection == null) {
             throw new V2ValidationException("detection is required");
@@ -1225,7 +1230,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 collectionPriority == null
                         ? TaskPriority.NORMAL
                         : collectionPriority,
-                overflowEnabled
+                overflowEnabled,
+                cleanupPolicy
         );
     }
 
@@ -1244,7 +1250,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cacheRegionRef(),
                 definition.classificationAreas(),
                 definition.collectionPriority(),
-                definition.overflowEnabled()
+                definition.overflowEnabled(),
+                definition.cleanupPolicy()
         );
     }
 
@@ -1283,7 +1290,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         definition.interruptionTaskId()
                 ).encode(),
                 triggerIds,
-                definition.overflowEnabled()
+                definition.overflowEnabled(),
+                definition.cleanupPolicy()
         );
     }
 
@@ -1435,7 +1443,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(),
                 task.requeueAfterInterruption(),
-                folderId
+                folderId,
+                task.cleanupPolicy()
         );
     }
 

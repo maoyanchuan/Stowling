@@ -18,6 +18,9 @@ import java.util.UUID;
 
 public final class TaskRunWorkspace {
     private final PlayerInventoryAccount inventoryAccount;
+    private dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy =
+            dev.stowling.v2.model.TaskCleanupPolicy.DEFAULT;
+    private final TaskProgress progress = new TaskProgress();
     private final Map<UUID, Integer> cacheUpdates = new LinkedHashMap<>();
     private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer =
             new LinkedHashMap<>();
@@ -60,6 +63,23 @@ public final class TaskRunWorkspace {
 
     public PlayerInventoryAccount inventoryAccount() {
         return inventoryAccount;
+    }
+
+    public synchronized void configureCleanup(dev.stowling.v2.model.TaskCleanupPolicy policy) {
+        cleanupPolicy = policy;
+    }
+
+    public synchronized dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy() {
+        return cleanupPolicy;
+    }
+
+    public TaskProgress progress() {
+        return progress;
+    }
+
+    public synchronized void invalidateCacheInventory() {
+        cacheInventory = Map.of();
+        deferredCacheCategories.clear();
     }
 
     public synchronized void recordCollected(String itemId, int count) {

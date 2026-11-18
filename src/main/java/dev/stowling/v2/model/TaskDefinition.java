@@ -16,12 +16,31 @@ public record TaskDefinition(
         String interruptionTaskRef,
         boolean defaultInterruptionFlow,
         boolean requeueAfterInterruption,
-        UUID folderId
+        UUID folderId,
+        TaskCleanupPolicy cleanupPolicy
 ) {
+    public TaskDefinition(
+            UUID id,
+            String name,
+            TaskPriority priority,
+            boolean repeatWhenIdle,
+            List<TaskStep> steps,
+            TaskInterruptionMode interruptionMode,
+            String interruptionTaskRef,
+            boolean defaultInterruptionFlow,
+            boolean requeueAfterInterruption,
+            UUID folderId
+    ) {
+        this(id, name, priority, repeatWhenIdle, steps, interruptionMode, interruptionTaskRef,
+                defaultInterruptionFlow, requeueAfterInterruption, folderId, null);
+    }
+
     public static final int MAX_STEP_DEPTH = 16;
     public static final int MAX_TOTAL_STEPS = 512;
 
     public TaskDefinition {
+        cleanupPolicy = cleanupPolicy == null ? TaskCleanupPolicy.DEFAULT : cleanupPolicy;
+        if (cleanupPolicy.resumeMode() == TaskResumeMode.CONTINUE) requeueAfterInterruption = true;
         id = Objects.requireNonNull(id, "id");
         name = requireName(name);
         priority = priority == null ? TaskPriority.NORMAL : priority;

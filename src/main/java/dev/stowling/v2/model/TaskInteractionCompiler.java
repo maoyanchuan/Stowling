@@ -51,7 +51,8 @@ public final class TaskInteractionCompiler {
                 task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(),
                 task.requeueAfterInterruption(),
-                task.folderId()
+                task.folderId(),
+                task.cleanupPolicy()
         );
     }
 

@@ -132,6 +132,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             } else {
                 context.workspace().consumeDeposit("managed", Map.of(pendingKey, pendingCount),
                         Map.of());
+                context.workspace().progress().recordDelivery(target.position(),
+                        Map.of(pendingKey, pendingCount));
             }
             remaining.compute(pendingKey, (key, value) -> Math.max(0, value - pendingCount));
             pendingKey = null;

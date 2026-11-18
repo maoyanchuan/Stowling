@@ -63,6 +63,10 @@ public interface StorageAutomationPort {
         return java.util.List.of();
     }
 
+    default java.util.List<ContainerTarget> recoveryContainers(TaskExecutionContext context) {
+        return temporaryContainers();
+    }
+
     default boolean hasTemporaryResources(UUID owner) {
         return false;
     }

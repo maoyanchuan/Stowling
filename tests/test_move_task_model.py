@@ -49,6 +49,26 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_cleanup_selection_and_continue_mode_survive_the_move_template() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingMoveTaskModel;
+            const task = model.createTask({...model.newDraft(), name: "Delivery",
+                x: "1", y: "64", z: "2", cleanupPolicy: {
+                    destinationRef: "coordinate:delivery", resumeMode: "CONTINUE"
+                }}, [], null, []);
+            return {recognized: model.isMoveTask(task),
+                restored: model.draftFromTask(task).cleanupPolicy,
+                payload: window.StowlingTaskModel.payloadTask(task).cleanupPolicy,
+                requeue: task.requeueAfterInterruption};
+        })()
+        """
+    )
+    policy = {"destinationRef": "coordinate:delivery", "resumeMode": "CONTINUE"}
+    assert result == {"recognized": True, "restored": policy, "payload": policy, "requeue": True}
+
+
 def test_new_draft_returns_fixed_shape_and_first_free_default_name() -> None:
     result = _run(
         """

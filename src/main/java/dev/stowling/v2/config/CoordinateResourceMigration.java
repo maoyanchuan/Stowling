@@ -32,7 +32,8 @@ public final class CoordinateResourceMigration {
         List<TaskDefinition> tasks = config.tasks().stream().map(task -> new TaskDefinition(
                 task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps(task.steps(), points), task.interruptionMode(), task.interruptionTaskRef(),
-                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId()))
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy()))
                 .toList();
         List<AutoClassifyDefinition> automatic = config.autoClassifyTasks().stream().map(definition ->
                 new AutoClassifyDefinition(definition.id(), definition.name(), definition.enabled(),
@@ -49,7 +50,7 @@ public final class CoordinateResourceMigration {
                                                         .map(CategoryBindingDefinition::storagePolicy)
                                                         .findFirst().orElse(StoragePolicy.DEFAULT)))
                                 .toList(), definition.collectionPriority(),
-                        definition.overflowEnabled())).toList();
+                        definition.overflowEnabled(), definition.cleanupPolicy())).toList();
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,

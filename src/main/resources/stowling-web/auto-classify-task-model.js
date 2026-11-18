@@ -173,6 +173,7 @@
             collectionPriority: "NORMAL",
             enabled: false,
             overflowEnabled: false,
+            cleanupDestinationRef: "",
             collectionEnabled: true,
             classificationEnabled: true
         };
@@ -209,6 +210,8 @@
             collectionPriority: String(item?.collectionPriority ?? ""),
             enabled: item?.enabled === true,
             overflowEnabled: item?.overflowEnabled === true,
+            cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheRegionRef
+                ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
             collectionEnabled: item?.collectionEnabled === true,
             classificationEnabled: item?.classificationEnabled === true
         };
@@ -286,6 +289,13 @@
             errors.push("所选缓存区域不存在，请刷新后重试");
         }
 
+        const cleanup = String(draft?.cleanupDestinationRef || "");
+        if (cleanup && !(cleanup.startsWith("coordinate:")
+                && resourceExists(resources, "coordinates", cleanup.slice(11)))
+                && !(cleanup.startsWith("region:")
+                    && resourceExists(resources, "regions", cleanup.slice(7)))) {
+            errors.push("中断存放位置不存在，请重新选择");
+        }
         validateAreas(draft, resources, errors);
 
         if (!COLLECTION_PRIORITIES.includes(draft?.collectionPriority)) {
@@ -319,6 +329,8 @@
             name: String(draft.name).trim(),
             enabled: draft.enabled,
             overflowEnabled: draft.overflowEnabled === true,
+            cleanupPolicy: {destinationRef: draft.cleanupDestinationRef
+                || reference("region", draft.cacheRegionId), resumeMode: "RESTART"},
             collectionEnabled: draft.collectionEnabled,
             classificationEnabled: draft.classificationEnabled,
             detection: {

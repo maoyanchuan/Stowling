@@ -366,7 +366,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "interruptionTaskRef",
                                 "defaultInterruptionFlow",
                                 "requeueAfterInterruption",
-                                "folderId"
+                                "folderId",
+                                "cleanupPolicy"
                         ),
                         Set.of("name", "steps")
                 );
@@ -625,7 +626,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "interruptionTaskRef",
                                 "defaultInterruptionFlow",
                                 "requeueAfterInterruption",
-                                "folderId"
+                                "folderId",
+                                "cleanupPolicy"
                         ),
                         Set.of("revision", "name", "steps")
                 );
@@ -640,7 +642,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 optionalString(json, "interruptionTaskRef"),
                                 optionalBoolean(json, "defaultInterruptionFlow"),
                                 optionalBoolean(json, "requeueAfterInterruption"),
-                                optionalUuid(json, "folderId")
+                                optionalUuid(json, "folderId"),
+                                cleanupPolicy(json)
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteTask(id, revision(body)));
@@ -747,6 +750,20 @@ public final class V2ControlServer implements AutoCloseable {
         throw new RequestFailure(404, "not_found", "Route not found");
     }
 
+    private static dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy(JsonObject json) {
+        if (!json.has("cleanupPolicy") || json.get("cleanupPolicy").isJsonNull()) return null;
+        JsonObject policy = jsonObject(json.get("cleanupPolicy"), "cleanupPolicy");
+        requireFieldsAny(policy, Set.of("destinationRef", "resumeMode"), Set.of());
+        String mode = optionalString(policy, "resumeMode");
+        try {
+            return new dev.stowling.v2.model.TaskCleanupPolicy(
+                    optionalString(policy, "destinationRef"), mode == null || mode.isBlank() ? null
+                            : dev.stowling.v2.model.TaskResumeMode.valueOf(mode));
+        } catch (IllegalArgumentException exception) {
+            throw invalid("cleanupPolicy: " + exception.getMessage());
+        }
+    }
+
     private static TaskRequest taskRequest(JsonObject json) {
         return new TaskRequest(
                 string(json, "name"),
@@ -757,7 +774,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalString(json, "interruptionTaskRef"),
                 optionalBoolean(json, "defaultInterruptionFlow"),
                 optionalBoolean(json, "requeueAfterInterruption"),
-                optionalUuid(json, "folderId")
+                optionalUuid(json, "folderId"),
+                cleanupPolicy(json)
         );
     }
 
@@ -774,7 +792,8 @@ public final class V2ControlServer implements AutoCloseable {
                 string(json, "cacheRegionRef"),
                 autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority"),
-                optionalBooleanValue(json, "overflowEnabled")
+                optionalBooleanValue(json, "overflowEnabled"),
+                cleanupPolicy(json)
         );
     }
 
@@ -792,7 +811,8 @@ public final class V2ControlServer implements AutoCloseable {
                 string(json, "cacheRegionRef"),
                 autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority"),
-                optionalBooleanValue(json, "overflowEnabled")
+                optionalBooleanValue(json, "overflowEnabled"),
+                cleanupPolicy(json)
         );
     }
 
@@ -861,6 +881,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "collectionEnabled",
                 "classificationEnabled",
                 "overflowEnabled",
+                "cleanupPolicy",
                 "detection",
                 "cacheRegionRef",
                 "classificationAreas",
@@ -1660,6 +1681,8 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
                 Map.entry("/warehouse-model.js", read("stowling-web/warehouse-model.js", js)),
                 Map.entry("/storage-settings.js", read("stowling-web/storage-settings.js", js)),
+                Map.entry("/task-cleanup-settings.js",
+                        read("stowling-web/task-cleanup-settings.js", js)),
                 Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),
                 Map.entry(
                         "/task-monitor-model.js",

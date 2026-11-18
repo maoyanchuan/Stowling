@@ -33,6 +33,31 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
+    @Test
+    void cleanupDestinationSurvivesLegacyTaskEditsAndProtectsItsCoordinate() {
+        V2ControlService service = service();
+        CoordinatePoint source = createPoint(service, "Source");
+        CoordinatePoint destination = createPoint(service, "Delivery");
+        var policy = new dev.stowling.v2.model.TaskCleanupPolicy(
+                "coordinate:" + destination.id(), dev.stowling.v2.model.TaskResumeMode.CONTINUE);
+        TaskRequest original = task("Gather", source.id().toString());
+        TaskListResponse created = service.createTask(new TaskRequest(original.name(),
+                original.priority(), original.repeatWhenIdle(), original.steps(),
+                original.interruptionMode(), original.interruptionTaskRef(),
+                original.defaultInterruptionFlow(), original.requeueAfterInterruption(),
+                original.folderId(), policy));
+        var saved = created.tasks().getFirst();
+        assertEquals(policy, saved.cleanupPolicy());
+        TaskListResponse updated = service.updateTask(saved.id(), new TaskUpdateRequest(
+                created.revision(), original.name(), original.priority(), original.repeatWhenIdle(),
+                original.steps(), original.interruptionMode(), original.interruptionTaskRef(),
+                original.defaultInterruptionFlow(), original.requeueAfterInterruption(),
+                original.folderId()));
+        assertEquals(policy, updated.tasks().getFirst().cleanupPolicy());
+        assertThrows(V2ValidationException.class, () -> service.deleteCoordinate(destination.id(),
+                new RevisionRequest(updated.revision())));
+    }
+
     @TempDir
     Path directory;
 

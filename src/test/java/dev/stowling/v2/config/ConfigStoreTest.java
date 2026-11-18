@@ -28,6 +28,37 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void automaticCleanupSelectionSurvivesRestartAndLegacyTasksDefaultToTheirCache()
+            throws Exception {
+        AppConfig initial = automaticConfiguration(false);
+        var original = initial.autoClassifyTasks().getFirst();
+        var policy = new dev.stowling.v2.model.TaskCleanupPolicy(original.detectionCoordinateRef(),
+                dev.stowling.v2.model.TaskResumeMode.RESTART);
+        var automatic = new AutoClassifyDefinition(original.id(), original.name(), original.enabled(),
+                original.collectionEnabled(), original.classificationEnabled(),
+                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
+                original.classificationAreas(), original.collectionPriority(), false, policy);
+        AppConfig config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
+                AutoClassifyTaskFactory.tasks(automatic, List.of()), initial.regions(),
+                initial.categoryZones(), List.of(), List.of(), List.of(automatic));
+        Path path = directory.resolve("cleanup-auto.json");
+        ConfigStore store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), config);
+        var loaded = new ConfigStore(path).loadOrReset().config();
+        assertEquals(policy, loaded.autoClassifyTasks().getFirst().cleanupPolicy());
+        assertTrue(loaded.tasks().stream().allMatch(task -> policy.equals(task.cleanupPolicy())));
+        var legacy = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        legacy.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject().remove("cleanupPolicy");
+        legacy.getAsJsonArray("tasks").forEach(task -> task.getAsJsonObject().remove("cleanupPolicy"));
+        Files.writeString(path, legacy.toString());
+        var reopened = new ConfigStore(path).loadOrReset().config();
+        assertEquals(original.cacheRegionRef(), reopened.autoClassifyTasks().getFirst()
+                .cleanupPolicy().destinationRef());
+        assertTrue(reopened.tasks().stream().allMatch(task -> original.cacheRegionRef()
+                .equals(task.cleanupPolicy().destinationRef())));
+    }
+
+    @Test
     void reloadsSavedAutomaticTasksWithOverflowEnabledOrDisabled() throws Exception {
         for (boolean enabled : List.of(false, true)) {
             Path path = directory.resolve("overflow-" + enabled + ".json");

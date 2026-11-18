@@ -186,6 +186,37 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         return new CacheInventoryScan(context, containers);
     }
 
+    @Override
+    public List<ContainerTarget> recoveryContainers(TaskExecutionContext context) {
+        return taskCleanupContainers(context, settings.resolved());
+    }
+
+    private List<ContainerTarget> taskCleanupContainers(TaskExecutionContext context,
+            StorageAutomationSettings configuration) {
+        var ref = context.workspace().cleanupPolicy().destinationRef();
+        List<ContainerTarget> destinations;
+        if (ref == null) {
+            destinations = temporaryContainers();
+        } else {
+            var destination = dev.stowling.v2.model.ResourceReference.parse(ref);
+            List<BlockPosition> points = List.of();
+            List<dev.stowling.v2.model.RegionDefinition> regions = List.of();
+            if (destination.type() == dev.stowling.v2.model.ResourceType.COORDINATE) {
+                var point = context.coordinates().get(destination.uuid());
+                if (point == null) throw new IllegalStateException("中断存放坐标不存在");
+                points = List.of(new BlockPosition(point.x(), point.y(), point.z()));
+            } else {
+                var region = context.regions().get(destination.uuid());
+                if (region == null) throw new IllegalStateException("中断存放区域不存在");
+                regions = List.of(region);
+            }
+            destinations = dev.stowling.automation.TemporaryContainerResolver.resolve(points,
+                    regions, containerRegions, Set.copyOf(configuration.emptyBoxContainers()),
+                    "任务中断存放");
+        }
+        return destinations;
+    }
+
     private abstract class Session implements TaskModuleExecutor {
         final TaskExecutionContext context;
         final StorageAutomationSettings configuration = settings.resolved();
@@ -199,6 +230,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         abstract void initialize();
+
+        final boolean cleanupAvailable() {
+            return configuration.cleanupEnabled()
+                    || context.workspace().cleanupPolicy().destinationRef() != null;
+        }
 
         String completionMessage() {
             return "储存操作完成";
@@ -466,8 +502,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (box.isEmpty()) {
                     return;
                 }
-                if (!configuration.cleanupEnabled()) {
-                    throw new IllegalStateException("拆分混杂盒前请开启全局收尾并配置暂存箱");
+                if (!cleanupAvailable()) {
+                    throw new IllegalStateException("拆分混杂盒前请配置任务中断存放位置");
                 }
                 if (hasTemporaryResources(owner())) {
                     throw new IllegalStateException("上次潜影盒尚未回收，请先执行全局收尾");
@@ -560,7 +596,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            if (configuration.cleanupEnabled() && ownedEmptyBox(owned()).isEmpty()
+            if (cleanupAvailable() && ownedEmptyBox(owned()).isEmpty()
                     && needsBox()) {
                 withdrawEmptyBox(0, box -> { });
             }
@@ -607,8 +643,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            if (!configuration.cleanupEnabled() || emptyBoxSources(context).isEmpty()) {
-                throw new IllegalStateException("请开启统一收尾，并在缓存或公共供应箱准备空盒");
+            if (!cleanupAvailable() || emptyBoxSources(context).isEmpty()) {
+                throw new IllegalStateException("请配置任务中断存放位置，并在缓存或公共供应箱准备空盒");
             }
             if (ItemIdentity.isBox(target.type())) {
                 throw new IllegalStateException("潜影盒储存模式需要普通箱子或木桶作为目标");
@@ -1059,8 +1095,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         void initialize() {
             initialized = true;
             if (cacheRegion == null && owned().isEmpty()) return;
-            if (!configuration.cleanupEnabled()) {
-                throw new IllegalStateException("溢出打包前请开启公共设施的统一中断收尾");
+            if (!cleanupAvailable()) {
+                throw new IllegalStateException("溢出打包前请配置任务中断存放位置");
             }
             destinations = overflowContainers();
             if (destinations.isEmpty()) {
@@ -1221,13 +1257,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            targets = temporaryContainers().stream()
+            recover(this::resolveDestinations);
+        }
+
+        private void resolveDestinations() {
+            List<ContainerTarget> destinations = taskCleanupContainers(context, configuration);
+            targets = destinations.stream()
                     .sorted(Comparator.comparingDouble(target -> distance(target.position())))
                     .toList();
             if (targets.isEmpty() && !overflowEnabled) {
-                throw new IllegalStateException("全局收尾缺少暂存箱，请配置后重试");
+                throw new IllegalStateException("任务未配置可用的中断存放位置，请配置后重试");
             }
-            recover(() -> depositAll(0));
+            depositAll(0);
         }
 
         private void depositAll(int index) {
@@ -1242,7 +1283,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     steps.add(new Step(new Overflow(context, null), () -> depositAll(index)));
                     return;
                 }
-                throw new IllegalStateException("暂存设施未能接收剩余 " + sum(owned())
+                throw new IllegalStateException("任务指定存放位置未能接收剩余 " + sum(owned())
                         + " 件任务物品，收尾受阻"
                         + (lastFailure.isEmpty() ? "" : "；最后一次失败：" + lastFailure));
             }

@@ -143,7 +143,7 @@ def test_overflow_switch_is_visible_outside_both_collapsed_phase_sections() -> N
     assert 'class="auto-switch-track"' in overflow
     assert " hidden" not in overflow
     assert form.index('id="auto-sort-body"') < form.index('id="auto-overflow-section"')
-    assert form.index('id="auto-overflow-section"') < form.index('class="auto-interruption-note"')
+    assert form.index('id="auto-overflow-section"') < form.index('id="auto-cleanup-settings"')
 
 
 def test_recognition_uses_two_consolidated_modes_in_each_area() -> None:

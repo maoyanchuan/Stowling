@@ -178,6 +178,7 @@ public final class ConfigValidator {
         }
         Map<UUID, TaskDefinition> tasks = new LinkedHashMap<>();
         for (TaskDefinition task : config.tasks()) {
+            requireCleanupDestination(task.cleanupPolicy(), coordinates, regions);
             if (tasks.putIfAbsent(task.id(), task) != null) {
                 throw new V2ValidationException("duplicate task id");
             }
@@ -241,6 +242,7 @@ public final class ConfigValidator {
                 .map(TaskTriggerDefinition::id)
                 .collect(java.util.stream.Collectors.toSet());
         for (AutoClassifyDefinition definition : definitions) {
+            requireCleanupDestination(definition.cleanupPolicy(), coordinates, regions);
             if (!ids.add(definition.id())) {
                 throw new V2ValidationException(
                         "duplicate auto classify task id"
@@ -344,6 +346,17 @@ public final class ConfigValidator {
             throw new V2ValidationException(
                     "direct rule requires only display marker sources"
             );
+        }
+    }
+
+    private static void requireCleanupDestination(
+            dev.stowling.v2.model.TaskCleanupPolicy policy,
+            Map<UUID, CoordinatePoint> coordinates, Map<UUID, RegionDefinition> regions) {
+        if (policy.destinationRef() == null) return;
+        ResourceReference ref = ResourceReference.parse(policy.destinationRef());
+        if (ref.type() == ResourceType.COORDINATE && !coordinates.containsKey(ref.uuid())
+                || ref.type() == ResourceType.REGION && !regions.containsKey(ref.uuid())) {
+            throw new V2ValidationException("中断存放位置引用的坐标或区域不存在");
         }
     }
 

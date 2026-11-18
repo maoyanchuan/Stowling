@@ -81,6 +81,18 @@
             changed
         };
         host.replaceChildren();
+        if (window.StowlingTaskCleanupSettings) {
+            const cleanupHost = document.createElement("div");
+            const cleanup = window.StowlingTaskCleanupSettings.create(cleanupHost);
+            cleanup.resources(coordinates, regions);
+            cleanup.set(task.cleanupPolicy || {});
+            cleanupHost.addEventListener("input", () => {
+                task.cleanupPolicy = cleanup.read();
+                if (task.cleanupPolicy.resumeMode === "CONTINUE") task.requeueAfterInterruption = true;
+                changed();
+            });
+            host.append(cleanupHost);
+        }
         const tree = Stowling.element("div", "workflow-tree");
         renderStepList(context, tree, task.steps || [], [], true, 0);
         host.append(tree);

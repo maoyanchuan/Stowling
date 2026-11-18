@@ -116,7 +116,8 @@ public final class AutoClassifyTaskFactory {
                         interruptionRef,
                         false,
                         false,
-                        null
+                        null,
+                        definition.cleanupPolicy()
                 ),
                 new TaskDefinition(
                         definition.classificationTaskId(),
@@ -128,7 +129,8 @@ public final class AutoClassifyTaskFactory {
                         interruptionRef,
                         false,
                         true,
-                        null
+                        null,
+                        definition.cleanupPolicy()
                 ),
                 new TaskDefinition(
                         definition.interruptionTaskId(),
@@ -142,7 +144,8 @@ public final class AutoClassifyTaskFactory {
                         null,
                         false,
                         false,
-                        null
+                        null,
+                        definition.cleanupPolicy()
                 )
         );
     }

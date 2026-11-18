@@ -6,6 +6,8 @@
     const Monitor = window.StowlingTaskMonitorModel;
     const Move = window.StowlingMoveTaskModel;
     const Coordinates = window.StowlingCoordinateModel;
+    const cleanup = window.StowlingTaskCleanupSettings.create(
+        document.querySelector("#move-cleanup-settings"));
     const taskLogs = Monitor.createLogBuffer(300);
     const state = {
         triggerStatuses: [],
@@ -19,6 +21,7 @@
         autoDraftActive: false,
         moveAllTasks: [],
         coordinates: [],
+        regions: [],
         moveDraft: Move.newDraft(),
         moveFormOpen: false,
         moveDraftActive: false,
@@ -83,9 +86,10 @@
         elements.moveResourcesMessage.textContent = "正在读取任务和坐标…";
         elements.moveResourcesMessage.classList.remove("error");
         try {
-            const [tasks, coordinates] = await Promise.all([
+            const [tasks, coordinates, regions] = await Promise.all([
                 Stowling.request("/v1/tasks"),
-                Stowling.request("/v1/coordinates")
+                Stowling.request("/v1/coordinates"),
+                Stowling.request("/v1/regions")
             ]);
             state.moveRevision = String(tasks?.revision || "");
             const allTasks = Array.isArray(tasks?.tasks)
@@ -93,6 +97,8 @@
             state.moveAllTasks = allTasks;
             state.moveTasks = allTasks.filter(Move.isMoveTask);
             state.coordinates = Coordinates.normalizeCoordinates(coordinates).coordinates;
+            state.regions = regions.regions || [];
+            cleanup.resources(state.coordinates, state.regions);
             state.moveResourcesReady = true;
             if (state.moveDraft.id && !state.moveDirty) {
                 const refreshed = state.moveTasks.find(
@@ -265,6 +271,7 @@
      */
     function syncMoveForm() {
         const draft = state.moveDraft;
+        cleanup.set(draft.cleanupPolicy || {});
         elements.moveName.value = draft.name;
         elements.moveX.value = draft.x.replace(/^\+/, "");
         elements.moveY.value = draft.y.replace(/^\+/, "");
@@ -286,7 +293,8 @@
             x: elements.moveX.value,
             y: elements.moveY.value,
             z: elements.moveZ.value,
-            coordinateId: elements.moveCoordinate.value
+            coordinateId: elements.moveCoordinate.value,
+            cleanupPolicy: cleanup.read()
         };
     }
 

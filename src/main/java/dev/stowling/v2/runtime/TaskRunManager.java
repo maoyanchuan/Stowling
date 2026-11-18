@@ -609,12 +609,15 @@ public final class TaskRunManager {
 
     private boolean requiresGlobalCleanup() {
         return registry.storageAutomation().cleanupEnabled()
+                || active != null && active.prepared.task.cleanupPolicy().destinationRef() != null
+                || active != null && active.prepared.task.cleanupPolicy().resumeMode()
+                        == dev.stowling.v2.model.TaskResumeMode.CONTINUE
                 || active != null && registry.storageAutomation().hasTemporaryResources(
                         active.workspace.inventoryAccount().ownerId());
     }
 
     private void beginInterruption() {
-        if (registry.storageAutomation().cleanupEnabled()) {
+        if (requiresGlobalCleanup()) {
             registry.inventory().observe();
             registry.inventory().claimUnexpected(active.workspace.inventoryAccount(), Set.of());
         }
@@ -796,6 +799,9 @@ public final class TaskRunManager {
     private void finishRun(TaskRunState state, String message) {
         publishWorkspaceEvents();
         PreparedRun completed = active.prepared;
+        Continuation continuation = completed.task.cleanupPolicy().resumeMode()
+                == dev.stowling.v2.model.TaskResumeMode.CONTINUE
+                ? new Continuation(active.workspace, active.completedSteps) : null;
         boolean hadManagedItems = active.workspace.hasManagedItems();
         TaskRunSnapshot old = active.snapshot;
         int completedSteps = state == TaskRunState.SUCCEEDED
@@ -833,8 +839,10 @@ public final class TaskRunManager {
             enqueuePrepared(
                     completed,
                     0,
-                    "被中断，等待重新运行",
-                    true
+                    continuation == null ? "被中断，等待重新运行"
+                            : "已保留交付进度，等待恢复当前阶段",
+                    true,
+                    continuation
             );
         }
     }
@@ -875,7 +883,8 @@ public final class TaskRunManager {
                         createIndependentTask(run, taskRef, priority);
                     }
                 },
-                allowTaskCreation
+                allowTaskCreation,
+                allowTaskCreation ? run.startStep : 0
         );
     }
 
@@ -1021,19 +1030,22 @@ public final class TaskRunManager {
         TaskRunSnapshot running = snapshot(
                 queued,
                 TaskRunState.RUNNING,
-                0,
+                queued.continuation == null ? 0 : queued.continuation.startStep,
                 "正在运行",
                 Instant.now()
         );
-        TaskRunWorkspace workspace = new TaskRunWorkspace(
-                registry.inventory().account(running.runId())
-        );
+        TaskRunWorkspace workspace = queued.continuation == null ? new TaskRunWorkspace(
+                registry.inventory().account(running.runId())) : queued.continuation.workspace;
+        workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
+        if (queued.continuation != null) workspace.invalidateCacheInventory();
         active = new ActiveRun(
                 running,
                 queued.prepared,
                 workspace,
                 executionContext(queued.prepared, workspace)
         );
+        active.startStep = queued.continuation == null ? 0 : queued.continuation.startStep;
+        active.completedSteps = active.startStep;
         replaceRetained(running);
         return running;
     }
@@ -1055,6 +1067,11 @@ public final class TaskRunManager {
             String message,
             boolean deduplicate
     ) {
+        enqueuePrepared(prepared, delayTicks, message, deduplicate, null);
+    }
+
+    private void enqueuePrepared(PreparedRun prepared, int delayTicks, String message,
+            boolean deduplicate, Continuation continuation) {
         if (deduplicate) {
             if (active != null
                     && active.prepared.task.id().equals(prepared.task.id())) {
@@ -1071,6 +1088,7 @@ public final class TaskRunManager {
                 ticks + delayTicks,
                 message
         );
+        queued.continuation = continuation;
         queue.add(queued);
         retain(snapshot(
                 queued,
@@ -1187,6 +1205,9 @@ public final class TaskRunManager {
             String message,
             Instant updatedAt
     ) {
+        if (queued.continuation != null) {
+            completedSteps = Math.max(completedSteps, queued.continuation.startStep);
+        }
         return new TaskRunSnapshot(
                 queued.snapshot.runId(),
                 queued.prepared.task.id(),
@@ -1305,6 +1326,7 @@ public final class TaskRunManager {
     }
 
     private static final class QueuedRun {
+        private Continuation continuation;
         private final UUID runId;
         private final PreparedRun prepared;
         private final long sequence;
@@ -1340,6 +1362,7 @@ public final class TaskRunManager {
     }
 
     private static final class ActiveRun {
+        private int startStep;
         private TaskRunSnapshot snapshot;
         private final PreparedRun prepared;
         private final TaskRunWorkspace workspace;
@@ -1373,5 +1396,8 @@ public final class TaskRunManager {
             this.workspace = workspace;
             this.context = context;
         }
+    }
+
+    private record Continuation(TaskRunWorkspace workspace, int startStep) {
     }
 }

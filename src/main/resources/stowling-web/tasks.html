@@ -16,6 +16,7 @@
     <script src="/move-task-model.js" defer></script>
     <script src="/auto-classify-task-model.js" defer></script>
     <script src="/task-monitor-model.js" defer></script>
+    <script src="/task-cleanup-settings.js" defer></script>
     <script src="/tasks.js" defer></script>
     <script src="/auto-classify-ui.js" defer></script>
 </head>
@@ -170,6 +171,7 @@
                                                 <option value="BACKGROUND">后台</option>
                                             </select>
                                         </label>
+                                        <div id="move-cleanup-settings"></div>
                                         <p id="move-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">
@@ -343,7 +345,7 @@
                                                         <small id="auto-overflow-description">
                                                             缓存装不下或分类后剩余的物品装盒送入溢出，
                                                             优先使用缓存空盒。
-                                                            请在公共设施配置溢出箱并开启统一收尾。
+                                                            请在公共设施配置溢出箱，并在任务中选择中断存放位置。
                                                         </small>
                                                     </span>
                                                 </label>
@@ -361,11 +363,7 @@
                                                 </label>
                                             </div>
                                         </section>
-                                        <div class="auto-interruption-note">
-                                            <b>中断收尾</b>
-                                            <span>优先处理收集任务；分类被中断时，把本次取出的
-                                                物品归还缓存，再重新排队。</span>
-                                        </div>
+                                        <div id="auto-cleanup-settings"></div>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">

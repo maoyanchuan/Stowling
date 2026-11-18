@@ -142,6 +142,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             if (moved > 0) deposited.put(key, moved);
         });
         context.workspace().recordCacheTransfer(target, deposited, false);
+        context.workspace().progress().recordDelivery(target.position(), deposited);
         recordCacheUpdate(result.remaining());
         if (retryOnFailure && "carried".equals(itemSource)
                 && targetReference.type() == ResourceType.OUTPUT

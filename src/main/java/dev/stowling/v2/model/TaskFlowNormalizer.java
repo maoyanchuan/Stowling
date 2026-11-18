@@ -39,6 +39,7 @@ public final class TaskFlowNormalizer {
                 .map(TaskFlowNormalizer::normalizeTask)
                 .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
                 .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
+                .map(task -> autoCleanupPolicy(task, config.autoClassifyTasks()))
                 .toList();
         List<TaskDefinition> tasks = new ArrayList<>(baseTasks);
         Set<UUID> taskIds = new HashSet<>();
@@ -91,7 +92,8 @@ public final class TaskFlowNormalizer {
                     reference,
                     false,
                     task.requeueAfterInterruption(),
-                    task.folderId()
+                    task.folderId(),
+                    task.cleanupPolicy()
             );
             replacements.put(task.id(), interrupted);
             if (!taskIds.contains(interruptionId)) {
@@ -110,7 +112,8 @@ public final class TaskFlowNormalizer {
                         null,
                         false,
                         false,
-                        task.folderId()
+                        task.folderId(),
+                        task.cleanupPolicy()
                 ));
                 taskIds.add(interruptionId);
             }
@@ -166,7 +169,20 @@ public final class TaskFlowNormalizer {
         ), seed));
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps, task.interruptionMode(), task.interruptionTaskRef(),
-                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId());
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy());
+    }
+
+    private static TaskDefinition autoCleanupPolicy(TaskDefinition task,
+            List<AutoClassifyDefinition> definitions) {
+        var owner = definitions.stream().filter(definition -> definition.id().equals(task.id())
+                || definition.classificationTaskId().equals(task.id())
+                || definition.interruptionTaskId().equals(task.id())).findFirst().orElse(null);
+        if (owner == null || owner.cleanupPolicy().equals(task.cleanupPolicy())) return task;
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                task.steps(), task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                owner.cleanupPolicy());
     }
 
     private static TaskDefinition upgradeAutoCollection(
@@ -211,7 +227,8 @@ public final class TaskFlowNormalizer {
                 task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(),
                 task.requeueAfterInterruption(),
-                task.folderId()
+                task.folderId(),
+                task.cleanupPolicy()
         );
     }
 
@@ -227,7 +244,8 @@ public final class TaskFlowNormalizer {
                 normalizeTaskReference(task.interruptionTaskRef()),
                 task.defaultInterruptionFlow(),
                 task.requeueAfterInterruption(),
-                task.folderId()
+                task.folderId(),
+                task.cleanupPolicy()
         );
     }
 
@@ -872,6 +890,7 @@ public final class TaskFlowNormalizer {
             TaskDefinition task,
             ResourceReference reference
     ) {
+        if (reference.encode().equals(task.cleanupPolicy().destinationRef())) return true;
         if (reference.type() == ResourceType.TASK
                 && reference.encode().equals(task.interruptionTaskRef())) {
             return true;

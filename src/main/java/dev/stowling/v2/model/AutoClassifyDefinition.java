@@ -17,8 +17,27 @@ public record AutoClassifyDefinition(
         String cacheRegionRef,
         List<AutoClassifyAreaDefinition> classificationAreas,
         TaskPriority collectionPriority,
-        boolean overflowEnabled
+        boolean overflowEnabled,
+        TaskCleanupPolicy cleanupPolicy
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            int pickupRadius,
+            String cacheRegionRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            boolean overflowEnabled
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheRegionRef, classificationAreas,
+                collectionPriority, overflowEnabled, null);
+    }
+
     public AutoClassifyDefinition(
             UUID id,
             String name,
@@ -41,6 +60,11 @@ public record AutoClassifyDefinition(
     public static final int MAX_PICKUP_RADIUS = 64;
 
     public AutoClassifyDefinition {
+        cleanupPolicy = cleanupPolicy == null || cleanupPolicy.destinationRef() == null
+                ? new TaskCleanupPolicy(cacheRegionRef, TaskResumeMode.RESTART) : cleanupPolicy;
+        if (cleanupPolicy.resumeMode() != TaskResumeMode.RESTART) {
+            throw new IllegalArgumentException("自动分类中断后需要重新扫描分类");
+        }
         id = Objects.requireNonNull(id, "id");
         name = requireName(name);
         detectionCoordinateRef = requireReference(

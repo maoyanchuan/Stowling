@@ -42,6 +42,11 @@ public final class TaskFlowExecutor {
             Host host,
             boolean allowTaskCreation
     ) {
+        this(steps, context, host, allowTaskCreation, 0);
+    }
+
+    public TaskFlowExecutor(List<TaskStep> steps, TaskExecutionContext context, Host host,
+            boolean allowTaskCreation, int startStep) {
         this.context = Objects.requireNonNull(context, "context");
         this.host = Objects.requireNonNull(host, "host");
         this.allowTaskCreation = allowTaskCreation;
@@ -49,7 +54,13 @@ public final class TaskFlowExecutor {
                 Objects.requireNonNull(steps, "steps")
         );
         this.totalTopLevelSteps = rootSteps.size();
-        frames.push(Frame.root(rootSteps));
+        if (startStep < 0 || startStep > rootSteps.size()) {
+            throw new IllegalArgumentException("invalid resume step");
+        }
+        Frame root = Frame.root(rootSteps);
+        root.index = startStep;
+        frames.push(root);
+        completedTopLevelSteps = startStep;
     }
 
     public synchronized TaskModuleResult tick() {

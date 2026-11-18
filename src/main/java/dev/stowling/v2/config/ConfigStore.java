@@ -116,6 +116,7 @@ public final class ConfigStore {
             }
             for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
                 JsonObject taskObject = requireObject(task, "task");
+                requireCleanupPolicy(taskObject.get("cleanupPolicy"));
                 requireFields(
                         taskObject,
                         Set.of(
@@ -129,7 +130,8 @@ public final class ConfigStore {
                                 "interruptionTaskRef",
                                 "defaultInterruptionFlow",
                                 "requeueAfterInterruption",
-                                "folderId"
+                                "folderId",
+                                "cleanupPolicy"
                         ),
                         Set.of("id", "name", "steps")
                 );
@@ -437,6 +439,19 @@ public final class ConfigStore {
         }
     }
 
+    private static void requireCleanupPolicy(JsonElement value) {
+        if (value == null || value.isJsonNull()) return;
+        JsonObject policy = requireObject(value, "cleanupPolicy");
+        requireFields(policy,
+                Set.of("destinationRef", "resumeMode"), Set.of());
+        JsonElement mode = policy.get("resumeMode");
+        if (mode != null && !mode.isJsonNull() && (!mode.isJsonPrimitive()
+                || !mode.getAsJsonPrimitive().isString()
+                || !Set.of("RESTART", "CONTINUE").contains(mode.getAsString()))) {
+            throw new V2ValidationException("cleanupPolicy.resumeMode is invalid");
+        }
+    }
+
     private static void requireAutoClassifyObjects(JsonElement value) {
         Set<String> fields = Set.of(
                 "id",
@@ -452,6 +467,7 @@ public final class ConfigStore {
         );
         Set<String> allowed = new java.util.HashSet<>(fields);
         allowed.add("overflowEnabled");
+        allowed.add("cleanupPolicy");
         for (JsonElement item
                 : requireArray(value, "autoClassifyTasks")) {
             JsonObject definition = requireObject(
@@ -459,6 +475,7 @@ public final class ConfigStore {
                     "auto classify task"
             );
             requireFields(definition, allowed, fields);
+            requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireAutoClassifyAreas(definition.get("classificationAreas"));
         }
     }

@@ -51,6 +51,91 @@ import org.junit.jupiter.api.Test;
 
 class TaskInterruptionLifecycleTest {
     @Test
+    void continueModeRetainsConfirmedDeliveryAndDoesNotRepeatCompletedStages() {
+        var point = coordinate(UUID.randomUUID());
+        String destination = "coordinate:" + point.id();
+        BlockPosition position = new BlockPosition(point.x(), point.y(), point.z());
+        AtomicInteger firstStage = new AtomicInteger();
+        AtomicInteger workStarts = new AtomicInteger();
+        AtomicInteger gathered = new AtomicInteger();
+        RecordingNavigation navigation = new RecordingNavigation();
+        TaskModuleRuntimeFactory stage = new TaskModuleRuntimeFactory() {
+            @Override
+            public String moduleId() {
+                return "TEST_GATHER_PROGRESS";
+            }
+
+            @Override
+            public TaskModuleExecutor create(TaskStep step, TaskExecutionContext context) {
+                return new TestAction(context) {
+                    @Override
+                    public TaskModuleResult start() {
+                        if ("first".equals(step.parameters().get("stage"))) {
+                            firstStage.incrementAndGet();
+                            return TaskModuleResult.succeeded("completed first stage");
+                        }
+                        int needed = context.workspace().progress().remainingAt(position,
+                                Map.of("minecraft:stone", 1000)).get("minecraft:stone");
+                        if (workStarts.incrementAndGet() == 1) {
+                            gathered.addAndGet(400);
+                            context.workspace().recordManagedAcquired("minecraft:stone", 400);
+                            return TaskModuleResult.waiting("partially gathered");
+                        }
+                        assertEquals(600, needed);
+                        gathered.addAndGet(needed);
+                        context.workspace().progress().recordDelivery(position,
+                                Map.of("minecraft:stone", needed));
+                        return TaskModuleResult.succeeded("remaining materials delivered");
+                    }
+                };
+            }
+        };
+        var registry = registry(navigation, stage);
+        registry.setStorageAutomation(new dev.stowling.v2.runtime.modules.StorageAutomationPort() {
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("unused");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                assertEquals(destination, context.workspace().cleanupPolicy().destinationRef());
+                return new TestAction(context) {
+                    @Override
+                    public TaskModuleResult start() {
+                        var items = context.workspace().managedItems();
+                        context.workspace().progress().recordDelivery(position, items);
+                        context.workspace().consumeDeposit("managed", items, Map.of());
+                        return TaskModuleResult.succeeded("delivered during interruption");
+                    }
+                };
+            }
+        });
+        var policy = new dev.stowling.v2.model.TaskCleanupPolicy(destination,
+                dev.stowling.v2.model.TaskResumeMode.CONTINUE);
+        TaskDefinition background = new TaskDefinition(UUID.randomUUID(), "Gather",
+                TaskPriority.BACKGROUND, false, List.of(
+                        TaskStep.action(UUID.randomUUID(), stage.moduleId(), Map.of("stage", "first")),
+                        TaskStep.action(UUID.randomUUID(), stage.moduleId(), Map.of())),
+                TaskInterruptionMode.NONE, null, false, false, null, policy);
+        TaskDefinition urgent = task("Pickup", TaskPriority.URGENT,
+                TaskInterruptionMode.NONE, actionStep(NOOP));
+        AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
+                List.of(background, urgent));
+        TaskRunManager manager = new TaskRunManager(navigation, registry);
+        manager.start(background, config, null);
+        manager.tick();
+        manager.start(urgent, config, null);
+        for (int tick = 0; tick < 40; tick++) manager.tick();
+        assertEquals(1, firstStage.get());
+        assertEquals(2, workStarts.get());
+        assertEquals(1000, gathered.get());
+        assertTrue(manager.runs().stream().anyMatch(run -> run.taskId().equals(background.id())
+                && run.state() == TaskRunState.SUCCEEDED));
+    }
+
+    @Test
     void urgentPreemptionPreservesTheInterruptedTasksOverflowChoiceDuringGlobalCleanup() {
         for (boolean enabled : List.of(false, true)) {
             RecordingNavigation navigation = new RecordingNavigation();

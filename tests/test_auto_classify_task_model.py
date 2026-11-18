@@ -84,6 +84,7 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "collectionEnabled": True,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "cleanupDestinationRef": "",
     }
     assert result["gap"] == "自动分类 2"
     assert result["continuous"] == "自动分类 4"
@@ -133,10 +134,12 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "cacheRegionId": "cache-1",
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
+            "storagePolicy": None,
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["SHELF", "PLACED_ITEM"],
         }, {
             "categoryZoneId": "storage-zone",
+            "storagePolicy": None,
             "ruleId": "CONTAINER_CONTENTS",
             "markerSources": ["CONTAINER_CONTENTS"],
         }],
@@ -145,6 +148,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "collectionEnabled": False,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "cleanupDestinationRef": "",
     }
 
 
@@ -183,6 +187,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "cacheRegionId": "",
         "classificationAreas": [{
             "categoryZoneId": "",
+            "storagePolicy": None,
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["SHELF"],
         }],
@@ -191,7 +196,9 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "collectionEnabled": True,
         "classificationEnabled": False,
         "overflowEnabled": False,
+        "cleanupDestinationRef": "",
     }
+
 
 
 def test_payload_serializes_only_post_fields_and_round_trips() -> None:
@@ -237,7 +244,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
             };
             const body = model.payload(draft, resources, items);
             const enabledDraft = { ...draft, name: "自动收集 2", enabled: true,
-                overflowEnabled: true };
+                overflowEnabled: true, cleanupDestinationRef: "coordinate:coordinate-1" };
             const enabledBody = model.payload(enabledDraft, resources, items);
             const item = {
                 id: "auto-1",
@@ -254,6 +261,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 detectionKeys: Object.keys(body.detection),
                 enabled: enabledBody.enabled,
                 overflow: model.draftFromTask({id: "auto-2", ...enabledBody}).overflowEnabled,
+                cleanup: model.draftFromTask({id: "auto-2", ...enabledBody}).cleanupDestinationRef,
                 roundTrip: model.draftFromTask(item),
             };
         })()
@@ -267,6 +275,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "collectionEnabled": False,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "cleanupPolicy": {"destinationRef": "region:region-1", "resumeMode": "RESTART"},
         "detection": {
             "coordinateRef": "coordinate:coordinate-1",
             "pickupRadius": 8,
@@ -274,10 +283,12 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cacheRegionRef": "region:region-1",
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
+            "storagePolicy": None,
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }, {
             "categoryZoneRef": "category-zone:zone-2",
+            "storagePolicy": None,
             "ruleId": "CONTAINER_CONTENTS",
             "markerSources": ["CONTAINER_CONTENTS"],
         }],
@@ -287,6 +298,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "name",
         "enabled",
         "overflowEnabled",
+        "cleanupPolicy",
         "collectionEnabled",
         "classificationEnabled",
         "detection",
@@ -297,6 +309,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert result["detectionKeys"] == ["coordinateRef", "pickupRadius"]
     assert result["enabled"] is True
     assert result["overflow"] is True
+    assert result["cleanup"] == "coordinate:coordinate-1"
     assert result["roundTrip"] == {
         "id": "auto-1",
         "name": "自动收集",
@@ -305,10 +318,12 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cacheRegionId": "region-1",
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
+            "storagePolicy": None,
             "ruleId": "DIRECT_BLOCK_ID",
             "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }, {
             "categoryZoneId": "zone-2",
+            "storagePolicy": None,
             "ruleId": "CONTAINER_CONTENTS",
             "markerSources": ["CONTAINER_CONTENTS"],
         }],
@@ -317,7 +332,9 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "collectionEnabled": False,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "cleanupDestinationRef": "",
     }
+
 
 
 def test_marker_sources_reject_empty_or_unknown_legacy_values() -> None:

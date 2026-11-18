@@ -73,7 +73,7 @@
                 }
             }
             save.disabled = false;
-            message.textContent = "暂存和溢出支持点位或区域，按 Ctrl 可多选。溢出只接收打包后的物品。";
+            message.textContent = "任务的中断存放位置请在任务内选择。这里的暂存仅兼容旧任务；溢出支持点位或区域。";
         } catch (error) {
             message.textContent = "读取公共设施失败，请点击重新读取。";
             S.handleError(error, "读取公共设施失败");
@@ -95,7 +95,7 @@
         }));
     });
     heading.append(S.element("h2", "", "公共设施"), link, regionLink, add);
-    const sections = [["统一中断收尾", enabled], ["暂存箱", temporary],
+    const sections = [["旧任务收尾（兼容）", enabled], ["旧任务暂存（兼容）", temporary],
         ["空潜影盒供应箱", empty], ["后备打包位置", fallback], ["溢出箱", overflow]];
     const fields = sections.map(([name, control]) => field(name, control));
     const navigation = S.element("nav", "resource-browser-list");

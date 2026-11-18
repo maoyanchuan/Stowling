@@ -3,6 +3,9 @@
 
     const Stowling = window.Stowling;
     const Auto = window.StowlingAutoClassifyTaskModel;
+    const cleanup = window.StowlingTaskCleanupSettings.create(
+        document.querySelector("#auto-cleanup-settings"),
+        {allowContinue: false, defaultLabel: "使用本任务缓存区域"});
     const state = {
         revision: "",
         items: [],
@@ -375,6 +378,8 @@
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
         elements.overflow.checked = Boolean(draft.overflowEnabled);
+        cleanup.resources(state.resources.coordinates, state.resources.regions);
+        cleanup.set({destinationRef: draft.cleanupDestinationRef, resumeMode: "RESTART"});
         renderClassificationAreas();
         updateControls();
     }
@@ -394,7 +399,8 @@
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
             classificationEnabled: elements.classifyEnabled.checked,
-            overflowEnabled: elements.overflow.checked
+            overflowEnabled: elements.overflow.checked,
+            cleanupDestinationRef: cleanup.read().destinationRef || ""
         };
     }
 

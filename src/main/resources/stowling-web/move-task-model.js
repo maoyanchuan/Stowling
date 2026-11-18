@@ -98,7 +98,8 @@
         }
         if (!isDisabledFlag(value.repeatWhenIdle)
                 || !isDisabledFlag(value.defaultInterruptionFlow)
-                || !isDisabledFlag(value.requeueAfterInterruption)) {
+                || !isDisabledFlag(value.requeueAfterInterruption)
+                    && value?.cleanupPolicy?.resumeMode !== "CONTINUE") {
             return false;
         }
         const mode = value.interruptionMode;
@@ -231,7 +232,8 @@
             x: saved ? "" : String(parameters.x || ""),
             y: saved ? "" : String(parameters.y || ""),
             z: saved ? "" : String(parameters.z || ""),
-            coordinateId: saved ? coordinateId : ""
+            coordinateId: saved ? coordinateId : "",
+            ...(normalized.cleanupPolicy ? {cleanupPolicy: normalized.cleanupPolicy} : {})
         };
     }
 
@@ -381,7 +383,9 @@
             interruptionMode: metadata.interruptionMode,
             interruptionTaskRef: "",
             defaultInterruptionFlow: false,
-            requeueAfterInterruption: false,
+            requeueAfterInterruption: draft?.cleanupPolicy?.resumeMode === "CONTINUE",
+            ...(draft?.cleanupPolicy || originalTask?.cleanupPolicy
+                ? {cleanupPolicy: draft.cleanupPolicy || originalTask.cleanupPolicy} : {}),
             steps: [step]
         });
         return Model.normalizeTask({

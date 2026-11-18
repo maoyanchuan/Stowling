@@ -14,7 +14,7 @@ public final class RecordedStorageCapacity {
 
     public static boolean shouldReserveBox(WarehouseInventory.Container stock, StoragePolicy policy,
             Map<String, Integer> items, Map<String, Integer> stackSizes) {
-        if (policy.mode() == StorageMode.NORMAL) {
+        if (policy.mode() == StorageMode.NORMAL || stock != null && stock.slots() < 1) {
             return false;
         }
         Set<String> checked = new LinkedHashSet<>();
@@ -97,7 +97,7 @@ public final class RecordedStorageCapacity {
 
     public static int rank(WarehouseInventory.Container stock, StoragePolicy policy,
             Map<String, Integer> items, Map<String, Integer> stackSizes) {
-        if (stock == null || stock.recordedAt() == null || items.isEmpty()) {
+        if (stock == null || stock.recordedAt() == null || stock.slots() < 1 || items.isEmpty()) {
             return 1;
         }
         int free = Math.max(0, stock.slots() - stock.occupiedSlots());

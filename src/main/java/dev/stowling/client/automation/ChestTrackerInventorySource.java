@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.inventory.RecordedContainerCapacity;
 import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.model.AreaBounds;
@@ -16,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import red.jackf.chesttracker.api.memory.CommonKeys;
 import red.jackf.chesttracker.api.memory.Memory;
@@ -162,10 +164,13 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         }
         var name = memory.renderName();
         Instant recorded = memory.realTimestamp();
+        String blockId = memory.container().map(block ->
+                BuiltInRegistries.BLOCK.getKey(block).toString()).orElse("");
+        int slots = RecordedContainerCapacity.slots(blockId, positions.size());
         return new WarehouseInventory.Container(dimension + ":" + positions.getFirst(),
                 name == null ? "已记录容器" : name.getString(), dimension, positions,
                 recorded == null || recorded.equals(Instant.EPOCH) ? null : recorded,
-                memory.fullItems().size(), occupied, full, partial, empty,
+                slots, occupied, full, partial, empty,
                 List.copyOf(items.values()), boxes);
     }
 

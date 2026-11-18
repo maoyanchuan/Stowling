@@ -5,6 +5,31 @@ coordinates, regions, category zones, queued tasks, and condition listeners.
 Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
+Install Chest Tracker (Unofficial port) **2.8.4+26.2** and YACL **3.9.7+26.2-fabric**
+alongside Stowling, Fabric API, and Baritone. Chest Tracker and YACL are required
+external mods, not embedded copies. Their projects are
+[Chest Tracker](https://modrinth.com/mod/chest-tracker-port) and
+[YACL](https://modrinth.com/mod/yacl). The Chest Tracker code remains a separate
+LGPL-3.0-only dependency; its source is available at
+[ponuing/ChestTracker](https://github.com/ponuing/ChestTracker/tree/26.2).
+
+**库存管理** follows task management in the browser navigation. It reads the active
+Chest Tracker memory bank through its public API, with the entire bank selected by
+default. Filter by saved basic regions, warehouse storage layouts, dimension, or item
+name/ID; expand an item to locate each container and its recording time. Coordinate-only
+regions apply to the current dimension. Linked double-chest halves and overlapping
+selections are counted once. Item components remain distinct, and shulker contents
+are counted separately as boxed quantities. Ender-chest overrides and entity containers
+are excluded from the physical warehouse view.
+
+The inventory endpoint uses the same loopback bearer-token middleware as the other
+control APIs. It copies Chest Tracker records on the client thread and returns an
+immutable view to the browser. Refreshing reads records without opening containers
+or starting a scan; client-only records cannot observe other players' unseen changes.
+An empty view means no matching recorded items, not proof that a region has been
+fully inventoried. Historical container records are owned and persisted by Chest
+Tracker; Stowling does not write a competing copy into Chest Tracker's files.
+
 The coordinate page groups warehouse layouts, public facilities, basic points, and
 basic regions. Resource lists stay on the left while the selected editor opens on
 the right. Reference summaries show saved tasks and facilities using each resource.
@@ -106,9 +131,9 @@ saved coordinate. Folder editing and free-form trigger editing are not restored;
 listeners are configured through their owning task.
 
 Persisted task, trigger, folder, and reusable editor source data remain available
-to the backend and editor code. Inventory query navigation and static web routes
-are temporarily removed; inventory APIs, data, and source assets remain intact for
-later restoration.
+to the backend and editor code. Inventory management is available after tasks in
+the navigation, backed by the current Chest Tracker bank. The legacy inventory
+API and database reader remain available for compatibility.
 
 ## Task model
 

@@ -12,6 +12,11 @@ import java.util.List;
 import java.util.UUID;
 
 public interface V2ControlService {
+    default dev.stowling.inventory.WarehouseInventory warehouseInventory() {
+        return new dev.stowling.inventory.WarehouseInventory("UNAVAILABLE", "库存数据源未配置", "",
+                java.time.Instant.now(), List.of(), List.of());
+    }
+
     default dev.stowling.v2.config.StorageSettingsStore.Snapshot storageSettings() {
         throw new UnsupportedOperationException("storage settings unavailable");
     }

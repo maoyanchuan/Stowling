@@ -27,6 +27,21 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
+    @Test
+    void warehouseInventoryRequiresAuthenticationAndServesItsBrowserAssets() throws Exception {
+        try (Fixture fixture = fixture()) {
+            assertEquals(401, fixture.send(
+                    "/v1/warehouse-inventory", "GET", null, false).statusCode());
+            assertEquals(200, fixture.send(
+                    "/v1/warehouse-inventory", "GET", null, true).statusCode());
+            assertEquals(405, fixture.send(
+                    "/v1/warehouse-inventory", "POST", "{}", true).statusCode());
+            for (String asset : List.of("/storage.html", "/storage.js", "/warehouse-model.js")) {
+                assertEquals(200, fixture.send(asset, "GET", null, false).statusCode());
+            }
+        }
+    }
+
     private static final String TOKEN = "test-token-that-is-long-enough";
 
     @TempDir
@@ -122,7 +137,7 @@ class V2ControlServerTest {
     }
 
     @Test
-    void hidesInventoryWebRoutesAndServesTaskAssets() throws Exception {
+    void servesInventoryWebRoutesAndTaskAssets() throws Exception {
         try (Fixture fixture = fixture()) {
             for (String path : List.of(
                     "/storage.html",
@@ -134,7 +149,7 @@ class V2ControlServerTest {
                         null,
                         true
                 );
-                assertEquals(404, response.statusCode(), path);
+                assertEquals(200, response.statusCode(), path);
             }
 
             HttpResponse<String> tasksPage = fixture.send(

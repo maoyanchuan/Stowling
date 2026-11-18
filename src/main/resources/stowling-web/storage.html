@@ -3,71 +3,62 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light dark">
-    <title>库存查询 · Stowling</title>
+    <meta name="color-scheme" content="dark">
+    <title>库存管理 · Stowling</title>
     <link rel="icon" type="image/svg+xml" href="/icon.svg">
-    <link rel="icon" type="image/png" href="/icon.png">
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/workbench.css">
     <script src="/common.js" defer></script>
+    <script src="/warehouse-model.js" defer></script>
     <script src="/storage.js" defer></script>
 </head>
 <body data-page="storage">
     <header class="topbar">
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">S</span>
-            <div>
-                <h1>Stowling 控制台</h1>
-                <p>库存查询 · 查看库存来源、采集时间与数据有效性</p>
-            </div>
+            <div><h1>Stowling 控制台</h1><p>库存管理 · Chest Tracker 容器记录</p></div>
         </div>
         <div class="connection-state">
             <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
             <span id="connection-label">未连接</span>
         </div>
     </header>
-
     <main>
         <div id="auth-shell"></div>
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
-
             <section class="panel wide" aria-labelledby="inventory-title">
                 <div class="panel-heading">
-                    <div>
-                        <p class="eyebrow">只读库存</p>
-                        <h2 id="inventory-title">库存快照</h2>
-                        <p class="muted section-help">
-                            “刷新库存”只重新读取已有快照，不会发起盘点或改变游戏状态。
-                        </p>
+                    <div><p class="eyebrow">CHEST TRACKER</p>
+                        <h2 id="inventory-title">仓库库存</h2>
+                        <p class="muted compact-help">默认汇总当前记忆库的全部实体容器。</p>
                     </div>
-                    <button id="refresh-storage-button" class="primary compact"
-                            type="button">刷新库存</button>
+                    <button id="refresh-storage-button" class="secondary" type="button">刷新记录</button>
                 </div>
-                <div class="inventory-summary">
-                    <span>快照数量</span>
-                    <strong id="inventory-count">--</strong>
-                    <span>最近读取</span>
-                    <strong id="inventory-observed">--</strong>
+                <div class="warehouse-filters">
+                    <label>查看范围<select id="inventory-area">
+                        <option value="">整个仓库</option></select></label>
+                    <label>维度<select id="inventory-dimension">
+                        <option value="">全部维度</option></select></label>
+                    <label>搜索物品<input id="inventory-query" type="search"
+                        placeholder="输入名称或物品 ID"></label>
                 </div>
-                <div class="filter-row inventory-filter-row">
-                    <div class="editor-field">
-                        <label for="inventory-filter-item">物品 ID</label>
-                        <input id="inventory-filter-item" type="search"
-                               placeholder="例如 minecraft:iron_ingot">
-                    </div>
-                    <div class="editor-field">
-                        <label for="inventory-filter-container">容器 / 来源</label>
-                        <input id="inventory-filter-container" type="search"
-                               placeholder="按容器或来源 ID 筛选">
-                    </div>
+                <div id="inventory-metrics" class="warehouse-metrics"></div>
+                <p id="storage-message" class="field-message" role="status" aria-live="polite"></p>
+                <p class="muted compact-help warehouse-help">
+                    物品数量＝散装＋潜影盒内物品，按属性分别统计。区域筛选使用当前维度的坐标范围。
+                    未满盒与满盒的外壳计入盒子统计，空盒作为物品列出。
+                    刷新记录不会驱动机器人盘点；箱子被其他人改动后，请重新打开以更新记录。
+                </p>
+                <div id="inventory-list" aria-live="polite"></div>
+                <div class="warehouse-pagination">
+                    <button id="inventory-previous" type="button" class="ghost">上一页</button>
+                    <span id="inventory-page" class="muted compact-help"></span>
+                    <button id="inventory-next" type="button" class="ghost">下一页</button>
                 </div>
-                <p id="storage-message" class="field-message" role="status"></p>
-                <div id="inventory-list" class="inventory-list" aria-live="polite"></div>
             </section>
         </div>
     </main>
-
-    <div id="toast-region" class="toast-region" aria-live="polite"
-         aria-atomic="true"></div>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

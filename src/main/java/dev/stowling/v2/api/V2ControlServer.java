@@ -259,6 +259,12 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, service.status());
             return;
         }
+        if ("/v1/warehouse-inventory".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.warehouseInventory());
+            return;
+        }
         if ("/v1/inventory".equals(path)) {
             requireMethod(method, "GET");
             requireEmpty(body);
@@ -1627,6 +1633,8 @@ public final class V2ControlServer implements AutoCloseable {
                 ),
                 Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
                 Map.entry("/common.js", read("stowling-web/common.js", js)),
+                Map.entry("/storage.html", read("stowling-web/storage.html", html)),
+                Map.entry("/storage.js", read("stowling-web/storage.js", js)),
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
                 Map.entry(
@@ -1646,6 +1654,7 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/region-model.js", js)
                 ),
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
+                Map.entry("/warehouse-model.js", read("stowling-web/warehouse-model.js", js)),
                 Map.entry("/storage-settings.js", read("stowling-web/storage-settings.js", js)),
                 Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),
                 Map.entry(

@@ -787,6 +787,105 @@ body[data-page] .resource-browser-item[aria-current="true"] {
     min-height: 160px;
 }
 
+.warehouse-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.4fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.warehouse-metrics {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.warehouse-metrics .metric {
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+}
+
+.warehouse-metrics strong {
+    font-size: 22px;
+}
+
+.warehouse-help {
+    margin: 12px 0 22px;
+}
+
+.warehouse-item {
+    margin-bottom: 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.warehouse-item > summary {
+    display: grid;
+    grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(70px, 1fr));
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: #222326;
+    cursor: pointer;
+}
+
+.warehouse-item-name,
+.warehouse-number {
+    display: grid;
+    gap: 5px;
+    overflow-wrap: anywhere;
+}
+
+.warehouse-item-name small {
+    margin: 0;
+    font-size: 11px;
+}
+
+.warehouse-locations {
+    padding: 0 16px;
+    background: #18191c;
+}
+
+.warehouse-location {
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) minmax(180px, 1.5fr) 1fr 1fr;
+    gap: 12px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.warehouse-pagination {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 16px;
+    margin-top: 18px;
+}
+
+@media (max-width: 780px) {
+    .warehouse-filters,
+    .warehouse-location {
+        grid-template-columns: 1fr;
+    }
+
+    .warehouse-metrics {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .warehouse-item > summary {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .warehouse-item-name {
+        grid-column: 1 / -1;
+    }
+}
+
 @media (max-width: 780px) {
     .resource-browser {
         grid-template-columns: minmax(0, 1fr);

@@ -50,6 +50,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private final ConfigStore configs;
     private final TaskRunManager runs;
     private final Supplier<List<InventoryInfo>> inventory;
+    private Supplier<dev.stowling.inventory.WarehouseInventory> warehouse;
     private final CategoryRuleRegistry categoryRules =
             CategoryRuleRegistry.standard();
 
@@ -69,6 +70,19 @@ public final class V2ControlServiceImpl implements V2ControlService {
             dev.stowling.v2.config.StorageSettingsStore storageSettings) {
         this(configs, runs, inventory);
         this.storageSettings = storageSettings;
+    }
+
+    public V2ControlServiceImpl(ConfigStore configs, TaskRunManager runs,
+            Supplier<List<InventoryInfo>> inventory,
+            dev.stowling.v2.config.StorageSettingsStore settings,
+            Supplier<dev.stowling.inventory.WarehouseInventory> warehouse) {
+        this(configs, runs, inventory, settings);
+        this.warehouse = Objects.requireNonNull(warehouse);
+    }
+
+    @Override
+    public dev.stowling.inventory.WarehouseInventory warehouseInventory() {
+        return warehouse == null ? V2ControlService.super.warehouseInventory() : warehouse.get();
     }
 
     @Override

@@ -127,7 +127,9 @@ public final class StowlingRuntime implements AutoCloseable {
                 configs,
                 taskRuns,
                 () -> inventory(inventories),
-                storageSettings
+                storageSettings,
+                new dev.stowling.client.automation.ChestTrackerInventorySource(
+                        minecraft, scheduler, configs)
         );
 
         int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);

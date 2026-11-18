@@ -521,7 +521,7 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
         ("coordinates.html", "坐标管理"),
         ("tasks.html", "任务管理"),
         ("category-zones.html", "分类区管理"),
-        ("storage.html", "库存查询"),
+        ("storage.html", "库存管理"),
     )
     for name, label in pages:
         html = read(name)

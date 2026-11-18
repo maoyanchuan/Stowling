@@ -15,11 +15,11 @@ def between(source: str, start: str, end: str) -> str:
     return source[content_start:source.index(end, content_start)]
 
 
-def test_inventory_is_not_exposed_in_navigation_but_sources_are_preserved() -> None:
+def test_inventory_management_follows_tasks_in_navigation() -> None:
     common = read("common.js")
     navigation = between(common, "const NAV_ITEMS", "]);")
-    assert "库存查询" not in navigation
-    assert "/storage.html" not in navigation
+    assert "库存管理" in navigation
+    assert navigation.index('page: "tasks"') < navigation.index('page: "storage"')
     assert (WEB / "storage.html").exists()
     assert (WEB / "storage.js").exists()
 

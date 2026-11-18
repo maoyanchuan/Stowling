@@ -56,7 +56,8 @@ public final class CoordinateResourceMigration {
                     automatic));
         }
         return new StorageAutomationSettings(settings.cleanupEnabled(), List.of(), List.of(), null,
-                temporary.stream().distinct().toList(), empty.stream().distinct().toList(), fallback);
+                temporary.stream().distinct().toList(), empty.stream().distinct().toList(), fallback,
+                settings.temporaryRegionIds());
     }
 
     private static UUID coordinate(List<CoordinatePoint> points, BlockPosition position, String name) {

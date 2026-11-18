@@ -10,12 +10,15 @@ public record StorageAutomationSettings(
         BlockPosition fallbackPackingPosition,
         List<java.util.UUID> temporaryCoordinateIds,
         List<java.util.UUID> emptyBoxCoordinateIds,
-        java.util.UUID fallbackCoordinateId
+        java.util.UUID fallbackCoordinateId,
+        List<java.util.UUID> temporaryRegionIds
 ) {
     public static final StorageAutomationSettings DEFAULT = new StorageAutomationSettings(
             false, List.of(), List.of(), null);
 
     public StorageAutomationSettings {
+        temporaryRegionIds = temporaryRegionIds == null ? List.of()
+                : List.copyOf(temporaryRegionIds);
         temporaryCoordinateIds = temporaryCoordinateIds == null ? List.of()
                 : List.copyOf(temporaryCoordinateIds);
         emptyBoxCoordinateIds = emptyBoxCoordinateIds == null ? List.of()
@@ -27,7 +30,11 @@ public record StorageAutomationSettings(
         if (temporaryContainers.size() > 64 || emptyBoxContainers.size() > 64) {
             throw new IllegalArgumentException("全局容器列表最多配置 64 个位置");
         }
-        if (cleanupEnabled && temporaryContainers.isEmpty() && temporaryCoordinateIds.isEmpty()) {
+        if (temporaryCoordinateIds.size() + temporaryRegionIds.size() > 64) {
+            throw new IllegalArgumentException("暂存设施最多引用 64 个点位或区域");
+        }
+        if (cleanupEnabled && temporaryContainers.isEmpty() && temporaryCoordinateIds.isEmpty()
+                && temporaryRegionIds.isEmpty()) {
             throw new IllegalArgumentException("开启全局收尾前必须配置暂存箱");
         }
         if (temporaryContainers.stream().anyMatch(emptyBoxContainers::contains)) {
@@ -41,5 +48,13 @@ public record StorageAutomationSettings(
     public StorageAutomationSettings(boolean cleanupEnabled, List<BlockPosition> temporary,
             List<BlockPosition> empty, BlockPosition fallback) {
         this(cleanupEnabled, temporary, empty, fallback, List.of(), List.of(), null);
+    }
+
+    public StorageAutomationSettings(boolean cleanupEnabled, List<BlockPosition> temporary,
+            List<BlockPosition> empty, BlockPosition fallback,
+            List<java.util.UUID> temporaryCoordinateIds, List<java.util.UUID> emptyBoxCoordinateIds,
+            java.util.UUID fallbackCoordinateId) {
+        this(cleanupEnabled, temporary, empty, fallback, temporaryCoordinateIds,
+                emptyBoxCoordinateIds, fallbackCoordinateId, List.of());
     }
 }

@@ -15,6 +15,12 @@ The task page selects locations and links to coordinate management. Each automat
 classification area selects its own storage mode, loose threshold, and partial-box
 policy, while layouts retain standing and packing geometry shared by those tasks.
 
+Temporary storage can combine named points and saved basic regions. At runtime,
+regions are scanned for chests, trapped chests, and barrels; duplicate positions are
+merged before nearby targets are tried. Referenced staging regions cannot be deleted.
+The facility editor labels points and regions separately and preserves both types
+when saved. Empty-box supply and fallback placement continue to use named points.
+
 Category binding templates support loose, mixed, and box-only storage. Mixed storage
 reserves 50% of the target's slots for loose items by default. The optional partial-box
 switch stores unfinished boxes alongside full boxes and refills them before opening

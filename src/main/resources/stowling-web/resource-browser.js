@@ -75,6 +75,8 @@
                 S.request("/v1/tasks"), S.request("/v1/storage-settings")]);
             tasks.tasks.forEach(task => collect(task.steps, task.name));
             const settings = facilities.settings;
+            (settings.temporaryRegionIds || []).forEach(id =>
+                collect(`region:${id}`, "公共设施·暂存区域"));
             for (const [values, name] of [[settings.temporaryCoordinateIds, "公共设施·暂存箱"],
                     [settings.emptyBoxCoordinateIds, "公共设施·空盒供应"],
                     [[settings.fallbackCoordinateId], "公共设施·后备打包位置"]]) {

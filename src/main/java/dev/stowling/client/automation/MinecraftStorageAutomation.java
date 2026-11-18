@@ -34,11 +34,19 @@ import net.minecraft.world.item.component.ItemContainerContents;
 public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final Minecraft minecraft;
     private final StorageSettingsStore settings;
+    private final dev.stowling.automation.ContainerRegionPort containerRegions;
     private final Map<UUID, MinecraftShulkerAction.Resource> resources = new LinkedHashMap<>();
 
     public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings) {
+        this(minecraft, settings, (region, types, volume) ->
+                dev.stowling.automation.ContainerScanResult.failure("区域扫描组件不可用"));
+    }
+
+    public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings,
+            dev.stowling.automation.ContainerRegionPort containerRegions) {
         this.minecraft = minecraft;
         this.settings = settings;
+        this.containerRegions = containerRegions;
     }
 
     @Override
@@ -53,8 +61,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public List<ContainerTarget> temporaryContainers() {
-        return settings.resolved().temporaryContainers().stream()
-                .map(position -> new ContainerTarget(position, "container")).toList();
+        return dev.stowling.automation.TemporaryContainerResolver.resolve(
+                settings.resolved(), settings.temporaryRegions(), containerRegions);
     }
 
     @Override
@@ -312,7 +320,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (loose > looseLimit && !carried.isEmpty()) {
                     ContainerTarget buffer = context.workspace().selectedContainer()
                             .orElseGet(() -> new ContainerTarget(
-                                    configuration.temporaryContainers().getFirst(), "container"));
+                                    temporaryContainers().getFirst().position(), "container"));
                     int before = sum(carried);
                     transfer(buffer, carried, false, () -> {
                         if (sum(rawOwned()) == before) {
@@ -520,8 +528,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private List<ContainerTarget> sourceTargets() {
             Set<ContainerTarget> sources = new LinkedHashSet<>(context.workspace().cacheContainers());
-            configuration.temporaryContainers().forEach(position ->
-                    sources.add(new ContainerTarget(position, "container")));
+            sources.addAll(temporaryContainers());
             return sources.stream().filter(source -> !source.position().equals(target.position()))
                     .filter(source -> !configuration.emptyBoxContainers().contains(source.position()))
                     .distinct().sorted(Comparator.comparingDouble(source -> distance(source.position())))
@@ -562,8 +569,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            targets = configuration.temporaryContainers().stream()
-                    .map(position -> new ContainerTarget(position, "container"))
+            targets = temporaryContainers().stream()
                     .sorted(Comparator.comparingDouble(target -> distance(target.position())))
                     .toList();
             if (targets.isEmpty()) {

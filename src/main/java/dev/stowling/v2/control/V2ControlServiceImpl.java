@@ -94,6 +94,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
         if (!ids.containsAll(referenced)) {
             throw new IllegalArgumentException("公共设施引用的坐标不存在，请刷新后重新选择");
         }
+        Set<UUID> regions = configs.read().config().regions().stream()
+                .map(RegionDefinition::id).collect(java.util.stream.Collectors.toSet());
+        if (!regions.containsAll(settings.temporaryRegionIds())) {
+            throw new IllegalArgumentException("暂存设施引用的区域不存在，请刷新后重新选择");
+        }
         if (!settings.temporaryContainers().isEmpty() || !settings.emptyBoxContainers().isEmpty()
                 || settings.fallbackPackingPosition() != null) {
             throw new IllegalArgumentException("请在坐标页创建位置，再选择公共设施引用");
@@ -343,6 +348,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .filter(trigger -> id.equals(trigger.cacheRegionId()))
                 .map(TaskTriggerDefinition::name)
                 .toList());
+        if (storageSettings != null
+                && storageSettings.read().settings().temporaryRegionIds().contains(id)) {
+            references.add("公共设施·暂存区域");
+        }
         if (!references.isEmpty()) {
             throw new V2ValidationException(
                     "region is used by: " + String.join(", ", references)

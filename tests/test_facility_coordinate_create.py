@@ -76,7 +76,10 @@ globalThis.window = {Stowling: {
     async request(path, options) {
         if (options) {saved = JSON.parse(options.body); return {revision: 'next'};}
         if (path === '/v1/coordinates') return {coordinates: [{id: 'old', name: 'Old', x: 1,y: 2,z: 3}]};
-        return {revision: 'old', settings: {cleanupEnabled: true, temporaryCoordinateIds: ['old']}};
+        if (path === '/v1/regions') return {regions: [{id: 'area', name: 'Staging',
+            firstX: 1, firstY: 2, firstZ: 3, secondX: 4, secondY: 5, secondZ: 6}]};
+        return {revision: 'old', settings: {cleanupEnabled: true, temporaryCoordinateIds: ['old'],
+            temporaryRegionIds: ['area']}};
     }
 }};
 vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
@@ -108,5 +111,6 @@ def test_facilities_mount_and_new_point_is_selected_without_losing_other_referen
         "returnPanel": "facilities", "name": "空盒供应箱",
     }
     assert value["saved"]["settings"]["temporaryCoordinateIds"] == ["old"]
+    assert value["saved"]["settings"]["temporaryRegionIds"] == ["area"]
     assert value["saved"]["settings"]["emptyBoxCoordinateIds"] == ["new"]
     assert value["saved"]["revision"] == "old"

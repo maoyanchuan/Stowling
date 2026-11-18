@@ -38,8 +38,9 @@
     async function load() {
         if (dirty || busy) return;
         try {
-            const [response, points] = await Promise.all([
-                S.request("/v1/storage-settings"), S.request("/v1/coordinates")]);
+            const [response, points, regions] = await Promise.all([
+                S.request("/v1/storage-settings"), S.request("/v1/coordinates"),
+                S.request("/v1/regions")]);
             if (dirty || busy) return;
             revision = response.revision;
             const value = response.settings;
@@ -50,14 +51,23 @@
                 select.replaceChildren();
                 if (select === fallback) select.append(new Option("不使用后备位置", ""));
                 for (const point of points.coordinates) {
-                    const option = new Option(`${point.name} · ${point.x}, ${point.y}, ${point.z}`,
-                        point.id);
+                    const option = new Option(`${select === temporary ? "[点位] " : ""}`
+                        + `${point.name} · ${point.x}, ${point.y}, ${point.z}`,
+                        select === temporary ? `coordinate:${point.id}` : point.id);
                     option.selected = ids.includes(point.id);
                     select.append(option);
                 }
             }
+            for (const region of regions.regions) {
+                const option = new Option(`[区域] ${region.name} · `
+                    + `${region.firstX}, ${region.firstY}, ${region.firstZ} → `
+                    + `${region.secondX}, ${region.secondY}, ${region.secondZ}`,
+                    `region:${region.id}`);
+                option.selected = (value.temporaryRegionIds || []).includes(region.id);
+                temporary.append(option);
+            }
             save.disabled = false;
-            message.textContent = "设施引用基础点位；按 Ctrl 可多选。修改点位后引用自动更新。";
+            message.textContent = "暂存箱支持点位和区域，按 Ctrl 可多选。区域内箱子和木桶自动参与收尾。";
         } catch (error) {
             message.textContent = "读取公共设施失败，请点击重新读取。";
             S.handleError(error, "读取公共设施失败");
@@ -66,6 +76,8 @@
     const heading = S.element("div", "panel-heading");
     const link = S.element("a", "text-link", "创建或编辑基础点位 →");
     link.href = "#coordinate-points";
+    const regionLink = S.element("a", "text-link", "创建或编辑基础区域 →");
+    regionLink.href = "#regions";
     const add = S.element("button", "secondary", "＋ 添加坐标点");
     add.type = "button";
     add.id = "add-facility-coordinate";
@@ -76,7 +88,7 @@
                 "后备打包位置"][pendingSection]}
         }));
     });
-    heading.append(S.element("h2", "", "公共设施"), link, add);
+    heading.append(S.element("h2", "", "公共设施"), link, regionLink, add);
     const sections = [["统一中断收尾", enabled], ["暂存箱", temporary],
         ["空潜影盒供应箱", empty], ["后备打包位置", fallback]];
     const fields = sections.map(([name, control]) => field(name, control));
@@ -107,7 +119,9 @@
         if (pendingSection === null) return;
         const point = event.detail.coordinate;
         for (const [index, select] of [[1, temporary], [2, empty], [3, fallback]]) {
-            const option = new Option(`${point.name} · ${point.x}, ${point.y}, ${point.z}`, point.id);
+            const option = new Option(`${index === 1 ? "[点位] " : ""}${point.name} · `
+                + `${point.x}, ${point.y}, ${point.z}`,
+                index === 1 ? `coordinate:${point.id}` : point.id);
             option.selected = index === pendingSection;
             select.append(option);
         }
@@ -134,7 +148,13 @@
                 method: "PUT", headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({revision, settings: {
                     cleanupEnabled: enabled.checked, temporaryContainers: [], emptyBoxContainers: [],
-                    temporaryCoordinateIds: selected(temporary), emptyBoxCoordinateIds: selected(empty),
+                    temporaryCoordinateIds: selected(temporary)
+                        .filter(value => value.startsWith("coordinate:"))
+                        .map(value => value.slice("coordinate:".length)),
+                    temporaryRegionIds: selected(temporary)
+                        .filter(value => value.startsWith("region:"))
+                        .map(value => value.slice("region:".length)),
+                    emptyBoxCoordinateIds: selected(empty),
                     fallbackCoordinateId: fallback.value || null
                 }})});
             revision = response.revision;

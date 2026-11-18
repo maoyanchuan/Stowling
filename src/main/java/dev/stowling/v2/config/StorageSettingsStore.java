@@ -39,7 +39,18 @@ public final class StorageSettingsStore {
                 settings.temporaryCoordinateIds().stream().map(resolve).toList(),
                 settings.emptyBoxCoordinateIds().stream().map(resolve).toList(),
                 settings.fallbackCoordinateId() == null ? null
-                        : resolve.apply(settings.fallbackCoordinateId()));
+                        : resolve.apply(settings.fallbackCoordinateId()),
+                java.util.List.of(), java.util.List.of(), null, settings.temporaryRegionIds());
+    }
+
+    public synchronized java.util.List<dev.stowling.v2.model.RegionDefinition> temporaryRegions() {
+        if (coordinates == null) {
+            return java.util.List.of();
+        }
+        var regions = coordinates.read().config().regions();
+        return settings.temporaryRegionIds().stream().map(id -> regions.stream()
+                .filter(region -> region.id().equals(id)).findFirst().orElseThrow(() ->
+                        new IllegalStateException("暂存设施引用的区域不存在"))).toList();
     }
 
     public StorageSettingsStore(Path path) throws IOException {

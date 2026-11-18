@@ -328,6 +328,26 @@ public final class TaskRunWorkspace {
         return Set.copyOf(categories);
     }
 
+    public synchronized Set<String> mixedBoxWithdrawalItems(ContainerTarget cache,
+            Set<String> contents) {
+        Set<String> categories = remainingCacheCategories(cache);
+        Set<String> selected = new LinkedHashSet<>();
+        for (String key : contents) {
+            if (!ItemIdentity.matches(key, categories)) {
+                continue;
+            }
+            boolean available = targetContainers.stream()
+                    .filter(target -> !target.position().equals(cache.position()))
+                    .filter(target -> !isUnavailable(target))
+                    .anyMatch(target -> ItemIdentity.matches(key,
+                            acceptedItemsByContainer.getOrDefault(target, Set.of())));
+            if (available) {
+                selected.add(key);
+            }
+        }
+        return Set.copyOf(selected);
+    }
+
     public synchronized void deferReturnedCacheItems(Map<String, Integer> requested,
             Map<String, Integer> remaining) {
         requested.forEach((key, count) -> {

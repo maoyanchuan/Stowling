@@ -402,6 +402,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 box = contents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
                         && ItemIdentity.MIXED_BOX_CATEGORY.equals(
                                 MinecraftItemIdentity.boxCategory(stack)))
+                        .filter(stack -> !eligibleItems(stack).isEmpty())
                         .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
                 if (box.isEmpty()) {
                     return;
@@ -414,6 +415,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
                 BlockPosition site = chooseSite(context, cache, null, configuration);
                 String key = MinecraftItemIdentity.key(box);
+                Set<String> innerKeys = eligibleItems(box);
                 int before = owned().getOrDefault(key, 0);
                 transfer(cache, Map.of(key, 1), true, () -> {
                     if (owned().getOrDefault(key, 0) != before + 1) {
@@ -421,15 +423,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     }
                     var resource = new MinecraftShulkerAction.Resource(site, box);
                     resources.put(owner(), resource);
-                    Set<String> innerKeys = MinecraftItemIdentity.contents(box)
-                            .nonEmptyItemCopyStream().map(MinecraftItemIdentity::key)
-                            .collect(java.util.stream.Collectors.toSet());
                     drain = new ContainerBatchWithdrawal(context,
                             new ContainerTarget(site, "minecraft:shulker_box"), innerKeys);
                     steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource,
                             true), () -> steps.add(new Step(drain, this::recoverBox))));
                 });
             });
+        }
+
+        private Set<String> eligibleItems(ItemStack candidate) {
+            Set<String> contents = MinecraftItemIdentity.contents(candidate).nonEmptyItemCopyStream()
+                    .map(MinecraftItemIdentity::key).collect(java.util.stream.Collectors.toSet());
+            return context.workspace().mixedBoxWithdrawalItems(cache, contents);
         }
 
         private void recoverBox() {

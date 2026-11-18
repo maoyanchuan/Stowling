@@ -23,12 +23,26 @@ public record WarehouseInventory(
             int stackSize) {
     }
 
+    public record Box(String category, int occupiedSlots, List<Entry> items) {
+        public Box {
+            items = List.copyOf(items);
+        }
+    }
+
     public record Container(String id, String name, String dimension, List<BlockPosition> positions,
             Instant recordedAt, int slots, int occupiedSlots, int fullBoxes, int partialBoxes,
-            int emptyBoxes, List<Entry> items) {
+            int emptyBoxes, List<Entry> items, List<Box> boxes) {
         public Container {
             positions = List.copyOf(positions);
             items = List.copyOf(items);
+            boxes = List.copyOf(boxes);
+        }
+
+        public Container(String id, String name, String dimension, List<BlockPosition> positions,
+                Instant recordedAt, int slots, int occupiedSlots, int fullBoxes, int partialBoxes,
+                int emptyBoxes, List<Entry> items) {
+            this(id, name, dimension, positions, recordedAt, slots, occupiedSlots, fullBoxes,
+                    partialBoxes, emptyBoxes, items, List.of());
         }
     }
 

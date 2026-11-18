@@ -8,6 +8,66 @@ import org.junit.jupiter.api.Test;
 
 class StoragePackingPlannerTest {
     @Test
+    void bringsASpareForOverflowAfterToppingUpAnExistingBox() {
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, true, null);
+        int boxSpace = 64;
+        assertTrue(StoragePackingPlanner.shouldBringBox(mixed, 5 * 64, 0, 64, 0,
+                boxSpace, 27 * 64));
+        assertFalse(StoragePackingPlanner.shouldBringBox(mixed, 64, 0, 64, 0,
+                boxSpace, 27 * 64));
+    }
+
+    @Test
+    void fullBoxModePlansASpareUsingTheTargetsLooseStock() {
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, false, null);
+        assertTrue(StoragePackingPlanner.shouldBringBox(mixed, 5 * 64, 0, 64, 0,
+                64, 27 * 64));
+        assertFalse(StoragePackingPlanner.shouldBringBox(mixed, 5 * 64, 0, 64, 0,
+                64, 22 * 64));
+        assertFalse(StoragePackingPlanner.shouldBringBox(mixed, 64, 0, 64, 0,
+                64, 27 * 64));
+    }
+
+    @Test
+    void fillsExistingBoxThenPacksTheRemainderWithOnlyTheRequiredLooseStock() {
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, false, null);
+        int carried = 5 * 64;
+        int loose = 27 * 64;
+        int inside = 26 * 64;
+        int borrowed = StoragePackingPlanner.targetItemsForPacking(mixed, carried, loose,
+                27 * 64, inside, 64);
+        assertEquals(0, borrowed);
+        assertTrue(StoragePackingPlanner.canPack(false, carried + borrowed, inside, 64));
+        carried -= 27 * 64 - inside;
+
+        borrowed = StoragePackingPlanner.targetItemsForPacking(mixed, carried, loose,
+                27 * 64, 0, 64);
+        assertEquals(23 * 64, borrowed);
+        assertTrue(StoragePackingPlanner.canPack(false, carried + borrowed, 0, 64));
+        assertEquals(4 * 64, loose - borrowed);
+    }
+
+    @Test
+    void insufficientStockDoesNotOverrideTheFullBoxRequirement() {
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, false, null);
+        int borrowed = StoragePackingPlanner.targetItemsForPacking(mixed, 4 * 16, 22 * 16,
+                27 * 16, 0, 16);
+        assertEquals(0, borrowed);
+        assertFalse(StoragePackingPlanner.canPack(false, 4 * 16 + borrowed, 0, 16));
+        assertEquals(0, StoragePackingPlanner.targetItemsForPacking(mixed, 0, 27 * 16,
+                27 * 16, 0, 16));
+    }
+
+    @Test
+    void partialBoxModeKeepsTheExistingLooseReserve() {
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, true, null);
+        assertEquals(0, StoragePackingPlanner.targetItemsForPacking(mixed, 64, 27 * 64,
+                27 * 64, 0, 64));
+        assertEquals(64, StoragePackingPlanner.targetItemsForPacking(mixed, 64, 28 * 64,
+                27 * 64, 0, 64));
+    }
+
+    @Test
     void predictsOverflowUsingBothPolicyAndRecordedFreeSlots() {
         StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, true, null);
         long space = StoragePackingPlanner.looseSpace(mixed, 54, 64, 26 * 64, 0, 53, 0);

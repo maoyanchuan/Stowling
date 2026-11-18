@@ -444,8 +444,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         policy, stock.slots(), stackSize) - otherSlots * stackSize);
                 long space = StoragePackingPlanner.looseSpace(policy, stock.slots(), stackSize,
                         sameLoose, otherSlots, stock.occupiedSlots(), matchingSlack);
+                long boxSpace = RecordedStorageCapacity.existingBoxSpace(stock, category,
+                        items.keySet(), stackSize);
                 if (StoragePackingPlanner.shouldBringBox(policy, incoming, space, stackSize,
-                        Math.max(0, sameLoose - limit))) {
+                        Math.max(0, sameLoose - limit), boxSpace, sameLoose)) {
                     return true;
                 }
             }
@@ -464,7 +466,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private ItemStack box;
         private ContainerTarget boxTarget;
         private boolean requestedBox;
-        private boolean packedBox;
         private boolean skipLooseDeposit;
         private int targetExcessRemaining;
         private BlockPosition preferredSite;
@@ -494,7 +495,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private void nextCategory() {
             category = categories.pollFirst();
             if (category != null) {
-                packedBox = false;
                 skipLooseDeposit = false;
                 inspectTarget();
             } else if (context.workspace().isClassificationStorage(target)) {
@@ -547,7 +547,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 boolean fullBoxFirst = !policy.allowPartialBoxes()
                         && StoragePackingPlanner.shouldBringBox(policy, sum(carried),
                                 Math.min(Math.max(0, looseLimit - loose), physicalSpace),
-                                stackSize, Math.max(0, loose - looseLimit));
+                                stackSize, Math.max(0, loose - looseLimit), 0, loose);
                 if (amount > 0 && !skipLooseDeposit && !fullBoxFirst) {
                     int before = sum(carried);
                     transfer(target, take(carried, amount), false, () -> {
@@ -574,15 +574,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
             requestedBox = !box.isEmpty();
             ItemStack supplied = ownedEmptyBox(owned());
-            targetExcessRemaining = Math.max(0, rawCount(targetContents) - looseLimit);
-            int available = sum(rawOwned()) + targetExcessRemaining;
-            if (!requestedBox && !supplied.isEmpty()
-                    && targetContents.stream().anyMatch(ItemStack::isEmpty)
-                    && StoragePackingPlanner.canPack(policy.allowPartialBoxes(),
-                            available, 0, stackSize)) {
-                box = supplied;
-                requestedBox = true;
-            }
             if (box.isEmpty()) {
                 box = targetContents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
                         && category.equals(MinecraftItemIdentity.boxCategory(stack))
@@ -595,16 +586,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 requestedBox = true;
             }
             int inside = box.isEmpty() ? 0 : insideCount(box);
+            int carried = sum(rawOwned());
+            targetExcessRemaining = StoragePackingPlanner.targetItemsForPacking(policy, carried,
+                    rawCount(targetContents), looseLimit, inside, stackSize);
+            int available = carried + targetExcessRemaining;
             if (!StoragePackingPlanner.canPack(policy.allowPartialBoxes(), available, inside, stackSize)) {
                 if (requestedBox && policy.allowPartialBoxes()) {
                     storeBox();
                 } else {
                     defer();
                 }
-                return;
-            }
-            if (box.isEmpty() && packedBox && context.workspace().isClassificationStorage(target)) {
-                defer();
                 return;
             }
             preferredSite = chooseSite(context, target, policy.packingArea(), configuration);
@@ -666,7 +657,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private void loadTargetExcess(int wanted) {
             read(target, contents -> {
                 Map<String, Integer> raw = rawItems(contents);
-                int amount = Math.min(targetExcessRemaining, Math.max(0, sum(raw) - looseLimit));
+                int amount = Math.min(targetExcessRemaining, sum(raw));
                 if (amount == 0) {
                     finishBox();
                 } else {
@@ -703,7 +694,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (owned().getOrDefault(key, 0) == before) {
                     throw new IllegalStateException("目标箱无法接收潜影盒，交给全局收尾暂存");
                 }
-                packedBox = true;
                 skipLooseDeposit = false;
                 inspectTarget();
             });

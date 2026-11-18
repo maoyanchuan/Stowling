@@ -2,11 +2,31 @@ package dev.stowling.inventory;
 
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.v2.model.StorageMode;
+import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
 import java.util.Map;
+import java.util.Set;
 
 public final class RecordedStorageCapacity {
     private RecordedStorageCapacity() {
+    }
+
+    public static long existingBoxSpace(WarehouseInventory.Container stock, String category,
+            Set<String> incomingKeys, int stackSize) {
+        long space = 0;
+        for (WarehouseInventory.Box box : stock.boxes()) {
+            if (!category.equals(box.category())) {
+                continue;
+            }
+            space += (long) Math.max(0, StoragePackingPlanner.BOX_SLOTS - box.occupiedSlots())
+                    * stackSize;
+            for (WarehouseInventory.Entry entry : box.items()) {
+                if (incomingKeys.contains(entry.key())) {
+                    space += Math.max(0, entry.stackSize() - entry.loose());
+                }
+            }
+        }
+        return space;
     }
 
     public static int rank(WarehouseInventory.Container stock, StoragePolicy policy,

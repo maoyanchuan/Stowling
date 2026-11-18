@@ -34,14 +34,36 @@ public final class StoragePackingPlanner {
 
     public static boolean shouldBringBox(StoragePolicy policy, int incoming, long looseSpace,
             int stackSize, long excessAtTarget) {
+        return shouldBringBox(policy, incoming, looseSpace, stackSize, excessAtTarget, 0);
+    }
+
+    public static boolean shouldBringBox(StoragePolicy policy, int incoming, long looseSpace,
+            int stackSize, long excessAtTarget, long existingBoxSpace) {
+        return shouldBringBox(policy, incoming, looseSpace, stackSize, excessAtTarget,
+                existingBoxSpace, 0);
+    }
+
+    public static boolean shouldBringBox(StoragePolicy policy, int incoming, long looseSpace,
+            int stackSize, long excessAtTarget, long existingBoxSpace, long targetLoose) {
         if (policy.mode() == StorageMode.NORMAL) {
             return false;
         }
+        long remaining = Math.max(0, incoming + excessAtTarget - existingBoxSpace);
         if (!policy.allowPartialBoxes()) {
-            return (incoming > looseSpace || excessAtTarget > 0)
-                    && incoming + excessAtTarget >= (long) BOX_SLOTS * stackSize;
+            long available = incoming + Math.max(excessAtTarget, targetLoose) - existingBoxSpace;
+            return remaining > looseSpace && available >= (long) BOX_SLOTS * stackSize;
         }
-        return incoming > looseSpace || excessAtTarget > 0;
+        return remaining > looseSpace;
+    }
+
+    public static int targetItemsForPacking(StoragePolicy policy, int carried, int targetLoose,
+            int looseLimit, int inside, int stackSize) {
+        int excess = Math.max(0, targetLoose - looseLimit);
+        int needed = Math.max(0, BOX_SLOTS * stackSize - inside - carried);
+        if (!policy.allowPartialBoxes() && carried > 0 && needed <= targetLoose) {
+            return Math.max(excess, needed);
+        }
+        return excess;
     }
 
 }

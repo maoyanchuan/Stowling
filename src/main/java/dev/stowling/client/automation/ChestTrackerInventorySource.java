@@ -129,6 +129,7 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
     private static WarehouseInventory.Container container(String dimension,
             List<BlockPosition> positions, Memory memory) {
         Map<String, WarehouseInventory.Entry> items = new LinkedHashMap<>();
+        List<WarehouseInventory.Box> boxes = new ArrayList<>();
         int full = 0;
         int partial = 0;
         int empty = 0;
@@ -145,6 +146,15 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                     if (MinecraftItemIdentity.full(stack)) full += stack.getCount();
                     else partial += stack.getCount();
                     content.forEach(inner -> add(items, inner, true, stack.getCount()));
+                    List<WarehouseInventory.Entry> boxItems = content.stream().map(inner ->
+                            new WarehouseInventory.Entry(MinecraftItemIdentity.key(inner),
+                                    MinecraftItemIdentity.base(inner),
+                                    inner.getHoverName().getString(), inner.getCount(), 0,
+                                    inner.getMaxStackSize())).toList();
+                    for (int index = 0; index < stack.getCount(); index++) {
+                        boxes.add(new WarehouseInventory.Box(MinecraftItemIdentity.boxCategory(stack),
+                                content.size(), boxItems));
+                    }
                 }
             } else {
                 add(items, stack, false, 1);
@@ -156,7 +166,7 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                 name == null ? "已记录容器" : name.getString(), dimension, positions,
                 recorded == null || recorded.equals(Instant.EPOCH) ? null : recorded,
                 memory.fullItems().size(), occupied, full, partial, empty,
-                List.copyOf(items.values()));
+                List.copyOf(items.values()), boxes);
     }
 
     private static void add(Map<String, WarehouseInventory.Entry> items, ItemStack stack,

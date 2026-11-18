@@ -60,22 +60,26 @@ public final class BaritoneNavigationService implements NavigationService {
     }
 
     @Override
-    public void navigateToStandingArea(BlockPosition target, AreaBounds standingArea) {
+    public void navigateToInteractionRange(BlockPosition target, AreaBounds standingArea) {
         LocalPlayer player = primaryBaritone().getPlayerContext().player();
         if (player == null) {
             throw new IllegalStateException("当前没有可寻路的玩家");
         }
-        primaryBaritone().getCustomGoalProcess().setGoalAndPath(standingGoal(
+        primaryBaritone().getCustomGoalProcess().setGoalAndPath(interactionGoal(
                 target, standingArea, player.blockInteractionRange(), player.getEyeHeight()
         ));
     }
 
-    static Goal standingGoal(
+    static Goal interactionGoal(
             BlockPosition target,
             AreaBounds area,
             double reach,
             double eyeHeight
     ) {
+        if (area == null) {
+            area = new AreaBounds(Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
+                    Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        }
         long margin = (long) Math.ceil(reach + eyeHeight + 1);
         List<Goal> goals = new ArrayList<>();
         for (long x = Math.max(area.minX(), (long) target.x() - margin);

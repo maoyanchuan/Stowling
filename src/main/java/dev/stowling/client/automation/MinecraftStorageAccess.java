@@ -94,7 +94,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             }
             NavigationStatus status = navigating
                     ? context.navigation().status(target.position())
-                    : context.navigation().startNear(target.position(), 2, target.standingArea());
+                    : context.navigation().startInteraction(
+                            target.position(), target.standingArea());
             navigating = true;
             if (status == NavigationStatus.FAILED) {
                 return finish(false, "无法到达容器操作位置 " + target.position());

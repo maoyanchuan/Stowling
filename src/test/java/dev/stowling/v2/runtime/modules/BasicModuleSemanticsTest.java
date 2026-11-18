@@ -241,7 +241,7 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
-    void outputMoveKeepsContainerRadius() {
+    void outputMoveUsesContainerInteractionGoal() {
         ContainerTarget container = target(8, 60, -4, "container");
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         workspace.setContainerScan(ContainerScanResult.success(List.of(container)));
@@ -270,7 +270,6 @@ class BasicModuleSemanticsTest {
                 List.of(new BlockPosition(8, 60, -4)),
                 navigation.containerPositions()
         );
-        assertEquals(List.of(4), navigation.containerRadii());
         assertTrue(navigation.exactPositions().isEmpty());
         assertTrue(navigation.coordinatePositions().isEmpty());
         assertTrue(navigation.dimensionChecks().isEmpty());
@@ -279,7 +278,7 @@ class BasicModuleSemanticsTest {
                 List.of(new BlockPosition(8, 60, -4)),
                 navigation.statusPositions()
         );
-        assertEquals(List.of(4), navigation.statusRadii());
+        assertNull(navigation.statusRadii().getFirst());
     }
 
     @Test
@@ -1986,7 +1985,6 @@ class BasicModuleSemanticsTest {
         private final List<BlockPosition> coordinatePositions = new ArrayList<>();
         private final List<Integer> coordinateRadii = new ArrayList<>();
         private final List<BlockPosition> containerPositions = new ArrayList<>();
-        private final List<Integer> containerRadii = new ArrayList<>();
         private final List<BlockPosition> statusPositions = new ArrayList<>();
         private final List<Integer> statusRadii = new ArrayList<>();
         private final List<String> dimensionChecks = new ArrayList<>();
@@ -2001,9 +1999,8 @@ class BasicModuleSemanticsTest {
         }
 
         @Override
-        public NavigationStatus startNear(BlockPosition target, int radius) {
+        public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea) {
             containerPositions.add(target);
-            containerRadii.add(radius);
             return NavigationStatus.NAVIGATING;
         }
 
@@ -2063,10 +2060,6 @@ class BasicModuleSemanticsTest {
 
         private List<BlockPosition> containerPositions() {
             return List.copyOf(containerPositions);
-        }
-
-        private List<Integer> containerRadii() {
-            return List.copyOf(containerRadii);
         }
 
         private List<BlockPosition> statusPositions() {

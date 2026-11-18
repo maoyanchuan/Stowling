@@ -9,15 +9,12 @@ import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
 
 final class MoveToCoordinateModule implements TaskModuleExecutor {
-    private static final int CONTAINER_NAVIGATION_RADIUS = 4;
-
     private final TaskExecutionContext context;
     private final ResourceReference targetReference;
     private CoordinatePoint coordinate;
     private ContainerTarget container;
     private BlockPosition position;
     private String targetName = "目标";
-    private Integer arrivalRadius = 0;
     private boolean navigationStarted;
     private boolean stopped;
 
@@ -58,7 +55,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
             navigationStarted = true;
             status = startNavigation();
         } else {
-            status = context.navigation().status(position, arrivalRadius);
+            status = context.navigation().status(position, container == null ? 0 : null);
         }
         if (status == NavigationStatus.ARRIVED && container != null
                 && container.standingArea() != null && !isAtContainer()) {
@@ -85,11 +82,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
 
     private NavigationStatus startNavigation() {
         if (container != null) {
-            return context.navigation().startNear(
-                    position,
-                    CONTAINER_NAVIGATION_RADIUS,
-                    container.standingArea()
-            );
+            return context.navigation().startInteraction(position, container.standingArea());
         }
         return context.navigation().start(position);
     }
@@ -139,7 +132,6 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         );
         position = container.position();
         targetName = container.type();
-        arrivalRadius = CONTAINER_NAVIGATION_RADIUS;
     }
 
     private static int manualCoordinate(TaskStep step, String key) {

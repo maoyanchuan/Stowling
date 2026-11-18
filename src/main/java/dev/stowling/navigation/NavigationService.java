@@ -9,8 +9,8 @@ public interface NavigationService {
 
     void navigateToNear(BlockPosition target, int radius);
 
-    default void navigateToStandingArea(BlockPosition target, AreaBounds standingArea) {
-        throw new IllegalStateException("当前寻路组件不支持操作站位区域");
+    default void navigateToInteractionRange(BlockPosition target, AreaBounds standingArea) {
+        throw new IllegalStateException("当前寻路组件不支持容器交互目标");
     }
 
     default void navigateToWithinRadius(BlockPosition target, int radius) {

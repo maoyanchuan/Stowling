@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 class BaritoneNavigationServiceTest {
     @Test
     void standingGoalRequiresTheSpecifiedStepAndExcludesTheSpaceBelowTheChest() {
-        Goal goal = BaritoneNavigationService.standingGoal(new BlockPosition(0, 68, 0),
+        Goal goal = BaritoneNavigationService.interactionGoal(new BlockPosition(0, 68, 0),
                 new AreaBounds(1, 64, 0, 2, 64, 0), 4.5, 1.62);
 
         assertTrue(goal.isInGoal(1, 64, 0));
@@ -26,9 +26,22 @@ class BaritoneNavigationServiceTest {
 
     @Test
     void standingGoalRejectsAnAreaThatCannotReachTheContainer() {
-        assertThrows(IllegalArgumentException.class, () -> BaritoneNavigationService.standingGoal(
-                new BlockPosition(0, 68, 0), new AreaBounds(1, 58, 0, 1, 58, 0), 4.5, 1.62
-        ));
+        assertThrows(IllegalArgumentException.class,
+                () -> BaritoneNavigationService.interactionGoal(new BlockPosition(0, 68, 0),
+                        new AreaBounds(1, 58, 0, 1, 58, 0), 4.5, 1.62));
+    }
+
+    @Test
+    void interactionGoalAcceptsReachableStanceOutsideOldRadius() {
+        BlockPosition chest = new BlockPosition(5, -43, 32);
+        Goal interaction = BaritoneNavigationService.interactionGoal(chest, null, 4.5, 1.62);
+        Goal oldNearGoal = BaritoneNavigationService.nearContainerGoal(chest, 2);
+        Goal reducedReach = BaritoneNavigationService.interactionGoal(chest, null, 1.5, 1.62);
+
+        assertFalse(oldNearGoal.isInGoal(6, -45, 34));
+        assertTrue(interaction.isInGoal(6, -45, 34));
+        assertFalse(interaction.isInGoal(6, -51, 34));
+        assertFalse(reducedReach.isInGoal(6, -45, 34));
     }
 
     @Test

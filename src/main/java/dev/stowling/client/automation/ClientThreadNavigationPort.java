@@ -54,9 +54,9 @@ public final class ClientThreadNavigationPort implements NavigationPort {
     }
 
     @Override
-    public NavigationStatus startNear(BlockPosition target, int radius, AreaBounds standingArea) {
+    public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea) {
         return scheduler.isClientThread()
-                ? delegate.startNear(target, radius, standingArea) : NavigationStatus.FAILED;
+                ? delegate.startInteraction(target, standingArea) : NavigationStatus.FAILED;
     }
 
     @Override

@@ -25,7 +25,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private int coordinateRadius = DEFAULT_COORDINATE_RADIUS;
     private int missingPathTicks;
     private int nearPathRetries;
-    private int nearRadius;
+    private Integer nearRadius;
     private int retryDelayTicks;
     private boolean stopRequested;
     private AreaBounds standingArea;
@@ -72,17 +72,21 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public NavigationStatus startNear(BlockPosition target, int radius) {
-        return startNear(target, radius, null);
-    }
-
-    @Override
-    public NavigationStatus startNear(BlockPosition target, int radius, AreaBounds standingArea) {
-        Objects.requireNonNull(target, "target");
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
+        return beginNear(target, radius, null);
+    }
+
+    @Override
+    public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea) {
+        return beginNear(target, null, standingArea);
+    }
+
+    private NavigationStatus beginNear(BlockPosition target, Integer radius, AreaBounds area) {
+        Objects.requireNonNull(target, "target");
         nearNavigation = true;
-        this.standingArea = standingArea;
+        standingArea = area;
         nearPathRetries = 0;
         nearRadius = radius;
         retryDelayTicks = 0;
@@ -91,11 +95,11 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         return NavigationStatus.NAVIGATING;
     }
 
-    private void navigateNear(BlockPosition target, int radius) {
-        if (standingArea == null) {
-            navigationService.navigateToNear(target, radius);
+    private void navigateNear(BlockPosition target, Integer radius) {
+        if (nearRadius == null) {
+            navigationService.navigateToInteractionRange(target, standingArea);
         } else {
-            navigationService.navigateToStandingArea(target, standingArea);
+            navigationService.navigateToNear(target, radius == null ? nearRadius : radius);
         }
     }
 
@@ -136,10 +140,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (retryDelayTicks > 0) {
             retryDelayTicks--;
             if (retryDelayTicks == 0) {
-                navigateNear(
-                        target,
-                        radius == null ? nearRadius : radius
-                );
+                navigateNear(target, radius);
             }
             return NavigationStatus.NAVIGATING;
         }

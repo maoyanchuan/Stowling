@@ -24,8 +24,8 @@ public interface NavigationPort {
         return start(target);
     }
 
-    default NavigationStatus startNear(BlockPosition target, int radius, AreaBounds standingArea) {
-        return standingArea == null ? startNear(target, radius) : NavigationStatus.FAILED;
+    default NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea) {
+        return NavigationStatus.FAILED;
     }
 
     default boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea) {

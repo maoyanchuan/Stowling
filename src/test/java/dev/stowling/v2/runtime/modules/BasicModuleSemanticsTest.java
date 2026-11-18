@@ -54,6 +54,85 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
+    @Test
+    void mixedBoxContentsEnterTheExistingBatchAndRouteWithoutASecondWithdrawal() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget stone = target(3, 64, 0, "chest");
+        ContainerTarget leaves = target(8, 64, 0, "chest");
+        workspace.setResolvedCategories(List.of(stone, leaves), Map.of(
+                stone, Set.of("minecraft:stone"), leaves, Set.of("minecraft:birch_leaves")),
+                List.of(cache));
+        workspace.selectNextContainer().orElseThrow();
+        TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), workspace);
+        StorageAutomationPort storage = new StorageAutomationPort() {
+            @Override
+            public Optional<TaskModuleExecutor> unpackMixedBox(TaskExecutionContext context,
+                    ContainerTarget source) {
+                assertEquals(cache, source);
+                return Optional.of(new TaskModuleExecutor() {
+                    @Override
+                    public TaskModuleResult start() {
+                        return TaskModuleResult.waiting("recovering mixed box");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        context.workspace().recordWithdrawn("minecraft:stone", 32);
+                        context.workspace().recordWithdrawn("minecraft:birch_leaves", 16);
+                        return TaskModuleResult.succeeded("box returned");
+                    }
+
+                    @Override
+                    public void cancel() {
+                    }
+                });
+            }
+
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("unpacking must finish before delivery");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                throw new AssertionError("successful unpacking does not invoke global cleanup");
+            }
+        };
+        var module = new WithdrawItemsModule(contextWithStorage(base, storage),
+                TaskStep.action(UUID.randomUUID(), TaskModuleIds.WITHDRAW_ITEMS,
+                        Map.of(TaskModuleIds.TARGET_REF, "output:container")));
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        assertTrue(workspace.carriedItems().isEmpty());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(Map.of("minecraft:stone", 32, "minecraft:birch_leaves", 16),
+                workspace.carriedItems());
+        assertTrue(workspace.cacheHasMore());
+        assertEquals(stone, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.consumeDeposit("carried", Map.of("minecraft:stone", 32), Map.of());
+        assertEquals(leaves, workspace.selectStorageTarget("carried", true).orElseThrow());
+    }
+
+    @Test
+    void mixedBoxBatchDrainPreservesConfirmedItemsOnFailureAndWaitsForSafeStop() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new PartialWithdrawal(), new FoodPort(), workspace);
+        var drain = new ContainerBatchWithdrawal(context, target(0, 64, 0, "shulker_box"),
+                Set.of("minecraft:iron_ingot"));
+        assertEquals(TaskModuleState.WAITING, drain.start().state());
+        drain.requestStop();
+        assertFalse(drain.safeToStop());
+        assertEquals(TaskModuleState.FAILED, drain.tick().state());
+        assertTrue(drain.safeToStop());
+        assertEquals(Map.of("minecraft:iron_ingot", 2), drain.withdrawn());
+        assertEquals(TaskModuleState.FAILED, drain.tick().state());
+        assertEquals(Map.of("minecraft:iron_ingot", 2), workspace.carriedItems());
+    }
+
 
     @Test
     void mixedStorageKeepsMultipleKindsInOneBatchWhenPartialBoxStorageIsDisabled() {

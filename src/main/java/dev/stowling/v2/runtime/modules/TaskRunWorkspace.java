@@ -187,7 +187,20 @@ public final class TaskRunWorkspace {
             Set<String> categories) {
         Map<String, Integer> items = cacheInventory.get(target.position());
         return items == null || items.keySet().stream()
-                .anyMatch(key -> ItemIdentity.matches(key, categories));
+                .anyMatch(key -> ItemIdentity.isMixedBox(key)
+                        || ItemIdentity.matches(key, categories));
+    }
+
+    public synchronized boolean hasMixedCacheStock(ContainerTarget target) {
+        return cacheInventory.getOrDefault(target.position(), Map.of()).keySet().stream()
+                .anyMatch(ItemIdentity::isMixedBox);
+    }
+
+    public synchronized void recordCacheContents(ContainerTarget target,
+            Map<String, Integer> items) {
+        Map<BlockPosition, Map<String, Integer>> copy = new LinkedHashMap<>(cacheInventory);
+        copy.put(target.position(), Map.copyOf(items));
+        cacheInventory = Map.copyOf(copy);
     }
 
     public synchronized void setCategoryMatch(

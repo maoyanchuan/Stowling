@@ -62,7 +62,7 @@ public final class MinecraftItemIdentity {
         }
         Set<String> categories = contents(stack).nonEmptyItemCopyStream()
                 .map(MinecraftItemIdentity::base).collect(Collectors.toSet());
-        return categories.size() == 1 ? categories.iterator().next() : "";
+        return ItemIdentity.boxContentsCategory(categories);
     }
 
     public static ItemContainerContents contents(ItemStack stack) {

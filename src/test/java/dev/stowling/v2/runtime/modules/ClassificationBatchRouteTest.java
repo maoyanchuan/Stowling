@@ -1,8 +1,11 @@
 package dev.stowling.v2.runtime.modules;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +13,23 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ClassificationBatchRouteTest {
+    @Test
+    void mixedOnlyCacheChestsAreKeptAndTheirContentsCanBeRefreshedAfterUnpacking() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget first = target(0);
+        ContainerTarget second = target(1);
+        String mixed = "minecraft:shulker_box#mixed@" + ItemIdentity.MIXED_BOX_CATEGORY;
+        workspace.recordCacheInventory(Map.of(first.position(), Map.of(mixed, 1),
+                second.position(), Map.of(mixed, 1)));
+
+        assertTrue(workspace.hasRecordedClassifiableStock(first, Set.of("minecraft:stone")));
+        assertTrue(workspace.hasMixedCacheStock(first));
+        workspace.recordCacheContents(first, Map.of("minecraft:dirt", 64));
+        assertFalse(workspace.hasMixedCacheStock(first));
+        assertFalse(workspace.hasRecordedClassifiableStock(first, Set.of("minecraft:stone")));
+        assertTrue(workspace.hasMixedCacheStock(second));
+    }
+
     @Test
     void keepsTheBatchRouteWhenTheSelectionPreferenceChanges() {
         TaskRunWorkspace workspace = workspace();

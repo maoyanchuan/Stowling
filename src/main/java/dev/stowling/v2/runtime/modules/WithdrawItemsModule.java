@@ -21,6 +21,8 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     private final ContainerTarget target;
     private final Set<String> matchingItemIds;
     private final boolean classificationBatch;
+    private TaskModuleExecutor unpacking;
+    private Map<String, Integer> beforeUnpacking = Map.of();
     private boolean started;
     private boolean inFlight;
     private boolean stopRequested;
@@ -39,11 +41,36 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
             return tick();
         }
         started = true;
+        if (classificationBatch) {
+            beforeUnpacking = context.workspace().carriedItems();
+            unpacking = context.storageAutomation().unpackMixedBox(context, target).orElse(null);
+            if (unpacking != null) {
+                return handleUnpacking(unpacking.start());
+            }
+        }
+        return startWithdrawal();
+    }
+
+    private TaskModuleResult startWithdrawal() {
         inFlight = true;
         return handle(classificationBatch
                 ? context.containerWithdrawals().startClassificationBatch(target, matchingItemIds,
                         fullBoxCategories())
                 : context.containerWithdrawals().startWithdrawal(target, matchingItemIds));
+    }
+
+    private TaskModuleResult handleUnpacking(TaskModuleResult result) {
+        if (result.state() != TaskModuleState.SUCCEEDED) {
+            return result;
+        }
+        unpacking = null;
+        if (!beforeUnpacking.equals(context.workspace().carriedItems())) {
+            context.workspace().resetStorageSelection();
+            context.workspace().setCacheHasMore(true);
+            return TaskModuleResult.succeeded("混杂盒已拆分，本批物品进入分类路线");
+        }
+        return stopRequested ? TaskModuleResult.succeeded("拆盒已确认，可安全停止")
+                : startWithdrawal();
     }
 
     private Set<String> fullBoxCategories() {
@@ -64,6 +91,9 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         if (!started) {
             return start();
         }
+        if (unpacking != null) {
+            return handleUnpacking(unpacking.tick());
+        }
         if (!inFlight) {
             return TaskModuleResult.succeeded("取出操作已完成");
         }
@@ -73,15 +103,21 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     @Override
     public void requestStop() {
         stopRequested = true;
+        if (unpacking != null) {
+            unpacking.requestStop();
+        }
     }
 
     @Override
     public boolean safeToStop() {
-        return !inFlight;
+        return unpacking == null ? !inFlight : unpacking.safeToStop();
     }
 
     @Override
     public void cancel() {
+        if (unpacking != null) {
+            unpacking.cancel();
+        }
         if (inFlight) {
             context.containerWithdrawals().cancelWithdrawal();
         }

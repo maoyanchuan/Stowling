@@ -12,6 +12,7 @@ import dev.stowling.v2.model.StorageAutomationSettings;
 import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
+import dev.stowling.v2.runtime.modules.ContainerBatchWithdrawal;
 import dev.stowling.v2.runtime.modules.StorageAutomationPort;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
@@ -93,6 +94,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             return Optional.empty();
         }
         return Optional.of(new PrepareBox(context, target, items));
+    }
+
+    @Override
+    public Optional<TaskModuleExecutor> unpackMixedBox(TaskExecutionContext context,
+            ContainerTarget cache) {
+        return context.workspace().hasMixedCacheStock(cache)
+                ? Optional.of(new UnpackMixedBox(context, cache)) : Optional.empty();
     }
 
     @Override
@@ -373,6 +381,105 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         String completionMessage() {
             return "已完成缓存库存盘点，共读取 " + counts.size() + " 个容器";
+        }
+    }
+
+    private final class UnpackMixedBox extends Session {
+        private final ContainerTarget cache;
+        private ItemStack box;
+        private ContainerBatchWithdrawal drain;
+        private final List<ContainerTarget> returnTargets = new ArrayList<>();
+
+        UnpackMixedBox(TaskExecutionContext context, ContainerTarget cache) {
+            super(context);
+            this.cache = cache;
+        }
+
+        @Override
+        void initialize() {
+            read(cache, contents -> {
+                recordContents(contents);
+                box = contents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
+                        && ItemIdentity.MIXED_BOX_CATEGORY.equals(
+                                MinecraftItemIdentity.boxCategory(stack)))
+                        .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
+                if (box.isEmpty()) {
+                    return;
+                }
+                if (!configuration.cleanupEnabled()) {
+                    throw new IllegalStateException("拆分混杂盒前请开启全局收尾并配置暂存箱");
+                }
+                if (hasTemporaryResources(owner())) {
+                    throw new IllegalStateException("上次潜影盒尚未回收，请先执行全局收尾");
+                }
+                BlockPosition site = chooseSite(context, cache, null, configuration);
+                String key = MinecraftItemIdentity.key(box);
+                int before = owned().getOrDefault(key, 0);
+                transfer(cache, Map.of(key, 1), true, () -> {
+                    if (owned().getOrDefault(key, 0) != before + 1) {
+                        throw new IllegalStateException("混杂潜影盒取出未确认，已停止拆盒");
+                    }
+                    var resource = new MinecraftShulkerAction.Resource(site, box);
+                    resources.put(owner(), resource);
+                    Set<String> innerKeys = MinecraftItemIdentity.contents(box)
+                            .nonEmptyItemCopyStream().map(MinecraftItemIdentity::key)
+                            .collect(java.util.stream.Collectors.toSet());
+                    drain = new ContainerBatchWithdrawal(context,
+                            new ContainerTarget(site, "minecraft:shulker_box"), innerKeys);
+                    steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource,
+                            true), () -> steps.add(new Step(drain, this::recoverBox))));
+                });
+            });
+        }
+
+        private void recoverBox() {
+            var resource = resources.get(owner());
+            recover(() -> {
+                box = resource.expected;
+                if (isEmptyBox(box)) {
+                    configuration.emptyBoxContainers().forEach(position ->
+                            returnTargets.add(new ContainerTarget(position, "container")));
+                    returnTargets.addAll(temporaryContainers());
+                }
+                returnTargets.add(cache);
+                returnBox(0);
+            });
+        }
+
+        private void returnBox(int index) {
+            if (index >= returnTargets.size()) {
+                throw new IllegalStateException("拆盒后的潜影盒无法归还，交给全局收尾");
+            }
+            String key = MinecraftItemIdentity.key(box);
+            int before = owned().getOrDefault(key, 0);
+            ContainerTarget destination = returnTargets.get(index);
+            MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
+                    destination, Map.of(key, 1), false, false);
+            Runnable after = () -> {
+                if (owned().getOrDefault(key, 0) == before - 1) {
+                    read(cache, contents -> {
+                        recordContents(contents);
+                        if (drain.withdrawn().isEmpty()) {
+                            throw new IllegalStateException("背包空间不足，混杂盒已完整放回缓存");
+                        }
+                    });
+                } else {
+                    returnBox(index + 1);
+                }
+            };
+            steps.add(new Step(access, after, after));
+        }
+
+        private void recordContents(List<ItemStack> contents) {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            contents.stream().filter(stack -> !stack.isEmpty()).forEach(stack ->
+                    counts.merge(MinecraftItemIdentity.key(stack), stack.getCount(), Math::addExact));
+            context.workspace().recordCacheContents(cache, counts);
+        }
+
+        @Override
+        String completionMessage() {
+            return "混杂盒已分批拆取，潜影盒已回收归还";
         }
     }
 

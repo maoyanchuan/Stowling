@@ -40,6 +40,11 @@ public interface StorageAutomationPort {
         return java.util.Optional.empty();
     }
 
+    default java.util.Optional<TaskModuleExecutor> unpackMixedBox(
+            TaskExecutionContext context, ContainerTarget cache) {
+        return java.util.Optional.empty();
+    }
+
     default boolean cleanupEnabled() {
         return false;
     }

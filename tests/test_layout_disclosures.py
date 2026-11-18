@@ -83,19 +83,28 @@ const expansion = {direction:'X_POSITIVE', step:1, templateCount:2, areaFirstX:1
 const automatic = createBindingEditor(bindings, expansion);
 const initial = nodes(automatic.root).filter(node => node.tagName === 'details')
     .map(node => ({css:node.className, open:node.open}));
+const rangeMode = nodes(automatic.root).find(node =>
+    node.className.includes('category-range-mode') && node.tagName === 'details');
+const expansionRoot = nodes(automatic.root).find(node =>
+    node.className.includes('category-expansion-editor'));
+const expansionNested = nodes(rangeMode).includes(expansionRoot);
 const saved = automatic.read();
 const add = nodes(automatic.root).find(node => node.textContent === '添加分类物');
 add.emit('click');
 const afterAdd = nodes(automatic.root).filter(node =>
     node.className.includes('category-binding-card')).map(node => node.open);
-const mode = automatic.root.children[0].children[0];
+const mode = nodes(automatic.root).find(node =>
+    node.className.includes('category-zone-mode-field')).children[0];
 mode.value = 'MANUAL'; mode.emit('change');
+const manualExpansionHidden = nodes(rangeMode).find(node =>
+    node.className.includes('category-expansion-host')).hidden;
 const afterSwitch = nodes(automatic.root).filter(node =>
     node.className.includes('category-binding-card')).map(node => node.open);
 const manual = createBindingEditor(bindings, null);
 const manualOpen = nodes(manual.root).filter(node => node.tagName === 'details')
     .map(node => node.open);
-process.stdout.write(JSON.stringify({initial, saved, afterAdd, afterSwitch, manualOpen}));
+process.stdout.write(JSON.stringify({initial, saved, afterAdd, afterSwitch, manualOpen,
+    expansionNested, manualExpansionHidden}));
 """
     result = subprocess.run(
         [str(NODE), "-e", script, str(WEB / "settings-ui.js"),
@@ -103,14 +112,16 @@ process.stdout.write(JSON.stringify({initial, saved, afterAdd, afterSwitch, manu
         check=True, capture_output=True, encoding="utf-8",
     )
     value = json.loads(result.stdout)
-    assert len(value["initial"]) == 4
+    assert len(value["initial"]) == 5
     assert all(item["open"] is False for item in value["initial"])
+    assert value["expansionNested"] is True
+    assert value["manualExpansionHidden"] is True
     assert value["saved"]["bindings"] == [{"markerFirstX": 13}, {"markerFirstX": 14}]
     assert value["saved"]["expansion"]["templateCount"] == 2
     assert value["saved"]["expansion"]["step"] == 1
     assert value["afterAdd"] == [False, False, True]
     assert value["afterSwitch"] == [False, False, False]
-    assert value["manualOpen"] == [False, False, False]
+    assert value["manualOpen"] == [False, False, False, False]
 
 
 def test_advanced_coordinate_and_cleanup_settings_use_shared_closed_disclosures() -> None:

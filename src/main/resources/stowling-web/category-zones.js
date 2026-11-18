@@ -223,6 +223,10 @@
             "div",
             "category-expansion-host"
         );
+        const modeBody = Stowling.element("div", "category-range-mode-body");
+        modeBody.append(modeField, modeHelp, expansionHost);
+        const modeSection = Settings.disclosure("范围模式", "", modeBody);
+        modeSection.root.classList.add("category-layout-section", "category-range-mode");
         const bindingsHost = Stowling.element(
             "div",
             "category-binding-list category-zone-binding-list"
@@ -304,6 +308,7 @@
          * @returns {void}
          */
         function renderExpansion() {
+            modeSection.description.textContent = mode === "AUTO" ? "自动铺满" : "手动绑定";
             expansionHost.replaceChildren();
             expansionReader = null;
             if (mode !== "AUTO") {
@@ -374,7 +379,7 @@
             "智能识别摆放方块、展示框、展示架和花盆内物品，每列识别一个物品。",
             bindingBody);
         bindingSection.root.classList.add("category-layout-section");
-        root.append(modeField, modeHelp, expansionHost, bindingSection.root);
+        root.append(modeSection.root, bindingSection.root);
         renderExpansion();
         return {
             root,

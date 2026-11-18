@@ -113,6 +113,11 @@ public final class StowlingRuntime implements AutoCloseable {
                 ),
                 StandardTaskModuleFactories.create()
         );
+        var storageSettings = new dev.stowling.v2.config.StorageSettingsStore(
+                configDirectory.resolve("stowling-storage-settings.json"));
+        moduleRuntime.setStorageAutomation(
+                new dev.stowling.client.automation.MinecraftStorageAutomation(
+                        minecraft, storageSettings));
         TaskRunManager taskRuns = new TaskRunManager(
                 navigationPort,
                 moduleRuntime
@@ -120,7 +125,8 @@ public final class StowlingRuntime implements AutoCloseable {
         V2ControlService service = new V2ControlServiceImpl(
                 configs,
                 taskRuns,
-                () -> inventory(inventories)
+                () -> inventory(inventories),
+                storageSettings
         );
 
         int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);

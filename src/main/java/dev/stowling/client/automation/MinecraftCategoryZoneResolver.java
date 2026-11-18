@@ -188,7 +188,7 @@ public final class MinecraftCategoryZoneResolver
                     binding,
                     markers,
                     storageScan.containers().stream().map(target -> new ContainerTarget(
-                            target.position(), target.type(), binding.standingArea()
+                            target.position(), target.type(), binding.standingArea(), binding.storagePolicy()
                     )).toList(),
                     markerSources
             );

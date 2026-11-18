@@ -234,7 +234,7 @@ public final class MinecraftContainerWithdrawalPort
                 continue;
             }
             String itemId = itemId(stack);
-            if (!matchingItemIds.contains(itemId)) {
+            if (!dev.stowling.automation.ItemIdentity.matches(itemId, matchingItemIds)) {
                 continue;
             }
             if (playerCapacity(menu, stack) < stack.getCount()) {
@@ -250,6 +250,7 @@ public final class MinecraftContainerWithdrawalPort
             ItemStack stack
     ) {
         int capacity = 0;
+        int reservedEmptySlots = 2;
         for (int slotIndex : playerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             if (!slot.mayPlace(stack)) {
@@ -258,6 +259,9 @@ public final class MinecraftContainerWithdrawalPort
             ItemStack current = slot.getItem();
             int maximum = slot.getMaxStackSize(stack);
             if (current.isEmpty()) {
+                if (reservedEmptySlots-- > 0) {
+                    continue;
+                }
                 capacity = Math.addExact(capacity, maximum);
             } else if (ItemStack.isSameItemSameComponents(current, stack)) {
                 capacity = Math.addExact(
@@ -275,7 +279,7 @@ public final class MinecraftContainerWithdrawalPort
     ) {
         for (int slotIndex : containerSlots(menu)) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
-            if (!stack.isEmpty() && matchingItemIds.contains(itemId(stack))) {
+            if (!stack.isEmpty() && dev.stowling.automation.ItemIdentity.matches(itemId(stack), matchingItemIds)) {
                 return true;
             }
         }
@@ -377,7 +381,7 @@ public final class MinecraftContainerWithdrawalPort
     }
 
     private static String itemId(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        return MinecraftItemIdentity.key(stack);
     }
 
     private static Set<String> checkedItemIds(Set<String> values) {

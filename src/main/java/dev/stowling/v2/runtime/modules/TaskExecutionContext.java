@@ -30,7 +30,8 @@ public record TaskExecutionContext(
         Map<UUID, RegionDefinition> regions,
         Map<UUID, CategoryZoneDefinition> categoryZones,
         TaskRunWorkspace workspace,
-        PlayerInventoryManager inventory
+        PlayerInventoryManager inventory,
+        StorageAutomationPort storageAutomation
 ) {
     public TaskExecutionContext {
         navigation = Objects.requireNonNull(navigation, "navigation");
@@ -70,8 +71,25 @@ public record TaskExecutionContext(
         );
         workspace = Objects.requireNonNull(workspace, "workspace");
         inventory = Objects.requireNonNull(inventory, "inventory");
+        storageAutomation = Objects.requireNonNull(storageAutomation);
         inventory.register(workspace.inventoryAccount());
         workspace.initialInventory().ifPresent(inventory::initialize);
+    }
+
+    public TaskExecutionContext(
+            NavigationPort navigation, DroppedItemObserverPort droppedItems,
+            ContainerRegionPort containerRegions, ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
+            ContainerInspectionPort containerInspections,
+            CategoryMarkerCachePort categoryMarkerCache, FoodConsumptionPort foodConsumption,
+            CategoryZonePort categoryZonesPort, Map<UUID, CoordinatePoint> coordinates,
+            Map<UUID, RegionDefinition> regions, Map<UUID, CategoryZoneDefinition> categoryZones,
+            TaskRunWorkspace workspace, PlayerInventoryManager inventory
+    ) {
+        this(navigation, droppedItems, containerRegions, containerTransfers, containerWithdrawals,
+                containerInspections, categoryMarkerCache, foodConsumption, categoryZonesPort,
+                coordinates, regions, categoryZones, workspace, inventory,
+                StorageAutomationPort.UNAVAILABLE);
     }
 
     public TaskExecutionContext(

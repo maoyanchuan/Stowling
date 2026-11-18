@@ -320,7 +320,7 @@ public final class TaskRunWorkspace {
                     Set.of()
             );
             for (String itemId : items.keySet()) {
-                if (accepted.contains(itemId)) {
+                if (dev.stowling.automation.ItemIdentity.matches(itemId, accepted)) {
                     selectedStorageTarget = candidate;
                     storageUsesCacheFallback = false;
                     return Optional.of(candidate);

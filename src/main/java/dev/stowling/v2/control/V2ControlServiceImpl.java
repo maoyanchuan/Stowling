@@ -46,6 +46,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 public final class V2ControlServiceImpl implements V2ControlService {
+    private dev.stowling.v2.config.StorageSettingsStore storageSettings;
     private final ConfigStore configs;
     private final TaskRunManager runs;
     private final Supplier<List<InventoryInfo>> inventory;
@@ -61,6 +62,28 @@ public final class V2ControlServiceImpl implements V2ControlService {
         this.runs = Objects.requireNonNull(runs, "runs");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
         runs.refreshTriggers(configs.read().config());
+    }
+
+    public V2ControlServiceImpl(ConfigStore configs, TaskRunManager runs,
+            Supplier<List<InventoryInfo>> inventory,
+            dev.stowling.v2.config.StorageSettingsStore storageSettings) {
+        this(configs, runs, inventory);
+        this.storageSettings = storageSettings;
+    }
+
+    @Override
+    public dev.stowling.v2.config.StorageSettingsStore.Snapshot storageSettings() {
+        return storageSettings.read();
+    }
+
+    @Override
+    public synchronized dev.stowling.v2.config.StorageSettingsStore.Snapshot saveStorageSettings(
+            String revision, dev.stowling.v2.model.StorageAutomationSettings settings) {
+        if (runs.busy() && runs.status().map(value -> value.state()
+                != dev.stowling.v2.runtime.TaskRunState.INTERRUPTION_FAILED).orElse(false)) {
+            throw new IllegalArgumentException("请等待当前任务结束后修改全局储存配置");
+        }
+        return storageSettings.save(revision, settings);
     }
 
     @Override
@@ -1543,7 +1566,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             binding.containerOverrides(),
                             existingBinding
                     ),
-                    binding.standingArea()
+                    binding.standingArea(),
+                    binding.storagePolicy()
             ));
         }
         return List.copyOf(result);

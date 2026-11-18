@@ -48,6 +48,27 @@ public final class PlayerInventoryManager {
         abandonedAccounts.clear();
     }
 
+    public synchronized void replaceProtectedIdentity(String before, String after) {
+        if (protectedInventory == null || before == null || after == null
+                || before.isEmpty() || before.equals(after)) {
+            return;
+        }
+        Map<String, Integer> items = new LinkedHashMap<>(protectedInventory.itemCounts());
+        int count = items.getOrDefault(before, 0);
+        if (count == 0) {
+            return;
+        }
+        if (count == 1) {
+            items.remove(before);
+        } else {
+            items.put(before, count - 1);
+        }
+        if (!after.isEmpty()) {
+            items.merge(after, 1, Math::addExact);
+        }
+        protectedInventory = new PlayerInventorySnapshot(items);
+    }
+
     public synchronized void initialize(PlayerInventorySnapshot baseline) {
         if (protectedInventory == null) {
             protectedInventory = Objects.requireNonNull(baseline, "baseline");

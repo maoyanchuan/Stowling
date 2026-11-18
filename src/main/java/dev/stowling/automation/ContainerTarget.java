@@ -7,11 +7,18 @@ import java.util.Objects;
 public record ContainerTarget(
         BlockPosition position,
         String type,
-        AreaBounds standingArea
+        AreaBounds standingArea,
+        dev.stowling.v2.model.StoragePolicy storagePolicy
 ) {
     public ContainerTarget {
+        storagePolicy = storagePolicy == null
+                ? dev.stowling.v2.model.StoragePolicy.DEFAULT : storagePolicy;
         position = Objects.requireNonNull(position, "position");
         type = requireText(type, "type");
+    }
+
+    public ContainerTarget(BlockPosition position, String type, AreaBounds standingArea) {
+        this(position, type, standingArea, null);
     }
 
     public ContainerTarget(BlockPosition position, String type) {

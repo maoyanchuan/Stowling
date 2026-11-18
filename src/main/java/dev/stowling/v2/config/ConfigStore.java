@@ -563,7 +563,8 @@ public final class ConfigStore {
                                 "ruleId",
                                 "ignoredMarkerBlockIds",
                                 "containerOverrides",
-                                "standingArea"
+                                "standingArea",
+                                "storagePolicy"
                         ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );

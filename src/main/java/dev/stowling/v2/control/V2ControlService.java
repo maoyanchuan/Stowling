@@ -12,6 +12,15 @@ import java.util.List;
 import java.util.UUID;
 
 public interface V2ControlService {
+    default dev.stowling.v2.config.StorageSettingsStore.Snapshot storageSettings() {
+        throw new UnsupportedOperationException("storage settings unavailable");
+    }
+
+    default dev.stowling.v2.config.StorageSettingsStore.Snapshot saveStorageSettings(
+            String revision, dev.stowling.v2.model.StorageAutomationSettings settings) {
+        throw new UnsupportedOperationException("storage settings unavailable");
+    }
+
     StatusResponse status();
 
     List<InventoryInfo> inventory();

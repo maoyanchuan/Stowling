@@ -19,6 +19,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
     private final String itemSource;
     private final Map<String, Integer> requested;
     private final boolean retryOnFailure;
+    private TaskModuleExecutor packing;
     private boolean started;
     private boolean inFlight;
     private boolean stopRequested;
@@ -60,6 +61,11 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             }
             return TaskModuleResult.succeeded("没有需要存入的物品");
         }
+        if (!context.workspace().selectedStorageUsesCacheFallback()
+                && target.storagePolicy().mode() != dev.stowling.v2.model.StorageMode.NORMAL) {
+            packing = context.storageAutomation().deposit(context, target, requested);
+            return packing.start();
+        }
         inFlight = true;
         return handle(context.containerTransfers().startDeposit(
                 target,
@@ -72,6 +78,9 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         if (!started) {
             return start();
         }
+        if (packing != null) {
+            return packing.tick();
+        }
         if (!inFlight) {
             return TaskModuleResult.succeeded("存入操作已完成");
         }
@@ -81,15 +90,21 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
     @Override
     public void requestStop() {
         stopRequested = true;
+        if (packing != null) {
+            packing.requestStop();
+        }
     }
 
     @Override
     public boolean safeToStop() {
-        return !inFlight;
+        return packing == null ? !inFlight : packing.safeToStop();
     }
 
     @Override
     public void cancel() {
+        if (packing != null) {
+            packing.cancel();
+        }
         if (inFlight) {
             context.containerTransfers().cancelDeposit();
         }
@@ -156,7 +171,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 .getOrDefault(target, Set.of());
         Map<String, Integer> filtered = new LinkedHashMap<>();
         for (Map.Entry<String, Integer> entry : items.entrySet()) {
-            if (accepted.contains(entry.getKey())) {
+            if (dev.stowling.automation.ItemIdentity.matches(entry.getKey(), accepted)) {
                 filtered.put(entry.getKey(), entry.getValue());
             }
         }

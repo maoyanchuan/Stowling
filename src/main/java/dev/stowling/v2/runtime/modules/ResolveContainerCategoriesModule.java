@@ -114,9 +114,16 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 }
             }
         }
-        List<ContainerTarget> cacheTargets = cacheScan == null
-                ? List.of()
-                : cacheScan.containers();
+        List<ContainerTarget> cacheTargets = new ArrayList<>(cacheScan == null
+                ? List.of() : cacheScan.containers());
+        for (ContainerTarget temporary : context.storageAutomation().temporaryContainers()) {
+            if (cacheTargets.stream().noneMatch(value ->
+                    value.position().equals(temporary.position()))
+                    && targets.stream().noneMatch(value ->
+                            value.position().equals(temporary.position()))) {
+                cacheTargets.add(temporary);
+            }
+        }
         context.workspace().setResolvedCategories(
                 targets,
                 accepted,

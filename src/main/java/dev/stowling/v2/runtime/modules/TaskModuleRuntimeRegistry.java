@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.Set;
 
 public final class TaskModuleRuntimeRegistry {
+    private StorageAutomationPort storageAutomation = StorageAutomationPort.UNAVAILABLE;
     private final NavigationPort navigation;
     private final DroppedItemObserverPort droppedItems;
     private final PlayerInventoryManager inventory;
@@ -204,6 +205,14 @@ public final class TaskModuleRuntimeRegistry {
                 categoryZones,
                 StandardTaskModuleFactories.create()
         );
+    }
+
+    public void setStorageAutomation(StorageAutomationPort storageAutomation) {
+        this.storageAutomation = Objects.requireNonNull(storageAutomation);
+    }
+
+    public StorageAutomationPort storageAutomation() {
+        return storageAutomation;
     }
 
     public NavigationPort navigation() {

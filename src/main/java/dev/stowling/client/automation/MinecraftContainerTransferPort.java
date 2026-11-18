@@ -643,7 +643,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private static String itemId(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        return MinecraftItemIdentity.key(stack);
     }
 
     private static Map<String, Integer> checkedItems(

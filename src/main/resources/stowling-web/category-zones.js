@@ -781,6 +781,43 @@
             "操作站位区域", "指定台阶或操作位置，随单片平移；允许位于总选区外。",
             standingToggle, standing.content
         ).root;
+        const storageMode = document.createElement("select");
+        for (const [value, label] of [["NORMAL", "普通散装"], ["MIXED", "散装与潜影盒混合"],
+                ["BOX_ONLY", "纯潜影盒"]]) {
+            storageMode.append(new Option(label, value));
+        }
+        storageMode.value = binding.storagePolicy?.mode || "NORMAL";
+        const loosePercent = document.createElement("input");
+        loosePercent.type = "number";
+        loosePercent.min = "0";
+        loosePercent.max = "100";
+        loosePercent.value = String(binding.storagePolicy?.loosePercent ?? 50);
+        const allowPartial = document.createElement("input");
+        allowPartial.type = "checkbox";
+        allowPartial.className = "settings-switch";
+        allowPartial.checked = Boolean(binding.storagePolicy?.allowPartialBoxes);
+        const packingToggle = document.createElement("input");
+        packingToggle.type = "checkbox";
+        packingToggle.checked = Boolean(binding.storagePolicy?.packingArea);
+        const packingValues = {};
+        for (const corner of ["First", "Second"]) {
+            for (const axis of ["X", "Y", "Z"]) {
+                packingValues[`standing${corner}${axis}`] = binding.storagePolicy?.packingArea?.[
+                    `${corner.toLowerCase()}${axis}`] ?? binding[`storage${corner}${axis}`];
+            }
+        }
+        const packing = cornerFields("打包放置区域", "standing", packingValues);
+        const packingSection = Settings.optionalSection("指定打包区域",
+            "留空时就近寻找位置；区域随单片平移，允许位于总选区外。",
+            packingToggle, packing.content).root;
+        const policyBody = Stowling.element("div", "");
+        policyBody.append(field("储存模式", storageMode),
+            field("散装槽位比例（%）", loosePercent),
+            field("允许未满盒入库，下次优先补满", allowPartial), packingSection,
+            Stowling.element("p", "muted compact-help",
+                "关闭未满盒入库时，尾料留缓存凑满；潜影盒功能需要先配置全局储存与收尾。"));
+        const storageSettings = Settings.disclosure("储存与潜影盒打包",
+            "普通、混合或纯盒；混合默认保留一半槽位散装。", policyBody).root;
         const rule = document.createElement("select");
         for (const definition of state.rules) {
             rule.append(new Option(definition.name, definition.id));
@@ -876,13 +913,19 @@
             });
             footer.append(remove);
         }
-        body.append(ranges, standingSection, settings, footer);
+        body.append(ranges, standingSection, storageSettings, settings, footer);
         card.append(summary, body);
         host.append(card);
         return () => ({
             ...marker.read(),
             ...storage.read(),
             standingArea: standingToggle.checked ? readStandingArea(standing.read()) : null,
+            storagePolicy: {
+                mode: storageMode.value,
+                loosePercent: Number(loosePercent.value),
+                allowPartialBoxes: allowPartial.checked,
+                packingArea: packingToggle.checked ? readStandingArea(packing.read()) : null
+            },
             ruleId: rule.value,
             ignoredMarkerBlockIds: parseBlockIds(ignored.value),
             containerOverrides: overrideReaders.map((reader) => reader.read())

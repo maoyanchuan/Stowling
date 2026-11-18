@@ -159,7 +159,8 @@ final class TaskModuleSupport {
                 ruleId,
                 binding.ignoredMarkerBlockIds(),
                 binding.containerOverrides(),
-                binding.standingArea()
+                binding.standingArea(),
+                binding.storagePolicy()
         );
     }
 
@@ -175,6 +176,7 @@ final class TaskModuleSupport {
         if (filter.isEmpty()) {
             return true;
         }
+        itemId = dev.stowling.automation.ItemIdentity.category(itemId);
         int separator = itemId.indexOf(':');
         String path = separator < 0 ? itemId : itemId.substring(separator + 1);
         return filter.contains(itemId) || filter.contains(path);

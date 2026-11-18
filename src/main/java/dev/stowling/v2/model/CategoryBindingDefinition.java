@@ -12,9 +12,11 @@ public record CategoryBindingDefinition(
         String ruleId,
         List<String> ignoredMarkerBlockIds,
         List<CategoryContainerOverrideDefinition> containerOverrides,
-        AreaBounds standingArea
+        AreaBounds standingArea,
+        StoragePolicy storagePolicy
 ) {
     public CategoryBindingDefinition {
+        storagePolicy = storagePolicy == null ? StoragePolicy.DEFAULT : storagePolicy;
         id = Objects.requireNonNull(id, "id");
         markerArea = Objects.requireNonNull(markerArea, "markerArea");
         storageArea = Objects.requireNonNull(storageArea, "storageArea");
@@ -23,6 +25,15 @@ public record CategoryBindingDefinition(
         containerOverrides = containerOverrides == null
                 ? List.of()
                 : List.copyOf(containerOverrides);
+    }
+
+    public CategoryBindingDefinition(
+            UUID id, AreaBounds markerArea, AreaBounds storageArea, String ruleId,
+            List<String> ignoredMarkerBlockIds,
+            List<CategoryContainerOverrideDefinition> containerOverrides, AreaBounds standingArea
+    ) {
+        this(id, markerArea, storageArea, ruleId, ignoredMarkerBlockIds,
+                containerOverrides, standingArea, StoragePolicy.DEFAULT);
     }
 
     public CategoryBindingDefinition(

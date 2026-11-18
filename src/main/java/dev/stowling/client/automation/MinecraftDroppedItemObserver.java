@@ -182,6 +182,6 @@ public final class MinecraftDroppedItemObserver
     }
 
     private static String itemId(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        return MinecraftItemIdentity.key(stack);
     }
 }

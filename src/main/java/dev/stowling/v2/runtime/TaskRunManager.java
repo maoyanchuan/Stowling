@@ -282,7 +282,7 @@ public final class TaskRunManager {
         if (!active.interruptionFailed) {
             throw new IllegalStateException("当前运行没有失败的收尾流程");
         }
-        if (active.prepared.interruptionTask == null
+        if (active.prepared.interruptionTask == null && !requiresGlobalCleanup()
                 && !active.stopFailurePending) {
             throw new IllegalStateException("当前运行没有可重试的收尾流程");
         }
@@ -458,7 +458,7 @@ public final class TaskRunManager {
                         result.message()
                 );
                 case FAILED -> {
-                    if (active.prepared.interruptionTask == null) {
+                    if (active.prepared.interruptionTask == null && !requiresGlobalCleanup()) {
                         finishRun(
                                 TaskRunState.FAILED,
                                 withManagedWarning(result.message())
@@ -470,17 +470,25 @@ public final class TaskRunManager {
                         );
                     }
                 }
-                case SUCCEEDED -> finishRun(
-                        TaskRunState.SUCCEEDED,
-                        active.workspace.hasManagedItems()
-                                ? "任务已完成，但仍有受管物品"
-                                : "任务已完成"
-                );
+                case SUCCEEDED -> {
+                    if (requiresGlobalCleanup() && (active.workspace.hasManagedItems()
+                            || registry.storageAutomation().hasTemporaryResources(
+                                    active.workspace.inventoryAccount().ownerId()))) {
+                        startTermination(TaskRunState.SUCCEEDED, "任务完成，正在全局收尾");
+                    } else {
+                        finishRun(
+                                TaskRunState.SUCCEEDED,
+                                active.workspace.hasManagedItems()
+                                        ? "任务已完成，但仍有受管物品"
+                                        : "任务已完成"
+                        );
+                    }
+                }
             }
         } catch (RuntimeException exception) {
             syncCompletedSteps();
             String message = "流程执行失败: " + safeMessage(exception);
-            if (active.prepared.interruptionTask == null) {
+            if (active.prepared.interruptionTask == null && !requiresGlobalCleanup()) {
                 finishRun(
                         TaskRunState.FAILED,
                         withManagedWarning(message)
@@ -571,9 +579,26 @@ public final class TaskRunManager {
         beginInterruption();
     }
 
+    private boolean requiresGlobalCleanup() {
+        return registry.storageAutomation().cleanupEnabled()
+                || active != null && registry.storageAutomation().hasTemporaryResources(
+                        active.workspace.inventoryAccount().ownerId());
+    }
+
     private void beginInterruption() {
+        if (registry.storageAutomation().cleanupEnabled()) {
+            registry.inventory().observe();
+            registry.inventory().claimUnexpected(active.workspace.inventoryAccount(), Set.of());
+        }
         TaskDefinition cleanup = active.prepared.interruptionTask;
-        if (cleanup == null || !active.workspace.hasManagedItems()) {
+        if (requiresGlobalCleanup()) {
+            cleanup = new TaskDefinition(UUID.randomUUID(), "全局物品收尾",
+                    List.of(TaskStep.action(UUID.randomUUID(), "GLOBAL_INVENTORY_CLEANUP",
+                            Map.of())));
+        }
+        if (cleanup == null || !active.workspace.hasManagedItems()
+                && !registry.storageAutomation().hasTemporaryResources(
+                        active.workspace.inventoryAccount().ownerId())) {
             finishTerminated();
             return;
         }
@@ -1051,7 +1076,8 @@ public final class TaskRunManager {
                 prepared.regions,
                 prepared.categoryZones,
                 workspace,
-                registry.inventory()
+                registry.inventory(),
+                registry.storageAutomation()
         );
     }
 

@@ -234,6 +234,25 @@ public final class V2ControlServer implements AutoCloseable {
             String method,
             String body
     ) throws IOException {
+        if ("/v1/storage-settings".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.storageSettings());
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("revision", "settings"));
+                var settings = V2Json.gson().fromJson(json.get("settings"),
+                        dev.stowling.v2.model.StorageAutomationSettings.class);
+                if (settings == null) {
+                    throw invalid("settings must be an object");
+                }
+                sendJson(exchange, 200, service.saveStorageSettings(
+                        string(json, "revision"), settings));
+            } else {
+                throw methodNotAllowed("GET, PUT");
+            }
+            return;
+        }
         if ("/v1/status".equals(path)) {
             requireMethod(method, "GET");
             requireEmpty(body);
@@ -1012,7 +1031,8 @@ public final class V2ControlServer implements AutoCloseable {
                             "ruleId",
                             "ignoredMarkerBlockIds",
                             "containerOverrides",
-                            "standingArea"
+                            "standingArea",
+                            "storagePolicy"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -1046,10 +1066,22 @@ public final class V2ControlServer implements AutoCloseable {
                     string(binding, "ruleId"),
                     stringArray(binding, "ignoredMarkerBlockIds"),
                     containerOverrideRequests(binding),
-                    standingArea(binding)
+                    standingArea(binding),
+                    storagePolicy(binding)
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static dev.stowling.v2.model.StoragePolicy storagePolicy(JsonObject binding) {
+        JsonElement value = binding.get("storagePolicy");
+        if (value == null || value.isJsonNull()) {
+            return dev.stowling.v2.model.StoragePolicy.DEFAULT;
+        }
+        JsonObject policy = jsonObject(value, "storagePolicy");
+        requireFieldsAny(policy, Set.of("mode", "loosePercent", "allowPartialBoxes", "packingArea"),
+                Set.of("mode", "loosePercent", "allowPartialBoxes"));
+        return V2Json.gson().fromJson(policy, dev.stowling.v2.model.StoragePolicy.class);
     }
 
     private static dev.stowling.v2.model.AreaBounds standingArea(JsonObject binding) {
@@ -1616,6 +1648,7 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/region-model.js", js)
                 ),
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
+                Map.entry("/storage-settings.js", read("stowling-web/storage-settings.js", js)),
                 Map.entry(
                         "/task-monitor-model.js",
                         read("stowling-web/task-monitor-model.js", js)

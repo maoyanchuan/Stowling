@@ -47,6 +47,50 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class TaskInterruptionLifecycleTest {
+    @Test
+    void globalCleanupAppliesWithoutAnyTaskSpecificInterruptionFlow() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        TaskModuleRuntimeRegistry registry = registry(navigation);
+        AtomicInteger cleaned = new AtomicInteger();
+        registry.setStorageAutomation(
+                new dev.stowling.v2.runtime.modules.StorageAutomationPort() {
+                    @Override
+                    public boolean cleanupEnabled() {
+                        return true;
+                    }
+
+                    @Override
+                    public TaskModuleExecutor deposit(TaskExecutionContext context,
+                            ContainerTarget target, Map<String, Integer> items) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                        return new TestAction(context) {
+                            @Override
+                            public TaskModuleResult start() {
+                                cleaned.incrementAndGet();
+                                context.workspace().consumeDeposit("managed",
+                                        context.workspace().managedItems(), Map.of());
+                                return TaskModuleResult.succeeded("returned to temporary storage");
+                            }
+                        };
+                    }
+                });
+        TaskRunManager manager = new TaskRunManager(navigation, registry);
+        TaskDefinition task = task("Independent", TaskPriority.NORMAL,
+                TaskInterruptionMode.NONE, actionStep(ADD_MANAGED), actionStep(SLOW));
+        TaskRunSnapshot run = manager.start(task, List.of());
+        manager.tick();
+        manager.cancel(run.runId());
+        for (int tick = 0; tick < 12; tick++) {
+            manager.tick();
+        }
+        assertEquals(1, cleaned.get());
+        assertEquals(TaskRunState.CANCELLED, runState(manager, run.runId()));
+    }
+
     private static final String ADD_MANAGED = "TEST_ADD_MANAGED";
     private static final String CLEAR_MANAGED = "TEST_CLEAR_MANAGED";
     private static final String SLOW = "TEST_SLOW";

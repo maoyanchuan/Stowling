@@ -22,6 +22,7 @@
             storageSecondY: Number(storage.secondY ?? 64),
             storageSecondZ: Number(storage.secondZ ?? 0),
             standingArea: value?.standingArea ? normalizeArea(value.standingArea) : null,
+            storagePolicy: normalizeStoragePolicy(value?.storagePolicy),
             ruleId: String(value?.ruleId || "DIRECT_BLOCK_ID"),
             ignoredMarkerBlockIds: Array.isArray(value?.ignoredMarkerBlockIds)
                 ? value.ignoredMarkerBlockIds
@@ -38,6 +39,16 @@
      * @param {object} value
      * @returns {object}
      */
+    function normalizeStoragePolicy(value) {
+        return {
+            mode: String(value?.mode || "NORMAL"),
+            loosePercent: Number(value?.loosePercent ?? 50),
+            allowPartialBoxes: Boolean(value?.allowPartialBoxes),
+            packingArea: value?.packingArea ? normalizeArea(value.packingArea) : null
+        };
+    }
+
+    /** @param {object} value @returns {object} */
     function normalizeArea(value) {
         const result = {};
         for (const corner of ["first", "second"]) {
@@ -134,6 +145,7 @@
                 storageSecondY: Number(binding.storageSecondY),
                 storageSecondZ: Number(binding.storageSecondZ),
                 standingArea: binding.standingArea ? normalizeArea(binding.standingArea) : null,
+                storagePolicy: normalizeStoragePolicy(binding.storagePolicy),
                 ruleId: String(binding.ruleId),
                 ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
                 containerOverrides: binding.containerOverrides.map(
@@ -179,7 +191,14 @@
             requireCoordinate(second);
             limits[axis] = [Math.min(first, second), Math.max(first, second)];
             for (const binding of bindings) {
-                for (const kind of ["marker", "storage"]) {
+                if (binding.storagePolicy?.packingArea) {
+                const area = normalizeArea(binding.storagePolicy.packingArea);
+                for (const corner of ["first", "second"]) {
+                    area[`${corner}${axis}`] += anchor - minimum;
+                }
+                result.storagePolicy = {...binding.storagePolicy, packingArea: area};
+            }
+            for (const kind of ["marker", "storage"]) {
                     const bounds = bindingBounds(binding, kind, axis);
                     if (bounds[0] < limits[axis][0] || bounds[1] > limits[axis][1]) {
                         throw new RangeError("单片母版必须完整位于总选区内");
@@ -236,6 +255,13 @@
                     standing[`second${axis}`] += anchor - minimum;
                 }
                 result.standingArea = standing;
+            }
+            if (binding.storagePolicy?.packingArea) {
+                const area = normalizeArea(binding.storagePolicy.packingArea);
+                for (const corner of ["first", "second"]) {
+                    area[`${corner}${axis}`] += anchor - minimum;
+                }
+                result.storagePolicy = {...binding.storagePolicy, packingArea: area};
             }
             for (const kind of ["marker", "storage"]) {
                 result[`${kind}First${axis}`] = anchor;

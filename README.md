@@ -5,6 +5,29 @@ coordinates, regions, category zones, queued tasks, and condition listeners.
 Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
+Category binding templates support loose, mixed, and box-only storage. Mixed storage
+reserves 50% of the target's slots for loose items by default. The optional partial-box
+switch stores unfinished boxes alongside full boxes and refills them before opening
+another box. With the switch off, tails wait in the cache until a full box can be made.
+Box capacity uses 27 times the item's actual stack limit.
+
+Configure **全局储存与中断收尾** on the task or coordinate page before enabling box
+storage: list temporary chests separately from empty-box supply chests, and enable
+global cleanup. The optional fallback position is the block occupied by a placed box,
+not the support block. Each binding can specify a packing area outside its selection;
+the area moves with each generated slice. Otherwise, packing chooses a nearby clear
+position with solid support and opening space. Inventory reserves two free slots during
+cache withdrawal so a box can be acquired and recovered.
+
+The shared runner cleanup waits for in-flight transfers, recovers registered boxes,
+and deposits task-owned loose items and boxes into nearby temporary chests. Personal
+inventory and working tools remain protected. Temporary chests participate in later
+classification. If recovery or storage is blocked, the run retains its interruption
+slot for retry; tasks do not need individual packing cleanup flows. Global storage
+settings are persisted in `config/stowling-storage-settings.json`. Temporary world
+resource ownership is currently kept for the active client session; finish or cancel
+tasks before shutting down the client.
+
 The task page uses a two-column console. A narrow left rail keeps active runs,
 queued runs, and listening tasks visible in urgent / normal / background priority
 order. Its lower half shows page-session task state changes, with export, clear,

@@ -1,6 +1,8 @@
 package dev.stowling.client.automation;
 
+import dev.stowling.automation.ClassificationBatchPolicy;
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
 import dev.stowling.automation.ItemIdentity;
@@ -8,7 +10,6 @@ import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
-import dev.stowling.v2.model.StoragePackingPlanner;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -68,8 +69,18 @@ public final class MinecraftContainerWithdrawalPort
         return startWithdrawal(target, matchingItemIds, true);
     }
 
+    @Override
+    public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
+            Set<String> matchingItemIds, Set<String> fullBoxCategories) {
+        ContainerWithdrawalResult result = startClassificationBatch(target, matchingItemIds);
+        if (result.state() == ContainerTransferState.PENDING) {
+            active.batchPolicy = new ClassificationBatchPolicy(fullBoxCategories);
+        }
+        return result;
+    }
+
     private ContainerWithdrawalResult startWithdrawal(
-            ContainerTarget target, Set<String> matchingItemIds, boolean singleCategory) {
+            ContainerTarget target, Set<String> matchingItemIds, boolean classificationBatch) {
         Objects.requireNonNull(target, "target");
         Set<String> itemIds = checkedItemIds(matchingItemIds);
         if (!scheduler.isClientThread()) {
@@ -93,7 +104,7 @@ public final class MinecraftContainerWithdrawalPort
                     false
             );
         }
-        active = new ActiveWithdrawal(target, itemIds, singleCategory);
+        active = new ActiveWithdrawal(target, itemIds, classificationBatch);
         if (target.partner() != null) {
             active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
         }
@@ -187,7 +198,7 @@ public final class MinecraftContainerWithdrawalPort
                     active.matchingItemIds
             );
             String message = !remaining ? "缓存中没有可分类物品"
-                    : active.singleCategory && !active.withdrawn.isEmpty()
+                    : active.classificationBatch && !active.withdrawn.isEmpty()
                             ? "本批取出完成，缓存仍有待分类物品"
                             : "玩家背包空间不足，稍后继续";
             return complete(message, remaining);
@@ -223,7 +234,7 @@ public final class MinecraftContainerWithdrawalPort
                     moved,
                     Math::addExact
             );
-            active.confirmedStacks++;
+            active.batchPolicy.recordConfirmed(active.pendingItemId);
             active.phase = Phase.READY;
             active.deadline = Instant.now().plus(WITHDRAW_TIMEOUT);
             active.pendingItemId = "";
@@ -266,11 +277,11 @@ public final class MinecraftContainerWithdrawalPort
             AbstractContainerMenu menu,
             ActiveWithdrawal batch
     ) {
-        if (batch.singleCategory && batch.confirmedStacks >= StoragePackingPlanner.BOX_SLOTS) {
+        if (batch.classificationBatch && !batch.batchPolicy.hasCapacity()) {
             return null;
         }
-        String category = batch.singleCategory ? batch.withdrawn.keySet().stream().findFirst()
-                .map(ItemIdentity::category).orElse(null) : null;
+        Candidate best = null;
+        int fewestStacks = Integer.MAX_VALUE;
         for (int slotIndex : containerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
@@ -278,16 +289,26 @@ public final class MinecraftContainerWithdrawalPort
                 continue;
             }
             String itemId = itemId(stack);
-            if (!ItemIdentity.matches(itemId, batch.matchingItemIds)
-                    || category != null && !category.equals(ItemIdentity.category(itemId))) {
+            if (!ItemIdentity.matches(itemId, batch.matchingItemIds)) {
+                continue;
+            }
+            if (batch.classificationBatch && !batch.batchPolicy.accepts(itemId)) {
                 continue;
             }
             if (playerCapacity(menu, stack) < stack.getCount()) {
                 continue;
             }
-            return new Candidate(slotIndex, itemId, stack.getCount());
+            Candidate candidate = new Candidate(slotIndex, itemId, stack.getCount());
+            if (!batch.classificationBatch) {
+                return candidate;
+            }
+            int taken = batch.batchPolicy.priority(itemId);
+            if (taken < fewestStacks) {
+                best = candidate;
+                fewestStacks = taken;
+            }
         }
-        return null;
+        return best;
     }
 
     private static int playerCapacity(
@@ -454,9 +475,9 @@ public final class MinecraftContainerWithdrawalPort
         private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private final Set<String> matchingItemIds;
-        private final boolean singleCategory;
+        private final boolean classificationBatch;
         private final Map<String, Integer> withdrawn = new LinkedHashMap<>();
-        private int confirmedStacks;
+        private ClassificationBatchPolicy batchPolicy = new ClassificationBatchPolicy(Set.of());
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;
@@ -469,11 +490,11 @@ public final class MinecraftContainerWithdrawalPort
         private ActiveWithdrawal(
                 ContainerTarget target,
                 Set<String> matchingItemIds,
-                boolean singleCategory
+                boolean classificationBatch
         ) {
             this.target = target;
             this.matchingItemIds = matchingItemIds;
-            this.singleCategory = singleCategory;
+            this.classificationBatch = classificationBatch;
         }
     }
 }

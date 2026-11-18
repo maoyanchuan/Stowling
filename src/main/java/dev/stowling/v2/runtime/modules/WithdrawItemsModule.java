@@ -3,11 +3,14 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
+import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.TaskStep;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,9 +30,7 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         this.target = target(context, step);
         this.matchingItemIds = matchingItems(context, step, target);
         this.classificationBatch = context.workspace().cacheContainers().contains(target)
-                && context.workspace().acceptedItemsByContainer().keySet().stream()
-                .anyMatch(container -> container.storagePolicy().mode()
-                        != dev.stowling.v2.model.StorageMode.NORMAL);
+                && !context.workspace().acceptedItemsByContainer().isEmpty();
     }
 
     @Override
@@ -40,8 +41,21 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         started = true;
         inFlight = true;
         return handle(classificationBatch
-                ? context.containerWithdrawals().startClassificationBatch(target, matchingItemIds)
+                ? context.containerWithdrawals().startClassificationBatch(target, matchingItemIds,
+                        fullBoxCategories())
                 : context.containerWithdrawals().startWithdrawal(target, matchingItemIds));
+    }
+
+    private Set<String> fullBoxCategories() {
+        Set<String> categories = new LinkedHashSet<>();
+        context.workspace().acceptedItemsByContainer().forEach((container, accepted) -> {
+            if (container.storagePolicy().mode() != StorageMode.NORMAL
+                    && !container.storagePolicy().allowPartialBoxes()) {
+                accepted.stream().map(ItemIdentity::category)
+                        .forEach(categories::add);
+            }
+        });
+        return Set.copyOf(categories);
     }
 
     @Override

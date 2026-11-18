@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ClassificationRoutePlanner;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ItemIdentity;
@@ -40,6 +41,7 @@ public final class TaskRunWorkspace {
     private boolean storageUsesCacheFallback;
     private int containerCursor;
     private final Set<BlockPosition> triedStorage = new LinkedHashSet<>();
+    private final List<ContainerTarget> storageRoute = new ArrayList<>();
     private final Set<String> deferredCacheCategories = new LinkedHashSet<>();
     private int markerCursor;
     private UUID markerZoneId;
@@ -158,6 +160,7 @@ public final class TaskRunWorkspace {
         }
         containerCursor = 0;
         triedStorage.clear();
+        storageRoute.clear();
         selectedContainer = null;
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
@@ -205,6 +208,7 @@ public final class TaskRunWorkspace {
         classifiedItemIds = Set.copyOf(itemIds);
         unavailableTargets.clear();
         triedStorage.clear();
+        storageRoute.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
     }
@@ -233,6 +237,7 @@ public final class TaskRunWorkspace {
         unavailableTargets.clear();
         containerCursor = 0;
         triedStorage.clear();
+        storageRoute.clear();
         selectedContainer = null;
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
@@ -266,6 +271,7 @@ public final class TaskRunWorkspace {
         selectedContainer = containerCandidates.get(containerCursor++);
         deferredCacheCategories.clear();
         triedStorage.clear();
+        storageRoute.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
         cacheHasMore = true;
@@ -351,7 +357,7 @@ public final class TaskRunWorkspace {
             storageUsesCacheFallback = false;
             return Optional.empty();
         }
-        Optional<ContainerTarget> next = targetContainers.stream()
+        List<ContainerTarget> candidates = targetContainers.stream()
                 .filter(candidate -> !triedStorage.contains(candidate.position()))
                 .filter(candidate -> !isUnavailable(candidate))
                 .filter(candidate -> selectedContainer == null
@@ -359,7 +365,23 @@ public final class TaskRunWorkspace {
                 .filter(candidate -> items.keySet().stream().anyMatch(itemId ->
                         dev.stowling.automation.ItemIdentity.matches(itemId,
                                 acceptedItemsByContainer.getOrDefault(candidate, Set.of()))))
-                .min(order);
+                .toList();
+        Optional<ContainerTarget> next;
+        if ("carried".equals(itemSource) && selectedContainer != null
+                && !cacheContainers.isEmpty()) {
+            storageRoute.removeIf(target -> !candidates.contains(target));
+            if (storageRoute.isEmpty()) {
+                BlockPosition start = selectedStorageTarget == null
+                        ? selectedContainer.position() : selectedStorageTarget.position();
+                storageRoute.addAll(ClassificationRoutePlanner.plan(start,
+                        selectedContainer.position(), candidates, acceptedItemsByContainer,
+                        items.keySet(), order));
+            }
+            next = storageRoute.isEmpty() ? Optional.empty()
+                    : Optional.of(storageRoute.removeFirst());
+        } else {
+            next = candidates.stream().min(order);
+        }
         if (next.isPresent()) {
             selectedStorageTarget = next.orElseThrow();
             triedStorage.add(selectedStorageTarget.position());
@@ -396,6 +418,7 @@ public final class TaskRunWorkspace {
 
     public synchronized void resetStorageSelection() {
         triedStorage.clear();
+        storageRoute.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
     }

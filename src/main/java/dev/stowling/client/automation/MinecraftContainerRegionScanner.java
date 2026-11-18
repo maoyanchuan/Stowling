@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -113,13 +112,17 @@ public final class MinecraftContainerRegionScanner
                             if (isChest(id)
                                     && state.getValue(ChestBlock.TYPE)
                                     != ChestType.SINGLE) {
-                                BlockPosition partner = blockPosition(
-                                        ChestBlock.getConnectedBlockPos(
-                                                position,
-                                                state
-                                        )
-                                );
-                                chestPartners.put(target.position(), partner);
+                                BlockPos other = ChestBlock.getConnectedBlockPos(position, state);
+                                if (level.isLoaded(other)) {
+                                    BlockState otherState = level.getBlockState(other);
+                                    if (otherState.is(state.getBlock())
+                                            && otherState.getValue(ChestBlock.TYPE)
+                                            != ChestType.SINGLE
+                                            && ChestBlock.getConnectedBlockPos(other, otherState)
+                                                    .equals(position)) {
+                                        chestPartners.put(target.position(), blockPosition(other));
+                                    }
+                                }
                             }
                         }
                     }
@@ -146,10 +149,6 @@ public final class MinecraftContainerRegionScanner
             List<ContainerTarget> containers,
             Map<BlockPosition, BlockPosition> chestPartners
     ) {
-        Map<BlockPosition, ContainerTarget> byPosition = new LinkedHashMap<>();
-        for (ContainerTarget container : containers) {
-            byPosition.put(container.position(), container);
-        }
         Set<BlockPosition> collapsed = new HashSet<>();
         List<ContainerTarget> result = new ArrayList<>();
         for (ContainerTarget container : containers) {
@@ -171,17 +170,12 @@ public final class MinecraftContainerRegionScanner
                     container.position(),
                     partnerPosition
             ) <= 0 ? container.position() : partnerPosition;
-            if (!byPosition.containsKey(representative)) {
-                result.add(container);
-                continue;
-            }
-            if (!container.position().equals(representative)) {
-                collapsed.add(container.position());
-                continue;
-            }
             collapsed.add(container.position());
             collapsed.add(partnerPosition);
-            result.add(byPosition.get(representative));
+            BlockPosition other = representative.equals(container.position())
+                    ? partnerPosition : container.position();
+            result.add(new ContainerTarget(representative, container.type(),
+                    container.standingArea(), container.storagePolicy(), other));
         }
         return result;
     }

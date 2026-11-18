@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerTarget;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,6 +24,10 @@ public interface StorageAutomationPort {
             Map<String, Integer> items);
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
+
+    default Comparator<ContainerTarget> storageOrder(Map<String, Integer> items) {
+        return (first, second) -> 0;
+    }
 
     default java.util.Optional<TaskModuleExecutor> prepareDeposit(
             TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items) {

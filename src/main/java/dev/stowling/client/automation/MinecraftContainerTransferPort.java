@@ -4,6 +4,9 @@ import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.automation.NavigationPort;
+import dev.stowling.v2.runtime.modules.TaskModuleResult;
+import dev.stowling.v2.runtime.modules.TaskModuleState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -36,14 +39,17 @@ public final class MinecraftContainerTransferPort
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private final NavigationPort navigation;
     private ActiveDeposit active;
 
     public MinecraftContainerTransferPort(
             Minecraft minecraft,
-            ClientActionScheduler scheduler
+            ClientActionScheduler scheduler,
+            NavigationPort navigation
     ) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.navigation = Objects.requireNonNull(navigation, "navigation");
     }
 
     @Override
@@ -70,6 +76,9 @@ public final class MinecraftContainerTransferPort
             );
         }
         active = new ActiveDeposit(target, remaining);
+        if (target.partner() != null) {
+            active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
+        }
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerTransferResult.pending("正在打开容器", remaining);
     }
@@ -88,7 +97,7 @@ public final class MinecraftContainerTransferPort
                     Map.of()
             );
         }
-        if (Instant.now().isAfter(active.deadline)) {
+        if (active.visit == null && Instant.now().isAfter(active.deadline)) {
             return timeout();
         }
         return switch (active.phase) {
@@ -109,6 +118,9 @@ public final class MinecraftContainerTransferPort
             closeContainer();
             return;
         }
+        if (active.visit != null) {
+            active.visit.cancelNavigation();
+        }
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen != null) {
             AbstractContainerMenu menu = screen.getMenu();
@@ -128,6 +140,18 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult pollOpening() {
+        if (active.visit != null) {
+            TaskModuleResult visit = active.visit.tick();
+            if (visit.state() == TaskModuleState.FAILED) {
+                return finishFailure(visit.message());
+            }
+            if (visit.state() != TaskModuleState.SUCCEEDED) {
+                return ContainerTransferResult.pending(visit.message(), remaining());
+            }
+            active.visit = null;
+            active.openSent = true;
+            active.deadline = Instant.now().plus(OPEN_TIMEOUT);
+        }
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen != null) {
             if (!active.openSent) {
@@ -691,6 +715,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private static final class ActiveDeposit {
+        private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private final Map<String, Integer> remaining;
         private Phase phase = Phase.OPENING;

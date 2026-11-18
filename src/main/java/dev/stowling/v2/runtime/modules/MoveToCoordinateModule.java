@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.automation.ContainerApproach;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
@@ -13,6 +14,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
     private final ResourceReference targetReference;
     private CoordinatePoint coordinate;
     private ContainerTarget container;
+    private ContainerApproach approach;
     private BlockPosition position;
     private String targetName = "目标";
     private boolean navigationStarted;
@@ -51,15 +53,13 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
             );
         }
         NavigationStatus status;
-        if (!navigationStarted) {
+        if (approach != null) {
+            status = approach.tick();
+        } else if (!navigationStarted) {
             navigationStarted = true;
-            status = startNavigation();
+            status = context.navigation().start(position);
         } else {
-            status = context.navigation().status(position, container == null ? 0 : null);
-        }
-        if (status == NavigationStatus.ARRIVED && container != null
-                && container.standingArea() != null && !isAtContainer()) {
-            return TaskModuleResult.failed("未能在指定操作站位区域内到达容器交互范围");
+            status = context.navigation().status(position, 0);
         }
         return switch (status) {
             case ARRIVED -> TaskModuleResult.succeeded("已到达 " + targetName);
@@ -68,23 +68,28 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
                     ? TaskModuleResult.succeeded(
                             "已在容器交互范围内 " + position
                     )
-                    : TaskModuleResult.failed(
-                            "无法前往 " + targetName + " " + position
-                    );
+                    : unreachable();
         };
     }
 
     private boolean isAtContainer() {
-        return container != null && context.navigation().isWithinInteractionRange(
-                position, container.standingArea()
-        );
+        if (container == null || approach == null || container.partner() != null) {
+            return false;
+        }
+        if (!context.navigation().isWithinInteractionRange(position, container.standingArea())) {
+            return false;
+        }
+        approach.cancel();
+        return true;
     }
 
-    private NavigationStatus startNavigation() {
-        if (container != null) {
-            return context.navigation().startInteraction(position, container.standingArea());
+    private TaskModuleResult unreachable() {
+        if (container != null && "storage".equals(targetReference.key())
+                && context.workspace().isClassificationStorage(container)) {
+            context.workspace().markTargetUnavailable(container);
+            return TaskModuleResult.succeeded("无法前往分类箱 " + position + "，尝试同组下一箱");
         }
-        return context.navigation().start(position);
+        return TaskModuleResult.failed("无法前往 " + targetName + " " + position);
     }
 
     @Override
@@ -132,6 +137,8 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         );
         position = container.position();
         targetName = container.type();
+        approach = new ContainerApproach(context.navigation(), container.standingArea(),
+                container.entrances());
     }
 
     private static int manualCoordinate(TaskStep step, String key) {

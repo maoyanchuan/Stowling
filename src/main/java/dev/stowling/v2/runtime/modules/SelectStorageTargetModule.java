@@ -31,8 +31,10 @@ final class SelectStorageTargetModule implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult start() {
-        ContainerTarget target = context.workspace()
-                .selectStorageTarget(itemSource, allowCacheFallback).orElse(null);
+        Map<String, Integer> items = context.workspace().itemsForSource(itemSource);
+        ContainerTarget target = context.workspace().selectStorageTarget(
+                itemSource, allowCacheFallback, context.storageAutomation().storageOrder(items))
+                .orElse(null);
         if (target == null) {
             return TaskModuleResult.failed("没有可用的分类目的容器");
         }
@@ -44,7 +46,7 @@ final class SelectStorageTargetModule implements TaskModuleExecutor {
             Set<String> accepted = context.workspace().acceptedItemsByContainer()
                     .getOrDefault(target, Set.of());
             Map<String, Integer> incoming = new LinkedHashMap<>();
-            context.workspace().itemsForSource(itemSource).forEach((key, count) -> {
+            items.forEach((key, count) -> {
                 if (ItemIdentity.matches(key, accepted)) {
                     incoming.put(key, count);
                 }

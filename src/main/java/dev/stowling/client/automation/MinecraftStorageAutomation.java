@@ -3,6 +3,7 @@ package dev.stowling.client.automation;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.inventory.RecordedStorageCapacity;
 import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
@@ -91,6 +92,42 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             return Optional.empty();
         }
         return Optional.of(new PrepareBox(context, target, items));
+    }
+
+    @Override
+    public Comparator<ContainerTarget> storageOrder(Map<String, Integer> items) {
+        if (minecraft.player == null || items.isEmpty()) {
+            return StorageAutomationPort.super.storageOrder(items);
+        }
+        WarehouseInventory snapshot = warehouse.get();
+        Map<BlockPosition, WarehouseInventory.Container> records = new LinkedHashMap<>();
+        Map<String, Integer> stackSizes = new LinkedHashMap<>();
+        for (ItemStack stack : inventoryStacks()) {
+            stackSizes.put(MinecraftItemIdentity.key(stack), stack.getMaxStackSize());
+        }
+        if (snapshot != null) {
+            for (WarehouseInventory.Container stock : snapshot.containers()) {
+                if (stock.dimension().equals(snapshot.currentDimension())) {
+                    stock.positions().forEach(position -> records.put(position, stock));
+                }
+            }
+        }
+        return Comparator.<ContainerTarget>comparingInt(target -> RecordedStorageCapacity.rank(
+                        records.get(target.position()), target.storagePolicy(), items, stackSizes))
+                .thenComparingDouble(this::storageDistance)
+                .thenComparingDouble(target -> target.entrances().stream()
+                        .mapToDouble(this::distance).min().orElseThrow());
+    }
+
+    private double storageDistance(ContainerTarget target) {
+        AreaBounds area = target.standingArea();
+        if (area == null) {
+            return target.entrances().stream().mapToDouble(this::distance).min().orElseThrow();
+        }
+        BlockPos feet = minecraft.player.blockPosition();
+        return distance(new BlockPosition(Math.clamp(feet.getX(), area.minX(), area.maxX()),
+                Math.clamp(feet.getY(), area.minY(), area.maxY()),
+                Math.clamp(feet.getZ(), area.minZ(), area.maxZ())));
     }
 
     @Override

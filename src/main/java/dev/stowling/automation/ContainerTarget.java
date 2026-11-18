@@ -2,19 +2,27 @@ package dev.stowling.automation;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.StoragePolicy;
+import java.util.List;
 import java.util.Objects;
 
 public record ContainerTarget(
         BlockPosition position,
         String type,
         AreaBounds standingArea,
-        dev.stowling.v2.model.StoragePolicy storagePolicy
+        StoragePolicy storagePolicy,
+        BlockPosition partner
 ) {
     public ContainerTarget {
         storagePolicy = storagePolicy == null
-                ? dev.stowling.v2.model.StoragePolicy.DEFAULT : storagePolicy;
+                ? StoragePolicy.DEFAULT : storagePolicy;
         position = Objects.requireNonNull(position, "position");
         type = requireText(type, "type");
+    }
+
+    public ContainerTarget(BlockPosition position, String type, AreaBounds standingArea,
+            StoragePolicy storagePolicy) {
+        this(position, type, standingArea, storagePolicy, null);
     }
 
     public ContainerTarget(BlockPosition position, String type, AreaBounds standingArea) {
@@ -23,6 +31,14 @@ public record ContainerTarget(
 
     public ContainerTarget(BlockPosition position, String type) {
         this(position, type, null);
+    }
+
+    public List<BlockPosition> entrances() {
+        return partner == null ? List.of(position) : List.of(position, partner);
+    }
+
+    public ContainerTarget withStandingArea(AreaBounds area, StoragePolicy policy) {
+        return new ContainerTarget(position, type, area, policy, partner);
     }
 
     private static String requireText(String value, String field) {

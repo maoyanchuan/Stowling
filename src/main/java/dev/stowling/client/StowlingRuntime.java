@@ -100,9 +100,9 @@ public final class StowlingRuntime implements AutoCloseable {
                 navigationPort,
                 new MinecraftDroppedItemObserver(minecraft, scheduler),
                 containerScanner,
-                new MinecraftContainerTransferPort(minecraft, scheduler),
-                new MinecraftContainerWithdrawalPort(minecraft, scheduler),
-                new MinecraftContainerInspectionPort(minecraft, scheduler),
+                new MinecraftContainerTransferPort(minecraft, scheduler, navigationPort),
+                new MinecraftContainerWithdrawalPort(minecraft, scheduler, navigationPort),
+                new MinecraftContainerInspectionPort(minecraft, scheduler, navigationPort),
                 categoryMarkerCache,
                 new MinecraftFoodConsumptionPort(minecraft, scheduler),
                 new MinecraftCategoryZoneResolver(

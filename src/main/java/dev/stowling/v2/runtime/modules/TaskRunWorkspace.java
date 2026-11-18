@@ -5,6 +5,7 @@ import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.domain.BlockPosition;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,7 +37,7 @@ public final class TaskRunWorkspace {
     private ContainerTarget selectedMarkerContainer;
     private boolean storageUsesCacheFallback;
     private int containerCursor;
-    private int storageCursor;
+    private final Set<BlockPosition> triedStorage = new LinkedHashSet<>();
     private int markerCursor;
     private UUID markerZoneId;
     private final Set<BlockPosition> readMarkerPositions =
@@ -152,7 +153,7 @@ public final class TaskRunWorkspace {
             containerCandidates.addAll(scan.containers());
         }
         containerCursor = 0;
-        storageCursor = 0;
+        triedStorage.clear();
         selectedContainer = null;
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
@@ -184,7 +185,7 @@ public final class TaskRunWorkspace {
         }
         classifiedItemIds = Set.copyOf(itemIds);
         unavailableTargets.clear();
-        storageCursor = 0;
+        triedStorage.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
     }
@@ -212,7 +213,7 @@ public final class TaskRunWorkspace {
         classifiedItemIds = Set.copyOf(itemIds);
         unavailableTargets.clear();
         containerCursor = 0;
-        storageCursor = 0;
+        triedStorage.clear();
         selectedContainer = null;
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
@@ -243,7 +244,7 @@ public final class TaskRunWorkspace {
             return Optional.empty();
         }
         selectedContainer = containerCandidates.get(containerCursor++);
-        storageCursor = 0;
+        triedStorage.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
         cacheHasMore = true;
@@ -300,32 +301,31 @@ public final class TaskRunWorkspace {
             String itemSource,
             boolean allowCacheFallback
     ) {
+        return selectStorageTarget(itemSource, allowCacheFallback, (first, second) -> 0);
+    }
+
+    public synchronized Optional<ContainerTarget> selectStorageTarget(String itemSource,
+            boolean allowCacheFallback, Comparator<ContainerTarget> order) {
         Map<String, Integer> items = itemsForSource(itemSource);
         if (items.isEmpty()) {
             selectedStorageTarget = null;
             storageUsesCacheFallback = false;
             return Optional.empty();
         }
-        while (storageCursor < targetContainers.size()) {
-            ContainerTarget candidate = targetContainers.get(storageCursor++);
-            if (isUnavailable(candidate)
-                    || selectedContainer != null
-                    && selectedContainer.position().equals(
-                            candidate.position()
-                    )) {
-                continue;
-            }
-            Set<String> accepted = acceptedItemsByContainer.getOrDefault(
-                    candidate,
-                    Set.of()
-            );
-            for (String itemId : items.keySet()) {
-                if (dev.stowling.automation.ItemIdentity.matches(itemId, accepted)) {
-                    selectedStorageTarget = candidate;
-                    storageUsesCacheFallback = false;
-                    return Optional.of(candidate);
-                }
-            }
+        Optional<ContainerTarget> next = targetContainers.stream()
+                .filter(candidate -> !triedStorage.contains(candidate.position()))
+                .filter(candidate -> !isUnavailable(candidate))
+                .filter(candidate -> selectedContainer == null
+                        || !selectedContainer.position().equals(candidate.position()))
+                .filter(candidate -> items.keySet().stream().anyMatch(itemId ->
+                        dev.stowling.automation.ItemIdentity.matches(itemId,
+                                acceptedItemsByContainer.getOrDefault(candidate, Set.of()))))
+                .min(order);
+        if (next.isPresent()) {
+            selectedStorageTarget = next.orElseThrow();
+            triedStorage.add(selectedStorageTarget.position());
+            storageUsesCacheFallback = false;
+            return next;
         }
         if (allowCacheFallback
                 && selectedContainer != null
@@ -356,7 +356,7 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized void resetStorageSelection() {
-        storageCursor = 0;
+        triedStorage.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
     }
@@ -365,6 +365,10 @@ public final class TaskRunWorkspace {
         if (target != null) {
             unavailableTargets.add(target);
         }
+    }
+
+    public synchronized boolean isRejectedStorage(ContainerTarget target) {
+        return target.equals(selectedStorageTarget) && isUnavailable(target);
     }
 
     private boolean isUnavailable(ContainerTarget target) {

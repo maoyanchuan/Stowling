@@ -4,6 +4,9 @@ import dev.stowling.automation.ContainerInspectionPort;
 import dev.stowling.automation.ContainerInspectionResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.automation.NavigationPort;
+import dev.stowling.v2.runtime.modules.TaskModuleResult;
+import dev.stowling.v2.runtime.modules.TaskModuleState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
@@ -30,14 +33,17 @@ public final class MinecraftContainerInspectionPort
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private final NavigationPort navigation;
     private ActiveInspection active;
 
     public MinecraftContainerInspectionPort(
             Minecraft minecraft,
-            ClientActionScheduler scheduler
+            ClientActionScheduler scheduler,
+            NavigationPort navigation
     ) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.navigation = Objects.requireNonNull(navigation, "navigation");
     }
 
     @Override
@@ -54,6 +60,9 @@ public final class MinecraftContainerInspectionPort
             );
         }
         active = new ActiveInspection(target);
+        if (target.partner() != null) {
+            active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
+        }
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerInspectionResult.pending("正在打开分类标记容器");
     }
@@ -70,8 +79,20 @@ public final class MinecraftContainerInspectionPort
                     "当前没有容器检查操作"
             );
         }
-        if (Instant.now().isAfter(active.deadline)) {
+        if (active.visit == null && Instant.now().isAfter(active.deadline)) {
             return fail("分类标记容器打开超时");
+        }
+        if (active.visit != null) {
+            TaskModuleResult visit = active.visit.tick();
+            if (visit.state() == TaskModuleState.FAILED) {
+                return fail(visit.message());
+            }
+            if (visit.state() != TaskModuleState.SUCCEEDED) {
+                return ContainerInspectionResult.pending(visit.message());
+            }
+            active.visit = null;
+            active.openSent = true;
+            active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         }
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen != null) {
@@ -106,6 +127,9 @@ public final class MinecraftContainerInspectionPort
     @Override
     public void cancelInspection() {
         if (scheduler.isClientThread()) {
+            if (active != null && active.visit != null) {
+                active.visit.cancelNavigation();
+            }
             closeContainer();
         }
         active = null;
@@ -174,6 +198,7 @@ public final class MinecraftContainerInspectionPort
     }
 
     private static final class ActiveInspection {
+        private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private Instant deadline;
         private boolean openSent;

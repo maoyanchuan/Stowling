@@ -209,7 +209,8 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
             if (phase == 5) {
                 context.navigation().cancel();
             }
-            context.workspace().recordManagedAcquired(key, 1);
+            context.inventory().recordWithdrawn(context.workspace().inventoryAccount(),
+                    Map.of(key, 1));
             terminal = TaskModuleResult.succeeded("已回收并核对潜影盒");
             return terminal;
         }

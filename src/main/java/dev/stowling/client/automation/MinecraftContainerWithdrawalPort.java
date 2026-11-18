@@ -5,6 +5,9 @@ import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.automation.NavigationPort;
+import dev.stowling.v2.runtime.modules.TaskModuleResult;
+import dev.stowling.v2.runtime.modules.TaskModuleState;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,14 +41,17 @@ public final class MinecraftContainerWithdrawalPort
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private final NavigationPort navigation;
     private ActiveWithdrawal active;
 
     public MinecraftContainerWithdrawalPort(
             Minecraft minecraft,
-            ClientActionScheduler scheduler
+            ClientActionScheduler scheduler,
+            NavigationPort navigation
     ) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.navigation = Objects.requireNonNull(navigation, "navigation");
     }
 
     @Override
@@ -88,6 +94,9 @@ public final class MinecraftContainerWithdrawalPort
             );
         }
         active = new ActiveWithdrawal(target, itemIds, singleCategory);
+        if (target.partner() != null) {
+            active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
+        }
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerWithdrawalResult.pending("正在打开缓存容器");
     }
@@ -108,7 +117,7 @@ public final class MinecraftContainerWithdrawalPort
                     false
             );
         }
-        if (Instant.now().isAfter(active.deadline)) {
+        if (active.visit == null && Instant.now().isAfter(active.deadline)) {
             return fail("缓存取出超时");
         }
         return switch (active.phase) {
@@ -121,12 +130,27 @@ public final class MinecraftContainerWithdrawalPort
     @Override
     public void cancelWithdrawal() {
         if (scheduler.isClientThread()) {
+            if (active != null && active.visit != null) {
+                active.visit.cancelNavigation();
+            }
             closeContainer();
         }
         active = null;
     }
 
     private ContainerWithdrawalResult pollOpening() {
+        if (active.visit != null) {
+            TaskModuleResult visit = active.visit.tick();
+            if (visit.state() == TaskModuleState.FAILED) {
+                return fail(visit.message());
+            }
+            if (visit.state() != TaskModuleState.SUCCEEDED) {
+                return ContainerWithdrawalResult.pending(visit.message());
+            }
+            active.visit = null;
+            active.openSent = true;
+            active.deadline = Instant.now().plus(OPEN_TIMEOUT);
+        }
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen != null) {
             if (!active.openSent) {
@@ -427,6 +451,7 @@ public final class MinecraftContainerWithdrawalPort
     }
 
     private static final class ActiveWithdrawal {
+        private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private final Set<String> matchingItemIds;
         private final boolean singleCategory;

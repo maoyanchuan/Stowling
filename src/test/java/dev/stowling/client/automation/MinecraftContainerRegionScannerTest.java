@@ -49,7 +49,7 @@ class MinecraftContainerRegionScannerTest {
                 );
 
         assertEquals(
-                List.of(chestLeft, barrel, trappedLeft),
+                List.of(pair(chestLeft, chestRight), barrel, pair(trappedLeft, trappedRight)),
                 result
         );
     }
@@ -81,7 +81,22 @@ class MinecraftContainerRegionScannerTest {
                         )
                 );
 
-        assertEquals(List.of(first, secondPartner), result);
+        assertEquals(List.of(pair(first, firstPartner), pair(secondPartner, second)), result);
+    }
+
+    @Test
+    void keepsBothEntrancesWhenTheRegionIncludesOnlyTheOtherHalf() {
+        ContainerTarget first = target(68, -35, 29, "minecraft:chest");
+        ContainerTarget second = target(68, -35, 30, "minecraft:chest");
+
+        assertEquals(List.of(pair(first, second)),
+                MinecraftContainerRegionScanner.collapseDoubleChestPairs(List.of(second),
+                        Map.of(second.position(), first.position())));
+    }
+
+    private static ContainerTarget pair(ContainerTarget first, ContainerTarget second) {
+        return new ContainerTarget(first.position(), first.type(), first.standingArea(),
+                first.storagePolicy(), second.position());
     }
 
     private static ContainerTarget target(

@@ -313,6 +313,52 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void unreachableClassificationStorageSkipsDepositAndTriesTheNextMatchingBox() {
+        String item = "minecraft:iron_ingot";
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget blocked = target(5, 64, 5, "storage");
+        ContainerTarget reachable = target(6, 64, 5, "storage");
+        ContainerTarget wrongCategory = target(7, 64, 5, "storage");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(List.of(wrongCategory, blocked, reachable),
+                Map.of(blocked, Set.of(item), reachable, Set.of(item),
+                        wrongCategory, Set.of("minecraft:gold_ingot")), List.of(cache));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn(item, 2);
+        assertEquals(blocked, workspace.selectStorageTarget("carried", true).orElseThrow());
+
+        RecordingTransfers transfers = new RecordingTransfers();
+        TaskExecutionContext context = context(new NavigationPort() {
+            @Override
+            public NavigationStatus start(BlockPosition position) {
+                return NavigationStatus.FAILED;
+            }
+
+            @Override
+            public NavigationStatus status(BlockPosition position) {
+                return NavigationStatus.FAILED;
+            }
+
+            @Override
+            public void cancel() {
+            }
+        }, transfers, new FailedWithdrawals(), new FoodPort(), workspace);
+        MoveToCoordinateModule move = new MoveToCoordinateModule(context, TaskStep.action(
+                UUID.randomUUID(), TaskModuleIds.MOVE_TO_COORDINATE,
+                Map.of(TaskModuleIds.TARGET_REF, "output:storage")));
+        DepositItemsActionModule deposit = new DepositItemsActionModule(context, TaskStep.action(
+                UUID.randomUUID(), TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                Map.of(TaskModuleIds.TARGET_REF, "output:storage",
+                        TaskModuleIds.ITEM_SOURCE, "carried", TaskModuleIds.RETRY_ON_FAILURE,
+                        "true")));
+
+        assertEquals(TaskModuleState.SUCCEEDED, move.start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, deposit.start().state());
+        assertEquals(Map.of(item, 2), workspace.carriedItems());
+        assertEquals(reachable, workspace.selectStorageTarget("carried", true).orElseThrow());
+    }
+
+    @Test
     void savedCoordinateRadiusSevenDoesNotArriveTwoBlocksAway() {
         UUID coordinateId = UUID.randomUUID();
         CoordinatePoint point = new CoordinatePoint(

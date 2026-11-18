@@ -52,6 +52,9 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             return tick();
         }
         started = true;
+        if (context.workspace().isRejectedStorage(target)) {
+            return TaskModuleResult.succeeded("已跳过无法到达的分类箱 " + target.position());
+        }
         if (requested.isEmpty()) {
             if (retryOnFailure) {
                 context.workspace().markTargetUnavailable(target);
@@ -64,7 +67,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         if (!context.workspace().selectedStorageUsesCacheFallback()
                 && target.storagePolicy().mode() != dev.stowling.v2.model.StorageMode.NORMAL) {
             packing = context.storageAutomation().deposit(context, target, requested);
-            return packing.start();
+            return handlePacking(packing.start());
         }
         inFlight = true;
         return handle(context.containerTransfers().startDeposit(
@@ -79,12 +82,25 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             return start();
         }
         if (packing != null) {
-            return packing.tick();
+            return handlePacking(packing.tick());
         }
         if (!inFlight) {
             return TaskModuleResult.succeeded("存入操作已完成");
         }
         return handle(context.containerTransfers().pollDeposit());
+    }
+
+    private TaskModuleResult handlePacking(TaskModuleResult result) {
+        if (result.state() == TaskModuleState.FAILED && retryOnFailure
+                && context.workspace().isClassificationStorage(target) && packing.safeToStop()
+                && !context.storageAutomation().hasTemporaryResources(
+                        context.workspace().inventoryAccount().ownerId())) {
+            context.workspace().markTargetUnavailable(target);
+            if (!itemsForSource(context, itemSource).isEmpty()) {
+                return TaskModuleResult.succeeded(result.message() + "；尝试同组下一箱");
+            }
+        }
+        return result;
     }
 
     @Override
@@ -121,6 +137,10 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 result.remaining()
         );
         recordCacheUpdate(result.remaining());
+        if (retryOnFailure && "carried".equals(itemSource)
+                && context.workspace().selectedStorageUsesCacheFallback()) {
+            context.workspace().setCacheHasMore(false);
+        }
         inFlight = false;
         if (result.state() == ContainerTransferState.SUCCEEDED
                 && !madeProgress(requested, result.remaining())) {

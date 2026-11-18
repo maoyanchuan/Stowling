@@ -25,6 +25,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final Map<String, Integer> remaining;
     private final boolean withdraw;
     private final boolean inspect;
+    private final boolean emptyBoxSupply;
     private final List<ItemStack> contents = new ArrayList<>();
     private boolean opened;
     private boolean stop;
@@ -33,19 +34,31 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private int settle;
     private String pendingKey;
     private int pendingCount;
-    private int playerBefore;
-    private int containerBefore;
+    private StorageTransferConfirmation pendingConfirmation;
     private TaskModuleResult result;
 
     MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
             boolean inspect) {
+        this(minecraft, context, target, requested, withdraw, inspect, false);
+    }
+
+    static MinecraftStorageAccess withdrawEmptyBox(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget supply, String key) {
+        return new MinecraftStorageAccess(minecraft, context, supply, Map.of(key, 1),
+                true, false, true);
+    }
+
+    private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
+            boolean inspect, boolean emptyBoxSupply) {
         this.minecraft = minecraft;
         this.context = context;
         this.visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
         this.remaining = new LinkedHashMap<>(requested);
         this.withdraw = withdraw;
         this.inspect = inspect;
+        this.emptyBoxSupply = emptyBoxSupply;
     }
 
     List<ItemStack> contents() {
@@ -103,11 +116,10 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             return TaskModuleResult.waiting("等待容器槽位同步");
         }
         if (pendingKey != null) {
-            int sign = withdraw ? 1 : -1;
-            if (count(menu, true, pendingKey) != playerBefore + sign * pendingCount
-                    || count(menu, false, pendingKey) != containerBefore - sign * pendingCount
-                    || !menu.getCarried().isEmpty()) {
-                return TaskModuleResult.waiting("等待服务器确认精确存取");
+            if (!pendingConfirmation.matches(count(menu, true, pendingKey),
+                    menu.getCarried().isEmpty(), () -> count(menu, false, pendingKey))) {
+                return TaskModuleResult.waiting(emptyBoxSupply
+                        ? "等待确认空潜影盒进入背包" : "等待服务器确认精确存取");
             }
             if (withdraw) {
                 context.inventory().recordWithdrawn(context.workspace().inventoryAccount(),
@@ -156,8 +168,11 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 }
                 pendingKey = key;
                 pendingCount = amount;
-                playerBefore = count(menu, true, key);
-                containerBefore = count(menu, false, key);
+                int playerBefore = count(menu, true, key);
+                pendingConfirmation = emptyBoxSupply
+                        ? StorageTransferConfirmation.emptyBoxSupply(playerBefore)
+                        : StorageTransferConfirmation.exact(playerBefore, count(menu, false, key),
+                                withdraw ? amount : -amount);
                 boolean wholeStack = amount == stack.getCount();
                 click(menu, index, 0, ContainerInput.PICKUP);
                 if (wholeStack) {

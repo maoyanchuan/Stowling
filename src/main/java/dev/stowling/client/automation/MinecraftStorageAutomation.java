@@ -425,10 +425,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     obtainEmpty(index + 1);
                 } else {
                     String key = MinecraftItemIdentity.key(box);
-                    transfer(supply, Map.of(key, 1), true, () -> {
+                    MinecraftStorageAccess access = MinecraftStorageAccess.withdrawEmptyBox(
+                            minecraft, context, supply, key);
+                    steps.add(new Step(access, () -> {
                         requireOwned(key);
                         placeBox();
-                    });
+                    }));
                 }
             });
         }

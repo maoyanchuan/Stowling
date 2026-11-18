@@ -1,6 +1,8 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerClickPlan;
+import dev.stowling.automation.ContainerInteractionBatch;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
@@ -11,9 +13,7 @@ import java.util.List;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
@@ -114,8 +114,11 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             return TaskModuleResult.waiting("等待容器界面");
         }
         AbstractContainerMenu menu = screen.getMenu();
-        if (++settle < 4) {
-            return TaskModuleResult.waiting("等待容器槽位同步");
+        if (!MinecraftContainerInteractions.ready(menu)) {
+            return TaskModuleResult.waiting("等待容器完整槽位数据");
+        }
+        if (pendingKey != null && ++settle < 2) {
+            return TaskModuleResult.waiting("等待批量存取同步");
         }
         if (pendingKey != null) {
             if (!pendingConfirmation.matches(count(menu, true, pendingKey),
@@ -142,54 +145,58 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         if (inspect) {
             return finish(true, "已读取容器内容");
         }
-        for (int index : slots(menu, !withdraw)) {
-            ItemStack stack = menu.getSlot(index).getItem();
-            if (stack.isEmpty()) {
-                continue;
-            }
+        Move candidate = findMove(menu, null, 0);
+        if (candidate == null) return finish(true, "容器存取已完成");
+        pendingKey = candidate.key();
+        pendingCount = 0;
+        int playerBefore = count(menu, true, pendingKey);
+        int containerBefore = count(menu, false, pendingKey);
+        var batch = new ContainerInteractionBatch(pendingKey);
+        while (candidate != null && batch.accepts(candidate.key(), candidate.clicks())) {
+            pendingCount += candidate.amount();
+            MinecraftContainerInteractions.moveExact(minecraft, menu, candidate.source(),
+                    candidate.destination(), candidate.amount());
+            batch.record(candidate.amount(), candidate.clicks());
+            candidate = findMove(menu, pendingKey, pendingCount);
+        }
+        pendingConfirmation = emptyBoxSupply
+                ? StorageTransferConfirmation.emptyBoxSupply(playerBefore)
+                : StorageTransferConfirmation.exact(playerBefore, containerBefore,
+                        withdraw ? pendingCount : -pendingCount);
+        settle = 0;
+        return TaskModuleResult.waiting("正在批量" + (withdraw ? "取出" : "存入"));
+    }
+
+    private Move findMove(AbstractContainerMenu menu, String batchKey, int planned) {
+        for (int source : slots(menu, !withdraw)) {
+            Slot from = menu.getSlot(source);
+            ItemStack stack = from.getItem();
+            if (stack.isEmpty() || !from.mayPickup(minecraft.player)) continue;
             String key = MinecraftItemIdentity.key(stack);
+            if (batchKey != null && !key.equals(batchKey)) continue;
             int wanted = remaining.getOrDefault(key, 0);
             if (!withdraw) {
                 wanted = Math.min(wanted, context.workspace().managedItems().getOrDefault(key, 0));
             }
-            if (wanted <= 0) {
-                continue;
-            }
+            wanted -= planned;
+            if (wanted <= 0) continue;
             for (int destination : slots(menu, withdraw)) {
                 Slot slot = menu.getSlot(destination);
                 ItemStack current = slot.getItem();
                 if (!slot.mayPlace(stack) || !current.isEmpty()
-                        && !ItemStack.isSameItemSameComponents(current, stack)) {
-                    continue;
-                }
-                int capacity = slot.getMaxStackSize(stack)
-                        - (current.isEmpty() ? 0 : current.getCount());
+                        && !ItemStack.isSameItemSameComponents(current, stack)) continue;
+                int capacity = slot.getMaxStackSize(stack) - current.getCount();
                 int amount = Math.min(Math.min(wanted, stack.getCount()), capacity);
-                if (amount <= 0) {
-                    continue;
+                if (amount > 0) {
+                    int clicks = ContainerClickPlan.exact(stack.getCount(), amount).size();
+                    return new Move(source, destination, key, amount, clicks);
                 }
-                pendingKey = key;
-                pendingCount = amount;
-                int playerBefore = count(menu, true, key);
-                pendingConfirmation = emptyBoxSupply
-                        ? StorageTransferConfirmation.emptyBoxSupply(playerBefore)
-                        : StorageTransferConfirmation.exact(playerBefore, count(menu, false, key),
-                                withdraw ? amount : -amount);
-                boolean wholeStack = amount == stack.getCount();
-                click(menu, index, 0, ContainerInput.PICKUP);
-                if (wholeStack) {
-                    click(menu, destination, 0, ContainerInput.PICKUP);
-                } else {
-                    for (int item = 0; item < amount; item++) {
-                        click(menu, destination, 1, ContainerInput.PICKUP);
-                    }
-                    click(menu, index, 0, ContainerInput.PICKUP);
-                }
-                settle = 0;
-                return TaskModuleResult.waiting("正在精确" + (withdraw ? "取出" : "存入"));
             }
         }
-        return finish(true, "容器存取已完成");
+        return null;
+    }
+
+    private record Move(int source, int destination, String key, int amount, int clicks) {
     }
 
     private TaskModuleResult finish(boolean success, String message) {
@@ -235,9 +242,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     }
 
     static List<Integer> slots(AbstractContainerMenu menu, boolean player) {
-        return menu.slots.stream()
-                .filter(slot -> (slot.container instanceof Inventory) == player)
-                .map(menu.slots::indexOf).toList();
+        return MinecraftContainerInteractions.slots(menu, player);
     }
 
     private static int count(AbstractContainerMenu menu, boolean player, String key) {
@@ -246,8 +251,4 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 .mapToInt(ItemStack::getCount).sum();
     }
 
-    private void click(AbstractContainerMenu menu, int slot, int button, ContainerInput input) {
-        minecraft.gameMode.handleContainerInput(menu.containerId, slot, button, input,
-                minecraft.player);
-    }
 }

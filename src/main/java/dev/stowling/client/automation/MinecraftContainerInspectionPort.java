@@ -20,9 +20,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -103,7 +101,7 @@ public final class MinecraftContainerInspectionPort
                 );
             }
             AbstractContainerMenu menu = screen.getMenu();
-            if (containerSlots(menu).isEmpty()) {
+            if (!MinecraftContainerInteractions.ready(menu) || containerSlots(menu).isEmpty()) {
                 return ContainerInspectionResult.pending(
                         "等待分类标记容器槽位加载"
                 );
@@ -158,10 +156,7 @@ public final class MinecraftContainerInspectionPort
     private static java.util.List<Integer> containerSlots(
             AbstractContainerMenu menu
     ) {
-        return menu.slots.stream()
-                .filter(slot -> !(slot.container instanceof Inventory))
-                .map(menu.slots::indexOf)
-                .toList();
+        return MinecraftContainerInteractions.slots(menu, false);
     }
 
     private void openBlock(ContainerTarget target) {

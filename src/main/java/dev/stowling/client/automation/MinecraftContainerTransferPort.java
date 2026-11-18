@@ -1,6 +1,8 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerInteractionBatch;
+import dev.stowling.automation.ContainerClickPlan;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
 import dev.stowling.client.interaction.ClientActionScheduler;
@@ -22,7 +24,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
@@ -35,7 +36,6 @@ public final class MinecraftContainerTransferPort
     private static final Duration OPEN_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration TRANSFER_TIMEOUT = Duration.ofSeconds(8);
     private static final int CURSOR_PRIMARY = 0;
-    private static final int CURSOR_SECONDARY = 1;
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
@@ -162,7 +162,7 @@ public final class MinecraftContainerTransferPort
                 );
             }
             AbstractContainerMenu menu = screen.getMenu();
-            if (playerSlots(menu).isEmpty()
+            if (!MinecraftContainerInteractions.ready(menu) || playerSlots(menu).isEmpty()
                     || containerSlots(menu).isEmpty()) {
                 return ContainerTransferResult.pending(
                         "等待容器槽位加载",
@@ -171,10 +171,7 @@ public final class MinecraftContainerTransferPort
             }
             active.phase = Phase.READY;
             active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
-            return ContainerTransferResult.pending(
-                    "容器已打开",
-                    remaining()
-            );
+            return pollReady();
         }
         if (!active.openSent) {
             openBlock(active.target);
@@ -205,20 +202,33 @@ public final class MinecraftContainerTransferPort
         }
         active.phase = Phase.CONFIRMING;
         active.pendingItemId = candidate.itemId();
-        active.pendingCount = candidate.plan().moveCount();
-        active.sourceSlot = candidate.slot();
+        active.pendingCount = 0;
         active.playerBefore = playerItemCount(menu, candidate.itemId());
         active.containerBefore = containerItemCount(menu, candidate.itemId());
         active.observedDelta = -1;
         active.observationPolls = 0;
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
-        if (candidate.plan().usesQuickMove()) {
-            click(menu, candidate.slot(), CURSOR_PRIMARY, ContainerInput.QUICK_MOVE);
-        } else {
-            splitDeposit(menu, candidate.slot(), candidate.plan());
-        }
-        if (!menu.getCarried().isEmpty()) {
-            return beginRollback("无法安全完成拆分存入");
+        var batch = new ContainerInteractionBatch(candidate.itemId());
+        Map<String, Integer> request = new LinkedHashMap<>(active.remaining);
+        while (candidate != null) {
+            int clicks = candidate.plan().usesQuickMove() ? 1
+                    : ContainerClickPlan.exact(menu.getSlot(candidate.slot()).getItem().getCount(),
+                            candidate.plan().moveCount()).size();
+            if (!batch.accepts(candidate.itemId(), clicks)) break;
+            active.sourceSlot = candidate.slot();
+            int moved = candidate.plan().moveCount();
+            active.pendingCount += moved;
+            if (candidate.plan().usesQuickMove()) {
+                click(menu, candidate.slot(), CURSOR_PRIMARY, ContainerInput.QUICK_MOVE);
+            } else {
+                splitDeposit(menu, candidate.slot(), candidate.plan());
+            }
+            batch.record(moved, clicks);
+            if (!menu.getCarried().isEmpty()) return beginRollback("无法安全完成批量存入");
+            request.put(active.pendingItemId,
+                    request.getOrDefault(active.pendingItemId, 0) - moved);
+            candidate = findCandidate(menu, Map.of(active.pendingItemId,
+                    request.getOrDefault(active.pendingItemId, 0)));
         }
         return ContainerTransferResult.pending(
                 "等待服务器确认存入",
@@ -301,18 +311,10 @@ public final class MinecraftContainerTransferPort
             int sourceSlot,
             DepositTransferPlan plan
     ) {
-        click(menu, sourceSlot, CURSOR_PRIMARY, ContainerInput.PICKUP);
         for (DepositTransferPlan.Placement placement : plan.placements()) {
-            for (int count = 0; count < placement.count(); count++) {
-                click(
-                        menu,
-                        placement.slot(),
-                        CURSOR_SECONDARY,
-                        ContainerInput.PICKUP
-                );
-            }
+            MinecraftContainerInteractions.moveExact(minecraft, menu, sourceSlot,
+                    placement.slot(), placement.count());
         }
-        click(menu, sourceSlot, CURSOR_PRIMARY, ContainerInput.PICKUP);
     }
 
     private boolean restoreCarried(AbstractContainerMenu menu) {
@@ -384,10 +386,7 @@ public final class MinecraftContainerTransferPort
             if (active.remaining.isEmpty()) {
                 return complete();
             }
-            return ContainerTransferResult.pending(
-                    "已存入 " + delta + " 个物品",
-                    remaining()
-            );
+            return pollReady();
         }
         return finishFailure(
                 "服务器仅确认存入 " + delta + " 个物品，剩余物品需要换箱"
@@ -522,6 +521,11 @@ public final class MinecraftContainerTransferPort
             if (!plan.hasMovement()) {
                 continue;
             }
+            if (!plan.usesQuickMove() && plan.placements().size() > 1) {
+                var first = plan.placements().getFirst();
+                plan = DepositTransferPlan.create(wanted, stack.getCount(),
+                        List.of(new DepositTransferPlan.Destination(first.slot(), first.count())));
+            }
             return new TransferCandidate(slotIndex, itemId(stack), plan);
         }
         return null;
@@ -572,17 +576,11 @@ public final class MinecraftContainerTransferPort
     }
 
     private static List<Integer> playerSlots(AbstractContainerMenu menu) {
-        return menu.slots.stream()
-                .filter(slot -> slot.container instanceof Inventory)
-                .map(slot -> menu.slots.indexOf(slot))
-                .toList();
+        return MinecraftContainerInteractions.slots(menu, true);
     }
 
     private static List<Integer> containerSlots(AbstractContainerMenu menu) {
-        return menu.slots.stream()
-                .filter(slot -> !(slot.container instanceof Inventory))
-                .map(slot -> menu.slots.indexOf(slot))
-                .toList();
+        return MinecraftContainerInteractions.slots(menu, false);
     }
 
     private static int playerItemCount(
@@ -640,17 +638,7 @@ public final class MinecraftContainerTransferPort
             int button,
             ContainerInput input
     ) {
-        LocalPlayer player = minecraft.player;
-        MultiPlayerGameMode gameMode = minecraft.gameMode;
-        if (player != null && gameMode != null) {
-            gameMode.handleContainerInput(
-                    menu.containerId,
-                    slot,
-                    button,
-                    input,
-                    player
-            );
-        }
+        MinecraftContainerInteractions.click(minecraft, menu, slot, button, input);
     }
 
     private void closeContainer() {

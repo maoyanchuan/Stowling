@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.ClassificationBatchPolicy;
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerInteractionBatch;
 import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
@@ -26,7 +27,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
@@ -169,13 +169,13 @@ public final class MinecraftContainerWithdrawalPort
                 return ContainerWithdrawalResult.pending("正在关闭当前界面");
             }
             AbstractContainerMenu menu = screen.getMenu();
-            if (playerSlots(menu).isEmpty()
+            if (!MinecraftContainerInteractions.ready(menu) || playerSlots(menu).isEmpty()
                     || containerSlots(menu).isEmpty()) {
                 return ContainerWithdrawalResult.pending("等待容器槽位加载");
             }
             active.phase = Phase.READY;
             active.deadline = Instant.now().plus(WITHDRAW_TIMEOUT);
-            return ContainerWithdrawalResult.pending("缓存容器已打开");
+            return pollReady();
         }
         if (!active.openSent) {
             openBlock(active.target);
@@ -205,12 +205,20 @@ public final class MinecraftContainerWithdrawalPort
         }
         active.phase = Phase.CONFIRMING;
         active.pendingItemId = candidate.itemId();
-        active.pendingCount = candidate.count();
+        active.pendingCount = 0;
         active.playerBefore = playerItemCount(menu, candidate.itemId());
         active.containerBefore = containerItemCount(menu, candidate.itemId());
         active.confirmationPolls = 0;
         active.deadline = Instant.now().plus(WITHDRAW_TIMEOUT);
-        click(menu, candidate.slot(), ContainerInput.QUICK_MOVE);
+        var batch = new ContainerInteractionBatch(candidate.itemId());
+        while (candidate != null && batch.accepts(candidate.itemId(), 1)) {
+            active.pendingCount += candidate.count();
+            click(menu, candidate.slot(), ContainerInput.QUICK_MOVE);
+            batch.record(candidate.count(), 1);
+            // Reserve classification capacity immediately; the ledger is booked on confirmation.
+            active.batchPolicy.recordConfirmed(candidate.itemId());
+            candidate = findCandidate(menu, active, active.pendingItemId);
+        }
         return ContainerWithdrawalResult.pending("等待服务器确认取出");
     }
 
@@ -234,14 +242,11 @@ public final class MinecraftContainerWithdrawalPort
                     moved,
                     Math::addExact
             );
-            active.batchPolicy.recordConfirmed(active.pendingItemId);
             active.phase = Phase.READY;
             active.deadline = Instant.now().plus(WITHDRAW_TIMEOUT);
             active.pendingItemId = "";
             active.pendingCount = 0;
-            return ContainerWithdrawalResult.pending(
-                    "已从缓存取出 " + moved + " 个物品"
-            );
+            return pollReady();
         }
         return ContainerWithdrawalResult.pending("等待服务器确认取出");
     }
@@ -277,6 +282,11 @@ public final class MinecraftContainerWithdrawalPort
             AbstractContainerMenu menu,
             ActiveWithdrawal batch
     ) {
+        return findCandidate(menu, batch, "");
+    }
+
+    private static Candidate findCandidate(AbstractContainerMenu menu, ActiveWithdrawal batch,
+            String exactKey) {
         if (batch.classificationBatch && !batch.batchPolicy.hasCapacity()) {
             return null;
         }
@@ -289,6 +299,7 @@ public final class MinecraftContainerWithdrawalPort
                 continue;
             }
             String itemId = itemId(stack);
+            if (!exactKey.isEmpty() && !exactKey.equals(itemId)) continue;
             if (!ItemIdentity.matches(itemId, batch.matchingItemIds)) {
                 continue;
             }
@@ -353,17 +364,11 @@ public final class MinecraftContainerWithdrawalPort
     }
 
     private static List<Integer> playerSlots(AbstractContainerMenu menu) {
-        return menu.slots.stream()
-                .filter(slot -> slot.container instanceof Inventory)
-                .map(slot -> menu.slots.indexOf(slot))
-                .toList();
+        return MinecraftContainerInteractions.slots(menu, true);
     }
 
     private static List<Integer> containerSlots(AbstractContainerMenu menu) {
-        return menu.slots.stream()
-                .filter(slot -> !(slot.container instanceof Inventory))
-                .map(slot -> menu.slots.indexOf(slot))
-                .toList();
+        return MinecraftContainerInteractions.slots(menu, false);
     }
 
     private static int playerItemCount(
@@ -420,17 +425,7 @@ public final class MinecraftContainerWithdrawalPort
             int slot,
             ContainerInput input
     ) {
-        LocalPlayer player = minecraft.player;
-        MultiPlayerGameMode gameMode = minecraft.gameMode;
-        if (player != null && gameMode != null) {
-            gameMode.handleContainerInput(
-                    menu.containerId,
-                    slot,
-                    0,
-                    input,
-                    player
-            );
-        }
+        MinecraftContainerInteractions.click(minecraft, menu, slot, 0, input);
     }
 
     private void closeContainer() {

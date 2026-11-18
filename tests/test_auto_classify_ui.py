@@ -131,6 +131,21 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "body.hidden = !state.phase[phase];" in javascript
 
 
+def test_overflow_switch_is_visible_outside_both_collapsed_phase_sections() -> None:
+    html = read("tasks.html")
+    form = between(html, 'id="auto-task-form"', "</form>")
+    for title in ("auto-collect-title", "auto-sort-title"):
+        section = between(form, f'aria-labelledby="{title}"', "</section>")
+        assert 'id="auto-overflow-enabled"' not in section
+    overflow = between(form, 'id="auto-overflow-section"', "</section>")
+    assert 'id="auto-overflow-enabled"' in overflow
+    assert 'role="switch"' in overflow
+    assert 'class="auto-switch-track"' in overflow
+    assert " hidden" not in overflow
+    assert form.index('id="auto-sort-body"') < form.index('id="auto-overflow-section"')
+    assert form.index('id="auto-overflow-section"') < form.index('class="auto-interruption-note"')
+
+
 def test_recognition_uses_two_consolidated_modes_in_each_area() -> None:
     html = read("tasks.html")
     javascript = read("auto-classify-ui.js")

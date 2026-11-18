@@ -271,18 +271,6 @@
                                                     扫描区域内的多个箱子，只存入本次拾取的物品，
                                                     不动原有工具和食物。
                                                 </p>
-                                                <label class="move-field"
-                                                       for="auto-overflow-enabled">
-                                                    <span>启用溢出处理</span>
-                                                    <input id="auto-overflow-enabled"
-                                                           class="settings-switch"
-                                                           type="checkbox">
-                                                </label>
-                                                <p class="auto-config-note">
-                                                    缓存装不下或所有分类范围处理后剩余的物品，
-                                                    装入潜影盒送往公共设施中的溢出箱。
-                                                    优先使用缓存内空盒，需开启公共设施的统一收尾。
-                                                </p>
                                                 <label class="move-field move-priority"
                                                        for="auto-collect-priority">
                                                     <span>收集优先级</span>
@@ -340,6 +328,37 @@
                                                     任务；未识别物品留在缓存，满箱会尝试同类其他
                                                     箱子。
                                                 </p>
+                                            </div>
+                                        </section>
+                                        <section id="auto-overflow-section"
+                                                 class="auto-config-section"
+                                                 aria-labelledby="auto-overflow-title">
+                                            <div class="auto-phase-header">
+                                                <label class="auto-phase-toggle"
+                                                       for="auto-overflow-enabled">
+                                                    <span class="auto-phase-copy">
+                                                        <strong id="auto-overflow-title">
+                                                            启用溢出处理
+                                                        </strong>
+                                                        <small id="auto-overflow-description">
+                                                            缓存装不下或分类后剩余的物品装盒送入溢出，
+                                                            优先使用缓存空盒。
+                                                            请在公共设施配置溢出箱并开启统一收尾。
+                                                        </small>
+                                                    </span>
+                                                </label>
+                                                <label class="auto-phase-switch"
+                                                       for="auto-overflow-enabled">
+                                                    <span class="visually-hidden">
+                                                        启用溢出处理
+                                                    </span>
+                                                    <input id="auto-overflow-enabled"
+                                                           type="checkbox" role="switch"
+                                                           aria-describedby=
+                                                               "auto-overflow-description">
+                                                    <span class="auto-switch-track"
+                                                          aria-hidden="true"></span>
+                                                </label>
                                             </div>
                                         </section>
                                         <div class="auto-interruption-note">

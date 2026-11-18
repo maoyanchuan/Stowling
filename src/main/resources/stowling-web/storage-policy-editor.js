@@ -72,12 +72,13 @@
         /** @returns {void} */
         function refresh() {
             const mixed = mode.value === "MIXED";
+            const boxesOnly = mode.value === "BOX_ONLY";
             const boxed = mode.value !== "NORMAL";
             slotRow.hidden = grid.hidden = !mixed;
             slots.disabled = !mixed;
-            partialRow.hidden = !boxed;
-            partial.disabled = !boxed;
-            destinationRow.hidden = !boxed || !partial.checked;
+            partialRow.hidden = !mixed;
+            partial.disabled = !mixed;
+            destinationRow.hidden = !boxesOnly && (!mixed || !partial.checked);
             destination.disabled = destinationRow.hidden;
             refillRow.hidden = !mixed;
             refill.disabled = !mixed;
@@ -96,8 +97,10 @@
                 mode: mode.value,
                 loosePercent: Math.round(Number(slots.value) * 100 / 54),
                 looseSlots: mode.value === "MIXED" ? Number(slots.value) : null,
-                allowPartialBoxes: mode.value !== "NORMAL" && partial.checked,
-                partialBoxDestinationRef: mode.value !== "NORMAL" && partial.checked
+                allowPartialBoxes: mode.value === "BOX_ONLY"
+                    || mode.value === "MIXED" && partial.checked,
+                partialBoxDestinationRef: mode.value === "BOX_ONLY"
+                    || mode.value === "MIXED" && partial.checked
                     ? destination.value || null : null,
                 refillLoose: mode.value === "MIXED" && refill.checked,
                 packingArea: policy.packingArea || null

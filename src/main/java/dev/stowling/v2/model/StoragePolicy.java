@@ -19,6 +19,7 @@ public record StoragePolicy(
 
     public StoragePolicy {
         mode = mode == null ? StorageMode.NORMAL : mode;
+        allowPartialBoxes = mode == StorageMode.BOX_ONLY || allowPartialBoxes;
         if (loosePercent < 0 || loosePercent > 100) {
             throw new IllegalArgumentException("散装比例必须在 0 到 100 之间");
         }

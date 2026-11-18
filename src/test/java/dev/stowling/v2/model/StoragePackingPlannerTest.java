@@ -8,6 +8,21 @@ import org.junit.jupiter.api.Test;
 
 class StoragePackingPlannerTest {
     @Test
+    void pureBoxModeStoresSmallRemaindersEvenForLegacyFullBoxOnlySettings() {
+        var policy = new StoragePolicy(StorageMode.BOX_ONLY, 50, false, null);
+        assertTrue(policy.allowPartialBoxes());
+        for (int size : java.util.List.of(1, 16, 64)) {
+            assertEquals(0, StoragePackingPlanner.looseLimit(policy, 54, size));
+            assertTrue(StoragePackingPlanner.canPack(policy.allowPartialBoxes(), 1, 0, size));
+            assertFalse(StoragePackingPlanner.canPack(policy.allowPartialBoxes(), 0, 0, size));
+        }
+        var legacy = new com.google.gson.Gson().fromJson(
+                "{\"mode\":\"BOX_ONLY\",\"loosePercent\":50,\"allowPartialBoxes\":false}",
+                StoragePolicy.class);
+        assertTrue(legacy.allowPartialBoxes());
+    }
+
+    @Test
     void explicitSlotsUseExactChestSlotsAndKeepLegacyPercentages() {
         for (int size : java.util.List.of(1, 16, 64)) {
             for (int slots : java.util.List.of(0, 1, 19, 27, 54)) {

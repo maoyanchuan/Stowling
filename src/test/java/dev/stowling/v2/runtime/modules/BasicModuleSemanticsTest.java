@@ -217,11 +217,38 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
-    void onlyStrictBoxOnlyDestinationsRequireADedicatedBatch() {
+    void pureBoxDestinationsAllowPartialBoxesWithoutADedicatedBatch() {
         ContainerTarget boxes = new ContainerTarget(new BlockPosition(5, 64, 0), "chest", null,
                 new StoragePolicy(StorageMode.BOX_ONLY, 50, false, null));
-        assertEquals(Set.of("minecraft:stone"), withdrawalBatchCategories(Map.of(
+        assertEquals(Set.of(), withdrawalBatchCategories(Map.of(
                 boxes, Set.of("minecraft:stone"))));
+    }
+
+    @Test
+    void pureBoxClassificationDefersTheStorageTripUntilABoxNeedsDepositing() {
+        for (StorageMode mode : StorageMode.values()) {
+            ContainerTarget cache = target(0, 64, 0, "cache");
+            ContainerTarget storage = new ContainerTarget(new BlockPosition(50, 64, 0), "chest",
+                    null, new StoragePolicy(mode, 50, false, null));
+            TaskRunWorkspace workspace = new TaskRunWorkspace();
+            workspace.setResolvedCategories(List.of(storage),
+                    Map.of(storage, Set.of("minecraft:stone")), List.of(cache));
+            workspace.recordWithdrawn("minecraft:stone", 1);
+            assertEquals(storage, workspace.selectStorageTarget("carried").orElseThrow());
+            RecordingMoveNavigation navigation = new RecordingMoveNavigation();
+            var context = context(navigation, new RecordingTransfers(), new FailedWithdrawals(),
+                    new FoodPort(), workspace);
+            var move = new MoveToCoordinateModule(context, TaskStep.action(UUID.randomUUID(),
+                    TaskModuleIds.MOVE_TO_COORDINATE,
+                    Map.of(TaskModuleIds.TARGET_REF, "output:storage")));
+
+            TaskModuleState result = move.start().state();
+            assertEquals(mode == StorageMode.BOX_ONLY
+                    ? TaskModuleState.SUCCEEDED : TaskModuleState.RUNNING, result);
+            assertEquals(mode == StorageMode.BOX_ONLY ? List.of() : List.of(storage.position()),
+                    navigation.containerPositions);
+            assertEquals(Map.of("minecraft:stone", 1), workspace.carriedItems());
+        }
     }
 
     private static Set<String> withdrawalBatchCategories(

@@ -424,7 +424,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 int remaining = owned().getOrDefault(key, 0);
                 if (remaining == before - 1) {
                     if (sameContainer(target, destination)) after.accept(access.contents());
-                    else read(target, after);
+                    else if (target.storagePolicy().mode() == StorageMode.BOX_ONLY) {
+                        after.accept(List.of());
+                    } else {
+                        read(target, after);
+                    }
                 } else if (remaining == before) {
                     storePackedBox(target, box, destinations, index + 1, after);
                 } else {
@@ -677,6 +681,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
+            // Pure-box packing first reuses carried or stored partial boxes at the current site.
+            if (target.storagePolicy().mode() == StorageMode.BOX_ONLY) return;
             if (cleanupAvailable() && ownedEmptyBox(owned()).isEmpty()
                     && needsBox()) {
                 withdrawEmptyBox(0, box -> { });
@@ -763,8 +769,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (hasTemporaryResources(owner())) {
                 throw new IllegalStateException("上次潜影盒尚未回收，请先执行全局收尾");
             }
-            partialSources = partialBoxContainers(context, policy).stream()
-                    .filter(source -> !sameContainer(source, target)).toList();
+            List<ContainerTarget> configuredPartials = partialBoxContainers(context, policy);
+            if (policy.mode() == StorageMode.BOX_ONLY) {
+                partialSources = policy.partialBoxDestinationRef() == null
+                        ? List.of(target) : configuredPartials;
+            } else {
+                partialSources = configuredPartials.stream()
+                        .filter(source -> !sameContainer(source, target)).toList();
+            }
             nextCategory();
         }
 
@@ -774,7 +786,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 skipLooseDeposit = false;
                 checkedPartial = false;
                 packedBoxes.clear();
-                inspectTarget();
+                if (policy.mode() == StorageMode.BOX_ONLY) packBoxesOnly();
+                else inspectTarget();
             } else if (context.workspace().isClassificationStorage(target)
                     && EmptyBoxSupplyPlan.canReturnUnusedBoxes(owned(), inventoryStacks().stream()
                             .filter(MinecraftStorageAutomation::isEmptyBox)
@@ -786,6 +799,37 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void inspectTarget() {
             read(target, this::inspectContents);
+        }
+
+        private void packBoxesOnly() {
+            targetContents = List.of();
+            looseLimit = 0;
+            List<ItemStack> inventory = inventoryStacks();
+            List<ItemStack> carriedBoxes = inventory.stream().filter(stack ->
+                    MinecraftItemIdentity.isBox(stack)
+                            && category.equals(MinecraftItemIdentity.boxCategory(stack))
+                            && owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
+                    .toList();
+            ItemStack full = carriedBoxes.stream().filter(MinecraftItemIdentity::full)
+                    .findFirst().orElse(ItemStack.EMPTY);
+            if (!full.isEmpty()) {
+                box = full;
+                storeBox();
+                return;
+            }
+            ItemStack representative = inventory.stream().filter(stack ->
+                    !MinecraftItemIdentity.isBox(stack)
+                            && category.equals(MinecraftItemIdentity.base(stack)))
+                    .findFirst().orElseGet(() -> carriedBoxes.stream()
+                            .flatMap(stack -> MinecraftItemIdentity.contents(stack)
+                                    .nonEmptyItemCopyStream())
+                            .findFirst().orElse(ItemStack.EMPTY));
+            stackSize = representative.isEmpty() ? 64 : representative.getMaxStackSize();
+            if (rawOwned().isEmpty() && carriedBoxes.isEmpty()) {
+                finishCategory();
+            } else {
+                chooseBox();
+            }
         }
 
         private void inspectContents(List<ItemStack> contents) {
@@ -993,7 +1037,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 packedBoxes.add(key);
                 checkedPartial = false;
                 skipLooseDeposit = false;
-                inspectContents(updated);
+                if (policy.mode() == StorageMode.BOX_ONLY) packBoxesOnly();
+                else inspectContents(updated);
             });
         }
 

@@ -68,7 +68,8 @@ globalThis.window = {
 vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
 const editor = window.StowlingStoragePolicyEditor.create(
     {mode:'MIXED', loosePercent:50, allowPartialBoxes:true, refillLoose:true},
-    {coordinates:[{id:'box', name:'Partial boxes'}]});
+    {coordinates:[{id:'box', name:'Partial boxes'}],
+        regions:[{id:'partials', name:'Partial region'}]});
 const content = editor.root.children[0];
 const [modeRow, slotsRow, grid, partialRow, destinationRow, refillRow, link] = content.children;
 const mode = modeRow.children[1];
@@ -87,13 +88,19 @@ grid.children[18].dispatchEvent(new Event('click'));
 input(destination, 'coordinate:box');
 const mixed = editor.read();
 input(mode, 'BOX_ONLY');
+input(destination, 'region:partials');
 const boxed = {policy:editor.read(), hidden:hidden()};
 partialRow.children[1].checked = false;
 partialRow.children[1].dispatchEvent(new Event('input', {bubbles:true}));
 const partialOff = {policy:editor.read(), hidden:destinationRow.hidden};
 input(mode, 'NORMAL');
 const normal = {policy:editor.read(), hidden:hidden()};
-process.stdout.write(JSON.stringify({initial, mixed, boxed, partialOff, normal}));
+const legacy = window.StowlingStoragePolicyEditor.create(
+    {mode:'BOX_ONLY', allowPartialBoxes:false, partialBoxDestinationRef:'region:partials'},
+    {regions:[{id:'partials', name:'Partial region'}]});
+const pureInitial = {policy:legacy.read(),
+    destinationVisible:!legacy.root.children[0].children[4].hidden};
+process.stdout.write(JSON.stringify({initial, mixed, boxed, partialOff, normal, pureInitial}));
 """
     result = subprocess.run(
         [str(NODE), "-e", script, str(WEB / "storage-policy-editor.js")],
@@ -106,11 +113,17 @@ process.stdout.write(JSON.stringify({initial, mixed, boxed, partialOff, normal})
     assert value["mixed"]["looseSlots"] == 19
     assert value["mixed"]["partialBoxDestinationRef"] == "coordinate:box"
     assert value["mixed"]["refillLoose"] is True
-    assert value["boxed"]["hidden"] == [True, True, False, False, True, False]
+    assert value["boxed"]["hidden"] == [True, True, True, False, True, False]
+    assert value["boxed"]["policy"]["allowPartialBoxes"] is True
+    assert value["boxed"]["policy"]["partialBoxDestinationRef"] == "region:partials"
     assert value["boxed"]["policy"]["looseSlots"] is None
     assert value["boxed"]["policy"]["refillLoose"] is False
-    assert value["partialOff"]["hidden"] is True
-    assert value["partialOff"]["policy"]["partialBoxDestinationRef"] is None
+    assert value["partialOff"]["hidden"] is False
+    assert value["partialOff"]["policy"]["allowPartialBoxes"] is True
+    assert value["partialOff"]["policy"]["partialBoxDestinationRef"] == "region:partials"
+    assert value["pureInitial"]["destinationVisible"] is True
+    assert value["pureInitial"]["policy"]["allowPartialBoxes"] is True
+    assert value["pureInitial"]["policy"]["partialBoxDestinationRef"] == "region:partials"
     assert value["normal"]["hidden"] == [True] * 6
     assert value["normal"]["policy"]["allowPartialBoxes"] is False
 

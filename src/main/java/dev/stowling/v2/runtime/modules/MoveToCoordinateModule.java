@@ -41,6 +41,13 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         if (stopped) {
             return TaskModuleResult.succeeded("寻路已停止");
         }
+        if (container != null && targetReference.type() == ResourceType.OUTPUT
+                && "storage".equals(targetReference.key())
+                && !context.workspace().selectedStorageUsesCacheFallback()
+                && context.workspace().isClassificationStorage(container)
+                && container.storagePolicy().mode() == dev.stowling.v2.model.StorageMode.BOX_ONLY) {
+            return TaskModuleResult.succeeded("纯盒模式先补盒，存入时再前往对应储存位置");
+        }
         if (coordinate != null
                 && !TaskModuleSupport.dimensionMatches(context, coordinate)) {
             return TaskModuleResult.failed(

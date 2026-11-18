@@ -1,6 +1,7 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerRecoveryReceipt;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
@@ -25,6 +26,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     static final class Resource {
         final BlockPosition position;
         final ItemStack original;
+        final ContainerRecoveryReceipt receipt = new ContainerRecoveryReceipt();
         ItemStack expected;
         boolean placed;
         boolean broken;
@@ -65,6 +67,10 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     @Override
     public TaskModuleResult tick() {
         if (terminal != null) {
+            return terminal;
+        }
+        if (!place && resource.receipt.confirmed()) {
+            terminal = TaskModuleResult.succeeded("潜影盒回收已确认，无需重复入账");
             return terminal;
         }
         if (minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) {
@@ -209,8 +215,8 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
             if (phase == 5) {
                 context.navigation().cancel();
             }
-            context.inventory().recordWithdrawn(context.workspace().inventoryAccount(),
-                    Map.of(key, 1));
+            resource.receipt.confirm(() -> context.inventory().recordWithdrawn(
+                    context.workspace().inventoryAccount(), Map.of(key, 1)));
             terminal = TaskModuleResult.succeeded("已回收并核对潜影盒");
             return terminal;
         }

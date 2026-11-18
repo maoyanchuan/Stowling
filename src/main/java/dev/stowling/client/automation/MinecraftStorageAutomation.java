@@ -151,7 +151,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public TaskModuleExecutor cleanup(TaskExecutionContext context) {
-        return new Cleanup(context);
+        return cleanup(context, false);
+    }
+
+    @Override
+    public TaskModuleExecutor cleanup(TaskExecutionContext context, boolean overflowEnabled) {
+        return new Cleanup(context, overflowEnabled);
     }
 
     @Override
@@ -319,6 +324,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         final void recover(Runnable after) {
             MinecraftShulkerAction.Resource resource = resources.get(owner());
             if (resource == null) {
+                after.run();
+                return;
+            }
+            if (resource.receipt.confirmed()) {
+                resources.remove(owner());
                 after.run();
                 return;
             }
@@ -1032,6 +1042,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     private final class Overflow extends Session {
+        private boolean initialized;
         private final dev.stowling.v2.model.RegionDefinition cacheRegion;
         private List<ContainerTarget> destinations;
         private ContainerVisitPlan sources;
@@ -1046,6 +1057,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
+            initialized = true;
             if (cacheRegion == null && owned().isEmpty()) return;
             if (!configuration.cleanupEnabled()) {
                 throw new IllegalStateException("溢出打包前请开启公共设施的统一中断收尾");
@@ -1106,6 +1118,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             } else {
                 visitSource();
             }
+        }
+
+        @Override
+        public TaskModuleResult tick() {
+            return initialized ? super.tick() : super.start();
         }
 
         private Map<String, Integer> rawOwned() {
@@ -1193,9 +1210,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class Cleanup extends Session {
         private List<ContainerTarget> targets;
+        private final boolean overflowEnabled;
+        private boolean overflowAttempted;
+        private String lastFailure = "";
 
-        Cleanup(TaskExecutionContext context) {
+        Cleanup(TaskExecutionContext context, boolean overflowEnabled) {
             super(context);
+            this.overflowEnabled = overflowEnabled;
         }
 
         @Override
@@ -1203,7 +1224,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             targets = temporaryContainers().stream()
                     .sorted(Comparator.comparingDouble(target -> distance(target.position())))
                     .toList();
-            if (targets.isEmpty()) {
+            if (targets.isEmpty() && !overflowEnabled) {
                 throw new IllegalStateException("全局收尾缺少暂存箱，请配置后重试");
             }
             recover(() -> depositAll(0));
@@ -1216,12 +1237,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             if (index >= targets.size()) {
-                throw new IllegalStateException("暂存箱已满或无法接收剩余物品，收尾受阻");
+                if (overflowEnabled && !overflowAttempted) {
+                    overflowAttempted = true;
+                    steps.add(new Step(new Overflow(context, null), () -> depositAll(index)));
+                    return;
+                }
+                throw new IllegalStateException("暂存设施未能接收剩余 " + sum(owned())
+                        + " 件任务物品，收尾受阻"
+                        + (lastFailure.isEmpty() ? "" : "；最后一次失败：" + lastFailure));
             }
             MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
                     targets.get(index), owned(), false, false);
             steps.add(new Step(access, () -> depositAll(index + 1),
-                    () -> depositAll(index + 1)));
+                    () -> {
+                        lastFailure = access.tick().message();
+                        depositAll(index + 1);
+                    }));
         }
     }
 

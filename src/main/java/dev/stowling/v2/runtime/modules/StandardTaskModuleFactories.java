@@ -12,7 +12,8 @@ public final class StandardTaskModuleFactories {
         return List.of(
                 factory("PACK_OVERFLOW", OverflowItemsModule::create),
                 factory("GLOBAL_INVENTORY_CLEANUP",
-                        (context, step) -> context.storageAutomation().cleanup(context)),
+                        (context, step) -> context.storageAutomation().cleanup(context,
+                                TaskModuleSupport.booleanParameter(step, "overflowEnabled", false))),
                 factory(
                         TaskModuleIds.MOVE_TO_COORDINATE,
                         MoveToCoordinateModule::new

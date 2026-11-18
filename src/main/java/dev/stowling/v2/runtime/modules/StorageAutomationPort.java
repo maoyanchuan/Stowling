@@ -27,6 +27,10 @@ public interface StorageAutomationPort {
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
 
+    default TaskModuleExecutor cleanup(TaskExecutionContext context, boolean overflowEnabled) {
+        return cleanup(context);
+    }
+
     default TaskModuleExecutor overflow(TaskExecutionContext context,
             dev.stowling.v2.model.RegionDefinition cacheRegion) {
         throw new IllegalStateException("当前环境不支持溢出打包");

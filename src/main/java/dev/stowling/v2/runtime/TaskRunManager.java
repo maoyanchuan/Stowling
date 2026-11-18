@@ -622,7 +622,8 @@ public final class TaskRunManager {
         if (requiresGlobalCleanup()) {
             cleanup = new TaskDefinition(UUID.randomUUID(), "全局物品收尾",
                     List.of(TaskStep.action(UUID.randomUUID(), "GLOBAL_INVENTORY_CLEANUP",
-                            Map.of())));
+                            Map.of("overflowEnabled", Boolean.toString(
+                                    usesOverflow(active.prepared.steps))))));
         }
         if (cleanup == null || !active.workspace.hasManagedItems()
                 && !registry.storageAutomation().hasTemporaryResources(
@@ -669,6 +670,11 @@ public final class TaskRunManager {
                     "中断收尾异常: " + safeMessage(exception)
             );
         }
+    }
+
+    private static boolean usesOverflow(List<TaskStep> steps) {
+        return steps.stream().anyMatch(step -> "PACK_OVERFLOW".equals(step.moduleId())
+                || usesOverflow(step.steps()) || usesOverflow(step.otherwise()));
     }
 
     private void failInterruption(String message) {

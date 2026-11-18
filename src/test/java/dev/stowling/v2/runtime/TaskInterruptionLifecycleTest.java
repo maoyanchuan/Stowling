@@ -51,6 +51,61 @@ import org.junit.jupiter.api.Test;
 
 class TaskInterruptionLifecycleTest {
     @Test
+    void urgentPreemptionPreservesTheInterruptedTasksOverflowChoiceDuringGlobalCleanup() {
+        for (boolean enabled : List.of(false, true)) {
+            RecordingNavigation navigation = new RecordingNavigation();
+            TaskModuleRuntimeRegistry registry = registry(navigation);
+            AtomicReference<Boolean> received = new AtomicReference<>();
+            registry.setStorageAutomation(
+                    new dev.stowling.v2.runtime.modules.StorageAutomationPort() {
+                        @Override
+                        public boolean cleanupEnabled() {
+                            return true;
+                        }
+
+                        @Override
+                        public TaskModuleExecutor deposit(TaskExecutionContext context,
+                                ContainerTarget target, Map<String, Integer> items) {
+                            throw new AssertionError("cleanup uses its own storage operation");
+                        }
+
+                        @Override
+                        public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                            throw new AssertionError("cleanup must receive the overflow choice");
+                        }
+
+                        @Override
+                        public TaskModuleExecutor cleanup(TaskExecutionContext context,
+                                boolean overflowEnabled) {
+                            received.set(overflowEnabled);
+                            return new TestAction(context) {
+                                @Override
+                                public TaskModuleResult start() {
+                                    context.workspace().consumeDeposit("managed",
+                                            context.workspace().managedItems(), Map.of());
+                                    return TaskModuleResult.succeeded("cleaned");
+                                }
+                            };
+                        }
+                    });
+            TaskDefinition background = task("Classify", TaskPriority.BACKGROUND,
+                    TaskInterruptionMode.NONE, actionStep(ADD_MANAGED), actionStep(SLOW),
+                    actionStep(enabled ? "PACK_OVERFLOW" : NOOP));
+            TaskDefinition urgent = task("Pickup", TaskPriority.URGENT,
+                    TaskInterruptionMode.NONE, actionStep(NOOP));
+            AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                    List.of(), List.of(background, urgent));
+            TaskRunManager manager = new TaskRunManager(navigation, registry);
+            TaskRunSnapshot run = manager.start(background, config, null);
+            manager.tick();
+            manager.start(urgent, config, null);
+            for (int tick = 0; tick < 24; tick++) manager.tick();
+            assertEquals(Boolean.valueOf(enabled), received.get());
+            assertEquals(TaskRunState.PREEMPTED, runState(manager, run.runId()));
+        }
+    }
+
+    @Test
     void recoveringABoxDoesNotPreemptClassificationButForeignDropsStillDo() {
         String box = "minecraft:shulker_box#recovering@minecraft:stone";
         BlockPosition site = new BlockPosition(10, 64, 10);

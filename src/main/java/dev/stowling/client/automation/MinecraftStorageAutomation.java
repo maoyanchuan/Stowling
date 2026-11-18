@@ -655,8 +655,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void defer() {
-            context.workspace().markTargetUnavailable(target);
-            context.workspace().setCacheHasMore(false);
+            if (!context.workspace().isClassificationStorage(target)) {
+                context.workspace().markTargetUnavailable(target);
+                context.workspace().setCacheHasMore(false);
+            }
             nextCategory();
         }
 

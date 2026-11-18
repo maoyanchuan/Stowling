@@ -138,8 +138,10 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         );
         recordCacheUpdate(result.remaining());
         if (retryOnFailure && "carried".equals(itemSource)
+                && targetReference.type() == ResourceType.OUTPUT
+                && "storage".equals(targetReference.key())
                 && context.workspace().selectedStorageUsesCacheFallback()) {
-            context.workspace().setCacheHasMore(false);
+            context.workspace().deferReturnedCacheItems(requested, result.remaining());
         }
         inFlight = false;
         if (result.state() == ContainerTransferState.SUCCEEDED

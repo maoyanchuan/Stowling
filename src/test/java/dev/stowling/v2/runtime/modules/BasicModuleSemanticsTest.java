@@ -1501,6 +1501,47 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void cacheFallbackDefersOnlyReturnedCategoriesAndKeepsScanning() {
+        String blocked = "minecraft:iron_ingot";
+        String next = "minecraft:gold_ingot";
+        String last = "minecraft:copper_ingot";
+        ContainerTarget cache = target(1, 64, 1, "cache");
+        ContainerTarget otherCache = target(2, 64, 1, "cache");
+        ContainerTarget storage = target(5, 64, 5, "storage");
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(List.of(storage),
+                Map.of(storage, Set.of(blocked, next, last)), List.of(cache, otherCache));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn(blocked, 2);
+        workspace.selectStorageTarget("carried", true).orElseThrow();
+        workspace.markTargetUnavailable(storage);
+        assertEquals(cache, workspace.selectStorageTarget("carried", true).orElseThrow());
+
+        CapturingWithdrawal withdrawal = new CapturingWithdrawal();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        DepositItemsActionModule deposit = new DepositItemsActionModule(context, TaskStep.action(
+                UUID.randomUUID(), TaskModuleIds.DEPOSIT_ITEMS_TO_CONTAINERS,
+                Map.of(TaskModuleIds.TARGET_REF, "output:storage",
+                        TaskModuleIds.ITEM_SOURCE, "carried", TaskModuleIds.RETRY_ON_FAILURE,
+                        "true")));
+        TaskStep withdraw = TaskStep.action(UUID.randomUUID(), TaskModuleIds.WITHDRAW_ITEMS,
+                Map.of(TaskModuleIds.TARGET_REF, "output:container",
+                        TaskModuleIds.ITEM_SOURCE, "classified"));
+
+        assertEquals(TaskModuleState.SUCCEEDED, deposit.start().state());
+        assertTrue(workspace.cacheHasMore());
+        assertEquals(TaskModuleState.SUCCEEDED, new WithdrawItemsModule(context, withdraw)
+                .start().state());
+        assertEquals(Set.of(next, last), withdrawal.matchingItemIds());
+
+        assertEquals(otherCache, workspace.selectNextContainer().orElseThrow());
+        assertEquals(TaskModuleState.SUCCEEDED, new WithdrawItemsModule(context, withdraw)
+                .start().state());
+        assertEquals(Set.of(blocked, next, last), withdrawal.matchingItemIds());
+    }
+
+    @Test
     void withdrawalMatchingItemsAreBoundToTheRequestedTarget() {
         ContainerTarget selected = target(1, 64, 1, "selected");
         ContainerTarget requested = target(9, 64, 9, "requested");

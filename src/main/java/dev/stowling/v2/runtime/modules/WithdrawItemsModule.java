@@ -109,7 +109,7 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
                 TaskModuleIds.ITEM_SOURCE
         );
         if (source == null || source.isBlank() || CLASSIFIED.equals(source)) {
-            return context.workspace().withdrawItemIdsFor(target);
+            return context.workspace().remainingCacheCategories(target);
         }
         throw new IllegalArgumentException(
                 "WITHDRAW_ITEMS supports itemSource=classified"

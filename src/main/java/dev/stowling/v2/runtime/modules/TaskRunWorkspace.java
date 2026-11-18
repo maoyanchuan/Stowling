@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.domain.BlockPosition;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ public final class TaskRunWorkspace {
     private boolean storageUsesCacheFallback;
     private int containerCursor;
     private final Set<BlockPosition> triedStorage = new LinkedHashSet<>();
+    private final Set<String> deferredCacheCategories = new LinkedHashSet<>();
     private int markerCursor;
     private UUID markerZoneId;
     private final Set<BlockPosition> readMarkerPositions =
@@ -158,6 +160,7 @@ public final class TaskRunWorkspace {
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
         cacheHasMore = false;
+        deferredCacheCategories.clear();
     }
 
     public synchronized Optional<ContainerScanResult> containerScan() {
@@ -218,6 +221,7 @@ public final class TaskRunWorkspace {
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
         cacheHasMore = false;
+        deferredCacheCategories.clear();
     }
 
     public synchronized Map<ContainerTarget, Set<String>> acceptedItemsByContainer() {
@@ -244,6 +248,7 @@ public final class TaskRunWorkspace {
             return Optional.empty();
         }
         selectedContainer = containerCandidates.get(containerCursor++);
+        deferredCacheCategories.clear();
         triedStorage.clear();
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
@@ -277,6 +282,24 @@ public final class TaskRunWorkspace {
             }
         }
         return Set.of();
+    }
+
+    public synchronized Set<String> remainingCacheCategories(ContainerTarget target) {
+        Set<String> categories = new LinkedHashSet<>(withdrawItemIdsFor(target));
+        if (selectedContainer != null && selectedContainer.position().equals(target.position())) {
+            categories.removeIf(key ->
+                    deferredCacheCategories.contains(ItemIdentity.category(key)));
+        }
+        return Set.copyOf(categories);
+    }
+
+    public synchronized void deferReturnedCacheItems(Map<String, Integer> requested,
+            Map<String, Integer> remaining) {
+        requested.forEach((key, count) -> {
+            if (count > remaining.getOrDefault(key, 0)) {
+                deferredCacheCategories.add(ItemIdentity.category(key));
+            }
+        });
     }
 
     public synchronized void setCacheHasMore(boolean value) {

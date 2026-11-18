@@ -19,19 +19,29 @@ public final class TemporaryContainerResolver {
 
     public static List<ContainerTarget> resolve(StorageAutomationSettings settings,
             List<RegionDefinition> regions, ContainerRegionPort scanner) {
+        return resolve(settings.temporaryContainers(), regions, scanner,
+                Set.copyOf(settings.emptyBoxContainers()), "暂存");
+    }
+
+    public static List<ContainerTarget> resolve(List<BlockPosition> positions,
+            List<RegionDefinition> regions, ContainerRegionPort scanner,
+            Set<BlockPosition> excluded, String purpose) {
         Map<BlockPosition, ContainerTarget> targets = new LinkedHashMap<>();
-        for (BlockPosition point : settings.temporaryContainers()) {
+        for (BlockPosition point : positions) {
+            if (excluded.contains(point)) {
+                throw new IllegalStateException(purpose + "设施包含空盒供应箱");
+            }
             targets.put(point, new ContainerTarget(point, "container"));
         }
         for (RegionDefinition region : regions) {
             ContainerScanResult scan = scanner.scan(region, TYPES, MAX_VOLUME);
             if (!scan.succeeded()) {
-                throw new IllegalStateException("暂存区域“" + region.name() + "”扫描失败："
+                throw new IllegalStateException(purpose + "区域“" + region.name() + "”扫描失败："
                         + scan.message());
             }
             for (ContainerTarget target : scan.containers()) {
-                if (settings.emptyBoxContainers().contains(target.position())) {
-                    throw new IllegalStateException("暂存区域包含空盒供应箱，请调整区域范围");
+                if (excluded.contains(target.position())) {
+                    throw new IllegalStateException(purpose + "区域包含空盒供应箱，请调整区域范围");
                 }
                 targets.putIfAbsent(target.position(), target);
             }

@@ -102,6 +102,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .collect(java.util.stream.Collectors.toSet());
         List<UUID> referenced = new ArrayList<>(settings.temporaryCoordinateIds());
         referenced.addAll(settings.emptyBoxCoordinateIds());
+        referenced.addAll(settings.overflowCoordinateIds());
         if (settings.fallbackCoordinateId() != null) {
             referenced.add(settings.fallbackCoordinateId());
         }
@@ -110,8 +111,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
         }
         Set<UUID> regions = configs.read().config().regions().stream()
                 .map(RegionDefinition::id).collect(java.util.stream.Collectors.toSet());
-        if (!regions.containsAll(settings.temporaryRegionIds())) {
-            throw new IllegalArgumentException("暂存设施引用的区域不存在，请刷新后重新选择");
+        if (!regions.containsAll(settings.temporaryRegionIds())
+                || !regions.containsAll(settings.overflowRegionIds())) {
+            throw new IllegalArgumentException("公共设施引用的区域不存在，请刷新后重新选择");
         }
         if (!settings.temporaryContainers().isEmpty() || !settings.emptyBoxContainers().isEmpty()
                 || settings.fallbackPackingPosition() != null) {
@@ -244,6 +246,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             var facilities = storageSettings.read().settings();
             if (facilities.temporaryCoordinateIds().contains(id)) references.add("公共设施·暂存箱");
             if (facilities.emptyBoxCoordinateIds().contains(id)) references.add("公共设施·空盒供应");
+            if (facilities.overflowCoordinateIds().contains(id)) references.add("公共设施·溢出箱");
             if (id.equals(facilities.fallbackCoordinateId())) references.add("公共设施·后备工位");
         }
         if (!references.isEmpty()) {
@@ -362,9 +365,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .filter(trigger -> id.equals(trigger.cacheRegionId()))
                 .map(TaskTriggerDefinition::name)
                 .toList());
-        if (storageSettings != null
-                && storageSettings.read().settings().temporaryRegionIds().contains(id)) {
-            references.add("公共设施·暂存区域");
+        if (storageSettings != null) {
+            var facilities = storageSettings.read().settings();
+            if (facilities.temporaryRegionIds().contains(id)) references.add("公共设施·暂存区域");
+            if (facilities.overflowRegionIds().contains(id)) references.add("公共设施·溢出区域");
         }
         if (!references.isEmpty()) {
             throw new V2ValidationException(
@@ -628,7 +632,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.detection(),
                 request.cacheRegionRef(),
                 request.classificationAreas(),
-                request.collectionPriority()
+                request.collectionPriority(),
+                Boolean.TRUE.equals(request.overflowEnabled())
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -705,7 +710,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.detection(),
                 request.cacheRegionRef(),
                 request.classificationAreas(),
-                request.collectionPriority()
+                request.collectionPriority(),
+                request.overflowEnabled() == null ? existing.overflowEnabled()
+                        : request.overflowEnabled()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1182,7 +1189,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             AutoClassifyDetectionRequest detection,
             String cacheRegionRef,
             List<AutoClassifyAreaRequest> requestedAreas,
-            TaskPriority collectionPriority
+            TaskPriority collectionPriority,
+            boolean overflowEnabled
     ) {
         if (detection == null) {
             throw new V2ValidationException("detection is required");
@@ -1216,7 +1224,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 areas,
                 collectionPriority == null
                         ? TaskPriority.NORMAL
-                        : collectionPriority
+                        : collectionPriority,
+                overflowEnabled
         );
     }
 
@@ -1234,7 +1243,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.pickupRadius(),
                 definition.cacheRegionRef(),
                 definition.classificationAreas(),
-                definition.collectionPriority()
+                definition.collectionPriority(),
+                definition.overflowEnabled()
         );
     }
 
@@ -1272,7 +1282,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ResourceType.TASK,
                         definition.interruptionTaskId()
                 ).encode(),
-                triggerIds
+                triggerIds,
+                definition.overflowEnabled()
         );
     }
 

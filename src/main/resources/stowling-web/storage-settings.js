@@ -9,8 +9,9 @@
     enabled.className = "settings-switch";
     const temporary = document.createElement("select");
     const empty = document.createElement("select");
-    temporary.multiple = empty.multiple = true;
-    temporary.size = empty.size = 6;
+    const overflow = document.createElement("select");
+    temporary.multiple = empty.multiple = overflow.multiple = true;
+    temporary.size = empty.size = overflow.size = 6;
     const fallback = document.createElement("select");
     let revision = "";
     let dirty = false;
@@ -46,28 +47,33 @@
             const value = response.settings;
             enabled.checked = value.cleanupEnabled;
             for (const [select, ids] of [[temporary, value.temporaryCoordinateIds || []],
+                    [overflow, value.overflowCoordinateIds || []],
                     [empty, value.emptyBoxCoordinateIds || []],
                     [fallback, [value.fallbackCoordinateId]]]) {
                 select.replaceChildren();
                 if (select === fallback) select.append(new Option("不使用后备位置", ""));
                 for (const point of points.coordinates) {
-                    const option = new Option(`${select === temporary ? "[点位] " : ""}`
+                    const regionCapable = select === temporary || select === overflow;
+                    const option = new Option(`${regionCapable ? "[点位] " : ""}`
                         + `${point.name} · ${point.x}, ${point.y}, ${point.z}`,
-                        select === temporary ? `coordinate:${point.id}` : point.id);
+                        regionCapable ? `coordinate:${point.id}` : point.id);
                     option.selected = ids.includes(point.id);
                     select.append(option);
                 }
             }
             for (const region of regions.regions) {
-                const option = new Option(`[区域] ${region.name} · `
-                    + `${region.firstX}, ${region.firstY}, ${region.firstZ} → `
-                    + `${region.secondX}, ${region.secondY}, ${region.secondZ}`,
-                    `region:${region.id}`);
-                option.selected = (value.temporaryRegionIds || []).includes(region.id);
-                temporary.append(option);
+                for (const [select, ids] of [[temporary, value.temporaryRegionIds || []],
+                        [overflow, value.overflowRegionIds || []]]) {
+                    const option = new Option(`[区域] ${region.name} · `
+                        + `${region.firstX}, ${region.firstY}, ${region.firstZ} → `
+                        + `${region.secondX}, ${region.secondY}, ${region.secondZ}`,
+                        `region:${region.id}`);
+                    option.selected = ids.includes(region.id);
+                    select.append(option);
+                }
             }
             save.disabled = false;
-            message.textContent = "暂存箱支持点位和区域，按 Ctrl 可多选。区域内箱子和木桶自动参与收尾。";
+            message.textContent = "暂存和溢出支持点位或区域，按 Ctrl 可多选。溢出只接收打包后的物品。";
         } catch (error) {
             message.textContent = "读取公共设施失败，请点击重新读取。";
             S.handleError(error, "读取公共设施失败");
@@ -85,12 +91,12 @@
         pendingSection = activeSection === 0 ? 1 : activeSection;
         document.dispatchEvent(new CustomEvent("stowling:request-coordinate-create", {
             detail: {returnPanel: "facilities", name: ["", "暂存箱", "空盒供应箱",
-                "后备打包位置"][pendingSection]}
+                "后备打包位置", "溢出箱"][pendingSection]}
         }));
     });
     heading.append(S.element("h2", "", "公共设施"), link, regionLink, add);
     const sections = [["统一中断收尾", enabled], ["暂存箱", temporary],
-        ["空潜影盒供应箱", empty], ["后备打包位置", fallback]];
+        ["空潜影盒供应箱", empty], ["后备打包位置", fallback], ["溢出箱", overflow]];
     const fields = sections.map(([name, control]) => field(name, control));
     const navigation = S.element("nav", "resource-browser-list");
     navigation.setAttribute("aria-label", "选择公共设施用途");
@@ -118,15 +124,16 @@
     document.addEventListener("stowling:coordinate-created", event => {
         if (pendingSection === null) return;
         const point = event.detail.coordinate;
-        for (const [index, select] of [[1, temporary], [2, empty], [3, fallback]]) {
-            const option = new Option(`${index === 1 ? "[点位] " : ""}${point.name} · `
+        for (const [index, select] of [[1, temporary], [2, empty], [3, fallback], [4, overflow]]) {
+            const regionCapable = index === 1 || index === 4;
+            const option = new Option(`${regionCapable ? "[点位] " : ""}${point.name} · `
                 + `${point.x}, ${point.y}, ${point.z}`,
-                index === 1 ? `coordinate:${point.id}` : point.id);
+                regionCapable ? `coordinate:${point.id}` : point.id);
             option.selected = index === pendingSection;
             select.append(option);
         }
         dirty = true;
-        const select = [null, temporary, empty, fallback][pendingSection];
+        const select = [null, temporary, empty, fallback, overflow][pendingSection];
         pendingSection = null;
         select.focus();
         message.textContent = "坐标点已创建并选中，请保存公共设施以应用引用。";
@@ -155,6 +162,12 @@
                         .filter(value => value.startsWith("region:"))
                         .map(value => value.slice("region:".length)),
                     emptyBoxCoordinateIds: selected(empty),
+                    overflowCoordinateIds: selected(overflow)
+                        .filter(value => value.startsWith("coordinate:"))
+                        .map(value => value.slice("coordinate:".length)),
+                    overflowRegionIds: selected(overflow)
+                        .filter(value => value.startsWith("region:"))
+                        .map(value => value.slice("region:".length)),
                     fallbackCoordinateId: fallback.value || null
                 }})});
             revision = response.revision;

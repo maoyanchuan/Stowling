@@ -40,7 +40,28 @@ public final class StorageSettingsStore {
                 settings.emptyBoxCoordinateIds().stream().map(resolve).toList(),
                 settings.fallbackCoordinateId() == null ? null
                         : resolve.apply(settings.fallbackCoordinateId()),
-                java.util.List.of(), java.util.List.of(), null, settings.temporaryRegionIds());
+                java.util.List.of(), java.util.List.of(), null, settings.temporaryRegionIds(),
+                settings.overflowCoordinateIds(), settings.overflowRegionIds());
+    }
+
+    public synchronized java.util.List<dev.stowling.domain.BlockPosition> overflowPositions() {
+        if (settings.overflowCoordinateIds().isEmpty()) return java.util.List.of();
+        if (coordinates == null) throw new IllegalStateException("溢出坐标未绑定公共设施");
+        var points = coordinates.read().config().coordinates();
+        return settings.overflowCoordinateIds().stream().map(id -> points.stream()
+                .filter(point -> point.id().equals(id)).findFirst().orElseThrow(() ->
+                        new IllegalStateException("溢出设施引用的坐标不存在")))
+                .map(point -> new dev.stowling.domain.BlockPosition(point.x(), point.y(), point.z()))
+                .toList();
+    }
+
+    public synchronized java.util.List<dev.stowling.v2.model.RegionDefinition> overflowRegions() {
+        if (settings.overflowRegionIds().isEmpty()) return java.util.List.of();
+        if (coordinates == null) throw new IllegalStateException("溢出区域未绑定公共设施");
+        var regions = coordinates.read().config().regions();
+        return settings.overflowRegionIds().stream().map(id -> regions.stream()
+                .filter(region -> region.id().equals(id)).findFirst().orElseThrow(() ->
+                        new IllegalStateException("溢出设施引用的区域不存在"))).toList();
     }
 
     public synchronized java.util.List<dev.stowling.v2.model.RegionDefinition> temporaryRegions() {

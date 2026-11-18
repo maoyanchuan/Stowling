@@ -10,6 +10,7 @@ public final class StandardTaskModuleFactories {
 
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
+                factory("PACK_OVERFLOW", OverflowItemsModule::create),
                 factory("GLOBAL_INVENTORY_CLEANUP",
                         (context, step) -> context.storageAutomation().cleanup(context)),
                 factory(

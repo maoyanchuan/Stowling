@@ -773,7 +773,8 @@ public final class V2ControlServer implements AutoCloseable {
                 detection,
                 string(json, "cacheRegionRef"),
                 autoClassifyAreas(json),
-                optionalPriority(json, "collectionPriority")
+                optionalPriority(json, "collectionPriority"),
+                optionalBooleanValue(json, "overflowEnabled")
         );
     }
 
@@ -790,7 +791,8 @@ public final class V2ControlServer implements AutoCloseable {
                 detection,
                 string(json, "cacheRegionRef"),
                 autoClassifyAreas(json),
-                optionalPriority(json, "collectionPriority")
+                optionalPriority(json, "collectionPriority"),
+                optionalBooleanValue(json, "overflowEnabled")
         );
     }
 
@@ -858,6 +860,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "enabled",
                 "collectionEnabled",
                 "classificationEnabled",
+                "overflowEnabled",
                 "detection",
                 "cacheRegionRef",
                 "classificationAreas",

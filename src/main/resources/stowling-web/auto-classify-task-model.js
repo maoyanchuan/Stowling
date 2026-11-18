@@ -172,6 +172,7 @@
             classificationAreas: [newArea()],
             collectionPriority: "NORMAL",
             enabled: false,
+            overflowEnabled: false,
             collectionEnabled: true,
             classificationEnabled: true
         };
@@ -207,6 +208,7 @@
                 : [],
             collectionPriority: String(item?.collectionPriority ?? ""),
             enabled: item?.enabled === true,
+            overflowEnabled: item?.overflowEnabled === true,
             collectionEnabled: item?.collectionEnabled === true,
             classificationEnabled: item?.classificationEnabled === true
         };
@@ -316,6 +318,7 @@
         return {
             name: String(draft.name).trim(),
             enabled: draft.enabled,
+            overflowEnabled: draft.overflowEnabled === true,
             collectionEnabled: draft.collectionEnabled,
             classificationEnabled: draft.classificationEnabled,
             detection: {

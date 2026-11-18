@@ -256,7 +256,8 @@ class V2ControlServiceImplTest {
                                         CategoryMarkerSource.CONTAINER_CONTENTS
                                 )
                         )),
-                        TaskPriority.NORMAL
+                        TaskPriority.NORMAL,
+                        true
                 )
         );
 
@@ -265,6 +266,7 @@ class V2ControlServiceImplTest {
         assertEquals(false, created.item().enabled());
         assertTrue(created.item().collectionEnabled());
         assertTrue(created.item().classificationEnabled());
+        assertTrue(created.item().overflowEnabled());
         assertEquals(2, created.item().classificationAreas().size());
         assertTrue(created.item().triggerIds().isEmpty());
 
@@ -290,6 +292,7 @@ class V2ControlServiceImplTest {
         assertTrue(!collision.item().name().equals("自动分类 分类"));
         assertTrue(collision.item().collectionEnabled());
         assertTrue(collision.item().classificationEnabled());
+        assertFalse(collision.item().overflowEnabled());
         assertEquals(2, service.autoClassifyTasks().items().size());
 
         TaskListResponse manual = service.createTask(task(
@@ -314,6 +317,7 @@ class V2ControlServiceImplTest {
                 new RevisionRequest(manualRemoved.revision())
         );
         assertTrue(started.item().enabled());
+        assertTrue(started.item().overflowEnabled());
         assertEquals(1, started.item().triggerIds().size());
         assertEquals(0, service.tasks().tasks().size());
         assertThrows(

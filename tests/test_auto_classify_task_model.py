@@ -83,6 +83,7 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "enabled": False,
         "collectionEnabled": True,
         "classificationEnabled": True,
+        "overflowEnabled": False,
     }
     assert result["gap"] == "自动分类 2"
     assert result["continuous"] == "自动分类 4"
@@ -143,6 +144,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "enabled": True,
         "collectionEnabled": False,
         "classificationEnabled": True,
+        "overflowEnabled": False,
     }
 
 
@@ -188,6 +190,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "enabled": False,
         "collectionEnabled": True,
         "classificationEnabled": False,
+        "overflowEnabled": False,
     }
 
 
@@ -233,7 +236,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 classificationEnabled: true,
             };
             const body = model.payload(draft, resources, items);
-            const enabledDraft = { ...draft, name: "自动收集 2", enabled: true };
+            const enabledDraft = { ...draft, name: "自动收集 2", enabled: true,
+                overflowEnabled: true };
             const enabledBody = model.payload(enabledDraft, resources, items);
             const item = {
                 id: "auto-1",
@@ -249,6 +253,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 bodyKeys: Object.keys(body),
                 detectionKeys: Object.keys(body.detection),
                 enabled: enabledBody.enabled,
+                overflow: model.draftFromTask({id: "auto-2", ...enabledBody}).overflowEnabled,
                 roundTrip: model.draftFromTask(item),
             };
         })()
@@ -261,6 +266,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "enabled": False,
         "collectionEnabled": False,
         "classificationEnabled": True,
+        "overflowEnabled": False,
         "detection": {
             "coordinateRef": "coordinate:coordinate-1",
             "pickupRadius": 8,
@@ -280,6 +286,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert result["bodyKeys"] == [
         "name",
         "enabled",
+        "overflowEnabled",
         "collectionEnabled",
         "classificationEnabled",
         "detection",
@@ -289,6 +296,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     ]
     assert result["detectionKeys"] == ["coordinateRef", "pickupRadius"]
     assert result["enabled"] is True
+    assert result["overflow"] is True
     assert result["roundTrip"] == {
         "id": "auto-1",
         "name": "自动收集",
@@ -308,6 +316,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "enabled": False,
         "collectionEnabled": False,
         "classificationEnabled": True,
+        "overflowEnabled": False,
     }
 
 

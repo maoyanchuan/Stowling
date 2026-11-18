@@ -114,3 +114,22 @@ def test_facilities_mount_and_new_point_is_selected_without_losing_other_referen
     assert value["saved"]["settings"]["temporaryRegionIds"] == ["area"]
     assert value["saved"]["settings"]["emptyBoxCoordinateIds"] == ["new"]
     assert value["saved"]["revision"] == "old"
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_overflow_facility_keeps_regions_when_adding_a_coordinate() -> None:
+    runner = RUNNER.replace("'空潜影盒供应箱'", "'溢出箱'").replace(
+        "temporaryRegionIds: ['area']}};",
+        "temporaryRegionIds: ['area'], overflowRegionIds: ['area']}};",
+    )
+    result = subprocess.run(
+        [str(NODE), "-e", runner, str(WEB / "storage-settings.js")],
+        check=True, capture_output=True, encoding="utf-8",
+    )
+    value = json.loads(result.stdout)
+    assert value["request"]["detail"] == {"returnPanel": "facilities", "name": "溢出箱"}
+    settings = value["saved"]["settings"]
+    assert settings["overflowCoordinateIds"] == ["new"]
+    assert settings["overflowRegionIds"] == ["area"]
+    assert settings["temporaryCoordinateIds"] == ["old"]
+    assert settings["temporaryRegionIds"] == ["area"]

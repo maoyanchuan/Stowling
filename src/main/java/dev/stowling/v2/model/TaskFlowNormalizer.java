@@ -156,8 +156,13 @@ public final class TaskFlowNormalizer {
         UUID seed = UUID.nameUUIDFromBytes(
                 (task.id() + ":global-inventory").getBytes(StandardCharsets.UTF_8)
         );
+        if (definition.overflowEnabled() && steps.stream().noneMatch(step ->
+                ConfigValidator.PACK_OVERFLOW.equals(step.moduleId()))) {
+            steps.addAll(remapStepIds(List.of(TaskFlowTemplates.overflow(
+                    definition.cacheRegionRef())), definition.derivedId("overflow")));
+        }
         steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
-                definition.cacheRegionRef(), Map.of()
+                definition.cacheRegionRef(), Map.of(), definition.overflowEnabled()
         ), seed));
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps, task.interruptionMode(), task.interruptionTaskRef(),
@@ -187,7 +192,8 @@ public final class TaskFlowNormalizer {
         List<TaskStep> collection = TaskFlowTemplates.collect(
                 definition.detectionCoordinateRef(),
                 definition.cacheRegionRef(),
-                parameters
+                parameters,
+                definition.overflowEnabled()
         );
         List<TaskStep> upgraded = new ArrayList<>(steps.subList(0, 3));
         upgraded.addAll(remapStepIds(

@@ -33,6 +33,7 @@
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
+        overflow: document.querySelector("#auto-overflow-enabled"),
         areas: document.querySelector("#auto-classification-areas"),
         addArea: document.querySelector("#add-auto-classification-area"),
         collectHeader: document.querySelector("#auto-collect-toggle"),
@@ -373,6 +374,7 @@
             "请选择包含缓存箱子的区域");
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
+        elements.overflow.checked = Boolean(draft.overflowEnabled);
         renderClassificationAreas();
         updateControls();
     }
@@ -391,7 +393,8 @@
             classificationAreas: areaReaders.map((reader) => reader.read()),
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
-            classificationEnabled: elements.classifyEnabled.checked
+            classificationEnabled: elements.classifyEnabled.checked,
+            overflowEnabled: elements.overflow.checked
         };
     }
 

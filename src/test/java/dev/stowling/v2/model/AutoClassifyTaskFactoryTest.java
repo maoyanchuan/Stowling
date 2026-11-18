@@ -13,6 +13,38 @@ import org.junit.jupiter.api.Test;
 
 class AutoClassifyTaskFactoryTest {
     @Test
+    void overflowIsOptInAndRunsAfterEveryClassificationAreaButBeforeReconciliation() {
+        AutoClassifyDefinition original = definition(true);
+        assertFalse(original.overflowEnabled());
+        var enabled = new AutoClassifyDefinition(original.id(), original.name(), original.enabled(),
+                original.collectionEnabled(), original.classificationEnabled(),
+                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
+                original.classificationAreas(), original.collectionPriority(), true);
+        List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
+        List<TaskStep> collect = tasks.getFirst().steps();
+        assertEquals(ConfigValidator.PACK_OVERFLOW, collect.get(3).moduleId());
+        assertTrue(collect.get(3).parameters().isEmpty());
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, collect.get(4).moduleId());
+        List<TaskStep> latePickups = collect.get(5).steps();
+        assertEquals(ConfigValidator.PACK_OVERFLOW, latePickups.get(2).moduleId());
+        assertTrue(latePickups.get(2).parameters().isEmpty());
+        List<TaskStep> classify = tasks.get(1).steps();
+        int index = original.classificationAreas().size() * 2;
+        assertEquals(ConfigValidator.PACK_OVERFLOW, classify.get(index).moduleId());
+        assertEquals(original.cacheRegionRef(), classify.get(index).parameters()
+                .get(ConfigValidator.REGION_REF));
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, classify.get(index + 1).moduleId());
+        assertTrue(AutoClassifyTaskFactory.tasks(original, List.of()).stream()
+                .flatMap(task -> task.steps().stream())
+                .noneMatch(step -> ConfigValidator.PACK_OVERFLOW.equals(step.moduleId())));
+        AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks,
+                List.of(), List.of(), List.of(), List.of(), List.of(enabled));
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+        assertEquals(tasks, normalized.tasks());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+    }
+
+    @Test
     void upgradesOldClassificationWithGlobalCleanupWithoutChangingSortingSteps() {
         AutoClassifyDefinition definition = definition(true);
         List<TaskDefinition> tasks = new ArrayList<>(

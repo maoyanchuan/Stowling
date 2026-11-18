@@ -8,9 +8,22 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.StorageAutomationSettings;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class TemporaryContainerResolverTest {
+    @Test
+    void overflowCombinesPointAndRegionFacilitiesWithoutDuplicatingDestinations() {
+        RegionDefinition region = new RegionDefinition(UUID.randomUUID(), "Overflow",
+                0, 64, 0, 8, 64, 8);
+        BlockPosition point = new BlockPosition(1, 64, 1);
+        ContainerTarget extra = new ContainerTarget(new BlockPosition(2, 64, 1), "barrel");
+        assertEquals(List.of(new ContainerTarget(point, "container"), extra),
+                TemporaryContainerResolver.resolve(List.of(point), List.of(region),
+                        (selected, types, limit) -> ContainerScanResult.success(List.of(
+                                new ContainerTarget(point, "chest"), extra)), Set.of(), "溢出"));
+    }
+
     @Test
     void regionOnlyStagingAcceptsAndDeduplicatesScannedContainers() {
         UUID id = UUID.randomUUID();

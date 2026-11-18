@@ -51,7 +51,8 @@ public final class AutoClassifyTaskFactory {
                         Map.of(
                                 ConfigValidator.PICKUP_RADIUS,
                                 Integer.toString(definition.pickupRadius())
-                        )
+                        ),
+                        definition.overflowEnabled()
                 )
         );
         if (definition.classificationEnabled()) {
@@ -98,8 +99,11 @@ public final class AutoClassifyTaskFactory {
                     )
             );
         }
+        if (definition.overflowEnabled()) {
+            classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheRegionRef()));
+        }
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
-                definition.cacheRegionRef(), Map.of()
+                definition.cacheRegionRef(), Map.of(), definition.overflowEnabled()
         ));
         return List.of(
                 new TaskDefinition(

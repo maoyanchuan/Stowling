@@ -121,6 +121,11 @@ public final class TaskFlowTemplates {
             String regionRef,
             Map<String, String> collectParameters
     ) {
+        return collect(areaRef, regionRef, collectParameters, false);
+    }
+
+    public static List<TaskStep> collect(String areaRef, String regionRef,
+            Map<String, String> collectParameters, boolean overflowEnabled) {
         Map<String, String> collect = new LinkedHashMap<>(collectParameters);
         collect.remove(ConfigValidator.CONTAINER_TYPES);
         collect.remove(ConfigValidator.MAX_VOLUME);
@@ -172,14 +177,28 @@ public final class TaskFlowTemplates {
                 List.of(selectContainer, move, deposit)
         );
         List<TaskStep> result = new ArrayList<>(List.of(collectStep, scanStep, depositCollected));
-        result.addAll(reconcileInventory(regionRef, collectParameters));
+        if (overflowEnabled) {
+            result.add(overflow(null));
+        }
+        result.addAll(reconcileInventory(regionRef, collectParameters, overflowEnabled));
         return List.copyOf(result);
+    }
+
+    public static TaskStep overflow(String cacheRegionRef) {
+        return TaskStep.action(UUID.randomUUID(), ConfigValidator.PACK_OVERFLOW,
+                cacheRegionRef == null ? Map.of() : Map.of(ConfigValidator.REGION_REF,
+                        cacheRegionRef));
     }
 
     public static List<TaskStep> reconcileInventory(
             String regionRef,
             Map<String, String> collectParameters
     ) {
+        return reconcileInventory(regionRef, collectParameters, false);
+    }
+
+    public static List<TaskStep> reconcileInventory(String regionRef,
+            Map<String, String> collectParameters, boolean overflowEnabled) {
         Map<String, String> scan = new LinkedHashMap<>();
         scan.put(ConfigValidator.REGION_REF, regionRef);
         copyIfPresent(collectParameters, scan, ConfigValidator.CONTAINER_TYPES);
@@ -237,14 +256,15 @@ public final class TaskFlowTemplates {
                 ConfigValidator.SYNC_PLAYER_INVENTORY,
                 syncParameters
         );
+        List<TaskStep> reconciliation = new ArrayList<>(List.of(reconcileScan, reconcileDeposits));
+        if (overflowEnabled) {
+            reconciliation.add(overflow(null));
+        }
+        reconciliation.add(reconcileSync);
         TaskStep reconcileLatePickups = TaskStep.repeat(
                 UUID.randomUUID(),
                 conditionParameters(TaskCondition.HAS_MANAGED_ITEMS, Map.of()),
-                List.of(
-                        reconcileScan,
-                        reconcileDeposits,
-                        reconcileSync
-                )
+                reconciliation
         );
         TaskStep assertClean = TaskStep.action(
                 UUID.randomUUID(),

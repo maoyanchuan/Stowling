@@ -48,6 +48,7 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-detection-point",
         "auto-pickup-radius",
         "auto-cache-region",
+        "auto-overflow-enabled",
         "auto-collect-priority",
         "auto-classification-areas",
         "add-auto-classification-area",

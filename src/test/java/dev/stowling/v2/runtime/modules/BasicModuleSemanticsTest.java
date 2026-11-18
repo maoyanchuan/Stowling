@@ -55,6 +55,63 @@ import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
     @Test
+    void overflowResolvesTheCacheRegionOrLimitsTheRequestToOwnedInventory() {
+        RegionDefinition region = new RegionDefinition(UUID.randomUUID(), "Cache",
+                0, 64, 0, 2, 64, 2);
+        List<RegionDefinition> requests = new ArrayList<>();
+        StorageAutomationPort storage = new StorageAutomationPort() {
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("overflow must use the packing action");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                throw new AssertionError("overflow must use the packing action");
+            }
+
+            @Override
+            public TaskModuleExecutor overflow(TaskExecutionContext context,
+                    RegionDefinition cacheRegion) {
+                requests.add(cacheRegion);
+                return new TaskModuleExecutor() {
+                    @Override
+                    public TaskModuleResult start() {
+                        return TaskModuleResult.waiting("packing");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        return TaskModuleResult.succeeded("stored");
+                    }
+
+                    @Override
+                    public void cancel() {
+                    }
+                };
+            }
+        };
+        TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), new TaskRunWorkspace());
+        TaskExecutionContext context = new TaskExecutionContext(base.navigation(),
+                base.droppedItems(), base.containerRegions(), base.containerTransfers(),
+                base.containerWithdrawals(), base.containerInspections(), base.categoryMarkerCache(),
+                base.foodConsumption(), base.categoryZonesPort(), base.coordinates(),
+                Map.of(region.id(), region), base.categoryZones(), base.workspace(),
+                base.inventory(), storage);
+        var action = OverflowItemsModule.create(context, TaskStep.action(UUID.randomUUID(),
+                "PACK_OVERFLOW", Map.of("regionRef", "region:" + region.id())));
+        assertEquals(TaskModuleState.WAITING, action.start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, action.tick().state());
+        assertEquals(List.of(region), requests);
+        OverflowItemsModule.create(context,
+                TaskStep.action(UUID.randomUUID(), "PACK_OVERFLOW", Map.of()));
+        assertEquals(2, requests.size());
+        assertNull(requests.getLast());
+    }
+
+    @Test
     void mixedBoxContentsEnterTheExistingBatchAndRouteWithoutASecondWithdrawal() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget cache = target(0, 64, 0, "cache");

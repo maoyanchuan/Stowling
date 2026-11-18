@@ -19,8 +19,31 @@ public record AutoClassifyTask(
         String collectionTaskRef,
         String classificationTaskRef,
         String interruptionTaskRef,
-        List<UUID> triggerIds
+        List<UUID> triggerIds,
+        boolean overflowEnabled
 ) {
+    public AutoClassifyTask(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            AutoClassifyDetection detection,
+            String cacheRegionRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            TaskPriority classificationPriority,
+            String collectionTaskRef,
+            String classificationTaskRef,
+            String interruptionTaskRef,
+            List<UUID> triggerIds
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheRegionRef, classificationAreas, collectionPriority,
+                classificationPriority, collectionTaskRef, classificationTaskRef,
+                interruptionTaskRef, triggerIds, false);
+    }
+
     public AutoClassifyTask {
         classificationAreas = List.copyOf(classificationAreas);
         triggerIds = List.copyOf(triggerIds);

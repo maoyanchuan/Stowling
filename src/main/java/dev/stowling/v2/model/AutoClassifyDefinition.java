@@ -16,8 +16,26 @@ public record AutoClassifyDefinition(
         int pickupRadius,
         String cacheRegionRef,
         List<AutoClassifyAreaDefinition> classificationAreas,
-        TaskPriority collectionPriority
+        TaskPriority collectionPriority,
+        boolean overflowEnabled
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            int pickupRadius,
+            String cacheRegionRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheRegionRef, classificationAreas,
+                collectionPriority, false);
+    }
+
     public static final int DEFAULT_PICKUP_RADIUS = 8;
     public static final int MIN_PICKUP_RADIUS = 1;
     public static final int MAX_PICKUP_RADIUS = 64;

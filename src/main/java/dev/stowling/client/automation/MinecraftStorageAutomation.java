@@ -4,6 +4,7 @@ import dev.stowling.automation.ContainerRecoveryDrop;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerVisitPlan;
 import dev.stowling.automation.DroppedItem;
+import dev.stowling.automation.EmptyBoxSupplyPlan;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedStorageCapacity;
@@ -99,7 +100,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             ContainerTarget target, Map<String, Integer> items) {
         if (target.storagePolicy().mode() == StorageMode.NORMAL
                 || !context.workspace().isClassificationStorage(target)
-                || settings.resolved().emptyBoxContainers().isEmpty()) {
+                || emptyBoxSources(context).isEmpty()) {
             return Optional.empty();
         }
         return Optional.of(new PrepareBox(context, target, items));
@@ -151,6 +152,27 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor cleanup(TaskExecutionContext context) {
         return new Cleanup(context);
+    }
+
+    @Override
+    public TaskModuleExecutor overflow(TaskExecutionContext context,
+            dev.stowling.v2.model.RegionDefinition cacheRegion) {
+        return new Overflow(context, cacheRegion);
+    }
+
+    private List<ContainerTarget> emptyBoxSources(TaskExecutionContext context) {
+        List<ContainerTarget> caches = new ArrayList<>();
+        context.workspace().containerScan().ifPresent(scan -> caches.addAll(scan.containers()));
+        caches.addAll(context.workspace().cacheContainers());
+        return EmptyBoxSupplyPlan.sources(caches,
+                context.workspace().selectedContainer().orElse(null),
+                settings.resolved().emptyBoxContainers());
+    }
+
+    private List<ContainerTarget> overflowContainers() {
+        return dev.stowling.automation.TemporaryContainerResolver.resolve(settings.overflowPositions(),
+                settings.overflowRegions(), containerRegions,
+                Set.copyOf(settings.resolved().emptyBoxContainers()), "溢出");
     }
 
     @Override
@@ -230,9 +252,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         final void read(ContainerTarget target, Consumer<List<ItemStack>> after) {
+            read(target, after, null);
+        }
+
+        final void read(ContainerTarget target, Consumer<List<ItemStack>> after, Runnable failed) {
             MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
                     target, Map.of(), false, true);
-            steps.add(new Step(access, () -> after.accept(access.contents())));
+            steps.add(new Step(access, () -> after.accept(access.contents()), failed));
         }
 
         final void transfer(ContainerTarget target, Map<String, Integer> items, boolean withdraw,
@@ -247,11 +273,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         final void withdrawEmptyBox(int index, Consumer<ItemStack> after) {
-            if (index >= configuration.emptyBoxContainers().size()) {
+            List<ContainerTarget> supplies = emptyBoxSources(context);
+            if (index >= supplies.size()) {
                 throw new IllegalStateException("空潜影盒供应不足，剩余物品等待收尾");
             }
-            ContainerTarget supply = new ContainerTarget(
-                    configuration.emptyBoxContainers().get(index), "container");
+            ContainerTarget supply = supplies.get(index);
             read(supply, contents -> {
                 ItemStack emptyBox = contents.stream()
                         .filter(MinecraftStorageAutomation::isEmptyBox)
@@ -264,13 +290,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 int before = owned().getOrDefault(key, 0);
                 MinecraftStorageAccess access = MinecraftStorageAccess.withdrawEmptyBox(
                         minecraft, context, supply, key);
-                steps.add(new Step(access, () -> {
-                    if (owned().getOrDefault(key, 0) != before + 1) {
-                        throw new IllegalStateException("背包空间不足或空潜影盒取出未确认");
+                Runnable confirmed = () -> {
+                    if (owned().getOrDefault(key, 0) == before + 1) {
+                        after.accept(emptyBox);
+                    } else {
+                        withdrawEmptyBox(index + 1, after);
                     }
-                    after.accept(emptyBox);
-                }));
-            });
+                };
+                steps.add(new Step(access, confirmed, confirmed));
+            }, () -> withdrawEmptyBox(index + 1, after));
         }
 
         final UUID owner() {
@@ -557,8 +585,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            if (!configuration.cleanupEnabled() || configuration.emptyBoxContainers().isEmpty()) {
-                throw new IllegalStateException("请先配置全局暂存箱、空盒供应并开启统一收尾");
+            if (!configuration.cleanupEnabled() || emptyBoxSources(context).isEmpty()) {
+                throw new IllegalStateException("请开启统一收尾，并在缓存或公共供应箱准备空盒");
             }
             if (ItemIdentity.isBox(target.type())) {
                 throw new IllegalStateException("潜影盒储存模式需要普通箱子或木桶作为目标");
@@ -976,6 +1004,161 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             items.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
                                     Math::addExact));
             return items;
+        }
+    }
+
+    private final class Overflow extends Session {
+        private final dev.stowling.v2.model.RegionDefinition cacheRegion;
+        private List<ContainerTarget> destinations;
+        private ContainerVisitPlan sources;
+        private ContainerTarget currentSource;
+        private ContainerTarget boxTarget;
+        private ItemStack box;
+
+        Overflow(TaskExecutionContext context, dev.stowling.v2.model.RegionDefinition cacheRegion) {
+            super(context);
+            this.cacheRegion = cacheRegion;
+        }
+
+        @Override
+        void initialize() {
+            if (cacheRegion == null && owned().isEmpty()) return;
+            if (!configuration.cleanupEnabled()) {
+                throw new IllegalStateException("溢出打包前请开启公共设施的统一中断收尾");
+            }
+            destinations = overflowContainers();
+            if (destinations.isEmpty()) {
+                throw new IllegalStateException("请先在公共设施配置溢出箱或溢出区域");
+            }
+            if (hasTemporaryResources(owner())) {
+                throw new IllegalStateException("尚有未回收潜影盒，请先执行全局收尾");
+            }
+            List<ContainerTarget> caches = List.of();
+            if (cacheRegion != null) {
+                var scan = containerRegions.scanComplete(cacheRegion, Set.of(), 1_000_000);
+                if (!scan.succeeded()) throw new IllegalStateException(scan.message());
+                caches = scan.containers().stream().filter(target -> destinations.stream()
+                        .noneMatch(destination -> destination.entrances().stream()
+                                .anyMatch(target.entrances()::contains)))
+                        .filter(target -> target.entrances().stream()
+                                .noneMatch(configuration.emptyBoxContainers()::contains)).toList();
+            }
+            sources = new ContainerVisitPlan(caches);
+            packOwned();
+        }
+
+        private void packOwned() {
+            ItemStack filled = inventoryStacks().stream().filter(MinecraftItemIdentity::isBox)
+                    .filter(stack -> !isEmptyBox(stack))
+                    .filter(stack -> owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
+                    .findFirst().orElse(ItemStack.EMPTY);
+            if (!filled.isEmpty()) {
+                box = filled;
+                storeOverflowBox(0);
+                return;
+            }
+            if (!rawOwned().isEmpty()) {
+                box = ownedEmptyBox(owned());
+                if (box.isEmpty()) {
+                    withdrawEmptyBox(0, supplied -> {
+                        box = supplied;
+                        placeOverflowBox();
+                    });
+                } else {
+                    placeOverflowBox();
+                }
+                return;
+            }
+            ItemStack empty = ownedEmptyBox(owned());
+            if (!empty.isEmpty()) {
+                box = empty;
+                storeOverflowBox(0);
+            } else if (currentSource != null) {
+                drainSource();
+            } else {
+                visitSource();
+            }
+        }
+
+        private Map<String, Integer> rawOwned() {
+            Map<String, Integer> items = new LinkedHashMap<>();
+            owned().forEach((key, count) -> {
+                if (!ItemIdentity.isBox(key)) items.put(key, count);
+            });
+            return items;
+        }
+
+        private void placeOverflowBox() {
+            BlockPosition site = chooseSite(context, destinations.getFirst(), null, configuration);
+            var resource = new MinecraftShulkerAction.Resource(site, box);
+            resources.put(owner(), resource);
+            boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
+            steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                    this::fillOverflowBox));
+        }
+
+        private void fillOverflowBox() {
+            int before = sum(rawOwned());
+            transfer(boxTarget, rawOwned(), false, () -> {
+                if (sum(rawOwned()) >= before) {
+                    throw new IllegalStateException("溢出潜影盒未能装入物品，等待全局收尾");
+                }
+                var resource = resources.get(owner());
+                recover(() -> {
+                    box = resource.expected;
+                    storeOverflowBox(0);
+                });
+            });
+        }
+
+        private void storeOverflowBox(int index) {
+            if (index >= destinations.size()) {
+                throw new IllegalStateException("溢出设施已满或不可达，打包物品已保留，等待收尾");
+            }
+            String key = MinecraftItemIdentity.key(box);
+            int before = owned().getOrDefault(key, 0);
+            var access = new MinecraftStorageAccess(minecraft, context, destinations.get(index),
+                    Map.of(key, 1), false, false);
+            Runnable after = () -> {
+                if (owned().getOrDefault(key, 0) == before - 1) {
+                    packOwned();
+                } else {
+                    storeOverflowBox(index + 1);
+                }
+            };
+            steps.add(new Step(access, after, after));
+        }
+
+        private void visitSource() {
+            BlockPos feet = minecraft.player.blockPosition();
+            currentSource = sources.next(new BlockPosition(feet.getX(), feet.getY(), feet.getZ()))
+                    .orElse(null);
+            if (currentSource != null) drainSource();
+        }
+
+        private void drainSource() {
+            read(currentSource, contents -> {
+                Set<String> keys = contents.stream().filter(stack -> !stack.isEmpty())
+                        .filter(stack -> !isEmptyBox(stack)).map(MinecraftItemIdentity::key)
+                        .collect(java.util.stream.Collectors.toSet());
+                if (keys.isEmpty()) {
+                    currentSource = null;
+                    visitSource();
+                    return;
+                }
+                var drain = new ContainerBatchWithdrawal(context, currentSource, keys);
+                steps.add(new Step(drain, () -> {
+                    if (drain.withdrawn().isEmpty()) {
+                        throw new IllegalStateException("背包空间不足，缓存溢出物品尚未取出");
+                    }
+                    packOwned();
+                }));
+            });
+        }
+
+        @Override
+        String completionMessage() {
+            return "无法处理的缓存物品已打包送往溢出设施";
         }
     }
 

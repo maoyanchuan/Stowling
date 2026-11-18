@@ -64,6 +64,10 @@ public final class TaskModuleCatalog {
                             )
                     )
             ),
+            action(ConfigValidator.PACK_OVERFLOW, "打包溢出物品",
+                    "把背包余料或缓存中无法分类的余料装盒后送往公共溢出设施。",
+                    List.of(reference(ConfigValidator.REGION_REF, "缓存区域", "region-reference",
+                            false))),
             action(
                     ConfigValidator.CONTAINER_INTERACTION,
                     "容器交互",

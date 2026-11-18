@@ -11,8 +11,23 @@ public record AutoClassifyTaskRequest(
         AutoClassifyDetectionRequest detection,
         String cacheRegionRef,
         List<AutoClassifyAreaRequest> classificationAreas,
-        TaskPriority collectionPriority
+        TaskPriority collectionPriority,
+        Boolean overflowEnabled
 ) {
+    public AutoClassifyTaskRequest(
+            String name,
+            Boolean enabled,
+            Boolean collectionEnabled,
+            Boolean classificationEnabled,
+            AutoClassifyDetectionRequest detection,
+            String cacheRegionRef,
+            List<AutoClassifyAreaRequest> classificationAreas,
+            TaskPriority collectionPriority
+    ) {
+        this(name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheRegionRef, classificationAreas, collectionPriority, null);
+    }
+
     public AutoClassifyTaskRequest {
         classificationAreas = classificationAreas == null
                 ? List.of()

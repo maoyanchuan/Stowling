@@ -48,7 +48,8 @@ public final class CoordinateResourceMigration {
                                                         .flatMap(zone -> zone.bindings().stream())
                                                         .map(CategoryBindingDefinition::storagePolicy)
                                                         .findFirst().orElse(StoragePolicy.DEFAULT)))
-                                .toList(), definition.collectionPriority())).toList();
+                                .toList(), definition.collectionPriority(),
+                        definition.overflowEnabled())).toList();
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,
@@ -57,7 +58,8 @@ public final class CoordinateResourceMigration {
         }
         return new StorageAutomationSettings(settings.cleanupEnabled(), List.of(), List.of(), null,
                 temporary.stream().distinct().toList(), empty.stream().distinct().toList(), fallback,
-                settings.temporaryRegionIds());
+                settings.temporaryRegionIds(), settings.overflowCoordinateIds(),
+                settings.overflowRegionIds());
     }
 
     private static UUID coordinate(List<CoordinatePoint> points, BlockPosition position, String name) {

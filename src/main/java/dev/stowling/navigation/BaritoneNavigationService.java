@@ -12,6 +12,8 @@ import dev.stowling.v2.model.AreaBounds;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 
@@ -60,21 +62,35 @@ public final class BaritoneNavigationService implements NavigationService {
     }
 
     @Override
-    public void navigateToInteractionRange(BlockPosition target, AreaBounds standingArea) {
-        LocalPlayer player = primaryBaritone().getPlayerContext().player();
+    public boolean navigateToInteractionRange(BlockPosition target, AreaBounds standingArea,
+            Set<BlockPosition> rejectedStances) {
+        IBaritone baritone = primaryBaritone();
+        LocalPlayer player = baritone.getPlayerContext().player();
         if (player == null) {
-            throw new IllegalStateException("当前没有可寻路的玩家");
+            return false;
         }
-        primaryBaritone().getCustomGoalProcess().setGoalAndPath(interactionGoal(
-                target, standingArea, player.blockInteractionRange(), player.getEyeHeight()
-        ));
+        Optional<Goal> goal = interactionGoal(target, standingArea, player.blockInteractionRange(),
+                player.getEyeHeight(), rejectedStances);
+        goal.ifPresent(baritone.getCustomGoalProcess()::setGoalAndPath);
+        return goal.isPresent();
     }
 
-    static Goal interactionGoal(
+    @Override
+    public Optional<BlockPosition> interactionFeet() {
+        var context = primaryBaritone().getPlayerContext();
+        if (context.player() == null) {
+            return Optional.empty();
+        }
+        BlockPos feet = context.playerFeet();
+        return Optional.of(new BlockPosition(feet.getX(), feet.getY(), feet.getZ()));
+    }
+
+    static Optional<Goal> interactionGoal(
             BlockPosition target,
             AreaBounds area,
             double reach,
-            double eyeHeight
+            double eyeHeight,
+            Set<BlockPosition> rejectedStances
     ) {
         if (area == null) {
             area = new AreaBounds(Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
@@ -92,15 +108,16 @@ public final class BaritoneNavigationService implements NavigationService {
                     if (withinReach(target, x + 0.5, y + eyeHeight, z + 0.5, reach)
                             || withinReach(target, x + 0.5, y + eyeHeight + 0.5,
                                     z + 0.5, reach)) {
-                        goals.add(new GoalBlock((int) x, (int) y, (int) z));
+                        BlockPosition stance = new BlockPosition((int) x, (int) y, (int) z);
+                        if (!rejectedStances.contains(stance)) {
+                            goals.add(new GoalBlock(stance.x(), stance.y(), stance.z()));
+                        }
                     }
                 }
             }
         }
-        if (goals.isEmpty()) {
-            throw new IllegalArgumentException("操作站位区域内没有够得着目标容器的位置");
-        }
-        return new GoalComposite(goals.toArray(Goal[]::new));
+        return goals.isEmpty() ? Optional.empty()
+                : Optional.of(new GoalComposite(goals.toArray(Goal[]::new)));
     }
 
     private static boolean withinReach(

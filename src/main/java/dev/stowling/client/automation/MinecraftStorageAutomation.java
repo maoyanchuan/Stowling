@@ -1,6 +1,7 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerVisitPlan;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.config.StorageSettingsStore;
@@ -343,20 +344,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 } else {
                     preferredSite = chooseSite(context, target, policy.packingArea(), configuration);
                     sourceContents.clear();
-                    scanSources(sourceTargets(), 0);
+                    scanSources(new ContainerVisitPlan(sourceTargets()));
                 }
             });
         }
 
-        private void scanSources(List<ContainerTarget> sources, int index) {
-            if (index == sources.size()) {
+        private void scanSources(ContainerVisitPlan plan) {
+            BlockPos feet = minecraft.player.blockPosition();
+            ContainerTarget source = plan.next(new BlockPosition(feet.getX(), feet.getY(),
+                    feet.getZ())).orElse(null);
+            if (source == null) {
                 chooseBox();
                 return;
             }
-            ContainerTarget source = sources.get(index);
             read(source, contents -> {
                 sourceContents.put(source, contents);
-                scanSources(sources, index + 1);
+                scanSources(plan);
             });
         }
 

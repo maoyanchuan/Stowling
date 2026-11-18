@@ -9,6 +9,7 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import dev.stowling.v2.model.AreaBounds;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +70,46 @@ class BaritoneAutomationNavigationTest {
         assertEquals(NavigationStatus.NAVIGATING, navigation.status(chest));
         service.withinInteractionRange = true;
         assertEquals(NavigationStatus.ARRIVED, navigation.status(chest));
+    }
+
+    @Test
+    void containerAlreadyInReachDoesNotSubmitAPath() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.withinInteractionRange = true;
+        BaritoneAutomationNavigation navigation = navigationAt(service,
+                new AtomicReference<>(new BlockPosition(6, -45, 34)));
+
+        assertEquals(NavigationStatus.ARRIVED,
+                navigation.startInteraction(new BlockPosition(5, -43, 32), null));
+        assertEquals(0, service.interactionCalls);
+    }
+
+    @Test
+    void retriesExcludeRejectedFeetAndDoNotCarryThemToTheNextContainer() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.navigating = true;
+        BlockPosition start = new BlockPosition(8, -45, 36);
+        BlockPosition stalled = new BlockPosition(8, -45, 35);
+        AtomicReference<BlockPosition> player = new AtomicReference<>(start);
+        BaritoneAutomationNavigation navigation = navigationAt(service, player);
+        BlockPosition chest = new BlockPosition(5, -43, 32);
+        service.feet = start;
+
+        assertEquals(NavigationStatus.NAVIGATING, navigation.startInteraction(chest, null));
+        assertEquals(Set.of(start), service.rejectedStances);
+        navigation.status(chest);
+        player.set(stalled);
+        service.feet = stalled;
+        service.navigating = false;
+        navigation.status(chest);
+        for (int tick = 0; tick < 20; tick++) {
+            navigation.status(chest);
+        }
+
+        assertEquals(2, service.interactionCalls);
+        assertEquals(Set.of(start, stalled), service.rejectedStances);
+        navigation.startInteraction(new BlockPosition(6, -43, 32), null);
+        assertEquals(Set.of(stalled), service.rejectedStances);
     }
 
     @Test
@@ -336,11 +377,21 @@ class BaritoneAutomationNavigationTest {
         private boolean navigating;
         private AreaBounds standingArea;
         private int interactionCalls;
+        private BlockPosition feet;
+        private Set<BlockPosition> rejectedStances = Set.of();
 
         @Override
-        public void navigateToInteractionRange(BlockPosition target, AreaBounds area) {
+        public boolean navigateToInteractionRange(BlockPosition target, AreaBounds area,
+                Set<BlockPosition> excluded) {
             standingArea = area;
             interactionCalls++;
+            rejectedStances = Set.copyOf(excluded);
+            return true;
+        }
+
+        @Override
+        public Optional<BlockPosition> interactionFeet() {
+            return Optional.ofNullable(feet);
         }
 
         @Override

@@ -1,38 +1,32 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
-import dev.stowling.automation.NavigationStatus;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
+import dev.stowling.v2.runtime.modules.TaskModuleState;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
 
 /** Navigation, exact component-aware transfers, and acknowledgement at one container. */
 final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final Minecraft minecraft;
     private final TaskExecutionContext context;
-    private final ContainerTarget target;
+    private final MinecraftContainerVisit visit;
     private final Map<String, Integer> remaining;
     private final boolean withdraw;
     private final boolean inspect;
     private final List<ItemStack> contents = new ArrayList<>();
-    private boolean navigating;
-    private boolean sent;
+    private boolean opened;
     private boolean stop;
     private boolean done;
     private int age;
@@ -48,7 +42,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             boolean inspect) {
         this.minecraft = minecraft;
         this.context = context;
-        this.target = target;
+        this.visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
         this.remaining = new LinkedHashMap<>(requested);
         this.withdraw = withdraw;
         this.inspect = inspect;
@@ -84,34 +78,16 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         if (stop && pendingKey == null) {
             return finish(true, "容器操作已安全停止");
         }
-        if (!sent) {
-            if (minecraft.gui.screen() != null) {
-                if (!minecraft.player.containerMenu.getCarried().isEmpty()) {
-                    return TaskModuleResult.waiting("等待鼠标上的物品归位");
-                }
-                minecraft.player.closeContainer();
-                return TaskModuleResult.waiting("正在关闭上一容器");
+        if (!opened) {
+            TaskModuleResult access = visit.tick();
+            if (access.state() == TaskModuleState.FAILED) {
+                return finish(false, access.message());
             }
-            NavigationStatus status = navigating
-                    ? context.navigation().status(target.position())
-                    : context.navigation().startInteraction(
-                            target.position(), target.standingArea());
-            navigating = true;
-            if (status == NavigationStatus.FAILED) {
-                return finish(false, "无法到达容器操作位置 " + target.position());
+            if (access.state() != TaskModuleState.SUCCEEDED) {
+                return access;
             }
-            if (status != NavigationStatus.ARRIVED) {
-                return TaskModuleResult.waiting("正在前往容器 " + target.position());
-            }
-            if (!ContainerStandingAccess.canOpen(minecraft.player, target)) {
-                return finish(false, "容器不在可交互距离内");
-            }
-            BlockPos position = block(target);
-            minecraft.gameMode.useItemOn(minecraft.player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(position), Direction.UP, position, false));
-            sent = true;
-            settle = 0;
-            return TaskModuleResult.waiting("等待容器打开");
+            opened = true;
+            age = 0;
         }
         if (!(minecraft.gui.screen() instanceof AbstractContainerScreen<?> screen)) {
             if (pendingKey != null) {
@@ -201,6 +177,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
 
     private TaskModuleResult finish(boolean success, String message) {
         done = true;
+        visit.cancelNavigation();
         if (minecraft.player != null && minecraft.player.containerMenu.getCarried().isEmpty()) {
             minecraft.player.closeContainer();
         }
@@ -222,13 +199,10 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     @Override
     public void cancel() {
         requestStop();
+        visit.cancelNavigation();
         if (safeToStop() && minecraft.player != null) {
             minecraft.player.closeContainer();
         }
-    }
-
-    static BlockPos block(ContainerTarget target) {
-        return new BlockPos(target.position().x(), target.position().y(), target.position().z());
     }
 
     static List<Integer> slots(AbstractContainerMenu menu, boolean player) {

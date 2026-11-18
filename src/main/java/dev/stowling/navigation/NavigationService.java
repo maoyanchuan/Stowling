@@ -3,14 +3,21 @@ package dev.stowling.navigation;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 public interface NavigationService {
     void navigateTo(BlockPosition target);
 
     void navigateToNear(BlockPosition target, int radius);
 
-    default void navigateToInteractionRange(BlockPosition target, AreaBounds standingArea) {
-        throw new IllegalStateException("当前寻路组件不支持容器交互目标");
+    default boolean navigateToInteractionRange(BlockPosition target, AreaBounds standingArea,
+            Set<BlockPosition> rejectedStances) {
+        return false;
+    }
+
+    default Optional<BlockPosition> interactionFeet() {
+        return Optional.empty();
     }
 
     default void navigateToWithinRadius(BlockPosition target, int radius) {

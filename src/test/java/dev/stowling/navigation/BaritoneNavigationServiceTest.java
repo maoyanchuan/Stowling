@@ -3,20 +3,20 @@ package dev.stowling.navigation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class BaritoneNavigationServiceTest {
     @Test
     void standingGoalRequiresTheSpecifiedStepAndExcludesTheSpaceBelowTheChest() {
         Goal goal = BaritoneNavigationService.interactionGoal(new BlockPosition(0, 68, 0),
-                new AreaBounds(1, 64, 0, 2, 64, 0), 4.5, 1.62);
+                new AreaBounds(1, 64, 0, 2, 64, 0), 4.5, 1.62, Set.of()).orElseThrow();
 
         assertTrue(goal.isInGoal(1, 64, 0));
         assertTrue(goal.isInGoal(2, 64, 0));
@@ -26,22 +26,37 @@ class BaritoneNavigationServiceTest {
 
     @Test
     void standingGoalRejectsAnAreaThatCannotReachTheContainer() {
-        assertThrows(IllegalArgumentException.class,
-                () -> BaritoneNavigationService.interactionGoal(new BlockPosition(0, 68, 0),
-                        new AreaBounds(1, 58, 0, 1, 58, 0), 4.5, 1.62));
+        assertTrue(BaritoneNavigationService.interactionGoal(new BlockPosition(0, 68, 0),
+                new AreaBounds(1, 58, 0, 1, 58, 0), 4.5, 1.62, Set.of()).isEmpty());
     }
 
     @Test
     void interactionGoalAcceptsReachableStanceOutsideOldRadius() {
         BlockPosition chest = new BlockPosition(5, -43, 32);
-        Goal interaction = BaritoneNavigationService.interactionGoal(chest, null, 4.5, 1.62);
+        Goal interaction = BaritoneNavigationService.interactionGoal(
+                chest, null, 4.5, 1.62, Set.of()).orElseThrow();
         Goal oldNearGoal = BaritoneNavigationService.nearContainerGoal(chest, 2);
-        Goal reducedReach = BaritoneNavigationService.interactionGoal(chest, null, 1.5, 1.62);
+        Goal reducedReach = BaritoneNavigationService.interactionGoal(
+                chest, null, 1.5, 1.62, Set.of()).orElseThrow();
 
         assertFalse(oldNearGoal.isInGoal(6, -45, 34));
         assertTrue(interaction.isInGoal(6, -45, 34));
         assertFalse(interaction.isInGoal(6, -51, 34));
         assertFalse(reducedReach.isInGoal(6, -45, 34));
+    }
+
+    @Test
+    void excludesTheObservedStallButRetainsTheUsableStance() {
+        BlockPosition chest = new BlockPosition(5, -43, 32);
+        BlockPosition stalled = new BlockPosition(8, -45, 36);
+        Goal unfiltered = BaritoneNavigationService.interactionGoal(
+                chest, null, 4.5, 1.62, Set.of()).orElseThrow();
+        Goal alternative = BaritoneNavigationService.interactionGoal(
+                chest, null, 4.5, 1.62, Set.of(stalled)).orElseThrow();
+
+        assertTrue(unfiltered.isInGoal(stalled.x(), stalled.y(), stalled.z()));
+        assertFalse(alternative.isInGoal(stalled.x(), stalled.y(), stalled.z()));
+        assertTrue(alternative.isInGoal(6, -45, 34));
     }
 
     @Test

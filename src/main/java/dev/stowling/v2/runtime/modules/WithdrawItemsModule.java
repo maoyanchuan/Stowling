@@ -48,13 +48,14 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
 
     private Set<String> fullBoxCategories() {
         Set<String> categories = new LinkedHashSet<>();
+        Set<String> flexible = new LinkedHashSet<>();
         context.workspace().acceptedItemsByContainer().forEach((container, accepted) -> {
-            if (container.storagePolicy().mode() != StorageMode.NORMAL
-                    && !container.storagePolicy().allowPartialBoxes()) {
-                accepted.stream().map(ItemIdentity::category)
-                        .forEach(categories::add);
-            }
+            Set<String> destination = container.storagePolicy().mode() == StorageMode.BOX_ONLY
+                    && !container.storagePolicy().allowPartialBoxes()
+                    ? categories : flexible;
+            accepted.stream().map(ItemIdentity::category).forEach(destination::add);
         });
+        categories.removeAll(flexible);
         return Set.copyOf(categories);
     }
 

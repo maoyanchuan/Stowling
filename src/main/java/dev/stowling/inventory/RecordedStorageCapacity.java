@@ -27,13 +27,13 @@ public final class RecordedStorageCapacity {
                 continue;
             }
             if (stock == null || stock.recordedAt() == null) {
-                return true;
+                return false;
             }
             int stackSize = stackSizes.getOrDefault(key, stock.items().stream()
                     .filter(entry -> entry.key().equals(key))
                     .mapToInt(WarehouseInventory.Entry::stackSize).findFirst().orElse(0));
             if (stackSize < 1) {
-                return true;
+                continue;
             }
             long incoming = items.entrySet().stream()
                     .filter(entry -> !ItemIdentity.isBox(entry.getKey())
@@ -62,9 +62,6 @@ public final class RecordedStorageCapacity {
                     loose, otherSlots, stock.occupiedSlots(), slack);
             // Reserving a spare is independent of permission to store a partially filled box.
             if (loose > limit || incoming > space) {
-                return true;
-            }
-            if (stock.partialBoxes() > 0 && stock.boxes().isEmpty()) {
                 return true;
             }
             boolean partial = stock.boxes().stream().anyMatch(box ->

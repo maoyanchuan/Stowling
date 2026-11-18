@@ -58,12 +58,42 @@ class BoxReservationTest {
     }
 
     @Test
-    void unknownTargetStockReservesBeforeTravelAndNormalStorageDoesNot() {
-        assertTrue(reserve(null, FULL_ONLY, 1, 64));
+    void unknownTargetStockDoesNotCauseSpeculativeSupplyTrips() {
+        assertFalse(reserve(null, FULL_ONLY, 1, 64));
         assertFalse(reserve(null, StoragePolicy.DEFAULT, 64, 64));
         assertFalse(RecordedStorageCapacity.shouldReserveBox(null, FULL_ONLY,
                 Map.of("minecraft:shulker_box#full@" + LEAVES, 1), Map.of()));
         assertFalse(RecordedStorageCapacity.shouldReserveBox(null, FULL_ONLY, Map.of(), Map.of()));
+    }
+
+    @Test
+    void incompletePartialBoxMetadataDoesNotMeanTheBoxWillOverflow() {
+        var stock = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                List.of(new BlockPosition(0, 64, 0)), Instant.ofEpochSecond(1),
+                54, 2, 0, 1, 0,
+                List.of(new WarehouseInventory.Entry(LEAVES, LEAVES, "Leaves", 64, 0, 64)));
+        assertFalse(reserve(stock, FULL_ONLY, 64, 64));
+    }
+
+    @Test
+    void unknownStackSizeDoesNotForceABoxForEveryCategory() {
+        assertFalse(RecordedStorageCapacity.shouldReserveBox(stock(54, 0, List.of()),
+                FULL_ONLY, Map.of("minecraft:dirt", 64), Map.of()));
+    }
+
+    @Test
+    void belowThresholdTripsDoNotFetchEmptyBoxesWithEitherRefillSetting() {
+        var stock = stock(54, 5 * 64, List.of());
+        assertFalse(reserve(stock, FULL_ONLY, 2 * 64, 64));
+        var refill = new StoragePolicy(StorageMode.MIXED, 50, false, null, true);
+        assertFalse(reserve(stock, refill, 2 * 64, 64));
+    }
+
+    @Test
+    void unrecordedSnapshotsDoNotCauseAnEmptyBoxToBeFetched() {
+        var unrecorded = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                List.of(new BlockPosition(0, 64, 0)), null, 54, 0, 0, 0, 0, List.of());
+        assertFalse(reserve(unrecorded, FULL_ONLY, 64, 64));
     }
 
     @Test

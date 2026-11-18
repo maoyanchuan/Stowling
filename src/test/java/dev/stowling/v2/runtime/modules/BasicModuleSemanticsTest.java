@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.CategoryMarkerCachePort;
+import dev.stowling.automation.ClassificationBatchPolicy;
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.ContainerInspectionPort;
@@ -39,6 +40,8 @@ import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.StorageMode;
+import dev.stowling.v2.model.StoragePolicy;
 import dev.stowling.v2.model.TaskStep;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -51,6 +54,54 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
+
+    @Test
+    void mixedStorageKeepsMultipleKindsInOneBatchWhenPartialBoxStorageIsDisabled() {
+        ContainerTarget leaves = new ContainerTarget(new BlockPosition(5, 64, 0), "chest", null,
+                new StoragePolicy(StorageMode.MIXED, 50, false, null));
+        ContainerTarget stone = new ContainerTarget(new BlockPosition(10, 64, 0), "chest", null,
+                new StoragePolicy(StorageMode.MIXED, 50, false, null));
+        Set<String> dedicated = withdrawalBatchCategories(Map.of(
+                leaves, Set.of("minecraft:birch_leaves"), stone, Set.of("minecraft:stone")));
+        assertEquals(Set.of(), dedicated);
+        ClassificationBatchPolicy batch = new ClassificationBatchPolicy(dedicated);
+        batch.recordConfirmed("minecraft:birch_leaves");
+        assertTrue(batch.accepts("minecraft:stone"));
+        assertTrue(batch.priority("minecraft:stone") < batch.priority("minecraft:birch_leaves"));
+    }
+
+    @Test
+    void aMixedAlternativePreventsAnUnnecessaryDedicatedBatch() {
+        ContainerTarget mixed = new ContainerTarget(new BlockPosition(5, 64, 0), "chest", null,
+                new StoragePolicy(StorageMode.MIXED, 50, false, null));
+        ContainerTarget boxes = new ContainerTarget(new BlockPosition(10, 64, 0), "chest", null,
+                new StoragePolicy(StorageMode.BOX_ONLY, 50, false, null));
+        assertEquals(Set.of(), withdrawalBatchCategories(Map.of(
+                mixed, Set.of("minecraft:stone"), boxes, Set.of("minecraft:stone"))));
+    }
+
+    @Test
+    void onlyStrictBoxOnlyDestinationsRequireADedicatedBatch() {
+        ContainerTarget boxes = new ContainerTarget(new BlockPosition(5, 64, 0), "chest", null,
+                new StoragePolicy(StorageMode.BOX_ONLY, 50, false, null));
+        assertEquals(Set.of("minecraft:stone"), withdrawalBatchCategories(Map.of(
+                boxes, Set.of("minecraft:stone"))));
+    }
+
+    private static Set<String> withdrawalBatchCategories(
+            Map<ContainerTarget, Set<String>> accepted) {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        workspace.setResolvedCategories(new ArrayList<>(accepted.keySet()), accepted,
+                List.of(target(0, 64, 0, "cache")));
+        workspace.selectNextContainer().orElseThrow();
+        CapturingWithdrawal withdrawal = new CapturingWithdrawal();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        var module = new WithdrawItemsModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.WITHDRAW_ITEMS, Map.of(TaskModuleIds.TARGET_REF, "output:container")));
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        return withdrawal.fullBoxCategories;
+    }
 
     @Test
     void classificationWaitsForBoxSupplyEvenWithoutTheCacheFallbackFlag() {
@@ -2461,6 +2512,14 @@ class BasicModuleSemanticsTest {
     private static final class CapturingWithdrawal
             implements ContainerWithdrawalPort {
         private Set<String> matchingItemIds = Set.of();
+        private Set<String> fullBoxCategories = Set.of();
+
+        @Override
+        public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
+                Set<String> matchingItemIds, Set<String> fullBoxCategories) {
+            this.fullBoxCategories = Set.copyOf(fullBoxCategories);
+            return startWithdrawal(target, matchingItemIds);
+        }
 
         @Override
         public ContainerWithdrawalResult startWithdrawal(

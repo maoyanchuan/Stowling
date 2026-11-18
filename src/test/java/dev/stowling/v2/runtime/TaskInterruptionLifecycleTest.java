@@ -8,6 +8,7 @@ import dev.stowling.automation.CategoryMarkerCachePort;
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.ContainerInspectionPort;
+import dev.stowling.automation.ContainerRecoveryDrop;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
@@ -29,6 +30,7 @@ import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.runtime.modules.StandardTaskModuleFactories;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
@@ -44,9 +46,89 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class TaskInterruptionLifecycleTest {
+    @Test
+    void recoveringABoxDoesNotPreemptClassificationButForeignDropsStillDo() {
+        String box = "minecraft:shulker_box#recovering@minecraft:stone";
+        BlockPosition site = new BlockPosition(10, 64, 10);
+        DroppedItem ownedBox = new DroppedItem(UUID.randomUUID(), box, 1, site);
+        AtomicReference<List<DroppedItem>> observed = new AtomicReference<>(List.of());
+        DroppedItemObserverPort drops = new DroppedItemObserverPort() {
+            @Override
+            public List<DroppedItem> observe(BlockPosition center, int radius) {
+                return observed.get();
+            }
+
+            @Override
+            public List<DroppedItem> observe(RegionDefinition region) {
+                return observed.get();
+            }
+        };
+        RecordingNavigation navigation = new RecordingNavigation();
+        TaskModuleRuntimeRegistry registry = registryWithDrops(navigation, drops);
+        AtomicInteger cleaned = new AtomicInteger();
+        registry.setStorageAutomation(new dev.stowling.v2.runtime.modules.StorageAutomationPort() {
+            @Override
+            public boolean cleanupEnabled() {
+                return true;
+            }
+
+            @Override
+            public boolean isRecoveryDrop(DroppedItem item) {
+                return ContainerRecoveryDrop.matches(item, site, box);
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                return new TestAction(context) {
+                    @Override
+                    public TaskModuleResult start() {
+                        cleaned.incrementAndGet();
+                        context.workspace().consumeDeposit("managed",
+                                context.workspace().managedItems(), Map.of());
+                        return TaskModuleResult.succeeded("cleaned");
+                    }
+                };
+            }
+
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new UnsupportedOperationException();
+            }
+        });
+        TaskDefinition classify = task("Classify", TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE, actionStep(ADD_MANAGED), actionStep(SLOW));
+        TaskDefinition pickup = task("Pickup", TaskPriority.URGENT,
+                TaskInterruptionMode.NONE, actionStep(NOOP));
+        UUID coordinateId = UUID.randomUUID();
+        var trigger = TaskTriggerDefinition.droppedItems(UUID.randomUUID(), "Drops", pickup.id(),
+                TaskPriority.URGENT, 1, 0, coordinateId, null);
+        AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(coordinate(coordinateId)), List.of(classify, pickup), List.of(), List.of(),
+                List.of(trigger));
+        TaskRunManager manager = new TaskRunManager(navigation, registry);
+        manager.refreshTriggers(config);
+        TaskRunSnapshot run = manager.start(classify, config, null);
+        manager.tick();
+        observed.set(List.of(ownedBox));
+        for (int tick = 0; tick < 3; tick++) {
+            manager.tick();
+        }
+        assertEquals(run.runId(), manager.status().orElseThrow().runId());
+        assertEquals(TaskRunState.WAITING, manager.status().orElseThrow().state());
+        assertTrue(manager.queued().isEmpty());
+        assertEquals(0, cleaned.get());
+
+        observed.set(List.of(ownedBox,
+                new DroppedItem(UUID.randomUUID(), "minecraft:dirt", 1, site)));
+        manager.tick();
+        assertTrue(manager.runs().stream().anyMatch(snapshot -> snapshot.taskId().equals(pickup.id())));
+    }
+
     @Test
     void globalCleanupAppliesWithoutAnyTaskSpecificInterruptionFlow() {
         RecordingNavigation navigation = new RecordingNavigation();
@@ -466,6 +548,8 @@ class TaskInterruptionLifecycleTest {
                 urgentRun.runId(),
                 manager.queued().getFirst().runId()
         );
+        assertTrue(manager.status().orElseThrow().message().contains("原任务停止原因"));
+        assertTrue(manager.status().orElseThrow().message().contains("Urgent"));
     }
 
 
@@ -879,6 +963,13 @@ class TaskInterruptionLifecycleTest {
             RecordingNavigation navigation,
             TaskModuleRuntimeFactory... extraFactories
     ) {
+        return registryWithDrops(navigation, new EmptyDroppedItems(), extraFactories);
+    }
+
+    private static TaskModuleRuntimeRegistry registryWithDrops(
+            RecordingNavigation navigation, DroppedItemObserverPort drops,
+            TaskModuleRuntimeFactory... extraFactories
+    ) {
         List<TaskModuleRuntimeFactory> factories = new ArrayList<>(
                 StandardTaskModuleFactories.create()
         );
@@ -889,7 +980,7 @@ class TaskInterruptionLifecycleTest {
         factories.addAll(List.of(extraFactories));
         return new TaskModuleRuntimeRegistry(
                 navigation,
-                new EmptyDroppedItems(),
+                drops,
                 (region, types, volume) ->
                         ContainerScanResult.failure("unused"),
                 new FailedTransfers(),

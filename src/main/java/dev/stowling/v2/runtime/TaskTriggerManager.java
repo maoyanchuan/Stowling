@@ -32,6 +32,10 @@ final class TaskTriggerManager {
         );
 
         boolean taskPending(UUID taskId);
+
+        default boolean isRecoveryDrop(DroppedItem item) {
+            return false;
+        }
     }
 
     private final DroppedItemObserverPort droppedItems;
@@ -315,6 +319,7 @@ final class TaskTriggerManager {
         }
         List<DroppedItem> matches = droppedItems.observe(center, radius)
                 .stream()
+                .filter(item -> !host.isRecoveryDrop(item))
                 .filter(item -> trigger.matches(item.itemId()))
                 .toList();
         return matches.isEmpty()

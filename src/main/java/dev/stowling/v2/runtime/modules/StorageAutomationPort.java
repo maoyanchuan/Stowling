@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.DroppedItem;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +55,10 @@ public interface StorageAutomationPort {
     }
 
     default boolean hasTemporaryResources(UUID owner) {
+        return false;
+    }
+
+    default boolean isRecoveryDrop(DroppedItem item) {
         return false;
     }
 }

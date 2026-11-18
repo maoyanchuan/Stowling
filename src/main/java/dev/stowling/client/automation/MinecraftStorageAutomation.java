@@ -1,7 +1,9 @@
 package dev.stowling.client.automation;
 
+import dev.stowling.automation.ContainerRecoveryDrop;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerVisitPlan;
+import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedStorageCapacity;
@@ -71,6 +73,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public boolean hasTemporaryResources(UUID owner) {
         return resources.containsKey(owner);
+    }
+
+    @Override
+    public boolean isRecoveryDrop(DroppedItem item) {
+        return resources.values().stream().anyMatch(resource -> resource.placed
+                && ContainerRecoveryDrop.matches(item, resource.position,
+                        MinecraftItemIdentity.key(resource.expected)));
     }
 
     @Override

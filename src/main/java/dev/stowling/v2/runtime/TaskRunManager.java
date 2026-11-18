@@ -86,6 +86,11 @@ public final class TaskRunManager {
                     public boolean taskPending(UUID taskId) {
                         return isTaskPending(taskId);
                     }
+
+                    @Override
+                    public boolean isRecoveryDrop(dev.stowling.automation.DroppedItem item) {
+                        return registry.storageAutomation().isRecoveryDrop(item);
+                    }
                 }
         );
     }
@@ -692,7 +697,11 @@ public final class TaskRunManager {
         String warning = active.stopWarning == null || active.stopWarning.isBlank()
                 ? ""
                 : "；" + active.stopWarning;
-        update(TaskRunState.INTERRUPTION_FAILED, message + warning);
+        String cause = (active.terminalState == TaskRunState.FAILED
+                || active.terminalState == TaskRunState.PREEMPTED)
+                && active.terminalMessage != null && !active.terminalMessage.isBlank()
+                ? "；原任务停止原因：" + active.terminalMessage : "";
+        update(TaskRunState.INTERRUPTION_FAILED, message + cause + warning);
     }
 
     private void tickInterruptionRecovery() {

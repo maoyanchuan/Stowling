@@ -15,6 +15,7 @@
     };
     let coordinateRequest = 0;
     let regionRequest = 0;
+    let coordinateReturnPanel = null;
 
     const elements = {
         tabs: Array.from(document.querySelectorAll(".page-subnav-tab")),
@@ -552,6 +553,8 @@
      */
     async function createCoordinate() {
         try {
+            const knownIds = new Set(state.coordinates.map(point => point.id));
+            const requestedName = elements.name.value.trim();
             const response = await Stowling.request("/v1/coordinates", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -581,6 +584,17 @@
             elements.add.focus();
             clearErrors();
             Stowling.showToast("坐标已添加");
+            const created = response.coordinates.find(point => !knownIds.has(point.id)
+                && point.name === requestedName);
+            if (coordinateReturnPanel && created) {
+                const panel = coordinateReturnPanel;
+                coordinateReturnPanel = null;
+                document.dispatchEvent(new CustomEvent("stowling:coordinate-created", {
+                    detail: {coordinate: created}
+                }));
+                window.location.hash = panel;
+                activateTab(panel);
+            }
         } catch (error) {
             showError(error, "添加坐标失败");
         }
@@ -649,6 +663,13 @@
         elements.regionForm.hidden = true;
         clearErrors(elements.errors);
         clearErrors(elements.regionErrors);
+        if (coordinateReturnPanel) {
+            const panel = coordinateReturnPanel;
+            coordinateReturnPanel = null;
+            document.dispatchEvent(new Event("stowling:coordinate-create-cancelled"));
+            window.location.hash = panel;
+            activateTab(panel);
+        }
     }
 
     /**
@@ -878,6 +899,19 @@
     document.addEventListener(TAB_EVENT, refreshResourcePanel);
     window.addEventListener("hashchange", activateHashTab);
     activateHashTab();
+    document.addEventListener("stowling:request-coordinate-create", event => {
+        coordinateReturnPanel = event.detail.returnPanel;
+        window.location.hash = "coordinate-points";
+        activateTab("coordinate-points");
+        showCoordinateForm();
+        const base = event.detail.name || "坐标点";
+        const names = new Set(state.coordinates.map(point => point.name));
+        let candidate = base;
+        for (let suffix = 2; names.has(candidate); suffix++) {
+            candidate = `${base} ${suffix}`;
+        }
+        elements.name.value = candidate;
+    });
     elements.add.addEventListener("click", showCoordinateForm);
     elements.addRegion.addEventListener("click", showRegionForm);
     elements.cancel.addEventListener("click", hideCreateForms);

@@ -28,6 +28,28 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void acceptsAndPersistsTheOptionalLooseRefillSwitch() throws Exception {
+        try (Fixture fixture = fixture()) {
+            JsonObject payload = JsonParser.parseString(categoryZone("Refill")).getAsJsonObject();
+            JsonObject policy = JsonParser.parseString("""
+                    {"mode":"MIXED","loosePercent":50,"allowPartialBoxes":false,
+                    "refillLoose":true}
+                    """).getAsJsonObject();
+            payload.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .add("storagePolicy", policy);
+            assertEquals(401, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), false).statusCode());
+            assertEquals(201, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), true).statusCode());
+            JsonObject saved = object(fixture.send("/v1/category-zones", "GET", null, true))
+                    .getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                    .getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .getAsJsonObject("storagePolicy");
+            assertTrue(saved.get("refillLoose").getAsBoolean());
+        }
+    }
+
+    @Test
     void warehouseInventoryRequiresAuthenticationAndServesItsBrowserAssets() throws Exception {
         try (Fixture fixture = fixture()) {
             assertEquals(401, fixture.send(

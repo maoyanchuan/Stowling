@@ -237,6 +237,10 @@
         partial.type = "checkbox";
         partial.className = "settings-switch";
         partial.checked = Boolean(policy.allowPartialBoxes);
+        const refill = document.createElement("input");
+        refill.type = "checkbox";
+        refill.className = "settings-switch";
+        refill.checked = Boolean(policy.refillLoose);
         const layoutLink = Stowling.element("a", "text-link", "管理仓储布局与公共设施 →");
         layoutLink.href = "/coordinates.html#category-zones";
         const recognition = document.createElement("select");
@@ -282,7 +286,8 @@
             labeledControl("分类物识别方式", recognition),
             labeledControl("储存模式", storageMode),
             labeledControl("散装槽位比例（%）", loose),
-            labeledControl("允许未满盒入库，下次优先补满", partial), layoutLink
+            labeledControl("允许未满盒入库，下次优先补满", partial),
+            labeledControl("混合模式：散货不足阈值时拆盒补足", refill), layoutLink
         );
         card.append(heading, fields);
         elements.areas.append(card);
@@ -290,7 +295,8 @@
             read: () => ({
                 categoryZoneId: range.value,
                 storagePolicy: {mode: storageMode.value, loosePercent: Number(loose.value),
-                    allowPartialBoxes: partial.checked, packingArea: null},
+                    allowPartialBoxes: partial.checked, refillLoose: refill.checked,
+                    packingArea: null},
                 ruleId: recognition.value,
                 markerSources: Auto.defaultMarkerSources(recognition.value)
             })

@@ -515,7 +515,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         }
                     });
                 } else if (carried.isEmpty() && loose <= looseLimit && boxes.isEmpty()) {
-                    nextCategory();
+                    finishCategory();
                 } else {
                     chooseBox();
                 }
@@ -660,7 +660,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 context.workspace().markTargetUnavailable(target);
                 context.workspace().setCacheHasMore(false);
             }
-            nextCategory();
+            finishCategory();
+        }
+
+        private void finishCategory() {
+            if (policy.refillLoose() && policy.mode() == StorageMode.MIXED) {
+                steps.add(new Step(new RefillLoose(context, target, category), this::nextCategory));
+            } else {
+                nextCategory();
+            }
         }
 
         private void stashUnusedSupplyBox(int index) {
@@ -703,6 +711,150 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
             });
             return result;
+        }
+    }
+
+    private final class RefillLoose extends Session {
+        private final ContainerTarget target;
+        private final String category;
+        private ContainerTarget boxTarget;
+        private ItemStack box;
+        private int stackSize;
+        private Map<String, Integer> extracted = Map.of();
+        private boolean madeProgress;
+        private boolean initialized;
+
+        RefillLoose(TaskExecutionContext context, ContainerTarget target, String category) {
+            super(context);
+            this.target = target;
+            this.category = category;
+        }
+
+        @Override
+        void initialize() {
+            initialized = true;
+            read(target, this::inspect);
+        }
+
+        @Override
+        public TaskModuleResult tick() {
+            return initialized ? super.tick() : super.start();
+        }
+
+        private void inspect(List<ItemStack> contents) {
+            box = contents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
+                    && category.equals(MinecraftItemIdentity.boxCategory(stack)))
+                    .min(Comparator.comparingInt(MinecraftStorageAutomation::insideCount))
+                    .map(ItemStack::copy).orElse(ItemStack.EMPTY);
+            if (box.isEmpty()) {
+                return;
+            }
+            stackSize = MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
+                    .findFirst().orElseThrow().getMaxStackSize();
+            if (refillAmount(contents, insideCount(box)) == 0) {
+                return;
+            }
+            BlockPosition site = chooseSite(context, target, target.storagePolicy().packingArea(),
+                    configuration);
+            String key = MinecraftItemIdentity.key(box);
+            int before = owned().getOrDefault(key, 0);
+            transfer(target, Map.of(key, 1), true, () -> {
+                if (owned().getOrDefault(key, 0) != before + 1) {
+                    throw new IllegalStateException("补散货用潜影盒取出未确认");
+                }
+                madeProgress = false;
+                var resource = new MinecraftShulkerAction.Resource(site, box);
+                resources.put(owner(), resource);
+                boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
+                steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                        this::extractLoose));
+            });
+        }
+
+        private void extractLoose() {
+            read(boxTarget, boxContents -> read(target, contents -> {
+                Map<String, Integer> requested = take(categoryItems(boxContents),
+                        refillAmount(contents, Integer.MAX_VALUE));
+                Map<String, Integer> before = owned();
+                transfer(boxTarget, requested, true, () -> {
+                    Map<String, Integer> acquired = new LinkedHashMap<>();
+                    requested.forEach((key, count) -> {
+                        int moved = Math.min(count,
+                                owned().getOrDefault(key, 0) - before.getOrDefault(key, 0));
+                        if (moved > 0) acquired.put(key, moved);
+                    });
+                    extracted = Map.copyOf(acquired);
+                    depositLoose();
+                });
+            }));
+        }
+
+        private void depositLoose() {
+            read(target, contents -> {
+                Map<String, Integer> requested = take(extracted,
+                        refillAmount(contents, Integer.MAX_VALUE));
+                Map<String, Integer> before = owned();
+                transfer(target, requested, false, () -> {
+                    Map<String, Integer> returned = new LinkedHashMap<>(extracted);
+                    requested.forEach((key, count) -> {
+                        int moved = Math.min(count,
+                                before.getOrDefault(key, 0) - owned().getOrDefault(key, 0));
+                        if (moved > 0) {
+                            madeProgress = true;
+                            returned.compute(key, (ignored, value) -> value - moved);
+                        }
+                    });
+                    returned.values().removeIf(count -> count <= 0);
+                    returnUnusedLoose(returned);
+                });
+            });
+        }
+
+        private void returnUnusedLoose(Map<String, Integer> returned) {
+            Map<String, Integer> before = owned();
+            transfer(boxTarget, returned, false, () -> {
+                if (returned.entrySet().stream().anyMatch(entry ->
+                        owned().getOrDefault(entry.getKey(), 0)
+                                != before.getOrDefault(entry.getKey(), 0) - entry.getValue())) {
+                    throw new IllegalStateException("补货余料尚未归还潜影盒，等待全局收尾");
+                }
+                var resource = resources.get(owner());
+                recover(() -> {
+                    box = resource.expected;
+                    storeRemainder();
+                });
+            });
+        }
+
+        private void storeRemainder() {
+            String key = MinecraftItemIdentity.key(box);
+            int before = owned().getOrDefault(key, 0);
+            transfer(target, Map.of(key, 1), false, () -> {
+                if (owned().getOrDefault(key, 0) != before - 1) {
+                    throw new IllegalStateException("补货后的潜影盒未能放回目标箱，等待全局收尾");
+                }
+                if (madeProgress) {
+                    read(target, this::inspect);
+                }
+            });
+        }
+
+        private int refillAmount(List<ItemStack> contents, int available) {
+            int otherSlots = (int) contents.stream().filter(stack -> !stack.isEmpty()
+                    && !MinecraftItemIdentity.isBox(stack)
+                    && !category.equals(MinecraftItemIdentity.base(stack))).count();
+            return StoragePackingPlanner.refillCount(target.storagePolicy(), contents.size(),
+                    stackSize, sum(categoryItems(contents)), otherSlots, available);
+        }
+
+        private Map<String, Integer> categoryItems(List<ItemStack> contents) {
+            Map<String, Integer> items = new LinkedHashMap<>();
+            contents.stream().filter(stack -> !stack.isEmpty()
+                    && !MinecraftItemIdentity.isBox(stack)
+                    && category.equals(MinecraftItemIdentity.base(stack))).forEach(stack ->
+                            items.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
+                                    Math::addExact));
+            return items;
         }
     }
 

@@ -13,6 +13,7 @@ NODE = shutil.which("node")
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_storage_policy_round_trip_keeps_tail_switch_and_external_packing_area() -> None:
     policy = {"mode": "MIXED", "loosePercent": 50, "allowPartialBoxes": True,
+              "refillLoose": True,
               "packingArea": {"firstX": 1, "firstY": 64, "firstZ": 2,
                               "secondX": 1, "secondY": 64, "secondZ": 3}}
     script = """
@@ -29,3 +30,11 @@ def test_storage_policy_round_trip_keeps_tail_switch_and_external_packing_area()
         check=True, capture_output=True, encoding="utf-8",
     )
     assert json.loads(result.stdout) == policy
+
+
+def test_task_editor_loads_and_saves_the_optional_refill_switch() -> None:
+    source = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
+    assert 'refill.type = "checkbox"' in source
+    assert "refill.checked = Boolean(policy.refillLoose)" in source
+    assert "refillLoose: refill.checked" in source
+    assert "混合模式：散货不足阈值时拆盒补足" in source

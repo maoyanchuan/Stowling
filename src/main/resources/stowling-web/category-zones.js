@@ -922,6 +922,7 @@
                 mode: storageMode.value,
                 loosePercent: Number(loosePercent.value),
                 allowPartialBoxes: allowPartial.checked,
+                refillLoose: Boolean(binding.storagePolicy?.refillLoose),
                 packingArea: packingToggle.checked ? readStandingArea(packing.read()) : null
             },
             ruleId: rule.value,

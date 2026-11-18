@@ -1083,7 +1083,8 @@ public final class V2ControlServer implements AutoCloseable {
             return dev.stowling.v2.model.StoragePolicy.DEFAULT;
         }
         JsonObject policy = jsonObject(value, "storagePolicy");
-        requireFieldsAny(policy, Set.of("mode", "loosePercent", "allowPartialBoxes", "packingArea"),
+        requireFieldsAny(policy, Set.of("mode", "loosePercent", "allowPartialBoxes", "packingArea",
+                        "refillLoose"),
                 Set.of("mode", "loosePercent", "allowPartialBoxes"));
         return V2Json.gson().fromJson(policy, dev.stowling.v2.model.StoragePolicy.class);
     }

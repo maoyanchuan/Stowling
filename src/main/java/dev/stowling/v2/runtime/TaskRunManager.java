@@ -180,7 +180,7 @@ public final class TaskRunManager {
                             binding.containerOverrides(), binding.standingArea(),
                             new dev.stowling.v2.model.StoragePolicy(policy.mode(),
                                     policy.loosePercent(), policy.allowPartialBoxes(),
-                                    binding.storagePolicy().packingArea())))
+                                    binding.storagePolicy().packingArea(), policy.refillLoose())))
                     .toList());
         }).toList();
     }

@@ -24,6 +24,16 @@ public final class StoragePackingPlanner {
         return available > 0 && (allowPartial || available >= needed);
     }
 
+    public static int refillCount(StoragePolicy policy, int slots, int stackSize, int loose,
+            int otherLooseSlots, int available) {
+        if (!policy.refillLoose() || policy.mode() != StorageMode.MIXED) {
+            return 0;
+        }
+        int limit = Math.max(0, looseLimit(policy, slots, stackSize)
+                - otherLooseSlots * stackSize);
+        return Math.min(Math.max(0, available), Math.max(0, limit - loose));
+    }
+
     public static long looseSpace(StoragePolicy policy, int slots, int stackSize,
             long sameCategoryLoose, long otherLooseSlots, int occupiedSlots, long matchingSlack) {
         long policySpace = looseLimit(policy, slots, stackSize)

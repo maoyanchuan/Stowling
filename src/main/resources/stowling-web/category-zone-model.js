@@ -44,6 +44,7 @@
             mode: String(value?.mode || "NORMAL"),
             loosePercent: Number(value?.loosePercent ?? 50),
             allowPartialBoxes: Boolean(value?.allowPartialBoxes),
+            refillLoose: Boolean(value?.refillLoose),
             packingArea: value?.packingArea ? normalizeArea(value.packingArea) : null
         };
     }

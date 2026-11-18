@@ -16,7 +16,8 @@ def test_task_policy_round_trip_preserves_per_task_storage_choice() -> None:
         globalThis.window = {};
         require(process.argv[1]);
         const model = window.StowlingAutoClassifyTaskModel;
-        const policy = {mode: 'BOX_ONLY', loosePercent: 25, allowPartialBoxes: true};
+        const policy = {mode: 'BOX_ONLY', loosePercent: 25, allowPartialBoxes: true,
+            refillLoose: true};
         const draft = model.draftFromTask({detection: {coordinateRef: 'coordinate:point'},
             cacheRegionRef: 'region:cache', classificationAreas: [{
                 categoryZoneRef: 'category-zone:zone', ruleId: 'DIRECT_BLOCK_ID',
@@ -29,4 +30,5 @@ def test_task_policy_round_trip_preserves_per_task_storage_choice() -> None:
     )
     assert json.loads(result.stdout) == {
         "mode": "BOX_ONLY", "loosePercent": 25, "allowPartialBoxes": True,
+        "refillLoose": True,
     }

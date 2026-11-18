@@ -4,7 +4,8 @@ public record StoragePolicy(
         StorageMode mode,
         int loosePercent,
         boolean allowPartialBoxes,
-        AreaBounds packingArea
+        AreaBounds packingArea,
+        boolean refillLoose
 ) {
     public static final StoragePolicy DEFAULT =
             new StoragePolicy(StorageMode.NORMAL, 50, false, null);
@@ -16,8 +17,13 @@ public record StoragePolicy(
         }
     }
 
+    public StoragePolicy(StorageMode mode, int loosePercent, boolean allowPartialBoxes,
+            AreaBounds packingArea) {
+        this(mode, loosePercent, allowPartialBoxes, packingArea, false);
+    }
+
     public StoragePolicy shift(int x, int z) {
         return new StoragePolicy(mode, loosePercent, allowPartialBoxes,
-                packingArea == null ? null : packingArea.shift(x, 0, z));
+                packingArea == null ? null : packingArea.shift(x, 0, z), refillLoose);
     }
 }

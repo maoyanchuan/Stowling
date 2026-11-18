@@ -736,6 +736,68 @@ body[data-page] [hidden] {
     display: none !important;
 }
 
+.resource-browser {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+}
+
+.resource-browser-list {
+    display: grid;
+    gap: 6px;
+    position: sticky;
+    top: 16px;
+    max-height: 75vh;
+    overflow: auto;
+}
+
+body[data-page] .resource-browser-item {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+    padding: 14px;
+    color: var(--text);
+    background: #202124;
+    border: 1px solid var(--line);
+    text-align: left;
+}
+
+.resource-browser-item small {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+body[data-page] .resource-browser-item[aria-current="true"] {
+    border-color: var(--accent);
+    background: #303b36;
+}
+
+.resource-not-selected {
+    display: none !important;
+}
+
+.resource-reference-hint {
+    padding: 16px;
+    border-top: 1px solid var(--line);
+}
+
+#facility-editor select[multiple] {
+    min-height: 160px;
+}
+
+@media (max-width: 780px) {
+    .resource-browser {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .resource-browser-list {
+        position: static;
+        max-height: 220px;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .settings-chevron {
         transition: none;

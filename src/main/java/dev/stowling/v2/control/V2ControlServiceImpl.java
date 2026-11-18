@@ -83,6 +83,21 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 != dev.stowling.v2.runtime.TaskRunState.INTERRUPTION_FAILED).orElse(false)) {
             throw new IllegalArgumentException("请等待当前任务结束后修改全局储存配置");
         }
+        var points = configs.read().config().coordinates();
+        Set<UUID> ids = points.stream().map(CoordinatePoint::id)
+                .collect(java.util.stream.Collectors.toSet());
+        List<UUID> referenced = new ArrayList<>(settings.temporaryCoordinateIds());
+        referenced.addAll(settings.emptyBoxCoordinateIds());
+        if (settings.fallbackCoordinateId() != null) {
+            referenced.add(settings.fallbackCoordinateId());
+        }
+        if (!ids.containsAll(referenced)) {
+            throw new IllegalArgumentException("公共设施引用的坐标不存在，请刷新后重新选择");
+        }
+        if (!settings.temporaryContainers().isEmpty() || !settings.emptyBoxContainers().isEmpty()
+                || settings.fallbackPackingPosition() != null) {
+            throw new IllegalArgumentException("请在坐标页创建位置，再选择公共设施引用");
+        }
         return storageSettings.save(revision, settings);
     }
 
@@ -206,6 +221,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 ))
                 .map(TaskTriggerDefinition::name)
                 .toList());
+        if (storageSettings != null) {
+            var facilities = storageSettings.read().settings();
+            if (facilities.temporaryCoordinateIds().contains(id)) references.add("公共设施·暂存箱");
+            if (facilities.emptyBoxCoordinateIds().contains(id)) references.add("公共设施·空盒供应");
+            if (id.equals(facilities.fallbackCoordinateId())) references.add("公共设施·后备工位");
+        }
         if (!references.isEmpty()) {
             throw new CoordinateInUseException(references);
         }
@@ -1156,7 +1177,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .map(area -> new AutoClassifyAreaDefinition(
                         area.categoryZoneRef(),
                         area.ruleId(),
-                        area.markerSources()
+                        area.markerSources(),
+                        area.storagePolicy()
                 ))
                 .toList();
         return new AutoClassifyDefinition(

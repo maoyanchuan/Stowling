@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="/workbench.css">
     <script src="/common.js" defer></script>
     <script src="/settings-ui.js" defer></script>
-    <script src="/storage-settings.js" defer></script>
     <script src="/v2-task-model.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
     <script src="/move-task-model.js" defer></script>
@@ -123,7 +122,9 @@
                                         </label>
                                         <div class="move-target-heading">
                                             <span>目标位置</span>
-                                            <div class="move-source-switch" role="group"
+                                            <a href="/coordinates.html#coordinate-points"
+                                               class="text-link">管理坐标 →</a>
+                                            <div class="move-source-switch" hidden role="group"
                                                  aria-label="坐标来源">
                                                 <button type="button" data-move-source="manual"
                                                         aria-pressed="true">手动输入</button>
@@ -131,7 +132,7 @@
                                                         aria-pressed="false">已保存坐标</button>
                                             </div>
                                         </div>
-                                        <div id="move-manual-target" class="move-axis-grid">
+                                        <div id="move-manual-target" class="move-axis-grid" hidden inert>
                                             <label class="move-field" for="move-target-x">
                                                 <span>X</span>
                                                 <input id="move-target-x" type="number" step="1"

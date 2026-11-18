@@ -223,6 +223,22 @@
         }
         range.value = area.categoryZoneId;
 
+        const policy = area.storagePolicy || selectedZone?.bindings?.[0]?.storagePolicy || {};
+        const storageMode = document.createElement("select");
+        for (const [value, name] of [["NORMAL", "普通散装"], ["MIXED", "散装与潜影盒混合"],
+                ["BOX_ONLY", "纯潜影盒"]]) storageMode.append(new Option(name, value));
+        storageMode.value = policy.mode || "NORMAL";
+        const loose = document.createElement("input");
+        loose.type = "number";
+        loose.min = "0";
+        loose.max = "100";
+        loose.value = String(policy.loosePercent ?? 50);
+        const partial = document.createElement("input");
+        partial.type = "checkbox";
+        partial.className = "settings-switch";
+        partial.checked = Boolean(policy.allowPartialBoxes);
+        const layoutLink = Stowling.element("a", "text-link", "管理仓储布局与公共设施 →");
+        layoutLink.href = "/coordinates.html#category-zones";
         const recognition = document.createElement("select");
         const smartRuleId = categoryRuleId(
             ["DIRECT_BLOCK_ID"],
@@ -263,13 +279,18 @@
         const fields = Stowling.element("div", "auto-area-fields");
         fields.append(
             labeledControl("分类范围", range),
-            labeledControl("分类物识别方式", recognition)
+            labeledControl("分类物识别方式", recognition),
+            labeledControl("储存模式", storageMode),
+            labeledControl("散装槽位比例（%）", loose),
+            labeledControl("允许未满盒入库，下次优先补满", partial), layoutLink
         );
         card.append(heading, fields);
         elements.areas.append(card);
         return {
             read: () => ({
                 categoryZoneId: range.value,
+                storagePolicy: {mode: storageMode.value, loosePercent: Number(loose.value),
+                    allowPartialBoxes: partial.checked, packingArea: null},
                 ruleId: recognition.value,
                 markerSources: Auto.defaultMarkerSources(recognition.value)
             })

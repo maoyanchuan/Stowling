@@ -15,6 +15,32 @@ public final class StorageSettingsStore {
     private final Path path;
     private StorageAutomationSettings settings;
     private long revision;
+    private ConfigStore coordinates;
+
+    public synchronized void bindCoordinates(ConfigStore coordinates) {
+        this.coordinates = coordinates;
+        var migrated = CoordinateResourceMigration.migrate(coordinates, settings);
+        if (!migrated.equals(settings)) {
+            save(Long.toString(revision), migrated);
+        }
+    }
+
+    public synchronized StorageAutomationSettings resolved() {
+        if (coordinates == null) {
+            return settings;
+        }
+        var points = coordinates.read().config().coordinates();
+        java.util.function.Function<java.util.UUID, dev.stowling.domain.BlockPosition> resolve = id -> {
+            var point = points.stream().filter(value -> value.id().equals(id)).findFirst()
+                    .orElseThrow(() -> new IllegalStateException("公共设施引用的坐标不存在"));
+            return new dev.stowling.domain.BlockPosition(point.x(), point.y(), point.z());
+        };
+        return new StorageAutomationSettings(settings.cleanupEnabled(),
+                settings.temporaryCoordinateIds().stream().map(resolve).toList(),
+                settings.emptyBoxCoordinateIds().stream().map(resolve).toList(),
+                settings.fallbackCoordinateId() == null ? null
+                        : resolve.apply(settings.fallbackCoordinateId()));
+    }
 
     public StorageSettingsStore(Path path) throws IOException {
         this.path = path.toAbsolutePath().normalize();

@@ -294,6 +294,7 @@
      * @returns {void}
      */
     function updateMoveTarget() {
+        state.moveDraft.source = "saved";
         const manual = state.moveDraft.source === "manual";
         elements.moveManual.hidden = !manual;
         elements.moveSaved.hidden = manual;

@@ -115,6 +115,7 @@ public final class StowlingRuntime implements AutoCloseable {
         );
         var storageSettings = new dev.stowling.v2.config.StorageSettingsStore(
                 configDirectory.resolve("stowling-storage-settings.json"));
+        storageSettings.bindCoordinates(configs);
         moduleRuntime.setStorageAutomation(
                 new dev.stowling.client.automation.MinecraftStorageAutomation(
                         minecraft, storageSettings));

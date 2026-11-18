@@ -794,15 +794,13 @@ public final class V2ControlServer implements AutoCloseable {
         List<AutoClassifyAreaRequest> result = new ArrayList<>();
         for (JsonElement value : array(json, "classificationAreas")) {
             JsonObject area = jsonObject(value, "classification area");
-            requireFields(area, Set.of(
-                    "categoryZoneRef",
-                    "ruleId",
-                    "markerSources"
-            ));
+            requireFieldsAny(area, Set.of("categoryZoneRef", "ruleId", "markerSources",
+                    "storagePolicy"), Set.of("categoryZoneRef", "ruleId", "markerSources"));
             result.add(new AutoClassifyAreaRequest(
                     string(area, "categoryZoneRef"),
                     string(area, "ruleId"),
-                    markerSources(area)
+                    markerSources(area),
+                    area.has("storagePolicy") ? storagePolicy(area) : null
             ));
         }
         if (result.isEmpty()) {
@@ -1649,6 +1647,7 @@ public final class V2ControlServer implements AutoCloseable {
                 ),
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
                 Map.entry("/storage-settings.js", read("stowling-web/storage-settings.js", js)),
+                Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),
                 Map.entry(
                         "/task-monitor-model.js",
                         read("stowling-web/task-monitor-model.js", js)

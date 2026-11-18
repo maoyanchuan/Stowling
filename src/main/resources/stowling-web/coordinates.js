@@ -5,7 +5,7 @@
     const Model = window.StowlingCoordinateModel;
     const RegionModel = window.StowlingRegionModel;
     const TAB_EVENT = "stowling:resource-tab-change";
-    const TAB_IDS = new Set(["coordinate-points", "regions", "category-zones"]);
+    const TAB_IDS = new Set(["coordinate-points", "regions", "category-zones", "facilities"]);
     const state = {
         revision: "",
         coordinates: [],
@@ -761,7 +761,7 @@
      */
     function normalizeTabId(value) {
         const candidate = String(value || "").replace(/^#/, "");
-        return TAB_IDS.has(candidate) ? candidate : "coordinate-points";
+        return TAB_IDS.has(candidate) ? candidate : "category-zones";
     }
 
     /**

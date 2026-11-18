@@ -43,7 +43,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public boolean cleanupEnabled() {
-        return settings.read().settings().cleanupEnabled();
+        return settings.resolved().cleanupEnabled();
     }
 
     @Override
@@ -53,7 +53,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public List<ContainerTarget> temporaryContainers() {
-        return settings.read().settings().temporaryContainers().stream()
+        return settings.resolved().temporaryContainers().stream()
                 .map(position -> new ContainerTarget(position, "container")).toList();
     }
 
@@ -70,7 +70,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private abstract class Session implements TaskModuleExecutor {
         final TaskExecutionContext context;
-        final StorageAutomationSettings configuration = settings.read().settings();
+        final StorageAutomationSettings configuration = settings.resolved();
         final Deque<Step> steps = new ArrayDeque<>();
         Step current;
         boolean stopping;

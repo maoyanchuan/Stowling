@@ -5,6 +5,16 @@ coordinates, regions, category zones, queued tasks, and condition listeners.
 Movement and container interaction are delegated through the existing game
 ports and Baritone integration.
 
+The coordinate page groups warehouse layouts, public facilities, basic points, and
+basic regions. Resource lists stay on the left while the selected editor opens on
+the right. Reference summaries show saved tasks and facilities using each resource.
+Public facilities select named points rather than storing duplicate XYZ values;
+referenced facility points cannot be deleted. Existing inline facility coordinates
+and simple manual movement targets migrate to reusable named points on startup.
+The task page selects locations and links to coordinate management. Each automatic
+classification area selects its own storage mode, loose threshold, and partial-box
+policy, while layouts retain standing and packing geometry shared by those tasks.
+
 Category binding templates support loose, mixed, and box-only storage. Mixed storage
 reserves 50% of the target's slots for loose items by default. The optional partial-box
 switch stores unfinished boxes alongside full boxes and refills them before opening

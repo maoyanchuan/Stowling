@@ -811,13 +811,11 @@
             "留空时就近寻找位置；区域随单片平移，允许位于总选区外。",
             packingToggle, packing.content).root;
         const policyBody = Stowling.element("div", "");
-        policyBody.append(field("储存模式", storageMode),
-            field("散装槽位比例（%）", loosePercent),
-            field("允许未满盒入库，下次优先补满", allowPartial), packingSection,
+        policyBody.append(packingSection,
             Stowling.element("p", "muted compact-help",
-                "关闭未满盒入库时，尾料留缓存凑满；潜影盒功能需要先配置全局储存与收尾。"));
-        const storageSettings = Settings.disclosure("储存与潜影盒打包",
-            "普通、混合或纯盒；混合默认保留一半槽位散装。", policyBody).root;
+                "普通、混合、纯盒模式及未满盒策略请到任务页设置。"));
+        const storageSettings = Settings.disclosure("打包操作位置",
+            "设置随单片平移的放盒范围；储存策略在任务中设置。", policyBody).root;
         const rule = document.createElement("select");
         for (const definition of state.rules) {
             rule.append(new Option(definition.name, definition.id));

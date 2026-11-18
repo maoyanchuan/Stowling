@@ -153,13 +153,36 @@ public final class TaskRunManager {
                 task,
                 config.coordinates(),
                 config.regions(),
-                config.categoryZones(),
+                taskCategoryZones(task, config),
                 indexTasks(config.tasks()),
                 config.triggers(),
                 priorityOverride,
                 allowRepeat,
                 true
         );
+    }
+
+    private static List<CategoryZoneDefinition> taskCategoryZones(TaskDefinition task,
+            AppConfig config) {
+        var owner = config.autoClassifyTasks().stream().filter(definition ->
+                definition.classificationTaskId().equals(task.id())).findFirst().orElse(null);
+        if (owner == null) return config.categoryZones();
+        return config.categoryZones().stream().map(zone -> {
+            var policy = owner.classificationAreas().stream().filter(area ->
+                    area.categoryZoneRef().equals("category-zone:" + zone.id()))
+                    .map(dev.stowling.v2.model.AutoClassifyAreaDefinition::storagePolicy)
+                    .filter(Objects::nonNull).findFirst().orElse(null);
+            if (policy == null) return zone;
+            return new CategoryZoneDefinition(zone.id(), zone.name(), zone.bindings().stream()
+                    .map(binding -> new dev.stowling.v2.model.CategoryBindingDefinition(
+                            binding.id(), binding.markerArea(), binding.storageArea(),
+                            binding.ruleId(), binding.ignoredMarkerBlockIds(),
+                            binding.containerOverrides(), binding.standingArea(),
+                            new dev.stowling.v2.model.StoragePolicy(policy.mode(),
+                                    policy.loosePercent(), policy.allowPartialBoxes(),
+                                    binding.storagePolicy().packingArea())))
+                    .toList());
+        }).toList();
     }
 
     private TaskRunSnapshot enqueueStart(
@@ -863,7 +886,8 @@ public final class TaskRunManager {
                 task,
                 List.copyOf(run.prepared.coordinates.values()),
                 List.copyOf(run.prepared.regions.values()),
-                List.copyOf(run.prepared.categoryZones.values()),
+                inventoryConfig == null ? List.copyOf(run.prepared.categoryZones.values())
+                        : taskCategoryZones(task, inventoryConfig),
                 run.prepared.tasks,
                 run.prepared.triggers,
                 priority,

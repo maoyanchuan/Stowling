@@ -200,6 +200,7 @@
                         area?.categoryZoneRef,
                         "category-zone"
                     ),
+                    storagePolicy: area?.storagePolicy || null,
                     ruleId: String(area?.ruleId ?? DIRECT_RULE_ID),
                     markerSources: markerSourceText(area?.markerSources)
                 }))
@@ -330,6 +331,7 @@
                     "category-zone",
                     area.categoryZoneId
                 ),
+                storagePolicy: area.storagePolicy || null,
                 ruleId: String(area.ruleId),
                 markerSources: [...area.markerSources]
             })),

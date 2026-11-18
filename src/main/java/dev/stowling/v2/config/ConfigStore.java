@@ -464,11 +464,12 @@ public final class ConfigStore {
     private static void requireAutoClassifyAreas(JsonElement value) {
         for (JsonElement item : requireArray(value, "classificationAreas")) {
             JsonObject area = requireObject(item, "classification area");
-            requireExactFields(area, Set.of(
+            requireFields(area, Set.of(
                     "categoryZoneRef",
                     "ruleId",
-                    "markerSources"
-            ));
+                    "markerSources",
+                    "storagePolicy"
+            ), Set.of("categoryZoneRef", "ruleId", "markerSources"));
             requireStringArray(area.get("markerSources"), "markerSources");
         }
     }

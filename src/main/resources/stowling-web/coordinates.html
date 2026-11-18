@@ -12,6 +12,7 @@
     <script src="/common.js" defer></script>
     <script src="/settings-ui.js" defer></script>
     <script src="/storage-settings.js" defer></script>
+    <script src="/resource-browser.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
     <script src="/region-model.js" defer></script>
     <script src="/category-zone-model.js" defer></script>
@@ -42,9 +43,9 @@
                 <div class="panel-heading">
                     <div>
                         <p class="eyebrow">共享资源</p>
-                        <h2 id="coordinate-title">坐标资源</h2>
+                        <h2 id="coordinate-title">坐标与仓储布局</h2>
                         <p class="muted section-help">
-                            在同一页面管理坐标点、区域和分类区，保存任务可复用的位置数据。
+                            先建立位置与仓储布局，再由任务引用；修改前可查看正在使用它的任务。
                         </p>
                     </div>
                 </div>
@@ -56,7 +57,7 @@
                        role="tab"
                        aria-controls="coordinate-points"
                        aria-selected="true"
-                       data-panel="coordinate-points">坐标点</a>
+                       data-panel="coordinate-points">基础点位</a>
                     <a id="regions-tab"
                        class="page-subnav-tab"
                        href="#regions"
@@ -64,7 +65,10 @@
                        aria-controls="regions"
                        aria-selected="false"
                        tabindex="-1"
-                       data-panel="regions">区域</a>
+                       data-panel="regions">基础区域</a>
+                    <a class="page-subnav-tab" href="#facilities" role="tab"
+                       aria-controls="facilities" aria-selected="false"
+                       data-panel="facilities">公共设施</a>
                     <a id="category-zones-tab"
                        class="page-subnav-tab"
                        href="#category-zones"
@@ -72,8 +76,11 @@
                        aria-controls="category-zones"
                        aria-selected="false"
                        tabindex="-1"
-                       data-panel="category-zones">分类区</a>
+                       data-panel="category-zones">仓储布局</a>
                 </nav>
+
+                <section id="facilities" class="resource-tab-panel" hidden
+                         aria-label="公共设施"><div id="facility-editor"></div></section>
 
                 <section id="coordinate-points"
                          class="resource-tab-panel resource-list-section"

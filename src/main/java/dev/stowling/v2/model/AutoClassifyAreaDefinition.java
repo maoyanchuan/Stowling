@@ -8,8 +8,14 @@ import java.util.Objects;
 public record AutoClassifyAreaDefinition(
         String categoryZoneRef,
         String ruleId,
-        List<CategoryMarkerSource> markerSources
+        List<CategoryMarkerSource> markerSources,
+        dev.stowling.v2.model.StoragePolicy storagePolicy
 ) {
+    public AutoClassifyAreaDefinition(String categoryZoneRef, String ruleId,
+            List<CategoryMarkerSource> markerSources) {
+        this(categoryZoneRef, ruleId, markerSources, null);
+    }
+
     public AutoClassifyAreaDefinition {
         categoryZoneRef = requireZoneReference(categoryZoneRef);
         ruleId = normalizeRuleId(requireText(ruleId, "ruleId"));

@@ -6,8 +6,14 @@ import java.util.List;
 public record AutoClassifyAreaRequest(
         String categoryZoneRef,
         String ruleId,
-        List<CategoryMarkerSource> markerSources
+        List<CategoryMarkerSource> markerSources,
+        dev.stowling.v2.model.StoragePolicy storagePolicy
 ) {
+    public AutoClassifyAreaRequest(String categoryZoneRef, String ruleId,
+            List<CategoryMarkerSource> markerSources) {
+        this(categoryZoneRef, ruleId, markerSources, null);
+    }
+
     public AutoClassifyAreaRequest {
         markerSources = markerSources == null
                 ? List.of()

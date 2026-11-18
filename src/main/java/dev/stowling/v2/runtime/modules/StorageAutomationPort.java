@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerTarget;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,6 +25,11 @@ public interface StorageAutomationPort {
             Map<String, Integer> items);
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
+
+    default TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
+            List<ContainerTarget> containers) {
+        throw new IllegalStateException("当前环境不支持缓存库存盘点");
+    }
 
     default Comparator<ContainerTarget> storageOrder(Map<String, Integer> items) {
         return (first, second) -> 0;

@@ -29,6 +29,7 @@ public final class TaskRunWorkspace {
     private final List<MarkerContainerScanAction.Target> markerTargets =
             new ArrayList<>();
     private ContainerScanResult containerScan;
+    private Map<BlockPosition, Map<String, Integer>> cacheInventory = Map.of();
     private UUID containerScanRegionId;
     private PlayerInventorySnapshot initialInventory;
     private PlayerInventorySnapshot lastInventory;
@@ -148,6 +149,7 @@ public final class TaskRunWorkspace {
     ) {
         containerScanRegionId = regionId;
         containerScan = scan;
+        cacheInventory = Map.of();
         cacheContainers.clear();
         unavailableTargets.clear();
         containerCandidates.clear();
@@ -169,6 +171,20 @@ public final class TaskRunWorkspace {
 
     public synchronized Optional<UUID> containerScanRegionId() {
         return Optional.ofNullable(containerScanRegionId);
+    }
+
+    public synchronized void recordCacheInventory(
+            Map<BlockPosition, Map<String, Integer>> contents) {
+        Map<BlockPosition, Map<String, Integer>> copy = new LinkedHashMap<>();
+        contents.forEach((position, items) -> copy.put(position, Map.copyOf(items)));
+        cacheInventory = Map.copyOf(copy);
+    }
+
+    public synchronized boolean hasRecordedClassifiableStock(ContainerTarget target,
+            Set<String> categories) {
+        Map<String, Integer> items = cacheInventory.get(target.position());
+        return items == null || items.keySet().stream()
+                .anyMatch(key -> ItemIdentity.matches(key, categories));
     }
 
     public synchronized void setCategoryMatch(

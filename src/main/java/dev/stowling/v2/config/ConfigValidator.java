@@ -106,6 +106,7 @@ public final class ConfigValidator {
     public static final String MARKER_SOURCES = "markerSources";
     public static final String PICKUP_RADIUS = "pickupRadius";
     public static final String RETRY_ON_FAILURE = "retryOnFailure";
+    public static final String SCAN_CONTENTS = "scanContents";
     public static final String ALLOW_CACHE_FALLBACK =
             "allowCacheFallback";
     public static final String PRIORITY = "priority";
@@ -989,7 +990,7 @@ public final class ConfigValidator {
         requireParameters(
                 step,
                 Set.of(REGION_REF, REGION_ID, CACHE_REGION_ID,
-                        CONTAINER_TYPES, MAX_VOLUME),
+                        CONTAINER_TYPES, MAX_VOLUME, SCAN_CONTENTS),
                 Set.of()
         );
         requireRegionReference(
@@ -1000,6 +1001,7 @@ public final class ConfigValidator {
                 CACHE_REGION_ID
         );
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+        requireOptionalBoolean(step, SCAN_CONTENTS);
     }
 
     private static void requireCategoryZoneStep(

@@ -1,6 +1,7 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerVisitPlan;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedStorageCapacity;
@@ -135,6 +136,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         return new Cleanup(context);
     }
 
+    @Override
+    public TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
+            List<ContainerTarget> containers) {
+        return new CacheInventoryScan(context, containers);
+    }
+
     private abstract class Session implements TaskModuleExecutor {
         final TaskExecutionContext context;
         final StorageAutomationSettings configuration = settings.resolved();
@@ -148,6 +155,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         abstract void initialize();
+
+        String completionMessage() {
+            return "储存操作完成";
+        }
 
         @Override
         public TaskModuleResult start() {
@@ -172,7 +183,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (current == null) {
                     current = steps.pollFirst();
                     if (current == null) {
-                        terminal = TaskModuleResult.succeeded("储存操作完成");
+                        terminal = TaskModuleResult.succeeded(completionMessage());
                         return terminal;
                     }
                 }
@@ -318,6 +329,50 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private record Step(TaskModuleExecutor action, Runnable after, Runnable failed) {
         Step(TaskModuleExecutor action, Runnable after) {
             this(action, after, null);
+        }
+    }
+
+    private final class CacheInventoryScan extends Session {
+        private final ContainerVisitPlan visits;
+        private final Map<BlockPosition, Map<String, Integer>> counts = new LinkedHashMap<>();
+
+        CacheInventoryScan(TaskExecutionContext context, List<ContainerTarget> containers) {
+            super(context);
+            visits = new ContainerVisitPlan(containers);
+        }
+
+        @Override
+        void initialize() {
+            visitNext();
+        }
+
+        private void visitNext() {
+            if (minecraft.player == null) {
+                throw new IllegalStateException("缓存盘点中止：当前世界不可用");
+            }
+            BlockPos feet = minecraft.player.blockPosition();
+            ContainerTarget next = visits.next(new BlockPosition(feet.getX(), feet.getY(),
+                    feet.getZ())).orElse(null);
+            if (next == null) {
+                context.workspace().recordCacheInventory(counts);
+                return;
+            }
+            read(next, contents -> {
+                Map<String, Integer> items = new LinkedHashMap<>();
+                for (ItemStack stack : contents) {
+                    if (!stack.isEmpty()) {
+                        items.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
+                                Math::addExact);
+                    }
+                }
+                counts.put(next.position(), items);
+                visitNext();
+            });
+        }
+
+        @Override
+        String completionMessage() {
+            return "已完成缓存库存盘点，共读取 " + counts.size() + " 个容器";
         }
     }
 

@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.v2.category.CategoryMarkerSource;
@@ -214,6 +215,10 @@ class AutoClassifyTaskFactoryTest {
                 definition.cacheRegionRef(),
                 cacheScan.parameters().get(ConfigValidator.REGION_REF)
         );
+        assertEquals("true", cacheScan.parameters().get(ConfigValidator.SCAN_CONTENTS));
+        TaskDefinition collection = AutoClassifyTaskFactory.tasks(definition, List.of()).getFirst();
+        assertFalse(collection.steps().get(1).parameters()
+                .containsKey(ConfigValidator.SCAN_CONTENTS));
         TaskStep hasContainers = classification.steps().get(1);
         assertEquals(TaskStepKind.IF, hasContainers.kind());
         assertEquals(

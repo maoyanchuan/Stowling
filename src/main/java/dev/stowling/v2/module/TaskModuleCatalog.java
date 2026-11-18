@@ -210,6 +210,9 @@ public final class TaskModuleCatalog {
                                     1,
                                     1_048_576,
                                     null
+                            ),
+                            booleanParameter(
+                                    ConfigValidator.SCAN_CONTENTS, "盘点容器库存", false
                             )
                     )
             ),

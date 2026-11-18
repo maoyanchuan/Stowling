@@ -53,6 +53,83 @@ import org.junit.jupiter.api.Test;
 class BasicModuleSemanticsTest {
 
     @Test
+    void completeCacheScanWaitsForAllContentsBeforeReportingSuccess() {
+        ContainerTarget empty = target(1, 64, 1, "chest");
+        ContainerTarget stocked = target(2, 64, 1, "chest");
+        RegionDefinition region = new RegionDefinition(
+                UUID.randomUUID(), "Cache", 1, 64, 1, 2, 64, 1);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), workspace);
+        ContainerRegionPort scanner = new ContainerRegionPort() {
+            @Override
+            public ContainerScanResult scan(RegionDefinition area, Set<String> types, int volume) {
+                throw new AssertionError("classification must require the complete region");
+            }
+
+            @Override
+            public ContainerScanResult scanComplete(RegionDefinition area, Set<String> types,
+                    int volume) {
+                assertEquals(region, area);
+                return ContainerScanResult.success(List.of(empty, stocked));
+            }
+        };
+        StorageAutomationPort storage = new StorageAutomationPort() {
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("inventory scan must be read-only");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                throw new AssertionError("inventory scan must be read-only");
+            }
+
+            @Override
+            public TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
+                    List<ContainerTarget> containers) {
+                assertEquals(List.of(empty, stocked), containers);
+                return new TaskModuleExecutor() {
+                    @Override
+                    public TaskModuleResult start() {
+                        return TaskModuleResult.waiting("reading");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        context.workspace().recordCacheInventory(Map.of(
+                                empty.position(), Map.of(),
+                                stocked.position(), Map.of("minecraft:stone", 64)));
+                        return TaskModuleResult.succeeded("complete");
+                    }
+
+                    @Override
+                    public void cancel() {
+                    }
+                };
+            }
+        };
+        TaskExecutionContext context = new TaskExecutionContext(base.navigation(),
+                base.droppedItems(), scanner, base.containerTransfers(),
+                base.containerWithdrawals(), base.containerInspections(),
+                base.categoryMarkerCache(), base.foodConsumption(), base.categoryZonesPort(),
+                Map.of(), Map.of(region.id(), region), Map.of(), workspace, base.inventory(),
+                storage);
+        var module = new ScanContainersInRegionModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.SCAN_CONTAINERS_IN_REGION,
+                Map.of(TaskModuleIds.REGION_REF, "region:" + region.id(), "scanContents", "true")));
+
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        Set<String> accepted = Set.of("minecraft:stone");
+        assertFalse(workspace.hasRecordedClassifiableStock(empty, accepted));
+        assertTrue(workspace.hasRecordedClassifiableStock(stocked, accepted));
+        workspace.setContainerScan(ContainerScanResult.success(List.of(empty)));
+        assertTrue(workspace.hasRecordedClassifiableStock(empty, accepted));
+    }
+
+    @Test
     void legacyCompositeExecutorsAreNotRegistered() {
         Set<String> ids = StandardTaskModuleFactories.create().stream()
                 .map(factory -> factory.moduleId())

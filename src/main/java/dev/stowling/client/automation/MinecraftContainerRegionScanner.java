@@ -56,6 +56,17 @@ public final class MinecraftContainerRegionScanner
             Set<String> containerTypes,
             int maxVolume
     ) {
+        return scan(region, containerTypes, maxVolume, false);
+    }
+
+    @Override
+    public ContainerScanResult scanComplete(RegionDefinition region, Set<String> containerTypes,
+            int maxVolume) {
+        return scan(region, containerTypes, maxVolume, true);
+    }
+
+    private ContainerScanResult scan(RegionDefinition region, Set<String> containerTypes,
+            int maxVolume, boolean requireLoadedRegion) {
         if (!scheduler.isClientThread()) {
             return ContainerScanResult.failure("区域扫描必须在客户端线程执行");
         }
@@ -97,6 +108,11 @@ public final class MinecraftContainerRegionScanner
                                 blockZ
                         );
                         if (!level.isLoaded(position)) {
+                            if (requireLoadedRegion) {
+                                return ContainerScanResult.failure(
+                                        "缓存区域“" + region.name() + "”未完整加载："
+                                                + blockPosition(position) + "；无法完成库存盘点");
+                            }
                             continue;
                         }
                         BlockState state = level.getBlockState(position);

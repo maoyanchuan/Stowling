@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerScanResult;
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
@@ -12,6 +13,8 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
     private final RegionDefinition region;
     private final Set<String> containerTypes;
     private final int maxVolume;
+    private final boolean scanContents;
+    private TaskModuleExecutor inventoryScan;
 
     ScanContainersInRegionModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
@@ -28,27 +31,50 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
                 TaskModuleIds.MAX_VOLUME,
                 TaskModuleSupport.DEFAULT_SCAN_VOLUME
         );
+        this.scanContents = TaskModuleSupport.booleanParameter(
+                step, ConfigValidator.SCAN_CONTENTS, false);
     }
 
     @Override
     public TaskModuleResult start() {
-        ContainerScanResult scan = context.containerRegions().scan(
-                region,
-                containerTypes,
-                maxVolume
-        );
+        ContainerScanResult scan = scanContents
+                ? context.containerRegions().scanComplete(region, containerTypes, maxVolume)
+                : context.containerRegions().scan(region, containerTypes, maxVolume);
         context.workspace().setContainerScan(region.id(), scan);
-        return scan.succeeded()
-                ? TaskModuleResult.succeeded(scan.message())
-                : TaskModuleResult.failed(scan.message());
+        if (!scan.succeeded()) {
+            return TaskModuleResult.failed(scan.message());
+        }
+        if (!scanContents || scan.containers().isEmpty()) {
+            return TaskModuleResult.succeeded(scan.message());
+        }
+        inventoryScan = context.storageAutomation().scanCacheContents(context, scan.containers());
+        return inventoryScan.start();
     }
 
     @Override
     public TaskModuleResult tick() {
-        throw new IllegalStateException("scan module already completed");
+        if (inventoryScan == null) {
+            throw new IllegalStateException("scan module already completed");
+        }
+        return inventoryScan.tick();
     }
 
     @Override
     public void cancel() {
+        if (inventoryScan != null) {
+            inventoryScan.cancel();
+        }
+    }
+
+    @Override
+    public void requestStop() {
+        if (inventoryScan != null) {
+            inventoryScan.requestStop();
+        }
+    }
+
+    @Override
+    public boolean safeToStop() {
+        return inventoryScan == null || inventoryScan.safeToStop();
     }
 }

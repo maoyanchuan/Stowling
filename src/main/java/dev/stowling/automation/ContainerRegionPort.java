@@ -9,4 +9,9 @@ public interface ContainerRegionPort {
             Set<String> containerTypes,
             int maxVolume
     );
+
+    default ContainerScanResult scanComplete(RegionDefinition region, Set<String> containerTypes,
+            int maxVolume) {
+        return scan(region, containerTypes, maxVolume);
+    }
 }

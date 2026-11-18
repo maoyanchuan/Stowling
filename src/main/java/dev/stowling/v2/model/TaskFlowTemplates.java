@@ -85,6 +85,7 @@ public final class TaskFlowTemplates {
         scan.remove(ConfigValidator.CATEGORY_BINDING_ID);
         scan.remove(ConfigValidator.CATEGORY_RULE_ID);
         scan.put(ConfigValidator.REGION_REF, cacheRegionRef);
+        scan.put(ConfigValidator.SCAN_CONTENTS, "true");
         TaskStep scanStep = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.SCAN_CONTAINERS_IN_REGION,

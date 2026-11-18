@@ -56,6 +56,7 @@
         remove: document.querySelector("#delete-auto-task")
     };
     const rows = new Map();
+    const phaseDisabledControls = new Map();
     let areaReaders = [];
 
     /** @returns {boolean} */
@@ -160,6 +161,9 @@
 
     /** @returns {void} */
     function renderClassificationAreas() {
+        for (const control of phaseDisabledControls.keys()) {
+            if (elements.areas.contains(control)) phaseDisabledControls.delete(control);
+        }
         elements.areas.replaceChildren();
         areaReaders = [];
         if (state.draft.classificationAreas.length === 0) {
@@ -173,37 +177,9 @@
     /**
      * @param {object} area
      * @param {number} index
-     * @returns {{read: () => object}}
+     * @returns {{read: () => object, collapse: () => void}}
      */
     function appendClassificationArea(area, index) {
-        const card = Stowling.element("article", "auto-classification-area");
-        const heading = Stowling.element(
-            "div",
-            "auto-classification-area-heading"
-        );
-        const title = Stowling.element(
-            "div",
-            "auto-classification-area-title"
-        );
-        title.append(
-            Stowling.element("strong", "", `分类选区 ${index + 1}`),
-            Stowling.element(
-                "span",
-                "",
-                "大选区内的识别与储存范围在坐标管理中维护"
-            )
-        );
-        const remove = Stowling.element(
-            "button",
-            "ghost compact danger-action",
-            "移除"
-        );
-        remove.type = "button";
-        remove.addEventListener("click", () => {
-            removeClassificationArea(index);
-        });
-        heading.append(title, remove);
-
         const range = document.createElement("select");
         range.required = true;
         const empty = new Option("请选择分类选区", "");
@@ -228,25 +204,7 @@
         range.value = area.categoryZoneId;
 
         const policy = area.storagePolicy || selectedZone?.bindings?.[0]?.storagePolicy || {};
-        const storageMode = document.createElement("select");
-        for (const [value, name] of [["NORMAL", "普通散装"], ["MIXED", "散装与潜影盒混合"],
-                ["BOX_ONLY", "纯潜影盒"]]) storageMode.append(new Option(name, value));
-        storageMode.value = policy.mode || "NORMAL";
-        const loose = document.createElement("input");
-        loose.type = "number";
-        loose.min = "0";
-        loose.max = "100";
-        loose.value = String(policy.loosePercent ?? 50);
-        const partial = document.createElement("input");
-        partial.type = "checkbox";
-        partial.className = "settings-switch";
-        partial.checked = Boolean(policy.allowPartialBoxes);
-        const refill = document.createElement("input");
-        refill.type = "checkbox";
-        refill.className = "settings-switch";
-        refill.checked = Boolean(policy.refillLoose);
-        const layoutLink = Stowling.element("a", "text-link", "管理仓储布局与公共设施 →");
-        layoutLink.href = "/coordinates.html#category-zones";
+        const storage = window.StowlingStoragePolicyEditor.create(policy, state.resources);
         const recognition = document.createElement("select");
         const smartRuleId = categoryRuleId(
             ["DIRECT_BLOCK_ID"],
@@ -288,19 +246,32 @@
         fields.append(
             labeledControl("分类范围", range),
             labeledControl("分类物识别方式", recognition),
-            labeledControl("储存模式", storageMode),
-            labeledControl("散装槽位比例（%）", loose),
-            labeledControl("允许未满盒入库，下次优先补满", partial),
-            labeledControl("混合模式：散货不足阈值时拆盒补足", refill), layoutLink
+            storage.root
         );
-        card.append(heading, fields);
-        elements.areas.append(card);
+        const disclosure = window.StowlingSettings.disclosure(
+            `分类选区 ${index + 1}`,
+            selectedZone?.name || "请选择分类范围", fields);
+        disclosure.root.classList.add("auto-classification-area");
+        const remove = Stowling.element("button", "ghost compact danger-action", "移除");
+        remove.type = "button";
+        remove.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            removeClassificationArea(index);
+        });
+        disclosure.summary.insertBefore(remove, disclosure.summary.lastElementChild);
+        range.addEventListener("input", () => {
+            disclosure.description.textContent = range.selectedOptions[0]?.textContent || "";
+        });
+        elements.areas.append(disclosure.root);
         return {
+            collapse: () => {
+                disclosure.setExpanded(false);
+                storage.collapse();
+            },
             read: () => ({
                 categoryZoneId: range.value,
-                storagePolicy: {mode: storageMode.value, loosePercent: Number(loose.value),
-                    allowPartialBoxes: partial.checked, refillLoose: refill.checked,
-                    packingArea: null},
+                storagePolicy: storage.read(),
                 ruleId: recognition.value,
                 markerSources: Auto.defaultMarkerSources(recognition.value)
             })
@@ -474,8 +445,8 @@
         elements.draftToggle.disabled = disabled;
         const isNew = state.active && !state.draft.id;
         elements.draft.hidden = !isNew;
-        elements.draftBody.hidden = !isNew || !state.expanded;
-        elements.form.hidden = !state.expanded;
+        void window.StowlingSettings.reveal(elements.draftBody, isNew && state.expanded);
+        elements.form.hidden = false;
         elements.draftToggle.setAttribute("aria-expanded", String(isNew && state.expanded));
         elements.start.textContent = state.draft.enabled
             ? "保存并继续监听" : "保存并开始监听";
@@ -488,7 +459,7 @@
             row.listening.disabled = disabled || (selected && state.dirty);
             row.listening.title = selected && state.dirty ? "先保存当前修改，再切换监听" : "启用监听";
             row.button.setAttribute("aria-expanded", String(expanded));
-            row.body.hidden = !expanded;
+            void window.StowlingSettings.reveal(row.body, expanded);
             const item = state.items.find((value) => value.id === id);
             row.status.textContent = selected && state.dirty ? "未保存修改"
                 : (item?.enabled ? "监听中" : "已保存");
@@ -501,12 +472,22 @@
             if (!header || !body) {
                 continue;
             }
-            header.setAttribute("aria-expanded", String(state.phase[phase]));
-            body.hidden = !state.phase[phase];
-            header.closest(".auto-config-section").dataset.enabled = String(
-                phase === "collection"
-                    ? elements.collectEnabled.checked : elements.classifyEnabled.checked
-            );
+            const enabled = phase === "collection"
+                ? elements.collectEnabled.checked : elements.classifyEnabled.checked;
+            header.disabled = disabled || !enabled;
+            header.title = enabled ? "展开或收起子任务设置" : "";
+            header.setAttribute("aria-expanded", String(enabled && state.phase[phase]));
+            void window.StowlingSettings.reveal(body, enabled && state.phase[phase]);
+            header.closest(".auto-config-section").dataset.enabled = String(enabled);
+            for (const control of body.querySelectorAll("input, select, textarea, button")) {
+                if (!enabled && !phaseDisabledControls.has(control)) {
+                    phaseDisabledControls.set(control, control.disabled);
+                    control.disabled = true;
+                } else if (enabled && phaseDisabledControls.has(control)) {
+                    control.disabled = phaseDisabledControls.get(control);
+                    phaseDisabledControls.delete(control);
+                }
+            }
         }
     }
 
@@ -547,6 +528,12 @@
     function togglePhase(phase) {
         if (unavailable()) {
             return;
+        }
+        const enabled = phase === "collection"
+            ? elements.collectEnabled.checked : elements.classifyEnabled.checked;
+        if (!enabled) return;
+        if (phase === "classification" && !state.phase[phase]) {
+            areaReaders.forEach(reader => reader.collapse());
         }
         state.phase[phase] = !state.phase[phase];
         updateControls();
@@ -732,12 +719,21 @@
     });
     elements.collectHeader.addEventListener("click", () => togglePhase("collection"));
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
+    elements.collectBody.addEventListener("invalid", () => {
+        state.phase.collection = true;
+        updateControls();
+    }, true);
+    elements.classifyBody.addEventListener("invalid", () => {
+        state.phase.classification = true;
+        updateControls();
+    }, true);
     elements.addArea.addEventListener("click", addClassificationArea);
     elements.refresh.addEventListener("click", () => void loadResources());
     elements.form.addEventListener("input", (event) => {
         if (event.target === elements.classifyEnabled) {
             state.phase.classification = elements.classifyEnabled.checked;
             if (elements.classifyEnabled.checked) {
+                areaReaders.forEach(reader => reader.collapse());
                 elements.collectEnabled.checked = true;
             }
         }

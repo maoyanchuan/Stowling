@@ -5,6 +5,7 @@ import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -13,6 +14,25 @@ public final class RecordedStorageCapacity {
     }
 
     public static boolean shouldReserveBox(WarehouseInventory.Container stock, StoragePolicy policy,
+            Map<String, Integer> items, Map<String, Integer> stackSizes) {
+        return shouldReserveBox(stock, policy, items, stackSizes, List.of());
+    }
+
+    public static boolean shouldReserveBox(WarehouseInventory.Container stock, StoragePolicy policy,
+            Map<String, Integer> items, Map<String, Integer> stackSizes,
+            List<WarehouseInventory.Box> partialBoxes) {
+        if (stock != null && !partialBoxes.isEmpty()) {
+            var boxes = new java.util.ArrayList<>(stock.boxes());
+            boxes.addAll(partialBoxes);
+            stock = new WarehouseInventory.Container(stock.id(), stock.name(), stock.dimension(),
+                    stock.positions(), stock.recordedAt(), stock.slots(), stock.occupiedSlots(),
+                    stock.fullBoxes(), stock.partialBoxes(), stock.emptyBoxes(), stock.items(),
+                    boxes);
+        }
+        return reserveForStock(stock, policy, items, stackSizes);
+    }
+
+    private static boolean reserveForStock(WarehouseInventory.Container stock, StoragePolicy policy,
             Map<String, Integer> items, Map<String, Integer> stackSizes) {
         if (policy.mode() == StorageMode.NORMAL || stock != null && stock.slots() < 1) {
             return false;

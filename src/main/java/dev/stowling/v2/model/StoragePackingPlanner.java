@@ -15,7 +15,8 @@ public final class StoragePackingPlanner {
             case NORMAL -> Math.multiplyExact(containerSlots, stackSize);
             case BOX_ONLY -> 0;
             case MIXED -> Math.multiplyExact(
-                    containerSlots * policy.loosePercent() / 100, stackSize);
+                    policy.looseSlots() == null ? containerSlots * policy.loosePercent() / 100
+                            : Math.min(containerSlots, policy.looseSlots()), stackSize);
         };
     }
 

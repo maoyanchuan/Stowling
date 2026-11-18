@@ -1108,8 +1108,8 @@ public final class V2ControlServer implements AutoCloseable {
         }
         JsonObject policy = jsonObject(value, "storagePolicy");
         requireFieldsAny(policy, Set.of("mode", "loosePercent", "allowPartialBoxes", "packingArea",
-                        "refillLoose"),
-                Set.of("mode", "loosePercent", "allowPartialBoxes"));
+                        "refillLoose", "looseSlots", "partialBoxDestinationRef"),
+                Set.of("mode", "allowPartialBoxes"));
         return V2Json.gson().fromJson(policy, dev.stowling.v2.model.StoragePolicy.class);
     }
 
@@ -1719,6 +1719,10 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/workbench.css",
                         read("stowling-web/workbench.css", "text/css; charset=utf-8")
+                ),
+                Map.entry(
+                        "/storage-policy-editor.js",
+                        read("stowling-web/storage-policy-editor.js", js)
                 ),
                 Map.entry(
                         "/settings-ui.js",

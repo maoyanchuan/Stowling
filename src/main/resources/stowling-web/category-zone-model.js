@@ -45,6 +45,9 @@
             loosePercent: Number(value?.loosePercent ?? 50),
             allowPartialBoxes: Boolean(value?.allowPartialBoxes),
             refillLoose: Boolean(value?.refillLoose),
+            ...(value?.looseSlots != null ? {looseSlots: Number(value.looseSlots)} : {}),
+            ...(value?.partialBoxDestinationRef
+                ? {partialBoxDestinationRef: String(value.partialBoxDestinationRef)} : {}),
             packingArea: value?.packingArea ? normalizeArea(value.packingArea) : null
         };
     }

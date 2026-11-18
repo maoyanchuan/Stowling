@@ -205,11 +205,12 @@
     function syncMoveDisclosure() {
         const newDraft = state.moveDraftActive && !state.moveDraft.id;
         elements.moveDraftCard.hidden = !newDraft;
-        elements.moveDraftBody.hidden = !newDraft || !state.moveFormOpen;
+        void window.StowlingSettings.reveal(elements.moveDraftBody,
+            newDraft && state.moveFormOpen);
         elements.moveDraftToggle.setAttribute("aria-expanded", String(
             newDraft && state.moveFormOpen
         ));
-        elements.moveForm.hidden = !state.moveFormOpen;
+        elements.moveForm.hidden = false;
         elements.movePlaceholder.hidden = state.moveTasks.length + state.autoTaskCount > 0
             || newDraft || state.autoDraftActive;
         elements.moveCount.textContent = String(state.moveTasks.length + state.autoTaskCount);
@@ -217,7 +218,7 @@
             const selected = state.moveDraft.id === id;
             const expanded = selected && state.moveFormOpen;
             row.button.setAttribute("aria-expanded", String(expanded));
-            row.body.hidden = !expanded;
+            void window.StowlingSettings.reveal(row.body, expanded);
             row.status.textContent = selected && state.moveDirty ? "未保存修改" : "已保存";
         }
     }

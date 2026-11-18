@@ -28,6 +28,38 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void storesExactLooseSlotsAndChecksThePartialBoxDestinationOnRestart() throws Exception {
+        AppConfig initial = automaticConfiguration(false);
+        var original = initial.autoClassifyTasks().getFirst();
+        var originalArea = original.classificationAreas().getFirst();
+        var policy = new dev.stowling.v2.model.StoragePolicy(
+                dev.stowling.v2.model.StorageMode.MIXED, 35, true, null, true, 19,
+                original.detectionCoordinateRef());
+        var automatic = new AutoClassifyDefinition(original.id(), original.name(), false,
+                true, true, original.detectionCoordinateRef(), 8, original.cacheRegionRef(),
+                List.of(new AutoClassifyAreaDefinition(originalArea.categoryZoneRef(),
+                        originalArea.ruleId(), originalArea.markerSources(), policy)),
+                TaskPriority.NORMAL);
+        var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
+                AutoClassifyTaskFactory.tasks(automatic, List.of()), initial.regions(),
+                initial.categoryZones(), List.of(), List.of(), List.of(automatic));
+        Path path = directory.resolve("partial-boxes.json");
+        var store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), config);
+        assertEquals(policy, new ConfigStore(path).loadOrReset().config().autoClassifyTasks()
+                .getFirst().classificationAreas().getFirst().storagePolicy());
+        var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject()
+                .getAsJsonObject("storagePolicy").addProperty("partialBoxDestinationRef",
+                        "coordinate:" + UUID.randomUUID());
+        String invalid = json.toString();
+        Files.writeString(path, invalid);
+        assertThrows(V2ValidationException.class, () -> new ConfigStore(path).loadOrReset());
+        assertEquals(invalid, Files.readString(path));
+    }
+
+    @Test
     void automaticCleanupSelectionSurvivesRestartAndLegacyTasksDefaultToTheirCache()
             throws Exception {
         AppConfig initial = automaticConfiguration(false);

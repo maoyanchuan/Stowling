@@ -13,7 +13,8 @@ NODE = shutil.which("node")
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_storage_policy_round_trip_keeps_tail_switch_and_external_packing_area() -> None:
     policy = {"mode": "MIXED", "loosePercent": 50, "allowPartialBoxes": True,
-              "refillLoose": True,
+              "refillLoose": True, "looseSlots": 19,
+              "partialBoxDestinationRef": "region:7c69978e-13f9-4be2-8ce0-4c0ea3b8d321",
               "packingArea": {"firstX": 1, "firstY": 64, "firstZ": 2,
                               "secondX": 1, "secondY": 64, "secondZ": 3}}
     script = """
@@ -33,8 +34,9 @@ def test_storage_policy_round_trip_keeps_tail_switch_and_external_packing_area()
 
 
 def test_task_editor_loads_and_saves_the_optional_refill_switch() -> None:
-    source = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
-    assert 'refill.type = "checkbox"' in source
+    source = (WEB / "storage-policy-editor.js").read_text(encoding="utf-8")
     assert "refill.checked = Boolean(policy.refillLoose)" in source
-    assert "refillLoose: refill.checked" in source
-    assert "混合模式：散货不足阈值时拆盒补足" in source
+    assert 'refillLoose: mode.value === "MIXED" && refill.checked' in source
+    assert "散货不足设定槽位时拆盒补足" in source
+    task = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
+    assert "StowlingStoragePolicyEditor.create(policy, state.resources)" in task

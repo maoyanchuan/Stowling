@@ -921,6 +921,8 @@
             storagePolicy: {
                 mode: storageMode.value,
                 loosePercent: Number(loosePercent.value),
+                looseSlots: binding.storagePolicy?.looseSlots ?? null,
+                partialBoxDestinationRef: binding.storagePolicy?.partialBoxDestinationRef ?? null,
                 allowPartialBoxes: allowPartial.checked,
                 refillLoose: Boolean(binding.storagePolicy?.refillLoose),
                 packingArea: packingToggle.checked ? readStandingArea(packing.read()) : null

@@ -226,6 +226,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         requireCoordinate(current.config(), id);
         String coordinateId = id.toString();
         List<String> references = new ArrayList<>();
+        references.addAll(partialBoxReferences(current.config(), "coordinate:" + id));
         ResourceReference reference = ResourceReference.of(
                 ResourceType.COORDINATE,
                 id
@@ -361,6 +362,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .map(TaskDefinition::name)
                         .toList()
         );
+        references.addAll(partialBoxReferences(current.config(), "region:" + id));
         references.addAll(current.config().triggers().stream()
                 .filter(trigger -> id.equals(trigger.cacheRegionId()))
                 .map(TaskTriggerDefinition::name)
@@ -392,6 +394,23 @@ public final class V2ControlServiceImpl implements V2ControlService {
     @Override
     public CategoryRuleListResponse categoryRules() {
         return new CategoryRuleListResponse(categoryRules.definitions());
+    }
+
+    private static List<String> partialBoxReferences(AppConfig config, String reference) {
+        List<String> names = new ArrayList<>();
+        for (var task : config.autoClassifyTasks()) {
+            if (task.classificationAreas().stream().anyMatch(area -> area.storagePolicy() != null
+                    && reference.equals(area.storagePolicy().partialBoxDestinationRef()))) {
+                names.add(task.name() + "·未满盒储存");
+            }
+        }
+        for (var zone : config.categoryZones()) {
+            if (zone.bindings().stream().anyMatch(binding -> reference.equals(
+                    binding.storagePolicy().partialBoxDestinationRef()))) {
+                names.add(zone.name() + "·未满盒储存");
+            }
+        }
+        return names;
     }
 
     @Override

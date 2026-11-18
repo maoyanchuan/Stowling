@@ -8,6 +8,38 @@ import org.junit.jupiter.api.Test;
 
 class StoragePackingPlannerTest {
     @Test
+    void explicitSlotsUseExactChestSlotsAndKeepLegacyPercentages() {
+        for (int size : java.util.List.of(1, 16, 64)) {
+            for (int slots : java.util.List.of(0, 1, 19, 27, 54)) {
+                var policy = new StoragePolicy(StorageMode.MIXED, 50, true, null,
+                        true, slots, null);
+                assertEquals(slots * size, StoragePackingPlanner.looseLimit(policy, 54, size));
+                assertEquals(Math.min(27, slots) * size,
+                        StoragePackingPlanner.looseLimit(policy, 27, size));
+                assertEquals(slots * size,
+                        StoragePackingPlanner.refillCount(policy, 54, size, 0, 0, 54 * size));
+            }
+        }
+        var legacy = new StoragePolicy(StorageMode.MIXED, 50, true, null);
+        assertEquals(13 * 64, StoragePackingPlanner.looseLimit(legacy, 27, 64));
+    }
+
+    @Test
+    void partialDestinationAndSlotsSurviveSerializationAndShifting() {
+        String ref = "region:" + java.util.UUID.randomUUID();
+        var policy = new StoragePolicy(StorageMode.MIXED, 35, true,
+                new AreaBounds(0, 64, 0, 1, 64, 1), true, 19, ref);
+        var gson = new com.google.gson.Gson();
+        assertEquals(policy, gson.fromJson(gson.toJson(policy), StoragePolicy.class));
+        assertEquals(19, policy.shift(5, 5).looseSlots());
+        assertEquals(ref, policy.shift(5, 5).partialBoxDestinationRef());
+        assertThrows(IllegalArgumentException.class,
+                () -> new StoragePolicy(StorageMode.MIXED, 50, true, null, false, 55, null));
+        assertThrows(IllegalArgumentException.class, () -> new StoragePolicy(StorageMode.MIXED,
+                50, true, null, false, 19, "category-zone:" + java.util.UUID.randomUUID()));
+    }
+
+    @Test
     void bringsASpareForOverflowAfterToppingUpAnExistingBox() {
         StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, true, null);
         int boxSpace = 64;

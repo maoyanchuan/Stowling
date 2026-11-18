@@ -170,6 +170,8 @@ public final class ConfigValidator {
         }
         Map<UUID, CategoryZoneDefinition> categoryZones =
                 validateCategoryZones(config.categoryZones());
+        config.categoryZones().forEach(zone -> zone.bindings().forEach(binding ->
+                requirePartialDestination(binding.storagePolicy(), coordinates, regions)));
         Map<UUID, TaskFolderDefinition> taskFolders = new LinkedHashMap<>();
         for (TaskFolderDefinition folder : config.taskFolders()) {
             if (taskFolders.putIfAbsent(folder.id(), folder) != null) {
@@ -268,6 +270,7 @@ public final class ConfigValidator {
             CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
             for (AutoClassifyAreaDefinition area
                     : definition.classificationAreas()) {
+                requirePartialDestination(area.storagePolicy(), coordinates, regions);
                 ResourceReference zoneReference = ResourceReference.parse(
                         area.categoryZoneRef()
                 );
@@ -357,6 +360,16 @@ public final class ConfigValidator {
         if (ref.type() == ResourceType.COORDINATE && !coordinates.containsKey(ref.uuid())
                 || ref.type() == ResourceType.REGION && !regions.containsKey(ref.uuid())) {
             throw new V2ValidationException("中断存放位置引用的坐标或区域不存在");
+        }
+    }
+
+    private static void requirePartialDestination(dev.stowling.v2.model.StoragePolicy policy,
+            Map<UUID, CoordinatePoint> coordinates, Map<UUID, RegionDefinition> regions) {
+        if (policy == null || policy.partialBoxDestinationRef() == null) return;
+        var ref = ResourceReference.parse(policy.partialBoxDestinationRef());
+        if (ref.type() == ResourceType.COORDINATE && !coordinates.containsKey(ref.uuid())
+                || ref.type() == ResourceType.REGION && !regions.containsKey(ref.uuid())) {
+            throw new V2ValidationException("未满盒储存位置引用的坐标或区域不存在");
         }
     }
 

@@ -128,7 +128,9 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
         assert selector in javascript
     assert 'togglePhase("collection")' in javascript
     assert 'togglePhase("classification")' in javascript
-    assert "body.hidden = !state.phase[phase];" in javascript
+    assert "reveal(body, enabled && state.phase[phase])" in javascript
+    assert "header.disabled = disabled || !enabled" in javascript
+    assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
 
 def test_overflow_switch_is_visible_outside_both_collapsed_phase_sections() -> None:

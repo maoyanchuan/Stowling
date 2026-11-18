@@ -15,6 +15,23 @@ import org.junit.jupiter.api.Test;
 
 class RecordedStorageCapacityTest {
     @Test
+    void partialBoxesAtTheSelectedLocationAreReservedBeforeEmptySupply() {
+        String item = "minecraft:birch_leaves";
+        var inside = new WarehouseInventory.Entry(item, item, "Inside", 26 * 64, 0, 64);
+        var loose = new WarehouseInventory.Entry(item, item, "Loose", 27 * 64, 0, 64);
+        var stock = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                List.of(new BlockPosition(1, 64, 0)), Instant.ofEpochSecond(1),
+                54, 27, 0, 0, 0, List.of(loose));
+        var partials = List.of(new WarehouseInventory.Box(item, 26, List.of(inside)));
+        var policy = new StoragePolicy(StorageMode.MIXED, 50, true, null, false, 27,
+                "coordinate:" + java.util.UUID.randomUUID());
+        assertFalse(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(item, 64), Map.of(item, 64), partials));
+        assertTrue(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(item, 65), Map.of(item, 64), partials));
+    }
+
+    @Test
     void existingPartialBoxAbsorbsIncomingBeforeReservingAnotherBox() {
         String item = "minecraft:birch_leaves";
         for (int size : List.of(64, 16)) {

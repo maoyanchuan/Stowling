@@ -3,6 +3,36 @@
 
     const UI = window.Stowling;
     let nextId = 0;
+    const reveals = new WeakMap();
+
+    /** @param {HTMLElement} content @param {boolean} expanded @returns {Promise<void>} */
+    function reveal(content, expanded) {
+        const previous = reveals.get(content);
+        if (previous?.expanded === expanded) return previous.done;
+        const height = content.getBoundingClientRect().height;
+        previous?.animation?.cancel();
+        const current = {expanded, animation: null, done: Promise.resolve()};
+        reveals.set(content, current);
+        if (!previous || !content.animate
+                || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+            content.hidden = !expanded;
+            return current.done;
+        }
+        content.hidden = false;
+        content.style.overflow = "hidden";
+        const end = expanded ? content.scrollHeight : 0;
+        const animation = content.animate([
+            {height: `${height}px`, opacity: expanded ? 0 : 1},
+            {height: `${end}px`, opacity: expanded ? 1 : 0}
+        ], {duration: 180, easing: "ease-out"});
+        current.animation = animation;
+        current.done = animation.finished.catch(() => {}).then(() => {
+            if (reveals.get(content) !== current) return;
+            content.hidden = !expanded;
+            content.style.overflow = "";
+        });
+        return current.done;
+    }
 
     /**
      * @param {HTMLInputElement} control
@@ -24,7 +54,7 @@
      * @param {string} description
      * @param {HTMLElement} content
      * @param {boolean} [expanded]
-     * @returns {{root: HTMLElement, description: HTMLElement}}
+     * @returns {object}
      */
     function disclosure(title, description, content, expanded = false) {
         const root = UI.element("details", "settings-disclosure");
@@ -38,7 +68,28 @@
         summary.append(copy, arrow);
         content.classList.add("settings-detail");
         root.append(summary, content);
-        return { root, description: note };
+        let desired = expanded;
+        summary.setAttribute("aria-expanded", String(expanded));
+        void reveal(content, expanded);
+        /** @param {boolean} value @returns {void} */
+        function setExpanded(value) {
+            desired = value;
+            summary.setAttribute("aria-expanded", String(value));
+            if (value) root.open = true;
+            void reveal(content, value).then(() => {
+                if (!desired) root.open = false;
+            });
+        }
+        summary.addEventListener("click", event => {
+            event.preventDefault();
+            setExpanded(!desired);
+        });
+        content.addEventListener("invalid", () => setExpanded(true), true);
+        root.addEventListener("toggle", () => {
+            if (root.open && !desired && content.hidden) setExpanded(true);
+            if (!root.open && desired) setExpanded(false);
+        });
+        return {root, summary, description: note, setExpanded};
     }
 
     /**
@@ -71,7 +122,8 @@
             root.dataset.enabled = String(toggle.checked);
             button.disabled = !toggle.checked;
             button.setAttribute("aria-expanded", String(expanded && toggle.checked));
-            content.hidden = !expanded || !toggle.checked;
+            arrow.hidden = !toggle.checked;
+            void reveal(content, expanded && toggle.checked);
             for (const control of content.querySelectorAll("input, select, textarea, button")) {
                 if (!toggle.checked && !disabledStates.has(control)) {
                     disabledStates.set(control, control.disabled);
@@ -111,5 +163,5 @@
         }
     }, true);
 
-    window.StowlingSettings = Object.freeze({ switchControl, disclosure, optionalSection });
+    window.StowlingSettings = Object.freeze({switchControl, disclosure, optionalSection, reveal});
 })();

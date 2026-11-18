@@ -60,8 +60,10 @@ public final class RecordedStorageCapacity {
                     stackSize) - otherSlots * stackSize);
             long space = StoragePackingPlanner.looseSpace(policy, stock.slots(), stackSize,
                     loose, otherSlots, stock.occupiedSlots(), slack);
-            // Reserving a spare is independent of permission to store a partially filled box.
-            if (loose > limit || incoming > space) {
+            long boxSpace = existingBoxSpace(stock, category, items.keySet(), stackSize);
+            // Existing boxes absorb stock before a new empty box is needed.
+            if ((loose > limit || incoming > space)
+                    && incoming + Math.max(0, loose - limit) > boxSpace) {
                 return true;
             }
             boolean partial = stock.boxes().stream().anyMatch(box ->
@@ -69,8 +71,7 @@ public final class RecordedStorageCapacity {
                             && (box.occupiedSlots() < StoragePackingPlanner.BOX_SLOTS
                                     || box.items().stream().anyMatch(entry ->
                                             entry.loose() < entry.stackSize())));
-            if (partial && incoming > existingBoxSpace(
-                    stock, category, items.keySet(), stackSize)) {
+            if (partial && incoming > boxSpace) {
                 return true;
             }
         }

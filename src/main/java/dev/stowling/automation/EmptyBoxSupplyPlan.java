@@ -10,6 +10,12 @@ public final class EmptyBoxSupplyPlan {
     private EmptyBoxSupplyPlan() {
     }
 
+    public static boolean canReturnUnusedBoxes(java.util.Map<String, Integer> owned,
+            Set<String> emptyBoxKeys) {
+        return owned.entrySet().stream().noneMatch(entry -> entry.getValue() > 0
+                && !emptyBoxKeys.contains(entry.getKey()));
+    }
+
     public static List<ContainerTarget> sources(List<ContainerTarget> caches,
             ContainerTarget selected, List<BlockPosition> facilities) {
         List<ContainerTarget> candidates = new ArrayList<>();

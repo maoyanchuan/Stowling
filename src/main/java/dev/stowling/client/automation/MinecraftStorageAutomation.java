@@ -602,7 +602,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (category != null) {
                 skipLooseDeposit = false;
                 inspectTarget();
-            } else if (context.workspace().isClassificationStorage(target)) {
+            } else if (context.workspace().isClassificationStorage(target)
+                    && EmptyBoxSupplyPlan.canReturnUnusedBoxes(owned(), inventoryStacks().stream()
+                            .filter(MinecraftStorageAutomation::isEmptyBox)
+                            .map(MinecraftItemIdentity::key)
+                            .collect(java.util.stream.Collectors.toSet()))) {
                 stashUnusedSupplyBox(0);
             }
         }
@@ -834,6 +838,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             transfer(staging.get(index), Map.of(key, 1), false, () -> {
                 if (owned().getOrDefault(key, 0) == before) {
                     stashUnusedSupplyBox(index + 1);
+                } else {
+                    stashUnusedSupplyBox(0);
                 }
             });
         }

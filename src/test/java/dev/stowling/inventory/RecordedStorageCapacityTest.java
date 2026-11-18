@@ -1,9 +1,11 @@
 package dev.stowling.inventory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePolicy;
 import java.time.Instant;
 import java.util.List;
@@ -12,6 +14,44 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class RecordedStorageCapacityTest {
+    @Test
+    void existingPartialBoxAbsorbsIncomingBeforeReservingAnotherBox() {
+        String item = "minecraft:birch_leaves";
+        for (int size : List.of(64, 16)) {
+            var inside = new WarehouseInventory.Entry(item, item, "Inside", 26L * size, 0, size);
+            var loose = new WarehouseInventory.Entry(item, item, "Loose", 27L * size, 0, size);
+            var partial = new WarehouseInventory.Box(item, 26, List.of(inside));
+            var stock = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                    List.of(new BlockPosition(1, 64, 0)), Instant.ofEpochSecond(1),
+                    54, 28, 0, 1, 0, List.of(loose), List.of(partial));
+            for (boolean allowPartial : List.of(false, true)) {
+                var policy = new StoragePolicy(StorageMode.MIXED, 50, allowPartial, null);
+                assertFalse(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                        Map.of(item, size - 1), Map.of(item, size)));
+                assertFalse(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                        Map.of(item, size), Map.of(item, size)));
+                assertTrue(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                        Map.of(item, size + 1), Map.of(item, size)));
+            }
+        }
+    }
+
+    @Test
+    void existingBoxSpaceAlsoAccountsForLooseStockAboveTheThreshold() {
+        String item = "minecraft:stone";
+        var inside = new WarehouseInventory.Entry(item, item, "Inside", 25 * 64, 0, 64);
+        var loose = new WarehouseInventory.Entry(item, item, "Loose", 28 * 64, 0, 64);
+        var stock = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                List.of(new BlockPosition(1, 64, 0)), Instant.ofEpochSecond(1),
+                54, 29, 0, 1, 0, List.of(loose),
+                List.of(new WarehouseInventory.Box(item, 25, List.of(inside))));
+        var policy = new StoragePolicy(StorageMode.MIXED, 50, true, null);
+        assertFalse(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(item, 64), Map.of(item, 64)));
+        assertTrue(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(item, 65), Map.of(item, 64)));
+    }
+
     @Test
     void countsOnlyCompatibleSlotsInTheSameCategoryBoxes() {
         String leaves = "minecraft:birch_leaves";

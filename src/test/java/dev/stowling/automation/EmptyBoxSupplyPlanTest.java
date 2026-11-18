@@ -1,12 +1,30 @@
 package dev.stowling.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class EmptyBoxSupplyPlanTest {
+    @Test
+    void spareBoxesWaitUntilAllOtherItemsInTheBatchAreFinished() {
+        String spare = "minecraft:shulker_box#empty";
+        Set<String> emptyKeys = Set.of(spare);
+        assertFalse(EmptyBoxSupplyPlan.canReturnUnusedBoxes(
+                Map.of(spare, 1, "minecraft:stone", 64, "minecraft:birch_leaves", 32), emptyKeys));
+        assertFalse(EmptyBoxSupplyPlan.canReturnUnusedBoxes(
+                Map.of(spare, 1, "minecraft:birch_leaves", 32), emptyKeys));
+        assertFalse(EmptyBoxSupplyPlan.canReturnUnusedBoxes(Map.of(spare, 1,
+                "minecraft:shulker_box#filled@minecraft:birch_leaves", 1), emptyKeys));
+        assertTrue(EmptyBoxSupplyPlan.canReturnUnusedBoxes(Map.of(spare, 2), emptyKeys));
+        assertTrue(EmptyBoxSupplyPlan.canReturnUnusedBoxes(Map.of(), emptyKeys));
+    }
+
     @Test
     void currentCacheAndOtherCachesPrecedePublicSupply() {
         ContainerTarget first = target(1);

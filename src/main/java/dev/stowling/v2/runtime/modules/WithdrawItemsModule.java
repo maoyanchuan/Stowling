@@ -144,6 +144,7 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     }
 
     private void applyWithdrawn(Map<String, Integer> withdrawn) {
+        context.workspace().recordCacheTransfer(target, withdrawn, true);
         context.inventory().recordWithdrawn(context.workspace().inventoryAccount(), withdrawn);
         if (!withdrawn.isEmpty()) {
             context.workspace().resetStorageSelection();

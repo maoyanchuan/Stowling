@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final Minecraft minecraft;
     private final TaskExecutionContext context;
+    private final ContainerTarget target;
     private final MinecraftContainerVisit visit;
     private final Map<String, Integer> remaining;
     private final boolean withdraw;
@@ -54,6 +55,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             boolean inspect, boolean emptyBoxSupply) {
         this.minecraft = minecraft;
         this.context = context;
+        this.target = target;
         this.visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
         this.remaining = new LinkedHashMap<>(requested);
         this.withdraw = withdraw;
@@ -191,6 +193,18 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     }
 
     private TaskModuleResult finish(boolean success, String message) {
+        if (success && !stop && opened && !contents.isEmpty()
+                && (context.workspace().cacheContents(target).isPresent()
+                        || context.workspace().containerScan().stream()
+                                .flatMap(scan -> scan.containers().stream())
+                                .anyMatch(cache -> cache.entrances().stream()
+                                        .anyMatch(target.entrances()::contains)))) {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            contents.stream().filter(stack -> !stack.isEmpty()).forEach(stack ->
+                    counts.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
+                            Math::addExact));
+            context.workspace().recordCacheContents(target, counts);
+        }
         done = true;
         visit.cancelNavigation();
         if (minecraft.player != null && minecraft.player.containerMenu.getCarried().isEmpty()) {

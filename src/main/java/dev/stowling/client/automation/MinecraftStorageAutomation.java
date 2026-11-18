@@ -263,13 +263,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         final void transfer(ContainerTarget target, Map<String, Integer> items, boolean withdraw,
                 Runnable after) {
+            transfer(target, items, withdraw, contents -> after.run());
+        }
+
+        final void transfer(ContainerTarget target, Map<String, Integer> items, boolean withdraw,
+                Consumer<List<ItemStack>> after) {
             if (items.isEmpty()) {
-                after.run();
+                after.accept(List.of());
                 return;
             }
             MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
                     target, items, withdraw, false);
-            steps.add(new Step(access, after));
+            steps.add(new Step(access, () -> after.accept(access.contents())));
         }
 
         final void withdrawEmptyBox(int index, Consumer<ItemStack> after) {
@@ -278,6 +283,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 throw new IllegalStateException("空潜影盒供应不足，剩余物品等待收尾");
             }
             ContainerTarget supply = supplies.get(index);
+            if (context.workspace().cacheContents(supply)
+                    .map(items -> items.keySet().stream().noneMatch(ItemIdentity::isEmptyBox))
+                    .orElse(false)) {
+                withdrawEmptyBox(index + 1, after);
+                return;
+            }
             read(supply, contents -> {
                 ItemStack emptyBox = contents.stream()
                         .filter(MinecraftStorageAutomation::isEmptyBox)
@@ -399,7 +410,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             ContainerTarget next = visits.next(new BlockPosition(feet.getX(), feet.getY(),
                     feet.getZ())).orElse(null);
             if (next == null) {
-                context.workspace().recordCacheInventory(counts);
+                counts.forEach((position, items) -> context.workspace().recordCacheContents(
+                        new ContainerTarget(position, "container"), items));
                 return;
             }
             read(next, contents -> {
@@ -612,67 +624,69 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void inspectTarget() {
-            read(target, contents -> {
-                targetContents = contents;
-                ItemStack representative = inventoryStacks().stream()
-                        .filter(stack -> MinecraftItemIdentity.base(stack).equals(category))
-                        .findFirst().orElseGet(() -> contents.stream()
-                                .filter(stack -> !stack.isEmpty()
-                                        && MinecraftItemIdentity.base(stack).equals(category))
-                                .findFirst().orElse(ItemStack.EMPTY));
-                stackSize = representative.isEmpty() ? 64 : representative.getMaxStackSize();
-                looseLimit = StoragePackingPlanner.looseLimit(policy, contents.size(), stackSize);
-                if (policy.mode() == StorageMode.MIXED) {
-                    long otherSlots = contents.stream().filter(stack -> !stack.isEmpty()
-                            && !MinecraftItemIdentity.isBox(stack)
-                            && !MinecraftItemIdentity.base(stack).equals(category)).count();
-                    looseLimit = Math.max(0, looseLimit - Math.toIntExact(otherSlots) * stackSize);
-                }
-                List<ItemStack> boxes = inventoryStacks().stream().filter(stack ->
-                        MinecraftItemIdentity.isBox(stack)
-                                && category.equals(MinecraftItemIdentity.boxCategory(stack))
-                                && owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
-                        .toList();
-                ItemStack full = boxes.stream().filter(MinecraftItemIdentity::full)
-                        .findFirst().orElse(ItemStack.EMPTY);
-                if (!full.isEmpty()) {
-                    String key = MinecraftItemIdentity.key(full);
-                    transfer(target, Map.of(key, 1), false, () -> {
-                        if (owned().getOrDefault(key, 0) >= boxes.stream()
-                                .filter(stack -> MinecraftItemIdentity.key(stack).equals(key))
-                                .mapToInt(ItemStack::getCount).sum()) {
-                            throw new IllegalStateException("目标容器已满，满盒将由全局收尾暂存");
-                        }
-                        inspectTarget();
-                    });
-                    return;
-                }
-                int loose = rawCount(contents);
-                Map<String, Integer> carried = rawOwned();
-                int amount = Math.min(sum(carried), Math.max(0, looseLimit - loose));
-                int physicalSpace = contents.stream().mapToInt(stack -> stack.isEmpty()
-                        ? stackSize : carried.containsKey(MinecraftItemIdentity.key(stack))
-                                ? stack.getMaxStackSize() - stack.getCount() : 0).sum();
-                boolean fullBoxFirst = !policy.allowPartialBoxes()
-                        && StoragePackingPlanner.shouldBringBox(policy, sum(carried),
-                                Math.min(Math.max(0, looseLimit - loose), physicalSpace),
-                                stackSize, Math.max(0, loose - looseLimit), 0, loose);
-                if (amount > 0 && !skipLooseDeposit && !fullBoxFirst) {
-                    int before = sum(carried);
-                    transfer(target, take(carried, amount), false, () -> {
-                        if (sum(rawOwned()) == before) {
-                            skipLooseDeposit = true;
-                            chooseBox();
-                        } else {
-                            inspectTarget();
-                        }
-                    });
-                } else if (carried.isEmpty() && loose <= looseLimit && boxes.isEmpty()) {
-                    finishCategory();
-                } else {
-                    chooseBox();
-                }
-            });
+            read(target, this::inspectContents);
+        }
+
+        private void inspectContents(List<ItemStack> contents) {
+            targetContents = contents;
+            ItemStack representative = inventoryStacks().stream()
+                    .filter(stack -> MinecraftItemIdentity.base(stack).equals(category))
+                    .findFirst().orElseGet(() -> contents.stream()
+                            .filter(stack -> !stack.isEmpty()
+                                    && MinecraftItemIdentity.base(stack).equals(category))
+                            .findFirst().orElse(ItemStack.EMPTY));
+            stackSize = representative.isEmpty() ? 64 : representative.getMaxStackSize();
+            looseLimit = StoragePackingPlanner.looseLimit(policy, contents.size(), stackSize);
+            if (policy.mode() == StorageMode.MIXED) {
+                long otherSlots = contents.stream().filter(stack -> !stack.isEmpty()
+                        && !MinecraftItemIdentity.isBox(stack)
+                        && !MinecraftItemIdentity.base(stack).equals(category)).count();
+                looseLimit = Math.max(0, looseLimit - Math.toIntExact(otherSlots) * stackSize);
+            }
+            List<ItemStack> boxes = inventoryStacks().stream().filter(stack ->
+                    MinecraftItemIdentity.isBox(stack)
+                            && category.equals(MinecraftItemIdentity.boxCategory(stack))
+                            && owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
+                    .toList();
+            ItemStack full = boxes.stream().filter(MinecraftItemIdentity::full)
+                    .findFirst().orElse(ItemStack.EMPTY);
+            if (!full.isEmpty()) {
+                String key = MinecraftItemIdentity.key(full);
+                transfer(target, Map.of(key, 1), false, updated -> {
+                    if (owned().getOrDefault(key, 0) >= boxes.stream()
+                            .filter(stack -> MinecraftItemIdentity.key(stack).equals(key))
+                            .mapToInt(ItemStack::getCount).sum()) {
+                        throw new IllegalStateException("目标容器已满，满盒将由全局收尾暂存");
+                    }
+                    inspectContents(updated);
+                });
+                return;
+            }
+            int loose = rawCount(contents);
+            Map<String, Integer> carried = rawOwned();
+            int amount = Math.min(sum(carried), Math.max(0, looseLimit - loose));
+            int physicalSpace = contents.stream().mapToInt(stack -> stack.isEmpty()
+                    ? stackSize : carried.containsKey(MinecraftItemIdentity.key(stack))
+                            ? stack.getMaxStackSize() - stack.getCount() : 0).sum();
+            boolean fullBoxFirst = !policy.allowPartialBoxes()
+                    && StoragePackingPlanner.shouldBringBox(policy, sum(carried),
+                            Math.min(Math.max(0, looseLimit - loose), physicalSpace),
+                            stackSize, Math.max(0, loose - looseLimit), 0, loose);
+            if (amount > 0 && !skipLooseDeposit && !fullBoxFirst) {
+                int before = sum(carried);
+                transfer(target, take(carried, amount), false, updated -> {
+                    if (sum(rawOwned()) == before) {
+                        skipLooseDeposit = true;
+                        inspectContents(updated);
+                    } else {
+                        inspectContents(updated);
+                    }
+                });
+            } else if (carried.isEmpty() && loose <= looseLimit && boxes.isEmpty()) {
+                finishCategory();
+            } else {
+                chooseBox();
+            }
         }
 
         private void chooseBox() {
@@ -799,12 +813,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private void storeBox() {
             String key = MinecraftItemIdentity.key(box);
             int before = owned().getOrDefault(key, 0);
-            transfer(target, Map.of(key, 1), false, () -> {
+            transfer(target, Map.of(key, 1), false, updated -> {
                 if (owned().getOrDefault(key, 0) == before) {
                     throw new IllegalStateException("目标箱无法接收潜影盒，交给全局收尾暂存");
                 }
                 skipLooseDeposit = false;
-                inspectTarget();
+                inspectContents(updated);
             });
         }
 
@@ -818,7 +832,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void finishCategory() {
             if (policy.refillLoose() && policy.mode() == StorageMode.MIXED) {
-                steps.add(new Step(new RefillLoose(context, target, category), this::nextCategory));
+                steps.add(new Step(new RefillLoose(context, target, category, targetContents),
+                        this::nextCategory));
             } else {
                 nextCategory();
             }
@@ -878,17 +893,20 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private Map<String, Integer> extracted = Map.of();
         private boolean madeProgress;
         private boolean initialized;
+        private final List<ItemStack> initialContents;
 
-        RefillLoose(TaskExecutionContext context, ContainerTarget target, String category) {
+        RefillLoose(TaskExecutionContext context, ContainerTarget target, String category,
+                List<ItemStack> initialContents) {
             super(context);
             this.target = target;
             this.category = category;
+            this.initialContents = initialContents;
         }
 
         @Override
         void initialize() {
             initialized = true;
-            read(target, this::inspect);
+            inspect(initialContents);
         }
 
         @Override
@@ -1047,7 +1065,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         .noneMatch(destination -> destination.entrances().stream()
                                 .anyMatch(target.entrances()::contains)))
                         .filter(target -> target.entrances().stream()
-                                .noneMatch(configuration.emptyBoxContainers()::contains)).toList();
+                                .noneMatch(configuration.emptyBoxContainers()::contains))
+                        .filter(target -> context.workspace().cacheContents(target)
+                                .map(items -> items.keySet().stream().anyMatch(key ->
+                                        !ItemIdentity.isEmptyBox(key)))
+                                .orElse(true)).toList();
             }
             sources = new ContainerVisitPlan(caches);
             packOwned();
@@ -1157,6 +1179,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     if (drain.withdrawn().isEmpty()) {
                         throw new IllegalStateException("背包空间不足，缓存溢出物品尚未取出");
                     }
+                    if (!drain.matchingItemsRemain()) currentSource = null;
                     packOwned();
                 }));
             });

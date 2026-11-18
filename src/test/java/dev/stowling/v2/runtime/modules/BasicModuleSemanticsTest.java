@@ -422,6 +422,12 @@ class BasicModuleSemanticsTest {
         Set<String> accepted = Set.of("minecraft:stone");
         assertFalse(workspace.hasRecordedClassifiableStock(empty, accepted));
         assertTrue(workspace.hasRecordedClassifiableStock(stocked, accepted));
+        workspace.recordCacheTransfer(stocked, Map.of("minecraft:stone", 64), true);
+        var repeated = new ScanContainersInRegionModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.SCAN_CONTAINERS_IN_REGION,
+                Map.of(TaskModuleIds.REGION_REF, "region:" + region.id(), "scanContents", "true")));
+        assertEquals(TaskModuleState.SUCCEEDED, repeated.start().state());
+        assertFalse(workspace.hasRecordedClassifiableStock(stocked, accepted));
         workspace.setContainerScan(ContainerScanResult.success(List.of(empty)));
         assertTrue(workspace.hasRecordedClassifiableStock(empty, accepted));
     }

@@ -172,6 +172,46 @@ public final class TaskRunWorkspace {
         return Optional.ofNullable(containerScan);
     }
 
+    public synchronized void refreshContainerScan(UUID regionId, ContainerScanResult scan) {
+        Map<BlockPosition, Map<String, Integer>> known = new LinkedHashMap<>();
+        if (regionId.equals(containerScanRegionId) && scan.succeeded() && containerScan != null
+                && containerScan.succeeded()) {
+            for (ContainerTarget target : scan.containers()) {
+                if (containerScan.containers().contains(target)
+                        && cacheInventory.containsKey(target.position())) {
+                    known.put(target.position(), cacheInventory.get(target.position()));
+                }
+            }
+        }
+        setContainerScan(regionId, scan);
+        recordCacheInventory(known);
+    }
+
+    public synchronized Optional<Map<String, Integer>> cacheContents(ContainerTarget target) {
+        return Optional.ofNullable(cacheInventory.get(target.position()));
+    }
+
+    public synchronized void recordCacheTransfer(ContainerTarget target, Map<String, Integer> moved,
+            boolean withdraw) {
+        Map<String, Integer> previous = cacheInventory.get(target.position());
+        if (previous == null) return;
+        if (withdraw && moved.entrySet().stream().anyMatch(entry ->
+                entry.getValue() > previous.getOrDefault(entry.getKey(), 0))) {
+            Map<BlockPosition, Map<String, Integer>> remaining = new LinkedHashMap<>(cacheInventory);
+            remaining.remove(target.position());
+            cacheInventory = Map.copyOf(remaining);
+            return;
+        }
+        Map<String, Integer> items = new LinkedHashMap<>(previous);
+        for (var entry : moved.entrySet()) {
+            int count = items.getOrDefault(entry.getKey(), 0)
+                    + (withdraw ? -entry.getValue() : entry.getValue());
+            if (count > 0) items.put(entry.getKey(), count);
+            else items.remove(entry.getKey());
+        }
+        recordCacheContents(target, items);
+    }
+
     public synchronized Optional<UUID> containerScanRegionId() {
         return Optional.ofNullable(containerScanRegionId);
     }

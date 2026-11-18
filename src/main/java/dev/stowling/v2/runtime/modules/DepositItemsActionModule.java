@@ -136,6 +136,12 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 requested,
                 result.remaining()
         );
+        Map<String, Integer> deposited = new LinkedHashMap<>();
+        requested.forEach((key, count) -> {
+            int moved = count - result.remaining().getOrDefault(key, 0);
+            if (moved > 0) deposited.put(key, moved);
+        });
+        context.workspace().recordCacheTransfer(target, deposited, false);
         recordCacheUpdate(result.remaining());
         if (retryOnFailure && "carried".equals(itemSource)
                 && targetReference.type() == ResourceType.OUTPUT

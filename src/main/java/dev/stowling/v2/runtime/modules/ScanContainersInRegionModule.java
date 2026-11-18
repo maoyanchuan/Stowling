@@ -40,14 +40,19 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
         ContainerScanResult scan = scanContents
                 ? context.containerRegions().scanComplete(region, containerTypes, maxVolume)
                 : context.containerRegions().scan(region, containerTypes, maxVolume);
-        context.workspace().setContainerScan(region.id(), scan);
+        context.workspace().refreshContainerScan(region.id(), scan);
         if (!scan.succeeded()) {
             return TaskModuleResult.failed(scan.message());
         }
         if (!scanContents || scan.containers().isEmpty()) {
             return TaskModuleResult.succeeded(scan.message());
         }
-        inventoryScan = context.storageAutomation().scanCacheContents(context, scan.containers());
+        var unread = scan.containers().stream()
+                .filter(target -> context.workspace().cacheContents(target).isEmpty()).toList();
+        if (unread.isEmpty()) {
+            return TaskModuleResult.succeeded("已复用本轮确认的缓存库存");
+        }
+        inventoryScan = context.storageAutomation().scanCacheContents(context, unread);
         return inventoryScan.start();
     }
 

@@ -28,6 +28,10 @@ public final class ItemIdentity {
         return isBox(key) && MIXED_BOX_CATEGORY.equals(category(key));
     }
 
+    public static boolean isEmptyBox(String key) {
+        return isBox(key) && key.indexOf('@') < 0;
+    }
+
     public static String boxContentsCategory(Set<String> itemIds) {
         Set<String> categories = itemIds.stream().map(ItemIdentity::base)
                 .collect(java.util.stream.Collectors.toSet());

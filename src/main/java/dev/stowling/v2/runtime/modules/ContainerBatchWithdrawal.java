@@ -16,6 +16,7 @@ public final class ContainerBatchWithdrawal implements TaskModuleExecutor {
     private boolean started;
     private boolean inFlight;
     private boolean stopRequested;
+    private boolean matchingItemsRemain;
 
     public ContainerBatchWithdrawal(TaskExecutionContext context, ContainerTarget target,
             Set<String> items) {
@@ -50,11 +51,17 @@ public final class ContainerBatchWithdrawal implements TaskModuleExecutor {
         return withdrawn;
     }
 
+    public boolean matchingItemsRemain() {
+        return matchingItemsRemain;
+    }
+
     private TaskModuleResult handle(ContainerWithdrawalResult result) {
         if (result.state() == ContainerTransferState.PENDING) {
             return TaskModuleResult.waiting(result.message());
         }
         withdrawn = result.withdrawn();
+        matchingItemsRemain = result.matchingItemsRemain();
+        context.workspace().recordCacheTransfer(target, withdrawn, true);
         context.inventory().recordWithdrawn(context.workspace().inventoryAccount(), withdrawn);
         inFlight = false;
         terminal = result.state() == ContainerTransferState.FAILED

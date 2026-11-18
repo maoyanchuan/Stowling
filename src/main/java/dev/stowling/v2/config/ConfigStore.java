@@ -450,13 +450,15 @@ public final class ConfigStore {
                 "classificationAreas",
                 "collectionPriority"
         );
+        Set<String> allowed = new java.util.HashSet<>(fields);
+        allowed.add("overflowEnabled");
         for (JsonElement item
                 : requireArray(value, "autoClassifyTasks")) {
             JsonObject definition = requireObject(
                     item,
                     "auto classify task"
             );
-            requireExactFields(definition, fields);
+            requireFields(definition, allowed, fields);
             requireAutoClassifyAreas(definition.get("classificationAreas"));
         }
     }

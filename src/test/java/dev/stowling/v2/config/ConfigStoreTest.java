@@ -4,8 +4,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonParser;
+import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.AutoClassifyAreaDefinition;
+import dev.stowling.v2.model.AutoClassifyDefinition;
+import dev.stowling.v2.model.AutoClassifyTaskFactory;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.TaskPriority;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -16,6 +26,65 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigStoreTest {
     @TempDir
     Path directory;
+
+    @Test
+    void reloadsSavedAutomaticTasksWithOverflowEnabledOrDisabled() throws Exception {
+        for (boolean enabled : List.of(false, true)) {
+            Path path = directory.resolve("overflow-" + enabled + ".json");
+            ConfigStore store = new ConfigStore(path);
+            var initial = store.loadOrReset();
+            AppConfig config = automaticConfiguration(enabled);
+            store.save(initial.revision(), config);
+            String content = Files.readString(path);
+            assertEquals(config, new ConfigStore(path).loadOrReset().config());
+            assertEquals(content, Files.readString(path));
+        }
+    }
+
+    @Test
+    void acceptsAutomaticTasksSavedBeforeOverflowWasAdded() throws Exception {
+        Path path = directory.resolve("legacy-auto.json");
+        ConfigStore store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), automaticConfiguration(false));
+        var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .remove("overflowEnabled");
+        Files.writeString(path, json.toString());
+        var loaded = new ConfigStore(path).loadOrReset();
+        assertEquals(false, loaded.config().autoClassifyTasks().getFirst().overflowEnabled());
+        assertEquals(json.toString(), Files.readString(path));
+    }
+
+    @Test
+    void stillRejectsUnknownAutomaticTaskFieldsWithoutChangingTheFile() throws Exception {
+        Path path = directory.resolve("unknown-auto.json");
+        ConfigStore store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), automaticConfiguration(true));
+        var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .addProperty("unknownField", true);
+        String content = json.toString();
+        Files.writeString(path, content);
+        assertThrows(V2ValidationException.class, () -> new ConfigStore(path).loadOrReset());
+        assertEquals(content, Files.readString(path));
+    }
+
+    private static AppConfig automaticConfiguration(boolean overflowEnabled) {
+        var point = new CoordinatePoint(UUID.randomUUID(), "Pickup", 0, 64, 0);
+        var region = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 2, 64, 2);
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(),
+                new AreaBounds(10, 64, 0, 12, 64, 0),
+                new AreaBounds(10, 64, 2, 12, 64, 2), "DIRECT_BLOCK_ID");
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Storage", List.of(binding));
+        var definition = new AutoClassifyDefinition(UUID.randomUUID(), "Automatic",
+                false, true, true, "coordinate:" + point.id(), 8, "region:" + region.id(),
+                List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id(),
+                        "DIRECT_BLOCK_ID", List.of(CategoryMarkerSource.PLACED_ITEM))),
+                TaskPriority.NORMAL, overflowEnabled);
+        return new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
+                AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(region),
+                List.of(zone), List.of(), List.of(), List.of(definition));
+    }
 
     @Test
     void rejectsOldSchemaWithoutOverwritingTheFile() throws Exception {

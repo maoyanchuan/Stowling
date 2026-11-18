@@ -41,7 +41,9 @@ class Element {
     /** @param {string} type @param {Function} callback @returns {void} */
     addEventListener(type, callback) { this.listeners[type] = callback; }
     /** @param {string} type @returns {void} */
-    emit(type) { this.listeners[type]?.({target: this}); }
+    emit(type) {
+        this.listeners[type]?.({target: this, /** @returns {void} */ preventDefault() {}});
+    }
     /** @param {string} selector @returns {Array<Element>} */
     querySelectorAll(selector) {
         const tags = selector.split(",").map(value => value.trim().toUpperCase());
@@ -219,3 +221,25 @@ def test_failed_task_switch_preserves_saved_state_and_reenables_controls() -> No
     assert result["state"]["revision"] == "old"
     assert result["state"]["busy"] is False
     assert result["renders"] == 1
+
+
+def test_delayed_native_toggle_does_not_reopen_a_module_after_user_closes_it() -> None:
+    result = run_ui(
+        """(async () => {
+            const body = new Element('div');
+            const section = settings.disclosure('识别区', '坐标', body);
+            section.summary.emit('click');
+            section.summary.emit('click');
+            section.root.emit('toggle');
+            await Promise.resolve();
+            const closed = {open:section.root.open, hidden:body.hidden,
+                expanded:section.summary.attributes['aria-expanded']};
+            section.root.open = true;
+            section.root.emit('toggle');
+            return {closed, external:{open:section.root.open, hidden:body.hidden}};
+        })()"""
+    )
+    assert result == {
+        "closed": {"open": False, "hidden": True, "expanded": "false"},
+        "external": {"open": True, "hidden": False},
+    }

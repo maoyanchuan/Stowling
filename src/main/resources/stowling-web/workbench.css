@@ -903,6 +903,36 @@ body[data-page] .resource-browser-item[aria-current="true"] {
     }
 }
 
+body[data-page] :is(.category-layout-section, .task-cleanup-section) {
+    margin: 12px 0;
+    padding: 0 16px;
+    border: 1px solid #3b3c42;
+    border-radius: 10px;
+    background: #202124;
+}
+
+body[data-page] :is(.category-layout-section, .task-cleanup-section) > .settings-detail {
+    padding: 0 0 14px;
+}
+
+body[data-page] .resource-options.settings-disclosure > summary::after {
+    display: none;
+}
+
+body[data-page] :is(.coordinate-point-summary, .category-binding-summary)::after {
+    align-self: center;
+}
+
+body[data-page] :is(.coordinate-point-summary,
+        .category-binding-summary)[aria-expanded="false"]::after {
+    transform: rotate(-45deg);
+}
+
+body[data-page] :is(.coordinate-point-summary,
+        .category-binding-summary)[aria-expanded="true"]::after {
+    transform: rotate(45deg);
+}
+
 @media (max-width: 1000px) {
     :root {
         --page-gutter: 16px;

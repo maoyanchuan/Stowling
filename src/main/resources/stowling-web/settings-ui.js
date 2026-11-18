@@ -9,13 +9,15 @@
     function reveal(content, expanded) {
         const previous = reveals.get(content);
         if (previous?.expanded === expanded) return previous.done;
-        const height = content.getBoundingClientRect().height;
+        const animated = previous && content.animate
+            && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        const height = animated ? content.getBoundingClientRect().height : 0;
         previous?.animation?.cancel();
         const current = {expanded, animation: null, done: Promise.resolve()};
         reveals.set(content, current);
-        if (!previous || !content.animate
-                || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        if (!animated) {
             content.hidden = !expanded;
+            if (content.style) content.style.overflow = "";
             return current.done;
         }
         content.hidden = false;
@@ -68,6 +70,20 @@
         summary.append(copy, arrow);
         content.classList.add("settings-detail");
         root.append(summary, content);
+        const controller = bindDisclosure(root, summary, content, expanded);
+        return {root, summary, description: note, ...controller};
+    }
+
+    /**
+     * @param {HTMLDetailsElement} root
+     * @param {HTMLElement} summary
+     * @param {HTMLElement} content
+     * @param {boolean} [expanded]
+     * @returns {{setExpanded: (value: boolean) => void}}
+     */
+    function bindDisclosure(root, summary, content, expanded = false) {
+        root.open = expanded;
+        let nativeOpen = expanded;
         let desired = expanded;
         summary.setAttribute("aria-expanded", String(expanded));
         void reveal(content, expanded);
@@ -75,9 +91,15 @@
         function setExpanded(value) {
             desired = value;
             summary.setAttribute("aria-expanded", String(value));
-            if (value) root.open = true;
+            if (value) {
+                nativeOpen = true;
+                root.open = true;
+            }
             void reveal(content, value).then(() => {
-                if (!desired) root.open = false;
+                if (!desired) {
+                    nativeOpen = false;
+                    root.open = false;
+                }
             });
         }
         summary.addEventListener("click", event => {
@@ -86,10 +108,12 @@
         });
         content.addEventListener("invalid", () => setExpanded(true), true);
         root.addEventListener("toggle", () => {
-            if (root.open && !desired && content.hidden) setExpanded(true);
-            if (!root.open && desired) setExpanded(false);
+            if (root.open !== nativeOpen) {
+                nativeOpen = root.open;
+                setExpanded(root.open);
+            }
         });
-        return {root, summary, description: note, setExpanded};
+        return {setExpanded};
     }
 
     /**
@@ -163,5 +187,7 @@
         }
     }, true);
 
-    window.StowlingSettings = Object.freeze({switchControl, disclosure, optionalSection, reveal});
+    window.StowlingSettings = Object.freeze({
+        switchControl, disclosure, optionalSection, reveal, bindDisclosure
+    });
 })();

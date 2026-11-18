@@ -258,17 +258,14 @@
         const radius = input("number", coordinate.radius ?? 3);
         radius.min = "0";
         radius.max = "128";
-        const options = Stowling.element("details", "resource-options");
-        options.open = useDimension.checked || useRadius.checked;
         const optionFields = Stowling.element("div", "resource-option-fields");
         optionFields.append(
             optionalField("指定维度", useDimension, dimension),
             optionalField("指定半径", useRadius, radius)
         );
-        options.append(
-            Stowling.element("summary", "", "更多选项 · 维度与到达半径"),
-            optionFields
-        );
+        const options = window.StowlingSettings.disclosure(
+            "更多选项", "维度与到达半径", optionFields).root;
+        options.classList.add("resource-options");
         fields.append(field("名称", name), axisGroup("位置", x, y, z), options);
 
         const actions = Stowling.element("div", "action-row");
@@ -298,6 +295,7 @@
         actions.append(save, remove);
         fields.append(actions);
         card.append(fields);
+        window.StowlingSettings.bindDisclosure(card, heading, fields);
         return card;
     }
 
@@ -368,6 +366,7 @@
         actions.append(save, remove);
         fields.append(actions);
         card.append(fields);
+        window.StowlingSettings.bindDisclosure(card, heading, fields);
         return card;
     }
 

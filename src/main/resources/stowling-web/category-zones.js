@@ -190,38 +190,18 @@
         actions.append(save, remove);
         body.append(actions);
         card.append(body);
+        Settings.bindDisclosure(card, summary, body);
         return card;
-    }
-
-    /**
-     * @returns {HTMLElement}
-     */
-    function bindingHeading() {
-        const wrapper = Stowling.element("div", "resource-section-heading");
-        const text = Stowling.element("div", "");
-        text.append(
-            Stowling.element("h3", "", "识别区 → 储存区"),
-            Stowling.element(
-                "p",
-                "muted compact-help",
-                "智能识别会读取摆放方块、展示框、展示架和花盆内物品，"
-                    + "每列只识别一个物品。"
-            )
-        );
-        wrapper.append(text);
-        return wrapper;
     }
 
     /**
      * @param {Array<object>} initialBindings
      * @param {object | null} initialExpansion
-     * @param {boolean} [expandBindings]
      * @returns {{root: HTMLElement, read: () => object}}
      */
     function createBindingEditor(
             initialBindings,
-            initialExpansion,
-            expandBindings = false
+            initialExpansion
     ) {
         const root = Stowling.element("div", "category-binding-editor");
         let mode = initialExpansion ? "AUTO" : "MANUAL";
@@ -315,11 +295,8 @@
         function renderBindings(bindings) {
             bindingsHost.replaceChildren();
             readers = [];
-            for (const [index, binding] of bindings.entries()) {
-                appendTemplate(
-                    binding,
-                    expandBindings || (mode === "AUTO" && index === 0)
-                );
+            for (const binding of bindings) {
+                appendTemplate(binding, false);
             }
         }
 
@@ -391,14 +368,13 @@
                 )
             )
             : initialBindings);
-        root.append(
-            modeField,
-            modeHelp,
-            expansionHost,
-            bindingHeading(),
-            bindingsHost,
-            addBindingRow
-        );
+        const bindingBody = Stowling.element("div", "category-bindings-body");
+        bindingBody.append(bindingsHost, addBindingRow);
+        const bindingSection = Settings.disclosure("识别区 → 储存区",
+            "智能识别摆放方块、展示框、展示架和花盆内物品，每列识别一个物品。",
+            bindingBody);
+        bindingSection.root.classList.add("category-layout-section");
+        root.append(modeField, modeHelp, expansionHost, bindingSection.root);
         renderExpansion();
         return {
             root,
@@ -422,18 +398,12 @@
      * @returns {{root: HTMLElement, read: () => object, refresh: () => void}}
      */
     function appendExpansionEditor(host, expansion, templateReader) {
-        const root = Stowling.element("article", "category-expansion-editor");
-        const heading = Stowling.element("div", "resource-section-heading");
-        heading.append(
-            Stowling.element("h4", "", "自动铺满设置"),
-            Stowling.element(
-                "p",
-                "muted compact-help",
-                "单片母版中的全部分类物会作为一组复制，"
-                    + "并且必须完整位于总选区内。自动识别会将整排范围提取为一片，"
-                    + "沿总选区连续铺满；特殊间距可手动设置。"
-            )
-        );
+        const content = Stowling.element("div", "category-expansion-body");
+        const section = Settings.disclosure("自动铺满设置",
+            "单片母版作为一组沿总选区复制；自动识别提取整排为一片，特殊间距可手动设置。",
+            content);
+        const root = section.root;
+        root.classList.add("category-expansion-editor", "category-layout-section");
         const area = cornerFields("总选区", "area", expansion);
         const direction = document.createElement("select");
         direction.append(
@@ -455,7 +425,7 @@
             field("拓展方向", direction),
             field("单片步长", step)
         );
-        root.append(heading, area.root, controls, preview);
+        content.append(area.root, controls, preview);
         host.append(root);
 
         /**
@@ -913,6 +883,7 @@
         }
         body.append(ranges, standingSection, storageSettings, settings, footer);
         card.append(summary, body);
+        Settings.bindDisclosure(card, summary, body, expanded);
         host.append(card);
         return () => ({
             ...marker.read(),
@@ -1227,8 +1198,7 @@
             elements.bindings.replaceChildren();
             const editor = createBindingEditor(
                 [Model.normalizeBinding({})],
-                Model.normalizeExpansion({}),
-                true
+                Model.normalizeExpansion({})
             );
             elements.bindings.append(editor.root);
             newZoneEditor = editor;

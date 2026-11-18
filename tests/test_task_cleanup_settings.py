@@ -17,7 +17,14 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 class Element {
     /** @returns {void} */
-    constructor() { this.children = []; this.value = ''; }
+    constructor() {
+        this.children = []; this.value = ''; this.listeners = {};
+        this.classList = {/** @returns {void} */ add() {}};
+    }
+    /** @param {string} name @param {Function} callback @returns {void} */
+    addEventListener(name, callback) { this.listeners[name] = callback; }
+    /** @returns {void} */
+    setAttribute() {}
     /** @param {...Element} children @returns {void} */
     append(...children) { this.children.push(...children); }
     /** @param {...Element} children @returns {void} */
@@ -25,12 +32,16 @@ class Element {
     /** @returns {Array<Element>} */
     get options() { return this.children; }
 }
-globalThis.document = {/** @returns {Element} */ createElement() { return new Element(); }};
+globalThis.document = {
+    /** @returns {Element} */ createElement() { return new Element(); },
+    /** @returns {void} */ addEventListener() {}
+};
 globalThis.Option = class extends Element {
     /** @param {string} text @param {string} value */
     constructor(text, value) { super(); this.textContent = text; this.value = value; }
 };
 globalThis.window = {Stowling: {/** @returns {Element} */ element() { return new Element(); }}};
+vm.runInThisContext(fs.readFileSync(process.argv[2], 'utf8'));
 vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
 const widget = window.StowlingTaskCleanupSettings.create(new Element());
 widget.resources([{id:'box', name:'Delivery'}], [{id:'area', name:'Cache'}]);
@@ -44,7 +55,8 @@ automatic.set({destinationRef:'region:area', resumeMode:'CONTINUE'});
 process.stdout.write(JSON.stringify({coordinate, region, automatic: automatic.read()}));
 """
     result = subprocess.run(
-        [str(NODE), "-e", runner, str(WEB / "task-cleanup-settings.js")],
+        [str(NODE), "-e", runner, str(WEB / "task-cleanup-settings.js"),
+         str(WEB / "settings-ui.js")],
         check=True, capture_output=True, encoding="utf-8",
     )
     value = json.loads(result.stdout)

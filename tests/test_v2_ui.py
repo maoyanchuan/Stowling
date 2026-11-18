@@ -580,8 +580,9 @@ def test_coordinate_editors_group_xyz_and_separate_optional_settings() -> None:
     assert 'axisGroup("位置", x, y, z)' in javascript
     assert 'axisGroup("角点 1", firstX, firstY, firstZ)' in javascript
     assert 'axisGroup("角点 2", secondX, secondY, secondZ)' in javascript
-    assert 'Stowling.element("details", "resource-options")' in javascript
-    assert "options.open = useDimension.checked || useRadius.checked" in javascript
+    assert 'options.classList.add("resource-options")' in javascript
+    assert '"更多选项", "维度与到达半径", optionFields)' in javascript
+    assert "options.open = useDimension.checked || useRadius.checked" not in javascript
     assert "resourceIdentity(" in javascript
     assert 'id="coordinate-list-count"' in html
     assert 'id="region-list-count"' in html
@@ -606,9 +607,10 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     javascript = read("category-zones.js")
 
     assert 'Stowling.element("details", "category-binding-card")' in javascript
-    assert "function appendBinding(host, binding, expanded = false)" in javascript
+    assert "function appendBinding(" in javascript
+    assert "Settings.bindDisclosure(card, summary, body, expanded)" in javascript
     assert "card.open = expanded" in javascript
-    assert 'Stowling.element("details", "category-binding-settings")' in javascript
+    assert 'Settings.disclosure("识别规则与容器例外"' in javascript
     assert "ranges.append(marker.root, storage.root)" in javascript
     assert "settingsBody.append(recognition, overrideHeading, overrides, overrideActions)" in (
         javascript

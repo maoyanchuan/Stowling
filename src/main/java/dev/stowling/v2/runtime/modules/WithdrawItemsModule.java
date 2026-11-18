@@ -17,6 +17,7 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final ContainerTarget target;
     private final Set<String> matchingItemIds;
+    private final boolean classificationBatch;
     private boolean started;
     private boolean inFlight;
     private boolean stopRequested;
@@ -25,6 +26,10 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         this.context = context;
         this.target = target(context, step);
         this.matchingItemIds = matchingItems(context, step, target);
+        this.classificationBatch = context.workspace().cacheContainers().contains(target)
+                && context.workspace().acceptedItemsByContainer().keySet().stream()
+                .anyMatch(container -> container.storagePolicy().mode()
+                        != dev.stowling.v2.model.StorageMode.NORMAL);
     }
 
     @Override
@@ -34,10 +39,9 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         }
         started = true;
         inFlight = true;
-        return handle(context.containerWithdrawals().startWithdrawal(
-                target,
-                matchingItemIds
-        ));
+        return handle(classificationBatch
+                ? context.containerWithdrawals().startClassificationBatch(target, matchingItemIds)
+                : context.containerWithdrawals().startWithdrawal(target, matchingItemIds));
     }
 
     @Override
@@ -74,7 +78,8 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
             return TaskModuleResult.waiting(result.message());
         }
         applyWithdrawn(result.withdrawn());
-        context.workspace().setCacheHasMore(result.matchingItemsRemain());
+        context.workspace().setCacheHasMore(result.matchingItemsRemain()
+                && (!classificationBatch || !result.withdrawn().isEmpty()));
         inFlight = false;
         if (result.state() == ContainerTransferState.FAILED) {
             return TaskModuleResult.failed(result.message());

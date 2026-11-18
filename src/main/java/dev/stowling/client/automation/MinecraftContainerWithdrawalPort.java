@@ -3,7 +3,9 @@ package dev.stowling.client.automation;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerWithdrawalPort;
 import dev.stowling.automation.ContainerWithdrawalResult;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.v2.model.StoragePackingPlanner;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -51,6 +53,17 @@ public final class MinecraftContainerWithdrawalPort
             ContainerTarget target,
             Set<String> matchingItemIds
     ) {
+        return startWithdrawal(target, matchingItemIds, false);
+    }
+
+    @Override
+    public ContainerWithdrawalResult startClassificationBatch(
+            ContainerTarget target, Set<String> matchingItemIds) {
+        return startWithdrawal(target, matchingItemIds, true);
+    }
+
+    private ContainerWithdrawalResult startWithdrawal(
+            ContainerTarget target, Set<String> matchingItemIds, boolean singleCategory) {
         Objects.requireNonNull(target, "target");
         Set<String> itemIds = checkedItemIds(matchingItemIds);
         if (!scheduler.isClientThread()) {
@@ -74,7 +87,7 @@ public final class MinecraftContainerWithdrawalPort
                     false
             );
         }
-        active = new ActiveWithdrawal(target, itemIds);
+        active = new ActiveWithdrawal(target, itemIds, singleCategory);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerWithdrawalResult.pending("正在打开缓存容器");
     }
@@ -143,15 +156,16 @@ public final class MinecraftContainerWithdrawalPort
             return fail("缓存容器在取出前关闭");
         }
         AbstractContainerMenu menu = screen.getMenu();
-        Candidate candidate = findCandidate(menu, active.matchingItemIds);
+        Candidate candidate = findCandidate(menu, active);
         if (candidate == null) {
             boolean remaining = containerHasMatching(
                     menu,
                     active.matchingItemIds
             );
-            String message = remaining
-                    ? "玩家背包空间不足，稍后继续"
-                    : "缓存中没有可分类物品";
+            String message = !remaining ? "缓存中没有可分类物品"
+                    : active.singleCategory && !active.withdrawn.isEmpty()
+                            ? "本批取出完成，缓存仍有待分类物品"
+                            : "玩家背包空间不足，稍后继续";
             return complete(message, remaining);
         }
         active.phase = Phase.CONFIRMING;
@@ -185,6 +199,7 @@ public final class MinecraftContainerWithdrawalPort
                     moved,
                     Math::addExact
             );
+            active.confirmedStacks++;
             active.phase = Phase.READY;
             active.deadline = Instant.now().plus(WITHDRAW_TIMEOUT);
             active.pendingItemId = "";
@@ -225,8 +240,13 @@ public final class MinecraftContainerWithdrawalPort
 
     private static Candidate findCandidate(
             AbstractContainerMenu menu,
-            Set<String> matchingItemIds
+            ActiveWithdrawal batch
     ) {
+        if (batch.singleCategory && batch.confirmedStacks >= StoragePackingPlanner.BOX_SLOTS) {
+            return null;
+        }
+        String category = batch.singleCategory ? batch.withdrawn.keySet().stream().findFirst()
+                .map(ItemIdentity::category).orElse(null) : null;
         for (int slotIndex : containerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
@@ -234,7 +254,8 @@ public final class MinecraftContainerWithdrawalPort
                 continue;
             }
             String itemId = itemId(stack);
-            if (!dev.stowling.automation.ItemIdentity.matches(itemId, matchingItemIds)) {
+            if (!ItemIdentity.matches(itemId, batch.matchingItemIds)
+                    || category != null && !category.equals(ItemIdentity.category(itemId))) {
                 continue;
             }
             if (playerCapacity(menu, stack) < stack.getCount()) {
@@ -408,7 +429,9 @@ public final class MinecraftContainerWithdrawalPort
     private static final class ActiveWithdrawal {
         private final ContainerTarget target;
         private final Set<String> matchingItemIds;
+        private final boolean singleCategory;
         private final Map<String, Integer> withdrawn = new LinkedHashMap<>();
+        private int confirmedStacks;
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;
@@ -420,10 +443,12 @@ public final class MinecraftContainerWithdrawalPort
 
         private ActiveWithdrawal(
                 ContainerTarget target,
-                Set<String> matchingItemIds
+                Set<String> matchingItemIds,
+                boolean singleCategory
         ) {
             this.target = target;
             this.matchingItemIds = matchingItemIds;
+            this.singleCategory = singleCategory;
         }
     }
 }

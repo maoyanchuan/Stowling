@@ -1,12 +1,13 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
-import dev.stowling.automation.ContainerVisitPlan;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.StorageAutomationSettings;
+import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
 import dev.stowling.v2.runtime.modules.StorageAutomationPort;
@@ -19,12 +20,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
@@ -36,6 +38,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final Minecraft minecraft;
     private final StorageSettingsStore settings;
     private final dev.stowling.automation.ContainerRegionPort containerRegions;
+    private final Supplier<WarehouseInventory> warehouse;
     private final Map<UUID, MinecraftShulkerAction.Resource> resources = new LinkedHashMap<>();
 
     public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings) {
@@ -45,9 +48,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings,
             dev.stowling.automation.ContainerRegionPort containerRegions) {
+        this(minecraft, settings, containerRegions, () -> null);
+    }
+
+    public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings,
+            dev.stowling.automation.ContainerRegionPort containerRegions,
+            Supplier<WarehouseInventory> warehouse) {
         this.minecraft = minecraft;
         this.settings = settings;
         this.containerRegions = containerRegions;
+        this.warehouse = warehouse;
     }
 
     @Override
@@ -70,6 +80,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
             Map<String, Integer> items) {
         return new Packing(context, target, items);
+    }
+
+    @Override
+    public Optional<TaskModuleExecutor> prepareDeposit(TaskExecutionContext context,
+            ContainerTarget target, Map<String, Integer> items) {
+        if (target.storagePolicy().mode() == StorageMode.NORMAL
+                || !context.workspace().isClassificationStorage(target)
+                || settings.resolved().emptyBoxContainers().isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new PrepareBox(context, target, items));
     }
 
     @Override
@@ -160,6 +181,33 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             steps.add(new Step(access, after));
         }
 
+        final void withdrawEmptyBox(int index, Consumer<ItemStack> after) {
+            if (index >= configuration.emptyBoxContainers().size()) {
+                throw new IllegalStateException("空潜影盒供应不足，剩余物品等待收尾");
+            }
+            ContainerTarget supply = new ContainerTarget(
+                    configuration.emptyBoxContainers().get(index), "container");
+            read(supply, contents -> {
+                ItemStack emptyBox = contents.stream()
+                        .filter(MinecraftStorageAutomation::isEmptyBox)
+                        .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
+                if (emptyBox.isEmpty()) {
+                    withdrawEmptyBox(index + 1, after);
+                    return;
+                }
+                String key = MinecraftItemIdentity.key(emptyBox);
+                int before = owned().getOrDefault(key, 0);
+                MinecraftStorageAccess access = MinecraftStorageAccess.withdrawEmptyBox(
+                        minecraft, context, supply, key);
+                steps.add(new Step(access, () -> {
+                    if (owned().getOrDefault(key, 0) != before + 1) {
+                        throw new IllegalStateException("背包空间不足或空潜影盒取出未确认");
+                    }
+                    after.accept(emptyBox);
+                }));
+            });
+        }
+
         final UUID owner() {
             return context.workspace().inventoryAccount().ownerId();
         }
@@ -236,6 +284,83 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
     }
 
+    private final class PrepareBox extends Session {
+        private final ContainerTarget target;
+        private final Map<String, Integer> items;
+
+        PrepareBox(TaskExecutionContext context, ContainerTarget target,
+                Map<String, Integer> items) {
+            super(context);
+            this.target = target;
+            this.items = items;
+        }
+
+        @Override
+        void initialize() {
+            if (configuration.cleanupEnabled() && ownedEmptyBox(owned()).isEmpty()
+                    && needsBox()) {
+                withdrawEmptyBox(0, box -> { });
+            }
+        }
+
+        private boolean needsBox() {
+            WarehouseInventory inventory = warehouse.get();
+            WarehouseInventory.Container stock = inventory == null ? null
+                    : inventory.containers().stream().filter(container -> container.slots() > 0
+                            && container.dimension().equals(inventory.currentDimension())
+                            && container.positions().contains(target.position()))
+                    .findFirst().orElse(null);
+            for (ItemStack stack : inventoryStacks()) {
+                String key = MinecraftItemIdentity.key(stack);
+                if (ItemIdentity.isBox(key) || !items.containsKey(key)) {
+                    continue;
+                }
+                String category = ItemIdentity.category(key);
+                int stackSize = stack.getMaxStackSize();
+                int incoming = items.entrySet().stream()
+                        .filter(entry -> !ItemIdentity.isBox(entry.getKey())
+                                && category.equals(ItemIdentity.category(entry.getKey())))
+                        .mapToInt(Map.Entry::getValue).sum();
+                long sameLoose = 0;
+                long otherSlots = 0;
+                long matchingSlack = 0;
+                if (stock != null) {
+                    for (WarehouseInventory.Entry entry : stock.items()) {
+                        if (ItemIdentity.isBox(entry.key())) {
+                            continue;
+                        }
+                        if (category.equals(entry.itemId())) {
+                            sameLoose += entry.loose();
+                            long remainder = entry.loose() % entry.stackSize();
+                            if (remainder > 0 && items.containsKey(entry.key())) {
+                                matchingSlack += entry.stackSize() - remainder;
+                            }
+                        } else if (entry.loose() > 0) {
+                            otherSlots += Math.ceilDiv(entry.loose(), entry.stackSize());
+                        }
+                    }
+                }
+                if (stock == null || stock.recordedAt() == null) {
+                    if (StoragePackingPlanner.shouldBringBox(
+                            target.storagePolicy(), incoming, 0, stackSize, 0)) {
+                        return true;
+                    }
+                    continue;
+                }
+                StoragePolicy policy = target.storagePolicy();
+                long limit = Math.max(0, StoragePackingPlanner.looseLimit(
+                        policy, stock.slots(), stackSize) - otherSlots * stackSize);
+                long space = StoragePackingPlanner.looseSpace(policy, stock.slots(), stackSize,
+                        sameLoose, otherSlots, stock.occupiedSlots(), matchingSlack);
+                if (StoragePackingPlanner.shouldBringBox(policy, incoming, space, stackSize,
+                        Math.max(0, sameLoose - limit))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     private final class Packing extends Session {
         private final ContainerTarget target;
         private final StoragePolicy policy;
@@ -244,10 +369,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int stackSize;
         private int looseLimit;
         private List<ItemStack> targetContents = List.of();
-        private final Map<ContainerTarget, List<ItemStack>> sourceContents = new LinkedHashMap<>();
         private ItemStack box;
         private ContainerTarget boxTarget;
         private boolean requestedBox;
+        private boolean packedBox;
+        private boolean skipLooseDeposit;
+        private int targetExcessRemaining;
         private BlockPosition preferredSite;
 
         Packing(TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items) {
@@ -275,7 +402,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private void nextCategory() {
             category = categories.pollFirst();
             if (category != null) {
+                packedBox = false;
+                skipLooseDeposit = false;
                 inspectTarget();
+            } else if (context.workspace().isClassificationStorage(target)) {
+                stashUnusedSupplyBox(0);
             }
         }
 
@@ -290,7 +421,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                                 .findFirst().orElse(ItemStack.EMPTY));
                 stackSize = representative.isEmpty() ? 64 : representative.getMaxStackSize();
                 looseLimit = StoragePackingPlanner.looseLimit(policy, contents.size(), stackSize);
-                if (policy.mode() == dev.stowling.v2.model.StorageMode.MIXED) {
+                if (policy.mode() == StorageMode.MIXED) {
                     long otherSlots = contents.stream().filter(stack -> !stack.isEmpty()
                             && !MinecraftItemIdentity.isBox(stack)
                             && !MinecraftItemIdentity.base(stack).equals(category)).count();
@@ -318,23 +449,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 int loose = rawCount(contents);
                 Map<String, Integer> carried = rawOwned();
                 int amount = Math.min(sum(carried), Math.max(0, looseLimit - loose));
-                if (loose > looseLimit && !carried.isEmpty()) {
-                    ContainerTarget buffer = context.workspace().selectedContainer()
-                            .orElseGet(() -> new ContainerTarget(
-                                    temporaryContainers().getFirst().position(), "container"));
-                    int before = sum(carried);
-                    transfer(buffer, carried, false, () -> {
-                        if (sum(rawOwned()) == before) {
-                            throw new IllegalStateException("整理目标箱前暂存空间不足");
-                        }
-                        context.workspace().setCacheHasMore(true);
-                        inspectTarget();
-                    });
-                } else if (amount > 0) {
+                int physicalSpace = contents.stream().mapToInt(stack -> stack.isEmpty()
+                        ? stackSize : carried.containsKey(MinecraftItemIdentity.key(stack))
+                                ? stack.getMaxStackSize() - stack.getCount() : 0).sum();
+                boolean fullBoxFirst = !policy.allowPartialBoxes()
+                        && StoragePackingPlanner.shouldBringBox(policy, sum(carried),
+                                Math.min(Math.max(0, looseLimit - loose), physicalSpace),
+                                stackSize, Math.max(0, loose - looseLimit));
+                if (amount > 0 && !skipLooseDeposit && !fullBoxFirst) {
                     int before = sum(carried);
                     transfer(target, take(carried, amount), false, () -> {
                         if (sum(rawOwned()) == before) {
-                            defer();
+                            skipLooseDeposit = true;
+                            chooseBox();
                         } else {
                             inspectTarget();
                         }
@@ -342,24 +469,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 } else if (carried.isEmpty() && loose <= looseLimit && boxes.isEmpty()) {
                     nextCategory();
                 } else {
-                    preferredSite = chooseSite(context, target, policy.packingArea(), configuration);
-                    sourceContents.clear();
-                    scanSources(new ContainerVisitPlan(sourceTargets()));
+                    chooseBox();
                 }
-            });
-        }
-
-        private void scanSources(ContainerVisitPlan plan) {
-            BlockPos feet = minecraft.player.blockPosition();
-            ContainerTarget source = plan.next(new BlockPosition(feet.getX(), feet.getY(),
-                    feet.getZ())).orElse(null);
-            if (source == null) {
-                chooseBox();
-                return;
-            }
-            read(source, contents -> {
-                sourceContents.put(source, contents);
-                scanSources(plan);
             });
         }
 
@@ -370,6 +481,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     && owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
                     .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
             requestedBox = !box.isEmpty();
+            ItemStack supplied = ownedEmptyBox(owned());
+            targetExcessRemaining = Math.max(0, rawCount(targetContents) - looseLimit);
+            int available = sum(rawOwned()) + targetExcessRemaining;
+            if (!requestedBox && !supplied.isEmpty()
+                    && targetContents.stream().anyMatch(ItemStack::isEmpty)
+                    && StoragePackingPlanner.canPack(policy.allowPartialBoxes(),
+                            available, 0, stackSize)) {
+                box = supplied;
+                requestedBox = true;
+            }
             if (box.isEmpty()) {
                 box = targetContents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
                         && category.equals(MinecraftItemIdentity.boxCategory(stack))
@@ -377,8 +498,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         .max(Comparator.comparingInt(MinecraftStorageAutomation::insideCount))
                         .map(ItemStack::copy).orElse(ItemStack.EMPTY);
             }
-            int available = sum(rawOwned()) + Math.max(0, rawCount(targetContents) - looseLimit)
-                    + sourceContents.values().stream().mapToInt(this::rawCount).sum();
+            if (box.isEmpty() && !supplied.isEmpty()) {
+                box = supplied;
+                requestedBox = true;
+            }
             int inside = box.isEmpty() ? 0 : insideCount(box);
             if (!StoragePackingPlanner.canPack(policy.allowPartialBoxes(), available, inside, stackSize)) {
                 if (requestedBox && policy.allowPartialBoxes()) {
@@ -388,6 +511,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
                 return;
             }
+            if (box.isEmpty() && packedBox && context.workspace().isClassificationStorage(target)) {
+                defer();
+                return;
+            }
+            preferredSite = chooseSite(context, target, policy.packingArea(), configuration);
             if (!box.isEmpty()) {
                 if (requestedBox) {
                     placeBox();
@@ -399,40 +527,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     });
                 }
             } else {
-                obtainEmpty(0);
+                withdrawEmptyBox(0, suppliedBox -> {
+                    box = suppliedBox;
+                    placeBox();
+                });
             }
-        }
-
-        private void obtainEmpty(int index) {
-            box = inventoryStacks().stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
-                    && MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream().findAny().isEmpty()
-                    && owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
-                    .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
-            if (!box.isEmpty()) {
-                placeBox();
-                return;
-            }
-            if (index >= configuration.emptyBoxContainers().size()) {
-                throw new IllegalStateException("空潜影盒供应不足，物品将返回暂存箱");
-            }
-            ContainerTarget supply = new ContainerTarget(configuration.emptyBoxContainers().get(index),
-                    "container");
-            read(supply, contents -> {
-                box = contents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
-                        && MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream().findAny().isEmpty())
-                        .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
-                if (box.isEmpty()) {
-                    obtainEmpty(index + 1);
-                } else {
-                    String key = MinecraftItemIdentity.key(box);
-                    MinecraftStorageAccess access = MinecraftStorageAccess.withdrawEmptyBox(
-                            minecraft, context, supply, key);
-                    steps.add(new Step(access, () -> {
-                        requireOwned(key);
-                        placeBox();
-                    }));
-                }
-            });
         }
 
         private void requireOwned(String key) {
@@ -453,7 +552,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private void fillBox() {
             read(boxTarget, contents -> {
                 int inside = rawCount(contents);
-                int remaining = 27 * stackSize - inside;
+                int remaining = StoragePackingPlanner.BOX_SLOTS * stackSize - inside;
                 Map<String, Integer> incoming = take(rawOwned(), remaining);
                 if (!incoming.isEmpty()) {
                     int before = sum(rawOwned());
@@ -464,35 +563,28 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             fillBox();
                         }
                     });
-                } else if (remaining <= 0) {
+                } else if (remaining <= 0 || targetExcessRemaining <= 0) {
                     finishBox();
                 } else {
-                    fetchMore(remaining, 0);
+                    loadTargetExcess(remaining);
                 }
             });
         }
 
-        private void fetchMore(int wanted, int index) {
-            List<ContainerTarget> sources = new ArrayList<>();
-            sources.add(target);
-            sources.addAll(sourceTargets());
-            if (index == sources.size()) {
-                finishBox();
-                return;
-            }
-            ContainerTarget source = sources.get(index);
-            read(source, contents -> {
+        private void loadTargetExcess(int wanted) {
+            read(target, contents -> {
                 Map<String, Integer> raw = rawItems(contents);
-                int amount = source.equals(target)
-                        ? Math.max(0, sum(raw) - looseLimit) : sum(raw);
+                int amount = Math.min(targetExcessRemaining, Math.max(0, sum(raw) - looseLimit));
                 if (amount == 0) {
-                    fetchMore(wanted, index + 1);
+                    finishBox();
                 } else {
                     int before = sum(rawOwned());
-                    transfer(source, take(raw, Math.min(amount, wanted)), true, () -> {
-                        if (sum(rawOwned()) == before) {
-                            fetchMore(wanted, index + 1);
+                    transfer(target, take(raw, Math.min(amount, wanted)), true, () -> {
+                        int withdrawn = sum(rawOwned()) - before;
+                        if (withdrawn <= 0) {
+                            finishBox();
                         } else {
+                            targetExcessRemaining -= withdrawn;
                             fillBox();
                         }
                     });
@@ -501,12 +593,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void finishBox() {
+            MinecraftShulkerAction.Resource resource = resources.get(owner());
             recover(() -> {
-                box = inventoryStacks().stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
-                        && category.equals(MinecraftItemIdentity.boxCategory(stack))
-                        && owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
-                        .findFirst().map(ItemStack::copy).orElseThrow(() ->
-                                new IllegalStateException("回收后找不到本次打包的潜影盒"));
+                box = resource.expected;
+                requireOwned(MinecraftItemIdentity.key(box));
                 if (!policy.allowPartialBoxes() && !MinecraftItemIdentity.full(box)) {
                     throw new IllegalStateException("物品不足或数据不同，未满盒交给全局收尾暂存");
                 }
@@ -521,6 +611,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (owned().getOrDefault(key, 0) == before) {
                     throw new IllegalStateException("目标箱无法接收潜影盒，交给全局收尾暂存");
                 }
+                packedBox = true;
+                skipLooseDeposit = false;
                 inspectTarget();
             });
         }
@@ -531,13 +623,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             nextCategory();
         }
 
-        private List<ContainerTarget> sourceTargets() {
-            Set<ContainerTarget> sources = new LinkedHashSet<>(context.workspace().cacheContainers());
-            sources.addAll(temporaryContainers());
-            return sources.stream().filter(source -> !source.position().equals(target.position()))
-                    .filter(source -> !configuration.emptyBoxContainers().contains(source.position()))
-                    .distinct().sorted(Comparator.comparingDouble(source -> distance(source.position())))
-                    .toList();
+        private void stashUnusedSupplyBox(int index) {
+            ItemStack unused = ownedEmptyBox(owned());
+            if (unused.isEmpty()) {
+                return;
+            }
+            List<ContainerTarget> staging = temporaryContainers();
+            if (index >= staging.size()) {
+                throw new IllegalStateException("暂存箱无法接收未使用的空潜影盒");
+            }
+            String key = MinecraftItemIdentity.key(unused);
+            int before = owned().getOrDefault(key, 0);
+            transfer(staging.get(index), Map.of(key, 1), false, () -> {
+                if (owned().getOrDefault(key, 0) == before) {
+                    stashUnusedSupplyBox(index + 1);
+                }
+            });
         }
 
         private int rawCount(List<ItemStack> contents) {
@@ -664,6 +765,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private List<ItemStack> inventoryStacks() {
         return minecraft.player.getInventory().getNonEquipmentItems().stream()
                 .filter(stack -> !stack.isEmpty()).map(ItemStack::copy).toList();
+    }
+
+    private static boolean isEmptyBox(ItemStack stack) {
+        return MinecraftItemIdentity.isBox(stack)
+                && MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream().findAny()
+                        .isEmpty();
+    }
+
+    private ItemStack ownedEmptyBox(Map<String, Integer> owned) {
+        return inventoryStacks().stream().filter(MinecraftStorageAutomation::isEmptyBox)
+                .filter(stack -> owned.getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
+                .findFirst().orElse(ItemStack.EMPTY);
     }
 
     private static BlockPos position(BlockPosition position) {

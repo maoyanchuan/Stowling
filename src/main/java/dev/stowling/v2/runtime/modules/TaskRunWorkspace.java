@@ -350,6 +350,11 @@ public final class TaskRunWorkspace {
         return storageUsesCacheFallback;
     }
 
+    public synchronized boolean isClassificationStorage(ContainerTarget target) {
+        return !storageUsesCacheFallback && target.equals(selectedStorageTarget)
+                && selectedContainer != null && !cacheContainers.isEmpty();
+    }
+
     public synchronized void resetStorageSelection() {
         storageCursor = 0;
         selectedStorageTarget = null;

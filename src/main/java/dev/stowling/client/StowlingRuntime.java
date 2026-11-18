@@ -116,9 +116,11 @@ public final class StowlingRuntime implements AutoCloseable {
         var storageSettings = new dev.stowling.v2.config.StorageSettingsStore(
                 configDirectory.resolve("stowling-storage-settings.json"));
         storageSettings.bindCoordinates(configs);
+        var warehouse = new dev.stowling.client.automation.ChestTrackerInventorySource(
+                minecraft, scheduler, configs);
         moduleRuntime.setStorageAutomation(
                 new dev.stowling.client.automation.MinecraftStorageAutomation(
-                        minecraft, storageSettings, containerScanner));
+                        minecraft, storageSettings, containerScanner, warehouse));
         TaskRunManager taskRuns = new TaskRunManager(
                 navigationPort,
                 moduleRuntime
@@ -128,8 +130,7 @@ public final class StowlingRuntime implements AutoCloseable {
                 taskRuns,
                 () -> inventory(inventories),
                 storageSettings,
-                new dev.stowling.client.automation.ChestTrackerInventorySource(
-                        minecraft, scheduler, configs)
+                warehouse
         );
 
         int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);

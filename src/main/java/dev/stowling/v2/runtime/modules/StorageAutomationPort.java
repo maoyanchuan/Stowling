@@ -24,6 +24,11 @@ public interface StorageAutomationPort {
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
 
+    default java.util.Optional<TaskModuleExecutor> prepareDeposit(
+            TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items) {
+        return java.util.Optional.empty();
+    }
+
     default boolean cleanupEnabled() {
         return false;
     }

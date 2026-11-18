@@ -3,6 +3,7 @@ package dev.stowling.client.automation;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
@@ -79,9 +80,15 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 minecraft.player.closeContainer();
                 return waitFor("正在关闭界面");
             }
-            NavigationStatus navigation = context.navigation().startNear(resource.position, 2);
+            NavigationStatus navigation = place
+                    ? context.navigation().startNear(resource.position, 2)
+                    : resource.broken ? NavigationStatus.ARRIVED
+                            : context.navigation().startInteraction(resource.position, miningArea());
             if (navigation == NavigationStatus.FAILED) {
                 return fail("无法到达潜影盒操作点");
+            }
+            if (navigation == NavigationStatus.ARRIVED) {
+                return prepareHand(position);
             }
             phase = 1;
             return waitFor("正在前往潜影盒操作点");
@@ -94,28 +101,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
             if (navigation != NavigationStatus.ARRIVED) {
                 return waitFor("正在靠近潜影盒");
             }
-            selected = minecraft.player.getInventory().getSelectedSlot();
-            if (place) {
-                if (!validSite(minecraft, position)) {
-                    return fail("潜影盒放置点被占用或开盖空间不足");
-                }
-                int source = findSlot(MinecraftItemIdentity.key(resource.original), false);
-                if (source < 0) {
-                    return fail("任务持有的潜影盒已不在背包中");
-                }
-                swap(source);
-            } else if (!resource.broken) {
-                if (!sameBlock(position)) {
-                    return fail("登记的潜影盒已变化，停止挖掘");
-                }
-                int tool = findSlot("", true);
-                if (tool >= 0) {
-                    swap(tool);
-                }
-            }
-            phase = 2;
-            ticks = 0;
-            return waitFor("等待手持物品同步");
+            return prepareHand(position);
         }
         if (phase == 2 && ticks < 4) {
             return waitFor("等待手持物品同步");
@@ -124,6 +110,40 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
             return tickPlacement(position);
         }
         return tickRecovery(position);
+    }
+
+    static AreaBounds miningArea(BlockPosition box) {
+        return new AreaBounds(box.x() - 1, box.y(), box.z() - 1,
+                box.x() + 1, box.y(), box.z() + 1);
+    }
+
+    private AreaBounds miningArea() {
+        return miningArea(resource.position);
+    }
+
+    private TaskModuleResult prepareHand(BlockPos position) {
+        selected = minecraft.player.getInventory().getSelectedSlot();
+        if (place) {
+            if (!validSite(minecraft, position)) {
+                return fail("潜影盒放置点被占用或开盖空间不足");
+            }
+            int source = findSlot(MinecraftItemIdentity.key(resource.original), false);
+            if (source < 0) {
+                return fail("任务持有的潜影盒已不在背包中");
+            }
+            swap(source);
+        } else if (!resource.broken) {
+            if (!sameBlock(position)) {
+                return fail("登记的潜影盒已变化，停止挖掘");
+            }
+            int tool = findSlot("", true);
+            if (tool >= 0) {
+                swap(tool);
+            }
+        }
+        phase = 2;
+        ticks = 0;
+        return waitFor("等待手持物品同步");
     }
 
     private TaskModuleResult tickPlacement(BlockPos position) {
@@ -160,6 +180,10 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 if (!sameBlock(position)) {
                     return fail("潜影盒在开始挖掘前已变化");
                 }
+                if (!context.navigation().isWithinInteractionRange(
+                        resource.position, miningArea())) {
+                    return fail("未贴近潜影盒，未开始挖掘");
+                }
                 resource.inventoryBefore = inventoryCount(key);
                 toolBefore = heldKey();
                 minecraft.gameMode.startDestroyBlock(position, Direction.UP);
@@ -182,6 +206,9 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
             }
         }
         if (inventoryCount(key) >= resource.inventoryBefore + 1) {
+            if (phase == 5) {
+                context.navigation().cancel();
+            }
             context.workspace().recordManagedAcquired(key, 1);
             terminal = TaskModuleResult.succeeded("已回收并核对潜影盒");
             return terminal;

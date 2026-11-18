@@ -10,5 +10,10 @@ public interface ContainerWithdrawalPort {
 
     ContainerWithdrawalResult pollWithdrawal();
 
+    default ContainerWithdrawalResult startClassificationBatch(
+            ContainerTarget target, Set<String> matchingItemIds) {
+        return startWithdrawal(target, matchingItemIds);
+    }
+
     void cancelWithdrawal();
 }

@@ -113,6 +113,24 @@ public final class MinecraftDroppedItemObserver
     }
 
     @Override
+    public boolean canPickUp(DroppedItem item) {
+        if (!scheduler.isClientThread() || minecraft.player == null) {
+            return false;
+        }
+        return canPickUp(minecraft.player.getInventory().getNonEquipmentItems(), item.itemId());
+    }
+
+    static boolean canPickUp(Iterable<ItemStack> slots, String itemId) {
+        for (ItemStack stack : slots) {
+            if (stack.isEmpty() || itemId(stack).equals(itemId)
+                    && stack.getCount() < stack.getMaxStackSize()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     public Optional<Map<String, Integer>> playerItemCounts() {
         if (!scheduler.isClientThread()) {
             return Optional.empty();

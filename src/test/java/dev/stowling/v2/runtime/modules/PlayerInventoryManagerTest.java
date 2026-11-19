@@ -16,6 +16,48 @@ import org.junit.jupiter.api.Test;
 
 class PlayerInventoryManagerTest {
     @Test
+    void continuousObservedPickupsAndLateArrivalsAreBookedWithoutAnEntityCountCap() {
+        String disc = "minecraft:music_disc_otherside";
+        String tool = "minecraft:diamond_pickaxe";
+        MutableInventory inventory = new MutableInventory();
+        inventory.set(Map.of(disc, 2, tool, 1));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.observePickupItem(disc);
+
+        inventory.set(Map.of(disc, 34, tool, 1));
+        manager.observe();
+        assertEquals(32, manager.claimObservedPickups(task, Set.of()));
+        assertEquals(0, manager.claimObservedPickups(task, Set.of()));
+
+        // Deposit the first batch; a further disc is picked up on the way to the cache.
+        task.confirmDeposit("collected", Map.of(disc, 32), Map.of());
+        inventory.set(Map.of(disc, 3, tool, 2));
+        manager.observe();
+        assertEquals(1, manager.claimUnexpected(task, Set.of()));
+        assertEquals(Map.of(disc, 1), task.managedItems());
+        assertEquals(Map.of(disc, 3, tool, 2), manager.expectedInventory()
+                .orElseThrow().itemCounts());
+        assertEquals(0, manager.claimUnexpected(task, Set.of()));
+    }
+
+    @Test
+    void pickupClaimsKeepExactIdentityAndTheRequestedFilter() {
+        MutableInventory inventory = new MutableInventory();
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.observePickupItem("minecraft:stone#first");
+        inventory.set(Map.of("minecraft:stone#first", 8, "minecraft:stone#other", 4));
+        manager.observe();
+
+        assertEquals(0, manager.claimObservedPickups(task, Set.of("minecraft:dirt")));
+        assertEquals(8, manager.claimObservedPickups(task, Set.of("minecraft:stone")));
+        assertEquals(Map.of("minecraft:stone#first", 8), task.managedItems());
+    }
+
+    @Test
     void pickaxeGivenBeforeTaskStartIsProtectedWithoutAnyManualSetting() {
         MutableInventory inventory = new MutableInventory();
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);

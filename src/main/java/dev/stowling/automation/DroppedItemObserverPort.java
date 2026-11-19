@@ -11,6 +11,10 @@ public interface DroppedItemObserverPort {
 
     List<DroppedItem> observe(RegionDefinition region);
 
+    default boolean canPickUp(DroppedItem item) {
+        return true;
+    }
+
     default Optional<Map<String, Integer>> playerItemCounts() {
         return Optional.empty();
     }

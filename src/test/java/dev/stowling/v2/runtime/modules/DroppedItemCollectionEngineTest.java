@@ -76,7 +76,7 @@ class DroppedItemCollectionEngineTest {
     }
 
     @Test
-    void recordsInventoryDifferenceOnceAfterTheCollectionSettles() {
+    void booksConfirmedPickupsImmediatelyButWaitsForStableCompletion() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();
         TaskRunWorkspace workspace = new TaskRunWorkspace();
@@ -99,12 +99,85 @@ class DroppedItemCollectionEngineTest {
 
         inventory.set(Map.of(GOLD, 3));
         assertEquals(TaskModuleState.RUNNING, engine.tick().state());
-        assertTrue(workspace.collectedItems().isEmpty());
+        assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
 
         TaskModuleResult settled = tickUntilFinished(engine, 45);
 
         assertEquals(TaskModuleState.SUCCEEDED, settled.state());
         assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
+    }
+
+    @Test
+    void fullInventoryYieldsTheConfirmedBatchWhileTheSameDiscKeepsArriving() {
+        String disc = "minecraft:music_disc_otherside";
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        entries(drops, item(1, disc, 1));
+        inventory.set(Map.of(IRON, 4));
+        DroppedItemCollectionEngine engine = engine(drops, inventory, workspace, new MutableClock());
+        engine.start();
+
+        // More discs arrived and were picked up between two entity scans.
+        entries(drops, item(2, disc, 1));
+        inventory.set(Map.of(IRON, 4, disc, 32));
+        drops.blockedItems = Set.of(disc);
+        TaskModuleResult result = engine.tick();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertTrue(result.message().contains("先将本批物品存入缓存"));
+        assertEquals(Map.of(disc, 32), workspace.collectedItems());
+        assertEquals(Map.of(disc, 32), workspace.managedItems());
+    }
+
+    @Test
+    void fullPersonalInventoryFailsClearlyWithoutRepeatedEmptyBatches() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        entries(drops, item(1, GOLD, 1));
+        inventory.set(Map.of(IRON, 36));
+        drops.blockedItems = Set.of(GOLD);
+
+        TaskModuleResult result = engine(drops, inventory, workspace, new MutableClock()).start();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertTrue(result.message().contains("背包空间不足"));
+        assertTrue(workspace.managedItems().isEmpty());
+    }
+
+    @Test
+    void usesRemainingStackSpaceForAnotherDropBeforeDepositing() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        String disc = "minecraft:music_disc_otherside";
+        entries(drops, item(1, disc, 1), item(2, GOLD, 1));
+        drops.blockedItems = Set.of(disc);
+        inventory.set(Map.of(GOLD, 63));
+        DroppedItemCollectionEngine engine = engine(drops, inventory, workspace, new MutableClock());
+
+        assertEquals(TaskModuleState.RUNNING, engine.start().state());
+        inventory.set(Map.of(GOLD, 64));
+        drops.blockedItems = Set.of(disc, GOLD);
+
+        assertEquals(TaskModuleState.SUCCEEDED, engine.tick().state());
+        assertEquals(Map.of(GOLD, 1), workspace.collectedItems());
+    }
+
+    @Test
+    void stoppingAtAnUnpickableEntityDoesNotWaitForever() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        entries(drops, item(1, GOLD, 1));
+        DroppedItemCollectionEngine engine = engine(drops, inventory,
+                new TaskRunWorkspace(), new MutableClock());
+        engine.start();
+        drops.blockedItems = Set.of(GOLD);
+        engine.requestStop();
+
+        assertTrue(engine.safeToStop());
+        assertEquals(TaskModuleState.SUCCEEDED, engine.tick().state());
     }
 
     @Test
@@ -315,6 +388,12 @@ class DroppedItemCollectionEngineTest {
     private static final class MutableDrops
             implements DroppedItemCollectionEngine.Source {
         private List<DroppedItem> items = List.of();
+        private Set<String> blockedItems = Set.of();
+
+        @Override
+        public boolean canPickUp(DroppedItem item) {
+            return !blockedItems.contains(item.itemId());
+        }
 
         @Override
         public boolean dimensionMatches() {

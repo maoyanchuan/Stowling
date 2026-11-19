@@ -22,10 +22,13 @@ class AutoClassifyTaskFactoryTest {
                 original.classificationAreas(), original.collectionPriority(), true);
         List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
         List<TaskStep> collect = tasks.getFirst().steps();
-        assertEquals(ConfigValidator.PACK_OVERFLOW, collect.get(3).moduleId());
-        assertTrue(collect.get(3).parameters().isEmpty());
-        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, collect.get(4).moduleId());
-        List<TaskStep> latePickups = collect.get(5).steps();
+        List<TaskStep> batch = collect.get(1).steps();
+        assertEquals(ConfigValidator.PACK_OVERFLOW, batch.get(2).moduleId());
+        assertTrue(batch.get(2).parameters().isEmpty());
+        assertEquals(ConfigValidator.ASSERT_NO_MANAGED_ITEMS, batch.get(3).moduleId());
+        assertEquals(ConfigValidator.COLLECT_DROPPED_ITEMS, batch.getLast().moduleId());
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, collect.get(2).moduleId());
+        List<TaskStep> latePickups = collect.get(3).steps();
         assertEquals(ConfigValidator.PACK_OVERFLOW, latePickups.get(2).moduleId());
         assertTrue(latePickups.get(2).parameters().isEmpty());
         List<TaskStep> classify = tasks.get(1).steps();
@@ -78,10 +81,11 @@ class AutoClassifyTaskFactoryTest {
                 AutoClassifyTaskFactory.tasks(definition, List.of())
         );
         TaskDefinition collection = tasks.getFirst();
+        List<TaskStep> batch = collection.steps().get(1).steps();
         List<TaskStep> oldSteps = List.of(
                 collection.steps().get(0),
-                collection.steps().get(1),
-                collection.steps().get(2),
+                batch.get(0),
+                batch.get(1),
                 collection.steps().get(collection.steps().size() - 3),
                 collection.steps().getLast()
         );
@@ -113,13 +117,18 @@ class AutoClassifyTaskFactoryTest {
         AppConfig normalized = TaskFlowNormalizer.normalize(config);
         TaskDefinition upgraded = normalized.tasks().getFirst();
 
-        assertEquals(8, upgraded.steps().size());
-        assertEquals(oldSteps.subList(0, 3), upgraded.steps().subList(0, 3));
+        assertEquals(7, upgraded.steps().size());
+        assertEquals(oldSteps.getFirst(), upgraded.steps().getFirst());
+        TaskStep batches = upgraded.steps().get(1);
+        assertEquals(TaskStepKind.REPEAT, batches.kind());
+        assertEquals(oldSteps.get(1).parameters(), batches.steps().get(0).parameters());
+        assertEquals(oldSteps.get(2).parameters(), batches.steps().get(1).parameters());
+        assertEquals(ConfigValidator.COLLECT_DROPPED_ITEMS, batches.steps().getLast().moduleId());
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY,
-                upgraded.steps().get(3).moduleId());
-        assertEquals(TaskStepKind.REPEAT, upgraded.steps().get(4).kind());
+                upgraded.steps().get(2).moduleId());
+        assertEquals(TaskStepKind.REPEAT, upgraded.steps().get(3).kind());
         assertEquals(ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
-                upgraded.steps().get(6).moduleId());
+                upgraded.steps().get(5).moduleId());
         assertEquals(oldSteps.getLast(), upgraded.steps().getLast());
         assertEquals(folderId, upgraded.folderId());
         assertEquals(collection.interruptionTaskRef(), upgraded.interruptionTaskRef());
@@ -129,6 +138,32 @@ class AutoClassifyTaskFactoryTest {
         );
         assertEquals(oldSteps, TaskFlowNormalizer.normalize(standalone)
                 .tasks().getFirst().steps());
+    }
+
+    @Test
+    void upgradesCurrentFlatCollectionAndKeepsItsExistingReconciliationAndHandoff() {
+        AutoClassifyDefinition definition = definition(true);
+        List<TaskDefinition> tasks = new ArrayList<>(
+                AutoClassifyTaskFactory.tasks(definition, List.of()));
+        TaskDefinition collection = tasks.getFirst();
+        List<TaskStep> oldSteps = new ArrayList<>(List.of(collection.steps().getFirst()));
+        oldSteps.addAll(collection.steps().get(1).steps().subList(0, 2));
+        oldSteps.addAll(collection.steps().subList(2, collection.steps().size()));
+        tasks.set(0, new TaskDefinition(collection.id(), collection.name(), collection.priority(),
+                false, oldSteps, collection.interruptionMode(), collection.interruptionTaskRef(),
+                false, false, collection.folderId(), collection.cleanupPolicy()));
+        AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks,
+                List.of(), List.of(), List.of(), List.of(), List.of(definition));
+
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+        List<TaskStep> upgraded = normalized.tasks().getFirst().steps();
+
+        assertEquals(oldSteps.getFirst(), upgraded.getFirst());
+        assertEquals(oldSteps.subList(3, oldSteps.size()), upgraded.subList(2, upgraded.size()));
+        assertEquals("collected", upgraded.get(1).parameters().get(ConfigValidator.ITEM_SOURCE));
+        assertEquals(ConfigValidator.COLLECT_DROPPED_ITEMS,
+                upgraded.get(1).steps().getLast().moduleId());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
     }
 
     @Test

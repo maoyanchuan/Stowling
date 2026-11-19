@@ -11,6 +11,7 @@ public final class PlayerInventoryAccount {
     private final Map<String, Integer> collected = new LinkedHashMap<>();
     private final Map<String, Integer> carried = new LinkedHashMap<>();
     private final Map<String, Integer> managed = new LinkedHashMap<>();
+    private final Set<String> observedPickupItems = new java.util.LinkedHashSet<>();
 
     public PlayerInventoryAccount(UUID ownerId) {
         this.ownerId = Objects.requireNonNull(ownerId, "ownerId");
@@ -22,6 +23,14 @@ public final class PlayerInventoryAccount {
 
     public synchronized Map<String, Integer> managedItems() {
         return Map.copyOf(managed);
+    }
+
+    public synchronized void observePickupItem(String itemId) {
+        observedPickupItems.add(Objects.requireNonNull(itemId, "itemId"));
+    }
+
+    public synchronized Set<String> observedPickupItems() {
+        return Set.copyOf(observedPickupItems);
     }
 
     public synchronized Map<String, Integer> itemsForSource(String source) {

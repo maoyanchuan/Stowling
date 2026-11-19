@@ -40,6 +40,11 @@ final class AssertPlayerInventoryRestoredModule
             return TaskModuleResult.failed("无法读取任务结束时的背包快照");
         }
         context.inventory().observe();
+        int latePickups = context.inventory().claimObservedPickups(
+                context.workspace().inventoryAccount(), java.util.Set.of());
+        if (latePickups > 0) {
+            return TaskModuleResult.failed("结束核对时仍有刚拾取的任务物品，交给收尾存入指定位置");
+        }
         context.inventory().protectUntrackedItems();
         PlayerInventorySnapshot expected = context.inventory().expectedInventory().orElseThrow();
         PlayerInventorySnapshot current = new PlayerInventorySnapshot(

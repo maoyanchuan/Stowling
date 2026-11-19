@@ -34,6 +34,22 @@ class AssertPlayerInventoryRestoredModuleTest {
     private static final String GOLD = "minecraft:gold_ingot";
 
     @Test
+    void pickupArrivingAtTheFinalAssertionIsKeptForCleanupInsteadOfBecomingPersonal() {
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
+        TaskRunWorkspace workspace = workspace(Map.of());
+        workspace.inventoryAccount().observePickupItem(GOLD);
+        AssertPlayerInventoryRestoredModule module = module(dropped, workspace);
+        dropped.set(Map.of(GOLD, 3));
+
+        TaskModuleResult result = module.start();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertTrue(result.message().contains("交给收尾"));
+        assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
+        assertEquals(Map.of(GOLD, 3), workspace.managedItems());
+    }
+
+    @Test
     void succeedsWhenTheFinalSnapshotMatchesTheTaskStart() {
         MutableDroppedItems dropped = new MutableDroppedItems(
                 Map.of("minecraft:iron_ingot", 4)

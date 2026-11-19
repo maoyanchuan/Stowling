@@ -104,6 +104,11 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                     public List<DroppedItem> observe() {
                         return context.droppedItems().observe(center, radius);
                     }
+
+                    @Override
+                    public boolean canPickUp(DroppedItem item) {
+                        return context.droppedItems().canPickUp(item);
+                    }
                 },
                 timeoutSeconds,
                 itemFilter
@@ -128,6 +133,11 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                     @Override
                     public List<DroppedItem> observe() {
                         return context.droppedItems().observe(region);
+                    }
+
+                    @Override
+                    public boolean canPickUp(DroppedItem item) {
+                        return context.droppedItems().canPickUp(item);
                     }
                 },
                 timeoutSeconds,

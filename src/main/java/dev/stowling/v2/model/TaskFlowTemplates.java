@@ -176,12 +176,23 @@ public final class TaskFlowTemplates {
                 conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
                 List.of(selectContainer, move, deposit)
         );
-        List<TaskStep> result = new ArrayList<>(List.of(collectStep, scanStep, depositCollected));
-        if (overflowEnabled) {
-            result.add(overflow(null));
-        }
+        List<TaskStep> result = new ArrayList<>(List.of(collectStep,
+                collectionBatches(collectStep, scanStep, depositCollected, overflowEnabled)));
         result.addAll(reconcileInventory(regionRef, collectParameters, overflowEnabled));
         return List.copyOf(result);
+    }
+
+    static TaskStep collectionBatches(TaskStep collect, TaskStep scan, TaskStep deposits,
+            boolean overflowEnabled) {
+        List<TaskStep> batch = new ArrayList<>(List.of(scan, deposits));
+        if (overflowEnabled) batch.add(overflow(null));
+        batch.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
+                Map.of()));
+        batch.add(TaskStep.action(UUID.randomUUID(), collect.moduleId(), collect.parameters()));
+        return TaskStep.repeat(UUID.randomUUID(), conditionParameters(
+                TaskCondition.HAS_MANAGED_ITEMS, Map.of(ConfigValidator.ITEM_SOURCE, "collected",
+                        MAX_ITERATIONS, "1000000")),
+                batch);
     }
 
     public static TaskStep overflow(String cacheRegionRef) {

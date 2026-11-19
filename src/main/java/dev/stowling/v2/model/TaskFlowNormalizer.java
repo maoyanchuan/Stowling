@@ -189,34 +189,35 @@ public final class TaskFlowNormalizer {
             TaskDefinition task,
             AutoClassifyDefinition definition
     ) {
-        if (definition == null
-                || task.steps().size() < 4
-                || task.steps().size() > 5) {
+        if (definition == null || task.steps().size() < 4) {
             return task;
         }
         List<TaskStep> steps = task.steps();
         if (!ConfigValidator.COLLECT_DROPPED_ITEMS.equals(steps.get(0).moduleId())
                 || !ConfigValidator.SCAN_CONTAINERS_IN_REGION.equals(steps.get(1).moduleId())
-                || steps.get(2).kind() != TaskStepKind.REPEAT
-                || steps.size() == 5 && steps.getLast().kind() != TaskStepKind.CREATE_TASK
-                || !ConfigValidator.ASSERT_NO_MANAGED_ITEMS.equals(steps.get(3).moduleId())) {
+                || steps.get(2).kind() != TaskStepKind.REPEAT) {
             return task;
         }
-        // Keep persisted actions and the classification handoff; upgrade only the old tail.
-        Map<String, String> parameters = new LinkedHashMap<>(steps.get(0).parameters());
-        parameters.putAll(steps.get(1).parameters());
-        List<TaskStep> collection = TaskFlowTemplates.collect(
-                definition.detectionCoordinateRef(),
-                definition.cacheRegionRef(),
-                parameters,
-                definition.overflowEnabled()
-        );
-        List<TaskStep> upgraded = new ArrayList<>(steps.subList(0, 3));
-        upgraded.addAll(remapStepIds(
-                collection.subList(3, collection.size()),
-                steps.get(3).id()
-        ));
-        upgraded.addAll(steps.subList(4, steps.size()));
+        boolean legacyTail = ConfigValidator.ASSERT_NO_MANAGED_ITEMS
+                .equals(steps.get(3).moduleId());
+        int tailStart = legacyTail ? 4 : 3;
+        if (!legacyTail && ConfigValidator.PACK_OVERFLOW.equals(steps.get(3).moduleId())) {
+            tailStart++;
+        }
+        TaskStep batches = TaskFlowTemplates.collectionBatches(steps.get(0), steps.get(1),
+                steps.get(2), definition.overflowEnabled());
+        UUID seed = UUID.nameUUIDFromBytes((task.id() + ":collection-batches")
+                .getBytes(StandardCharsets.UTF_8));
+        List<TaskStep> upgraded = new ArrayList<>(List.of(steps.getFirst()));
+        upgraded.addAll(remapStepIds(List.of(batches), seed));
+        if (legacyTail) {
+            Map<String, String> parameters = new LinkedHashMap<>(steps.get(0).parameters());
+            parameters.putAll(steps.get(1).parameters());
+            upgraded.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
+                    definition.cacheRegionRef(), parameters, definition.overflowEnabled()),
+                    steps.get(3).id()));
+        }
+        upgraded.addAll(steps.subList(tailStart, steps.size()));
         return new TaskDefinition(
                 task.id(),
                 task.name(),

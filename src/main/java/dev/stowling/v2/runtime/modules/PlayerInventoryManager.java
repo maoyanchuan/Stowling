@@ -131,8 +131,8 @@ public final class PlayerInventoryManager {
             Set<String> itemFilter
     ) {
         register(account);
+        int claimed = claimObservedPickups(account, itemFilter);
         protectUntrackedItems();
-        int claimed = 0;
         for (UUID owner : Set.copyOf(abandonedAccounts)) {
             PlayerInventoryAccount abandoned = accounts.get(owner);
             for (Map.Entry<String, Integer> entry : abandoned.managedItems().entrySet()) {
@@ -158,6 +158,25 @@ public final class PlayerInventoryManager {
         }
         if (claimed > 0) revision++;
         protectUntrackedItems();
+        return claimed;
+    }
+
+    /** Books actual gains of observed pickup identities, including arrivals between scans. */
+    public synchronized int claimObservedPickups(
+            PlayerInventoryAccount account,
+            Set<String> itemFilter
+    ) {
+        register(account);
+        int claimed = 0;
+        Set<String> observed = account.observedPickupItems();
+        for (Map.Entry<String, Integer> entry : unassignedItems().entrySet()) {
+            if (observed.contains(entry.getKey())
+                    && TaskModuleSupport.itemMatches(entry.getKey(), itemFilter)) {
+                account.recordCollected(entry.getKey(), entry.getValue());
+                claimed = Math.addExact(claimed, entry.getValue());
+            }
+        }
+        if (claimed > 0) revision++;
         return claimed;
     }
 

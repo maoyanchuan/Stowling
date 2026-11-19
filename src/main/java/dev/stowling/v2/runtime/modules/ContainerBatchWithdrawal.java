@@ -36,7 +36,8 @@ public final class ContainerBatchWithdrawal implements TaskModuleExecutor {
             return terminal;
         }
         inFlight = true;
-        return handle(context.containerWithdrawals().startClassificationBatch(target, items));
+        return handle(context.containerWithdrawals().startClassificationBatch(target, items,
+                Set.of(), context.workspace().classificationItemOrder(items)));
     }
 
     @Override

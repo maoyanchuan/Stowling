@@ -134,7 +134,8 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         context.workspace().setResolvedCategories(
                 targets,
                 accepted,
-                cacheTargets
+                cacheTargets,
+                result.layout()
         );
         return TaskModuleResult.succeeded(
                 "已解析 " + accepted.size() + " 个分类目标容器"

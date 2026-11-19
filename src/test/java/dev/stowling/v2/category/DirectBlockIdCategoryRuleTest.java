@@ -14,6 +14,25 @@ import org.junit.jupiter.api.Test;
 
 class DirectBlockIdCategoryRuleTest {
     @Test
+    void keepsRepeatedCategoryMarkersInTheirOriginalLayoutPositions() {
+        ContainerTarget first = new ContainerTarget(new BlockPosition(0, 64, 0), "chest");
+        ContainerTarget middle = new ContainerTarget(new BlockPosition(1, 64, 0), "chest");
+        ContainerTarget last = new ContainerTarget(new BlockPosition(2, 64, 0), "chest");
+        CategoryRuleResult result = new DirectBlockIdCategoryRule().resolve(List.of(
+                new CategoryMarker(new BlockPosition(0, 64, 1), "minecraft:stone"),
+                new CategoryMarker(new BlockPosition(1, 64, 1), "minecraft:dirt"),
+                new CategoryMarker(new BlockPosition(2, 64, 1), "minecraft:stone")),
+                List.of(first, middle, last));
+
+        assertTrue(result.succeeded());
+        assertEquals(List.of("minecraft:stone", "minecraft:dirt", "minecraft:stone"),
+                result.layout().stream().map(entry -> entry.itemId()).toList());
+        assertEquals(List.of(List.of(first), List.of(middle), List.of(last)),
+                result.layout().stream().map(entry -> entry.containers()).toList());
+        assertEquals(List.of(first, last), result.categories().get("minecraft:stone"));
+    }
+
+    @Test
     void mapsEachMarkerBlockToTheContainerInItsColumn() {
         DirectBlockIdCategoryRule rule =
                 new DirectBlockIdCategoryRule();

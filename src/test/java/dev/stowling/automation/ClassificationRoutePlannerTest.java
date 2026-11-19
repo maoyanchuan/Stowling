@@ -12,6 +12,58 @@ import org.junit.jupiter.api.Test;
 
 class ClassificationRoutePlannerTest {
     @Test
+    void recognizedLayoutKeepsSliceOrderEvenWhenTheNextSliceIsMuchCloser() {
+        ContainerTarget first = target(30, 10);
+        ContainerTarget second = target(30, 0);
+        ContainerTarget nextSlice = target(1, 0);
+        List<ContainerTarget> route = ClassificationRoutePlanner.planLayout(List.of(
+                new ClassificationLayoutEntry("glass", List.of(first)),
+                new ClassificationLayoutEntry("dirt", List.of(second)),
+                new ClassificationLayoutEntry("stone", List.of(nextSlice))),
+                List.of(nextSlice, second, first),
+                Map.of(first, Set.of("glass"), second, Set.of("dirt"),
+                        nextSlice, Set.of("stone")), Set.of("stone", "dirt", "glass"),
+                Comparator.comparingInt(target -> target.position().x()));
+
+        assertEquals(List.of(first, second, nextSlice), route);
+    }
+
+    @Test
+    void layoutDoesNotMergeRepeatedItemsAcrossOtherMarkers() {
+        ContainerTarget firstStone = target(30, 0);
+        ContainerTarget dirt = target(20, 0);
+        ContainerTarget nextStone = target(1, 0);
+        List<ClassificationLayoutEntry> layout = List.of(
+                new ClassificationLayoutEntry("stone", List.of(firstStone)),
+                new ClassificationLayoutEntry("dirt", List.of(dirt)),
+                new ClassificationLayoutEntry("stone", List.of(nextStone)));
+        Map<ContainerTarget, Set<String>> accepted = Map.of(firstStone, Set.of("stone"),
+                dirt, Set.of("dirt"), nextStone, Set.of("stone"));
+        Comparator<ContainerTarget> distance = Comparator.comparingInt(
+                target -> target.position().x());
+
+        assertEquals(List.of(firstStone, dirt), ClassificationRoutePlanner.planLayout(layout,
+                List.of(nextStone, dirt, firstStone), accepted, Set.of("stone", "dirt"), distance));
+        assertEquals(List.of(dirt, nextStone), ClassificationRoutePlanner.planLayout(layout,
+                List.of(nextStone, dirt), accepted, Set.of("stone", "dirt"), distance));
+    }
+
+    @Test
+    void layoutChoosesCapacityWithinOneMarkerAndGroupsItsSharedDestination() {
+        ContainerTarget full = target(1, 0);
+        ContainerTarget available = target(8, 0);
+        List<ContainerTarget> route = ClassificationRoutePlanner.planLayout(List.of(
+                new ClassificationLayoutEntry("minecraft:stone", List.of(full, available)),
+                new ClassificationLayoutEntry("minecraft:dirt", List.of(available))),
+                List.of(full, available), Map.of(full, Set.of("minecraft:stone"),
+                        available, Set.of("minecraft:stone", "minecraft:dirt")),
+                Set.of("minecraft:shulker_box#full@minecraft:stone", "minecraft:dirt#variant"),
+                Comparator.comparingInt(target -> target.equals(available) ? 0 : 1));
+
+        assertEquals(List.of(available), route);
+    }
+
+    @Test
     void visitsInterleavedCategoriesInSpatialOrder() {
         ContainerTarget near = target(2, 0);
         ContainerTarget middle = target(10, 0);

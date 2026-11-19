@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
+import dev.stowling.automation.ClassificationLayoutEntry;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
@@ -20,6 +21,7 @@ import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -163,6 +165,7 @@ public final class MinecraftCategoryZoneResolver
                 : markerSources;
         Map<String, List<ContainerTarget>> categories =
                 new LinkedHashMap<>();
+        List<ClassificationLayoutEntry> layout = new ArrayList<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
             long markerVolume = volume(binding.markerArea());
             if (markerVolume > maxVolume) {
@@ -197,6 +200,7 @@ public final class MinecraftCategoryZoneResolver
                 return CategoryZoneResult.failure(resolved.message());
             }
             mergeCategories(categories, resolved.categories());
+            layout.addAll(resolved.layout());
         }
         if (categories.isEmpty()) {
             if (markerSources == null) {
@@ -210,7 +214,7 @@ public final class MinecraftCategoryZoneResolver
                             + " 中没有识别出分类"
             );
         }
-        return CategoryZoneResult.success(categories);
+        return CategoryZoneResult.success(categories, layout);
     }
 
     private CategoryRuleResult resolveBinding(
@@ -306,6 +310,13 @@ public final class MinecraftCategoryZoneResolver
         if (markerSources.contains(CategoryMarkerSource.ITEM_FRAME)) {
             appendItemFrameMarkers(level, area, result);
         }
+        result.sort(Comparator.<CategoryMarker>comparingLong(marker ->
+                        Math.abs((long) marker.position().x() - area.firstX()))
+                .thenComparingLong(marker ->
+                        Math.abs((long) marker.position().y() - area.firstY()))
+                .thenComparingLong(marker ->
+                        Math.abs((long) marker.position().z() - area.firstZ()))
+                .thenComparingInt(CategoryMarker::slotIndex));
         return List.copyOf(result);
     }
 

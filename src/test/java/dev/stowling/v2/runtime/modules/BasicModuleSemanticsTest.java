@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.CategoryMarkerCachePort;
 import dev.stowling.automation.ClassificationBatchPolicy;
+import dev.stowling.automation.ClassificationLayoutEntry;
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.ContainerInspectionPort;
@@ -54,6 +55,115 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
+    @Test
+    void classificationBatchAndDeliveryFollowLayoutInsteadOfCacheOrDistanceOrder() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget glass = target(30, 64, 0, "chest");
+        ContainerTarget dirt = target(20, 64, 0, "chest");
+        ContainerTarget stone = target(1, 64, 0, "chest");
+        workspace.setResolvedCategories(List.of(stone, dirt, glass), Map.of(
+                stone, Set.of("minecraft:stone"), dirt, Set.of("minecraft:dirt"),
+                glass, Set.of("minecraft:glass")), List.of(cache), List.of(
+                new ClassificationLayoutEntry("minecraft:glass", List.of(glass)),
+                new ClassificationLayoutEntry("minecraft:dirt", List.of(dirt)),
+                new ClassificationLayoutEntry("minecraft:stone", List.of(stone))));
+        workspace.selectNextContainer().orElseThrow();
+        RecordingLayoutWithdrawal withdrawal = new RecordingLayoutWithdrawal();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        var module = new WithdrawItemsModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.WITHDRAW_ITEMS, Map.of(TaskModuleIds.TARGET_REF, "output:container")));
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(List.of("minecraft:glass", "minecraft:dirt", "minecraft:stone"),
+                withdrawal.order);
+        assertEquals(glass, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.consumeDeposit("carried", Map.of("minecraft:glass", 16), Map.of());
+        assertEquals(dirt, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.consumeDeposit("carried", Map.of("minecraft:dirt", 16), Map.of());
+        assertEquals(stone, workspace.selectStorageTarget("carried", true).orElseThrow());
+    }
+
+    @Test
+    void remainingFirstItemUsesItsOtherContainerBeforeMovingToTheNextLayoutEntry() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget first = target(20, 64, 0, "chest");
+        ContainerTarget second = target(21, 64, 0, "chest");
+        ContainerTarget later = target(1, 64, 0, "chest");
+        workspace.setResolvedCategories(List.of(first, second, later), Map.of(
+                first, Set.of("minecraft:glass"), second, Set.of("minecraft:glass"),
+                later, Set.of("minecraft:stone")), List.of(cache), List.of(
+                new ClassificationLayoutEntry("minecraft:glass", List.of(first, second)),
+                new ClassificationLayoutEntry("minecraft:stone", List.of(later))));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn("minecraft:glass", 64);
+        workspace.recordWithdrawn("minecraft:stone", 64);
+
+        assertEquals(first, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.consumeDeposit("carried", Map.of("minecraft:glass", 64),
+                Map.of("minecraft:glass", 32));
+        assertEquals(second, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.markTargetUnavailable(second);
+        workspace.resetStorageSelection();
+        workspace.markTargetUnavailable(first);
+        assertEquals(List.of("minecraft:stone"), workspace.classificationItemOrder(
+                Set.of("minecraft:glass", "minecraft:stone")));
+        assertEquals(later, workspace.selectStorageTarget("carried", true).orElseThrow());
+    }
+
+    @Test
+    void mixedBoxDrainReceivesTheSameLayoutOrderAsRegularCacheWithdrawal() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget storage = target(20, 64, 0, "chest");
+        workspace.setResolvedCategories(List.of(storage), Map.of(storage,
+                Set.of("minecraft:stone", "minecraft:glass", "minecraft:dirt")),
+                List.of(cache), List.of(
+                new ClassificationLayoutEntry("minecraft:glass", List.of(storage)),
+                new ClassificationLayoutEntry("minecraft:dirt", List.of(storage)),
+                new ClassificationLayoutEntry("minecraft:stone", List.of(storage))));
+        workspace.selectNextContainer().orElseThrow();
+        RecordingLayoutWithdrawal withdrawal = new RecordingLayoutWithdrawal();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        var module = new ContainerBatchWithdrawal(context,
+                target(0, 65, 0, "minecraft:shulker_box"),
+                Set.of("minecraft:stone", "minecraft:glass", "minecraft:dirt"));
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(List.of("minecraft:glass", "minecraft:dirt", "minecraft:stone"),
+                withdrawal.order);
+    }
+
+    private static final class RecordingLayoutWithdrawal implements ContainerWithdrawalPort {
+        private List<String> order = List.of();
+
+        @Override
+        public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
+                Set<String> matchingItemIds, Set<String> fullBoxCategories, List<String> itemOrder) {
+            order = List.copyOf(itemOrder);
+            return ContainerWithdrawalResult.succeeded("withdrawn", Map.of(
+                    "minecraft:stone", 16, "minecraft:glass", 16, "minecraft:dirt", 16), false);
+        }
+
+        @Override
+        public ContainerWithdrawalResult startWithdrawal(ContainerTarget target,
+                Set<String> matchingItemIds) {
+            throw new AssertionError("classification must pass the layout order");
+        }
+
+        @Override
+        public ContainerWithdrawalResult pollWithdrawal() {
+            throw new AssertionError("withdrawal already completed");
+        }
+
+        @Override
+        public void cancelWithdrawal() {
+        }
+    }
+
     @Test
     void overflowResolvesTheCacheRegionOrLimitsTheRequestToOwnedInventory() {
         RegionDefinition region = new RegionDefinition(UUID.randomUUID(), "Cache",

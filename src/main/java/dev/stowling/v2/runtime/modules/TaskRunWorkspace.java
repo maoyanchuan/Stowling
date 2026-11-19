@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ClassificationRoutePlanner;
+import dev.stowling.automation.ClassificationLayoutEntry;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ItemIdentity;
@@ -25,6 +26,7 @@ public final class TaskRunWorkspace {
     private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer =
             new LinkedHashMap<>();
     private final List<ContainerTarget> targetContainers = new ArrayList<>();
+    private List<ClassificationLayoutEntry> classificationLayout = List.of();
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
     private final Set<ContainerTarget> unavailableTargets =
@@ -171,6 +173,7 @@ public final class TaskRunWorkspace {
     ) {
         containerScanRegionId = regionId;
         containerScan = scan;
+        classificationLayout = List.of();
         cacheInventory = Map.of();
         cacheContainers.clear();
         unavailableTargets.clear();
@@ -267,6 +270,7 @@ public final class TaskRunWorkspace {
             List<ContainerTarget> targets,
             Map<ContainerTarget, Set<String>> accepted
     ) {
+        classificationLayout = List.of();
         targetContainers.clear();
         targetContainers.addAll(targets);
         acceptedItemsByContainer.clear();
@@ -291,6 +295,16 @@ public final class TaskRunWorkspace {
             Map<ContainerTarget, Set<String>> accepted,
             List<ContainerTarget> cacheTargets
     ) {
+        setResolvedCategories(targets, accepted, cacheTargets, List.of());
+    }
+
+    public synchronized void setResolvedCategories(
+            List<ContainerTarget> targets,
+            Map<ContainerTarget, Set<String>> accepted,
+            List<ContainerTarget> cacheTargets,
+            List<ClassificationLayoutEntry> layout
+    ) {
+        classificationLayout = List.copyOf(layout);
         targetContainers.clear();
         targetContainers.addAll(targets);
         containerCandidates.clear();
@@ -316,6 +330,19 @@ public final class TaskRunWorkspace {
         storageUsesCacheFallback = false;
         cacheHasMore = false;
         deferredCacheCategories.clear();
+    }
+
+    public synchronized List<String> classificationItemOrder(Set<String> items) {
+        Set<String> result = new LinkedHashSet<>();
+        for (ClassificationLayoutEntry entry : classificationLayout) {
+            boolean available = entry.containers().stream().anyMatch(target ->
+                    !isUnavailable(target) && (selectedContainer == null
+                            || !target.position().equals(selectedContainer.position())));
+            if (!available) continue;
+            items.stream().filter(key -> ItemIdentity.matches(key, Set.of(entry.itemId())))
+                    .forEach(result::add);
+        }
+        return List.copyOf(result);
     }
 
     public synchronized Map<ContainerTarget, Set<String>> acceptedItemsByContainer() {
@@ -460,7 +487,10 @@ public final class TaskRunWorkspace {
                                 acceptedItemsByContainer.getOrDefault(candidate, Set.of()))))
                 .toList();
         Optional<ContainerTarget> next;
-        if ("carried".equals(itemSource) && selectedContainer != null
+        if (!classificationLayout.isEmpty()) {
+            next = ClassificationRoutePlanner.planLayout(classificationLayout, candidates,
+                    acceptedItemsByContainer, items.keySet(), order).stream().findFirst();
+        } else if ("carried".equals(itemSource) && selectedContainer != null
                 && !cacheContainers.isEmpty()) {
             storageRoute.removeIf(target -> !candidates.contains(target));
             if (storageRoute.isEmpty()) {
@@ -597,7 +627,8 @@ public final class TaskRunWorkspace {
                 markerCache.computeIfAbsent(
                         bindingId,
                         ignored -> new LinkedHashMap<>()
-                ).put(target.position(), Set.copyOf(itemIds));
+                ).put(target.position(), java.util.Collections.unmodifiableSet(
+                        new LinkedHashSet<>(itemIds)));
             }
             readMarkerPositions.add(target.position());
         }

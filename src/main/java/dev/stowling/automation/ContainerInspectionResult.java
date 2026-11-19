@@ -1,6 +1,8 @@
 package dev.stowling.automation;
 
 import java.util.Objects;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 public record ContainerInspectionResult(
@@ -10,7 +12,8 @@ public record ContainerInspectionResult(
 ) {
     public ContainerInspectionResult {
         state = Objects.requireNonNull(state, "state");
-        itemIds = Set.copyOf(Objects.requireNonNull(itemIds, "itemIds"));
+        itemIds = Collections.unmodifiableSet(new LinkedHashSet<>(
+                Objects.requireNonNull(itemIds, "itemIds")));
         message = Objects.requireNonNull(message, "message");
     }
 

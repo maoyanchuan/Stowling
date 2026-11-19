@@ -150,7 +150,7 @@ public final class MinecraftContainerInspectionPort
                 );
             }
         }
-        return Set.copyOf(result);
+        return java.util.Collections.unmodifiableSet(result);
     }
 
     private static java.util.List<Integer> containerSlots(

@@ -583,7 +583,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         && ItemIdentity.MIXED_BOX_CATEGORY.equals(
                                 MinecraftItemIdentity.boxCategory(stack)))
                         .filter(stack -> !eligibleItems(stack).isEmpty())
-                        .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
+                        .min(Comparator.comparingInt(this::layoutPriority))
+                        .map(ItemStack::copy).orElse(ItemStack.EMPTY);
                 if (box.isEmpty()) {
                     return;
                 }
@@ -615,6 +616,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Set<String> contents = MinecraftItemIdentity.contents(candidate).nonEmptyItemCopyStream()
                     .map(MinecraftItemIdentity::key).collect(java.util.stream.Collectors.toSet());
             return context.workspace().mixedBoxWithdrawalItems(cache, contents);
+        }
+
+        private int layoutPriority(ItemStack candidate) {
+            List<String> order = context.workspace().classificationItemOrder(
+                    context.workspace().remainingCacheCategories(cache));
+            Set<String> contents = eligibleItems(candidate);
+            for (int index = 0; index < order.size(); index++) {
+                Set<String> category = Set.of(order.get(index));
+                if (contents.stream().anyMatch(key -> ItemIdentity.matches(key, category))) {
+                    return index;
+                }
+            }
+            return Integer.MAX_VALUE;
         }
 
         private void recoverBox() {
@@ -754,7 +768,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             super(context);
             this.target = target;
             this.policy = target.storagePolicy();
-            this.categories = new ArrayDeque<>(items.keySet().stream()
+            Set<String> orderedItems = new java.util.LinkedHashSet<>(
+                    context.workspace().classificationItemOrder(items.keySet()));
+            orderedItems.addAll(items.keySet());
+            this.categories = new ArrayDeque<>(orderedItems.stream()
                     .map(ItemIdentity::category).distinct().toList());
         }
 

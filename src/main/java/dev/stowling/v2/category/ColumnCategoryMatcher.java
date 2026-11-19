@@ -1,6 +1,7 @@
 package dev.stowling.v2.category;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ClassificationLayoutEntry;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideMode;
@@ -43,6 +44,7 @@ final class ColumnCategoryMatcher {
         PairingAxis axis = pairingAxis(storageContainers);
         Map<String, List<ContainerTarget>> categories =
                 new LinkedHashMap<>();
+        List<ClassificationLayoutEntry> layout = new ArrayList<>();
         Map<ColumnKey, Set<String>> columnItems = new LinkedHashMap<>();
         Map<ColumnKey, BlockPosition> columnPositions = new LinkedHashMap<>();
         for (CategoryMarker marker : markers) {
@@ -57,6 +59,7 @@ final class ColumnCategoryMatcher {
             if (matching.isEmpty()) {
                 continue;
             }
+            layout.add(new ClassificationLayoutEntry(marker.itemId(), matching));
             if (rejectDirectColumnConflicts
                     && marker.source()
                     != CategoryMarkerSource.CONTAINER_CONTENTS) {
@@ -90,11 +93,19 @@ final class ColumnCategoryMatcher {
         if (overrideError != null) {
             return CategoryRuleResult.failure(overrideError);
         }
+        for (CategoryContainerOverrideDefinition override : overrides) {
+            List<ContainerTarget> targets = storageContainers.stream()
+                    .filter(target -> target.position().equals(override.storagePosition()))
+                    .toList();
+            for (String itemId : override.itemIds()) {
+                layout.add(new ClassificationLayoutEntry(itemId, targets));
+            }
+        }
         Map<String, List<ContainerTarget>> immutable = new LinkedHashMap<>();
         categories.forEach((categoryId, containers) ->
                 immutable.put(categoryId, List.copyOf(containers))
         );
-        return CategoryRuleResult.success(immutable);
+        return CategoryRuleResult.success(immutable, layout);
     }
 
     private static String applyOverrides(

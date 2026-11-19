@@ -9,9 +9,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Plans a batch's delivery tour, including the trip back to its cache. */
+/** Follows recognized layouts, with spatial routing available for unbound batches. */
 public final class ClassificationRoutePlanner {
     private ClassificationRoutePlanner() {
+    }
+
+    /** Keeps slice and marker order; capacity preferences only choose a marker's destination. */
+    public static List<ContainerTarget> planLayout(
+            List<ClassificationLayoutEntry> layout,
+            List<ContainerTarget> candidates,
+            Map<ContainerTarget, Set<String>> accepted,
+            Set<String> items,
+            Comparator<ContainerTarget> preference
+    ) {
+        Set<String> remaining = new LinkedHashSet<>(items);
+        List<ContainerTarget> route = new ArrayList<>();
+        for (ClassificationLayoutEntry entry : layout) {
+            if (remaining.stream().noneMatch(key ->
+                    ItemIdentity.matches(key, Set.of(entry.itemId())))) {
+                continue;
+            }
+            ContainerTarget target = entry.containers().stream().filter(candidates::contains)
+                    .min(preference).orElse(null);
+            if (target == null) continue;
+            if (!route.contains(target)) route.add(target);
+            remaining.removeIf(key -> ItemIdentity.matches(key,
+                    accepted.getOrDefault(target, Set.of())));
+        }
+        return List.copyOf(route);
     }
 
     public static List<ContainerTarget> plan(

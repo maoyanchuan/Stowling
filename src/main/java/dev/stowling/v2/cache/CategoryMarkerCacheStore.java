@@ -12,7 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -54,10 +56,10 @@ public final class CategoryMarkerCacheStore
                             container.y(),
                             container.z()
                     ),
-                    Set.copyOf(container.itemIds())
+                    Collections.unmodifiableSet(new LinkedHashSet<>(container.itemIds()))
             );
         }
-        return Optional.of(Map.copyOf(result));
+        return Optional.of(Collections.unmodifiableMap(result));
     }
 
     @Override

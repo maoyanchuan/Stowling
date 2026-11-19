@@ -55,7 +55,8 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         inFlight = true;
         return handle(classificationBatch
                 ? context.containerWithdrawals().startClassificationBatch(target, matchingItemIds,
-                        fullBoxCategories())
+                        fullBoxCategories(), context.workspace()
+                                .classificationItemOrder(matchingItemIds))
                 : context.containerWithdrawals().startWithdrawal(target, matchingItemIds));
     }
 

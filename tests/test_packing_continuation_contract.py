@@ -39,7 +39,7 @@ def test_preparation_reserves_a_spare_independently_of_full_box_packing() -> Non
 def test_cache_packing_and_donor_selection_reuse_confirmed_contents() -> None:
     source = (ROOT / "src/main/java/dev/stowling/client/automation/"
               "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
-    confirmed = source.split("private Optional<List<ItemStack>> confirmedCacheContents(", 1)[1]
+    confirmed = source.split("private Optional<CacheSnapshot> confirmedCacheSnapshot(", 1)[1]
     confirmed = confirmed.split("@Override", 1)[0]
     assert "context.workspace().cacheContents(target)" in confirmed
     assert "counts.equals(snapshot.counts())" in confirmed
@@ -47,15 +47,16 @@ def test_cache_packing_and_donor_selection_reuse_confirmed_contents() -> None:
     scan = source.split("private void scan(int index,", 1)[1].split(
         "private void tracePackingSource", 1
     )[0]
-    assert scan.index("confirmedCacheContents(context, source)") < scan.index(
+    assert scan.index("confirmedCacheSnapshot(context, source)") < scan.index(
         "read(source, contents ->"
     )
-    assert "cacheSnapshots.put(source.position(), contents)" in scan
+    assert "cacheSnapshots.put(source.position(), snapshot)" in scan
     assert "refreshCacheSnapshot(access);" in source
     refresh = source.split("private void refreshCacheSnapshot(", 1)[1].split(
         "final void read(", 1
     )[0]
     assert "recordCacheContents(context, target, contents)" in refresh
+    assert "cacheSnapshots.put(target.position(), snapshot)" in refresh
 
     work = source.split("private boolean queueSourceWork()", 1)[1].split(
         "private boolean prepareSource", 1
@@ -63,6 +64,36 @@ def test_cache_packing_and_donor_selection_reuse_confirmed_contents() -> None:
     assert work.index("confirmedCacheContents(context, currentSource)") < work.index(
         "readCache(currentSource, contents ->"
     )
+
+
+def test_cache_packing_skips_empty_requests_and_reuses_source_stack_sizes() -> None:
+    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
+    plan = source.split("private void gather(int index)", 1)[1].split(
+        "private void finishCategoryLoad()", 1
+    )[0]
+    assert "inventoryFitting(wanted, snapshot)" in plan
+    assert "inventoryFitting(requested, snapshot)" in plan
+    fitting = source.split("private Map<String, Integer> inventoryFitting(", 1)[1].split(
+        "private void gatherOtherCategories(", 1
+    )[0]
+    assert fitting.index("if (wanted.isEmpty()) return Map.of();") < fitting.index(
+        "minecraft.player.getInventory()"
+    )
+    assert "wanted, snapshot.stackSizes()" in fitting
+    assert "snapshots()" not in fitting
+
+
+def test_companion_categories_use_the_same_snapshot_for_items_and_full_boxes() -> None:
+    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
+    gather = source.split("private void gatherOtherCategories(int index)", 1)[1].split(
+        "private int targetLooseDeficit()", 1
+    )[0]
+    assert "Set<String> present = snapshot.counts().keySet();" in gather
+    assert "snapshot.fullBoxKeys().contains(key)" in gather
+    assert "MinecraftItemIdentity.key(" not in gather
+    assert "snapshot.stacks()" not in gather
 
 
 def test_generic_mixed_box_batch_leaves_dedicated_pure_box_stock_to_packing() -> None:

@@ -491,7 +491,6 @@
      * @returns {string}
      */
     function stateLabel(kind, state) {
-        if (kind === "diagnostic") return DIAGNOSTIC_LABELS[state] || state;
         const labels = kind === "trigger"
             ? TRIGGER_STATE_LABELS
             : RUN_STATE_LABELS;
@@ -511,7 +510,6 @@
      * @returns {string}
      */
     function kindLabel(kind) {
-        if (kind === "diagnostic") return "诊断";
         return kind === "trigger" ? "监听" : "运行";
     }
 
@@ -548,47 +546,6 @@
         const baseline = new Map();
         const records = [];
         let serial = 0;
-        let diagnosticSession = "";
-        let diagnosticCursor = 0;
-        const diagnosticFingerprints = new Map();
-
-        /**
-         * @param {object} batch
-         * @param {Array<object>} runs
-         * @returns {number}
-         */
-        function ingestDiagnostics(batch, runs = []) {
-            if (diagnosticSession !== batch.session) {
-                diagnosticSession = batch.session;
-                diagnosticCursor = 0;
-                diagnosticFingerprints.clear();
-            }
-            const names = new Map(runs.map((run) => [run.runId, run]));
-            let added = 0;
-            for (const event of asObjects(batch.events)) {
-                if (event.sequence <= diagnosticCursor) continue;
-                diagnosticCursor = event.sequence;
-                const key = [event.runId, event.phase, event.step, event.kind,
-                    event.operation].join(":");
-                if (!["ERROR", "TIMEOUT", "STEP", "RESULT", "DECISION"].includes(event.kind)
-                        && diagnosticFingerprints.get(key) === event.details) continue;
-                diagnosticFingerprints.delete(key);
-                diagnosticFingerprints.set(key, event.details);
-                if (diagnosticFingerprints.size > 2000) {
-                    diagnosticFingerprints.delete(diagnosticFingerprints.keys().next().value);
-                }
-                const run = names.get(event.runId);
-                append({
-                    id: `diagnostic:${batch.session}:${event.sequence}`,
-                    time: event.time, kind: "diagnostic", state: event.kind,
-                    taskName: run?.taskName || event.module || "运行诊断",
-                    priority: run?.priority || "NORMAL",
-                    message: diagnosticMessage(event)
-                });
-                added += 1;
-            }
-            return added;
-        }
 
         /**
          * @param {object} entry
@@ -730,8 +687,8 @@
          * @returns {void}
          */
         function clearEntries() {
+            // Keep the baseline so unchanged snapshots cannot replay cleared rows.
             records.length = 0;
-            diagnosticFingerprints.clear();
         }
 
         /**
@@ -757,7 +714,6 @@
 
         return Object.freeze({
             ingest,
-            ingestDiagnostics,
             entries: readEntries,
             clear: clearEntries,
             exportText

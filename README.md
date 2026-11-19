@@ -403,7 +403,7 @@ queue.
 Triggers are stored independently but bound to one saved target task, and a task
 may have multiple triggers. Dropped items, food level, and cache updates are
 supported. The web page no longer reads trigger configuration directly; run
-snapshots still provide listening status for the queue and logs. Trigger
+snapshots still provide listening status for the queue. Trigger
 intervals and cooldowns retain their existing meaning.
 
 Background tasks may requeue after completion. `requeueAfterInterruption`

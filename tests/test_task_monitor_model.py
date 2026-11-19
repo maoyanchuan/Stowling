@@ -103,29 +103,56 @@ def test_full_diagnostics_are_gzip_and_only_contain_the_requested_run() -> None:
     assert "OTHER_RUN" not in text
 
 
-def test_monitor_does_not_fill_with_unchanged_polling_but_keeps_progress_and_errors() -> None:
+def test_task_progress_stays_cleared_when_older_poll_responses_arrive() -> None:
+    tasks = MODEL.with_name("tasks.js").read_text(encoding="utf-8")
+    load_start = tasks.index("    async function loadRuns()")
+    load_end = tasks.index("\n    }", load_start) + len("\n    }")
+    clear_marker = '    elements.clearLogs.addEventListener("click", '
+    clear_start = tasks.index(clear_marker) + len(clear_marker)
+    clear_end = tasks.index("\n    });", clear_start) + len("\n    }")
+    load_runs = tasks[load_start:load_end]
+    clear_logs = tasks[clear_start:clear_end]
     result = _run_model(
-        """
-        (() => {
-            const log = window.StowlingTaskMonitorModel.createLogBuffer(300);
-            const event = { sequence: 1, runId: "run", phase: "TASK", step: "1",
-                module: "STORE", kind: "WAIT", operation: "confirm", details: "actual=0",
-                elapsedMillis: 0, repeated: 0, time: "2026-11-19T13:00:00Z" };
-            const batch = (events) => ({ session: "s", events });
-            log.ingestDiagnostics(batch([event]));
-            const unchanged = log.ingestDiagnostics(batch([
-                { ...event, sequence: 2, elapsedMillis: 1000 }
-            ]));
-            const progress = log.ingestDiagnostics(batch([
-                { ...event, sequence: 3, details: "actual=64" },
-                { ...event, sequence: 4, kind: "ERROR", details: "failed" },
-                { ...event, sequence: 5, kind: "ERROR", details: "failed" }
-            ]));
-            return { unchanged, progress, count: log.entries().length };
-        })()
+        f"""
+        (async () => {{
+            const taskLogs = window.StowlingTaskMonitorModel.createLogBuffer(10);
+            const state = {{ runRequestId: 0, lastRunResponseId: 0 }};
+            const pending = [];
+            const Stowling = {{ request: () => new Promise(resolve => pending.push(resolve)) }};
+            const renderRuntime = () => {{}};
+            const renderQueue = () => {{}};
+            const showMonitorSync = () => {{}};
+            const renderMonitorLogs = () => {{}};
+            const appendMonitorLogs = () => taskLogs.ingest(state.runs, state.queue);
+            {load_runs}
+            const clearLogs = {clear_logs};
+
+            const history = {{ runId: "archived", taskName: "旧任务", state: "SUCCEEDED" }};
+            const run = {{
+                runId: "active", taskName: "任务", state: "RUNNING", completedSteps: 1
+            }};
+            const initial = loadRuns();
+            pending.shift()({{ runs: [history, run] }});
+            await initial;
+
+            const beforeClear = loadRuns();
+            clearLogs();
+            pending.shift()({{ runs: [history, {{ ...run, message: "清空前的迟到记录" }}] }});
+            await beforeClear;
+            const afterClear = taskLogs.entries().length;
+
+            const older = loadRuns();
+            const newer = loadRuns();
+            pending.pop()({{ runs: [history, {{ ...run, completedSteps: 2 }}] }});
+            await newer;
+            pending.shift()({{ runs: [history, run] }});
+            await older;
+            const steps = taskLogs.entries().map(entry => entry.completedSteps);
+            return {{ afterClear, steps }};
+        }})()
         """
     )
-    assert result == {"unchanged": 0, "progress": 3, "count": 4}
+    assert result == {"afterClear": 0, "steps": [2]}
 
 
 def test_run_exports_are_separate_and_compact_without_losing_errors() -> None:
@@ -167,7 +194,7 @@ def test_run_exports_are_separate_and_compact_without_losing_errors() -> None:
     assert "RECOVERY_PENDING" in result["compact"]
 
 
-def test_runtime_diagnostics_deduplicate_pages_and_export_wait_details() -> None:
+def test_single_run_download_includes_diagnostics_after_clearing_progress() -> None:
     result = _run_model(
         """
         (() => {
@@ -179,32 +206,27 @@ def test_runtime_diagnostics_deduplicate_pages_and_export_wait_details() -> None
                 kind: "WAIT", operation: "deposit.confirm", elapsedMillis: 8000,
                 repeated: 19, details: "planned=64; pickedUp=64; outgoing=64; actual=0"
             };
-            const batch = {
-                session: "session-1", firstAvailable: 1, nextSequence: 1,
-                latestSequence: 1, events: [event]
-            };
-            const first = log.ingestDiagnostics(batch, [{
-                runId: "run-1", taskName: "全物品", priority: "URGENT"
-            }]);
-            const duplicate = log.ingestDiagnostics(batch);
-            const exported = model.exportDiagnostics(batch);
+            const batch = { events: [
+                event,
+                { ...event, sequence: 2, kind: "INVENTORY", operation: "inventory.compare",
+                    details: "物品数量变化" },
+                { ...event, sequence: 3, kind: "DECISION", operation: "cache.packBatch",
+                    details: "nextLoad=64" }
+            ] };
+            const run = { runId: "run-1", taskName: "全物品", state: "WAITING" };
+            log.ingest([run]);
             log.clear();
-            const clearedDuplicate = log.ingestDiagnostics(batch);
-            const restarted = log.ingestDiagnostics({ ...batch, session: "session-2" });
-            return { first, duplicate, clearedDuplicate, restarted, exported,
-                label: model.diagnosticLabel("RESYNC"), entries: log.entries() };
+            const exported = model.exportCurrentRun(batch, run.runId, run);
+            return { exported, entries: log.entries() };
         })()
         """
     )
-    assert result["first"] == 1
-    assert result["duplicate"] == 0
-    assert result["clearedDuplicate"] == 0
-    assert result["restarted"] == 1
-    assert result["label"] == "重新读取"
+    assert result["entries"] == []
     assert "deposit.confirm" in result["exported"]
     assert "planned=64; pickedUp=64" in result["exported"]
-    assert "8000\t19" in result["exported"]
-    assert "2.2.1" in result["entries"][0]["message"]
+    assert "已等待 8 秒" in result["exported"]
+    assert "物品数量变化" in result["exported"]
+    assert "nextLoad=64" in result["exported"]
 
 
 def test_full_diagnostic_export_is_independent_of_the_small_visible_log_buffer() -> None:
@@ -219,7 +241,7 @@ def test_full_diagnostic_export_is_independent_of_the_small_visible_log_buffer()
                     details: "", elapsedMillis: 0, repeated: 0
                 })) };
             const log = model.createLogBuffer(2);
-            log.ingestDiagnostics(batch);
+            log.ingest([1, 2, 3, 4].map(n => ({ runId: `r-${n}`, completedSteps: n })));
             return { visible: log.entries().length, exported: model.exportDiagnostics(batch) };
         })()
         """

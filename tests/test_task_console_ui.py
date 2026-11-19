@@ -63,6 +63,7 @@ def test_monitor_uses_shared_model_and_static_task_names() -> None:
 def test_log_panel_has_only_export_and_clear_icon_buttons() -> None:
     html = read("tasks.html")
     panel = between(html, 'class="panel task-log-panel"', "</section>")
+    assert 'id="task-log-title">任务进度</h2>' in panel
     assert panel.count("<button ") == 2
     for button_id, label in (("export-task-logs", "导出日志"), ("clear-task-logs", "清空日志")):
         button = between(panel, f'<button id="{button_id}"', "</button>")
@@ -77,7 +78,9 @@ def test_log_icons_download_one_current_run_file_and_clear_the_buffer() -> None:
     javascript = read("tasks.js")
     export = between(javascript, "async function exportMonitorLogs()", "function downloadLog")
     assert "Monitor.createLogBuffer(300)" in javascript
-    assert "taskLogs.ingest(" in javascript
+    assert "taskLogs.ingest(state.runs, state.queue)" in javascript
+    assert "ingestDiagnostics" not in javascript
+    assert "/v1/task-diagnostics/since/" not in javascript
     assert 'elements.exportLogs.addEventListener("click", exportMonitorLogs)' in javascript
     assert "const [run] = Monitor.exportRuns(state.runs)" in export
     assert "/v1/task-diagnostics/run/${encodeURIComponent(runId)}" in export

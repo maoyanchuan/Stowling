@@ -14,9 +14,8 @@
         modules: [],
         runs: [],
         queue: [],
-        diagnosticSession: "",
-        diagnosticCursor: 0,
-        diagnosticsLoading: false,
+        runRequestId: 0,
+        lastRunResponseId: 0,
         moveRevision: "",
         moveTasks: [],
         autoTaskCount: 0,
@@ -541,12 +540,14 @@
      * @returns {Promise<void>}
      */
     async function loadAll() {
+        const requestId = ++state.runRequestId;
         try {
             const [modules, runs] = await Promise.all([
                 Stowling.request("/v1/task-modules"),
                 Stowling.request("/v1/task-runs")
             ]);
             state.modules = Array.isArray(modules?.modules) ? modules.modules : [];
+            if (requestId <= state.lastRunResponseId) return;
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             state.queue = Array.isArray(runs?.queue) ? runs.queue : [];
             state.triggerStatuses = Array.isArray(runs?.triggers) ? runs.triggers : [];
@@ -554,7 +555,7 @@
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
-            await loadDiagnostics();
+            state.lastRunResponseId = requestId;
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
         }
@@ -618,8 +619,10 @@
      * @returns {Promise<void>}
      */
     async function loadRuns() {
+        const requestId = ++state.runRequestId;
         try {
             const response = await Stowling.request("/v1/task-runs");
+            if (requestId <= state.lastRunResponseId) return;
             state.runs = Array.isArray(response?.runs) ? response.runs : [];
             state.queue = Array.isArray(response?.queue)
                 ? response.queue
@@ -631,37 +634,12 @@
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
-            await loadDiagnostics();
+            state.lastRunResponseId = requestId;
         } catch (error) {
+            if (requestId <= state.lastRunResponseId) return;
             elements.monitorMessage.textContent = "同步失败 · 显示上次状态";
             elements.monitorMessage.classList.add("is-stale");
             Stowling.handleError(error, "读取运行状态失败");
-        }
-    }
-
-    /**
-     * @returns {Promise<void>}
-     */
-    async function loadDiagnostics() {
-        if (state.diagnosticsLoading) return;
-        state.diagnosticsLoading = true;
-        try {
-            let batch = await Stowling.request(
-                `/v1/task-diagnostics/since/${state.diagnosticCursor}`);
-            if (state.diagnosticSession && state.diagnosticSession !== batch.session) {
-                batch = await Stowling.request("/v1/task-diagnostics/since/0");
-            }
-            state.diagnosticSession = batch.session;
-            state.diagnosticCursor = batch.nextSequence;
-            if (taskLogs.ingestDiagnostics(batch, state.runs) > 0) renderMonitorLogs();
-            if (batch.truncated) {
-                elements.monitorMessage.textContent = "详细日志较多，部分旧记录已轮换；可导出保留记录";
-            }
-        } catch (error) {
-            elements.monitorMessage.textContent = "任务状态已同步，详细日志读取失败";
-            Stowling.handleError(error, "读取详细运行日志失败");
-        } finally {
-            state.diagnosticsLoading = false;
         }
     }
 
@@ -840,9 +818,7 @@
      */
     function appendMonitorLogs() {
         elements.exportLogs.disabled = Monitor.exportRuns(state.runs).length === 0;
-        const added = taskLogs.ingest(
-            state.runs, state.queue, state.triggerStatuses, new Date().toISOString()
-        );
+        const added = taskLogs.ingest(state.runs, state.queue);
         if (added > 0 || elements.logList.childElementCount === 0) {
             renderMonitorLogs();
         }
@@ -859,31 +835,30 @@
         elements.logCount.textContent = String(entries.length);
         elements.clearLogs.disabled = entries.length === 0;
         if (entries.length === 0) {
-            elements.logList.append(Stowling.emptyState("暂无任务日志"));
+            elements.logList.append(Stowling.emptyState("暂无任务进度"));
         }
         for (const entry of entries) {
             const row = Stowling.element("article", "rail-log-entry");
             row.classList.toggle("is-error", [
-                "ERROR", "FAILED", "INTERRUPTION_FAILED"
+                "FAILED", "INTERRUPTION_FAILED"
             ].includes(entry.state));
             const time = Stowling.element("time", "rail-log-time");
             time.dateTime = entry.time;
             time.textContent = new Date(entry.time).toLocaleTimeString(
                 "zh-CN", { hour12: false }
             );
-            const status = entry.kind === "diagnostic" ? Monitor.diagnosticLabel(entry.state)
-                : entry.kind === "trigger"
-                ? listeningStateLabel(entry.state)
-                : runStateLabel(entry.state);
+            const status = runStateLabel(entry.state);
             const heading = Stowling.element("div", "rail-log-heading");
             heading.append(time, Stowling.element("span", "rail-state", status));
             row.append(heading, Stowling.element("strong", "", entry.taskName));
-            row.append(Stowling.element("p", "rail-log-message", entry.message));
-            const progress = entry.completedSteps !== undefined
-                ? ` · ${entry.completedSteps} / ${entry.totalSteps ?? "—"} 步` : "";
-            row.append(Stowling.element(
-                "span", "rail-log-time", Model.priorityLabel(entry.priority) + progress
-            ));
+            const message = runStateMessage(entry);
+            if (message && message !== status) {
+                row.append(Stowling.element("p", "rail-log-message", message));
+            }
+            if (entry.completedSteps !== undefined) {
+                const progress = `${entry.completedSteps} / ${entry.totalSteps ?? "—"} 步`;
+                row.append(Stowling.element("span", "rail-log-time", progress));
+            }
             elements.logList.append(row);
         }
         elements.logList.scrollTop = followLatest ? elements.logList.scrollHeight : scrollTop;
@@ -1030,6 +1005,7 @@
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
     elements.exportLogs.addEventListener("click", exportMonitorLogs);
     elements.clearLogs.addEventListener("click", () => {
+        state.lastRunResponseId = state.runRequestId;
         taskLogs.clear();
         renderMonitorLogs();
     });

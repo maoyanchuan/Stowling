@@ -13,6 +13,25 @@ import org.junit.jupiter.api.Test;
 
 class TaskDiagnosticLogTest {
     @Test
+    void runExportIncludesItsCleanupButNeverAnotherExecution() {
+        TaskDiagnosticLog log = new TaskDiagnosticLog();
+        UUID selected = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        append(log, selected, "selected-task");
+        append(log, other, "other-task");
+        log.append(selected, "CLEANUP", "1", "CLEANUP", "ERROR", "cleanup",
+                "selected-cleanup", 100, false);
+
+        var batch = log.readRun(selected);
+        assertEquals(2, batch.events().size());
+        assertTrue(batch.events().stream().allMatch(event -> selected.equals(event.runId())));
+        assertEquals("CLEANUP", batch.events().getLast().phase());
+        assertEquals(1, batch.firstAvailable());
+        assertEquals(3, batch.latestSequence());
+        assertTrue(log.readRun(UUID.randomUUID()).events().isEmpty());
+    }
+
+    @Test
     void accidentalCredentialsInStatusMessagesAreRedactedBeforeRetention() {
         TaskDiagnosticLog log = new TaskDiagnosticLog();
         append(log, UUID.randomUUID(), "Bearer private-token; password=private-password");

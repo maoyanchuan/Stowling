@@ -15,6 +15,13 @@ public interface V2ControlService {
     default dev.stowling.v2.runtime.TaskDiagnosticLog.Batch taskDiagnostics(long after, int limit) {
         return new dev.stowling.v2.runtime.TaskDiagnosticLog.Batch("", 1, 0, 0, false, List.of());
     }
+    default dev.stowling.v2.runtime.TaskDiagnosticLog.Batch taskDiagnostics(UUID runId) {
+        var batch = taskDiagnostics(0, dev.stowling.v2.runtime.TaskDiagnosticLog.CAPACITY);
+        return new dev.stowling.v2.runtime.TaskDiagnosticLog.Batch(batch.session(),
+                batch.firstAvailable(), batch.nextSequence(), batch.latestSequence(),
+                batch.truncated(), batch.events().stream()
+                        .filter(event -> runId.equals(event.runId())).toList());
+    }
     default dev.stowling.inventory.WarehouseInventory warehouseInventory() {
         return new dev.stowling.inventory.WarehouseInventory("UNAVAILABLE", "库存数据源未配置", "",
                 java.time.Instant.now(), List.of(), List.of());

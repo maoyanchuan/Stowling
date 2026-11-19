@@ -46,6 +46,45 @@ def _run_model(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_run_exports_are_separate_and_compact_without_losing_errors() -> None:
+    result = _run_model(
+        """
+        (() => {
+            const model = window.StowlingTaskMonitorModel;
+            const event = { runId: "selected", phase: "TASK", step: "1", module: "PICKUP",
+                kind: "WAIT", operation: "pickup", details: "waiting", elapsedMillis: 0,
+                time: "2026-11-19T13:40:00Z", repeated: 0 };
+            const batch = { session: "s", firstAvailable: 1, latestSequence: 6, events: [
+                { ...event, sequence: 1 },
+                { ...event, sequence: 2, elapsedMillis: 1000 },
+                { ...event, sequence: 3, runId: "other", details: "OTHER_RUN_SECRET" },
+                { ...event, sequence: 4, kind: "CALL", details: "INTERFACE_DETAIL" },
+                { ...event, sequence: 5, kind: "ERROR", details: "OUTSIDE_SAFE_AREA" },
+                { ...event, sequence: 6, phase: "CLEANUP", kind: "ERROR",
+                    details: "RECOVERY_PENDING" }
+            ] };
+            const runs = model.exportRuns([
+                { runId: "selected", state: "INTERRUPTION_FAILED",
+                    updatedAt: "2026-11-19T13:41:50Z" },
+                { runId: "queued", state: "QUEUED", updatedAt: "2026-11-19T13:44:00Z" },
+                { runId: "older", state: "SUCCEEDED", updatedAt: "2026-11-19T13:39:00Z" }
+            ]);
+            return { compact: model.exportDiagnostics(batch, "selected", false),
+                detailed: model.exportDiagnostics(batch, "selected", true),
+                runs: runs.map((run) => run.runId) };
+        })()
+        """
+    )
+    assert result["runs"] == ["selected", "older"]
+    assert "OTHER_RUN_SECRET" not in result["compact"]
+    assert "OTHER_RUN_SECRET" not in result["detailed"]
+    assert "INTERFACE_DETAIL" not in result["compact"]
+    assert "INTERFACE_DETAIL" in result["detailed"]
+    assert result["compact"].count("waiting") == 1
+    assert "OUTSIDE_SAFE_AREA" in result["compact"]
+    assert "RECOVERY_PENDING" in result["compact"]
+
+
 def test_runtime_diagnostics_deduplicate_pages_and_export_wait_details() -> None:
     result = _run_model(
         """

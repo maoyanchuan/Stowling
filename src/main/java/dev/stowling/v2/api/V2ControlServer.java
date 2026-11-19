@@ -297,6 +297,13 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, service.categoryRules());
             return;
         }
+        if (path.startsWith("/v1/task-diagnostics/run/")) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            UUID runId = uuid(path.substring("/v1/task-diagnostics/run/".length()));
+            sendJson(exchange, 200, service.taskDiagnostics(runId));
+            return;
+        }
         if ("/v1/task-diagnostics".equals(path)
                 || path.startsWith("/v1/task-diagnostics/since/")) {
             requireMethod(method, "GET");

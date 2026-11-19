@@ -57,6 +57,17 @@ class V2ControlServerTest {
             assertEquals(1, next.getAsJsonArray("events").size());
             assertEquals("RESYNC", next.getAsJsonArray("events").get(0).getAsJsonObject()
                     .get("kind").getAsString());
+            runs.diagnostics().append(UUID.randomUUID(), "TASK", "1", "MOVE", "STATE", "run",
+                    "other-execution", 0, false);
+            String runPath = "/v1/task-diagnostics/run/" + owner;
+            assertEquals(401, fixture.send(runPath, "GET", null, false).statusCode());
+            var selected = object(fixture.send(runPath, "GET", null, true));
+            assertEquals(2, selected.getAsJsonArray("events").size());
+            assertEquals(owner.toString(), selected.getAsJsonArray("events").get(0)
+                    .getAsJsonObject().get("runId").getAsString());
+            assertEquals(400, fixture.send("/v1/task-diagnostics/run/invalid", "GET", null, true)
+                    .statusCode());
+            assertEquals(405, fixture.send(runPath, "POST", "{}", true).statusCode());
             assertEquals(400, fixture.send("/v1/task-diagnostics/since/-1", "GET", null, true)
                     .statusCode());
             assertEquals(405, fixture.send("/v1/task-diagnostics", "POST", "{}", true)

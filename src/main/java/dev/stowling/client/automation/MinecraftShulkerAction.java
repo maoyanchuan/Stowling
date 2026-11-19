@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerRecoveryReceipt;
+import dev.stowling.automation.ContainerRecoveryPathPlan;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
@@ -39,6 +40,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         boolean broken;
         int inventoryBefore;
         BlockPosition dropPosition;
+        int dropEntityId = -1;
 
         Resource(BlockPosition position, ItemStack original) {
             this.position = position;
@@ -62,6 +64,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private int pickupRadius;
     private int pickupRetries;
     private int nextPickupRetry;
+    private final Set<BlockPosition> rejectedPickupTargets = new java.util.HashSet<>();
 
     MinecraftShulkerAction(Minecraft minecraft, TaskExecutionContext context,
             Resource resource, boolean place) {
@@ -253,7 +256,10 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         if (!hasRecoveryCapacity(minecraft, resource.expected)) {
             return fail("背包没有空位拾取已挖掉的潜影盒，请腾出一格后重试收尾");
         }
-        ItemEntity drop = nearbyDrops(minecraft, resource).stream()
+        ItemEntity tracked = minecraft.level.getEntity(resource.dropEntityId)
+                instanceof ItemEntity entity && resource.receipt.tracksDrop(entity.getUUID())
+                && entity.isAlive() && !entity.isRemoved() ? entity : null;
+        ItemEntity drop = tracked != null ? tracked : nearbyDrops(minecraft, resource).stream()
                 .filter(entity -> resource.receipt.acceptsDrop(entity.getUUID()))
                 .filter(entity -> MinecraftItemIdentity.sameRecoveredBox(
                         resource.expected, entity.getItem()))
@@ -262,28 +268,73 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                         resource.position.z() + 0.5))).orElse(null);
         if (drop != null) {
             resource.receipt.trackDrop(drop.getUUID());
+            resource.dropEntityId = drop.getId();
             resource.dropPosition = new BlockPosition(drop.blockPosition().getX(),
                     drop.blockPosition().getY(), drop.blockPosition().getZ());
         }
-        BlockPosition target = resource.dropPosition == null ? resource.position
+        BlockPosition observed = resource.dropPosition == null ? resource.position
                 : resource.dropPosition;
+        if (!ContainerRecoveryPathPlan.withinArea(resource.position, observed,
+                minecraft.level.getMinY(), minecraft.level.getMaxY())) {
+            return fail("潜影盒掉落物已离开安全回收范围，已停止追踪；放盒点="
+                    + resource.position + "；掉落物=" + observed + "；保留回收登记");
+        }
+        BlockPosition target = pickupFeet(observed);
+        if (target == null) {
+            if (pickupTarget != null) context.navigation().cancel();
+            pickupTarget = null;
+            return waitFor("掉落物附近没有可站立的拾取位置，等待落稳；掉落物=" + observed);
+        }
         if (pickupTarget == null || !pickupTarget.equals(target)) {
+            if (ticks < nextPickupRetry) return waitFor("等待切换潜影盒安全拾取站位");
             pickupTarget = target;
-            BlockPos feet = new BlockPos(target.x(), target.y(), target.z());
-            pickupRadius = minecraft.level.getBlockState(feet)
-                    .getCollisionShape(minecraft.level, feet).isEmpty() ? 0 : 1;
-            pickupRetries = 0;
+            pickupRadius = 0;
+            dev.stowling.v2.runtime.TaskTrace.event("DECISION", "shulker.pickupTarget",
+                    "site=" + resource.position + "; drop=" + observed + "; feet=" + target,
+                    0, false);
             context.navigation().startWithinRadius(pickupTarget, pickupRadius);
         }
         if (context.navigation().status(pickupTarget, pickupRadius) == NavigationStatus.FAILED
-                && pickupRetries < 2 && ticks >= nextPickupRetry) {
-            pickupRadius = 1;
+                && ticks >= nextPickupRetry) {
+            if (pickupRetries >= 2) {
+                return fail("潜影盒安全拾取站位不可达，已停止寻路；掉落物=" + observed
+                        + "；保留回收登记");
+            }
+            context.navigation().cancel();
+            rejectedPickupTargets.add(pickupTarget);
+            pickupTarget = null;
             pickupRetries++;
             nextPickupRetry = ticks + 20;
-            context.navigation().startWithinRadius(pickupTarget, pickupRadius);
         }
         phase = 5;
         return waitFor("等待拾取并核对潜影盒内容");
+    }
+
+    private BlockPosition pickupFeet(BlockPosition drop) {
+        List<BlockPosition> supported = new java.util.ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dy = -1; dy <= 0; dy++) {
+                    BlockPosition feet = drop.offset(dx, dy, dz);
+                    BlockPos position = new BlockPos(feet.x(), feet.y(), feet.z());
+                    if (rejectedPickupTargets.contains(feet)
+                            || !minecraft.level.hasChunkAt(position)
+                            || !minecraft.level.hasChunkAt(position.below())) continue;
+                    if (minecraft.level.getBlockState(position).getCollisionShape(
+                            minecraft.level, position).isEmpty()
+                            && minecraft.level.getBlockState(position.above()).getCollisionShape(
+                                    minecraft.level, position.above()).isEmpty()
+                            && minecraft.level.getBlockState(position.below()).isFaceSturdy(
+                                    minecraft.level, position.below(), Direction.UP)) {
+                        supported.add(feet);
+                    }
+                }
+            }
+        }
+        BlockPos player = minecraft.player.blockPosition();
+        return ContainerRecoveryPathPlan.select(resource.position, drop,
+                new BlockPosition(player.getX(), player.getY(), player.getZ()), supported,
+                minecraft.level.getMinY(), minecraft.level.getMaxY()).orElse(null);
     }
 
     private Map<String, Integer> inventoryCounts() {
@@ -330,6 +381,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                         return false;
                     }
                     resource.receipt.trackDrop(entity.getUUID());
+                    resource.dropEntityId = entity.getId();
                     resource.dropPosition = new BlockPosition(entity.blockPosition().getX(),
                             entity.blockPosition().getY(), entity.blockPosition().getZ());
                     return true;
@@ -337,8 +389,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     }
 
     private static List<ItemEntity> nearbyDrops(Minecraft minecraft, Resource resource) {
-        BlockPosition center = resource.dropPosition == null ? resource.position
-                : resource.dropPosition;
+        BlockPosition center = resource.position;
         return minecraft.level.getEntities(EntityTypeTest.forClass(ItemEntity.class),
                 new AABB(new BlockPos(center.x(), center.y(), center.z())).inflate(4, 8, 4),
                 entity -> entity.isAlive() && !entity.isRemoved());

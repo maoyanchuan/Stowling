@@ -763,15 +763,35 @@
     }
 
     /**
+     * @param {Array<object>} runs
+     * @returns {Array<object>}
+     */
+    function exportRuns(runs) {
+        return asObjects(runs).filter((run) => run.runId && run.state !== "QUEUED")
+            .slice().sort((left, right) => asText(right.updatedAt || right.startedAt)
+                .localeCompare(asText(left.updatedAt || left.startedAt)));
+    }
+
+    /**
      * @param {object} batch
+     * @param {string} [runId]
+     * @param {boolean} [detailed]
      * @returns {string}
      */
-    function exportDiagnostics(batch) {
-        const lines = ["Stowling 详细运行诊断 · 格式 1",
+    function exportDiagnostics(batch, runId = "", detailed = true) {
+        const events = asObjects(batch.events).filter((event) => !runId || event.runId === runId);
+        const lines = ["Stowling 运行诊断 · 格式 2",
             `会话=${batch.session}; 首条=${batch.firstAvailable}; 最新=${batch.latestSequence}`,
-            "运行端保留最近 20000 条；相同轮询每秒记录一次，数量和等待条件变化立即记录。",
+            `运行=${runId || "全部"}; 模式=${detailed ? "完整接口日志" : "精简日志"}`,
+            batch.truncated ? "保留日志已轮换，较早记录可能缺失。" : "",
             "序号\t时间\t运行ID\t阶段\t步骤\t模块\t类型\t接口/操作\t耗时毫秒\t合并次数\t详情"];
-        for (const event of asObjects(batch.events)) {
+        const previous = new Map();
+        for (const event of events) {
+            if (!detailed && ["CALL", "RETURN"].includes(event.kind)) continue;
+            const key = [event.phase, event.step, event.module, event.kind, event.operation].join(":");
+            if (!detailed && ["WAIT", "STATE", "INVENTORY"].includes(event.kind)
+                    && previous.get(key) === event.details) continue;
+            previous.set(key, event.details);
             lines.push([event.sequence, event.time, event.runId, event.phase, event.step,
                 event.module, event.kind, event.operation, event.elapsedMillis,
                 event.repeated, event.details].map(sanitizeCell).join("\t"));
@@ -792,6 +812,7 @@
         createLogBuffer,
         diagnosticMessage,
         exportDiagnostics,
+        exportRuns,
         diagnosticLabel
     });
 })();

@@ -63,9 +63,16 @@
                             <h2 id="task-log-title">日志输出</h2>
                             <span id="task-log-count" class="count-label">0</span>
                         </div>
+                        <label class="rail-caption" for="task-log-export-run">导出哪次运行</label>
+                        <select id="task-log-export-run" aria-label="选择要导出的运行">
+                            <option value="">最近一次运行</option>
+                        </select>
+                        <label class="rail-caption checkbox-field">
+                            <input id="task-log-export-detailed" type="checkbox">完整接口日志
+                        </label>
                         <div class="rail-log-actions" role="group" aria-label="日志操作">
                             <button id="export-task-logs" class="ghost compact"
-                                    type="button" disabled>导出</button>
+                                    type="button" disabled>导出本次</button>
                             <button id="clear-task-logs" class="ghost compact"
                                     type="button" disabled>清空</button>
                             <button id="pause-task-log-scroll" class="ghost compact"
@@ -73,7 +80,7 @@
                             <button id="show-run-details" class="ghost compact"
                                     type="button">运行详情</button>
                         </div>
-                        <p class="rail-caption">页面显示最近 300 条；导出包含运行端最近 20000 条详细日志</p>
+                        <p class="rail-caption">每次运行单独导出步骤、等待变化和异常；可选完整接口日志。</p>
                         <div id="task-log-list" class="rail-log-list" role="log"
                              aria-label="任务状态日志" aria-live="off" tabindex="0"></div>
                     </section>

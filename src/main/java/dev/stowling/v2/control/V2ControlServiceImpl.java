@@ -1193,6 +1193,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public dev.stowling.v2.runtime.TaskDiagnosticLog.Batch taskDiagnostics(UUID runId) {
+        return runs.diagnostics().readRun(runId);
+    }
+
+    @Override
     public void cancelRun(UUID runId) {
         runs.cancel(runId);
     }

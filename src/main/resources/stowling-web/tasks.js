@@ -68,6 +68,8 @@
         logList: document.querySelector("#task-log-list"),
         logCount: document.querySelector("#task-log-count"),
         exportLogs: document.querySelector("#export-task-logs"),
+        exportRun: document.querySelector("#task-log-export-run"),
+        exportDetailed: document.querySelector("#task-log-export-detailed"),
         clearLogs: document.querySelector("#clear-task-logs"),
         pauseLogScroll: document.querySelector("#pause-task-log-scroll"),
         showRunDetails: document.querySelector("#show-run-details"),
@@ -857,7 +859,16 @@
         const entries = taskLogs.entries();
         elements.logList.replaceChildren();
         elements.logCount.textContent = String(entries.length);
-        elements.exportLogs.disabled = entries.length === 0;
+        const runs = Monitor.exportRuns(state.runs);
+        const selected = elements.exportRun.value;
+        elements.exportRun.replaceChildren(new Option("最近一次运行", ""));
+        for (const run of runs) {
+            const time = new Date(run.startedAt).toLocaleString("zh-CN", { hour12: false });
+            elements.exportRun.append(new Option(
+                `${run.taskName} · ${time} · ${run.runId.slice(0, 8)}`, run.runId));
+        }
+        elements.exportRun.value = runs.some((run) => run.runId === selected) ? selected : "";
+        elements.exportLogs.disabled = runs.length === 0;
         elements.clearLogs.disabled = entries.length === 0;
         if (entries.length === 0) {
             elements.logList.append(Stowling.emptyState("暂无任务日志"));
@@ -895,20 +906,23 @@
      * @returns {Promise<void>}
      */
     async function exportMonitorLogs() {
+        const runId = elements.exportRun.value || Monitor.exportRuns(state.runs)[0]?.runId;
+        if (!runId) return;
         let batch;
         try {
-            batch = await Stowling.request("/v1/task-diagnostics");
+            batch = await Stowling.request(
+                `/v1/task-diagnostics/run/${encodeURIComponent(runId)}`);
         } catch (error) {
             Stowling.handleError(error, "导出详细运行日志失败，请重试");
             return;
         }
-        const output = taskLogs.exportText() + "\n\n" + Monitor.exportDiagnostics(batch);
+        const output = Monitor.exportDiagnostics(batch, runId, elements.exportDetailed.checked);
         const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
         const date = new Date().toISOString().replace(/[:.]/g, "-");
-        link.download = `stowling-task-log-${date}.txt`;
+        link.download = `stowling-task-log-${runId}-${date}.txt`;
         document.body.append(link);
         link.click();
         link.remove();

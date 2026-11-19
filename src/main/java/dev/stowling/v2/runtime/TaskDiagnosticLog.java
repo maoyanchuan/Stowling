@@ -71,6 +71,15 @@ public final class TaskDiagnosticLog {
         return new Batch(session, first, next, sequence, cursor < first - 1, selected);
     }
 
+    public synchronized Batch readRun(UUID runId) {
+        java.util.Objects.requireNonNull(runId, "runId");
+        List<Event> selected = events.stream().filter(event -> runId.equals(event.runId())).toList();
+        long first = selected.isEmpty() ? sequence + 1 : selected.getFirst().sequence();
+        long last = selected.isEmpty() ? sequence : selected.getLast().sequence();
+        boolean truncated = !events.isEmpty() && events.getFirst().sequence() > 1;
+        return new Batch(session, first, last, last, truncated, selected);
+    }
+
     public record Event(long sequence, Instant time, UUID runId, String phase, String step,
             String module, String kind, String operation, String details, long elapsedMillis,
             int repeated) {

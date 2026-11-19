@@ -134,7 +134,8 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         context.workspace().setResolvedCategories(
                 targets,
                 accepted,
-                cacheTargets,
+                dev.stowling.automation.PartialBoxSourcePlan.combine(cacheTargets,
+                        context.storageAutomation().partialBoxSources(context, targets), targets),
                 result.layout()
         );
         return TaskModuleResult.succeeded(

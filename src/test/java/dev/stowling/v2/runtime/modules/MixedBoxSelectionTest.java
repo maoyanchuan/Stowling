@@ -11,6 +11,21 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class MixedBoxSelectionTest {
+    @Test
+    void dedicatedPartialSourcesCanDonateAndCompletedPartialCategoryStaysPut() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget partialA = target(10);
+        ContainerTarget partialB = target(11);
+        workspace.setResolvedCategories(List.of(STONE_CHEST),
+                Map.of(STONE_CHEST, Set.of(STONE)), List.of(CACHE, partialA, partialB));
+        workspace.selectNextContainer();
+
+        assertEquals(Set.of(STONE), workspace.mixedBoxWithdrawalItems(partialB, Set.of(STONE)));
+        workspace.deferCacheCategory(STONE);
+        assertTrue(workspace.remainingCacheCategories(CACHE).isEmpty());
+        assertEquals(Set.of(STONE), workspace.remainingCacheCategories(partialA));
+    }
+
     private static final String STONE = "minecraft:stone";
     private static final String LEAVES = "minecraft:birch_leaves";
     private static final String UNKNOWN = "minecraft:dirt";

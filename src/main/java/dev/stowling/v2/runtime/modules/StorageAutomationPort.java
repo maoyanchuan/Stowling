@@ -67,6 +67,11 @@ public interface StorageAutomationPort {
         return temporaryContainers();
     }
 
+    default List<ContainerTarget> partialBoxSources(TaskExecutionContext context,
+            List<ContainerTarget> targets) {
+        return List.of();
+    }
+
     default boolean hasTemporaryResources(UUID owner) {
         return false;
     }

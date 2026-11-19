@@ -484,6 +484,10 @@ public final class TaskRunWorkspace {
         return cacheHasMore;
     }
 
+    public synchronized void deferCacheCategory(String category) {
+        deferredCacheCategories.add(category);
+    }
+
     public synchronized Optional<ContainerTarget> selectStorageTarget() {
         return selectStorageTarget("carried");
     }

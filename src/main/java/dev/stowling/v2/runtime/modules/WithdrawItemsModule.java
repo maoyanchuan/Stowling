@@ -52,11 +52,13 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     }
 
     private TaskModuleResult startWithdrawal() {
+        Set<String> selected = classificationBatch
+                ? context.workspace().remainingCacheCategories(target) : matchingItemIds;
         inFlight = true;
         return handle(classificationBatch
-                ? context.containerWithdrawals().startClassificationBatch(target, matchingItemIds,
+                ? context.containerWithdrawals().startClassificationBatch(target, selected,
                         fullBoxCategories(), context.workspace()
-                                .classificationItemOrder(matchingItemIds))
+                                .classificationItemOrder(selected))
                 : context.containerWithdrawals().startWithdrawal(target, matchingItemIds));
     }
 

@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.RegionDefinition;
@@ -15,6 +16,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.entity.EntityTypeTest;
@@ -132,6 +134,15 @@ public final class MinecraftDroppedItemObserver
 
     @Override
     public Optional<Map<String, Integer>> playerItemCounts() {
+        return readInventory(false).map(PlayerInventorySnapshot::itemCounts);
+    }
+
+    @Override
+    public Optional<PlayerInventorySnapshot> playerInventorySnapshot() {
+        return readInventory(true);
+    }
+
+    private Optional<PlayerInventorySnapshot> readInventory(boolean trackToolWear) {
         if (!scheduler.isClientThread()) {
             return Optional.empty();
         }
@@ -140,6 +151,7 @@ public final class MinecraftDroppedItemObserver
             return Optional.empty();
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
+        Map<String, String> pickaxes = new LinkedHashMap<>();
         Map<String, String> names = new LinkedHashMap<>();
         for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
             if (stack.isEmpty() || stack.getCount() <= 0) {
@@ -148,9 +160,14 @@ public final class MinecraftDroppedItemObserver
             String key = itemId(stack);
             counts.merge(key, stack.getCount(), Math::addExact);
             names.put(key, stack.getHoverName().getString());
+            if (trackToolWear && stack.is(ItemTags.PICKAXES) && stack.isDamageableItem()) {
+                ItemStack undamaged = stack.copyWithCount(1);
+                undamaged.setDamageValue(0);
+                pickaxes.put(key, itemId(undamaged));
+            }
         }
         itemNames = Map.copyOf(names);
-        return Optional.of(Map.copyOf(counts));
+        return Optional.of(new PlayerInventorySnapshot(counts, pickaxes));
     }
 
     @Override

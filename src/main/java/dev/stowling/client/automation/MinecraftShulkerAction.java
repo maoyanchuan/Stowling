@@ -10,6 +10,7 @@ import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
@@ -58,8 +59,9 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private int swapSlot = -1;
     private int selected;
     private boolean swapping;
-    private String toolBefore;
     private TaskModuleResult terminal;
+    private BlockPosition placementFeet;
+    private final Set<BlockPosition> rejectedPlacementStances = new java.util.HashSet<>();
     private BlockPosition pickupTarget;
     private int pickupRadius;
     private int pickupRetries;
@@ -102,15 +104,16 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                     ? "潜影盒已挖掉，回收物尚未确认；请检查掉落物与背包空间"
                     : "潜影盒挖掘未确认");
         }
+        if (place && phase < 2) {
+            return approachPlacement(position);
+        }
         if (phase == 0) {
             if (minecraft.gui.screen() != null) {
                 minecraft.player.closeContainer();
                 return waitFor("正在关闭界面");
             }
-            NavigationStatus navigation = place
-                    ? context.navigation().startNear(resource.position, 2)
-                    : resource.broken ? NavigationStatus.ARRIVED
-                            : context.navigation().startInteraction(resource.position, miningArea());
+            NavigationStatus navigation = resource.broken ? NavigationStatus.ARRIVED
+                    : context.navigation().startInteraction(resource.position, miningArea());
             if (navigation == NavigationStatus.FAILED) {
                 return fail("无法到达潜影盒操作点");
             }
@@ -139,6 +142,65 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         return tickRecovery(position);
     }
 
+    private TaskModuleResult approachPlacement(BlockPos site) {
+        if (!clearPlacementSite(minecraft, site)) return blockedPlacement();
+        if (minecraft.gui.screen() != null) {
+            minecraft.player.closeContainer();
+            return waitFor("正在关闭界面");
+        }
+        if (canPlaceFromHere(site)) {
+            if (placementFeet != null) context.navigation().cancel();
+            return prepareHand(site);
+        }
+        if (placementFeet != null) {
+            if (context.navigation().status(placementFeet, 0) == NavigationStatus.NAVIGATING) {
+                return waitFor("正在前往潜影盒旁的操作站位");
+            }
+            rejectedPlacementStances.add(placementFeet);
+        }
+        BlockPos player = minecraft.player.blockPosition();
+        List<BlockPosition> candidates = placementStances(resource.position).stream()
+                .filter(feet -> !rejectedPlacementStances.contains(feet))
+                .filter(feet -> canStandAt(blockPos(feet)))
+                .sorted(Comparator.comparingDouble(feet -> blockPos(feet).distSqr(player)))
+                .toList();
+        for (BlockPosition candidate : candidates) {
+            if (context.navigation().startWithinRadius(candidate, 0) != NavigationStatus.FAILED) {
+                placementFeet = candidate;
+                phase = 1;
+                return waitFor("正在前往潜影盒旁的操作站位");
+            }
+            rejectedPlacementStances.add(candidate);
+        }
+        return fail("放置点旁没有可到达的站位；放盒点=" + resource.position);
+    }
+
+    static List<BlockPosition> placementStances(BlockPosition site) {
+        List<BlockPosition> stances = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                for (int dy = -1; dy <= 1; dy++) {
+                    stances.add(site.offset(dx, dy, dz));
+                }
+            }
+        }
+        return stances;
+    }
+
+    private boolean canPlaceFromHere(BlockPos site) {
+        return validSite(minecraft, site)
+                && minecraft.player.isWithinBlockInteractionRange(site.below(), 0.0D);
+    }
+
+    private TaskModuleResult blockedPlacement() {
+        return fail("潜影盒放置点被占用或开盖空间不足；放盒点=" + resource.position);
+    }
+
+    private static BlockPos blockPos(BlockPosition position) {
+        return new BlockPos(position.x(), position.y(), position.z());
+    }
+
     static AreaBounds miningArea(BlockPosition box) {
         return new AreaBounds(box.x() - 1, box.y(), box.z() - 1,
                 box.x() + 1, box.y(), box.z() + 1);
@@ -151,9 +213,6 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private TaskModuleResult prepareHand(BlockPos position) {
         selected = minecraft.player.getInventory().getSelectedSlot();
         if (place) {
-            if (!validSite(minecraft, position)) {
-                return fail("潜影盒放置点被占用或开盖空间不足");
-            }
             int source = findSlot(MinecraftItemIdentity.key(resource.original), false);
             if (source < 0) {
                 return fail("任务持有的潜影盒已不在背包中");
@@ -176,6 +235,12 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private TaskModuleResult tickPlacement(BlockPos position) {
         String key = MinecraftItemIdentity.key(resource.original);
         if (phase == 2) {
+            if (!clearPlacementSite(minecraft, position)) return blockedPlacement();
+            if (!canPlaceFromHere(position)) {
+                restore();
+                phase = 0;
+                return waitFor("正在重新选择潜影盒旁的操作站位");
+            }
             ItemStack held = minecraft.player.getMainHandItem();
             if (held.isEmpty() || !MinecraftItemIdentity.key(held).equals(key)) {
                 return fail("手持潜影盒与任务记录不一致");
@@ -216,7 +281,6 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 resource.receipt.begin(inventoryCounts(), compatibleInventoryKeys(),
                         nearbyDrops(minecraft, resource).stream().map(ItemEntity::getUUID)
                                 .collect(java.util.stream.Collectors.toSet()));
-                toolBefore = heldKey();
                 minecraft.gameMode.startDestroyBlock(position, Direction.UP);
                 phase = 3;
             }
@@ -226,8 +290,6 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 }
                 resource.broken = true;
                 minecraft.gameMode.stopDestroyBlock();
-                context.inventory().replaceProtectedIdentity(toolBefore, heldKey());
-                toolBefore = null;
                 restore();
                 ticks = 0;
                 phase = 4;
@@ -317,15 +379,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 for (int dy = -1; dy <= 0; dy++) {
                     BlockPosition feet = drop.offset(dx, dy, dz);
                     BlockPos position = new BlockPos(feet.x(), feet.y(), feet.z());
-                    if (rejectedPickupTargets.contains(feet)
-                            || !minecraft.level.hasChunkAt(position)
-                            || !minecraft.level.hasChunkAt(position.below())) continue;
-                    if (minecraft.level.getBlockState(position).getCollisionShape(
-                            minecraft.level, position).isEmpty()
-                            && minecraft.level.getBlockState(position.above()).getCollisionShape(
-                                    minecraft.level, position.above()).isEmpty()
-                            && minecraft.level.getBlockState(position.below()).isFaceSturdy(
-                                    minecraft.level, position.below(), Direction.UP)) {
+                    if (!rejectedPickupTargets.contains(feet) && canStandAt(position)) {
                         supported.add(feet);
                     }
                 }
@@ -335,6 +389,17 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         return ContainerRecoveryPathPlan.select(resource.position, drop,
                 new BlockPosition(player.getX(), player.getY(), player.getZ()), supported,
                 minecraft.level.getMinY(), minecraft.level.getMaxY()).orElse(null);
+    }
+
+    private boolean canStandAt(BlockPos position) {
+        return minecraft.level.hasChunkAt(position)
+                && minecraft.level.hasChunkAt(position.below())
+                && minecraft.level.getBlockState(position).getCollisionShape(
+                        minecraft.level, position).isEmpty()
+                && minecraft.level.getBlockState(position.above()).getCollisionShape(
+                        minecraft.level, position.above()).isEmpty()
+                && minecraft.level.getBlockState(position.below()).isFaceSturdy(
+                        minecraft.level, position.below(), Direction.UP);
     }
 
     private Map<String, Integer> inventoryCounts() {
@@ -401,17 +466,17 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     }
 
     static boolean validSite(Minecraft minecraft, BlockPos position) {
-        if (minecraft.level == null || minecraft.player == null) {
-            return false;
-        }
-        return minecraft.level.hasChunkAt(position)
+        return minecraft.player != null && clearPlacementSite(minecraft, position)
+                && !minecraft.player.getBoundingBox().intersects(new AABB(position));
+    }
+
+    private static boolean clearPlacementSite(Minecraft minecraft, BlockPos position) {
+        return minecraft.level != null && minecraft.level.hasChunkAt(position)
                 && minecraft.level.getBlockState(position).isAir()
                 && minecraft.level.getBlockState(position.above()).isAir()
                 && minecraft.level.getBlockEntity(position.below()) == null
                 && minecraft.level.getBlockState(position.below()).isFaceSturdy(
-                        minecraft.level, position.below(), Direction.UP)
-                && !minecraft.player.getBoundingBox().intersects(
-                        new net.minecraft.world.phys.AABB(position));
+                        minecraft.level, position.below(), Direction.UP);
     }
 
     private int findSlot(String key, boolean tool) {
@@ -450,19 +515,11 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         return context.droppedItems().playerItemCounts().orElse(Map.of()).getOrDefault(key, 0);
     }
 
-    private String heldKey() {
-        ItemStack held = minecraft.player == null ? ItemStack.EMPTY
-                : minecraft.player.getMainHandItem();
-        return held.isEmpty() ? "" : MinecraftItemIdentity.key(held);
-    }
-
     private TaskModuleResult fail(String message) {
         context.navigation().cancel();
         if (minecraft.gameMode != null) {
             minecraft.gameMode.stopDestroyBlock();
         }
-        context.inventory().replaceProtectedIdentity(toolBefore, heldKey());
-        toolBefore = null;
         restore();
         terminal = TaskModuleResult.failed(message);
         return terminal;

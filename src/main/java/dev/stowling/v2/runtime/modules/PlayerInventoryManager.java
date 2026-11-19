@@ -53,6 +53,7 @@ public final class PlayerInventoryManager {
         PlayerInventorySnapshot current = observed.orElseThrow();
         if (!previous.equals(observed)) revision++;
         initialize(current);
+        reconcilePickaxeWear(current);
         boolean baseline = previous.isEmpty();
         PlayerInventoryDelta delta = previous
                 .map(prior -> PlayerInventoryDelta.between(prior, current))
@@ -77,26 +78,58 @@ public final class PlayerInventoryManager {
         revision++;
     }
 
-    public synchronized void replaceProtectedIdentity(String before, String after) {
-        if (protectedInventory == null || before == null || after == null
-                || before.isEmpty() || before.equals(after)) {
+    private void reconcilePickaxeWear(PlayerInventorySnapshot observed) {
+        var protectedPickaxes = protectedInventory.pickaxeIdentities();
+        var observedPickaxes = observed.pickaxeIdentities();
+        if (observedPickaxes.isEmpty()) return;
+        boolean missing = protectedPickaxes.keySet().stream()
+                .anyMatch(key -> protectedInventory.count(key) > observed.count(key));
+        boolean newIdentity = observedPickaxes.keySet().stream().anyMatch(key ->
+                protectedInventory.count(key) > 0 && !protectedPickaxes.containsKey(key));
+        if (!missing) {
+            if (newIdentity) {
+                protectedInventory = protectedSnapshot(protectedInventory.itemCounts(), observed);
+            }
             return;
         }
-        Map<String, Integer> items = new LinkedHashMap<>(protectedInventory.itemCounts());
-        int count = items.getOrDefault(before, 0);
-        if (count == 0) {
-            return;
+        var expected = expectedInventory().orElseThrow();
+        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
+        boolean changed = newIdentity;
+        for (var pickaxe : observedPickaxes.entrySet()) {
+            String after = pickaxe.getKey();
+            // Only unassigned excess can replace a missing protected pickaxe.
+            int extra = observed.count(after) - expected.count(after);
+            for (var original : protectedPickaxes.entrySet()) {
+                if (extra <= 0) break;
+                if (!pickaxe.getValue().equals(original.getValue())) continue;
+                String before = original.getKey();
+                int count = kept.getOrDefault(before, 0);
+                int moved = Math.min(extra, count - observed.count(before));
+                if (moved <= 0) continue;
+                if (count == moved) kept.remove(before);
+                else kept.put(before, count - moved);
+                kept.merge(after, moved, Math::addExact);
+                extra -= moved;
+                changed = true;
+            }
         }
-        if (count == 1) {
-            items.remove(before);
-        } else {
-            items.put(before, count - 1);
+        if (changed) {
+            protectedInventory = protectedSnapshot(kept, observed);
+            revision++;
         }
-        if (!after.isEmpty()) {
-            items.merge(after, 1, Math::addExact);
+    }
+
+    private PlayerInventorySnapshot protectedSnapshot(Map<String, Integer> items,
+            PlayerInventorySnapshot observed) {
+        Map<String, String> previousIdentities = protectedInventory == null
+                ? Map.of() : protectedInventory.pickaxeIdentities();
+        Map<String, String> pickaxes = new LinkedHashMap<>();
+        for (String key : items.keySet()) {
+            String identity = observed.pickaxeIdentities().getOrDefault(key,
+                    previousIdentities.get(key));
+            if (identity != null) pickaxes.put(key, identity);
         }
-        protectedInventory = new PlayerInventorySnapshot(items);
-        revision++;
+        return new PlayerInventorySnapshot(items, pickaxes);
     }
 
     public synchronized void initialize(PlayerInventorySnapshot baseline) {
@@ -234,7 +267,7 @@ public final class PlayerInventoryManager {
             int kept = Math.max(reserved, count - owned - queued);
             if (kept > 0) protectedItems.put(key, kept);
         }
-        PlayerInventorySnapshot next = new PlayerInventorySnapshot(protectedItems);
+        PlayerInventorySnapshot next = protectedSnapshot(protectedItems, previous.orElseThrow());
         if (!next.equals(protectedInventory) || !queuedBefore.equals(classificationItems)) revision++;
         protectedInventory = next;
     }
@@ -297,7 +330,7 @@ public final class PlayerInventoryManager {
         else kept.remove(key);
         if (free > keepCount) classificationItems.put(key, free - keepCount);
         else classificationItems.remove(key);
-        protectedInventory = new PlayerInventorySnapshot(kept);
+        protectedInventory = protectedSnapshot(kept, previous.orElseThrow());
         revision++;
     }
 
@@ -348,7 +381,7 @@ public final class PlayerInventoryManager {
         }
         delivered.forEach((itemId, count) -> protectedItems.merge(itemId, count, Math::addExact));
         account.confirmDeposit("managed", delivered, Map.of());
-        protectedInventory = new PlayerInventorySnapshot(protectedItems);
+        protectedInventory = protectedSnapshot(protectedItems, previous.orElse(protectedInventory));
         revision++;
     }
 

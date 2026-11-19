@@ -4,7 +4,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-public record PlayerInventorySnapshot(Map<String, Integer> itemCounts) {
+public record PlayerInventorySnapshot(Map<String, Integer> itemCounts,
+        Map<String, String> pickaxeIdentities) {
+    public PlayerInventorySnapshot(Map<String, Integer> itemCounts) {
+        this(itemCounts, Map.of());
+    }
+
     public PlayerInventorySnapshot {
         Objects.requireNonNull(itemCounts, "itemCounts");
         Map<String, Integer> checked = new LinkedHashMap<>();
@@ -21,6 +26,10 @@ public record PlayerInventorySnapshot(Map<String, Integer> itemCounts) {
             checked.merge(itemId, count, Math::addExact);
         }
         itemCounts = Map.copyOf(checked);
+        pickaxeIdentities = Map.copyOf(pickaxeIdentities);
+        if (!itemCounts.keySet().containsAll(pickaxeIdentities.keySet())) {
+            throw new IllegalArgumentException("pickaxe identities must belong to snapshot items");
+        }
     }
 
     public int count(String itemId) {

@@ -132,8 +132,7 @@ public record TaskExecutionContext(
         this(navigation, droppedItems, containerRegions, containerTransfers,
                 containerWithdrawals, containerInspections, categoryMarkerCache,
                 foodConsumption, categoryZonesPort, coordinates, regions, categoryZones,
-                workspace, new PlayerInventoryManager(() -> droppedItems.playerItemCounts()
-                        .map(dev.stowling.automation.PlayerInventorySnapshot::new)));
+                workspace, new PlayerInventoryManager(droppedItems::playerInventorySnapshot));
     }
 
     public TaskExecutionContext(

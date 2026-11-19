@@ -18,6 +18,7 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
+import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
@@ -129,6 +130,18 @@ class AssertPlayerInventoryRestoredModuleTest {
 
         assertEquals(TaskModuleState.SUCCEEDED, result.state());
         assertTrue(workspace.collectedItems().isEmpty());
+        assertTrue(workspace.managedItems().isEmpty());
+    }
+
+    @Test
+    void syncUsesExactCountsEvenWhenTheObservationAlsoTracksPickaxeWear() {
+        String pickaxe = "minecraft:netherite_pickaxe#worn";
+        Map<String, Integer> counts = Map.of(pickaxe, 1);
+        MutableDroppedItems dropped = new MutableDroppedItems(counts);
+        dropped.pickaxeIdentities = Map.of(pickaxe, "minecraft:netherite_pickaxe");
+        TaskRunWorkspace workspace = workspace(counts);
+
+        assertEquals(TaskModuleState.SUCCEEDED, finishSync(syncModule(dropped, workspace)).state());
         assertTrue(workspace.managedItems().isEmpty());
     }
 
@@ -308,6 +321,7 @@ class AssertPlayerInventoryRestoredModuleTest {
     private static final class MutableDroppedItems
             implements DroppedItemObserverPort {
         private Map<String, Integer> counts;
+        private Map<String, String> pickaxeIdentities = Map.of();
 
         private MutableDroppedItems(Map<String, Integer> counts) {
             this.counts = Map.copyOf(counts);
@@ -329,6 +343,11 @@ class AssertPlayerInventoryRestoredModuleTest {
         @Override
         public Optional<Map<String, Integer>> playerItemCounts() {
             return Optional.of(counts);
+        }
+
+        @Override
+        public Optional<PlayerInventorySnapshot> playerInventorySnapshot() {
+            return Optional.of(new PlayerInventorySnapshot(counts, pickaxeIdentities));
         }
 
         private Map<String, Integer> counts() {

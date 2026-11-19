@@ -52,8 +52,7 @@ public final class TaskModuleRuntimeRegistry {
     ) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
         this.droppedItems = Objects.requireNonNull(droppedItems, "droppedItems");
-        this.inventory = new PlayerInventoryManager(() -> this.droppedItems.playerItemCounts()
-                .map(dev.stowling.automation.PlayerInventorySnapshot::new));
+        this.inventory = new PlayerInventoryManager(this.droppedItems::playerInventorySnapshot);
         this.containerRegions = Objects.requireNonNull(
                 containerRegions,
                 "containerRegions"

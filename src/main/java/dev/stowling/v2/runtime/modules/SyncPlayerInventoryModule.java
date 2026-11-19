@@ -42,7 +42,7 @@ final class SyncPlayerInventoryModule implements TaskModuleExecutor {
                     "全局背包有待处理物品，交给当前任务处理"
             );
         }
-        if (current.equals(expected)) {
+        if (current.itemCounts().equals(expected.itemCounts())) {
             mismatchTicks = 0;
             stableTicks++;
             if (stableTicks >= STABLE_TICKS) {

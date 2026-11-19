@@ -19,6 +19,10 @@ public interface DroppedItemObserverPort {
         return Optional.empty();
     }
 
+    default Optional<PlayerInventorySnapshot> playerInventorySnapshot() {
+        return playerItemCounts().map(PlayerInventorySnapshot::new);
+    }
+
     default Map<String, String> playerItemNames() {
         return Map.of();
     }

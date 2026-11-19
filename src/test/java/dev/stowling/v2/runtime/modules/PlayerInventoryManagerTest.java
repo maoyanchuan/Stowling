@@ -278,21 +278,46 @@ class PlayerInventoryManagerTest {
     }
 
     @Test
-    void personalToolsCanChangeDurabilityWithoutBecomingTaskItems() {
+    void delayedPickaxeWearRemainsProtectedDuringCleanup() {
         MutableInventory inventory = new MutableInventory();
-        inventory.set(Map.of("minecraft:diamond_pickaxe#new", 1));
+        String before = "minecraft:netherite_pickaxe#before";
+        String after = "minecraft:netherite_pickaxe#after";
+        String identity = "minecraft:netherite_pickaxe#undamaged";
+        inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, identity)));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
         manager.observe();
-        manager.replaceProtectedIdentity("minecraft:diamond_pickaxe#new",
-                "minecraft:diamond_pickaxe#used");
-        inventory.set(Map.of("minecraft:diamond_pickaxe#used", 1));
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        manager.recordWithdrawn(task, Map.of("minecraft:moss_block", 16));
+        manager.observe();
+        inventory.set(new PlayerInventorySnapshot(Map.of(after, 1, "minecraft:moss_block", 16),
+                Map.of(after, identity)));
+        manager.observe();
+
+        assertEquals(0, manager.claimUnprotectedItems(task));
+        assertEquals(Map.of("minecraft:moss_block", 16), task.managedItems());
+        assertEquals(Map.of(after, 1, "minecraft:moss_block", 16),
+                manager.expectedInventory().orElseThrow().itemCounts());
+    }
+
+    @Test
+    void wearMatchingDoesNotAbsorbConfirmedTaskPickaxesOrOtherTools() {
+        MutableInventory inventory = new MutableInventory();
+        String before = "minecraft:diamond_pickaxe#before";
+        String after = "minecraft:diamond_pickaxe#after";
+        String other = "minecraft:diamond_pickaxe#other";
+        String identity = "minecraft:diamond_pickaxe#same_enchantments";
+        inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, identity)));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        manager.recordWithdrawn(task, Map.of(after, 1));
+        inventory.set(new PlayerInventorySnapshot(Map.of(after, 1, other, 1),
+                Map.of(after, identity, other, "minecraft:diamond_pickaxe#other_enchantments")));
+        manager.observe();
 
-        assertEquals(0, manager.claimUnexpected(task, Set.of()));
-        assertEquals(Map.of("minecraft:diamond_pickaxe#used", 1),
-                manager.expectedInventory().orElseThrow().itemCounts());
-        assertFalse(manager.needsRecovery());
+        assertEquals(1, manager.claimUnprotectedItems(task));
+        assertEquals(Map.of(after, 1, other, 1), task.managedItems());
+        assertEquals(1, manager.expectedInventory().orElseThrow().count(before));
     }
 
     @Test
@@ -438,7 +463,11 @@ class PlayerInventoryManagerTest {
         }
 
         private void set(Map<String, Integer> counts) {
-            snapshot = Optional.of(new PlayerInventorySnapshot(counts));
+            set(new PlayerInventorySnapshot(counts));
+        }
+
+        private void set(PlayerInventorySnapshot inventory) {
+            snapshot = Optional.of(inventory);
         }
 
         private void unavailable() {

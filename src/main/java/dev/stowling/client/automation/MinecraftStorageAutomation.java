@@ -126,7 +126,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
             });
         }
-        Set<String> keys = context.workspace().cacheContents(cache).map(Map::keySet).orElse(Set.of());
+        Set<String> present = context.workspace().cacheContents(cache)
+                .map(Map::keySet).orElse(Set.of());
+        Set<String> keys = context.workspace().mixedBoxWithdrawalItems(cache, present);
         List<String> ordered = new ArrayList<>(context.workspace().classificationItemOrder(keys));
         keys.stream().filter(key -> !ordered.contains(key)).forEach(ordered::add);
         for (String key : ordered) {
@@ -139,9 +141,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return Optional.of(new CachePackingBatch(context, cache, category, destination));
             }
         }
-        return context.workspace().cacheContents(cache).map(items -> items.keySet().stream()
-                .anyMatch(key -> ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key)))
-                .orElse(true)
+        return keys.stream().anyMatch(key -> ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key))
+                || present.stream().anyMatch(ItemIdentity::isMixedBox)
                 ? Optional.of(new CacheBoxBatch(context, cache)) : Optional.empty();
     }
 

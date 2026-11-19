@@ -1,3 +1,5 @@
+import base64
+import gzip
 import json
 import shutil
 import subprocess
@@ -29,7 +31,8 @@ const source = fs.readFileSync(process.argv[1], "utf8");
 globalThis.window = {};
 vm.runInThisContext(source, { filename: process.argv[1] });
 const result = vm.runInThisContext(`(${process.argv[2]})`);
-process.stdout.write(JSON.stringify(result));
+Promise.resolve(result).then((value) => process.stdout.write(JSON.stringify(value)))
+    .catch((error) => { process.stderr.write(String(error)); process.exitCode = 1; });
 """
 
 
@@ -44,6 +47,60 @@ def _run_model(expression: str) -> Any:
         text=True,
     )
     return json.loads(completed.stdout)
+
+
+def test_default_export_keeps_latest_classification_cycle_with_readable_counts() -> None:
+    result = _run_model(
+        """
+        (() => {
+            const event = { runId: "selected", phase: "TASK", step: "6.2.2.2",
+                module: "WITHDRAW_ITEMS", kind: "WAIT", operation: "wait", elapsedMillis: 0,
+                repeated: 0, time: "2026-11-19T14:00:00Z" };
+            const batch = { session: "s", events: [
+                { ...event, sequence: 1, details: "PREVIOUS_CYCLE" },
+                { ...event, sequence: 2, step: "6.2.2", module: "REPEAT", kind: "LOOP",
+                    details: "iteration=2" },
+                { ...event, sequence: 3, kind: "STEP", details: "开始取货" },
+                { ...event, sequence: 4, kind: "DECISION", details: "boxItems=979; nextLoad=0" },
+                { ...event, sequence: 5, details: "等待确认; collected={}; managed={"
+                    + "minecraft:shulker_box#" + "a".repeat(64) + "@minecraft:stone=1}" },
+                { ...event, sequence: 6, phase: "CLEANUP", kind: "ERROR", details: "收尾失败" },
+                { ...event, sequence: 7, runId: "other", details: "OTHER_RUN" }
+            ] };
+            return window.StowlingTaskMonitorModel.exportCurrentRun(batch, "selected",
+                { taskName: "全物品", state: "WAITING" });
+        })()
+        """
+    )
+    assert "PREVIOUS_CYCLE" not in result
+    assert "OTHER_RUN" not in result
+    assert "boxItems=979; nextLoad=0" in result
+    assert "收尾失败" in result
+    assert "任务背包：1 件" in result
+    assert "managed={" not in result
+    assert "全物品" in result
+
+
+def test_full_diagnostics_are_gzip_and_only_contain_the_requested_run() -> None:
+    result = _run_model(
+        """
+        (async () => {
+            if (typeof CompressionStream === "undefined") return { unsupported: true };
+            const batch = { session: "s", events: [
+                { runId: "selected", sequence: 1, details: "PREVIOUS_CYCLE_DIAGNOSTICS" },
+                { runId: "other", sequence: 2, details: "OTHER_RUN" }
+            ] };
+            const archive = await window.StowlingTaskMonitorModel.compressRunDiagnostics(
+                batch, "selected");
+            return { data: Buffer.from(await archive.arrayBuffer()).toString("base64") };
+        })()
+        """
+    )
+    if result.get("unsupported"):
+        pytest.skip("CompressionStream requires a newer Node.js runtime")
+    text = gzip.decompress(base64.b64decode(result["data"])).decode("utf-8")
+    assert "PREVIOUS_CYCLE_DIAGNOSTICS" in text
+    assert "OTHER_RUN" not in text
 
 
 def test_monitor_does_not_fill_with_unchanged_polling_but_keeps_progress_and_errors() -> None:

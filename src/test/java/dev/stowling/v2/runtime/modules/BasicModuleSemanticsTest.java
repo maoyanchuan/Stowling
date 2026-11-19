@@ -326,6 +326,69 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void completedPartialCategoryContinuesPackingOthersBeforeAnyFallbackWithdrawal() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget output = target(3, 64, 0, "chest");
+        List<String> categories = List.of("minecraft:cobblestone", "minecraft:granite",
+                "minecraft:diorite");
+        workspace.setResolvedCategories(List.of(output), Map.of(output, Set.copyOf(categories)),
+                List.of(cache));
+        workspace.selectNextContainer().orElseThrow();
+        List<String> processed = new java.util.ArrayList<>();
+        CapturingWithdrawal withdrawal = new CapturingWithdrawal();
+        TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        StorageAutomationPort storage = new StorageAutomationPort() {
+            @Override
+            public Optional<TaskModuleExecutor> unpackMixedBox(TaskExecutionContext context,
+                    ContainerTarget source) {
+                String next = categories.stream().filter(context.workspace()
+                        .remainingCacheCategories(source)::contains).findFirst().orElse(null);
+                if (next == null) return Optional.empty();
+                return Optional.of(new TaskModuleExecutor() {
+                    @Override
+                    public TaskModuleResult start() {
+                        processed.add(next);
+                        context.workspace().deferCacheCategory(next);
+                        return TaskModuleResult.succeeded("已合并，未满盒留在缓存");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        throw new AssertionError("a new packing stage must be started first");
+                    }
+
+                    @Override
+                    public void cancel() {
+                    }
+                });
+            }
+
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("partials must stay in cache");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                throw new AssertionError("no cleanup needed");
+            }
+        };
+        var module = new WithdrawItemsModule(contextWithStorage(base, storage),
+                TaskStep.action(UUID.randomUUID(), TaskModuleIds.WITHDRAW_ITEMS,
+                        Map.of(TaskModuleIds.TARGET_REF, "output:container")));
+        assertEquals(TaskModuleState.WAITING, module.start().state());
+        assertEquals(TaskModuleState.WAITING, module.tick().state());
+        assertEquals(TaskModuleState.SUCCEEDED, module.tick().state());
+        assertEquals(categories, processed);
+        assertTrue(withdrawal.matchingItemIds().isEmpty());
+        assertTrue(workspace.carriedItems().isEmpty());
+        assertTrue(!workspace.cacheHasMore());
+    }
+
+    @Test
     void mixedBoxBatchDrainPreservesConfirmedItemsOnFailureAndWaitsForSafeStop() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),

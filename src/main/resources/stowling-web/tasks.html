@@ -65,10 +65,10 @@
                         </div>
                         <label class="rail-caption" for="task-log-export-run">导出哪次运行</label>
                         <select id="task-log-export-run" aria-label="选择要导出的运行">
-                            <option value="">最近一次运行</option>
+                            <option value="">本次运行</option>
                         </select>
                         <label class="rail-caption checkbox-field">
-                            <input id="task-log-export-detailed" type="checkbox">完整接口日志
+                            <input id="task-log-export-detailed" type="checkbox">另存本次完整诊断压缩包
                         </label>
                         <div class="rail-log-actions" role="group" aria-label="日志操作">
                             <button id="export-task-logs" class="ghost compact"
@@ -80,7 +80,7 @@
                             <button id="show-run-details" class="ghost compact"
                                     type="button">运行详情</button>
                         </div>
-                        <p class="rail-caption">每次运行单独导出步骤、等待变化和异常；可选完整接口日志。</p>
+                        <p class="rail-caption">默认只导出最近一轮；需要排查更早循环时，再选择完整诊断压缩包。</p>
                         <div id="task-log-list" class="rail-log-list" role="log"
                              aria-label="任务状态日志" aria-live="off" tabindex="0"></div>
                     </section>

@@ -769,9 +769,69 @@
      * @returns {string}
      */
     function diagnosticMessage(event) {
-        return `[${event.phase} · ${event.step || "—"} · ${event.module}] `
-            + `${event.operation}: ${event.details}; elapsedMs=${event.elapsedMillis}`
-            + (event.repeated ? `; 其间省略相同轮询=${event.repeated}` : "");
+        return `${event.phase === "CLEANUP" ? "收尾" : "执行"} · 第 ${event.step || "—"} 步`
+            + ` · ${event.module}\n${readableDetails(event.details)}`
+            + (event.elapsedMillis ? `；已等待 ${event.elapsedMillis / 1000} 秒` : "")
+            + (event.repeated ? `；省略相同轮询 ${event.repeated} 次` : "");
+    }
+
+    /**
+     * @param {unknown} details
+     * @returns {string}
+     */
+    function readableDetails(details) {
+        return asText(details).replace(/;\s*(collected|managed)=\{([^}]*)\}/g,
+            (_match, kind, contents) => {
+                const counts = Array.from(contents.matchAll(/=(\d+)(?=, |$)/g),
+                    (match) => Number(match[1]));
+                const label = kind === "managed" ? "任务背包" : "已拾取";
+                return `；${label}：${counts.reduce((sum, count) => sum + count, 0)} 件`
+                    + `（${counts.length} 项）`;
+            }).replace(/#([a-f0-9]{8})[a-f0-9]{56}/g, "#$1");
+    }
+
+    /**
+     * @param {object} batch
+     * @param {string} runId
+     * @param {object} [run]
+     * @returns {string}
+     */
+    function exportCurrentRun(batch, runId, run = {}) {
+        const events = asObjects(batch.events).filter((event) => event.runId === runId);
+        const withdrawal = events.findLast((event) => event.module === "WITHDRAW_ITEMS"
+            && event.kind === "STEP");
+        const parent = withdrawal?.step.slice(0, withdrawal.step.lastIndexOf("."));
+        const cycle = withdrawal && events.findLast((event) => event.kind === "LOOP"
+            && event.step === parent && event.sequence <= withdrawal.sequence);
+        const selected = cycle ? events.filter((event) => event.sequence >= cycle.sequence) : events;
+        const lines = ["Stowling 本次运行日志", `任务：${run.taskName || "未命名任务"}`,
+            `运行编号：${runId}`, `状态：${RUN_STATE_LABELS[run.state] || run.state || "未知"}`,
+            cycle ? "仅导出最近一轮分类及其收尾，更早循环未附带。"
+                : "仅包含本次运行及其收尾；历史运行未导出。"];
+        if (batch.truncated) lines.push("较早记录可能已轮换，以下为当前保留记录。");
+        const previous = new Map();
+        for (const event of selected) {
+            if (["CALL", "RETURN"].includes(event.kind)) continue;
+            const key = [event.phase, event.step, event.module, event.kind, event.operation].join(":");
+            if (["WAIT", "STATE", "INVENTORY"].includes(event.kind)
+                    && previous.get(key) === event.details) continue;
+            previous.set(key, event.details);
+            const time = new Date(event.time).toLocaleString("zh-CN", { hour12: false });
+            lines.push("", `${time}  ${diagnosticLabel(event.kind)}`,
+                diagnosticMessage(event), `记录 ${event.sequence} · ${event.operation}`);
+        }
+        return lines.join("\n");
+    }
+
+    /**
+     * @param {object} batch
+     * @param {string} runId
+     * @returns {Promise<Blob>}
+     */
+    async function compressRunDiagnostics(batch, runId) {
+        const text = exportDiagnostics(batch, runId, true);
+        const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+        return new Response(stream).blob();
     }
 
     /**
@@ -824,6 +884,8 @@
         createLogBuffer,
         diagnosticMessage,
         exportDiagnostics,
+        exportCurrentRun,
+        compressRunDiagnostics,
         exportRuns,
         diagnosticLabel
     });

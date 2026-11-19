@@ -861,7 +861,7 @@
         elements.logCount.textContent = String(entries.length);
         const runs = Monitor.exportRuns(state.runs);
         const selected = elements.exportRun.value;
-        elements.exportRun.replaceChildren(new Option("最近一次运行", ""));
+        elements.exportRun.replaceChildren(new Option("本次运行", ""));
         for (const run of runs) {
             const time = new Date(run.startedAt).toLocaleString("zh-CN", { hour12: false });
             elements.exportRun.append(new Option(
@@ -916,13 +916,31 @@
             Stowling.handleError(error, "导出详细运行日志失败，请重试");
             return;
         }
-        const output = Monitor.exportDiagnostics(batch, runId, elements.exportDetailed.checked);
-        const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+        const run = state.runs.find((entry) => entry.runId === runId) || {};
+        const output = Monitor.exportCurrentRun(batch, runId, run);
+        const date = new Date().toISOString().replace(/[:.]/g, "-");
+        const name = `stowling-task-log-${runId}-${date}`;
+        downloadLog(new Blob([output], { type: "text/plain;charset=utf-8" }), `${name}.txt`);
+        if (elements.exportDetailed.checked) {
+            try {
+                const archive = await Monitor.compressRunDiagnostics(batch, runId);
+                downloadLog(archive, `${name}-full.txt.gz`);
+            } catch (error) {
+                Stowling.handleError(error, "本轮日志已导出，完整诊断压缩失败");
+            }
+        }
+    }
+
+    /**
+     * @param {Blob} blob
+     * @param {string} name
+     * @returns {void}
+     */
+    function downloadLog(blob, name) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        const date = new Date().toISOString().replace(/[:.]/g, "-");
-        link.download = `stowling-task-log-${runId}-${date}.txt`;
+        link.download = name;
         document.body.append(link);
         link.click();
         link.remove();

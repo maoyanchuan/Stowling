@@ -12,6 +12,17 @@ import org.junit.jupiter.api.Test;
 
 class MixedBoxSelectionTest {
     @Test
+    void completedPartialBoxCategoryIsNotSelectedAgainFromUnchangedCacheContents() {
+        TaskRunWorkspace workspace = workspace();
+        String stoneBox = "minecraft:shulker_box#stone@" + STONE;
+        String leafBox = "minecraft:shulker_box#leaves@" + LEAVES;
+        workspace.deferCacheCategory(STONE);
+        workspace.resetStorageSelection();
+        assertEquals(Set.of(leafBox), workspace.mixedBoxWithdrawalItems(CACHE,
+                Set.of(stoneBox, leafBox)));
+    }
+
+    @Test
     void dedicatedPartialSourcesCanDonateAndCompletedPartialCategoryStaysPut() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget partialA = target(10);

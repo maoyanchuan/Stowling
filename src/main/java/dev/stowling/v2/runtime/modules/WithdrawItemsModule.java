@@ -23,6 +23,8 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     private final boolean classificationBatch;
     private TaskModuleExecutor unpacking;
     private Map<String, Integer> beforeUnpacking = Map.of();
+    private Set<String> beforeUnpackingCategories = Set.of();
+    private boolean unpackingStarted;
     private boolean started;
     private boolean inFlight;
     private boolean stopRequested;
@@ -43,8 +45,10 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         started = true;
         if (classificationBatch) {
             beforeUnpacking = context.workspace().carriedItems();
+            beforeUnpackingCategories = context.workspace().remainingCacheCategories(target);
             unpacking = context.storageAutomation().unpackMixedBox(context, target).orElse(null);
             if (unpacking != null) {
+                unpackingStarted = true;
                 return handleUnpacking(unpacking.start());
             }
         }
@@ -72,6 +76,19 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
             context.workspace().setCacheHasMore(true);
             return TaskModuleResult.succeeded("缓存潜影盒与散货已组成批次，按仓储排版分类");
         }
+        Set<String> remaining = context.workspace().remainingCacheCategories(target);
+        if (!stopRequested && !remaining.equals(beforeUnpackingCategories)) {
+            dev.stowling.v2.runtime.TaskTrace.event("DECISION", "cache.nextPackingCategory",
+                    "已合并分类留在缓存，继续处理剩余分类；source=" + target.position()
+                            + "; remaining=" + remaining, 0, false);
+            beforeUnpacking = context.workspace().carriedItems();
+            beforeUnpackingCategories = remaining;
+            unpacking = context.storageAutomation().unpackMixedBox(context, target).orElse(null);
+            if (unpacking != null) {
+                unpackingStarted = false;
+                return TaskModuleResult.waiting("当前分类已合并，正在处理下一个分类");
+            }
+        }
         return stopRequested ? TaskModuleResult.succeeded("拆盒已确认，可安全停止")
                 : startWithdrawal();
     }
@@ -95,6 +112,10 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
             return start();
         }
         if (unpacking != null) {
+            if (!unpackingStarted) {
+                unpackingStarted = true;
+                return handleUnpacking(unpacking.start());
+            }
             return handleUnpacking(unpacking.tick());
         }
         if (!inFlight) {

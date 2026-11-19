@@ -28,12 +28,14 @@ final class MinecraftContainerVisit {
     private BlockPosition openRequested;
     private int openTicks;
     private int visitTicks;
+    private final MinecraftContainerOpenHand hand;
 
     MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target) {
         this.minecraft = minecraft;
         this.navigation = dev.stowling.v2.runtime.TaskTracePorts.wrap(NavigationPort.class,
                 navigation);
         this.target = target;
+        hand = new MinecraftContainerOpenHand(minecraft);
         entrances = new ArrayList<>(target.entrances());
         approach = new ContainerApproach(this.navigation, target.standingArea(), entrances);
     }
@@ -46,6 +48,10 @@ final class MinecraftContainerVisit {
         }
         if (openRequested != null) {
             if (minecraft.gui.screen() instanceof AbstractContainerScreen<?>) {
+                if (!MinecraftContainerInteractions.ready(minecraft.player.containerMenu)) {
+                    return TaskModuleResult.waiting("等待容器槽位同步后还原手持槽位");
+                }
+                hand.restore();
                 return TaskModuleResult.succeeded("已打开容器 " + target.position());
             }
             if (++openTicks <= OPEN_TIMEOUT_TICKS) {
@@ -53,6 +59,7 @@ final class MinecraftContainerVisit {
             }
             entrances.remove(openRequested);
             if (entrances.isEmpty()) {
+                hand.restore();
                 return TaskModuleResult.failed("已到操作位置，但容器未打开 " + target.position());
             }
             openTicks = 0;
@@ -75,11 +82,14 @@ final class MinecraftContainerVisit {
         if (status == NavigationStatus.NAVIGATING) {
             return TaskModuleResult.waiting("正在前往容器 " + target.position());
         }
-        openRequested = approach.reached();
-        BlockPos position = new BlockPos(openRequested.x(), openRequested.y(), openRequested.z());
+        BlockPosition reached = approach.reached();
+        BlockPos position = new BlockPos(reached.x(), reached.y(), reached.z());
         if (!minecraft.player.isWithinBlockInteractionRange(position, 0.0D)) {
-            return TaskModuleResult.failed("最终站位够不到容器 " + openRequested);
+            hand.restore();
+            return TaskModuleResult.failed("最终站位够不到容器 " + reached);
         }
+        if (!hand.prepare()) return TaskModuleResult.waiting("正在切换安全手持槽位以打开容器");
+        openRequested = reached;
         dev.stowling.v2.runtime.TaskTrace.event("CALL", "game.useItemOn",
                 "openContainer=" + openRequested, 0, false);
         var interaction = minecraft.gameMode.useItemOn(minecraft.player, InteractionHand.MAIN_HAND,
@@ -91,5 +101,6 @@ final class MinecraftContainerVisit {
 
     void cancelNavigation() {
         approach.cancel();
+        hand.restore();
     }
 }

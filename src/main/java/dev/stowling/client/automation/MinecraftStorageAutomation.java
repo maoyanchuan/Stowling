@@ -2127,7 +2127,34 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            recover(this::resolveDestinations);
+            recover(() -> steps.add(new Step(new TaskModuleExecutor() {
+                private dev.stowling.automation.PlayerInventorySnapshot previous;
+                private int stable;
+
+                @Override
+                public TaskModuleResult start() {
+                    return tick();
+                }
+
+                @Override
+                public TaskModuleResult tick() {
+                    var observed = context.inventory().observe();
+                    if (observed.isEmpty()) {
+                        return TaskModuleResult.failed("无法读取真实背包，收尾核对已停止");
+                    }
+                    var current = observed.orElseThrow().snapshot();
+                    stable = current.equals(previous) ? stable + 1 : 0;
+                    previous = current;
+                    if (stable < 4) return TaskModuleResult.waiting("等待背包稳定，核对实际收尾物品");
+                    context.inventory().reconcileMissingItems(
+                            context.workspace().inventoryAccount());
+                    return TaskModuleResult.succeeded("已核对实际收尾物品");
+                }
+
+                @Override
+                public void cancel() {
+                }
+            }, this::resolveDestinations)));
         }
 
         private void resolveDestinations() {
@@ -2207,7 +2234,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
         return candidates.stream().min(Comparator.comparingDouble(candidate ->
                 distance(candidate) + squared(candidate, target.position())))
-                .orElseThrow(() -> new IllegalStateException("附近没有可用打包位置，请指定单片打包区域"));
+                .orElseThrow(() -> new IllegalStateException("附近没有可用打包位置，请指定单片打包区域"
+                        + "；目标=" + target.position() + "；打包区域=" + allowed
+                        + "；需空置放盒和开盖空间，且下方为非容器的坚固方块"));
     }
 
     private boolean reserved(TaskExecutionContext context, BlockPosition position) {

@@ -120,9 +120,7 @@ public final class MinecraftContainerWithdrawalPort
             );
         }
         active = new ActiveWithdrawal(target, itemIds, classificationBatch);
-        if (target.partner() != null) {
-            active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
-        }
+        active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerWithdrawalResult.pending("正在打开缓存容器");
     }

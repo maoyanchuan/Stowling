@@ -77,9 +77,7 @@ public final class MinecraftContainerTransferPort
             );
         }
         active = new ActiveDeposit(target, remaining);
-        if (target.partner() != null) {
-            active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
-        }
+        active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerTransferResult.pending("正在打开容器", remaining);
     }

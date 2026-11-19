@@ -36,7 +36,9 @@ final class SelectStorageTargetModule implements TaskModuleExecutor {
                 itemSource, allowCacheFallback, context.storageAutomation().storageOrder(items))
                 .orElse(null);
         if (target == null) {
-            return TaskModuleResult.failed("没有可用的分类目的容器");
+            String reason = context.workspace().storageFailureReason();
+            return TaskModuleResult.failed("没有可用的分类目的容器"
+                    + (reason.isEmpty() ? "" : "；最后一次失败：" + reason));
         }
         if (context.workspace().selectedStorageUsesCacheFallback()) {
             return TaskModuleResult.succeeded("分类目的容器不可用，物品将存回缓存 "

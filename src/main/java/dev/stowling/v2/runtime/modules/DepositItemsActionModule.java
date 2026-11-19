@@ -102,7 +102,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 && context.workspace().isClassificationStorage(target) && packing.safeToStop()
                 && !context.storageAutomation().hasTemporaryResources(
                         context.workspace().inventoryAccount().ownerId())) {
-            context.workspace().markTargetUnavailable(target);
+            context.workspace().markTargetUnavailable(target, result.message());
             if (!itemsForSource(context, itemSource).isEmpty()) {
                 return TaskModuleResult.succeeded(result.message() + "；尝试同组下一箱");
             }
@@ -163,7 +163,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             context.workspace().markTargetUnavailable(target);
         }
         if (result.state() == ContainerTransferState.FAILED) {
-            context.workspace().markTargetUnavailable(target);
+            context.workspace().markTargetUnavailable(target, result.message());
             if (retryOnFailure && !itemsForSource(context, itemSource).isEmpty()) {
                 return TaskModuleResult.succeeded(
                         "目标容器已满或不可用，尝试下一个同类容器"

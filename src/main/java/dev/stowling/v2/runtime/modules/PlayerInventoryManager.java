@@ -366,6 +366,34 @@ public final class PlayerInventoryManager {
         return previous;
     }
 
+    /** Only call at a settled boundary with no placed boxes or unconfirmed transfers. */
+    public synchronized Map<String, Integer> reconcileMissingItems(PlayerInventoryAccount account) {
+        if (!available || previous.isEmpty() || protectedInventory == null) {
+            throw new IllegalStateException("无法读取真实背包，不能核对任务余料");
+        }
+        if (accounts.get(account.ownerId()) != account) {
+            throw new IllegalArgumentException("inventory account is not registered");
+        }
+        Map<String, Integer> reserved = new LinkedHashMap<>(protectedInventory.itemCounts());
+        classificationItems.forEach((key, count) -> reserved.merge(key, count, Math::addExact));
+        accounts.values().stream().filter(other -> other != account).forEach(other ->
+                other.managedItems().forEach((key, count) -> reserved.merge(key, count,
+                        Math::addExact)));
+        Map<String, Integer> missing = new LinkedHashMap<>();
+        account.managedItems().forEach((key, count) -> {
+            int actual = Math.max(0, previous.orElseThrow().count(key)
+                    - reserved.getOrDefault(key, 0));
+            if (count > actual) missing.put(key, count - actual);
+        });
+        if (!missing.isEmpty()) {
+            account.confirmDeposit("managed", missing, Map.of());
+            revision++;
+            dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.missing",
+                    "已核对真实背包，移除不存在的余料账目；未记为存入或交付: " + missing);
+        }
+        return Map.copyOf(missing);
+    }
+
     public record Observation(
             boolean baseline,
             PlayerInventorySnapshot snapshot,

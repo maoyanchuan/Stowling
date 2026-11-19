@@ -40,6 +40,7 @@ public final class TaskRunWorkspace {
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
     private final Set<ContainerTarget> unavailableTargets =
             new LinkedHashSet<>();
+    private String storageFailureReason = "";
     private Set<String> classifiedItemIds = Set.of();
     private final List<MarkerContainerScanAction.Target> markerTargets =
             new ArrayList<>();
@@ -399,6 +400,7 @@ public final class TaskRunWorkspace {
             return Optional.empty();
         }
         selectedContainer = containerCandidates.get(containerCursor++);
+        storageFailureReason = "";
         deferredCacheCategories.clear();
         triedStorage.clear();
         storageRoute.clear();
@@ -570,6 +572,7 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized void resetStorageSelection() {
+        storageFailureReason = "";
         triedStorage.clear();
         storageRoute.clear();
         selectedStorageTarget = null;
@@ -577,9 +580,18 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized void markTargetUnavailable(ContainerTarget target) {
+        markTargetUnavailable(target, "目标容器已满或不可用");
+    }
+
+    public synchronized void markTargetUnavailable(ContainerTarget target, String reason) {
         if (target != null) {
             unavailableTargets.add(target);
+            storageFailureReason = target.position() + "：" + reason;
         }
+    }
+
+    public synchronized String storageFailureReason() {
+        return storageFailureReason;
     }
 
     public synchronized boolean isRejectedStorage(ContainerTarget target) {

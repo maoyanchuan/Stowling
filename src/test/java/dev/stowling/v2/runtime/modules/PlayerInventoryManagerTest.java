@@ -16,6 +16,58 @@ import org.junit.jupiter.api.Test;
 
 class PlayerInventoryManagerTest {
     @Test
+    void settledCleanupRemovesPhantomRemainderWithoutCountingItAsDelivery() {
+        MutableInventory inventory = new MutableInventory();
+        inventory.set(Map.of("minecraft:diamond_pickaxe", 1));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.recordWithdrawn("minecraft:stone", 1293);
+        task.confirmDeposit("carried", Map.of("minecraft:stone", 1292), Map.of());
+        manager.observe();
+
+        assertEquals(Map.of("minecraft:stone", 1), manager.reconcileMissingItems(task));
+        assertTrue(task.managedItems().isEmpty());
+        assertTrue(task.itemsForSource("carried").isEmpty());
+        assertEquals(Map.of("minecraft:diamond_pickaxe", 1),
+                manager.expectedInventory().orElseThrow().itemCounts());
+    }
+
+    @Test
+    void cleanupKeepsRealTaskItemsAndReservesPersonalAndOtherTaskItems() {
+        MutableInventory inventory = new MutableInventory();
+        inventory.set(Map.of("minecraft:stone", 5));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        PlayerInventoryAccount other = manager.account(UUID.randomUUID());
+        other.recordWithdrawn("minecraft:stone", 3);
+        task.recordCollected("minecraft:stone", 10);
+        inventory.set(Map.of("minecraft:stone", 14));
+        manager.observe();
+
+        assertEquals(Map.of("minecraft:stone", 4), manager.reconcileMissingItems(task));
+        assertEquals(Map.of("minecraft:stone", 6), task.itemsForSource("collected"));
+        assertEquals(Map.of("minecraft:stone", 3), other.managedItems());
+        assertEquals(14, manager.expectedInventory().orElseThrow().count("minecraft:stone"));
+        assertTrue(manager.reconcileMissingItems(task).isEmpty());
+    }
+
+    @Test
+    void unavailableInventoryCannotEraseTaskReceipts() {
+        MutableInventory inventory = new MutableInventory();
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.recordWithdrawn("minecraft:stone", 64);
+        inventory.unavailable();
+        manager.observe();
+
+        assertThrows(IllegalStateException.class, () -> manager.reconcileMissingItems(task));
+        assertEquals(Map.of("minecraft:stone", 64), task.managedItems());
+    }
+
+    @Test
     void lateDropsBetweenTasksStayOwnedWhileUnrelatedIdleGiftsRemainProtected() {
         MutableInventory inventory = new MutableInventory();
         MutableClock clock = new MutableClock();

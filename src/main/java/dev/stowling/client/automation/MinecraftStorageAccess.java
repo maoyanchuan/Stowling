@@ -35,6 +35,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private int settle;
     private String pendingKey;
     private int pendingCount;
+    private long pickupsBefore;
     private StorageTransferConfirmation pendingConfirmation;
     private TaskModuleResult result;
 
@@ -122,6 +123,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         }
         if (pendingKey != null) {
             if (!pendingConfirmation.matches(count(menu, true, pendingKey),
+                    MinecraftInventoryPickups.count(minecraft, pendingKey) - pickupsBefore,
                     menu.getCarried().isEmpty(), () -> count(menu, false, pendingKey))) {
                 return TaskModuleResult.waiting(emptyBoxSupply
                         ? "等待确认空潜影盒进入背包" : "等待服务器确认精确存取");
@@ -152,6 +154,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         pendingKey = candidate.key();
         pendingCount = 0;
         int playerBefore = count(menu, true, pendingKey);
+        pickupsBefore = MinecraftInventoryPickups.count(minecraft, pendingKey);
         int containerBefore = count(menu, false, pendingKey);
         var batch = new ContainerInteractionBatch(pendingKey);
         while (candidate != null && batch.accepts(candidate.key(), candidate.clicks())) {

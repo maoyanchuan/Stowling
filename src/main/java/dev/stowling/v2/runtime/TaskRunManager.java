@@ -658,6 +658,7 @@ public final class TaskRunManager {
             registry.inventory().observe();
             if (!registry.storageAutomation().hasTemporaryResources(
                     active.workspace.inventoryAccount().ownerId())) {
+                registry.inventory().claimUnprotectedItems(active.workspace.inventoryAccount());
                 registry.inventory().claimUnexpected(active.workspace.inventoryAccount(), Set.of());
             }
         }

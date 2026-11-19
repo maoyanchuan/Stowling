@@ -71,6 +71,7 @@ final class DroppedItemCollectionEngine {
         this.inventory = inventory;
         this.clock = clock;
         this.lastProgressAt = clock.instant();
+        context.workspace().inventoryAccount().beginCollection(itemFilter);
     }
 
     TaskModuleResult start() {
@@ -211,9 +212,6 @@ final class DroppedItemCollectionEngine {
     }
 
     private void recordDropProgress(List<DroppedItem> drops) {
-        for (DroppedItem drop : drops) {
-            context.workspace().inventoryAccount().observePickupItem(drop.itemId());
-        }
         Set<DroppedItem> observed = Set.copyOf(drops);
         if (observed.equals(observedDrops)) {
             return;
@@ -265,7 +263,7 @@ final class DroppedItemCollectionEngine {
         if (startInventory == null || currentInventory == null) {
             return;
         }
-        inventory.claimObservedPickups(context.workspace().inventoryAccount(), itemFilter);
+        inventory.claimCollectionItems(context.workspace().inventoryAccount(), itemFilter);
         context.workspace().observeInventory(
                 currentInventory.itemCounts()
         );

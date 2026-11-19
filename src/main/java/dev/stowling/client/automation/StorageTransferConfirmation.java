@@ -15,7 +15,12 @@ record StorageTransferConfirmation(int expectedPlayer, OptionalInt expectedConta
     }
 
     boolean matches(int playerAfter, boolean cursorEmpty, IntSupplier containerAfter) {
-        return playerAfter == expectedPlayer && cursorEmpty
+        return matches(playerAfter, 0, cursorEmpty, containerAfter);
+    }
+
+    boolean matches(int playerAfter, long pickedUp, boolean cursorEmpty,
+            IntSupplier containerAfter) {
+        return pickedUp >= 0 && (long) playerAfter - pickedUp == expectedPlayer && cursorEmpty
                 && (expectedContainer.isEmpty()
                 || containerAfter.getAsInt() == expectedContainer.getAsInt());
     }

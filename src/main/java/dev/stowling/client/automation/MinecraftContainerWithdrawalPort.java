@@ -222,6 +222,7 @@ public final class MinecraftContainerWithdrawalPort
         active.pendingItemId = candidate.itemId();
         active.pendingCount = 0;
         active.playerBefore = playerItemCount(menu, candidate.itemId());
+        active.pickupsBefore = MinecraftInventoryPickups.count(minecraft, candidate.itemId());
         active.containerBefore = containerItemCount(menu, candidate.itemId());
         active.confirmationPolls = 0;
         active.deadline = Instant.now().plus(WITHDRAW_TIMEOUT);
@@ -247,7 +248,9 @@ public final class MinecraftContainerWithdrawalPort
         int moved = active.pendingCount;
         int playerAfter = playerItemCount(menu, active.pendingItemId);
         int containerAfter = containerItemCount(menu, active.pendingItemId);
-        boolean confirmed = playerAfter == active.playerBefore + moved
+        long pickedUp = MinecraftInventoryPickups.count(minecraft, active.pendingItemId)
+                - active.pickupsBefore;
+        boolean confirmed = pickedUp >= 0 && playerAfter - pickedUp == active.playerBefore + moved
                 && containerAfter == active.containerBefore - moved;
         if (active.confirmationPolls >= CONFIRM_POLLS
                 && confirmed
@@ -494,6 +497,7 @@ public final class MinecraftContainerWithdrawalPort
         private String pendingItemId = "";
         private int pendingCount;
         private int playerBefore;
+        private long pickupsBefore;
         private int containerBefore;
         private int confirmationPolls;
 

@@ -125,13 +125,13 @@ public final class PlayerInventoryManager {
         ).added();
     }
 
-    /** Takes only abandoned task receipts and items explicitly assigned in the browser. */
+    /** Claims collection gains, abandoned receipts, and explicit browser allocations. */
     public synchronized int claimUnexpected(
             PlayerInventoryAccount account,
             Set<String> itemFilter
     ) {
         register(account);
-        int claimed = claimObservedPickups(account, itemFilter);
+        int claimed = claimCollectionItems(account, itemFilter);
         protectUntrackedItems();
         for (UUID owner : Set.copyOf(abandonedAccounts)) {
             PlayerInventoryAccount abandoned = accounts.get(owner);
@@ -161,17 +161,26 @@ public final class PlayerInventoryManager {
         return claimed;
     }
 
-    /** Books actual gains of observed pickup identities, including arrivals between scans. */
-    public synchronized int claimObservedPickups(
+    /** Collection tasks own unprotected gains within their filter, even between entity scans. */
+    public synchronized int claimCollectionItems(
             PlayerInventoryAccount account,
             Set<String> itemFilter
     ) {
+        return claimUnassigned(account, key -> account.acceptsCollectionItem(key)
+                && TaskModuleSupport.itemMatches(key, itemFilter));
+    }
+
+    /** Used after in-flight operations finish, when cleanup must store all unprotected items. */
+    public synchronized int claimUnprotectedItems(PlayerInventoryAccount account) {
+        return claimUnassigned(account, key -> true);
+    }
+
+    private int claimUnassigned(PlayerInventoryAccount account,
+            java.util.function.Predicate<String> accepts) {
         register(account);
         int claimed = 0;
-        Set<String> observed = account.observedPickupItems();
         for (Map.Entry<String, Integer> entry : unassignedItems().entrySet()) {
-            if (observed.contains(entry.getKey())
-                    && TaskModuleSupport.itemMatches(entry.getKey(), itemFilter)) {
+            if (accepts.test(entry.getKey())) {
                 account.recordCollected(entry.getKey(), entry.getValue());
                 claimed = Math.addExact(claimed, entry.getValue());
             }

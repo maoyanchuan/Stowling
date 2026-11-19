@@ -37,7 +37,7 @@ class AssertPlayerInventoryRestoredModuleTest {
     void pickupArrivingAtTheFinalAssertionIsKeptForCleanupInsteadOfBecomingPersonal() {
         MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
         TaskRunWorkspace workspace = workspace(Map.of());
-        workspace.inventoryAccount().observePickupItem(GOLD);
+        workspace.inventoryAccount().beginCollection(Set.of(GOLD));
         AssertPlayerInventoryRestoredModule module = module(dropped, workspace);
         dropped.set(Map.of(GOLD, 3));
 

@@ -9,6 +9,59 @@ import org.junit.jupiter.api.Test;
 
 class DepositTransferPlanTest {
     @Test
+    void continuedDiscPickupsDoNotEraseTheOutgoingReceipt() {
+        int outgoing = DepositTransferPlan.outgoingCount(36, 36, 100, 108);
+        assertEquals(8, outgoing);
+        var first = DepositTransferPlan.observeConfirmation(8, -1, 0, outgoing, 8);
+        var second = DepositTransferPlan.observeConfirmation(8, first.delta(),
+                first.observations(), outgoing, 8);
+
+        assertTrue(second.stable());
+        assertEquals(8, second.delta());
+    }
+
+    @Test
+    void oneNonStackableItemMovesOnlyOneItemEvenWithManyEmptyDestinationSlots() {
+        DepositTransferPlan plan = DepositTransferPlan.create(36, 1,
+                List.of(new DepositTransferPlan.Destination(0, 1),
+                        new DepositTransferPlan.Destination(1, 1)));
+
+        assertEquals(1, plan.moveCount());
+        assertEquals(35, plan.remainingAfterConfirmed());
+        assertEquals(List.of(new DepositTransferPlan.Placement(0, 1)), plan.placements());
+    }
+
+    @Test
+    void receiptsHandlePartialRefillingAndEvenAnIncreasingInventoryCount() {
+        assertEquals(8, DepositTransferPlan.outgoingCount(36, 31, 100, 103));
+        assertEquals(8, DepositTransferPlan.outgoingCount(20, 22, 100, 110));
+        assertEquals(3, DepositTransferPlan.outgoingCount(36, 36, 100, 103));
+    }
+
+    @Test
+    void freshServerSnapshotCanSettleWithoutTheOldContainerNetDelta() {
+        var first = DepositTransferPlan.observeResynchronized(8, -1, 0, 8);
+        var second = DepositTransferPlan.observeResynchronized(8, first.delta(),
+                first.observations(), 8);
+
+        assertTrue(second.stable());
+        assertEquals(8, second.delta());
+        assertFalse(DepositTransferPlan.observeResynchronized(8, 8, 1, 9).stable());
+    }
+
+    @Test
+    void freshSnapshotCanSettleZeroOrPartialAcceptanceWithoutRetryingTheClick() {
+        var zero = DepositTransferPlan.observeResynchronized(8, -1, 0, -2);
+        assertTrue(DepositTransferPlan.observeResynchronized(8, zero.delta(),
+                zero.observations(), -2).stable());
+        var partial = DepositTransferPlan.observeResynchronized(8, -1, 0, 3);
+        var settled = DepositTransferPlan.observeResynchronized(8, partial.delta(),
+                partial.observations(), 3);
+        assertTrue(settled.stable());
+        assertEquals(3, settled.delta());
+    }
+
+    @Test
     void requestingTwoFromTenKeepsEightInSource() {
         DepositTransferPlan plan = DepositTransferPlan.create(
                 2,

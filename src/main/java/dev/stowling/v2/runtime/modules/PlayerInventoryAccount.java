@@ -11,7 +11,9 @@ public final class PlayerInventoryAccount {
     private final Map<String, Integer> collected = new LinkedHashMap<>();
     private final Map<String, Integer> carried = new LinkedHashMap<>();
     private final Map<String, Integer> managed = new LinkedHashMap<>();
-    private final Set<String> observedPickupItems = new java.util.LinkedHashSet<>();
+    private final Set<String> collectionFilters = new java.util.LinkedHashSet<>();
+    private boolean collectionStarted;
+    private boolean collectAll;
 
     public PlayerInventoryAccount(UUID ownerId) {
         this.ownerId = Objects.requireNonNull(ownerId, "ownerId");
@@ -25,12 +27,19 @@ public final class PlayerInventoryAccount {
         return Map.copyOf(managed);
     }
 
-    public synchronized void observePickupItem(String itemId) {
-        observedPickupItems.add(Objects.requireNonNull(itemId, "itemId"));
+    public synchronized void beginCollection(Set<String> itemFilter) {
+        collectionStarted = true;
+        collectAll |= itemFilter.isEmpty();
+        collectionFilters.addAll(itemFilter);
     }
 
-    public synchronized Set<String> observedPickupItems() {
-        return Set.copyOf(observedPickupItems);
+    public synchronized boolean acceptsCollectionItem(String itemId) {
+        return collectionStarted && (collectAll
+                || TaskModuleSupport.itemMatches(itemId, collectionFilters));
+    }
+
+    public synchronized boolean collecting() {
+        return collectionStarted;
     }
 
     public synchronized Map<String, Integer> itemsForSource(String source) {

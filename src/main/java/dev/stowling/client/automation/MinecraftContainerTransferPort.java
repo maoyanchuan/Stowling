@@ -97,6 +97,9 @@ public final class MinecraftContainerTransferPort
                     Map.of()
             );
         }
+        if (active.phase == Phase.RESYNCHRONIZING) {
+            return pollResynchronization();
+        }
         if (active.visit == null && Instant.now().isAfter(active.deadline)) {
             return timeout();
         }
@@ -105,6 +108,7 @@ public final class MinecraftContainerTransferPort
             case READY -> pollReady();
             case CONFIRMING -> pollConfirmation();
             case ROLLBACK -> pollRollback();
+            case RESYNCHRONIZING -> pollResynchronization();
         };
     }
 
@@ -204,6 +208,7 @@ public final class MinecraftContainerTransferPort
         active.pendingItemId = candidate.itemId();
         active.pendingCount = 0;
         active.playerBefore = playerItemCount(menu, candidate.itemId());
+        active.pickupsBefore = MinecraftInventoryPickups.count(minecraft, candidate.itemId());
         active.containerBefore = containerItemCount(menu, candidate.itemId());
         active.observedDelta = -1;
         active.observationPolls = 0;
@@ -248,8 +253,7 @@ public final class MinecraftContainerTransferPort
                 return beginRollback("服务器未完成拆分归还");
             }
         }
-        int playerDelta = active.playerBefore
-                - playerItemCount(menu, active.pendingItemId);
+        int playerDelta = pendingOutgoingCount(menu);
         int containerDelta = containerItemCount(menu, active.pendingItemId)
                 - active.containerBefore;
         DepositTransferPlan.TransferObservation observation =
@@ -400,8 +404,7 @@ public final class MinecraftContainerTransferPort
         if (active.pendingItemId.isEmpty()) {
             return finishFailure(message);
         }
-        int playerDelta = active.playerBefore
-                - playerItemCount(menu, active.pendingItemId);
+        int playerDelta = pendingOutgoingCount(menu);
         int containerDelta = containerItemCount(menu, active.pendingItemId)
                 - active.containerBefore;
         DepositTransferPlan.TransferObservation observation =
@@ -415,6 +418,9 @@ public final class MinecraftContainerTransferPort
         active.observedDelta = observation.delta();
         active.observationPolls = observation.observations();
         if (!observation.stable()) {
+            if (Instant.now().isAfter(active.deadline)) {
+                return beginResynchronization(message);
+            }
             return ContainerTransferResult.pending(
                     "等待服务器确认实际存入数量",
                     remaining()
@@ -424,6 +430,61 @@ public final class MinecraftContainerTransferPort
             return settleConfirmed(menu, observation.delta());
         }
         return finishFailure(message);
+    }
+
+    private int pendingOutgoingCount(AbstractContainerMenu menu) {
+        return DepositTransferPlan.outgoingCount(active.playerBefore,
+                playerItemCount(menu, active.pendingItemId), active.pickupsBefore,
+                MinecraftInventoryPickups.count(minecraft, active.pendingItemId));
+    }
+
+    private ContainerTransferResult beginResynchronization(String message) {
+        if (minecraft.player == null) return finishFailure("重新核对存入时玩家不可用");
+        if (!minecraft.player.containerMenu.getCarried().isEmpty()) {
+            return beginRollback(message);
+        }
+        closeContainer();
+        active.phase = Phase.RESYNCHRONIZING;
+        active.rollbackMessage = message;
+        active.observedDelta = -1;
+        active.observationPolls = 0;
+        active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target);
+        active.deadline = Instant.now().plus(OPEN_TIMEOUT);
+        return ContainerTransferResult.pending("正在重新读取原缓存，核对实际存入", remaining());
+    }
+
+    private ContainerTransferResult pollResynchronization() {
+        if (Instant.now().isAfter(active.deadline)) {
+            return finishFailure("重新读取缓存后仍无法核对存入数量，请检查容器或背包变化");
+        }
+        if (active.visit != null) {
+            TaskModuleResult visit = active.visit.tick();
+            if (visit.state() == TaskModuleState.FAILED) return finishFailure(visit.message());
+            if (visit.state() != TaskModuleState.SUCCEEDED) {
+                return ContainerTransferResult.pending(visit.message(), remaining());
+            }
+            AbstractContainerScreen<?> screen = currentContainerScreen();
+            if (screen == null || !MinecraftContainerInteractions.ready(screen.getMenu())) {
+                return ContainerTransferResult.pending("等待缓存完整服务器快照", remaining());
+            }
+            active.visit = null;
+            active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
+        }
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        if (screen == null || !screen.getMenu().getCarried().isEmpty()) {
+            return ContainerTransferResult.pending("等待重新核对的缓存界面", remaining());
+        }
+        AbstractContainerMenu menu = screen.getMenu();
+        var observation = DepositTransferPlan.observeResynchronized(active.pendingCount,
+                active.observedDelta, active.observationPolls, pendingOutgoingCount(menu));
+        active.observedDelta = observation.delta();
+        active.observationPolls = observation.observations();
+        if (!observation.stable()) {
+            return ContainerTransferResult.pending("核对缓存服务器快照中的实际存入量", remaining());
+        }
+        if (observation.delta() > 0) return settleConfirmed(menu, observation.delta());
+        clearPending();
+        return finishFailure("重新核对后没有确认到物品转出，尝试其他缓存");
     }
 
     private ContainerTransferResult succeed(String message) {
@@ -472,6 +533,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult awaitResolution(String message) {
+        if (!active.pendingItemId.isEmpty()) return beginResynchronization(message);
         active.phase = Phase.ROLLBACK;
         if (active.rollbackMessage.isEmpty()) {
             active.rollbackMessage = message;
@@ -480,6 +542,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult finishFailure(String message) {
+        if (active.visit != null) active.visit.cancelNavigation();
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen != null && !restoreCarried(screen.getMenu())) {
             return beginRollback(message);
@@ -692,7 +755,8 @@ public final class MinecraftContainerTransferPort
         OPENING,
         READY,
         CONFIRMING,
-        ROLLBACK
+        ROLLBACK,
+        RESYNCHRONIZING
     }
 
     private record TransferCandidate(
@@ -713,6 +777,7 @@ public final class MinecraftContainerTransferPort
         private int pendingCount;
         private int sourceSlot = -1;
         private int playerBefore;
+        private long pickupsBefore;
         private int containerBefore;
         private int observedDelta = -1;
         private int observationPolls;

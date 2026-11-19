@@ -135,6 +135,22 @@ final class DepositTransferPlan {
         );
     }
 
+    static int outgoingCount(int playerBefore, int playerAfter, long pickupsBefore,
+            long pickupsAfter) {
+        if (pickupsAfter < pickupsBefore) {
+            throw new IllegalStateException("拾取回执所属世界已改变");
+        }
+        return Math.toIntExact((long) playerBefore - playerAfter + pickupsAfter - pickupsBefore);
+    }
+
+    /** A reopened menu contains a fresh server snapshot, without local transfer predictions. */
+    static TransferObservation observeResynchronized(int pendingCount, int previousDelta,
+            int previousObservations, int outgoingCount) {
+        int confirmed = Math.max(0, outgoingCount);
+        return observeSettlement(pendingCount, previousDelta, previousObservations,
+                confirmed, confirmed);
+    }
+
     private static TransferObservation observe(
             int pendingCount,
             int previousDelta,

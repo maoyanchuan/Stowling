@@ -7,6 +7,18 @@ import org.junit.jupiter.api.Test;
 
 class StorageTransferConfirmationTest {
     @Test
+    void continuousPickupsAreExcludedFromDepositAndWithdrawalConfirmation() {
+        var deposit = StorageTransferConfirmation.exact(36, 0, -8);
+        assertTrue(deposit.matches(36, 8, true, () -> 8));
+        assertFalse(deposit.matches(36, 8, true, () -> 7));
+        assertFalse(deposit.matches(36, 8, false, () -> 8));
+
+        var withdrawal = StorageTransferConfirmation.exact(2, 16, 8);
+        assertTrue(withdrawal.matches(13, 3, true, () -> 8));
+        assertFalse(withdrawal.matches(13, 2, true, () -> 8));
+    }
+
+    @Test
     void refilledSupplyConfirmsOnlyOneNewBoxAndAnEmptyCursor() {
         StorageTransferConfirmation confirmation = StorageTransferConfirmation.emptyBoxSupply(2);
 

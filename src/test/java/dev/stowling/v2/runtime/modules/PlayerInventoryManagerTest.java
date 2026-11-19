@@ -24,12 +24,12 @@ class PlayerInventoryManagerTest {
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
-        task.observePickupItem(disc);
+        task.beginCollection(Set.of(disc));
 
         inventory.set(Map.of(disc, 34, tool, 1));
         manager.observe();
-        assertEquals(32, manager.claimObservedPickups(task, Set.of()));
-        assertEquals(0, manager.claimObservedPickups(task, Set.of()));
+        assertEquals(32, manager.claimCollectionItems(task, Set.of()));
+        assertEquals(0, manager.claimCollectionItems(task, Set.of()));
 
         // Deposit the first batch; a further disc is picked up on the way to the cache.
         task.confirmDeposit("collected", Map.of(disc, 32), Map.of());
@@ -48,13 +48,53 @@ class PlayerInventoryManagerTest {
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
-        task.observePickupItem("minecraft:stone#first");
+        task.beginCollection(Set.of("minecraft:stone#first"));
         inventory.set(Map.of("minecraft:stone#first", 8, "minecraft:stone#other", 4));
         manager.observe();
 
-        assertEquals(0, manager.claimObservedPickups(task, Set.of("minecraft:dirt")));
-        assertEquals(8, manager.claimObservedPickups(task, Set.of("minecraft:stone")));
+        assertEquals(0, manager.claimCollectionItems(task, Set.of("minecraft:dirt")));
+        assertEquals(8, manager.claimCollectionItems(task, Set.of("minecraft:stone")));
         assertEquals(Map.of("minecraft:stone#first", 8), task.managedItems());
+    }
+
+    @Test
+    void allItemCollectionClaimsEveryUnprotectedKindWithoutRequiringAnObservedEntity() {
+        String disc = "minecraft:music_disc_otherside";
+        String tool = "minecraft:diamond_pickaxe";
+        MutableInventory inventory = new MutableInventory();
+        inventory.set(Map.of(tool, 1, disc, 2));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.beginCollection(Set.of());
+        PlayerInventoryAccount other = manager.account(UUID.randomUUID());
+        other.recordWithdrawn("minecraft:stone", 4);
+        inventory.set(Map.of(tool, 1, disc, 34, "minecraft:stone", 7));
+        manager.observe();
+
+        assertEquals(35, manager.claimCollectionItems(task, Set.of()));
+        assertEquals(Map.of(disc, 32, "minecraft:stone", 3), task.managedItems());
+        assertEquals(Map.of("minecraft:stone", 4), other.managedItems());
+        assertEquals(0, manager.claimUnexpected(task, Set.of()));
+    }
+
+    @Test
+    void cleanupStoresUnprotectedItemsEvenWithoutAPreviousCollectionAction() {
+        String tool = "minecraft:diamond_pickaxe";
+        String disc = "minecraft:music_disc_otherside";
+        MutableInventory inventory = new MutableInventory();
+        inventory.set(Map.of(tool, 1, disc, 2));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        manager.observe();
+        PlayerInventoryAccount cleanup = manager.account(UUID.randomUUID());
+        inventory.set(Map.of(tool, 1, disc, 34));
+        manager.observe();
+
+        assertEquals(32, manager.claimUnprotectedItems(cleanup));
+        assertEquals(Map.of(disc, 32), cleanup.managedItems());
+        assertEquals(0, manager.claimUnprotectedItems(cleanup));
+        assertEquals(Map.of(tool, 1, disc, 34), manager.expectedInventory()
+                .orElseThrow().itemCounts());
     }
 
     @Test

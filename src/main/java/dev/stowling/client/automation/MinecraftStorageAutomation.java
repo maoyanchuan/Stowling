@@ -251,7 +251,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     private List<ContainerTarget> partialBoxContainers(TaskExecutionContext context,
-            StoragePolicy policy) {
+            StoragePolicy policy, StorageAutomationSettings configuration) {
         String encoded = policy.partialBoxDestinationRef();
         if (encoded == null) return List.of();
         var ref = dev.stowling.v2.model.ResourceReference.parse(encoded);
@@ -267,7 +267,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             regions = List.of(region);
         }
         return dev.stowling.automation.TemporaryContainerResolver.resolve(points, regions,
-                containerRegions, Set.copyOf(settings.resolved().emptyBoxContainers()),
+                containerRegions, Set.copyOf(configuration.emptyBoxContainers()),
                 "未满盒存放");
     }
 
@@ -326,7 +326,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             StoragePolicy policy = target.storagePolicy();
             if (policy.mode() != StorageMode.NORMAL && policy.partialBoxDestinationRef() != null
                     && visited.add(policy.partialBoxDestinationRef())) {
-                sources.addAll(partialBoxContainers(context, policy));
+                sources.addAll(partialBoxContainers(context, policy, settings.resolved()));
             }
         }
         return EmptyBoxSupplyPlan.sources(sources, null, List.of());
@@ -545,7 +545,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             List<ContainerTarget> destinations = MinecraftItemIdentity.full(box)
                     || target.storagePolicy().partialBoxDestinationRef() == null
-                    ? List.of(target) : partialBoxContainers(context, target.storagePolicy());
+                    ? List.of(target)
+                    : partialBoxContainers(context, target.storagePolicy(), configuration);
             storePackedBox(target, box, destinations, 0, after);
         }
 
@@ -810,7 +811,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            startCategory(partialBoxContainers(context, policy));
+            startCategory(partialBoxContainers(context, policy, configuration));
         }
 
         private void startCategory(List<ContainerTarget> configuredPartials) {
@@ -1053,13 +1054,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 Set<String> ordered = new LinkedHashSet<>(
                         context.workspace().classificationItemOrder(partialStock.keySet()));
                 ordered.addAll(partialStock.keySet());
+                Map<String, List<ContainerTarget>> retainedByDestination = new LinkedHashMap<>();
                 for (String next : ordered) {
                     List<ContainerTarget> targets = context.workspace().classificationTargets(next);
                     if (targets.isEmpty()) continue;
                     ContainerTarget target = targets.getFirst();
                     StoragePolicy nextPolicy = target.storagePolicy();
                     if (nextPolicy.mode() != StorageMode.BOX_ONLY) continue;
-                    List<ContainerTarget> retained = partialBoxContainers(context, nextPolicy);
+                    List<ContainerTarget> retained = retainedByDestination.computeIfAbsent(
+                            nextPolicy.partialBoxDestinationRef(),
+                            ignored -> partialBoxContainers(context, nextPolicy, configuration));
                     if (partialStock.get(next).stream()
                             .allMatch(source -> isRetainedPartialSource(source, retained))) {
                         continue;
@@ -1580,7 +1584,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (hasTemporaryResources(owner())) {
                 throw new IllegalStateException("上次潜影盒尚未回收，请先执行全局收尾");
             }
-            List<ContainerTarget> configuredPartials = partialBoxContainers(context, policy);
+            List<ContainerTarget> configuredPartials =
+                    partialBoxContainers(context, policy, configuration);
             if (policy.mode() == StorageMode.BOX_ONLY) {
                 partialSources = policy.partialBoxDestinationRef() == null
                         ? List.of(target) : configuredPartials;
@@ -1930,7 +1935,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         void initialize() {
             initialized = true;
-            partialSources = partialBoxContainers(context, target.storagePolicy()).stream()
+            partialSources = partialBoxContainers(context, target.storagePolicy(), configuration)
+                    .stream()
                     .filter(source -> !sameContainer(source, target)).toList();
             inspect(initialContents);
         }

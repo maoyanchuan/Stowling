@@ -128,12 +128,25 @@ def test_pure_partial_box_categories_prepare_in_the_same_withdrawal_when_space_r
     assert "remainingBatchSlots() > 0" in companion
     assert "RESERVED_INVENTORY_SLOTS" in companion
     assert "nextPolicy.mode() != StorageMode.BOX_ONLY" in companion
+    assert "retainedByDestination.computeIfAbsent(" in companion
+    assert "nextPolicy.partialBoxDestinationRef()," in companion
+    assert "partialBoxContainers(context, nextPolicy, configuration)" in companion
     assert "allMatch(source -> isRetainedPartialSource(source, retained))" in companion
     assert companion.index("startCategory(retained)") < companion.index("gatherOtherCategories(0)")
     assert "preparedCategories.add(category)" in batch
     assert "!preparedCategories.contains(next)" in batch
     assert "!ItemIdentity.MIXED_BOX_CATEGORY.equals(next)" in batch
     assert "int slots = remainingBatchSlots();" in batch
+
+
+def test_partial_box_lookup_uses_resolved_settings() -> None:
+    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
+    lookup = source.split("private List<ContainerTarget> partialBoxContainers(", 1)[1].split(
+        "private static boolean sameContainer(", 1
+    )[0]
+    assert "configuration.emptyBoxContainers()" in lookup
+    assert "settings.resolved()" not in lookup
 
 
 def test_box_only_refill_space_comes_from_the_configured_partial_cache() -> None:

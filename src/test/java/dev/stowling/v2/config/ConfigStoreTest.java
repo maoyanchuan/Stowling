@@ -1,6 +1,7 @@
 package dev.stowling.v2.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,24 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigStoreTest {
     @TempDir
     Path directory;
+
+    @Test
+    void reusesValidatedConfigAndDetectsSameLengthExternalEdits() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        ConfigStore store = new ConfigStore(path);
+        var initial = store.loadOrReset();
+        var coordinate = new CoordinatePoint(UUID.randomUUID(), "Before", 0, 64, 0);
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(coordinate), List.of());
+        var saved = store.save(initial.revision(), config);
+        assertSame(saved, store.read());
+
+        Files.writeString(path, Files.readString(path).replace("\"Before\"", "\"Edited\""));
+        var edited = store.read();
+        assertEquals("Edited", edited.config().coordinates().getFirst().name());
+        assertSame(edited, store.read());
+        assertThrows(V2RevisionConflictException.class, () -> store.save(saved.revision(), config));
+    }
 
     @Test
     void preservesWholeStorageMappingAfterRestart() throws Exception {

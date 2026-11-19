@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -32,6 +33,8 @@ public final class ConfigStore {
             .create();
 
     private final Path path;
+    private byte[] validatedBytes;
+    private V2ConfigSnapshot validatedSnapshot;
 
     public ConfigStore(Path path) {
         this.path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
@@ -62,6 +65,9 @@ public final class ConfigStore {
     public synchronized V2ConfigSnapshot read() {
         try {
             byte[] bytes = Files.readAllBytes(path);
+            if (Arrays.equals(bytes, validatedBytes)) {
+                return validatedSnapshot;
+            }
             AppConfig parsed = parseConfig(
                     new String(bytes, StandardCharsets.UTF_8)
             );
@@ -70,7 +76,9 @@ public final class ConfigStore {
             }
             AppConfig config = TaskFlowNormalizer.normalize(parsed);
             ConfigValidator.requireValid(config);
-            return new V2ConfigSnapshot(revision(bytes), config);
+            validatedSnapshot = new V2ConfigSnapshot(revision(bytes), config);
+            validatedBytes = bytes;
+            return validatedSnapshot;
         } catch (IOException | JsonParseException exception) {
             throw new V2ValidationException("configuration cannot be read");
         }

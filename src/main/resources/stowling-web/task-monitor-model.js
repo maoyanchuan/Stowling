@@ -550,6 +550,7 @@
         let serial = 0;
         let diagnosticSession = "";
         let diagnosticCursor = 0;
+        const diagnosticFingerprints = new Map();
 
         /**
          * @param {object} batch
@@ -560,12 +561,22 @@
             if (diagnosticSession !== batch.session) {
                 diagnosticSession = batch.session;
                 diagnosticCursor = 0;
+                diagnosticFingerprints.clear();
             }
             const names = new Map(runs.map((run) => [run.runId, run]));
             let added = 0;
             for (const event of asObjects(batch.events)) {
                 if (event.sequence <= diagnosticCursor) continue;
                 diagnosticCursor = event.sequence;
+                const key = [event.runId, event.phase, event.step, event.kind,
+                    event.operation].join(":");
+                if (!["ERROR", "TIMEOUT", "STEP", "RESULT", "DECISION"].includes(event.kind)
+                        && diagnosticFingerprints.get(key) === event.details) continue;
+                diagnosticFingerprints.delete(key);
+                diagnosticFingerprints.set(key, event.details);
+                if (diagnosticFingerprints.size > 2000) {
+                    diagnosticFingerprints.delete(diagnosticFingerprints.keys().next().value);
+                }
                 const run = names.get(event.runId);
                 append({
                     id: `diagnostic:${batch.session}:${event.sequence}`,
@@ -720,6 +731,7 @@
          */
         function clearEntries() {
             records.length = 0;
+            diagnosticFingerprints.clear();
         }
 
         /**

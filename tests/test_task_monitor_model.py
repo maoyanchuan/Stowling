@@ -46,6 +46,31 @@ def _run_model(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_monitor_does_not_fill_with_unchanged_polling_but_keeps_progress_and_errors() -> None:
+    result = _run_model(
+        """
+        (() => {
+            const log = window.StowlingTaskMonitorModel.createLogBuffer(300);
+            const event = { sequence: 1, runId: "run", phase: "TASK", step: "1",
+                module: "STORE", kind: "WAIT", operation: "confirm", details: "actual=0",
+                elapsedMillis: 0, repeated: 0, time: "2026-11-19T13:00:00Z" };
+            const batch = (events) => ({ session: "s", events });
+            log.ingestDiagnostics(batch([event]));
+            const unchanged = log.ingestDiagnostics(batch([
+                { ...event, sequence: 2, elapsedMillis: 1000 }
+            ]));
+            const progress = log.ingestDiagnostics(batch([
+                { ...event, sequence: 3, details: "actual=64" },
+                { ...event, sequence: 4, kind: "ERROR", details: "failed" },
+                { ...event, sequence: 5, kind: "ERROR", details: "failed" }
+            ]));
+            return { unchanged, progress, count: log.entries().length };
+        })()
+        """
+    )
+    assert result == {"unchanged": 0, "progress": 3, "count": 4}
+
+
 def test_run_exports_are_separate_and_compact_without_losing_errors() -> None:
     result = _run_model(
         """

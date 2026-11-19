@@ -7,6 +7,31 @@ import dev.stowling.v2.model.StoragePolicy;
 import org.junit.jupiter.api.Test;
 
 class CachePackingBatchPlanTest {
+    @Test
+    void fullBoxOnlyStillConsolidatesPartialsEvenBeforeTheyCanBeDelivered() {
+        StoragePolicy fullOnly = new StoragePolicy(StorageMode.BOX_ONLY, 0, false, null);
+        var split = CachePackingBatchPlan.calculate(fullOnly, 0, 3 * 64, 64, 64, 0, 0);
+        assertEquals(2 * 64, split.nextLoad());
+        assertEquals(0, split.plannedBoxes());
+        var merged = CachePackingBatchPlan.calculate(fullOnly, 0, 3 * 64, 3 * 64, 64, 0, 0);
+        assertEquals(0, merged.nextLoad());
+        assertEquals(0, merged.plannedBoxes());
+        assertEquals(64, CachePackingBatchPlan.calculate(fullOnly, 64, 64, 64, 64, 0, 0)
+                .nextLoad());
+    }
+
+    @Test
+    void secondaryBoxCategoriesMustCompleteTheirOwnCachePackingFirst() {
+        for (StorageMode mode : new StorageMode[] {StorageMode.BOX_ONLY, StorageMode.MIXED}) {
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    CachePackingBatchPlan.canShareUnpreparedBatch(mode, false));
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    CachePackingBatchPlan.canShareUnpreparedBatch(mode, true));
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(
+                CachePackingBatchPlan.canShareUnpreparedBatch(StorageMode.NORMAL, false));
+    }
+
     private static final StoragePolicy BOXES = new StoragePolicy(StorageMode.BOX_ONLY, 0, true, null);
 
     @Test

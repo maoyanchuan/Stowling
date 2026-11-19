@@ -1201,8 +1201,11 @@ public final class TaskRunManager {
             String message
     ) {
         TaskRunSnapshot old = active.snapshot;
-        diagnostics.append(old.runId(), "TASK", "", "RUN", "STATE", state.name(), message,
-                0, true);
+        if (old.state() != state || old.completedSteps() != completedSteps
+                || !old.message().equals(message)) {
+            diagnostics.append(old.runId(), "TASK", "", "RUN", "STATE", state.name(), message,
+                    0, true);
+        }
         active.snapshot = new TaskRunSnapshot(
                 old.runId(),
                 old.taskId(),

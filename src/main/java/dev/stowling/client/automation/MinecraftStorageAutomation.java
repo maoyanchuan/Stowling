@@ -121,7 +121,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (destination.storagePolicy().mode() != StorageMode.NORMAL) {
                 return Optional.of(new CachePackingBatch(context, cache, category, destination));
             }
-            break;
         }
         return context.workspace().cacheContents(cache).map(items -> items.keySet().stream()
                 .anyMatch(key -> ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key)))
@@ -917,6 +916,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 int tail = Math.max(0, sum(rawOwned()) - looseDeficit - existingBoxSpace);
                 if (tail > 0 && ownedEmptyBox(owned()).isEmpty() && cleanupAvailable()) {
                     withdrawEmptyBox(0, ignored -> {});
+                } else if (EmptyBoxSupplyPlan.canReturnUnusedBoxes(owned(),
+                        inventoryStacks().stream().filter(MinecraftStorageAutomation::isEmptyBox)
+                                .map(MinecraftItemIdentity::key)
+                                .collect(java.util.stream.Collectors.toSet()))) {
+                    returnEmptyBoxes(emptyBoxReturnsForSources(sources), () -> {});
                 }
                 return;
             }
@@ -926,6 +930,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .collect(java.util.stream.Collectors.toSet());
             Set<String> keys = context.workspace().mixedBoxWithdrawalItems(source, present).stream()
                     .filter(key -> !category.equals(ItemIdentity.category(key)))
+                    .filter(key -> CachePackingBatchPlan.canShareUnpreparedBatch(
+                            context.workspace().classificationTargets(ItemIdentity.category(key))
+                                    .stream().findFirst().map(target -> target.storagePolicy().mode())
+                                    .orElse(StorageMode.BOX_ONLY),
+                            cacheSnapshots.get(source.position()).stream().anyMatch(stack ->
+                                    MinecraftItemIdentity.key(stack).equals(key)
+                                            && MinecraftItemIdentity.isBox(stack)
+                                            && MinecraftItemIdentity.full(stack))))
                     .collect(java.util.stream.Collectors.toSet());
             if (keys.isEmpty()) {
                 gatherOtherCategories(index + 1);

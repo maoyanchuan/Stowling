@@ -30,9 +30,14 @@ public record CachePackingBatchPlan(int looseReserved, int materialToPack, int p
         boolean partial = policy.allowPartialBoxes() && finishPartial;
         int boxes = packing / capacity + (partial && packing % capacity > 0 ? 1 : 0);
         int planned = Math.min(StoragePackingPlanner.BOX_SLOTS, fullBoxes + boxes);
+        boolean needsConsolidation = partialItems > 0 && packing > keeperItems;
         int load = fullBoxes >= StoragePackingPlanner.BOX_SLOTS
-                || !partial && packing < capacity ? 0
+                || !partial && packing < capacity && !needsConsolidation ? 0
                 : Math.max(0, Math.min(capacity, packing) - keeperItems);
         return new CachePackingBatchPlan(reserve, packing, planned, load);
+    }
+
+    public static boolean canShareUnpreparedBatch(StorageMode mode, boolean fullBox) {
+        return mode == StorageMode.NORMAL || fullBox;
     }
 }

@@ -11,6 +11,7 @@
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "坐标" },
         { page: "tasks", href: "/tasks.html", label: "任务管理" },
+        { page: "backpack", href: "/backpack.html", label: "背包管理" },
         { page: "storage", href: "/storage.html", label: "库存管理" }
     ]);
     const connectedHandlers = new Set();

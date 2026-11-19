@@ -19,6 +19,11 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.AutoClassifyTaskFactory;
+import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.runtime.TaskRunManager;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +37,63 @@ class GlobalPlayerInventoryTest {
     private static final String GOLD = "minecraft:gold_ingot";
 
     @Test
-    void idleRuntimeDetectsInventoryPickupsWithoutAnyGroundItem() {
+    void toolGivenImmediatelyBeforeStartingATaskIsNotClaimedByItsSyncStep() {
+        InventorySource source = new InventorySource(Map.of());
+        TaskModuleRuntimeRegistry registry = registry(source);
+        TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
+        runs.tick();
+        source.set(Map.of("minecraft:diamond_pickaxe#new", 1));
+        TaskDefinition task = new TaskDefinition(UUID.randomUUID(), "Sync", List.of(
+                TaskStep.action(UUID.randomUUID(), TaskModuleIds.SYNC_PLAYER_INVENTORY, Map.of())));
+
+        runs.start(task, List.of());
+        for (int tick = 0; tick < 45; tick++) runs.tick();
+
+        assertFalse(runs.busy());
+        var item = runs.playerInventory().items().getFirst();
+        assertEquals(1, item.protectedCount());
+        assertEquals(0, item.taskCount());
+        assertEquals(0, item.classificationCount());
+    }
+
+    @Test
+    void browserItemsCanStartReconciliationWithOnlyBackgroundClassificationEnabled() {
+        InventorySource source = new InventorySource(Map.of(IRON, 5));
+        TaskModuleRuntimeRegistry registry = registry(source);
+        TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
+        var point = new CoordinatePoint(UUID.randomUUID(), "Pickup", 0, 64, 0);
+        var cache = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 1);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Storage", List.of(
+                new CategoryBindingDefinition(UUID.randomUUID(),
+                        new AreaBounds(5, 64, 1, 5, 64, 1),
+                        new AreaBounds(5, 64, 0, 5, 64, 0), "DIRECT_BLOCK_ID")));
+        var definition = new AutoClassifyDefinition(UUID.randomUUID(), "Automatic",
+                true, false, true, "coordinate:" + point.id(), 2, "region:" + cache.id(),
+                List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id(),
+                        "DIRECT_BLOCK_ID", List.of(CategoryMarkerSource.PLACED_ITEM))),
+                TaskPriority.NORMAL);
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
+                AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(cache),
+                List.of(zone), List.of(), List.of(), List.of(definition));
+        runs.refreshTriggers(config);
+        runs.tick();
+        var before = runs.playerInventory();
+        assertTrue(before.classificationAvailable());
+
+        runs.allocatePlayerInventory(before.revision(), IRON, 2);
+        runs.tick();
+
+        assertTrue(runs.busy());
+        var item = runs.playerInventory().items().getFirst();
+        assertEquals(2, item.protectedCount());
+        assertEquals(3, item.taskCount());
+        assertEquals(0, item.classificationCount());
+        assertThrows(IllegalStateException.class,
+                () -> runs.allocatePlayerInventory(runs.playerInventory().revision(), IRON, 0));
+    }
+
+    @Test
+    void idleRuntimeKeepsNewItemsInsteadOfStartingClassification() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         TaskModuleRuntimeRegistry registry = registry(source);
         TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
@@ -55,16 +116,14 @@ class GlobalPlayerInventoryTest {
         source.set(Map.of(IRON, 5, GOLD, 3));
         runs.tick();
 
-        assertEquals(1, runs.runs().size());
-        assertEquals(definition.id(), runs.runs().getFirst().taskId());
-        assertEquals(TaskPriority.BACKGROUND, runs.runs().getFirst().priority());
+        assertTrue(runs.runs().isEmpty());
         assertEquals(Map.of(IRON, 5, GOLD, 3), registry.inventory()
                 .expectedInventory().orElseThrow().itemCounts());
         assertTrue(registry.inventory().unassignedItems().isEmpty());
     }
 
     @Test
-    void pickupsBetweenTasksKeepTheirGlobalIdentity() {
+    void giftsBetweenTasksBecomeProtectedPersonalItems() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
@@ -74,11 +133,13 @@ class GlobalPlayerInventoryTest {
         manager.observe();
         PlayerInventoryAccount classification = manager.account(UUID.randomUUID());
 
-        assertEquals(3, manager.claimUnexpected(classification, Set.of()));
-        assertEquals(Map.of(GOLD, 3), classification.managedItems());
-        classification.confirmDeposit("collected", Map.of(GOLD, 3), Map.of());
+        assertEquals(0, manager.claimUnexpected(classification, Set.of()));
+        assertTrue(classification.managedItems().isEmpty());
+        assertEquals(Map.of(IRON, 5, GOLD, 3), manager.expectedInventory()
+                .orElseThrow().itemCounts());
         source.set(Map.of(IRON, 5));
         manager.observe();
+        manager.protectUntrackedItems();
         manager.closeAccount(classification);
 
         assertFalse(manager.needsRecovery());
@@ -86,20 +147,21 @@ class GlobalPlayerInventoryTest {
     }
 
     @Test
-    void depositAndSameItemPickupCanCancelOutWithoutLosingThePickup() {
+    void confirmedTaskWithdrawalsStaySeparateFromUntrackedSameItemAdditions() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
         PlayerInventoryAccount account = manager.account(UUID.randomUUID());
         source.set(Map.of(IRON, 15));
         manager.observe();
-        assertEquals(10, manager.claimUnexpected(account, Set.of()));
-        account.confirmDeposit("collected", Map.of(IRON, 10), Map.of());
+        manager.recordWithdrawn(account, Map.of(IRON, 10));
+        account.confirmDeposit("carried", Map.of(IRON, 10), Map.of());
         source.set(Map.of(IRON, 8));
         manager.observe();
 
-        assertEquals(3, manager.claimUnexpected(account, Set.of()));
-        assertEquals(Map.of(IRON, 3), account.managedItems());
+        assertEquals(0, manager.claimUnexpected(account, Set.of()));
+        assertTrue(account.managedItems().isEmpty());
+        assertEquals(Map.of(IRON, 8), manager.expectedInventory().orElseThrow().itemCounts());
         assertEquals(0, manager.claimUnexpected(account, Set.of()));
     }
 
@@ -138,8 +200,10 @@ class GlobalPlayerInventoryTest {
                 .orElseThrow().itemCounts());
         source.set(Map.of(IRON, 5, GOLD, 10));
         manager.observe();
-        assertEquals(2, manager.claimUnexpected(cleanup, Set.of()));
-        assertEquals(Map.of(GOLD, 2), cleanup.managedItems());
+        assertEquals(0, manager.claimUnexpected(cleanup, Set.of()));
+        assertTrue(cleanup.managedItems().isEmpty());
+        assertEquals(Map.of(IRON, 5, GOLD, 10), manager.expectedInventory()
+                .orElseThrow().itemCounts());
     }
 
     @Test
@@ -178,15 +242,20 @@ class GlobalPlayerInventoryTest {
     }
 
     @Test
-    void filterLeavesOtherPickupsAvailableForTheNextTask() {
+    void filterLeavesOtherExplicitClassificationItemsForTheNextTask() {
         InventorySource source = new InventorySource(Map.of());
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
         source.set(Map.of(IRON, 5, GOLD, 3));
         manager.observe();
+        manager.protectUntrackedItems();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 0);
+        manager.allocate(manager.view(false, true, Map.of()).revision(), GOLD, 0);
 
         assertEquals(5, manager.claimUnexpected(manager.account(UUID.randomUUID()), Set.of(IRON)));
-        assertEquals(Map.of(GOLD, 3), manager.unassignedItems());
+        assertEquals(3, manager.view(false, true, Map.of()).items().stream()
+                .filter(item -> item.key().equals(GOLD)).findFirst().orElseThrow()
+                .classificationCount());
         assertEquals(3, manager.claimUnexpected(manager.account(UUID.randomUUID()), Set.of(GOLD)));
         assertTrue(manager.unassignedItems().isEmpty());
     }

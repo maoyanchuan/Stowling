@@ -30,6 +30,15 @@ public interface V2ControlService {
 
     List<InventoryInfo> inventory();
 
+    default PlayerInventoryResponse playerInventory() {
+        throw new UnsupportedOperationException("player inventory unavailable");
+    }
+
+    default PlayerInventoryResponse allocatePlayerInventory(String revision, String key,
+            int keepCount) {
+        throw new UnsupportedOperationException("player inventory unavailable");
+    }
+
     ModuleListResponse modules();
 
     CoordinateListResponse coordinates();

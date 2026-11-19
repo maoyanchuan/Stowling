@@ -9,12 +9,19 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
+import dev.stowling.automation.DroppedItem;
+import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2ControlServiceImpl;
 import dev.stowling.v2.runtime.TaskRunManager;
+import dev.stowling.v2.runtime.modules.TaskModuleRuntimeRegistry;
+import dev.stowling.v2.runtime.modules.StandardTaskModuleFactories;
+import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskStep;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -23,10 +30,74 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
+    @Test
+    void backpackAllocationRequiresAuthenticationAndRejectsStaleOrRunningChanges()
+            throws Exception {
+        ConfigStore store = new ConfigStore(directory.resolve("backpack.json"));
+        store.loadOrReset();
+        var navigation = new FailedNavigation();
+        var base = TaskModuleRuntimeRegistry.unavailablePorts(navigation);
+        DroppedItemObserverPort drops = new DroppedItemObserverPort() {
+            @Override
+            public List<DroppedItem> observe(BlockPosition center, int radius) {
+                return List.of();
+            }
+
+            @Override
+            public List<DroppedItem> observe(RegionDefinition region) {
+                return List.of();
+            }
+
+            @Override
+            public Optional<Map<String, Integer>> playerItemCounts() {
+                return Optional.of(Map.of("minecraft:stone", 64));
+            }
+        };
+        var registry = new TaskModuleRuntimeRegistry(navigation, drops, base.containerRegions(),
+                base.containerTransfers(), base.containerWithdrawals(), base.containerInspections(),
+                base.categoryMarkerCache(), base.foodConsumption(), base.categoryZones(),
+                StandardTaskModuleFactories.create());
+        var runs = new TaskRunManager(navigation, registry);
+        runs.tick();
+        try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
+            for (String asset : List.of("/backpack.html", "/backpack.js", "/backpack-model.js")) {
+                assertEquals(200, fixture.send(asset, "GET", null, false).statusCode());
+            }
+            assertEquals(401, fixture.send("/v1/player-inventory", "GET", null, false).statusCode());
+            JsonObject view = object(fixture.send("/v1/player-inventory", "GET", null, true));
+            JsonObject allocation = new JsonObject();
+            allocation.addProperty("revision", view.get("revision").getAsString());
+            allocation.addProperty("key", "minecraft:stone");
+            allocation.addProperty("keepCount", 16);
+            assertEquals(401, fixture.send("/v1/player-inventory", "PUT",
+                    allocation.toString(), false).statusCode());
+            HttpResponse<String> saved = fixture.send("/v1/player-inventory", "PUT",
+                    allocation.toString(), true);
+            assertEquals(200, saved.statusCode());
+            JsonObject item = object(saved).getAsJsonArray("items").get(0).getAsJsonObject();
+            assertEquals(16, item.get("protectedCount").getAsInt());
+            assertEquals(48, item.get("classificationCount").getAsInt());
+            assertEquals(409, fixture.send("/v1/player-inventory", "PUT",
+                    allocation.toString(), true).statusCode());
+            allocation.addProperty("revision", object(saved).get("revision").getAsString());
+            allocation.addProperty("keepCount", -1);
+            assertEquals(400, fixture.send("/v1/player-inventory", "PUT",
+                    allocation.toString(), true).statusCode());
+            allocation.addProperty("keepCount", 0);
+            runs.start(new TaskDefinition(UUID.randomUUID(), "Busy", List.of(TaskStep.action(
+                    UUID.randomUUID(), "SYNC_PLAYER_INVENTORY", Map.of()))), List.of());
+            assertEquals(409, fixture.send("/v1/player-inventory", "PUT",
+                    allocation.toString(), true).statusCode());
+        }
+    }
+
     @Test
     void acceptsWholeStorageForRotatedSlicesAndKeepsItOnEveryCopy() throws Exception {
         try (Fixture fixture = fixture()) {

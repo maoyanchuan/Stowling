@@ -39,7 +39,9 @@ final class AssertPlayerInventoryRestoredModule
         if (observed.isEmpty()) {
             return TaskModuleResult.failed("无法读取任务结束时的背包快照");
         }
-        PlayerInventorySnapshot expected = initial.orElseThrow();
+        context.inventory().observe();
+        context.inventory().protectUntrackedItems();
+        PlayerInventorySnapshot expected = context.inventory().expectedInventory().orElseThrow();
         PlayerInventorySnapshot current = new PlayerInventorySnapshot(
                 observed.orElseThrow()
         );

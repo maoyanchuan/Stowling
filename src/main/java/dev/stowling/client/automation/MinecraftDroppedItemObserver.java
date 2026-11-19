@@ -25,6 +25,7 @@ public final class MinecraftDroppedItemObserver
         implements DroppedItemObserverPort {
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private volatile Map<String, String> itemNames = Map.of();
 
     public MinecraftDroppedItemObserver(
             Minecraft minecraft,
@@ -121,13 +122,22 @@ public final class MinecraftDroppedItemObserver
             return Optional.empty();
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
+        Map<String, String> names = new LinkedHashMap<>();
         for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
             if (stack.isEmpty() || stack.getCount() <= 0) {
                 continue;
             }
-            counts.merge(itemId(stack), stack.getCount(), Math::addExact);
+            String key = itemId(stack);
+            counts.merge(key, stack.getCount(), Math::addExact);
+            names.put(key, stack.getHoverName().getString());
         }
+        itemNames = Map.copyOf(names);
         return Optional.of(Map.copyOf(counts));
+    }
+
+    @Override
+    public Map<String, String> playerItemNames() {
+        return itemNames;
     }
 
     private static Optional<DroppedItem> droppedItem(

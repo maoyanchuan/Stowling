@@ -2,6 +2,8 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.PlayerInventoryDelta;
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.automation.ItemIdentity;
+import dev.stowling.v2.control.PlayerInventoryResponse;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -21,6 +23,9 @@ public final class PlayerInventoryManager {
     private final Map<UUID, PlayerInventoryAccount> accounts = new LinkedHashMap<>();
     private PlayerInventorySnapshot protectedInventory;
     private final Set<UUID> abandonedAccounts = new LinkedHashSet<>();
+    private final Map<String, Integer> classificationItems = new LinkedHashMap<>();
+    private long revision;
+    private boolean available;
 
     public PlayerInventoryManager(Source source) {
         this.source = Objects.requireNonNull(source, "source");
@@ -29,9 +34,14 @@ public final class PlayerInventoryManager {
     public synchronized Optional<Observation> observe() {
         Optional<PlayerInventorySnapshot> observed = source.snapshot();
         if (observed.isEmpty()) {
+            if (available) revision++;
+            available = false;
             return Optional.empty();
         }
+        if (!available) revision++;
+        available = true;
         PlayerInventorySnapshot current = observed.orElseThrow();
+        if (!previous.equals(observed)) revision++;
         initialize(current);
         boolean baseline = previous.isEmpty();
         PlayerInventoryDelta delta = previous
@@ -46,6 +56,9 @@ public final class PlayerInventoryManager {
         protectedInventory = null;
         accounts.clear();
         abandonedAccounts.clear();
+        classificationItems.clear();
+        available = false;
+        revision++;
     }
 
     public synchronized void replaceProtectedIdentity(String before, String after) {
@@ -67,6 +80,7 @@ public final class PlayerInventoryManager {
             items.merge(after, 1, Math::addExact);
         }
         protectedInventory = new PlayerInventorySnapshot(items);
+        revision++;
     }
 
     public synchronized void initialize(PlayerInventorySnapshot baseline) {
@@ -93,6 +107,7 @@ public final class PlayerInventoryManager {
             return Optional.empty();
         }
         Map<String, Integer> expected = new LinkedHashMap<>(protectedInventory.itemCounts());
+        classificationItems.forEach((itemId, count) -> expected.merge(itemId, count, Math::addExact));
         for (PlayerInventoryAccount account : accounts.values()) {
             account.managedItems().forEach((itemId, count) ->
                     expected.merge(itemId, count, Math::addExact)
@@ -110,11 +125,13 @@ public final class PlayerInventoryManager {
         ).added();
     }
 
+    /** Takes only abandoned task receipts and items explicitly assigned in the browser. */
     public synchronized int claimUnexpected(
             PlayerInventoryAccount account,
             Set<String> itemFilter
     ) {
         register(account);
+        protectUntrackedItems();
         int claimed = 0;
         for (UUID owner : Set.copyOf(abandonedAccounts)) {
             PlayerInventoryAccount abandoned = accounts.get(owner);
@@ -132,13 +149,97 @@ public final class PlayerInventoryManager {
                 accounts.remove(owner);
             }
         }
-        for (Map.Entry<String, Integer> entry : unassignedItems().entrySet()) {
+        for (Map.Entry<String, Integer> entry : Map.copyOf(classificationItems).entrySet()) {
             if (TaskModuleSupport.itemMatches(entry.getKey(), itemFilter)) {
                 account.recordCollected(entry.getKey(), entry.getValue());
+                classificationItems.remove(entry.getKey());
                 claimed = Math.addExact(claimed, entry.getValue());
             }
         }
+        if (claimed > 0) revision++;
+        protectUntrackedItems();
         return claimed;
+    }
+
+    /** Called while idle or after all in-flight transfers and pickups have been accounted for. */
+    public synchronized void protectUntrackedItems() {
+        if (!available || previous.isEmpty()) return;
+        Map<String, Integer> managed = managedCounts();
+        Map<String, Integer> protectedItems = new LinkedHashMap<>();
+        Map<String, Integer> queuedBefore = Map.copyOf(classificationItems);
+        Map<String, Integer> actual = previous.orElseThrow().itemCounts();
+        Map<String, Integer> before = protectedInventory == null
+                ? Map.of() : protectedInventory.itemCounts();
+        Set<String> keys = new LinkedHashSet<>(actual.keySet());
+        keys.addAll(before.keySet());
+        keys.addAll(classificationItems.keySet());
+        for (String key : keys) {
+            int count = actual.getOrDefault(key, 0);
+            int owned = managed.getOrDefault(key, 0);
+            // Never use protected stock to hide a missing confirmed task receipt.
+            int reserved = owned > 0 ? before.getOrDefault(key, 0)
+                    : Math.min(count, before.getOrDefault(key, 0));
+            int queued = Math.min(Math.max(0, count - owned - reserved),
+                    classificationItems.getOrDefault(key, 0));
+            if (queued > 0) classificationItems.put(key, queued);
+            else classificationItems.remove(key);
+            int kept = Math.max(reserved, count - owned - queued);
+            if (kept > 0) protectedItems.put(key, kept);
+        }
+        PlayerInventorySnapshot next = new PlayerInventorySnapshot(protectedItems);
+        if (!next.equals(protectedInventory) || !queuedBefore.equals(classificationItems)) revision++;
+        protectedInventory = next;
+    }
+
+    public synchronized PlayerInventoryResponse view(boolean busy, boolean classificationAvailable,
+            Map<String, String> names) {
+        Map<String, Integer> managed = managedCounts();
+        Map<String, Integer> protectedItems = protectedInventory == null
+                ? Map.of() : protectedInventory.itemCounts();
+        var items = previous.stream().flatMap(snapshot -> snapshot.itemCounts().entrySet().stream())
+                .sorted(Map.Entry.comparingByKey()).map(entry -> {
+                    String key = entry.getKey();
+                    int count = entry.getValue();
+                    int taskCount = Math.min(count, managed.getOrDefault(key, 0));
+                    int queued = Math.min(count - taskCount,
+                            classificationItems.getOrDefault(key, 0));
+                    int kept = Math.min(count - taskCount - queued,
+                            protectedItems.getOrDefault(key, 0));
+                    return new PlayerInventoryResponse.Item(key, ItemIdentity.base(key),
+                            names.getOrDefault(key, ItemIdentity.base(key)), count,
+                            kept, taskCount, queued);
+                }).toList();
+        return new PlayerInventoryResponse(Long.toString(revision), available, busy,
+                classificationAvailable, items);
+    }
+
+    public synchronized void allocate(String expectedRevision, String key, int keepCount) {
+        if (!Long.toString(revision).equals(expectedRevision)) {
+            throw new IllegalStateException("背包已变化，请刷新后重新分配");
+        }
+        if (!available || previous.isEmpty()
+                || !previous.orElseThrow().itemCounts().containsKey(key)) {
+            throw new IllegalArgumentException("背包中没有这个物品，请刷新");
+        }
+        int count = previous.orElseThrow().itemCounts().get(key);
+        int free = Math.max(0, count - managedCounts().getOrDefault(key, 0));
+        if (keepCount < 0 || keepCount > free) {
+            throw new IllegalArgumentException("保留数量必须在 0 与可分配数量之间");
+        }
+        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
+        if (keepCount > 0) kept.put(key, keepCount);
+        else kept.remove(key);
+        if (free > keepCount) classificationItems.put(key, free - keepCount);
+        else classificationItems.remove(key);
+        protectedInventory = new PlayerInventorySnapshot(kept);
+        revision++;
+    }
+
+    private Map<String, Integer> managedCounts() {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        accounts.values().forEach(account -> account.managedItems().forEach((key, count) ->
+                result.merge(key, count, Math::addExact)));
+        return result;
     }
 
     public synchronized void closeAccount(PlayerInventoryAccount account) {
@@ -147,10 +248,15 @@ public final class PlayerInventoryManager {
         } else {
             abandonedAccounts.add(account.ownerId());
         }
+        revision++;
     }
 
     public synchronized boolean needsRecovery() {
-        return !abandonedAccounts.isEmpty() || !unassignedItems().isEmpty();
+        return !abandonedAccounts.isEmpty() || !classificationItems.isEmpty();
+    }
+
+    public synchronized boolean hasClassificationRequests() {
+        return !classificationItems.isEmpty();
     }
 
     public synchronized void releaseToPlayer(
@@ -173,6 +279,7 @@ public final class PlayerInventoryManager {
         delivered.forEach((itemId, count) -> protectedItems.merge(itemId, count, Math::addExact));
         account.confirmDeposit("managed", delivered, Map.of());
         protectedInventory = new PlayerInventorySnapshot(protectedItems);
+        revision++;
     }
 
     public synchronized void recordWithdrawn(
@@ -182,6 +289,7 @@ public final class PlayerInventoryManager {
         register(account);
         Map<String, Integer> checked = new PlayerInventorySnapshot(items).itemCounts();
         checked.forEach(account::recordWithdrawn);
+        revision++;
     }
 
     public synchronized Optional<PlayerInventorySnapshot> current() {

@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.UUID;
 import java.util.Set;
 
 final class DroppedItemCollectionEngine {
@@ -37,6 +39,8 @@ final class DroppedItemCollectionEngine {
     private boolean drainChecked;
     private int stableTicks;
     private Set<DroppedItem> observedDrops = Set.of();
+    private final Map<UUID, DroppedItem> seenDrops = new LinkedHashMap<>();
+    private final Map<String, Integer> recordedPickups = new LinkedHashMap<>();
 
     DroppedItemCollectionEngine(
             TaskExecutionContext context,
@@ -193,6 +197,10 @@ final class DroppedItemCollectionEngine {
     }
 
     private void recordDropProgress(List<DroppedItem> drops) {
+        for (DroppedItem drop : drops) {
+            seenDrops.merge(drop.entityId(), drop,
+                    (before, after) -> before.count() >= after.count() ? before : after);
+        }
         Set<DroppedItem> observed = Set.copyOf(drops);
         if (observed.equals(observedDrops)) {
             return;
@@ -207,12 +215,12 @@ final class DroppedItemCollectionEngine {
     ) {
         PlayerInventorySnapshot snapshot = observation.snapshot();
         if (startInventory == null) {
-            startInventory = context.workspace().initialInventory()
-                    .orElse(snapshot);
+            startInventory = snapshot;
             context.workspace().captureInitialInventory(
                     startInventory.itemCounts()
             );
             currentInventory = snapshot;
+            context.workspace().observeInventory(snapshot.itemCounts());
             return;
         }
         if (snapshot.equals(currentInventory)) {
@@ -258,10 +266,15 @@ final class DroppedItemCollectionEngine {
             )) {
                 continue;
             }
-            context.workspace().recordCollected(
-                    entry.getKey(),
-                    entry.getValue()
-            );
+            int observedCount = seenDrops.values().stream()
+                    .filter(drop -> drop.itemId().equals(entry.getKey()))
+                    .mapToInt(DroppedItem::count).sum();
+            int count = Math.min(entry.getValue(), Math.max(0, observedCount
+                    - recordedPickups.getOrDefault(entry.getKey(), 0)));
+            if (count > 0) {
+                context.workspace().recordCollected(entry.getKey(), count);
+                recordedPickups.merge(entry.getKey(), count, Math::addExact);
+            }
         }
         context.workspace().observeInventory(
                 currentInventory.itemCounts()

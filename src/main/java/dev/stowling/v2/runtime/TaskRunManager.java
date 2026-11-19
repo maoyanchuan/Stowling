@@ -241,6 +241,7 @@ public final class TaskRunManager {
     public synchronized void tick() {
         ticks++;
         boolean inventoryAvailable = registry.inventory().observe().isPresent();
+        if (inventoryAvailable && active == null) registry.inventory().protectUntrackedItems();
         triggers.tick();
         if (inventoryAvailable) {
             queueInventoryClassification();
@@ -417,10 +418,26 @@ public final class TaskRunManager {
         nextInventoryRecoveryTick = ticks + BACKGROUND_REPEAT_DELAY_TICKS;
         for (AutoClassifyDefinition definition
                 : inventoryConfig.autoClassifyTasks()) {
-            if (definition.enabled() && definition.collectionEnabled()) {
+            if (definition.enabled()
+                    && (definition.classificationEnabled()
+                            || definition.collectionEnabled()
+                            && !registry.inventory().hasClassificationRequests())) {
                 TaskDefinition task = knownTasks.get(definition.id());
                 if (task != null) {
-                    startFromConfig(task, inventoryConfig, TaskPriority.BACKGROUND, false);
+                    List<TaskStep> steps = new ArrayList<>(
+                            dev.stowling.v2.model.TaskFlowTemplates.reconcileInventory(
+                                    definition.cacheRegionRef(), Map.of(),
+                                    definition.overflowEnabled()));
+                    if (definition.classificationEnabled()) {
+                        steps.add(TaskStep.createTask(UUID.randomUUID(), Map.of(
+                                "taskRef", "task:" + definition.classificationTaskId(),
+                                "priority", TaskPriority.BACKGROUND.name())));
+                    }
+                    TaskDefinition recovery = new TaskDefinition(task.id(), task.name(),
+                            TaskPriority.BACKGROUND, false, steps, task.interruptionMode(),
+                            task.interruptionTaskRef(), false, false, task.folderId(),
+                            task.cleanupPolicy());
+                    startFromConfig(recovery, inventoryConfig, TaskPriority.BACKGROUND, false);
                     return;
                 }
             }
@@ -452,6 +469,24 @@ public final class TaskRunManager {
 
     public synchronized boolean busy() {
         return active != null;
+    }
+
+    public synchronized dev.stowling.v2.control.PlayerInventoryResponse playerInventory() {
+        boolean classificationAvailable = inventoryConfig != null
+                && inventoryConfig.autoClassifyTasks().stream().anyMatch(definition ->
+                        definition.enabled() && definition.classificationEnabled());
+        return registry.inventory().view(active != null || !queue.isEmpty(),
+                classificationAvailable, registry.droppedItems().playerItemNames());
+    }
+
+    public synchronized dev.stowling.v2.control.PlayerInventoryResponse allocatePlayerInventory(
+            String revision, String key, int keepCount) {
+        if (active != null || !queue.isEmpty()) {
+            throw new IllegalStateException("请等待任务和收尾结束后调整背包归属");
+        }
+        registry.inventory().allocate(revision, key, keepCount);
+        nextInventoryRecoveryTick = ticks;
+        return playerInventory();
     }
 
     public synchronized void cancelAll() {
@@ -1028,6 +1063,7 @@ public final class TaskRunManager {
     }
 
     private TaskRunSnapshot startQueued(QueuedRun queued) {
+        registry.inventory().protectUntrackedItems();
         queue.remove(queued);
         TaskRunSnapshot running = snapshot(
                 queued,

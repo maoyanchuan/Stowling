@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>背包管理 · Stowling</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/workbench.css">
+    <script src="/common.js" defer></script>
+    <script src="/backpack-model.js" defer></script>
+    <script src="/backpack.js" defer></script>
+</head>
+<body data-page="backpack">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">S</span>
+            <div><h1>Stowling 控制台</h1><p>背包管理 · 自用与任务物品</p></div>
+        </div>
+        <div class="connection-state">
+            <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
+            <span id="connection-label">未连接</span>
+        </div>
+    </header>
+    <main>
+        <div id="auth-shell"></div>
+        <div id="workspace" class="workspace page-workspace" aria-hidden="true">
+            <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
+            <section class="panel wide" aria-labelledby="backpack-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">全局物品归属</p>
+                        <h2 id="backpack-title">当前背包</h2>
+                        <p class="muted compact-help">
+                            空闲时新增的物品默认保留自用，任务只处理自己收集、取出的物品。
+                            点击物品调整当前背包的保留数量，其余物品交给自动分类。
+                        </p>
+                    </div>
+                    <button id="backpack-refresh" class="secondary" type="button">刷新背包</button>
+                </div>
+                <p id="backpack-status" class="field-message" role="status"></p>
+                <div class="backpack-browser">
+                    <div id="backpack-items" class="backpack-items"
+                         aria-label="选择背包物品"></div>
+                    <form id="backpack-editor" class="backpack-editor" hidden>
+                        <h3 id="backpack-item-name"></h3>
+                        <p id="backpack-item-id" class="muted compact-help"></p>
+                        <p id="backpack-counts"></p>
+                        <label class="move-field">
+                            <span>保留自用数量</span>
+                            <input id="backpack-keep" type="number" min="0" step="1" required>
+                        </label>
+                        <p id="backpack-preview" class="muted compact-help" aria-live="polite"></p>
+                        <div class="move-form-actions">
+                            <button id="backpack-keep-all" class="secondary" type="button">
+                                全部保留自用
+                            </button>
+                            <button id="backpack-classify-all" class="secondary" type="button">
+                                全部交给分类
+                            </button>
+                            <button id="backpack-save" class="primary" type="submit">保存分配</button>
+                        </div>
+                        <p class="muted compact-help">
+                            任务和收尾运行时可以查看背包，结束后可调整归属。
+                            分类物品先放入已启用自动分类任务的缓存，再按仓储排版入库。
+                        </p>
+                    </form>
+                </div>
+                <p id="backpack-message" class="field-message" role="status" aria-live="polite"></p>
+            </section>
+        </div>
+    </main>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

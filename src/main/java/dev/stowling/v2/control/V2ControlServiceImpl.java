@@ -136,6 +136,17 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public PlayerInventoryResponse playerInventory() {
+        return runs.playerInventory();
+    }
+
+    @Override
+    public PlayerInventoryResponse allocatePlayerInventory(String revision, String key,
+            int keepCount) {
+        return runs.allocatePlayerInventory(revision, key, keepCount);
+    }
+
+    @Override
     public ModuleListResponse modules() {
         return new ModuleListResponse(TaskModuleCatalog.modules());
     }

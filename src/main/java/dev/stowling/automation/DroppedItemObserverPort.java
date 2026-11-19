@@ -14,4 +14,8 @@ public interface DroppedItemObserverPort {
     default Optional<Map<String, Integer>> playerItemCounts() {
         return Optional.empty();
     }
+
+    default Map<String, String> playerItemNames() {
+        return Map.of();
+    }
 }

@@ -234,6 +234,20 @@ public final class V2ControlServer implements AutoCloseable {
             String method,
             String body
     ) throws IOException {
+        if ("/v1/player-inventory".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.playerInventory());
+            } else if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                requireFields(json, Set.of("revision", "key", "keepCount"));
+                sendJson(exchange, 200, service.allocatePlayerInventory(
+                        string(json, "revision"), string(json, "key"), integer(json, "keepCount")));
+            } else {
+                throw methodNotAllowed("GET, PUT");
+            }
+            return;
+        }
         if ("/v1/storage-settings".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);
@@ -1662,6 +1676,9 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/common.js", read("stowling-web/common.js", js)),
                 Map.entry("/storage.html", read("stowling-web/storage.html", html)),
                 Map.entry("/storage.js", read("stowling-web/storage.js", js)),
+                Map.entry("/backpack.html", read("stowling-web/backpack.html", html)),
+                Map.entry("/backpack.js", read("stowling-web/backpack.js", js)),
+                Map.entry("/backpack-model.js", read("stowling-web/backpack-model.js", js)),
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
                 Map.entry(

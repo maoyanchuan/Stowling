@@ -36,6 +36,24 @@ class DroppedItemCollectionEngineTest {
     private static final String IRON = "minecraft:iron_ingot";
 
     @Test
+    void onlyObservedPickupItemsAreCollectedAndUnrelatedToolsStayPersonal() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        entries(drops, item(1, GOLD, 3));
+        inventory.set(Map.of());
+        DroppedItemCollectionEngine engine = engine(drops, inventory, workspace, new MutableClock());
+        engine.start();
+        engine.tick();
+        drops.clear();
+        inventory.set(Map.of(GOLD, 3, "minecraft:diamond_pickaxe", 1));
+
+        assertEquals(TaskModuleState.SUCCEEDED, tickUntilFinished(engine, 45).state());
+        assertEquals(Map.of(GOLD, 3), workspace.collectedItems());
+        assertEquals(Map.of(GOLD, 3), workspace.managedItems());
+    }
+
+    @Test
     void capturesTheTaskStartInventoryBeforeNavigating() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();

@@ -48,6 +48,8 @@
                             <h2 id="queue-title">运行队列</h2>
                             <div class="rail-heading-actions">
                                 <span id="task-queue-count" class="count-label">0</span>
+                                <button id="show-run-details" class="ghost compact"
+                                        type="button">运行详情</button>
                                 <button id="refresh-runs-button" class="ghost compact"
                                         type="button" title="刷新运行状态">刷新</button>
                             </div>
@@ -61,26 +63,27 @@
                     <section class="panel task-log-panel" aria-labelledby="task-log-title">
                         <div class="panel-heading rail-heading">
                             <h2 id="task-log-title">日志输出</h2>
-                            <span id="task-log-count" class="count-label">0</span>
+                            <div class="rail-heading-actions">
+                                <span id="task-log-count" class="count-label">0</span>
+                                <button id="export-task-logs" class="ghost rail-log-action"
+                                        type="button" aria-label="导出日志" title="导出日志" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2" stroke-linecap="round"
+                                         stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" />
+                                    </svg>
+                                </button>
+                                <button id="clear-task-logs" class="ghost rail-log-action"
+                                        type="button" aria-label="清空日志" title="清空日志" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2" stroke-linecap="round"
+                                         stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+                                        <path d="M10 11v5m4-5v5" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
-                        <label class="rail-caption" for="task-log-export-run">导出哪次运行</label>
-                        <select id="task-log-export-run" aria-label="选择要导出的运行">
-                            <option value="">本次运行</option>
-                        </select>
-                        <label class="rail-caption checkbox-field">
-                            <input id="task-log-export-detailed" type="checkbox">另存本次完整诊断压缩包
-                        </label>
-                        <div class="rail-log-actions" role="group" aria-label="日志操作">
-                            <button id="export-task-logs" class="ghost compact"
-                                    type="button" disabled>导出本次</button>
-                            <button id="clear-task-logs" class="ghost compact"
-                                    type="button" disabled>清空</button>
-                            <button id="pause-task-log-scroll" class="ghost compact"
-                                    type="button" aria-pressed="false">暂停滚动</button>
-                            <button id="show-run-details" class="ghost compact"
-                                    type="button">运行详情</button>
-                        </div>
-                        <p class="rail-caption">默认只导出最近一轮；需要排查更早循环时，再选择完整诊断压缩包。</p>
                         <div id="task-log-list" class="rail-log-list" role="log"
                              aria-label="任务状态日志" aria-live="off" tabindex="0"></div>
                     </section>

@@ -36,13 +36,6 @@ def test_narrow_rail_has_queue_above_logs_and_move_workbench_on_the_right() -> N
     assert "data-task-tab=" not in html
     assert "data-task-panel=" not in html
     assert "紧急 → 普通 → 后台" in rail
-    for name in (
-        "export-task-logs",
-        "clear-task-logs",
-        "pause-task-log-scroll",
-        "show-run-details",
-    ):
-        assert f'id="{name}"' in rail
     assert 'role="log"' in rail
     assert 'aria-live="off"' in rail
     assert 'tabindex="0"' in rail
@@ -67,17 +60,36 @@ def test_monitor_uses_shared_model_and_static_task_names() -> None:
     assert 'QUEUED: "排队中"' in javascript
 
 
-def test_log_controls_export_clear_and_pause_without_stopping_tasks() -> None:
+def test_log_panel_has_only_export_and_clear_icon_buttons() -> None:
+    html = read("tasks.html")
+    panel = between(html, 'class="panel task-log-panel"', "</section>")
+    assert panel.count("<button ") == 2
+    for button_id, label in (("export-task-logs", "导出日志"), ("clear-task-logs", "清空日志")):
+        button = between(panel, f'<button id="{button_id}"', "</button>")
+        assert f'aria-label="{label}"' in button
+        assert f'title="{label}"' in button
+        assert "<svg " in button
+    assert "<select " not in panel
+    assert "<input " not in panel
+
+
+def test_log_icons_download_one_current_run_file_and_clear_the_buffer() -> None:
     javascript = read("tasks.js")
+    export = between(javascript, "async function exportMonitorLogs()", "function downloadLog")
     assert "Monitor.createLogBuffer(300)" in javascript
     assert "taskLogs.ingest(" in javascript
-    assert "taskLogs.exportText()" in javascript
+    assert 'elements.exportLogs.addEventListener("click", exportMonitorLogs)' in javascript
+    assert "const [run] = Monitor.exportRuns(state.runs)" in export
+    assert "/v1/task-diagnostics/run/${encodeURIComponent(runId)}" in export
+    assert "Monitor.exportCurrentRun(batch, runId, run)" in export
+    assert export.count("downloadLog(") == 1
+    assert '"text/plain;charset=utf-8"' in export
     assert "URL.createObjectURL(blob)" in javascript
     assert "URL.revokeObjectURL(url)" in javascript
-    assert "taskLogs.clear()" in javascript
-    assert "state.logScrollPaused = !state.logScrollPaused" in javascript
-    assert "? scrollTop : elements.logList.scrollHeight" in javascript
-    assert "text/plain;charset=utf-8" in javascript
+    clear = between(javascript, 'elements.clearLogs.addEventListener("click",', "});")
+    assert "taskLogs.clear()" in clear
+    assert "renderMonitorLogs()" in clear
+    assert "? elements.logList.scrollHeight : scrollTop" in javascript
     assert "innerHTML" not in javascript
 
 
@@ -86,6 +98,8 @@ def test_task_details_use_static_names_and_keep_interruption_recovery() -> None:
     javascript = read("tasks.js")
     runtime = between(javascript, "function runtimeCard(run)", "function renderQueue")
 
+    queue = between(html, 'class="panel task-queue-panel"', "</section>")
+    assert 'id="show-run-details"' in queue
     assert '<dialog id="task-run-details"' in html
     assert 'aria-labelledby="runtime-title"' in html
     assert "elements.runDetails.showModal()" in javascript

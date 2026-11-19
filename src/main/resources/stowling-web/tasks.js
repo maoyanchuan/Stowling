@@ -14,7 +14,6 @@
         modules: [],
         runs: [],
         queue: [],
-        logScrollPaused: false,
         diagnosticSession: "",
         diagnosticCursor: 0,
         diagnosticsLoading: false,
@@ -68,10 +67,7 @@
         logList: document.querySelector("#task-log-list"),
         logCount: document.querySelector("#task-log-count"),
         exportLogs: document.querySelector("#export-task-logs"),
-        exportRun: document.querySelector("#task-log-export-run"),
-        exportDetailed: document.querySelector("#task-log-export-detailed"),
         clearLogs: document.querySelector("#clear-task-logs"),
-        pauseLogScroll: document.querySelector("#pause-task-log-scroll"),
         showRunDetails: document.querySelector("#show-run-details"),
         closeRunDetails: document.querySelector("#close-run-details"),
         runDetails: document.querySelector("#task-run-details")
@@ -843,6 +839,7 @@
      * @returns {void}
      */
     function appendMonitorLogs() {
+        elements.exportLogs.disabled = Monitor.exportRuns(state.runs).length === 0;
         const added = taskLogs.ingest(
             state.runs, state.queue, state.triggerStatuses, new Date().toISOString()
         );
@@ -855,20 +852,11 @@
      * @returns {void}
      */
     function renderMonitorLogs() {
-        const scrollTop = elements.logList.scrollTop;
+        const { scrollTop, scrollHeight, clientHeight } = elements.logList;
+        const followLatest = scrollHeight - clientHeight - scrollTop <= 1;
         const entries = taskLogs.entries();
         elements.logList.replaceChildren();
         elements.logCount.textContent = String(entries.length);
-        const runs = Monitor.exportRuns(state.runs);
-        const selected = elements.exportRun.value;
-        elements.exportRun.replaceChildren(new Option("本次运行", ""));
-        for (const run of runs) {
-            const time = new Date(run.startedAt).toLocaleString("zh-CN", { hour12: false });
-            elements.exportRun.append(new Option(
-                `${run.taskName} · ${time} · ${run.runId.slice(0, 8)}`, run.runId));
-        }
-        elements.exportRun.value = runs.some((run) => run.runId === selected) ? selected : "";
-        elements.exportLogs.disabled = runs.length === 0;
         elements.clearLogs.disabled = entries.length === 0;
         if (entries.length === 0) {
             elements.logList.append(Stowling.emptyState("暂无任务日志"));
@@ -898,37 +886,30 @@
             ));
             elements.logList.append(row);
         }
-        elements.logList.scrollTop = state.logScrollPaused
-            ? scrollTop : elements.logList.scrollHeight;
+        elements.logList.scrollTop = followLatest ? elements.logList.scrollHeight : scrollTop;
     }
 
     /**
      * @returns {Promise<void>}
      */
     async function exportMonitorLogs() {
-        const runId = elements.exportRun.value || Monitor.exportRuns(state.runs)[0]?.runId;
-        if (!runId) return;
+        const [run] = Monitor.exportRuns(state.runs);
+        if (!run) {
+            return;
+        }
+        const { runId } = run;
         let batch;
         try {
             batch = await Stowling.request(
                 `/v1/task-diagnostics/run/${encodeURIComponent(runId)}`);
         } catch (error) {
-            Stowling.handleError(error, "导出详细运行日志失败，请重试");
+            Stowling.handleError(error, "导出日志失败，请重试");
             return;
         }
-        const run = state.runs.find((entry) => entry.runId === runId) || {};
         const output = Monitor.exportCurrentRun(batch, runId, run);
         const date = new Date().toISOString().replace(/[:.]/g, "-");
         const name = `stowling-task-log-${runId}-${date}`;
         downloadLog(new Blob([output], { type: "text/plain;charset=utf-8" }), `${name}.txt`);
-        if (elements.exportDetailed.checked) {
-            try {
-                const archive = await Monitor.compressRunDiagnostics(batch, runId);
-                downloadLog(archive, `${name}-full.txt.gz`);
-            } catch (error) {
-                Stowling.handleError(error, "本轮日志已导出，完整诊断压缩失败");
-            }
-        }
     }
 
     /**
@@ -1051,15 +1032,6 @@
     elements.clearLogs.addEventListener("click", () => {
         taskLogs.clear();
         renderMonitorLogs();
-    });
-    elements.pauseLogScroll.addEventListener("click", () => {
-        state.logScrollPaused = !state.logScrollPaused;
-        elements.pauseLogScroll.setAttribute("aria-pressed", String(state.logScrollPaused));
-        elements.pauseLogScroll.textContent = state.logScrollPaused
-            ? "继续滚动" : "暂停滚动";
-        if (!state.logScrollPaused) {
-            elements.logList.scrollTop = elements.logList.scrollHeight;
-        }
     });
     elements.showRunDetails.addEventListener("click", () => {
         renderRuntime();

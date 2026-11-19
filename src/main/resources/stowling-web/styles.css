@@ -3997,7 +3997,6 @@ button:active:not(:disabled) {
 }
 
 .rail-heading-actions,
-.rail-log-actions,
 .rail-card-actions {
     display: flex;
     align-items: center;
@@ -4011,13 +4010,25 @@ button:active:not(:disabled) {
     font-size: 0.7rem;
 }
 
-.rail-log-actions {
-    margin-block: 0.25rem;
+.rail-log-action {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
 }
 
-.rail-log-actions [aria-pressed="true"] {
-    color: var(--accent-strong);
+.rail-log-action svg {
+    width: 1.15rem;
+    height: 1.15rem;
+}
+
+.rail-log-action:hover:not(:disabled) {
     background: var(--accent-soft);
+}
+
+.rail-log-action:focus-visible {
+    outline: 2px solid var(--accent);
 }
 
 .rail-caption,

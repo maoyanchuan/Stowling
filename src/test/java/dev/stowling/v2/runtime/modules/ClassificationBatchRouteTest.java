@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.ClassificationLayoutEntry;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
@@ -42,6 +43,31 @@ class ClassificationBatchRouteTest {
                 .orElseThrow());
         workspace.consumeDeposit("carried", Map.of("b", 64), Map.of());
         assertEquals(target(20), workspace.selectStorageTarget("carried", true).orElseThrow());
+    }
+
+    @Test
+    void oneLoadOfPurePartialBoxesUsesTheRouteForBothCategories() {
+        var workspace = new TaskRunWorkspace();
+        var cache = target(0);
+        var stoneTarget = target(5);
+        var dirtTarget = target(8);
+        String stone = "minecraft:stone";
+        String dirt = "minecraft:dirt";
+        String stoneBox = "minecraft:shulker_box#partial1@" + stone;
+        String dirtBox = "minecraft:shulker_box#partial2@" + dirt;
+        workspace.setResolvedCategories(List.of(stoneTarget, dirtTarget),
+                Map.of(stoneTarget, Set.of(stone), dirtTarget, Set.of(dirt)), List.of(cache),
+                List.of(new ClassificationLayoutEntry(stone, List.of(stoneTarget)),
+                        new ClassificationLayoutEntry(dirt, List.of(dirtTarget))));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.recordWithdrawn(stoneBox, 1);
+        workspace.recordWithdrawn(dirtBox, 1);
+
+        assertEquals(stoneTarget, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.consumeDeposit("carried", Map.of(stoneBox, 1), Map.of());
+        assertEquals(dirtTarget, workspace.selectStorageTarget("carried", true).orElseThrow());
+        workspace.consumeDeposit("carried", Map.of(dirtBox, 1), Map.of());
+        assertTrue(workspace.carriedItems().isEmpty());
     }
 
     @Test

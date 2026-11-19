@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
@@ -35,6 +36,72 @@ import org.junit.jupiter.api.Test;
 class GlobalPlayerInventoryTest {
     private static final String IRON = "minecraft:iron_ingot";
     private static final String GOLD = "minecraft:gold_ingot";
+
+    @Test
+    void interruptedRecoveryIsConfirmedBeforeTheUnassignedBoxCanBecomePersonal() {
+        String box = "minecraft:shulker_box#recovered";
+        InventorySource source = new InventorySource(Map.of(IRON, 5));
+        TaskModuleRuntimeRegistry registry = registry(source);
+        boolean[] pending = {false};
+        boolean[] recovered = {false};
+        registry.setStorageAutomation(new StorageAutomationPort() {
+            @Override
+            public boolean hasTemporaryResources(UUID owner) {
+                return pending[0];
+            }
+
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("only interruption cleanup is expected");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                return new TaskModuleExecutor() {
+                    @Override
+                    public TaskModuleResult start() {
+                        return tick();
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        assertEquals(0, context.inventory().expectedInventory().orElseThrow()
+                                .count(box));
+                        context.inventory().recordWithdrawn(context.workspace().inventoryAccount(),
+                                Map.of(box, 1));
+                        assertEquals(1, context.inventory().expectedInventory().orElseThrow()
+                                .count(box));
+                        context.workspace().consumeDeposit("managed", Map.of(box, 1), Map.of());
+                        source.set(Map.of(IRON, 5));
+                        pending[0] = false;
+                        recovered[0] = true;
+                        return TaskModuleResult.succeeded("recovered and stored");
+                    }
+
+                    @Override
+                    public void cancel() {
+                    }
+                };
+            }
+        });
+        TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
+        runs.tick();
+        var point = new CoordinatePoint(UUID.randomUUID(), "Pickup", 0, 64, 0);
+        var task = new TaskDefinition(UUID.randomUUID(), "Interrupted", List.of(TaskStep.action(
+                UUID.randomUUID(), TaskModuleIds.COLLECT_DROPPED_ITEMS,
+                Map.of(TaskModuleIds.AREA_REF, "coordinate:" + point.id()))));
+        var run = runs.start(task, List.of(point));
+        runs.tick();
+        pending[0] = true;
+        source.set(Map.of(IRON, 5, box, 1));
+
+        runs.cancel(run.runId());
+        for (int tick = 0; tick < 10 && runs.busy(); tick++) runs.tick();
+
+        assertTrue(recovered[0]);
+        assertFalse(runs.busy());
+    }
 
     @Test
     void toolGivenImmediatelyBeforeStartingATaskIsNotClaimedByItsSyncStep() {
@@ -270,6 +337,11 @@ class GlobalPlayerInventoryTest {
             @Override
             public NavigationStatus status(BlockPosition target) {
                 return NavigationStatus.ARRIVED;
+            }
+
+            @Override
+            public dev.stowling.schedule.StopOutcome requestStop() {
+                return dev.stowling.schedule.StopOutcome.CLEAN;
             }
 
             @Override

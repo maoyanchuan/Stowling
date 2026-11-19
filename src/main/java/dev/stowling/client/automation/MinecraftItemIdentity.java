@@ -7,6 +7,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
@@ -67,6 +69,30 @@ public final class MinecraftItemIdentity {
 
     public static ItemContainerContents contents(ItemStack stack) {
         return stack.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
+    }
+
+    /** Recovery compares decoded components and quantities, independent of JSON key order. */
+    public static boolean sameRecoveredBox(ItemStack expected, ItemStack actual) {
+        if (!isBox(expected) || !isBox(actual)) return false;
+        ItemStack expectedShell = expected.copyWithCount(1);
+        ItemStack actualShell = actual.copyWithCount(1);
+        expectedShell.remove(DataComponents.CONTAINER);
+        actualShell.remove(DataComponents.CONTAINER);
+        if (!ItemStack.isSameItemSameComponents(expectedShell, actualShell)) return false;
+        List<ItemStack> remaining = new ArrayList<>(contents(actual).nonEmptyItemCopyStream()
+                .toList());
+        for (ItemStack wanted : contents(expected).nonEmptyItemCopyStream().toList()) {
+            int count = wanted.getCount();
+            for (ItemStack candidate : remaining) {
+                if (!ItemStack.isSameItemSameComponents(wanted, candidate)) continue;
+                int matched = Math.min(count, candidate.getCount());
+                candidate.shrink(matched);
+                count -= matched;
+                if (count == 0) break;
+            }
+            if (count != 0) return false;
+        }
+        return remaining.stream().allMatch(ItemStack::isEmpty);
     }
 
     public static boolean full(ItemStack stack) {

@@ -1,6 +1,5 @@
 package dev.stowling.client.automation;
 
-import dev.stowling.automation.ContainerRecoveryDrop;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerVisitPlan;
 import dev.stowling.automation.DroppedItem;
@@ -80,8 +79,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public boolean isRecoveryDrop(DroppedItem item) {
         return resources.values().stream().anyMatch(resource -> resource.placed
-                && ContainerRecoveryDrop.matches(item, resource.position,
-                        MinecraftItemIdentity.key(resource.expected)));
+                && MinecraftShulkerAction.isRecoveryDrop(minecraft, resource, item));
     }
 
     @Override
@@ -532,11 +530,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     throw new IllegalStateException("潜影盒放置状态未确认，保留收尾记录");
                 }
             }
-            Runnable breakBox = () -> steps.add(new Step(new MinecraftShulkerAction(minecraft,
-                    context, resource, false), () -> {
-                        resources.remove(owner());
-                        after.run();
-                    }));
+            Runnable breakBox = () -> {
+                if (!MinecraftShulkerAction.hasRecoveryCapacity(minecraft, resource.expected)
+                        && !MinecraftShulkerAction.canConfirmRecovery(minecraft, resource)) {
+                    makeRecoverySpace(resource, 0, after);
+                    return;
+                }
+                steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, false),
+                        () -> {
+                            resources.remove(owner());
+                            after.run();
+                        }));
+            };
+            if (!resource.broken && resource.receipt.begun()
+                    && minecraft.level.getBlockState(position).isAir()) {
+                resource.broken = true;
+            }
             if (resource.broken) {
                 breakBox.run();
             } else {
@@ -547,6 +556,35 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     breakBox.run();
                 });
             }
+        }
+
+        private void makeRecoverySpace(MinecraftShulkerAction.Resource resource, int index,
+                Runnable after) {
+            List<ContainerTarget> destinations = taskCleanupContainers(context, configuration)
+                    .stream().filter(target -> !target.entrances().contains(resource.position))
+                    .toList();
+            ItemStack movable = inventoryStacks().stream().filter(stack ->
+                    owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) >= stack.getCount())
+                    .min(Comparator.comparingInt(stack -> MinecraftItemIdentity.isBox(stack) ? 1 : 0))
+                    .orElse(ItemStack.EMPTY);
+            if (movable.isEmpty() || index >= destinations.size()) {
+                throw new IllegalStateException("背包没有空位回收潜影盒，且任务物品无法暂存；"
+                        + "请腾出一格后重试收尾");
+            }
+            String key = MinecraftItemIdentity.key(movable);
+            int before = owned().getOrDefault(key, 0);
+            var access = new MinecraftStorageAccess(minecraft, context, destinations.get(index),
+                    Map.of(key, movable.getCount()), false, false);
+            Runnable confirmed = () -> {
+                int moved = before - owned().getOrDefault(key, 0);
+                if (moved > 0) {
+                    resource.receipt.recordRemoval(key, moved);
+                    recover(after);
+                } else {
+                    makeRecoverySpace(resource, index + 1, after);
+                }
+            };
+            steps.add(new Step(access, confirmed, confirmed));
         }
 
         final Map<String, Integer> owned() {

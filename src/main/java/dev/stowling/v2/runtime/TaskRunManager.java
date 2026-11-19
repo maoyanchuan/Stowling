@@ -656,7 +656,10 @@ public final class TaskRunManager {
     private void beginInterruption() {
         if (requiresGlobalCleanup()) {
             registry.inventory().observe();
-            registry.inventory().claimUnexpected(active.workspace.inventoryAccount(), Set.of());
+            if (!registry.storageAutomation().hasTemporaryResources(
+                    active.workspace.inventoryAccount().ownerId())) {
+                registry.inventory().claimUnexpected(active.workspace.inventoryAccount(), Set.of());
+            }
         }
         TaskDefinition cleanup = active.prepared.interruptionTask;
         if (requiresGlobalCleanup()) {

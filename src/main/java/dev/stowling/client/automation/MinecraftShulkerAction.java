@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerRecoveryReceipt;
+import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
@@ -9,6 +10,9 @@ import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import java.util.Map;
+import java.util.List;
+import java.util.Set;
+import java.util.Comparator;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -18,6 +22,9 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.entity.EntityTypeTest;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -31,6 +38,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         boolean placed;
         boolean broken;
         int inventoryBefore;
+        BlockPosition dropPosition;
 
         Resource(BlockPosition position, ItemStack original) {
             this.position = position;
@@ -50,6 +58,10 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private boolean swapping;
     private String toolBefore;
     private TaskModuleResult terminal;
+    private BlockPosition pickupTarget;
+    private int pickupRadius;
+    private int pickupRetries;
+    private int nextPickupRetry;
 
     MinecraftShulkerAction(Minecraft minecraft, TaskExecutionContext context,
             Resource resource, boolean place) {
@@ -76,11 +88,17 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         if (minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) {
             return fail("潜影盒操作需要已加载世界");
         }
-        if (++ticks > 600) {
-            return fail(place ? "潜影盒放置未确认" : "潜影盒挖掘或拾取未确认");
-        }
         BlockPos position = new BlockPos(resource.position.x(), resource.position.y(),
                 resource.position.z());
+        if (!place && phase == 0 && resource.placed && resource.receipt.begun()
+                && minecraft.level.getBlockState(position).isAir()) {
+            resource.broken = true;
+        }
+        if (++ticks > 600) {
+            return fail(place ? "潜影盒放置未确认" : resource.broken
+                    ? "潜影盒已挖掉，回收物尚未确认；请检查掉落物与背包空间"
+                    : "潜影盒挖掘未确认");
+        }
         if (phase == 0) {
             if (minecraft.gui.screen() != null) {
                 minecraft.player.closeContainer();
@@ -180,7 +198,6 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     }
 
     private TaskModuleResult tickRecovery(BlockPos position) {
-        String key = MinecraftItemIdentity.key(resource.expected);
         if (!resource.broken) {
             if (phase == 2) {
                 if (!sameBlock(position)) {
@@ -190,7 +207,12 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                         resource.position, miningArea())) {
                     return fail("未贴近潜影盒，未开始挖掘");
                 }
-                resource.inventoryBefore = inventoryCount(key);
+                if (!hasRecoveryCapacity(minecraft, resource.expected)) {
+                    return fail("背包没有空位回收潜影盒，尚未开始挖掘");
+                }
+                resource.receipt.begin(inventoryCounts(), compatibleInventoryKeys(),
+                        nearbyDrops(minecraft, resource).stream().map(ItemEntity::getUUID)
+                                .collect(java.util.stream.Collectors.toSet()));
                 toolBefore = heldKey();
                 minecraft.gameMode.startDestroyBlock(position, Direction.UP);
                 phase = 3;
@@ -202,6 +224,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 resource.broken = true;
                 minecraft.gameMode.stopDestroyBlock();
                 context.inventory().replaceProtectedIdentity(toolBefore, heldKey());
+                toolBefore = null;
                 restore();
                 ticks = 0;
                 phase = 4;
@@ -211,23 +234,114 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
                 return waitFor("正在挖掘本次登记的潜影盒");
             }
         }
-        if (inventoryCount(key) >= resource.inventoryBefore + 1) {
-            if (phase == 5) {
-                context.navigation().cancel();
-            }
+        String acquired = resource.receipt.acquiredKey(inventoryCounts(), compatibleInventoryKeys())
+                .orElse(null);
+        if (acquired != null) {
+            context.navigation().cancel();
+            resource.expected = minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .filter(stack -> !stack.isEmpty()
+                            && MinecraftItemIdentity.key(stack).equals(acquired))
+                    .findFirst().orElseThrow().copyWithCount(1);
             resource.receipt.confirm(() -> context.inventory().recordWithdrawn(
-                    context.workspace().inventoryAccount(), Map.of(key, 1)));
+                    context.workspace().inventoryAccount(), Map.of(acquired, 1)));
             terminal = TaskModuleResult.succeeded("已回收并核对潜影盒");
             return terminal;
         }
-        if (phase != 5) {
-            context.navigation().startWithinRadius(resource.position, 0);
-            phase = 5;
+        if (!resource.receipt.begun()) {
+            return fail("缺少潜影盒挖掘前的回收快照，已保留收尾记录");
         }
-        if (context.navigation().status(resource.position, 0) == NavigationStatus.FAILED) {
-            return fail("潜影盒已挖掉但尚未拾取，请检查掉落物");
+        if (!hasRecoveryCapacity(minecraft, resource.expected)) {
+            return fail("背包没有空位拾取已挖掉的潜影盒，请腾出一格后重试收尾");
         }
+        ItemEntity drop = nearbyDrops(minecraft, resource).stream()
+                .filter(entity -> resource.receipt.acceptsDrop(entity.getUUID()))
+                .filter(entity -> MinecraftItemIdentity.sameRecoveredBox(
+                        resource.expected, entity.getItem()))
+                .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(
+                        resource.position.x() + 0.5, resource.position.y() + 0.5,
+                        resource.position.z() + 0.5))).orElse(null);
+        if (drop != null) {
+            resource.receipt.trackDrop(drop.getUUID());
+            resource.dropPosition = new BlockPosition(drop.blockPosition().getX(),
+                    drop.blockPosition().getY(), drop.blockPosition().getZ());
+        }
+        BlockPosition target = resource.dropPosition == null ? resource.position
+                : resource.dropPosition;
+        if (pickupTarget == null || !pickupTarget.equals(target)) {
+            pickupTarget = target;
+            BlockPos feet = new BlockPos(target.x(), target.y(), target.z());
+            pickupRadius = minecraft.level.getBlockState(feet)
+                    .getCollisionShape(minecraft.level, feet).isEmpty() ? 0 : 1;
+            pickupRetries = 0;
+            context.navigation().startWithinRadius(pickupTarget, pickupRadius);
+        }
+        if (context.navigation().status(pickupTarget, pickupRadius) == NavigationStatus.FAILED
+                && pickupRetries < 2 && ticks >= nextPickupRetry) {
+            pickupRadius = 1;
+            pickupRetries++;
+            nextPickupRetry = ticks + 20;
+            context.navigation().startWithinRadius(pickupTarget, pickupRadius);
+        }
+        phase = 5;
         return waitFor("等待拾取并核对潜影盒内容");
+    }
+
+    private Map<String, Integer> inventoryCounts() {
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        minecraft.player.getInventory().getNonEquipmentItems().stream()
+                .filter(stack -> !stack.isEmpty()).forEach(stack ->
+                        counts.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
+                                Math::addExact));
+        return counts;
+    }
+
+    private Set<String> compatibleInventoryKeys() {
+        return minecraft.player.getInventory().getNonEquipmentItems().stream()
+                .filter(stack -> MinecraftItemIdentity.sameRecoveredBox(resource.expected, stack))
+                .map(MinecraftItemIdentity::key).collect(java.util.stream.Collectors.toSet());
+    }
+
+    static boolean hasRecoveryCapacity(Minecraft minecraft, ItemStack box) {
+        if (minecraft.player == null) return false;
+        return minecraft.player.getInventory().getNonEquipmentItems().stream()
+                .anyMatch(stack -> stack.isEmpty() || ItemStack.isSameItemSameComponents(stack, box)
+                        && stack.getCount() < stack.getMaxStackSize());
+    }
+
+    static boolean canConfirmRecovery(Minecraft minecraft, Resource resource) {
+        if (minecraft.player == null || !resource.receipt.begun()) return false;
+        Map<String, Integer> matching = new java.util.LinkedHashMap<>();
+        minecraft.player.getInventory().getNonEquipmentItems().stream()
+                .filter(stack -> MinecraftItemIdentity.sameRecoveredBox(resource.expected, stack))
+                .forEach(stack -> matching.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
+                        Math::addExact));
+        return resource.receipt.acquiredKey(matching, matching.keySet()).isPresent();
+    }
+
+    static boolean isRecoveryDrop(Minecraft minecraft, Resource resource, DroppedItem item) {
+        if (!resource.receipt.acceptsDrop(item.entityId()) || minecraft.level == null) return false;
+        BlockPos site = new BlockPos(resource.position.x(), resource.position.y(),
+                resource.position.z());
+        if (!resource.broken && !minecraft.level.getBlockState(site).isAir()) return false;
+        return nearbyDrops(minecraft, resource).stream()
+                .filter(entity -> entity.getUUID().equals(item.entityId()))
+                .anyMatch(entity -> {
+                    if (!MinecraftItemIdentity.sameRecoveredBox(resource.expected, entity.getItem())) {
+                        return false;
+                    }
+                    resource.receipt.trackDrop(entity.getUUID());
+                    resource.dropPosition = new BlockPosition(entity.blockPosition().getX(),
+                            entity.blockPosition().getY(), entity.blockPosition().getZ());
+                    return true;
+                });
+    }
+
+    private static List<ItemEntity> nearbyDrops(Minecraft minecraft, Resource resource) {
+        BlockPosition center = resource.dropPosition == null ? resource.position
+                : resource.dropPosition;
+        return minecraft.level.getEntities(EntityTypeTest.forClass(ItemEntity.class),
+                new AABB(new BlockPos(center.x(), center.y(), center.z())).inflate(4, 8, 4),
+                entity -> entity.isAlive() && !entity.isRemoved());
     }
 
     private boolean sameBlock(BlockPos position) {
@@ -292,10 +406,12 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     }
 
     private TaskModuleResult fail(String message) {
+        context.navigation().cancel();
         if (minecraft.gameMode != null) {
             minecraft.gameMode.stopDestroyBlock();
         }
         context.inventory().replaceProtectedIdentity(toolBefore, heldKey());
+        toolBefore = null;
         restore();
         terminal = TaskModuleResult.failed(message);
         return terminal;

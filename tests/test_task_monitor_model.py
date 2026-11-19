@@ -46,6 +46,68 @@ def _run_model(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_runtime_diagnostics_deduplicate_pages_and_export_wait_details() -> None:
+    result = _run_model(
+        """
+        (() => {
+            const model = window.StowlingTaskMonitorModel;
+            const log = model.createLogBuffer(300);
+            const event = {
+                sequence: 1, time: "2026-11-19T10:00:00Z", runId: "run-1",
+                phase: "TASK", step: "2.2.1", module: "DEPOSIT_ITEMS_TO_CONTAINERS",
+                kind: "WAIT", operation: "deposit.confirm", elapsedMillis: 8000,
+                repeated: 19, details: "planned=64; pickedUp=64; outgoing=64; actual=0"
+            };
+            const batch = {
+                session: "session-1", firstAvailable: 1, nextSequence: 1,
+                latestSequence: 1, events: [event]
+            };
+            const first = log.ingestDiagnostics(batch, [{
+                runId: "run-1", taskName: "全物品", priority: "URGENT"
+            }]);
+            const duplicate = log.ingestDiagnostics(batch);
+            const exported = model.exportDiagnostics(batch);
+            log.clear();
+            const clearedDuplicate = log.ingestDiagnostics(batch);
+            const restarted = log.ingestDiagnostics({ ...batch, session: "session-2" });
+            return { first, duplicate, clearedDuplicate, restarted, exported,
+                label: model.diagnosticLabel("RESYNC"), entries: log.entries() };
+        })()
+        """
+    )
+    assert result["first"] == 1
+    assert result["duplicate"] == 0
+    assert result["clearedDuplicate"] == 0
+    assert result["restarted"] == 1
+    assert result["label"] == "重新读取"
+    assert "deposit.confirm" in result["exported"]
+    assert "planned=64; pickedUp=64" in result["exported"]
+    assert "8000\t19" in result["exported"]
+    assert "2.2.1" in result["entries"][0]["message"]
+
+
+def test_full_diagnostic_export_is_independent_of_the_small_visible_log_buffer() -> None:
+    result = _run_model(
+        """
+        (() => {
+            const model = window.StowlingTaskMonitorModel;
+            const batch = { session: "s", firstAvailable: 1, latestSequence: 4,
+                events: [1, 2, 3, 4].map((sequence) => ({
+                    sequence, time: "2026-11-19T10:00:00Z", runId: "r", phase: "TASK",
+                    step: "1", module: "PICKUP", kind: "CALL", operation: `call-${sequence}`,
+                    details: "", elapsedMillis: 0, repeated: 0
+                })) };
+            const log = model.createLogBuffer(2);
+            log.ingestDiagnostics(batch);
+            return { visible: log.entries().length, exported: model.exportDiagnostics(batch) };
+        })()
+        """
+    )
+    assert result["visible"] == 2
+    assert "call-1" in result["exported"]
+    assert "call-4" in result["exported"]
+
+
 def test_queue_entries_mix_priority_fifo_and_run_deduplication() -> None:
     result = _run_model(
         """

@@ -15,6 +15,9 @@
         runs: [],
         queue: [],
         logScrollPaused: false,
+        diagnosticSession: "",
+        diagnosticCursor: 0,
+        diagnosticsLoading: false,
         moveRevision: "",
         moveTasks: [],
         autoTaskCount: 0,
@@ -553,6 +556,7 @@
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
+            await loadDiagnostics();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
         }
@@ -629,10 +633,37 @@
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
+            await loadDiagnostics();
         } catch (error) {
             elements.monitorMessage.textContent = "同步失败 · 显示上次状态";
             elements.monitorMessage.classList.add("is-stale");
             Stowling.handleError(error, "读取运行状态失败");
+        }
+    }
+
+    /**
+     * @returns {Promise<void>}
+     */
+    async function loadDiagnostics() {
+        if (state.diagnosticsLoading) return;
+        state.diagnosticsLoading = true;
+        try {
+            let batch = await Stowling.request(
+                `/v1/task-diagnostics/since/${state.diagnosticCursor}`);
+            if (state.diagnosticSession && state.diagnosticSession !== batch.session) {
+                batch = await Stowling.request("/v1/task-diagnostics/since/0");
+            }
+            state.diagnosticSession = batch.session;
+            state.diagnosticCursor = batch.nextSequence;
+            if (taskLogs.ingestDiagnostics(batch, state.runs) > 0) renderMonitorLogs();
+            if (batch.truncated) {
+                elements.monitorMessage.textContent = "详细日志较多，部分旧记录已轮换；可导出保留记录";
+            }
+        } catch (error) {
+            elements.monitorMessage.textContent = "任务状态已同步，详细日志读取失败";
+            Stowling.handleError(error, "读取详细运行日志失败");
+        } finally {
+            state.diagnosticsLoading = false;
         }
     }
 
@@ -841,7 +872,8 @@
             time.textContent = new Date(entry.time).toLocaleTimeString(
                 "zh-CN", { hour12: false }
             );
-            const status = entry.kind === "trigger"
+            const status = entry.kind === "diagnostic" ? Monitor.diagnosticLabel(entry.state)
+                : entry.kind === "trigger"
                 ? listeningStateLabel(entry.state)
                 : runStateLabel(entry.state);
             const heading = Stowling.element("div", "rail-log-heading");
@@ -860,10 +892,18 @@
     }
 
     /**
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function exportMonitorLogs() {
-        const blob = new Blob([taskLogs.exportText()], { type: "text/plain;charset=utf-8" });
+    async function exportMonitorLogs() {
+        let batch;
+        try {
+            batch = await Stowling.request("/v1/task-diagnostics");
+        } catch (error) {
+            Stowling.handleError(error, "导出详细运行日志失败，请重试");
+            return;
+        }
+        const output = taskLogs.exportText() + "\n\n" + Monitor.exportDiagnostics(batch);
+        const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;

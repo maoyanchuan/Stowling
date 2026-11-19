@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerClickPlan;
 import dev.stowling.automation.ContainerSyncTracker;
+import dev.stowling.v2.runtime.TaskTrace;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -39,8 +40,23 @@ public final class MinecraftContainerInteractions {
                 || minecraft.player.containerMenu != menu) {
             throw new IllegalStateException("容器交互会话已失效");
         }
-        minecraft.gameMode.handleContainerInput(menu.containerId, slot, button, input,
-                minecraft.player);
+        TaskTrace.event("CALL", "game.handleContainerInput", "menu=" + menu.containerId
+                + "; state=" + menu.getStateId() + "; slot=" + slot + "; button=" + button
+                + "; input=" + input + "; source=" + (slot >= 0 && slot < menu.slots.size()
+                        ? MinecraftItemIdentity.key(menu.getSlot(slot).getItem()) + " x"
+                                + menu.getSlot(slot).getItem().getCount() + "; stackLimit="
+                                + menu.getSlot(slot).getItem().getMaxStackSize() : "outside"),
+                0, false);
+        try {
+            minecraft.gameMode.handleContainerInput(menu.containerId, slot, button, input,
+                    minecraft.player);
+            TaskTrace.event("RETURN", "game.handleContainerInput", "cursorCount="
+                    + menu.getCarried().getCount() + "; state=" + menu.getStateId(), 0, false);
+        } catch (RuntimeException failure) {
+            TaskTrace.event("ERROR", "game.handleContainerInput",
+                    failure.getClass().getSimpleName(), 0, false);
+            throw failure;
+        }
     }
 
     public static int moveExact(Minecraft minecraft, AbstractContainerMenu menu,

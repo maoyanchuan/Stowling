@@ -34,6 +34,8 @@ public final class PlayerInventoryManager {
     public synchronized Optional<Observation> observe() {
         Optional<PlayerInventorySnapshot> observed = source.snapshot();
         if (observed.isEmpty()) {
+            dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.observe",
+                    "available=false");
             if (available) revision++;
             available = false;
             return Optional.empty();
@@ -48,6 +50,10 @@ public final class PlayerInventoryManager {
                 .map(prior -> PlayerInventoryDelta.between(prior, current))
                 .orElseGet(() -> new PlayerInventoryDelta(Map.of(), Map.of()));
         previous = Optional.of(current);
+        dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.observe",
+                "available=true; actual=" + current.itemCounts() + "; added=" + delta.added()
+                        + "; removed=" + delta.removed() + "; expected="
+                        + expectedInventory().orElseThrow().itemCounts());
         return Optional.of(new Observation(baseline, current, delta));
     }
 
@@ -186,6 +192,8 @@ public final class PlayerInventoryManager {
             }
         }
         if (claimed > 0) revision++;
+        dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.claim",
+                "claimed=" + claimed + "; managed=" + account.managedItems());
         return claimed;
     }
 

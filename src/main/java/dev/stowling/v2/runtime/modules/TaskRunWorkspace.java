@@ -18,6 +18,15 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
+    private dev.stowling.v2.runtime.TaskDiagnosticLog diagnostics;
+
+    public synchronized void setDiagnostics(dev.stowling.v2.runtime.TaskDiagnosticLog value) {
+        diagnostics = value;
+    }
+
+    public synchronized dev.stowling.v2.runtime.TaskDiagnosticLog diagnostics() {
+        return diagnostics;
+    }
     private final PlayerInventoryAccount inventoryAccount;
     private dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy =
             dev.stowling.v2.model.TaskCleanupPolicy.DEFAULT;

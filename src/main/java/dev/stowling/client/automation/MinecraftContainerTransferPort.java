@@ -9,6 +9,7 @@ import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
+import dev.stowling.v2.runtime.TaskTrace;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -213,6 +214,7 @@ public final class MinecraftContainerTransferPort
         active.observedDelta = -1;
         active.observationPolls = 0;
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
+        active.pendingStartedAt = System.nanoTime();
         var batch = new ContainerInteractionBatch(candidate.itemId());
         Map<String, Integer> request = new LinkedHashMap<>(active.remaining);
         while (candidate != null) {
@@ -266,6 +268,7 @@ public final class MinecraftContainerTransferPort
                 );
         active.observedDelta = observation.delta();
         active.observationPolls = observation.observations();
+        traceConfirmation(menu, playerDelta, containerDelta, observation.stable());
         if (observation.stable()) {
             return settleConfirmed(menu, observation.delta());
         }
@@ -288,6 +291,9 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult timeout() {
+        TaskTrace.event("TIMEOUT", "deposit.deadline", "phase=" + active.phase
+                + "; pending=" + active.pendingCount + "; remaining=" + active.remaining,
+                0, false);
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen == null) {
             if (!active.pendingItemId.isEmpty()
@@ -417,6 +423,7 @@ public final class MinecraftContainerTransferPort
                 );
         active.observedDelta = observation.delta();
         active.observationPolls = observation.observations();
+        traceConfirmation(menu, playerDelta, containerDelta, observation.stable());
         if (!observation.stable()) {
             if (Instant.now().isAfter(active.deadline)) {
                 return beginResynchronization(message);
@@ -438,7 +445,25 @@ public final class MinecraftContainerTransferPort
                 MinecraftInventoryPickups.count(minecraft, active.pendingItemId));
     }
 
+    private void traceConfirmation(AbstractContainerMenu menu, int outgoing, int containerDelta,
+            boolean stable) {
+        TaskTrace.event("WAIT", "deposit.confirm", "phase=" + active.phase
+                + "; item=" + active.pendingItemId + "; planned=" + active.pendingCount
+                + "; playerBefore=" + active.playerBefore
+                + "; playerNow=" + playerItemCount(menu, active.pendingItemId)
+                + "; pickedUp=" + (MinecraftInventoryPickups.count(minecraft, active.pendingItemId)
+                        - active.pickupsBefore)
+                + "; outgoing=" + outgoing + "; containerBefore=" + active.containerBefore
+                + "; containerNow=" + containerItemCount(menu, active.pendingItemId)
+                + "; containerDelta=" + containerDelta + "; stablePolls=" + active.observationPolls
+                + "; confirmed=" + stable + "; cursorEmpty=" + menu.getCarried().isEmpty(),
+                (System.nanoTime() - active.pendingStartedAt) / 1_000_000, true);
+    }
+
     private ContainerTransferResult beginResynchronization(String message) {
+        TaskTrace.event("RESYNC", "deposit.reopen", "reason=" + message
+                + "; target=" + active.target.position() + "; pending=" + active.pendingCount,
+                0, false);
         if (minecraft.player == null) return finishFailure("重新核对存入时玩家不可用");
         if (!minecraft.player.containerMenu.getCarried().isEmpty()) {
             return beginRollback(message);
@@ -479,6 +504,9 @@ public final class MinecraftContainerTransferPort
                 active.observedDelta, active.observationPolls, pendingOutgoingCount(menu));
         active.observedDelta = observation.delta();
         active.observationPolls = observation.observations();
+        traceConfirmation(menu, pendingOutgoingCount(menu),
+                containerItemCount(menu, active.pendingItemId) - active.containerBefore,
+                observation.stable());
         if (!observation.stable()) {
             return ContainerTransferResult.pending("核对缓存服务器快照中的实际存入量", remaining());
         }
@@ -692,7 +720,10 @@ public final class MinecraftContainerTransferPort
                 position,
                 false
         );
-        gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+        TaskTrace.event("CALL", "game.useItemOn", "openContainer=" + target.position(), 0, false);
+        var interaction = gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+        TaskTrace.event("RETURN", "game.useItemOn",
+                dev.stowling.v2.runtime.TaskTraceValues.describe(interaction), 0, false);
     }
 
     private void click(
@@ -707,6 +738,7 @@ public final class MinecraftContainerTransferPort
     private void closeContainer() {
         LocalPlayer player = minecraft.player;
         if (player != null) {
+            TaskTrace.event("CALL", "game.closeContainer", "", 0, false);
             player.closeContainer();
         }
     }
@@ -778,6 +810,7 @@ public final class MinecraftContainerTransferPort
         private int sourceSlot = -1;
         private int playerBefore;
         private long pickupsBefore;
+        private long pendingStartedAt;
         private int containerBefore;
         private int observedDelta = -1;
         private int observationPolls;

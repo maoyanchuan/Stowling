@@ -31,10 +31,11 @@ final class MinecraftContainerVisit {
 
     MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target) {
         this.minecraft = minecraft;
-        this.navigation = navigation;
+        this.navigation = dev.stowling.v2.runtime.TaskTracePorts.wrap(NavigationPort.class,
+                navigation);
         this.target = target;
         entrances = new ArrayList<>(target.entrances());
-        approach = new ContainerApproach(navigation, target.standingArea(), entrances);
+        approach = new ContainerApproach(this.navigation, target.standingArea(), entrances);
     }
 
     TaskModuleResult tick() {
@@ -62,6 +63,8 @@ final class MinecraftContainerVisit {
             if (!minecraft.player.containerMenu.getCarried().isEmpty()) {
                 return TaskModuleResult.waiting("等待鼠标上的物品归位");
             }
+            dev.stowling.v2.runtime.TaskTrace.event("CALL", "game.closeContainer",
+                    "reason=open-next-container", 0, false);
             minecraft.player.closeContainer();
             return TaskModuleResult.waiting("正在关闭上一容器");
         }
@@ -77,8 +80,12 @@ final class MinecraftContainerVisit {
         if (!minecraft.player.isWithinBlockInteractionRange(position, 0.0D)) {
             return TaskModuleResult.failed("最终站位够不到容器 " + openRequested);
         }
-        minecraft.gameMode.useItemOn(minecraft.player, InteractionHand.MAIN_HAND,
+        dev.stowling.v2.runtime.TaskTrace.event("CALL", "game.useItemOn",
+                "openContainer=" + openRequested, 0, false);
+        var interaction = minecraft.gameMode.useItemOn(minecraft.player, InteractionHand.MAIN_HAND,
                 new BlockHitResult(Vec3.atCenterOf(position), Direction.UP, position, false));
+        dev.stowling.v2.runtime.TaskTrace.event("RETURN", "game.useItemOn",
+                dev.stowling.v2.runtime.TaskTraceValues.describe(interaction), 0, false);
         return TaskModuleResult.waiting("等待容器打开 " + openRequested);
     }
 

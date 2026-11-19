@@ -36,6 +36,11 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunManager {
+    private final TaskDiagnosticLog diagnostics = new TaskDiagnosticLog();
+
+    public TaskDiagnosticLog diagnostics() {
+        return diagnostics;
+    }
     private static final int HISTORY_LIMIT = 50;
     private static final int BACKGROUND_REPEAT_DELAY_TICKS = 100;
 
@@ -838,6 +843,8 @@ public final class TaskRunManager {
     }
 
     private void finishRun(TaskRunState state, String message) {
+        diagnostics.append(active.snapshot.runId(), "TASK", "", "RUN", "STATE", state.name(),
+                message + "; managed=" + active.workspace.managedItems(), 0, false);
         publishWorkspaceEvents();
         PreparedRun completed = active.prepared;
         Continuation continuation = completed.task.cleanupPolicy().resumeMode()
@@ -1079,6 +1086,10 @@ public final class TaskRunManager {
         TaskRunWorkspace workspace = queued.continuation == null ? new TaskRunWorkspace(
                 registry.inventory().account(running.runId())) : queued.continuation.workspace;
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
+        workspace.setDiagnostics(diagnostics);
+        diagnostics.append(running.runId(), "TASK", "", "RUN", "STATE", "RUNNING",
+                "priority=" + running.priority() + "; resumeStep=" + running.completedSteps(),
+                0, false);
         if (queued.continuation != null) workspace.invalidateCacheInventory();
         active = new ActiveRun(
                 running,
@@ -1190,6 +1201,8 @@ public final class TaskRunManager {
             String message
     ) {
         TaskRunSnapshot old = active.snapshot;
+        diagnostics.append(old.runId(), "TASK", "", "RUN", "STATE", state.name(), message,
+                0, true);
         active.snapshot = new TaskRunSnapshot(
                 old.runId(),
                 old.taskId(),

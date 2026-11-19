@@ -33,6 +33,25 @@ import org.junit.jupiter.api.Test;
 
 class TaskFlowExecutorTest {
     @Test
+    void fastStepsAreRecordedEvenWhenBothCompleteDuringOneMonitorTick() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        TaskDiagnosticLog log = new TaskDiagnosticLog();
+        workspace.setDiagnostics(log);
+        AtomicInteger count = new AtomicInteger();
+        TaskFlowExecutor flow = flow(workspace, Map.of("COUNT", (context, step) -> action(() ->
+                success("counted", count.incrementAndGet()))),
+                List.of(actionStep("COUNT"), actionStep("COUNT")));
+
+        assertEquals(TaskModuleState.SUCCEEDED, flow.tick().state());
+        assertEquals(2, count.get());
+        var events = log.read(0, 100).events();
+        assertEquals(2, events.stream().filter(event -> event.kind().equals("STEP")).count());
+        assertTrue(events.stream().anyMatch(event -> event.step().equals("1")
+                && event.kind().equals("RESULT")));
+        assertTrue(events.stream().anyMatch(event -> event.step().equals("2")
+                && event.kind().equals("RESULT")));
+    }
+    @Test
     void repeatStopsWhenConditionTurnsFalse() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         workspace.setCacheHasMore(true);

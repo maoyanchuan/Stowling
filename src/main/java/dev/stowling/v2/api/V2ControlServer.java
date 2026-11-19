@@ -297,6 +297,23 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, service.categoryRules());
             return;
         }
+        if ("/v1/task-diagnostics".equals(path)
+                || path.startsWith("/v1/task-diagnostics/since/")) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            long after = 0;
+            int limit = dev.stowling.v2.runtime.TaskDiagnosticLog.CAPACITY;
+            if (!"/v1/task-diagnostics".equals(path)) {
+                String cursor = path.substring("/v1/task-diagnostics/since/".length());
+                if (!cursor.matches("[0-9]{1,18}")) {
+                    throw new RequestFailure(400, "invalid_request", "Invalid diagnostic cursor");
+                }
+                after = Long.parseLong(cursor);
+                limit = 1000;
+            }
+            sendJson(exchange, 200, service.taskDiagnostics(after, limit));
+            return;
+        }
         if ("/v1/task-runs".equals(path)) {
             requireMethod(method, "GET");
             requireEmpty(body);

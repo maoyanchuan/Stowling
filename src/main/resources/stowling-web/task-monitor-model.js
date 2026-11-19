@@ -41,6 +41,12 @@
         NORMAL: "普通",
         BACKGROUND: "后台"
     });
+    const DIAGNOSTIC_LABELS = Object.freeze({
+        CALL: "接口调用", RETURN: "接口返回", WAIT: "等待确认", RESULT: "步骤结果",
+        STEP: "步骤开始", ERROR: "异常", TIMEOUT: "超时", RESYNC: "重新读取",
+        INVENTORY: "背包核对", CONDITION: "条件判断", LOOP: "下一批次",
+        STOP: "停止动作", STATE: "任务状态", DECISION: "处理决策"
+    });
 
     /**
      * @param {unknown} value
@@ -485,6 +491,7 @@
      * @returns {string}
      */
     function stateLabel(kind, state) {
+        if (kind === "diagnostic") return DIAGNOSTIC_LABELS[state] || state;
         const labels = kind === "trigger"
             ? TRIGGER_STATE_LABELS
             : RUN_STATE_LABELS;
@@ -504,6 +511,7 @@
      * @returns {string}
      */
     function kindLabel(kind) {
+        if (kind === "diagnostic") return "诊断";
         return kind === "trigger" ? "监听" : "运行";
     }
 
@@ -540,6 +548,36 @@
         const baseline = new Map();
         const records = [];
         let serial = 0;
+        let diagnosticSession = "";
+        let diagnosticCursor = 0;
+
+        /**
+         * @param {object} batch
+         * @param {Array<object>} runs
+         * @returns {number}
+         */
+        function ingestDiagnostics(batch, runs = []) {
+            if (diagnosticSession !== batch.session) {
+                diagnosticSession = batch.session;
+                diagnosticCursor = 0;
+            }
+            const names = new Map(runs.map((run) => [run.runId, run]));
+            let added = 0;
+            for (const event of asObjects(batch.events)) {
+                if (event.sequence <= diagnosticCursor) continue;
+                diagnosticCursor = event.sequence;
+                const run = names.get(event.runId);
+                append({
+                    id: `diagnostic:${batch.session}:${event.sequence}`,
+                    time: event.time, kind: "diagnostic", state: event.kind,
+                    taskName: run?.taskName || event.module || "运行诊断",
+                    priority: run?.priority || "NORMAL",
+                    message: diagnosticMessage(event)
+                });
+                added += 1;
+            }
+            return added;
+        }
 
         /**
          * @param {object} entry
@@ -707,14 +745,53 @@
 
         return Object.freeze({
             ingest,
+            ingestDiagnostics,
             entries: readEntries,
             clear: clearEntries,
             exportText
         });
     }
 
+    /**
+     * @param {object} event
+     * @returns {string}
+     */
+    function diagnosticMessage(event) {
+        return `[${event.phase} · ${event.step || "—"} · ${event.module}] `
+            + `${event.operation}: ${event.details}; elapsedMs=${event.elapsedMillis}`
+            + (event.repeated ? `; 其间省略相同轮询=${event.repeated}` : "");
+    }
+
+    /**
+     * @param {object} batch
+     * @returns {string}
+     */
+    function exportDiagnostics(batch) {
+        const lines = ["Stowling 详细运行诊断 · 格式 1",
+            `会话=${batch.session}; 首条=${batch.firstAvailable}; 最新=${batch.latestSequence}`,
+            "运行端保留最近 20000 条；相同轮询每秒记录一次，数量和等待条件变化立即记录。",
+            "序号\t时间\t运行ID\t阶段\t步骤\t模块\t类型\t接口/操作\t耗时毫秒\t合并次数\t详情"];
+        for (const event of asObjects(batch.events)) {
+            lines.push([event.sequence, event.time, event.runId, event.phase, event.step,
+                event.module, event.kind, event.operation, event.elapsedMillis,
+                event.repeated, event.details].map(sanitizeCell).join("\t"));
+        }
+        return lines.join("\n");
+    }
+
+    /**
+     * @param {string} kind
+     * @returns {string}
+     */
+    function diagnosticLabel(kind) {
+        return DIAGNOSTIC_LABELS[kind] || kind;
+    }
+
     window.StowlingTaskMonitorModel = Object.freeze({
         queueEntries,
-        createLogBuffer
+        createLogBuffer,
+        diagnosticMessage,
+        exportDiagnostics,
+        diagnosticLabel
     });
 })();

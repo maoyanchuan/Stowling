@@ -252,6 +252,12 @@ public final class MinecraftContainerWithdrawalPort
                 - active.pickupsBefore;
         boolean confirmed = pickedUp >= 0 && playerAfter - pickedUp == active.playerBefore + moved
                 && containerAfter == active.containerBefore - moved;
+        dev.stowling.v2.runtime.TaskTrace.event("WAIT", "withdraw.confirm",
+                "item=" + active.pendingItemId + "; planned=" + moved
+                        + "; playerBefore=" + active.playerBefore + "; playerNow=" + playerAfter
+                        + "; pickedUp=" + pickedUp + "; containerBefore=" + active.containerBefore
+                        + "; containerNow=" + containerAfter + "; confirmed=" + confirmed
+                        + "; polls=" + Math.min(active.confirmationPolls, CONFIRM_POLLS));
         if (active.confirmationPolls >= CONFIRM_POLLS
                 && confirmed
                 && menu.getCarried().isEmpty()) {

@@ -126,9 +126,7 @@ public final class TaskFlowExecutor {
         if (action == null) {
             return TaskModuleResult.succeeded("流程已到安全停止点");
         }
-        TaskModuleResult result = action.started
-                ? action.executor.tick()
-                : startAction();
+        TaskModuleResult result = invokeAction();
         if (result.state() == TaskModuleState.RUNNING
                 || result.state() == TaskModuleState.WAITING) {
             return result;
@@ -143,17 +141,29 @@ public final class TaskFlowExecutor {
     public synchronized void requestStop() {
         stopRequested = true;
         if (action != null) {
-            action.executor.requestStop();
+            traced(action.frame, () -> {
+                TaskTrace.event("STOP", "requestStop", "等待当前在途动作确认后停止", 0, false);
+                action.executor.requestStop();
+                return null;
+            });
         }
     }
 
     public synchronized boolean safeToStop() {
-        return action == null || action.executor.safeToStop();
+        return action == null || traced(action.frame, () -> {
+            boolean safe = action.executor.safeToStop();
+            TaskTrace.event("WAIT", "stop.safeToStop", "safe=" + safe);
+            return safe;
+        });
     }
 
     public synchronized void cancel() {
         if (action != null) {
-            action.executor.cancel();
+            traced(action.frame, () -> {
+                TaskTrace.event("STOP", "cancel", "取消当前动作", 0, false);
+                action.executor.cancel();
+                return null;
+            });
             action = null;
         }
     }
@@ -168,11 +178,12 @@ public final class TaskFlowExecutor {
 
     private TaskModuleResult tickAction(Frame frame, TaskStep step) {
         if (action == null) {
-            action = new ActionState(frame, step, host.createAction(step));
+            action = new ActionState(frame, step, traced(frame, () -> {
+                TaskTrace.event("STEP", "begin", "开始执行模块", 0, false);
+                return host.createAction(step);
+            }));
         }
-        TaskModuleResult result = action.started
-                ? action.executor.tick()
-                : startAction();
+        TaskModuleResult result = invokeAction();
         if (result.state() == TaskModuleState.FAILED) {
             ActionState failed = action;
             action = null;
@@ -189,6 +200,32 @@ public final class TaskFlowExecutor {
     private TaskModuleResult startAction() {
         action.started = true;
         return action.executor.start();
+    }
+
+    private <T> T traced(Frame frame, java.util.function.Supplier<T> operation) {
+        StepLocation location = frame.location();
+        return TaskTrace.within(context.workspace().diagnostics(),
+                context.workspace().inventoryAccount().ownerId(),
+                allowTaskCreation ? "TASK" : "CLEANUP", location.path(), location.label(), operation);
+    }
+
+    private TaskModuleResult invokeAction() {
+        return traced(action.frame, () -> {
+            String method = action.started ? "tick" : "start";
+            TaskTrace.event("CALL", "module." + method, "", 0, action.started);
+            TaskModuleResult result = action.started ? action.executor.tick() : startAction();
+            long elapsed = (System.nanoTime() - action.beganAt) / 1_000_000;
+            String kind = switch (result.state()) {
+                case WAITING -> "WAIT";
+                case FAILED -> "ERROR";
+                default -> "RESULT";
+            };
+            TaskTrace.event(kind,
+                    "module." + method, result.state() + ":" + result.message()
+                            + "; collected=" + context.workspace().collectedItems()
+                            + "; managed=" + context.workspace().managedItems(), elapsed, true);
+            return result;
+        });
     }
 
     private TaskModuleResult enterConditional(Frame frame, TaskStep step) {
@@ -235,6 +272,11 @@ public final class TaskFlowExecutor {
             );
         }
         frame.iterations++;
+        traced(frame, () -> {
+            TaskTrace.event("LOOP", "repeat.next", "iteration=" + frame.iterations
+                    + "; limit=" + frame.maxIterations, 0, false);
+            return null;
+        });
         frame.index = 0;
         return null;
     }
@@ -286,6 +328,11 @@ public final class TaskFlowExecutor {
                 step,
                 TaskModuleIds.NEGATE
         ));
+        traced(frames.peek(), () -> {
+            TaskTrace.event("CONDITION", condition.name(), "raw=" + result + "; negate=" + negate
+                    + "; result=" + (negate ? !result : result));
+            return null;
+        });
         return negate ? !result : result;
     }
 
@@ -340,6 +387,12 @@ public final class TaskFlowExecutor {
     }
 
     private TaskModuleResult failureFor(RuntimeException exception) {
+        Frame frame = action == null ? frames.peek() : action.frame;
+        if (frame != null) traced(frame, () -> {
+            TaskTrace.event("ERROR", "module.exception", exception.getClass().getSimpleName(),
+                    0, false);
+            return null;
+        });
         StepLocation location = action == null
                 ? currentLocation()
                 : action.frame.location();
@@ -392,6 +445,7 @@ public final class TaskFlowExecutor {
         private final TaskStep step;
         private final TaskModuleExecutor executor;
         private boolean started;
+        private final long beganAt = System.nanoTime();
 
         private ActionState(
                 Frame frame,

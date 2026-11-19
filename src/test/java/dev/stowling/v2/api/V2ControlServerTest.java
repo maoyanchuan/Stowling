@@ -38,6 +38,32 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void detailedDiagnosticsRequireAuthenticationAndValidateTheirReadCursor() throws Exception {
+        ConfigStore store = new ConfigStore(directory.resolve("diagnostics.json"));
+        store.loadOrReset();
+        TaskRunManager runs = new TaskRunManager(new FailedNavigation());
+        UUID owner = UUID.randomUUID();
+        runs.diagnostics().append(owner, "TASK", "2.2", "DEPOSIT", "WAIT", "confirm",
+                "planned=64; actual=0", 1200, false);
+        runs.diagnostics().append(owner, "TASK", "2.2", "DEPOSIT", "RESYNC", "reopen",
+                "target=1,2,3", 1300, false);
+        try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
+            assertEquals(401, fixture.send("/v1/task-diagnostics", "GET", null, false).statusCode());
+            assertEquals(401, fixture.send("/v1/task-diagnostics/since/0", "GET", null, false)
+                    .statusCode());
+            var full = object(fixture.send("/v1/task-diagnostics", "GET", null, true));
+            assertEquals(2, full.getAsJsonArray("events").size());
+            var next = object(fixture.send("/v1/task-diagnostics/since/1", "GET", null, true));
+            assertEquals(1, next.getAsJsonArray("events").size());
+            assertEquals("RESYNC", next.getAsJsonArray("events").get(0).getAsJsonObject()
+                    .get("kind").getAsString());
+            assertEquals(400, fixture.send("/v1/task-diagnostics/since/-1", "GET", null, true)
+                    .statusCode());
+            assertEquals(405, fixture.send("/v1/task-diagnostics", "POST", "{}", true)
+                    .statusCode());
+        }
+    }
+    @Test
     void backpackAllocationRequiresAuthenticationAndRejectsStaleOrRunningChanges()
             throws Exception {
         ConfigStore store = new ConfigStore(directory.resolve("backpack.json"));

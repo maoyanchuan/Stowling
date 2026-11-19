@@ -1188,6 +1188,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public dev.stowling.v2.runtime.TaskDiagnosticLog.Batch taskDiagnostics(long after, int limit) {
+        return runs.diagnostics().read(after, limit);
+    }
+
+    @Override
     public void cancelRun(UUID runId) {
         runs.cancel(runId);
     }

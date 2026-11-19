@@ -36,6 +36,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private String pendingKey;
     private int pendingCount;
     private long pickupsBefore;
+    private long pendingStartedAt;
     private StorageTransferConfirmation pendingConfirmation;
     private TaskModuleResult result;
 
@@ -122,6 +123,16 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             return TaskModuleResult.waiting("等待批量存取同步");
         }
         if (pendingKey != null) {
+            dev.stowling.v2.runtime.TaskTrace.event("WAIT", "storage.confirm",
+                    "withdraw=" + withdraw + "; item=" + pendingKey + "; planned=" + pendingCount
+                            + "; playerNow=" + count(menu, true, pendingKey)
+                            + "; expectedPlayer=" + pendingConfirmation.expectedPlayer()
+                            + "; containerNow=" + count(menu, false, pendingKey)
+                            + "; expectedContainer=" + pendingConfirmation.expectedContainer()
+                            + "; pickedUp=" + (MinecraftInventoryPickups.count(minecraft, pendingKey)
+                                    - pickupsBefore)
+                            + "; cursorEmpty=" + menu.getCarried().isEmpty(),
+                    (System.nanoTime() - pendingStartedAt) / 1_000_000, true);
             if (!pendingConfirmation.matches(count(menu, true, pendingKey),
                     MinecraftInventoryPickups.count(minecraft, pendingKey) - pickupsBefore,
                     menu.getCarried().isEmpty(), () -> count(menu, false, pendingKey))) {
@@ -155,6 +166,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         pendingCount = 0;
         int playerBefore = count(menu, true, pendingKey);
         pickupsBefore = MinecraftInventoryPickups.count(minecraft, pendingKey);
+        pendingStartedAt = System.nanoTime();
         int containerBefore = count(menu, false, pendingKey);
         var batch = new ContainerInteractionBatch(pendingKey);
         while (candidate != null && batch.accepts(candidate.key(), candidate.clicks())) {
@@ -220,6 +232,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         done = true;
         visit.cancelNavigation();
         if (minecraft.player != null && minecraft.player.containerMenu.getCarried().isEmpty()) {
+            dev.stowling.v2.runtime.TaskTrace.event("CALL", "game.closeContainer",
+                    "target=" + target.position() + "; success=" + success, 0, false);
             minecraft.player.closeContainer();
         }
         result = success ? TaskModuleResult.succeeded(message) : TaskModuleResult.failed(message);

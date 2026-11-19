@@ -95,6 +95,10 @@ final class DroppedItemCollectionEngine {
         recordInventoryObservation(observation);
         recordCollectedFromSnapshot();
         List<DroppedItem> available = drops.stream().filter(source::canPickUp).toList();
+        dev.stowling.v2.runtime.TaskTrace.event("DECISION", "pickup.capacity",
+                "entities=" + drops.size() + "; pickable=" + available.size()
+                        + "; carried=" + context.workspace().collectedItems()
+                        + "; current=" + (current == null ? "none" : current.itemId()));
         if (!drops.isEmpty() && available.isEmpty()) {
             context.navigation().cancel();
             current = null;

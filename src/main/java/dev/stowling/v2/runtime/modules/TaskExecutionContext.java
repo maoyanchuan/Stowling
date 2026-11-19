@@ -12,6 +12,7 @@ import dev.stowling.automation.NavigationPort;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.runtime.TaskTracePorts;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -74,6 +75,27 @@ public record TaskExecutionContext(
         storageAutomation = Objects.requireNonNull(storageAutomation);
         inventory.register(workspace.inventoryAccount());
         workspace.initialInventory().ifPresent(inventory::initialize);
+        if (workspace.diagnostics() != null) {
+            navigation = TaskTracePorts.wrap(NavigationPort.class, navigation);
+            droppedItems = TaskTracePorts.wrap(
+                    DroppedItemObserverPort.class, droppedItems);
+            containerRegions = TaskTracePorts.wrap(
+                    ContainerRegionPort.class, containerRegions);
+            containerTransfers = TaskTracePorts.wrap(
+                    ContainerTransferPort.class, containerTransfers);
+            containerWithdrawals = TaskTracePorts.wrap(
+                    ContainerWithdrawalPort.class, containerWithdrawals);
+            containerInspections = TaskTracePorts.wrap(
+                    ContainerInspectionPort.class, containerInspections);
+            categoryMarkerCache = TaskTracePorts.wrap(
+                    CategoryMarkerCachePort.class, categoryMarkerCache);
+            foodConsumption = TaskTracePorts.wrap(
+                    FoodConsumptionPort.class, foodConsumption);
+            categoryZonesPort = TaskTracePorts.wrap(
+                    CategoryZonePort.class, categoryZonesPort);
+            storageAutomation = TaskTracePorts.wrap(
+                    StorageAutomationPort.class, storageAutomation);
+        }
     }
 
     public TaskExecutionContext(

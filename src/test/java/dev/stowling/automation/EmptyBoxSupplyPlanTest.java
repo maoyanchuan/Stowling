@@ -20,9 +20,25 @@ class EmptyBoxSupplyPlanTest {
 
         assertEquals(List.of(cache, supply, fallback), EmptyBoxSupplyPlan.returns(cache,
                 List.of(cache, classification, supply), List.of(classification, fallback),
-                Set.of(classification.position())));
+                Set.of(classification.position()), Set.of()));
         assertEquals(List.of(cache, supply, fallback), EmptyBoxSupplyPlan.returns(classification,
-                List.of(cache, supply), List.of(fallback), Set.of(classification.position())));
+                List.of(cache, supply), List.of(fallback), Set.of(classification.position()),
+                Set.of()));
+    }
+
+    @Test
+    void emptyDonorBoxesSkipDedicatedPartialStorageEvenWhenPreferredOrUsedForCleanup() {
+        var partial = new ContainerTarget(position(10), "minecraft:chest", null, null,
+                position(11));
+        ContainerTarget cache = target(1);
+        ContainerTarget supply = target(2);
+        ContainerTarget cleanup = target(3);
+
+        assertEquals(List.of(cache, supply, cleanup), EmptyBoxSupplyPlan.returns(partial,
+                List.of(partial, cache, supply), List.of(target(11), cleanup), Set.of(),
+                Set.copyOf(partial.entrances())));
+        assertTrue(EmptyBoxSupplyPlan.returns(partial, List.of(), List.of(), Set.of(),
+                Set.of(position(11))).isEmpty());
     }
 
     @Test

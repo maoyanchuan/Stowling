@@ -131,12 +131,17 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 cacheTargets.add(temporary);
             }
         }
+        List<ContainerTarget> partialBoxes = context.storageAutomation()
+                .partialBoxSources(context, targets);
+        Set<BlockPosition> partialBoxPositions = new LinkedHashSet<>();
+        partialBoxes.forEach(target -> partialBoxPositions.addAll(target.entrances()));
         context.workspace().setResolvedCategories(
                 targets,
                 accepted,
                 dev.stowling.automation.PartialBoxSourcePlan.combine(cacheTargets,
-                        context.storageAutomation().partialBoxSources(context, targets), targets),
-                result.layout()
+                        partialBoxes, targets),
+                result.layout(),
+                partialBoxPositions
         );
         return TaskModuleResult.succeeded(
                 "已解析 " + accepted.size() + " 个分类目标容器"

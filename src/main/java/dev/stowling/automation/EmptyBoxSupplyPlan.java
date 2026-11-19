@@ -18,13 +18,14 @@ public final class EmptyBoxSupplyPlan {
 
     public static List<ContainerTarget> returns(ContainerTarget preferred,
             List<ContainerTarget> sources, List<ContainerTarget> fallback,
-            Set<BlockPosition> storagePositions) {
+            Set<BlockPosition> storagePositions, Set<BlockPosition> partialBoxPositions) {
         List<ContainerTarget> candidates = new ArrayList<>();
         if (preferred != null) candidates.add(preferred);
         candidates.addAll(sources);
         candidates.addAll(fallback);
         return sources(candidates.stream().filter(target ->
-                target.entrances().stream().noneMatch(storagePositions::contains)).toList(),
+                target.entrances().stream().noneMatch(position -> storagePositions.contains(position)
+                        || partialBoxPositions.contains(position))).toList(),
                 null, List.of());
     }
 

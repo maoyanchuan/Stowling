@@ -38,6 +38,7 @@ public final class TaskRunWorkspace {
     private List<ClassificationLayoutEntry> classificationLayout = List.of();
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
+    private Set<BlockPosition> partialBoxStoragePositions = Set.of();
     private final Set<ContainerTarget> unavailableTargets =
             new LinkedHashSet<>();
     private String storageFailureReason = "";
@@ -281,6 +282,7 @@ public final class TaskRunWorkspace {
             Map<ContainerTarget, Set<String>> accepted
     ) {
         classificationLayout = List.of();
+        partialBoxStoragePositions = Set.of();
         targetContainers.clear();
         targetContainers.addAll(targets);
         acceptedItemsByContainer.clear();
@@ -314,7 +316,18 @@ public final class TaskRunWorkspace {
             List<ContainerTarget> cacheTargets,
             List<ClassificationLayoutEntry> layout
     ) {
+        setResolvedCategories(targets, accepted, cacheTargets, layout, Set.of());
+    }
+
+    public synchronized void setResolvedCategories(
+            List<ContainerTarget> targets,
+            Map<ContainerTarget, Set<String>> accepted,
+            List<ContainerTarget> cacheTargets,
+            List<ClassificationLayoutEntry> layout,
+            Set<BlockPosition> partialBoxStoragePositions
+    ) {
         classificationLayout = List.copyOf(layout);
+        this.partialBoxStoragePositions = Set.copyOf(partialBoxStoragePositions);
         targetContainers.clear();
         targetContainers.addAll(targets);
         containerCandidates.clear();
@@ -382,6 +395,10 @@ public final class TaskRunWorkspace {
 
     public synchronized List<ContainerTarget> cacheContainers() {
         return List.copyOf(cacheContainers);
+    }
+
+    public synchronized Set<BlockPosition> partialBoxStoragePositions() {
+        return partialBoxStoragePositions;
     }
 
     public synchronized boolean hasContainers() {

@@ -571,7 +571,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             List<ContainerTarget> sources = new ArrayList<>(preferred);
             sources.addAll(emptyBoxSources(context));
             return EmptyBoxSupplyPlan.returns(null, sources,
-                    taskCleanupContainers(context, configuration), storagePositions);
+                    taskCleanupContainers(context, configuration), storagePositions,
+                    context.workspace().partialBoxStoragePositions());
         }
 
         final void returnEmptyBoxes(Runnable after) {
@@ -2382,8 +2383,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         + " 件任务物品，收尾受阻"
                         + (lastFailure.isEmpty() ? "" : "；最后一次失败：" + lastFailure));
             }
+            ContainerTarget target = targets.get(index);
+            Map<String, Integer> items = owned();
+            if (target.entrances().stream()
+                    .anyMatch(context.workspace().partialBoxStoragePositions()::contains)
+                    && items.keySet().stream().anyMatch(ItemIdentity::isEmptyBox)) {
+                returnEmptyBoxes(() -> depositAll(index));
+                return;
+            }
             MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
-                    targets.get(index), owned(), false, false);
+                    target, items, false, false);
             steps.add(new Step(access, () -> depositAll(index + 1),
                     () -> {
                         lastFailure = access.tick().message();

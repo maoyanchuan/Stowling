@@ -28,10 +28,13 @@ class MixedBoxSelectionTest {
         ContainerTarget partialA = target(10);
         ContainerTarget partialB = target(11);
         workspace.setResolvedCategories(List.of(STONE_CHEST),
-                Map.of(STONE_CHEST, Set.of(STONE)), List.of(CACHE, partialA, partialB));
+                Map.of(STONE_CHEST, Set.of(STONE)), List.of(CACHE, partialA, partialB), List.of(),
+                Set.of(partialA.position(), partialB.position()));
         workspace.selectNextContainer();
 
         assertEquals(Set.of(STONE), workspace.mixedBoxWithdrawalItems(partialB, Set.of(STONE)));
+        assertEquals(Set.of(partialA.position(), partialB.position()),
+                workspace.partialBoxStoragePositions());
         workspace.deferCacheCategory(STONE);
         assertTrue(workspace.remainingCacheCategories(CACHE).isEmpty());
         assertEquals(Set.of(STONE), workspace.remainingCacheCategories(partialA));

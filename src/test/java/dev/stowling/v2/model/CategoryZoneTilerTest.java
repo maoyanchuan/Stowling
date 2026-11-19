@@ -11,6 +11,54 @@ import org.junit.jupiter.api.Test;
 
 class CategoryZoneTilerTest {
     @Test
+    void wholeStoragePreservesRotatedTwoWideSlicesInEveryDirection() {
+        for (CategoryZoneExpansionAxis direction : CategoryZoneExpansionAxis.values()) {
+            boolean xAxis = direction == CategoryZoneExpansionAxis.X_POSITIVE
+                    || direction == CategoryZoneExpansionAxis.X_NEGATIVE;
+            boolean positive = direction == CategoryZoneExpansionAxis.X_POSITIVE
+                    || direction == CategoryZoneExpansionAxis.Z_POSITIVE;
+            int start = positive ? 0 : 4;
+            AreaBounds marker = xAxis ? new AreaBounds(start, -40, 10, start, -40, 11)
+                    : new AreaBounds(10, -40, start, 11, -40, start);
+            AreaBounds storage = xAxis
+                    ? new AreaBounds(start, -38, 10, start + 1, -36, 10)
+                    : new AreaBounds(10, -38, start, 10, -36, start + 1);
+            CategoryBindingDefinition template = new CategoryBindingDefinition(
+                    UUID.randomUUID(), marker, storage, "MARKER_CONTAINER_CONTENTS",
+                    List.of(), List.of(), null, StoragePolicy.DEFAULT, true);
+            AreaBounds total = xAxis ? new AreaBounds(0, -40, 10, 5, -36, 11)
+                    : new AreaBounds(10, -40, 0, 11, -36, 5);
+            CategoryZoneExpansionDefinition expansion = new CategoryZoneExpansionDefinition(
+                    total, direction, 2, 1);
+
+            List<CategoryBindingDefinition> result = CategoryZoneTiler.expand(
+                    expansion, List.of(template));
+
+            assertEquals(3, result.size());
+            int distance = positive ? 4 : -4;
+            assertEquals(storage.shift(xAxis ? distance : 0, 0, xAxis ? 0 : distance),
+                    result.get(2).storageArea());
+            assertTrue(result.stream().allMatch(CategoryBindingDefinition::wholeStorage));
+            assertThrows(IllegalArgumentException.class, () -> CategoryZoneTiler.expand(
+                    new CategoryZoneExpansionDefinition(total, direction, 1, 1), List.of(template)));
+        }
+    }
+
+    @Test
+    void oldBindingsKeepColumnPairingWhenTheOptionIsAbsent() {
+        CategoryBindingDefinition template = template();
+        assertTrue(!template.wholeStorage());
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        String legacy = gson.toJson(template).replace(
+                ",\"wholeStorage\":false", "");
+        assertTrue(!gson.fromJson(legacy, CategoryBindingDefinition.class).wholeStorage());
+        CategoryBindingDefinition enabled = new CategoryBindingDefinition(template.id(),
+                template.markerArea(), template.storageArea(), "MARKER_CONTAINER_CONTENTS",
+                List.of(), List.of(), null, StoragePolicy.DEFAULT, true);
+        assertEquals(enabled, gson.fromJson(gson.toJson(enabled), CategoryBindingDefinition.class));
+    }
+
+    @Test
     void standingAreaOutsideTheSelectionMovesWithEverySlice() {
         CategoryBindingDefinition original = template();
         AreaBounds standing = new AreaBounds(0, 65, 15, 4, 65, 16);

@@ -22,6 +22,16 @@ final class ColumnCategoryMatcher {
             List<CategoryContainerOverrideDefinition> overrides,
             boolean rejectDirectColumnConflicts
     ) {
+        return resolve(markers, storageContainers, overrides, rejectDirectColumnConflicts, false);
+    }
+
+    static CategoryRuleResult resolve(
+            List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers,
+            List<CategoryContainerOverrideDefinition> overrides,
+            boolean rejectDirectColumnConflicts,
+            boolean wholeStorage
+    ) {
         if (storageContainers.isEmpty()) {
             return CategoryRuleResult.failure("储存区没有可用容器");
         }
@@ -37,11 +47,12 @@ final class ColumnCategoryMatcher {
         Map<ColumnKey, BlockPosition> columnPositions = new LinkedHashMap<>();
         for (CategoryMarker marker : markers) {
             List<ContainerTarget> matching = storageContainers.stream()
-                    .filter(container -> matchesColumn(
+                    .filter(container -> ((wholeStorage && marker.source()
+                            == CategoryMarkerSource.CONTAINER_CONTENTS) || matchesColumn(
                             axis,
                             marker.position(),
                             container.position()
-                    ) && !replacedPositions.contains(container.position()))
+                    )) && !replacedPositions.contains(container.position()))
                     .toList();
             if (matching.isEmpty()) {
                 continue;

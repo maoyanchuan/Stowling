@@ -1651,7 +1651,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             existingBinding
                     ),
                     binding.standingArea(),
-                    binding.storagePolicy()
+                    binding.storagePolicy(),
+                    binding.wholeStorage()
             ));
         }
         return List.copyOf(result);

@@ -24,6 +24,7 @@
             standingArea: value?.standingArea ? normalizeArea(value.standingArea) : null,
             storagePolicy: normalizeStoragePolicy(value?.storagePolicy),
             ruleId: String(value?.ruleId || "DIRECT_BLOCK_ID"),
+            wholeStorage: Boolean(value?.wholeStorage),
             ignoredMarkerBlockIds: Array.isArray(value?.ignoredMarkerBlockIds)
                 ? value.ignoredMarkerBlockIds
                     .map((blockId) => String(blockId).trim())
@@ -151,6 +152,7 @@
                 standingArea: binding.standingArea ? normalizeArea(binding.standingArea) : null,
                 storagePolicy: normalizeStoragePolicy(binding.storagePolicy),
                 ruleId: String(binding.ruleId),
+                wholeStorage: Boolean(binding.wholeStorage),
                 ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
                 containerOverrides: binding.containerOverrides.map(
                     (override) => ({
@@ -195,20 +197,16 @@
             requireCoordinate(second);
             limits[axis] = [Math.min(first, second), Math.max(first, second)];
             for (const binding of bindings) {
-                if (binding.storagePolicy?.packingArea) {
-                const area = normalizeArea(binding.storagePolicy.packingArea);
-                for (const corner of ["first", "second"]) {
-                    area[`${corner}${axis}`] += anchor - minimum;
-                }
-                result.storagePolicy = {...binding.storagePolicy, packingArea: area};
-            }
-            for (const kind of ["marker", "storage"]) {
+                for (const kind of ["marker", "storage"]) {
                     const bounds = bindingBounds(binding, kind, axis);
                     if (bounds[0] < limits[axis][0] || bounds[1] > limits[axis][1]) {
                         throw new RangeError("单片母版必须完整位于总选区内");
                     }
                 }
             }
+        }
+        if (bindings.some((binding) => binding.wholeStorage)) {
+            return inferWholeStorageExpansion(bindings, expansion, limits);
         }
         const candidates = ["X", "Z"].filter((axis) => {
             const expected = bindingBounds(bindings[0], "marker", axis);
@@ -288,6 +286,68 @@
             count,
             collapsed
         };
+    }
+
+    /**
+     * @param {Array<object>} bindings
+     * @param {object} expansion
+     * @param {object} limits
+     * @returns {object}
+     */
+    function inferWholeStorageExpansion(bindings, expansion, limits) {
+        const footprints = {};
+        for (const axis of ["X", "Z"]) {
+            const bounds = bindings.flatMap((binding) => ["marker", "storage"]
+                .flatMap((kind) => bindingBounds(binding, kind, axis)));
+            footprints[axis] = [Math.min(...bounds), Math.max(...bounds)];
+        }
+        const candidates = ["X", "Z"].map((axis) => ({
+            axis,
+            step: axisLength(footprints[axis]),
+            count: Math.floor(axisLength(limits[axis]) / axisLength(footprints[axis]))
+        })).sort((left, right) => right.count - left.count);
+        if (candidates[0].count === candidates[1].count) {
+            throw new RangeError("无法唯一识别拓展方向，请手动选择方向和步长");
+        }
+        const {axis, step, count} = candidates[0];
+        if (count > 256) {
+            throw new RangeError("自动铺满最多生成 256 个单片");
+        }
+        const [minimum, maximum] = footprints[axis];
+        const [lower, upper] = limits[axis];
+        const positive = minimum === lower && maximum < upper ? true
+            : maximum === upper && minimum > lower ? false
+                : Number(expansion[`areaFirst${axis}`]) <= Number(
+                    expansion[`areaSecond${axis}`]);
+        const delta = positive ? lower - minimum : upper - maximum;
+        const templates = bindings.map((binding) => {
+            const result = {...binding};
+            for (const kind of ["marker", "storage"]) {
+                for (const corner of ["First", "Second"]) {
+                    result[`${kind}${corner}${axis}`] = Number(
+                        binding[`${kind}${corner}${axis}`]) + delta;
+                }
+            }
+            for (const kind of ["standingArea", "packingArea"]) {
+                const source = kind === "standingArea" ? binding.standingArea
+                    : binding.storagePolicy?.packingArea;
+                if (!source) continue;
+                const area = normalizeArea(source);
+                for (const corner of ["first", "second"]) {
+                    area[`${corner}${axis}`] += delta;
+                }
+                if (kind === "standingArea") result.standingArea = area;
+                else result.storagePolicy = {...binding.storagePolicy, packingArea: area};
+            }
+            result.containerOverrides = binding.containerOverrides.map((override) => ({
+                ...override,
+                [`storage${axis}`]: Number(override[`storage${axis}`]) + delta
+            }));
+            return result;
+        });
+        return {bindings: templates, expansion: {...expansion,
+            direction: `${axis}_${positive ? "POSITIVE" : "NEGATIVE"}`,
+            step, templateCount: templates.length}, count, collapsed: false};
     }
 
     /**

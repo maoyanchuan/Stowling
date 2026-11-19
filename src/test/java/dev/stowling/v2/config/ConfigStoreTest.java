@@ -28,6 +28,24 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void preservesWholeStorageMappingAfterRestart() throws Exception {
+        Path path = directory.resolve("whole-storage.json");
+        ConfigStore store = new ConfigStore(path);
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(),
+                new AreaBounds(11, -40, 46, 10, -40, 46),
+                new AreaBounds(10, -38, 46, 10, -36, 47), "MARKER_CONTAINER_CONTENTS",
+                List.of(), List.of(), null, dev.stowling.v2.model.StoragePolicy.DEFAULT, true);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Rotated", List.of(binding));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(), List.of(), List.of(), List.of(zone));
+
+        store.save(store.loadOrReset().revision(), config);
+
+        assertEquals(binding, new ConfigStore(path).loadOrReset().config().categoryZones()
+                .getFirst().bindings().getFirst());
+    }
+
+    @Test
     void storesExactLooseSlotsAndChecksThePartialBoxDestinationOnRestart() throws Exception {
         AppConfig initial = automaticConfiguration(false);
         var original = initial.autoClassifyTasks().getFirst();

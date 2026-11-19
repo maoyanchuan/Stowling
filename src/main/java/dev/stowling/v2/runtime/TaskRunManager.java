@@ -186,7 +186,8 @@ public final class TaskRunManager {
                             new dev.stowling.v2.model.StoragePolicy(policy.mode(),
                                     policy.loosePercent(), policy.allowPartialBoxes(),
                                     binding.storagePolicy().packingArea(), policy.refillLoose(),
-                                    policy.looseSlots(), policy.partialBoxDestinationRef())))
+                                    policy.looseSlots(), policy.partialBoxDestinationRef()),
+                            binding.wholeStorage()))
                     .toList());
         }).toList();
     }

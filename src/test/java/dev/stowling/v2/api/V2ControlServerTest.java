@@ -28,6 +28,41 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void acceptsWholeStorageForRotatedSlicesAndKeepsItOnEveryCopy() throws Exception {
+        try (Fixture fixture = fixture()) {
+            JsonObject payload = JsonParser.parseString("""
+                    {"name":"Rotated","bindings":[{
+                    "markerFirstX":11,"markerFirstY":-40,"markerFirstZ":46,
+                    "markerSecondX":10,"markerSecondY":-40,"markerSecondZ":46,
+                    "storageFirstX":10,"storageFirstY":-38,"storageFirstZ":46,
+                    "storageSecondX":10,"storageSecondY":-36,"storageSecondZ":47,
+                    "ruleId":"MARKER_CONTAINER_CONTENTS","wholeStorage":true}],
+                    "expansion":{"firstX":10,"firstY":-40,"firstZ":46,
+                    "secondX":11,"secondY":-36,"secondZ":51,
+                    "direction":"Z_POSITIVE","step":2}}
+                    """).getAsJsonObject();
+            assertEquals(401, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), false).statusCode());
+            HttpResponse<String> created = fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            JsonArray bindings = object(created).getAsJsonArray("categoryZones")
+                    .get(0).getAsJsonObject().getAsJsonArray("bindings");
+            assertEquals(3, bindings.size());
+            for (JsonElement binding : bindings) {
+                assertTrue(binding.getAsJsonObject().get("wholeStorage").getAsBoolean());
+            }
+            JsonObject third = bindings.get(2).getAsJsonObject().getAsJsonObject("storageArea");
+            assertEquals(50, third.get("firstZ").getAsInt());
+            assertEquals(51, third.get("secondZ").getAsInt());
+            payload.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .addProperty("wholeStorage", "true");
+            assertEquals(400, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), true).statusCode());
+        }
+    }
+
+    @Test
     void acceptsAndPersistsTheOptionalLooseRefillSwitch() throws Exception {
         try (Fixture fixture = fixture()) {
             JsonObject payload = JsonParser.parseString(categoryZone("Refill")).getAsJsonObject();

@@ -1570,6 +1570,10 @@ public final class ConfigValidator {
                     );
                 }
                 rules.require(binding.ruleId());
+                if (binding.wholeStorage()
+                        && !ContainerContentsCategoryRule.ID.equals(binding.ruleId())) {
+                    throw new V2ValidationException("整片储存区对应仅支持标记箱/木桶识别方式");
+                }
                 if (binding.markerArea().equals(binding.storageArea())) {
                     throw new V2ValidationException(
                             "category marker and storage areas must differ"

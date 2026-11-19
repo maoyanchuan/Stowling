@@ -457,7 +457,8 @@
                 const axis = inferred?.expansion.direction.startsWith("X_") ? "X" : "Z";
                 const sign = inferred?.expansion.direction.endsWith("POSITIVE") ? "正" : "负";
                 preview.textContent = inferred
-                    ? `自动识别 ${axis} ${sign}方向 · 步长 1 · ${stats.message}`
+                    ? `自动识别 ${axis} ${sign}方向 · 步长 ${inferred.expansion.step}`
+                        + ` · ${stats.message}`
                         + (inferred.collapsed ? " · 整排母版已提取为单片" : "")
                     : stats.message;
                 preview.classList.toggle("error", !stats.valid);
@@ -526,19 +527,21 @@
     function maximumAxisSpan(templates, direction) {
         return Math.max(
             1,
-            ...templates.map((template) => axisSpan(template, direction))
+            ...templates.flatMap((template) => [
+                axisSpan(template, direction), axisSpan(template, direction, "storage")])
         );
     }
 
     /**
      * @param {object} template
      * @param {string} direction
+     * @param {string} kind
      * @returns {number}
      */
-    function axisSpan(template, direction) {
+    function axisSpan(template, direction, kind = "marker") {
         const xAxis = direction.startsWith("X_");
-        const first = xAxis ? template.markerFirstX : template.markerFirstZ;
-        const second = xAxis ? template.markerSecondX : template.markerSecondZ;
+        const first = template[`${kind}First${xAxis ? "X" : "Z"}`];
+        const second = template[`${kind}Second${xAxis ? "X" : "Z"}`];
         return Math.max(1, Math.abs(Number(second) - Number(first)) + 1);
     }
 
@@ -551,22 +554,14 @@
         let span = 1;
         for (const template of templates) {
             const markerSpan = axisSpan(template, expansion.direction);
-            const storageSpan = axisSpan(
-                {
-                    markerFirstX: template.storageFirstX,
-                    markerSecondX: template.storageSecondX,
-                    markerFirstZ: template.storageFirstZ,
-                    markerSecondZ: template.storageSecondZ
-                },
-                expansion.direction
-            );
-            if (markerSpan !== storageSpan) {
+            const storageSpan = axisSpan(template, expansion.direction, "storage");
+            if (markerSpan !== storageSpan && !template.wholeStorage) {
                 return {
                     valid: false,
                     message: "每个分类物的识别区和储存区在展开方向上的长度必须一致"
                 };
             }
-            span = Math.max(span, markerSpan);
+            span = Math.max(span, markerSpan, storageSpan);
         }
         if (!Number.isInteger(expansion.step)
                 || expansion.step < span) {
@@ -796,6 +791,22 @@
             rule.append(new Option(definition.name, definition.id));
         }
         rule.value = binding.ruleId;
+        const wholeStorage = document.createElement("input");
+        wholeStorage.type = "checkbox";
+        wholeStorage.checked = Boolean(binding.wholeStorage);
+        const wholeStorageRow = field("标记箱对应整片储存区",
+            Settings.switchControl(wholeStorage, "标记箱对应整片储存区"));
+        const wholeStorageHelp = Stowling.element("p", "muted compact-help",
+            "启用后，本分类物标记箱里的物品可存入整片储存区；"
+            + "识别区与储存区可不同宽，自动铺满保留整片尺寸。每种独立分类请分别添加分类物。");
+        /** @returns {void} */
+        function refreshWholeStorage() {
+            const available = rule.value === "MARKER_CONTAINER_CONTENTS";
+            wholeStorageRow.hidden = !available;
+            wholeStorageHelp.hidden = !available;
+        }
+        rule.addEventListener("change", refreshWholeStorage);
+        refreshWholeStorage();
         const ignored = document.createElement("textarea");
         ignored.rows = 2;
         ignored.placeholder = "minecraft:stone_bricks";
@@ -806,6 +817,8 @@
         );
         recognition.append(
             field("分类物识别方式", rule),
+            wholeStorageRow,
+            wholeStorageHelp,
             field("忽略支撑方块（每行一个）", ignored)
         );
         const overrideHeading = Stowling.element(
@@ -904,6 +917,7 @@
                 packingArea: packingToggle.checked ? readStandingArea(packing.read()) : null
             },
             ruleId: rule.value,
+            wholeStorage: rule.value === "MARKER_CONTAINER_CONTENTS" && wholeStorage.checked,
             ignoredMarkerBlockIds: parseBlockIds(ignored.value),
             containerOverrides: overrideReaders.map((reader) => reader.read())
         });
@@ -945,6 +959,7 @@
             + `${binding.storageFirstZ}`;
         const exceptions = binding.containerOverrides.length;
         return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`
+            + (binding.wholeStorage ? " · 对应整片储存区" : "")
             + (binding.standingArea ? " · 已指定操作站位区域" : "");
     }
 

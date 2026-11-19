@@ -12,6 +12,7 @@ import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.category.CategoryRule;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryRuleResult;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.category.DirectBlockIdCategoryRule;
 import dev.stowling.v2.category.PottedBlockItems;
 import dev.stowling.v2.model.AreaBounds;
@@ -222,13 +223,18 @@ public final class MinecraftCategoryZoneResolver
             return DirectBlockIdCategoryRule.resolveExplicitSources(
                     markers,
                     storageContainers,
-                    binding.containerOverrides()
+                    binding.containerOverrides(),
+                    binding.wholeStorage()
             );
         }
         CategoryRule rule = rules.require(binding.ruleId());
         List<CategoryMarker> acceptedMarkers = markers.stream()
                 .filter(rule::accepts)
                 .toList();
+        if (rule instanceof ContainerContentsCategoryRule contentsRule) {
+            return contentsRule.resolve(acceptedMarkers, storageContainers,
+                    binding.containerOverrides(), binding.wholeStorage());
+        }
         return rule.resolve(
                 acceptedMarkers,
                 storageContainers,

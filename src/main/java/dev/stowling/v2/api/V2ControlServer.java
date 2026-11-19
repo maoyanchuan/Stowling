@@ -1060,7 +1060,8 @@ public final class V2ControlServer implements AutoCloseable {
                             "ignoredMarkerBlockIds",
                             "containerOverrides",
                             "standingArea",
-                            "storagePolicy"
+                            "storagePolicy",
+                            "wholeStorage"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -1095,7 +1096,8 @@ public final class V2ControlServer implements AutoCloseable {
                     stringArray(binding, "ignoredMarkerBlockIds"),
                     containerOverrideRequests(binding),
                     standingArea(binding),
-                    storagePolicy(binding)
+                    storagePolicy(binding),
+                    optionalBoolean(binding, "wholeStorage")
             ));
         }
         return List.copyOf(result);

@@ -74,6 +74,76 @@ def run_model(expression: str) -> Any:
 
 @pytest.mark.parametrize("axis", ["X", "Z"])
 @pytest.mark.parametrize("reverse", [False, True])
+def test_whole_storage_keeps_two_wide_slice_and_offsets_its_helpers(
+    axis: str, reverse: bool
+) -> None:
+    result = run_model(
+        f"""(() => {{
+            const axis = {json.dumps(axis)};
+            const start = {17 if reverse else 13};
+            const template = {{...binding(axis, start, start),
+                ruleId: 'MARKER_CONTAINER_CONTENTS', wholeStorage: true,
+                standingArea: {{firstX: 20, secondX: 21, firstY: 65, secondY: 65,
+                    firstZ: 20, secondZ: 21}},
+                storagePolicy: {{packingArea: {{firstX: 22, secondX: 23,
+                    firstY: 65, secondY: 65, firstZ: 22, secondZ: 23}}}},
+                containerOverrides: [{{storageX: 20, storageY: 64, storageZ: 20,
+                    mode: 'ADD', itemIds: ['minecraft:stone']}}]}};
+            template[`storageSecond${{axis}}`] = start + 1;
+            const other = axis === 'X' ? 'Z' : 'X';
+            template[`markerFirst${{other}}`] = 0;
+            template[`markerSecond${{other}}`] = 1;
+            template[`storageFirst${{other}}`] = 0;
+            template[`storageSecond${{other}}`] = 0;
+            const before = JSON.stringify(template);
+            const expansion = area(axis, {18 if reverse else 13}, {13 if reverse else 18});
+            const result = model.inferExpansion([template], expansion);
+            return {{...result, unchanged: before === JSON.stringify(template)}};
+        }})()"""
+    )
+
+    assert result["count"] == 3
+    assert result["collapsed"] is False
+    assert result["unchanged"] is True
+    assert result["expansion"]["step"] == 2
+    assert result["expansion"]["direction"] == f"{axis}_{'NEGATIVE' if reverse else 'POSITIVE'}"
+    saved = result["bindings"][0]
+    assert saved["wholeStorage"] is True
+    assert saved[f"storageSecond{axis}"] - saved[f"storageFirst{axis}"] == 1
+    assert saved[f"markerFirst{axis}"] == (17 if reverse else 13)
+    assert saved["standingArea"][f"first{axis}"] == 20
+    assert saved["storagePolicy"]["packingArea"][f"first{axis}"] == 22
+
+
+def test_whole_storage_payload_and_legacy_default_round_trip() -> None:
+    result = run_model(
+        """(() => {
+            const legacy = model.normalizeBinding({});
+            const template = {...binding('X', 20, 20), wholeStorage: true,
+                ruleId: 'MARKER_CONTAINER_CONTENTS', storageSecondX: 21,
+                standingArea: {firstX: 19, secondX: 20, firstY: 65, secondY: 65,
+                    firstZ: -1, secondZ: -1},
+                storagePolicy: {packingArea: {firstX: 22, secondX: 22,
+                    firstY: 65, secondY: 65, firstZ: -1, secondZ: -1}},
+                containerOverrides: [{storageX: 21, storageY: 64, storageZ: 0,
+                    mode: 'ADD', itemIds: ['minecraft:stone']}]};
+            return {legacy: legacy.wholeStorage,
+                saved: model.payload({name: 'Wide', bindings: [template],
+                    expansion: area('X', 13, 92)})};
+        })()"""
+    )
+
+    assert result["legacy"] is False
+    saved = result["saved"]["bindings"][0]
+    assert saved["wholeStorage"] is True
+    assert saved["storageSecondX"] == 14
+    assert saved["standingArea"]["firstX"] == 12
+    assert saved["storagePolicy"]["packingArea"]["firstX"] == 15
+    assert saved["containerOverrides"][0]["storageX"] == 14
+
+
+@pytest.mark.parametrize("axis", ["X", "Z"])
+@pytest.mark.parametrize("reverse", [False, True])
 def test_whole_row_becomes_eighty_single_slices(axis: str, reverse: bool) -> None:
     first, second = (92, 13) if reverse else (13, 92)
     result = run_model(

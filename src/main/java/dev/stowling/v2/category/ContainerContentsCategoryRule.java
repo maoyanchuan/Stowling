@@ -12,7 +12,7 @@ public final class ContainerContentsCategoryRule implements CategoryRule {
         return new CategoryRuleDefinition(
                 ID,
                 "标记箱/木桶",
-                "读取识别区内箱子或木桶的全部物品槽位，并把每种物品分配给同一列储存区。"
+                "读取标记箱或木桶的全部物品，默认对应同列储存区；可选择对应整片储存区。"
         );
     }
 
@@ -30,6 +30,15 @@ public final class ContainerContentsCategoryRule implements CategoryRule {
             List<ContainerTarget> storageContainers,
             List<CategoryContainerOverrideDefinition> overrides
     ) {
+        return resolve(markers, storageContainers, overrides, false);
+    }
+
+    public CategoryRuleResult resolve(
+            List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers,
+            List<CategoryContainerOverrideDefinition> overrides,
+            boolean wholeStorage
+    ) {
         if (storageContainers.isEmpty()) {
             return CategoryRuleResult.failure("储存区没有可用容器");
         }
@@ -40,7 +49,8 @@ public final class ContainerContentsCategoryRule implements CategoryRule {
                 markers,
                 storageContainers,
                 overrides,
-                false
+                false,
+                wholeStorage
         );
         if (!result.succeeded() || !result.categories().isEmpty()) {
             return result;

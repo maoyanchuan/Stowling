@@ -28,7 +28,7 @@ public final class CategoryZoneTiler {
         for (CategoryBindingDefinition template : templates) {
             int markerSpan = span(template.markerArea(), expansion.direction());
             int storageSpan = span(template.storageArea(), expansion.direction());
-            if (markerSpan != storageSpan) {
+            if (markerSpan != storageSpan && !template.wholeStorage()) {
                 throw new IllegalArgumentException(
                         "每个分类物的识别区和储存区在展开方向上的长度必须一致"
                 );
@@ -39,7 +39,7 @@ public final class CategoryZoneTiler {
                         "单片母版必须完整位于总选区内"
                 );
             }
-            maximumSpan = Math.max(maximumSpan, markerSpan);
+            maximumSpan = Math.max(maximumSpan, Math.max(markerSpan, storageSpan));
         }
         if (expansion.step() < maximumSpan) {
             throw new IllegalArgumentException(
@@ -126,7 +126,8 @@ public final class CategoryZoneTiler {
                 template.ignoredMarkerBlockIds(),
                 template.containerOverrides(),
                 template.standingArea() == null ? null : template.standingArea().shift(x, 0, z),
-                template.storagePolicy().shift(x, z)
+                template.storagePolicy().shift(x, z),
+                template.wholeStorage()
         );
     }
 
@@ -152,7 +153,8 @@ public final class CategoryZoneTiler {
                 template.ignoredMarkerBlockIds(),
                 overrides,
                 shifted.standingArea(),
-                shifted.storagePolicy()
+                shifted.storagePolicy(),
+                template.wholeStorage()
         );
     }
 

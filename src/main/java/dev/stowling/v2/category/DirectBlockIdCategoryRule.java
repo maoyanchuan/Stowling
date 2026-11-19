@@ -50,11 +50,21 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
             List<ContainerTarget> storageContainers,
             List<CategoryContainerOverrideDefinition> overrides
     ) {
+        return resolveExplicitSources(markers, storageContainers, overrides, false);
+    }
+
+    public static CategoryRuleResult resolveExplicitSources(
+            List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers,
+            List<CategoryContainerOverrideDefinition> overrides,
+            boolean wholeStorage
+    ) {
         return ColumnCategoryMatcher.resolve(
                 markers,
                 storageContainers,
                 overrides,
-                false
+                false,
+                wholeStorage
         );
     }
 

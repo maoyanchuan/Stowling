@@ -37,6 +37,7 @@ final class DroppedItemCollectionEngine {
     private boolean stopping;
     private boolean pickupConfirmed;
     private boolean drainChecked;
+    private boolean claimedExistingReceipts;
     private int stableTicks;
     private Set<DroppedItem> observedDrops = Set.of();
 
@@ -267,7 +268,12 @@ final class DroppedItemCollectionEngine {
         if (startInventory == null || currentInventory == null) {
             return;
         }
-        inventory.claimCollectionItems(context.workspace().inventoryAccount(), itemFilter);
+        if (!claimedExistingReceipts) {
+            inventory.claimUnexpected(context.workspace().inventoryAccount(), itemFilter);
+            claimedExistingReceipts = true;
+        } else {
+            inventory.claimCollectionItems(context.workspace().inventoryAccount(), itemFilter);
+        }
         context.workspace().observeInventory(
                 currentInventory.itemCounts()
         );

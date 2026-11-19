@@ -269,6 +269,10 @@ public final class MinecraftContainerTransferPort
         active.observedDelta = observation.delta();
         active.observationPolls = observation.observations();
         traceConfirmation(menu, playerDelta, containerDelta, observation.stable());
+        if (DepositTransferPlan.needsServerSnapshot(active.pendingCount, playerDelta,
+                containerDelta)) {
+            return beginResynchronization("箱子数量与拾取回执不一致，立即读取服务器快照");
+        }
         if (observation.stable()) {
             return settleConfirmed(menu, observation.delta());
         }
@@ -500,8 +504,9 @@ public final class MinecraftContainerTransferPort
             return ContainerTransferResult.pending("等待重新核对的缓存界面", remaining());
         }
         AbstractContainerMenu menu = screen.getMenu();
-        var observation = DepositTransferPlan.observeResynchronized(active.pendingCount,
-                active.observedDelta, active.observationPolls, pendingOutgoingCount(menu));
+        var observation = DepositTransferPlan.observeServerSnapshot(active.pendingCount,
+                active.observedDelta, active.observationPolls,
+                containerItemCount(menu, active.pendingItemId) - active.containerBefore);
         active.observedDelta = observation.delta();
         active.observationPolls = observation.observations();
         traceConfirmation(menu, pendingOutgoingCount(menu),

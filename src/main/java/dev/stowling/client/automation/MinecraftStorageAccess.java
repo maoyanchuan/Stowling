@@ -22,7 +22,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final Minecraft minecraft;
     private final TaskExecutionContext context;
     private final ContainerTarget target;
-    private final MinecraftContainerVisit visit;
+    private MinecraftContainerVisit visit;
     private final Map<String, Integer> remaining;
     private final boolean withdraw;
     private final boolean inspect;
@@ -37,6 +37,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private int pendingCount;
     private long pickupsBefore;
     private long pendingStartedAt;
+    private boolean rereading;
+    private boolean serverReread;
     private StorageTransferConfirmation pendingConfirmation;
     private TaskModuleResult result;
 
@@ -104,6 +106,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 return access;
             }
             opened = true;
+            serverReread = rereading;
+            rereading = false;
             age = 0;
         }
         if (!(minecraft.gui.screen() instanceof AbstractContainerScreen<?> screen)) {
@@ -133,9 +137,23 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                                     - pickupsBefore)
                             + "; cursorEmpty=" + menu.getCarried().isEmpty(),
                     (System.nanoTime() - pendingStartedAt) / 1_000_000, true);
-            if (!pendingConfirmation.matches(count(menu, true, pendingKey),
+            boolean confirmed = pendingConfirmation.matches(count(menu, true, pendingKey),
                     MinecraftInventoryPickups.count(minecraft, pendingKey) - pickupsBefore,
-                    menu.getCarried().isEmpty(), () -> count(menu, false, pendingKey))) {
+                    menu.getCarried().isEmpty(), () -> count(menu, false, pendingKey));
+            boolean destinationConfirmed = pendingConfirmation.matchesServerContainer(
+                    menu.getCarried().isEmpty(), count(menu, false, pendingKey));
+            if (!confirmed && !serverReread && destinationConfirmed) {
+                dev.stowling.v2.runtime.TaskTrace.event("RESYNC", "storage.reopen",
+                        "容器数量已匹配整批存取，但拾取回执不完整; item=" + pendingKey, 0, false);
+                minecraft.player.closeContainer();
+                visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
+                opened = false;
+                rereading = true;
+                settle = 0;
+                age = 0;
+                return TaskModuleResult.waiting("立即读取原容器服务器快照，核对整批存取");
+            }
+            if (!confirmed && !(serverReread && destinationConfirmed)) {
                 return TaskModuleResult.waiting(emptyBoxSupply
                         ? "等待确认空潜影盒进入背包" : "等待服务器确认精确存取");
             }
@@ -163,6 +181,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         Move candidate = findMove(menu, null, 0);
         if (candidate == null) return finish(true, "容器存取已完成");
         pendingKey = candidate.key();
+        serverReread = false;
         pendingCount = 0;
         int playerBefore = count(menu, true, pendingKey);
         pickupsBefore = MinecraftInventoryPickups.count(minecraft, pendingKey);

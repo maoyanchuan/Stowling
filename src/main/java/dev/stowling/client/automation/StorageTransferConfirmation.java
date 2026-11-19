@@ -24,4 +24,9 @@ record StorageTransferConfirmation(int expectedPlayer, OptionalInt expectedConta
                 && (expectedContainer.isEmpty()
                 || containerAfter.getAsInt() == expectedContainer.getAsInt());
     }
+
+    boolean matchesServerContainer(boolean cursorEmpty, int containerAfter) {
+        return cursorEmpty && expectedContainer.isPresent()
+                && containerAfter == expectedContainer.getAsInt();
+    }
 }

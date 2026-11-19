@@ -39,23 +39,25 @@ class DepositTransferPlanTest {
     }
 
     @Test
-    void freshServerSnapshotCanSettleWithoutTheOldContainerNetDelta() {
-        var first = DepositTransferPlan.observeResynchronized(8, -1, 0, 8);
-        var second = DepositTransferPlan.observeResynchronized(8, first.delta(),
-                first.observations(), 8);
+    void theLogged512ItemsAreConfirmedEvenWhenPickupReceiptsOnlyCounted499() {
+        assertTrue(DepositTransferPlan.needsServerSnapshot(512, 499, 512));
+        var confirmed = DepositTransferPlan.observeServerSnapshot(512, -1, 0, 512);
 
-        assertTrue(second.stable());
-        assertEquals(8, second.delta());
-        assertFalse(DepositTransferPlan.observeResynchronized(8, 8, 1, 9).stable());
+        assertTrue(confirmed.stable());
+        assertEquals(512, confirmed.delta());
+        assertFalse(DepositTransferPlan.needsServerSnapshot(512, 512, 512));
+        assertFalse(DepositTransferPlan.needsServerSnapshot(512, 0, 0));
+        assertFalse(DepositTransferPlan.observeServerSnapshot(512, -1, 0, 513).stable());
     }
 
     @Test
     void freshSnapshotCanSettleZeroOrPartialAcceptanceWithoutRetryingTheClick() {
-        var zero = DepositTransferPlan.observeResynchronized(8, -1, 0, -2);
-        assertTrue(DepositTransferPlan.observeResynchronized(8, zero.delta(),
-                zero.observations(), -2).stable());
-        var partial = DepositTransferPlan.observeResynchronized(8, -1, 0, 3);
-        var settled = DepositTransferPlan.observeResynchronized(8, partial.delta(),
+        var zero = DepositTransferPlan.observeServerSnapshot(8, -1, 0, 0);
+        assertTrue(DepositTransferPlan.observeServerSnapshot(8, zero.delta(),
+                zero.observations(), 0).stable());
+        assertFalse(DepositTransferPlan.observeServerSnapshot(8, -1, 0, -1).stable());
+        var partial = DepositTransferPlan.observeServerSnapshot(8, -1, 0, 3);
+        var settled = DepositTransferPlan.observeServerSnapshot(8, partial.delta(),
                 partial.observations(), 3);
         assertTrue(settled.stable());
         assertEquals(3, settled.delta());

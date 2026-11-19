@@ -2,7 +2,7 @@ package dev.stowling.automation;
 
 /** A bounded wave of one exact item key, confirmed together by the caller. */
 public final class ContainerInteractionBatch {
-    public static final int MAX_TRANSFERS = 8;
+    public static final int MAX_TRANSFERS = 36;
     public static final int MAX_CLICKS = 64;
     private final String key;
     private int transfers;

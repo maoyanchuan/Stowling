@@ -12,6 +12,7 @@ public final class PlayerInventoryAccount {
     private final Map<String, Integer> carried = new LinkedHashMap<>();
     private final Map<String, Integer> managed = new LinkedHashMap<>();
     private final Set<String> collectionFilters = new java.util.LinkedHashSet<>();
+    private final Set<String> collectedItemIds = new java.util.LinkedHashSet<>();
     private boolean collectionStarted;
     private boolean collectAll;
 
@@ -42,6 +43,10 @@ public final class PlayerInventoryAccount {
         return collectionStarted;
     }
 
+    public synchronized Set<String> collectedItemIds() {
+        return Set.copyOf(collectedItemIds);
+    }
+
     public synchronized Map<String, Integer> itemsForSource(String source) {
         return switch (source) {
             case "collected" -> Map.copyOf(collected);
@@ -54,6 +59,7 @@ public final class PlayerInventoryAccount {
     public synchronized void recordCollected(String itemId, int count) {
         add(collected, itemId, count);
         add(managed, itemId, count);
+        collectedItemIds.add(itemId);
     }
 
     public synchronized void recordWithdrawn(String itemId, int count) {

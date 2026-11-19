@@ -16,6 +16,80 @@ import org.junit.jupiter.api.Test;
 
 class PlayerInventoryManagerTest {
     @Test
+    void lateDropsBetweenTasksStayOwnedWhileUnrelatedIdleGiftsRemainProtected() {
+        MutableInventory inventory = new MutableInventory();
+        MutableClock clock = new MutableClock();
+        String tool = "minecraft:diamond_pickaxe";
+        String wood = "minecraft:oak_log";
+        inventory.set(Map.of(tool, 1));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory, clock);
+        manager.observe();
+        PlayerInventoryAccount collection = manager.account(UUID.randomUUID());
+        collection.beginCollection(Set.of());
+        inventory.set(Map.of(tool, 1, wood, 64));
+        manager.observe();
+        assertEquals(64, manager.claimCollectionItems(collection, Set.of()));
+        collection.confirmDeposit("collected", Map.of(wood, 64), Map.of());
+        inventory.set(Map.of(tool, 1));
+        manager.observe();
+        manager.closeAccount(collection);
+
+        inventory.set(Map.of(tool, 1, wood, 2240, "minecraft:iron_pickaxe", 1));
+        manager.observe();
+        manager.protectUntrackedItems();
+
+        assertTrue(manager.needsRecovery());
+        PlayerInventoryAccount next = manager.account(UUID.randomUUID());
+        assertEquals(2240, manager.claimUnexpected(next, Set.of()));
+        assertEquals(Map.of(wood, 2240), next.managedItems());
+        assertEquals(1, manager.view(false, true, Map.of()).items().stream()
+                .filter(item -> item.itemId().equals("minecraft:iron_pickaxe"))
+                .findFirst().orElseThrow().protectedCount());
+    }
+
+    @Test
+    void latePickupWindowExpiresAndDoesNotReclassifyPersonalGiftsIndefinitely() {
+        MutableInventory inventory = new MutableInventory();
+        MutableClock clock = new MutableClock();
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory, clock);
+        manager.observe();
+        PlayerInventoryAccount collection = manager.account(UUID.randomUUID());
+        collection.beginCollection(Set.of());
+        inventory.set(Map.of("minecraft:stone", 64));
+        manager.observe();
+        manager.claimCollectionItems(collection, Set.of());
+        collection.confirmDeposit("collected", Map.of("minecraft:stone", 64), Map.of());
+        inventory.set(Map.of());
+        manager.observe();
+        manager.closeAccount(collection);
+        clock.now = clock.now.plusSeconds(3);
+        inventory.set(Map.of("minecraft:stone", 2));
+        manager.observe();
+        manager.protectUntrackedItems();
+
+        assertFalse(manager.needsRecovery());
+        assertEquals(2, manager.view(false, true, Map.of()).items().getFirst().protectedCount());
+    }
+
+    private static final class MutableClock extends java.time.Clock {
+        private java.time.Instant now = java.time.Instant.parse("2026-11-19T10:00:00Z");
+
+        @Override
+        public java.time.ZoneId getZone() {
+            return java.time.ZoneOffset.UTC;
+        }
+
+        @Override
+        public java.time.Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public java.time.Instant instant() {
+            return now;
+        }
+    }
+    @Test
     void continuousObservedPickupsAndLateArrivalsAreBookedWithoutAnEntityCountCap() {
         String disc = "minecraft:music_disc_otherside";
         String tool = "minecraft:diamond_pickaxe";

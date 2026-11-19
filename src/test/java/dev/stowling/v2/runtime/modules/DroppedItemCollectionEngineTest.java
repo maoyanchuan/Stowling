@@ -36,6 +36,36 @@ class DroppedItemCollectionEngineTest {
     private static final String IRON = "minecraft:iron_ingot";
 
     @Test
+    void aNewCollectionFlushesFullInventoryOwnedByThePreviousCollectionsLateReceipt() {
+        MutableInventory inventory = new MutableInventory();
+        MutableClock clock = new MutableClock();
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory, clock);
+        manager.observe();
+        PlayerInventoryAccount previous = manager.account(UUID.randomUUID());
+        previous.beginCollection(Set.of());
+        inventory.set(Map.of(GOLD, 64));
+        manager.observe();
+        manager.claimCollectionItems(previous, Set.of());
+        previous.confirmDeposit("collected", Map.of(GOLD, 64), Map.of());
+        inventory.set(Map.of());
+        manager.observe();
+        manager.closeAccount(previous);
+        inventory.set(Map.of(GOLD, 2240));
+        manager.observe();
+        manager.protectUntrackedItems();
+        MutableDrops drops = new MutableDrops();
+        entries(drops, item(1, GOLD, 64));
+        drops.blockedItems = Set.of(GOLD);
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        var engine = new DroppedItemCollectionEngine(context(workspace), drops, 120,
+                Set.of(), manager, clock);
+
+        assertEquals(TaskModuleState.SUCCEEDED, engine.start().state());
+        assertEquals(Map.of(GOLD, 2240), workspace.collectedItems());
+        assertTrue(previous.managedItems().isEmpty());
+    }
+
+    @Test
     void allUnprotectedKindsAreCollectedWhilePersonalToolsStayProtected() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();

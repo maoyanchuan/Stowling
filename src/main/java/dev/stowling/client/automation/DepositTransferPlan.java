@@ -143,12 +143,22 @@ final class DepositTransferPlan {
         return Math.toIntExact((long) playerBefore - playerAfter + pickupsAfter - pickupsBefore);
     }
 
-    /** A reopened menu contains a fresh server snapshot, without local transfer predictions. */
-    static TransferObservation observeResynchronized(int pendingCount, int previousDelta,
-            int previousObservations, int outgoingCount) {
-        int confirmed = Math.max(0, outgoingCount);
+    /** Only a newly opened, initialized menu may use the destination's authoritative delta. */
+    static TransferObservation observeServerSnapshot(int pendingCount, int previousDelta,
+            int previousObservations, int containerDelta) {
+        if (pendingCount <= 0) {
+            throw new IllegalArgumentException("pending count must be positive");
+        }
+        if (containerDelta == pendingCount) {
+            return new TransferObservation(containerDelta, STABLE_OBSERVATIONS, true);
+        }
         return observeSettlement(pendingCount, previousDelta, previousObservations,
-                confirmed, confirmed);
+                containerDelta, containerDelta);
+    }
+
+    static boolean needsServerSnapshot(int pendingCount, int outgoingCount, int containerDelta) {
+        return containerDelta > 0 && containerDelta <= pendingCount
+                && outgoingCount != containerDelta;
     }
 
     private static TransferObservation observe(

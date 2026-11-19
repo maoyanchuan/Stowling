@@ -26,9 +26,17 @@ public final class PlayerInventoryManager {
     private final Map<String, Integer> classificationItems = new LinkedHashMap<>();
     private long revision;
     private boolean available;
+    private final java.time.Clock clock;
+    private PlayerInventoryAccount lateCollection;
+    private java.time.Instant lateCollectionUntil;
 
     public PlayerInventoryManager(Source source) {
+        this(source, java.time.Clock.systemUTC());
+    }
+
+    PlayerInventoryManager(Source source, java.time.Clock clock) {
         this.source = Objects.requireNonNull(source, "source");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     public synchronized Optional<Observation> observe() {
@@ -58,6 +66,8 @@ public final class PlayerInventoryManager {
     }
 
     public synchronized void reset() {
+        lateCollection = null;
+        lateCollectionUntil = null;
         previous = Optional.empty();
         protectedInventory = null;
         accounts.clear();
@@ -101,6 +111,7 @@ public final class PlayerInventoryManager {
     }
 
     public synchronized void register(PlayerInventoryAccount account) {
+        if (lateCollection == account) lateCollection = null;
         PlayerInventoryAccount existing = accounts.putIfAbsent(account.ownerId(), account);
         if (existing != null && existing != account) {
             throw new IllegalArgumentException("inventory account already exists");
@@ -200,6 +211,7 @@ public final class PlayerInventoryManager {
     /** Called while idle or after all in-flight transfers and pickups have been accounted for. */
     public synchronized void protectUntrackedItems() {
         if (!available || previous.isEmpty()) return;
+        captureLateCollectionPickups();
         Map<String, Integer> managed = managedCounts();
         Map<String, Integer> protectedItems = new LinkedHashMap<>();
         Map<String, Integer> queuedBefore = Map.copyOf(classificationItems);
@@ -225,6 +237,24 @@ public final class PlayerInventoryManager {
         PlayerInventorySnapshot next = new PlayerInventorySnapshot(protectedItems);
         if (!next.equals(protectedInventory) || !queuedBefore.equals(classificationItems)) revision++;
         protectedInventory = next;
+    }
+
+    /** Preserve late arrivals of recently collected identities before idle protection runs. */
+    private void captureLateCollectionPickups() {
+        if (lateCollection == null) return;
+        if (clock.instant().isAfter(lateCollectionUntil)) {
+            lateCollection = null;
+            return;
+        }
+        Set<String> identities = lateCollection.collectedItemIds();
+        for (Map.Entry<String, Integer> entry : unassignedItems().entrySet()) {
+            if (!identities.contains(entry.getKey())) continue;
+            accounts.putIfAbsent(lateCollection.ownerId(), lateCollection);
+            lateCollection.recordCollected(entry.getKey(), entry.getValue());
+            abandonedAccounts.add(lateCollection.ownerId());
+            lateCollectionUntil = clock.instant().plusSeconds(2);
+            revision++;
+        }
     }
 
     public synchronized PlayerInventoryResponse view(boolean busy, boolean classificationAvailable,
@@ -279,6 +309,10 @@ public final class PlayerInventoryManager {
     }
 
     public synchronized void closeAccount(PlayerInventoryAccount account) {
+        if (account.collecting() && !account.collectedItemIds().isEmpty()) {
+            lateCollection = account;
+            lateCollectionUntil = clock.instant().plusSeconds(2);
+        }
         if (account.managedItems().isEmpty()) {
             accounts.remove(account.ownerId(), account);
         } else {

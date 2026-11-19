@@ -58,6 +58,12 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
     private TaskModuleResult startWithdrawal() {
         Set<String> selected = classificationBatch
                 ? context.workspace().remainingCacheCategories(target) : matchingItemIds;
+        if (classificationBatch && context.workspace().cacheContents(target)
+                .filter(items -> items.keySet().stream()
+                        .noneMatch(key -> ItemIdentity.matches(key, selected))).isPresent()) {
+            context.workspace().setCacheHasMore(false);
+            return TaskModuleResult.succeeded("缓存已无可取出的分类物品");
+        }
         inFlight = true;
         return handle(classificationBatch
                 ? context.containerWithdrawals().startClassificationBatch(target, selected,

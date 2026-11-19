@@ -88,6 +88,29 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void retainedPartialDoesNotReopenCacheForOtherCategoriesWithNoStock() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget storage = target(10, 64, 0, "chest");
+        workspace.setResolvedCategories(List.of(storage),
+                Map.of(storage, Set.of("minecraft:stone", "minecraft:dirt")), List.of(cache));
+        workspace.recordCacheContents(cache, Map.of(
+                "minecraft:shulker_box#partial@minecraft:stone", 1));
+        workspace.selectNextContainer().orElseThrow();
+        workspace.deferCacheCategory("minecraft:stone");
+        RecordingLayoutWithdrawal withdrawal = new RecordingLayoutWithdrawal();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        var module = new WithdrawItemsModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.WITHDRAW_ITEMS, Map.of(TaskModuleIds.TARGET_REF, "output:container")));
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertTrue(withdrawal.order.isEmpty());
+        assertFalse(workspace.cacheHasMore());
+        assertTrue(workspace.carriedItems().isEmpty());
+    }
+
+    @Test
     void classificationBatchAndDeliveryFollowLayoutInsteadOfCacheOrDistanceOrder() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget cache = target(0, 64, 0, "cache");

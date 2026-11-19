@@ -1,24 +1,28 @@
 package dev.stowling.client.automation;
 
-import com.google.gson.JsonElement;
-import com.mojang.serialization.JsonOps;
+import com.google.common.collect.MapMaker;
 import dev.stowling.automation.ItemIdentity;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 public final class MinecraftItemIdentity {
+    // Keep a key while inventories or tasks reference it, then release its component snapshot.
+    private static final ConcurrentMap<Variant, String> VARIANT_KEYS =
+            new MapMaker().weakValues().makeMap();
+    private static final String SESSION =
+            Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), 36);
+    private static final AtomicLong NEXT_ID = new AtomicLong();
+
     private MinecraftItemIdentity() {
     }
 
@@ -28,30 +32,22 @@ public final class MinecraftItemIdentity {
 
     public static String key(ItemStack stack) {
         String base = base(stack);
-        if (isBox(stack)) {
-            stack = stack.copyWithCount(1);
-            stack.set(DataComponents.CONTAINER, contents(stack));
+        boolean box = !stack.isEmpty() && ItemIdentity.isBox(base);
+        DataComponentPatch patch = stack.getComponentsPatch();
+        if (box && stack.get(DataComponents.CONTAINER) == null) {
+            ItemStack normalized = stack.copy();
+            normalized.set(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
+            patch = normalized.getComponentsPatch();
         }
-        if (stack.getComponentsPatch().isEmpty()) {
-            return base;
-        }
-        var level = Minecraft.getInstance().level;
-        if (level == null) {
-            throw new IllegalStateException("物品数据读取需要已加载世界");
-        }
-        JsonElement data = ItemStack.CODEC.encodeStart(
-                RegistryOps.create(JsonOps.INSTANCE, level.registryAccess()),
-                stack.copyWithCount(1)
-        ).getOrThrow();
-        String category = boxCategory(stack);
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(
-                    data.toString().getBytes(StandardCharsets.UTF_8));
-            return base + "#" + HexFormat.of().formatHex(digest)
+        if (patch.isEmpty()) return base;
+        return VARIANT_KEYS.computeIfAbsent(new Variant(base, patch), variant -> {
+            String category = box ? boxCategory(stack) : "";
+            return variant.base() + "#s" + SESSION + "-" + Long.toString(NEXT_ID.incrementAndGet(), 36)
                     + (category.isEmpty() ? "" : "@" + category);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException(exception);
-        }
+        });
+    }
+
+    private record Variant(String base, DataComponentPatch patch) {
     }
 
     public static boolean isBox(ItemStack stack) {

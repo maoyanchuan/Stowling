@@ -1,8 +1,11 @@
 package dev.stowling.client.automation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.ItemIdentity;
 import java.util.List;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.component.DataComponents;
@@ -30,6 +33,32 @@ class MinecraftRecoveredBoxIdentityTest {
         assertTrue(MinecraftItemIdentity.sameRecoveredBox(expected, actual));
         assertFalse(MinecraftItemIdentity.sameRecoveredBox(expected,
                 new ItemStack(Items.RED_SHULKER_BOX)));
+        assertEquals(MinecraftItemIdentity.key(expected), MinecraftItemIdentity.key(actual));
+    }
+
+    @Test
+    void itemKeysReuseEqualComponentsAndDistinguishBoxContents() {
+        ItemStack expected = box(List.of(new ItemStack(Items.STONE, 16)));
+        String key = MinecraftItemIdentity.key(expected);
+        assertEquals(key, MinecraftItemIdentity.key(expected.copyWithCount(2)));
+        assertEquals(key, MinecraftItemIdentity.key(box(List.of(new ItemStack(Items.STONE, 16)))));
+        assertEquals("minecraft:stone", ItemIdentity.category(key));
+        assertNotEquals(key, MinecraftItemIdentity.key(box(List.of(new ItemStack(Items.STONE, 17)))));
+        assertNotEquals(key, MinecraftItemIdentity.key(box(List.of(new ItemStack(Items.DIRT, 16)))));
+        assertEquals(ItemIdentity.MIXED_BOX_CATEGORY, ItemIdentity.category(MinecraftItemIdentity.key(
+                box(List.of(new ItemStack(Items.STONE), new ItemStack(Items.DIRT))))));
+    }
+
+    @Test
+    void itemKeysPreserveEarlierVersionsOfEditedStacks() {
+        ItemStack tool = new ItemStack(Items.DIAMOND_PICKAXE);
+        tool.set(DataComponents.DAMAGE, 1);
+        ItemStack original = tool.copy();
+        String originalKey = MinecraftItemIdentity.key(tool);
+        tool.set(DataComponents.DAMAGE, 2);
+        assertNotEquals(originalKey, MinecraftItemIdentity.key(tool));
+        assertEquals(originalKey, MinecraftItemIdentity.key(original));
+        assertEquals("minecraft:stone", MinecraftItemIdentity.key(new ItemStack(Items.STONE, 16)));
     }
 
     @Test

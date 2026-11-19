@@ -424,9 +424,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             ContainerTarget target = access.target();
             boolean inPackingPlan = cacheSnapshots != null
                     && cacheSnapshots.containsKey(target.position());
-            if (!inPackingPlan && context.workspace().cacheContents(target).isEmpty()) return;
             List<ItemStack> contents = access.contents();
             if (contents.isEmpty()) return;
+            if (!inPackingPlan && context.workspace().cacheContents(target).isEmpty()
+                    && context.workspace().containerScan().stream()
+                            .flatMap(scan -> scan.containers().stream())
+                            .noneMatch(cache -> sameContainer(cache, target))) return;
             CacheSnapshot snapshot = recordCacheContents(context, target, contents);
             if (inPackingPlan) cacheSnapshots.put(target.position(), snapshot);
         }

@@ -3,14 +3,15 @@ package dev.stowling.client.automation;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerClickPlan;
 import dev.stowling.automation.ContainerInteractionBatch;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -24,10 +25,11 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final ContainerTarget target;
     private MinecraftContainerVisit visit;
     private final Map<String, Integer> remaining;
+    private final Set<String> requestedBases;
     private final boolean withdraw;
     private final boolean inspect;
     private final boolean emptyBoxSupply;
-    private final List<ItemStack> contents = new ArrayList<>();
+    private List<ItemStack> contents = List.of();
     private boolean opened;
     private boolean stop;
     private boolean done;
@@ -64,13 +66,15 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         this.target = target;
         this.visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
         this.remaining = new LinkedHashMap<>(requested);
+        this.requestedBases = requested.keySet().stream().map(ItemIdentity::base)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         this.withdraw = withdraw;
         this.inspect = inspect;
         this.emptyBoxSupply = emptyBoxSupply;
     }
 
     List<ItemStack> contents() {
-        return contents.stream().map(ItemStack::copy).toList();
+        return contents;
     }
 
     ContainerTarget target() {
@@ -195,8 +199,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 return finish(true, "精确存取已确认，可安全停止");
             }
         }
-        contents.clear();
-        slots(menu, false).forEach(index -> contents.add(menu.getSlot(index).getItem().copy()));
+        contents = slots(menu, false).stream()
+                .map(index -> menu.getSlot(index).getItem().copy()).toList();
         if (inspect) {
             return finish(true, "已读取容器内容");
         }
@@ -209,9 +213,9 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         var batch = new ContainerInteractionBatch(pendingKey, true);
         while (candidate != null && batch.accepts(candidate.key(), candidate.clicks())) {
             String key = candidate.key();
-            pendingBefore.putIfAbsent(key, new StorageTransferBatchConfirmation.Before(
-                    count(menu, true, key), count(menu, false, key),
-                    MinecraftInventoryPickups.count(minecraft, key)));
+            pendingBefore.computeIfAbsent(key, item -> new StorageTransferBatchConfirmation.Before(
+                    count(menu, true, item), count(menu, false, item),
+                    MinecraftInventoryPickups.count(minecraft, item)));
             pendingMoves.merge(key, candidate.amount(), Math::addExact);
             pendingCount += candidate.amount();
             MinecraftContainerInteractions.moveExact(minecraft, menu, candidate.source(),
@@ -229,7 +233,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         for (int source : slots(menu, !withdraw)) {
             Slot from = menu.getSlot(source);
             ItemStack stack = from.getItem();
-            if (stack.isEmpty() || !from.mayPickup(minecraft.player)) continue;
+            if (stack.isEmpty() || !requestedBases.contains(MinecraftItemIdentity.base(stack))
+                    || !from.mayPickup(minecraft.player)) continue;
             String key = MinecraftItemIdentity.key(stack);
             int wanted = remaining.getOrDefault(key, 0);
             if (!withdraw) {
@@ -257,18 +262,6 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     }
 
     private TaskModuleResult finish(boolean success, String message) {
-        if (success && !stop && opened && !contents.isEmpty()
-                && (context.workspace().cacheContents(target).isPresent()
-                        || context.workspace().containerScan().stream()
-                                .flatMap(scan -> scan.containers().stream())
-                                .anyMatch(cache -> cache.entrances().stream()
-                                        .anyMatch(target.entrances()::contains)))) {
-            Map<String, Integer> counts = new LinkedHashMap<>();
-            contents.stream().filter(stack -> !stack.isEmpty()).forEach(stack ->
-                    counts.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
-                            Math::addExact));
-            context.workspace().recordCacheContents(target, counts);
-        }
         done = true;
         visit.cancelNavigation();
         if (minecraft.player != null && minecraft.player.containerMenu.getCarried().isEmpty()) {
@@ -305,8 +298,10 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     }
 
     private static int count(AbstractContainerMenu menu, boolean player, String key) {
+        String base = ItemIdentity.base(key);
         return slots(menu, player).stream().map(menu::getSlot).map(Slot::getItem)
-                .filter(stack -> !stack.isEmpty() && MinecraftItemIdentity.key(stack).equals(key))
+                .filter(stack -> !stack.isEmpty() && base.equals(MinecraftItemIdentity.base(stack))
+                        && MinecraftItemIdentity.key(stack).equals(key))
                 .mapToInt(ItemStack::getCount).sum();
     }
 

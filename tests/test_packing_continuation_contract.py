@@ -57,6 +57,10 @@ def test_cache_packing_and_donor_selection_reuse_confirmed_contents() -> None:
     )[0]
     assert "recordCacheContents(context, target, contents)" in refresh
     assert "cacheSnapshots.put(target.position(), snapshot)" in refresh
+    assert "sameContainer(cache, target)" in refresh
+    access = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAccess.java").read_text(encoding="utf-8")
+    assert "recordCacheContents(" not in access
 
     work = source.split("private boolean queueSourceWork()", 1)[1].split(
         "private boolean prepareSource", 1

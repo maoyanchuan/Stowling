@@ -35,11 +35,13 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private int settle;
     private String pendingKey;
     private int pendingCount;
-    private long pickupsBefore;
+    private final Map<String, Integer> pendingMoves = new LinkedHashMap<>();
+    private final Map<String, StorageTransferBatchConfirmation.Before> pendingBefore =
+            new LinkedHashMap<>();
     private long pendingStartedAt;
     private boolean rereading;
     private boolean serverReread;
-    private StorageTransferConfirmation pendingConfirmation;
+    private StorageTransferBatchConfirmation pendingConfirmation;
     private TaskModuleResult result;
 
     MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
@@ -69,6 +71,10 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
 
     List<ItemStack> contents() {
         return contents.stream().map(ItemStack::copy).toList();
+    }
+
+    ContainerTarget target() {
+        return target;
     }
 
     Map<String, Integer> remaining() {
@@ -128,23 +134,27 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         }
         if (pendingKey != null) {
             dev.stowling.v2.runtime.TaskTrace.event("WAIT", "storage.confirm",
-                    "withdraw=" + withdraw + "; item=" + pendingKey + "; planned=" + pendingCount
-                            + "; playerNow=" + count(menu, true, pendingKey)
-                            + "; expectedPlayer=" + pendingConfirmation.expectedPlayer()
-                            + "; containerNow=" + count(menu, false, pendingKey)
-                            + "; expectedContainer=" + pendingConfirmation.expectedContainer()
-                            + "; pickedUp=" + (MinecraftInventoryPickups.count(minecraft, pendingKey)
-                                    - pickupsBefore)
+                    "withdraw=" + withdraw + "; planned=" + pendingMoves
+                            + "; before=" + pendingBefore
+                            + "; playerNow=" + pendingMoves.keySet().stream().map(key ->
+                                    key + "=" + count(menu, true, key)).toList()
+                            + "; containerNow=" + pendingMoves.keySet().stream().map(key ->
+                                    key + "=" + count(menu, false, key)).toList()
+                            + "; pickedUp=" + pendingMoves.keySet().stream().map(key -> key + "="
+                                    + (MinecraftInventoryPickups.count(minecraft, key)
+                                            - pendingBefore.get(key).pickups())).toList()
                             + "; cursorEmpty=" + menu.getCarried().isEmpty(),
                     (System.nanoTime() - pendingStartedAt) / 1_000_000, true);
-            boolean confirmed = pendingConfirmation.matches(count(menu, true, pendingKey),
-                    MinecraftInventoryPickups.count(minecraft, pendingKey) - pickupsBefore,
-                    menu.getCarried().isEmpty(), () -> count(menu, false, pendingKey));
+            boolean confirmed = pendingConfirmation.matches(key -> count(menu, true, key),
+                    key -> count(menu, false, key),
+                    key -> MinecraftInventoryPickups.count(minecraft, key),
+                    menu.getCarried().isEmpty());
             boolean destinationConfirmed = pendingConfirmation.matchesServerContainer(
-                    menu.getCarried().isEmpty(), count(menu, false, pendingKey));
-            if (!confirmed && !serverReread && destinationConfirmed) {
+                    key -> count(menu, false, key), menu.getCarried().isEmpty());
+            if (!confirmed && !serverReread && menu.getCarried().isEmpty()
+                    && pendingConfirmation.hasContainerProgress(key -> count(menu, false, key))) {
                 dev.stowling.v2.runtime.TaskTrace.event("RESYNC", "storage.reopen",
-                        "容器数量已匹配整批存取，但拾取回执不完整; item=" + pendingKey, 0, false);
+                        "批量存取两侧数量不一致，读取服务器快照; items=" + pendingMoves, 0, false);
                 minecraft.player.closeContainer();
                 visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
                 opened = false;
@@ -153,22 +163,34 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 age = 0;
                 return TaskModuleResult.waiting("立即读取原容器服务器快照，核对整批存取");
             }
+            Map<String, Integer> accepted = Map.copyOf(pendingMoves);
             if (!confirmed && !(serverReread && destinationConfirmed)) {
-                return TaskModuleResult.waiting(emptyBoxSupply
-                        ? "等待确认空潜影盒进入背包" : "等待服务器确认精确存取");
+                var observed = serverReread ? pendingConfirmation.acceptedServerSnapshot(
+                        key -> count(menu, false, key), menu.getCarried().isEmpty())
+                        : java.util.Optional.<Map<String, Integer>>empty();
+                if (observed.isEmpty()) {
+                    return TaskModuleResult.waiting(emptyBoxSupply
+                            ? "等待确认空潜影盒进入背包" : "等待服务器确认精确存取");
+                }
+                accepted = observed.orElseThrow();
             }
+            boolean partial = !accepted.equals(pendingMoves);
             if (withdraw) {
                 context.inventory().recordWithdrawn(context.workspace().inventoryAccount(),
-                        Map.of(pendingKey, pendingCount));
+                        accepted);
             } else {
-                context.workspace().consumeDeposit("managed", Map.of(pendingKey, pendingCount),
+                context.workspace().consumeDeposit("managed", accepted,
                         Map.of());
                 context.workspace().progress().recordDelivery(target.position(),
-                        Map.of(pendingKey, pendingCount));
+                        accepted);
             }
-            remaining.compute(pendingKey, (key, value) -> Math.max(0, value - pendingCount));
+            accepted.forEach((key, amount) -> remaining.compute(key,
+                    (ignored, value) -> Math.max(0, value - amount)));
             pendingKey = null;
+            pendingMoves.clear();
+            pendingBefore.clear();
             age = 0;
+            if (partial) return finish(false, "服务器仅接受本批部分物品，已记账，剩余物品交给下一容器");
             if (stop) {
                 return finish(true, "精确存取已确认，可安全停止");
             }
@@ -178,43 +200,42 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         if (inspect) {
             return finish(true, "已读取容器内容");
         }
-        Move candidate = findMove(menu, null, 0);
+        Move candidate = findMove(menu, Map.of());
         if (candidate == null) return finish(true, "容器存取已完成");
         pendingKey = candidate.key();
         serverReread = false;
         pendingCount = 0;
-        int playerBefore = count(menu, true, pendingKey);
-        pickupsBefore = MinecraftInventoryPickups.count(minecraft, pendingKey);
         pendingStartedAt = System.nanoTime();
-        int containerBefore = count(menu, false, pendingKey);
-        var batch = new ContainerInteractionBatch(pendingKey);
+        var batch = new ContainerInteractionBatch(pendingKey, true);
         while (candidate != null && batch.accepts(candidate.key(), candidate.clicks())) {
+            String key = candidate.key();
+            pendingBefore.putIfAbsent(key, new StorageTransferBatchConfirmation.Before(
+                    count(menu, true, key), count(menu, false, key),
+                    MinecraftInventoryPickups.count(minecraft, key)));
+            pendingMoves.merge(key, candidate.amount(), Math::addExact);
             pendingCount += candidate.amount();
             MinecraftContainerInteractions.moveExact(minecraft, menu, candidate.source(),
                     candidate.destination(), candidate.amount());
             batch.record(candidate.amount(), candidate.clicks());
-            candidate = findMove(menu, pendingKey, pendingCount);
+            candidate = findMove(menu, pendingMoves);
         }
-        pendingConfirmation = emptyBoxSupply
-                ? StorageTransferConfirmation.emptyBoxSupply(playerBefore)
-                : StorageTransferConfirmation.exact(playerBefore, containerBefore,
-                        withdraw ? pendingCount : -pendingCount);
+        pendingConfirmation = new StorageTransferBatchConfirmation(pendingBefore, pendingMoves,
+                withdraw, emptyBoxSupply);
         settle = 0;
         return TaskModuleResult.waiting("正在批量" + (withdraw ? "取出" : "存入"));
     }
 
-    private Move findMove(AbstractContainerMenu menu, String batchKey, int planned) {
+    private Move findMove(AbstractContainerMenu menu, Map<String, Integer> planned) {
         for (int source : slots(menu, !withdraw)) {
             Slot from = menu.getSlot(source);
             ItemStack stack = from.getItem();
             if (stack.isEmpty() || !from.mayPickup(minecraft.player)) continue;
             String key = MinecraftItemIdentity.key(stack);
-            if (batchKey != null && !key.equals(batchKey)) continue;
             int wanted = remaining.getOrDefault(key, 0);
             if (!withdraw) {
                 wanted = Math.min(wanted, context.workspace().managedItems().getOrDefault(key, 0));
             }
-            wanted -= planned;
+            wanted -= planned.getOrDefault(key, 0);
             if (wanted <= 0) continue;
             for (int destination : slots(menu, withdraw)) {
                 Slot slot = menu.getSlot(destination);

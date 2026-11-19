@@ -1,6 +1,7 @@
 package dev.stowling.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -10,6 +11,23 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ShulkerTransferPlannerTest {
+    @Test
+    void preparedBoxesAndTheMixedLooseQuotaFitTogetherInTheActualInventory() {
+        String box = "minecraft:shulker_box#packed@minecraft:oak_log";
+        Map<String, Integer> incoming = new java.util.LinkedHashMap<>();
+        incoming.put(box, 2);
+        incoming.put("minecraft:oak_log", 27 * 64);
+        var slots = List.of(new ShulkerTransferPlanner.Slot("minecraft:diamond_pickaxe", 1, 1));
+
+        assertEquals(incoming, ShulkerTransferPlanner.fittingInventory(slots, 34, incoming,
+                Map.of(box, 1, "minecraft:oak_log", 64)));
+        assertFalse(ShulkerTransferPlanner.fitting(slots, 34, incoming, Map.of(box, 1))
+                .containsKey(box));
+        assertEquals(24, ShulkerTransferPlanner.fittingInventory(
+                java.util.Collections.nCopies(10,
+                        new ShulkerTransferPlanner.Slot("protected", 1, 1)),
+                34, Map.of(box, 27), Map.of(box, 1)).get(box));
+    }
     @Test
     void threeSingleStackBoxesShareOneBatchInsteadOfResettingCapacityForEveryBox() {
         Map<String, Integer> carried = new LinkedHashMap<>();

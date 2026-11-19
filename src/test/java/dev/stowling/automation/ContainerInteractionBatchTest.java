@@ -9,6 +9,17 @@ import org.junit.jupiter.api.Test;
 
 class ContainerInteractionBatchTest {
     @Test
+    void distinctBoxKeysCanUseOneWaveWithoutBypassingTheClickBudget() {
+        var batch = new ContainerInteractionBatch("first", true);
+        for (int box = 0; box < 27; box++) {
+            assertTrue(batch.accepts("box-" + box, 2));
+            batch.record(1, 2);
+        }
+        assertEquals(27, batch.count());
+        assertTrue(batch.accepts("other", 10));
+        assertFalse(batch.accepts("other", 11));
+    }
+    @Test
     void aWaveCombinesThePlayerInventoryButKeepsExactItemComponentsSeparate() {
         var batch = new ContainerInteractionBatch("minecraft:stone#one");
         assertFalse(batch.accepts("minecraft:stone#two", 1));

@@ -363,6 +363,22 @@ public final class TaskRunWorkspace {
         return Map.copyOf(result);
     }
 
+    public synchronized List<ContainerTarget> classificationTargets(String itemId) {
+        Set<ContainerTarget> ordered = new LinkedHashSet<>();
+        for (ClassificationLayoutEntry entry : classificationLayout) {
+            if (ItemIdentity.matches(itemId, Set.of(entry.itemId()))) {
+                ordered.addAll(entry.containers());
+            }
+        }
+        ordered.addAll(targetContainers);
+        return ordered.stream().filter(target -> !isUnavailable(target))
+                .filter(target -> ItemIdentity.matches(itemId,
+                        acceptedItemsByContainer.getOrDefault(target, Set.of())))
+                .filter(target -> selectedContainer == null
+                        || target.entrances().stream()
+                                .noneMatch(selectedContainer.entrances()::contains)).toList();
+    }
+
     public synchronized List<ContainerTarget> cacheContainers() {
         return List.copyOf(cacheContainers);
     }

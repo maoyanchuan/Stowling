@@ -15,6 +15,16 @@ public final class ShulkerTransferPlanner {
 
     public static Map<String, Integer> fitting(List<Slot> contents, int slots,
             Map<String, Integer> incoming, Map<String, Integer> stackSizes) {
+        return fitting(contents, slots, incoming, stackSizes, false);
+    }
+
+    public static Map<String, Integer> fittingInventory(List<Slot> contents, int slots,
+            Map<String, Integer> incoming, Map<String, Integer> stackSizes) {
+        return fitting(contents, slots, incoming, stackSizes, true);
+    }
+
+    private static Map<String, Integer> fitting(List<Slot> contents, int slots,
+            Map<String, Integer> incoming, Map<String, Integer> stackSizes, boolean allowBoxes) {
         int empty = Math.max(0, slots - (int) contents.stream()
                 .filter(slot -> slot.count() > 0).count());
         Map<String, Integer> slack = new LinkedHashMap<>();
@@ -23,7 +33,7 @@ public final class ShulkerTransferPlanner {
         Map<String, Integer> result = new LinkedHashMap<>();
         for (var entry : incoming.entrySet()) {
             String key = entry.getKey();
-            if (ItemIdentity.isBox(key)) continue;
+            if (!allowBoxes && ItemIdentity.isBox(key)) continue;
             int limit = Math.max(1, stackSizes.getOrDefault(key, 64));
             int matching = slack.getOrDefault(key, 0);
             int amount = (int) Math.min(Math.max(0, entry.getValue()),

@@ -56,6 +56,38 @@ import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
     @Test
+    void boxDrainsCarryTheRemainingBatchCapacityInsteadOfStartingAnotherFullBatch() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        RecordingLayoutWithdrawal withdrawal = new RecordingLayoutWithdrawal();
+        TaskExecutionContext context = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                withdrawal, new FoodPort(), workspace);
+        var drain = new ContainerBatchWithdrawal(context,
+                target(0, 65, 0, "minecraft:shulker_box"), Set.of("minecraft:stone"), 2);
+
+        assertEquals(TaskModuleState.SUCCEEDED, drain.start().state());
+        assertEquals(2, withdrawal.stackLimit);
+        assertEquals(Map.of("minecraft:stone", 16), drain.withdrawn());
+    }
+
+    @Test
+    void cachesEmptiedByCrossCacheBoxConsolidationAreNotOpenedAgainByTheOuterLoop() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget first = target(0, 64, 0, "cache");
+        ContainerTarget second = target(1, 64, 0, "cache");
+        ContainerTarget third = target(2, 64, 0, "cache");
+        ContainerTarget storage = target(10, 64, 0, "chest");
+        workspace.setResolvedCategories(List.of(storage), Map.of(storage, Set.of("minecraft:stone")),
+                List.of(first, second, third));
+        workspace.selectNextContainer().orElseThrow();
+        for (ContainerTarget cache : List.of(first, second, third)) {
+            workspace.recordCacheContents(cache, Map.of("minecraft:shulker_box", 1));
+        }
+
+        assertFalse(workspace.hasContainers());
+        assertTrue(workspace.selectNextContainer().isEmpty());
+    }
+
+    @Test
     void classificationBatchAndDeliveryFollowLayoutInsteadOfCacheOrDistanceOrder() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget cache = target(0, 64, 0, "cache");
@@ -139,13 +171,23 @@ class BasicModuleSemanticsTest {
 
     private static final class RecordingLayoutWithdrawal implements ContainerWithdrawalPort {
         private List<String> order = List.of();
+        private int stackLimit;
+
+        @Override
+        public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
+                Set<String> matchingItemIds, Set<String> fullBoxCategories, List<String> itemOrder,
+                int limit) {
+            stackLimit = limit;
+            return startClassificationBatch(target, matchingItemIds, fullBoxCategories, itemOrder);
+        }
 
         @Override
         public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
                 Set<String> matchingItemIds, Set<String> fullBoxCategories, List<String> itemOrder) {
             order = List.copyOf(itemOrder);
-            return ContainerWithdrawalResult.succeeded("withdrawn", Map.of(
-                    "minecraft:stone", 16, "minecraft:glass", 16, "minecraft:dirt", 16), false);
+            Map<String, Integer> withdrawn = new java.util.LinkedHashMap<>();
+            for (String key : matchingItemIds) withdrawn.put(key, 16);
+            return ContainerWithdrawalResult.succeeded("withdrawn", withdrawn, false);
         }
 
         @Override

@@ -10,6 +10,17 @@ import org.junit.jupiter.api.Test;
 
 class ClassificationBatchPolicyTest {
     @Test
+    void anotherBoxOnlyReceivesTheCapacityStillFreeInTheSharedBatch() {
+        ClassificationBatchPolicy policy = new ClassificationBatchPolicy(Set.of(),
+                List.of("minecraft:stone"), 2);
+        policy.recordConfirmed("minecraft:stone");
+        assertTrue(policy.hasCapacity());
+        policy.recordConfirmed("minecraft:stone");
+        assertFalse(policy.hasCapacity());
+        assertFalse(new ClassificationBatchPolicy(Set.of(), List.of(), 0).hasCapacity());
+    }
+
+    @Test
     void layoutPriorityDoesNotChangeAfterTakingSeveralStacksOfTheFirstItem() {
         ClassificationBatchPolicy policy = new ClassificationBatchPolicy(Set.of(),
                 List.of("minecraft:glass", "minecraft:dirt", "minecraft:stone"));

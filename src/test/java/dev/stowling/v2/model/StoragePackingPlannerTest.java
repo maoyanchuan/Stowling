@@ -8,6 +8,19 @@ import org.junit.jupiter.api.Test;
 
 class StoragePackingPlannerTest {
     @Test
+    void cachePartialBoxesAreCombinedWhileTheMixedLooseRefillSwitchIsRespected() {
+        StoragePolicy boxes = new StoragePolicy(StorageMode.BOX_ONLY, 0, true, null);
+        StoragePolicy mixedOff = new StoragePolicy(StorageMode.MIXED, 50, true, null, false);
+        StoragePolicy mixedOn = new StoragePolicy(StorageMode.MIXED, 50, true, null, true);
+
+        assertTrue(StoragePackingPlanner.unpackIncomingBox(false, false, boxes));
+        assertTrue(StoragePackingPlanner.unpackIncomingBox(false, false, mixedOn));
+        assertFalse(StoragePackingPlanner.unpackIncomingBox(false, false, mixedOff));
+        assertFalse(StoragePackingPlanner.unpackIncomingBox(false, true, boxes));
+        assertTrue(StoragePackingPlanner.unpackIncomingBox(true, true, mixedOff));
+    }
+
+    @Test
     void pureBoxModeStoresSmallRemaindersEvenForLegacyFullBoxOnlySettings() {
         var policy = new StoragePolicy(StorageMode.BOX_ONLY, 50, false, null);
         assertTrue(policy.allowPartialBoxes());

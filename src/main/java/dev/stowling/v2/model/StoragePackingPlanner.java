@@ -7,6 +7,10 @@ public final class StoragePackingPlanner {
     private StoragePackingPlanner() {
     }
 
+    public static boolean unpackIncomingBox(boolean mixed, boolean full, StoragePolicy policy) {
+        return mixed || !full && (policy.mode() != StorageMode.MIXED || policy.refillLoose());
+    }
+
     public static int looseLimit(StoragePolicy policy, int containerSlots, int stackSize) {
         if (containerSlots < 1 || stackSize < 1) {
             throw new IllegalArgumentException("invalid container or stack capacity");

@@ -12,6 +12,20 @@ import org.junit.jupiter.api.Test;
 
 class EmptyBoxSupplyPlanTest {
     @Test
+    void emptiedRefillBoxesReturnToCachesOrSupplyAndNeverToClassificationStorage() {
+        ContainerTarget cache = target(1);
+        ContainerTarget supply = target(2);
+        ContainerTarget classification = target(3);
+        ContainerTarget fallback = target(4);
+
+        assertEquals(List.of(cache, supply, fallback), EmptyBoxSupplyPlan.returns(cache,
+                List.of(cache, classification, supply), List.of(classification, fallback),
+                Set.of(classification.position())));
+        assertEquals(List.of(cache, supply, fallback), EmptyBoxSupplyPlan.returns(classification,
+                List.of(cache, supply), List.of(fallback), Set.of(classification.position())));
+    }
+
+    @Test
     void spareBoxesWaitUntilAllOtherItemsInTheBatchAreFinished() {
         String spare = "minecraft:shulker_box#empty";
         Set<String> emptyKeys = Set.of(spare);

@@ -359,6 +359,11 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized boolean hasContainers() {
+        while (!cacheContainers.isEmpty() && containerCursor < containerCandidates.size()
+                && !hasRecordedClassifiableStock(containerCandidates.get(containerCursor),
+                        classifiedItemIds)) {
+            containerCursor++;
+        }
         return containerCursor < containerCandidates.size();
     }
 

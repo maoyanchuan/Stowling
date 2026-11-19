@@ -16,6 +16,18 @@ public final class EmptyBoxSupplyPlan {
                 && !emptyBoxKeys.contains(entry.getKey()));
     }
 
+    public static List<ContainerTarget> returns(ContainerTarget preferred,
+            List<ContainerTarget> sources, List<ContainerTarget> fallback,
+            Set<BlockPosition> storagePositions) {
+        List<ContainerTarget> candidates = new ArrayList<>();
+        if (preferred != null) candidates.add(preferred);
+        candidates.addAll(sources);
+        candidates.addAll(fallback);
+        return sources(candidates.stream().filter(target ->
+                target.entrances().stream().noneMatch(storagePositions::contains)).toList(),
+                null, List.of());
+    }
+
     public static List<ContainerTarget> sources(List<ContainerTarget> caches,
             ContainerTarget selected, List<BlockPosition> facilities) {
         List<ContainerTarget> candidates = new ArrayList<>();

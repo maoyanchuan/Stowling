@@ -78,9 +78,18 @@ public final class MinecraftContainerWithdrawalPort
     @Override
     public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
             Set<String> matchingItemIds, Set<String> fullBoxCategories, List<String> itemOrder) {
+        return startClassificationBatch(target, matchingItemIds, fullBoxCategories, itemOrder, 27);
+    }
+
+    @Override
+    public ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
+            Set<String> matchingItemIds, Set<String> fullBoxCategories, List<String> itemOrder,
+            int stackLimit) {
+        ClassificationBatchPolicy policy = new ClassificationBatchPolicy(fullBoxCategories,
+                itemOrder, stackLimit);
         ContainerWithdrawalResult result = startClassificationBatch(target, matchingItemIds);
         if (result.state() == ContainerTransferState.PENDING) {
-            active.batchPolicy = new ClassificationBatchPolicy(fullBoxCategories, itemOrder);
+            active.batchPolicy = policy;
         }
         return result;
     }

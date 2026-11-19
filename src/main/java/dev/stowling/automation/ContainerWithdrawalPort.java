@@ -26,5 +26,11 @@ public interface ContainerWithdrawalPort {
         return startClassificationBatch(target, matchingItemIds, fullBoxCategories);
     }
 
+    default ContainerWithdrawalResult startClassificationBatch(ContainerTarget target,
+            Set<String> matchingItemIds, Set<String> fullBoxCategories, List<String> itemOrder,
+            int stackLimit) {
+        return startClassificationBatch(target, matchingItemIds, fullBoxCategories, itemOrder);
+    }
+
     void cancelWithdrawal();
 }

@@ -11,6 +11,7 @@ public final class ContainerBatchWithdrawal implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final ContainerTarget target;
     private final Set<String> items;
+    private final int stackLimit;
     private Map<String, Integer> withdrawn = Map.of();
     private TaskModuleResult terminal;
     private boolean started;
@@ -20,9 +21,18 @@ public final class ContainerBatchWithdrawal implements TaskModuleExecutor {
 
     public ContainerBatchWithdrawal(TaskExecutionContext context, ContainerTarget target,
             Set<String> items) {
+        this(context, target, items, 27);
+    }
+
+    public ContainerBatchWithdrawal(TaskExecutionContext context, ContainerTarget target,
+            Set<String> items, int stackLimit) {
+        if (stackLimit < 0 || stackLimit > 27) {
+            throw new IllegalArgumentException("invalid classification batch capacity");
+        }
         this.context = context;
         this.target = target;
         this.items = Set.copyOf(items);
+        this.stackLimit = stackLimit;
     }
 
     @Override
@@ -37,7 +47,7 @@ public final class ContainerBatchWithdrawal implements TaskModuleExecutor {
         }
         inFlight = true;
         return handle(context.containerWithdrawals().startClassificationBatch(target, items,
-                Set.of(), context.workspace().classificationItemOrder(items)));
+                Set.of(), context.workspace().classificationItemOrder(items), stackLimit));
     }
 
     @Override

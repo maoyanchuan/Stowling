@@ -68,7 +68,7 @@ final class WithdrawItemsModule implements TaskModuleExecutor {
         if (!beforeUnpacking.equals(context.workspace().carriedItems())) {
             context.workspace().resetStorageSelection();
             context.workspace().setCacheHasMore(true);
-            return TaskModuleResult.succeeded("混杂盒已拆分，本批物品进入分类路线");
+            return TaskModuleResult.succeeded("缓存潜影盒与散货已组成批次，按仓储排版分类");
         }
         return stopRequested ? TaskModuleResult.succeeded("拆盒已确认，可安全停止")
                 : startWithdrawal();

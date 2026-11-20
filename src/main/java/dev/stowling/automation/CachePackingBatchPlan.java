@@ -44,10 +44,17 @@ public record CachePackingBatchPlan(int looseReserved, int materialToPack, int p
         return new CachePackingBatchPlan(reserve, packing, planned, load);
     }
 
-    /** Returns the exact items to borrow from stock, excluding the keeper itself. */
+    public int loosePackingBudget(int looseItems) {
+        return Math.max(0, looseItems - looseReserved);
+    }
+
+    /** Only plans transfers that leave a larger consolidated box. */
     public Map<String, Integer> compatibleLoad(List<ShulkerTransferPlanner.Slot> keeper,
-            Map<String, Integer> stock, Map<String, Integer> stackSizes) {
-        if (nextLoad <= 0) return Map.of();
+            Map<String, Integer> stock, Map<String, Integer> stackSizes, int largestPartial) {
+        int inside = keeper.stream().mapToInt(ShulkerTransferPlanner.Slot::count).sum();
+        if (nextLoad <= 0 || inside + nextLoad <= largestPartial) {
+            return Map.of();
+        }
         Map<String, Integer> available = new LinkedHashMap<>();
         for (var slot : keeper) {
             int count = available.getOrDefault(slot.key(), stock.getOrDefault(slot.key(), 0));
@@ -66,7 +73,7 @@ public record CachePackingBatchPlan(int looseReserved, int materialToPack, int p
             load.put(entry.getKey(), count);
             remaining -= count;
         }
-        return load;
+        return inside + nextLoad - remaining > largestPartial ? load : Map.of();
     }
 
     public static boolean canShareUnpreparedBatch(StorageMode mode, boolean fullBox) {

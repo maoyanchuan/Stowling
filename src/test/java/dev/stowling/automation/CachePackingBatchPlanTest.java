@@ -87,10 +87,42 @@ class CachePackingBatchPlanTest {
 
         var nominal = CachePackingBatchPlan.calculate(BOXES, 0, 2342, 1665, 64, 0, 0);
         assertEquals(63, nominal.nextLoad());
-        assertEquals(Map.of(), nominal.compatibleLoad(largerBox, stock, sizes));
+        assertEquals(Map.of(), nominal.compatibleLoad(largerBox, stock, sizes, 1665));
 
         var alternative = CachePackingBatchPlan.calculate(BOXES, 0, 2342, 614, 64, 0, 0);
-        assertEquals(Map.of(stone, 1114), alternative.compatibleLoad(smallerBox, stock, sizes));
+        assertEquals(Map.of(stone, 1114),
+                alternative.compatibleLoad(smallerBox, stock, sizes, 1665));
+    }
+
+    @Test
+    void aKeeperAtThePackingTargetStopsTransfersBetweenPartials() {
+        String deepslate = "minecraft:deepslate";
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, true, null, true);
+        Map<String, Integer> sizes = Map.of(deepslate, 64);
+        var keeper = new ArrayList<>(Collections.nCopies(7,
+                new ShulkerTransferPlanner.Slot(deepslate, 64, 64)));
+        keeper.add(new ShulkerTransferPlanner.Slot(deepslate, 35, 64));
+        Map<String, Integer> stock = Map.of(deepslate, 551 + 483);
+        var plan = CachePackingBatchPlan.calculate(mixed, 729, 551 + 483, 483, 64, 1212, 0);
+
+        assertEquals(68, plan.nextLoad());
+        assertEquals(Map.of(deepslate, 68), plan.compatibleLoad(keeper, stock, sizes, 483));
+        assertEquals(Map.of(), plan.compatibleLoad(keeper, stock, sizes, 551));
+    }
+
+    @Test
+    void aPackingBatchUsesLooseSurplusUpToTheKeepersCapacity() {
+        String stone = "minecraft:stone";
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, true, null);
+        int loose = 2048;
+        int inside = 640;
+        var plan = CachePackingBatchPlan.calculate(mixed, loose, inside, inside, 64, 640, 0);
+        int surplus = plan.loosePackingBudget(loose);
+        var keeper = Collections.nCopies(10, new ShulkerTransferPlanner.Slot(stone, 64, 64));
+
+        assertEquals(1408, surplus);
+        assertEquals(Map.of(stone, 1088), plan.compatibleLoad(keeper,
+                Map.of(stone, inside + surplus), Map.of(stone, 64), inside));
     }
 
     @Test

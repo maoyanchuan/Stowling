@@ -3,12 +3,9 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.CategoryZoneResult;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
-import dev.stowling.automation.ClassificationLayoutEntry;
-import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.category.CategoryMarkerSource;
-import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.ResourceReference;
@@ -74,7 +71,6 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         Map<BlockPosition, Set<String>> markerContents = new LinkedHashMap<>();
         if (requiresContainerContents()) {
             for (CategoryBindingDefinition binding : zone.bindings()) {
-                if (UnstackableCategoryRule.ID.equals(binding.ruleId())) continue;
                 if (markerSources == null && !ContainerContentsCategoryRule.ID.equals(
                         binding.ruleId())) {
                     continue;
@@ -107,9 +103,6 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 );
         if (!result.succeeded()) {
             return TaskModuleResult.failed(result.message());
-        }
-        if (result.categories().containsKey(UnstackableCategoryRule.CATEGORY)) {
-            result = expandUnstackableCategories(result, cacheScan);
         }
         Map<ContainerTarget, Set<String>> accepted = new LinkedHashMap<>();
         List<ContainerTarget> targets = new ArrayList<>();
@@ -157,38 +150,6 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         return TaskModuleResult.succeeded(
                 "已解析 " + accepted.size() + " 个分类目标容器"
         );
-    }
-
-    private CategoryZoneResult expandUnstackableCategories(CategoryZoneResult result,
-            ContainerScanResult cacheScan) {
-        Set<String> selectors = new LinkedHashSet<>();
-        Set<BlockPosition> cachePositions = new LinkedHashSet<>();
-        if (cacheScan != null) {
-            for (ContainerTarget cache : cacheScan.containers()) {
-                cachePositions.addAll(cache.entrances());
-                context.storageAutomation().unstackableItems(context, cache).stream()
-                        .map(ItemIdentity::exact).forEach(selectors::add);
-            }
-        }
-        Map<String, List<ContainerTarget>> categories = new LinkedHashMap<>();
-        List<ClassificationLayoutEntry> layout = new ArrayList<>();
-        for (ClassificationLayoutEntry entry : result.layout()) {
-            if (!UnstackableCategoryRule.CATEGORY.equals(entry.itemId())) {
-                categories.computeIfAbsent(entry.itemId(), ignored -> new ArrayList<>())
-                        .addAll(entry.containers());
-                layout.add(entry);
-                continue;
-            }
-            List<ContainerTarget> targets = entry.containers().stream()
-                    .filter(target -> target.entrances().stream().noneMatch(cachePositions::contains))
-                    .toList();
-            if (targets.isEmpty()) continue;
-            for (String selector : selectors) {
-                categories.computeIfAbsent(selector, ignored -> new ArrayList<>()).addAll(targets);
-                layout.add(new ClassificationLayoutEntry(selector, targets));
-            }
-        }
-        return CategoryZoneResult.success(categories, layout);
     }
 
     @Override

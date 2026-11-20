@@ -262,9 +262,8 @@ public final class TaskRunWorkspace {
     public synchronized boolean hasRecordedClassifiableStock(ContainerTarget target,
             Set<String> categories) {
         Map<String, Integer> items = cacheInventory.get(target.position());
-        boolean exactItems = categories.stream().anyMatch(key -> key.startsWith("="));
         return items == null || items.keySet().stream()
-                .anyMatch(key -> (exactItems
+                .anyMatch(key -> (unstackableClassification
                             ? ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key)
                             : ItemIdentity.isMixedBox(key))
                         || ItemIdentity.matches(key, categories));
@@ -372,14 +371,6 @@ public final class TaskRunWorkspace {
         return unstackableClassification;
     }
 
-    public synchronized boolean hasExactClassifications() {
-        return classifiedItemIds.stream().anyMatch(key -> key.startsWith("="));
-    }
-
-    public synchronized boolean hasExactClassification(String key) {
-        return classifiedItemIds.contains(ItemIdentity.exact(key));
-    }
-
     public synchronized List<String> classificationItemOrder(Set<String> items) {
         Set<String> result = new LinkedHashSet<>();
         for (ClassificationLayoutEntry entry : classificationLayout) {
@@ -484,7 +475,7 @@ public final class TaskRunWorkspace {
         Set<String> categories = new LinkedHashSet<>(withdrawItemIdsFor(target));
         if (selectedContainer != null && selectedContainer.position().equals(target.position())) {
             categories.removeIf(key ->
-                    deferredCacheCategories.contains(key.startsWith("=")
+                    deferredCacheCategories.contains(unstackableClassification
                             ? key : ItemIdentity.category(key)));
         }
         return Set.copyOf(categories);
@@ -514,13 +505,8 @@ public final class TaskRunWorkspace {
             Map<String, Integer> remaining) {
         requested.forEach((key, count) -> {
             if (count > remaining.getOrDefault(key, 0)) {
-                if (hasExactClassification(key)) {
-                    deferredCacheCategories.add(ItemIdentity.exact(key));
-                }
-                if (!hasExactClassification(key)
-                        || classifiedItemIds.contains(ItemIdentity.category(key))) {
-                    deferredCacheCategories.add(ItemIdentity.category(key));
-                }
+                deferredCacheCategories.add(unstackableClassification
+                        ? ItemIdentity.exact(key) : ItemIdentity.category(key));
             }
         });
     }

@@ -149,8 +149,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
         return keys.stream().anyMatch(key -> ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key))
                 || present.stream().anyMatch(ItemIdentity::isMixedBox)
-                || context.workspace().hasExactClassifications() && present.stream()
-                        .anyMatch(key -> ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key))
                 ? Optional.of(new CacheBoxBatch(context, cache)) : Optional.empty();
     }
 
@@ -234,7 +232,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         if (snapshot == null) {
             throw new IllegalStateException("请先盘点缓存容器库存");
         }
-        return MinecraftItemIdentity.unstackableItems(snapshot.stacks());
+        return snapshot.stacks().stream().flatMap(stack -> MinecraftItemIdentity.isBox(stack)
+                        ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                        : java.util.stream.Stream.of(stack))
+                .filter(stack -> !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
+                        && stack.getMaxStackSize() == 1)
+                .map(MinecraftItemIdentity::key)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     @Override
@@ -1410,7 +1414,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private Set<String> selectors(Set<String> keys) {
-            return context.workspace().hasExactClassifications()
+            return context.workspace().unstackableClassification()
                     ? keys.stream().map(ItemIdentity::exact)
                             .collect(java.util.stream.Collectors.toUnmodifiableSet())
                     : keys;
@@ -1418,9 +1422,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private boolean shouldUnpack(ItemStack candidate) {
             if (context.workspace().unstackableClassification()) return true;
-            if (packingCategory == null && MinecraftItemIdentity.contents(candidate)
-                    .nonEmptyItemCopyStream().map(MinecraftItemIdentity::key)
-                    .anyMatch(context.workspace()::hasExactClassification)) return true;
             if (packingCategory != null) {
                 return ItemIdentity.isMixedBox(MinecraftItemIdentity.key(candidate))
                         || !MinecraftItemIdentity.full(candidate)

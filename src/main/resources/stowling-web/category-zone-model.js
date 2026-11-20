@@ -1,14 +1,6 @@
 (() => {
     "use strict";
 
-    /** @param {string} rule @param {object} marker @param {object} storage @returns {object} */
-    function markerValues(rule, marker, storage) {
-        if (rule !== "UNSTACKABLE_ITEMS") return marker;
-        return Object.fromEntries(["First", "Second"].flatMap(corner =>
-            ["X", "Y", "Z"].map(axis => [`marker${corner}${axis}`,
-                storage[`storage${corner}${axis}`]])));
-    }
-
     /**
      * @param {object} value
      * @returns {object}
@@ -139,45 +131,39 @@
      * @returns {object}
      */
     function payload(zone) {
-        zone = {...zone, bindings: zone.bindings.map(binding => ({...binding,
-            ...markerValues(binding.ruleId, binding, binding)}))};
         if (zone.expansion?.direction === "AUTO") {
             zone = { ...zone, ...inferExpansion(zone.bindings, zone.expansion) };
         }
         const result = {
             name: String(zone.name || "").trim(),
-            bindings: zone.bindings.map((original) => {
-                const binding = {...original,
-                    ...markerValues(original.ruleId, original, original)};
-                return {
-                    markerFirstX: Number(binding.markerFirstX),
-                    markerFirstY: Number(binding.markerFirstY),
-                    markerFirstZ: Number(binding.markerFirstZ),
-                    markerSecondX: Number(binding.markerSecondX),
-                    markerSecondY: Number(binding.markerSecondY),
-                    markerSecondZ: Number(binding.markerSecondZ),
-                    storageFirstX: Number(binding.storageFirstX),
-                    storageFirstY: Number(binding.storageFirstY),
-                    storageFirstZ: Number(binding.storageFirstZ),
-                    storageSecondX: Number(binding.storageSecondX),
-                    storageSecondY: Number(binding.storageSecondY),
-                    storageSecondZ: Number(binding.storageSecondZ),
-                    standingArea: binding.standingArea ? normalizeArea(binding.standingArea) : null,
-                    storagePolicy: normalizeStoragePolicy(binding.storagePolicy),
-                    ruleId: String(binding.ruleId),
-                    wholeStorage: Boolean(binding.wholeStorage),
-                    ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
-                    containerOverrides: binding.containerOverrides.map(
-                        (override) => ({
-                            storageX: Number(override.storageX),
-                            storageY: Number(override.storageY),
-                            storageZ: Number(override.storageZ),
-                            mode: String(override.mode),
-                            itemIds: override.itemIds
-                        })
-                    )
-                };
-            })
+            bindings: zone.bindings.map((binding) => ({
+                markerFirstX: Number(binding.markerFirstX),
+                markerFirstY: Number(binding.markerFirstY),
+                markerFirstZ: Number(binding.markerFirstZ),
+                markerSecondX: Number(binding.markerSecondX),
+                markerSecondY: Number(binding.markerSecondY),
+                markerSecondZ: Number(binding.markerSecondZ),
+                storageFirstX: Number(binding.storageFirstX),
+                storageFirstY: Number(binding.storageFirstY),
+                storageFirstZ: Number(binding.storageFirstZ),
+                storageSecondX: Number(binding.storageSecondX),
+                storageSecondY: Number(binding.storageSecondY),
+                storageSecondZ: Number(binding.storageSecondZ),
+                standingArea: binding.standingArea ? normalizeArea(binding.standingArea) : null,
+                storagePolicy: normalizeStoragePolicy(binding.storagePolicy),
+                ruleId: String(binding.ruleId),
+                wholeStorage: Boolean(binding.wholeStorage),
+                ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
+                containerOverrides: binding.containerOverrides.map(
+                    (override) => ({
+                        storageX: Number(override.storageX),
+                        storageY: Number(override.storageY),
+                        storageZ: Number(override.storageZ),
+                        mode: String(override.mode),
+                        itemIds: override.itemIds
+                    })
+                )
+            }))
         };
         if (zone.expansion) {
             result.expansion = {
@@ -397,7 +383,6 @@
     }
 
     window.StowlingCategoryZoneModel = Object.freeze({
-        markerValues,
         normalizeBinding,
         normalizeContainerOverride,
         normalizeExpansion,

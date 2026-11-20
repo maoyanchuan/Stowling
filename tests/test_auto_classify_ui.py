@@ -152,7 +152,7 @@ def test_recognition_is_configured_only_in_the_storage_layout() -> None:
     assert "markerSources" not in javascript
     assert "ruleId" not in model
     assert "markerSources" not in model
-    assert 'field("分类方式", rule)' in layout
+    assert 'field("分类物识别方式", rule)' in layout
     assert "ruleId: rule.value" in layout
     assert "classificationAreas: [newArea()]" in model
     assert "function addClassificationArea()" in javascript

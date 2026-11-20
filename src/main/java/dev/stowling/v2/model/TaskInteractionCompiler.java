@@ -252,11 +252,6 @@ public final class TaskInteractionCompiler {
         List<TaskStep> result = new ArrayList<>();
         for (TaskStep step : steps) {
             if (step.kind() == TaskStepKind.ACTION
-                    && ConfigValidator.SORT_UNSTACKABLE_ITEMS.equals(step.moduleId())) {
-                result.addAll(sortUnstackable(step));
-                continue;
-            }
-            if (step.kind() == TaskStepKind.ACTION
                     && ConfigValidator.CONTAINER_INTERACTION.equals(
                     step.moduleId()
             )) {
@@ -285,25 +280,6 @@ public final class TaskInteractionCompiler {
             }
         }
         return List.copyOf(result);
-    }
-
-    private static List<TaskStep> sortUnstackable(TaskStep step) {
-        Map<String, String> parameters = step.parameters();
-        if (!Set.of(ConfigValidator.REGION_REF, ConfigValidator.TARGET_REF)
-                .containsAll(parameters.keySet())) {
-            throw new IllegalArgumentException("SORT_UNSTACKABLE_ITEMS has unsupported parameters");
-        }
-        ResourceReference cache = ResourceReference.parse(
-                required(parameters, ConfigValidator.REGION_REF));
-        ResourceReference storage = ResourceReference.parse(
-                required(parameters, ConfigValidator.TARGET_REF));
-        if (cache.type() != ResourceType.REGION || storage.type() != ResourceType.REGION) {
-            throw new IllegalArgumentException("不可堆叠分类的缓存和储存目标必须是区域");
-        }
-        if (cache.equals(storage)) {
-            throw new IllegalArgumentException("不可堆叠储存区需要使用独立区域");
-        }
-        return TaskFlowTemplates.sortUnstackable(cache.encode(), storage.encode());
     }
 
     private static List<TaskStep> compileInteraction(

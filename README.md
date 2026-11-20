@@ -8,9 +8,6 @@
 
 Stowling 是一款用于自动分类和搬运物品的 Minecraft Fabric 模组。
 
-在“坐标与仓储布局 → 仓储布局”中，将分类方式设为“不可堆叠物品（排除潜影盒）”，
-配置储存范围，再让自动分类任务引用该布局即可；无需设置分类物识别区。
-
 ## Minecraft 26.2 必装模组
 
 - [Fabric API 0.161.0+26.2](https://modrinth.com/mod/fabric-api/version/ewUK83HI)

@@ -173,9 +173,7 @@ public final class MinecraftCategoryZoneResolver
                         "分类区 " + zone.name() + " 的识别区体积过大"
                 );
             }
-            List<CategoryMarker> markers =
-                    dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(binding.ruleId())
-                    ? List.of() : markers(
+            List<CategoryMarker> markers = markers(
                     level,
                     binding.markerArea(),
                     Set.copyOf(binding.ignoredMarkerBlockIds()),
@@ -225,9 +223,6 @@ public final class MinecraftCategoryZoneResolver
             List<ContainerTarget> storageContainers,
             Set<CategoryMarkerSource> markerSources
     ) {
-        if (dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(binding.ruleId())) {
-            return rules.require(binding.ruleId()).resolve(List.of(), storageContainers);
-        }
         if (markerSources != null) {
             return DirectBlockIdCategoryRule.resolveExplicitSources(
                     markers,

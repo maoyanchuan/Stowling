@@ -44,7 +44,6 @@ public final class ConfigValidator {
     public static final String RESOLVE_CONTAINER_CATEGORIES =
             "RESOLVE_CONTAINER_CATEGORIES";
     public static final String RESOLVE_UNSTACKABLE_STORAGE = "RESOLVE_UNSTACKABLE_STORAGE";
-    public static final String SORT_UNSTACKABLE_ITEMS = "SORT_UNSTACKABLE_ITEMS";
     public static final String SELECT_CONTAINER = "SELECT_CONTAINER";
     public static final String WITHDRAW_ITEMS = "WITHDRAW_ITEMS";
     public static final String PACK_OVERFLOW = "PACK_OVERFLOW";
@@ -658,15 +657,6 @@ public final class ConfigValidator {
                 requireParameters(step, Set.of(REGION_REF, CONTAINER_TYPES), Set.of(REGION_REF));
                 requireRegionReference(step, regions, REGION_REF);
             }
-            case SORT_UNSTACKABLE_ITEMS -> {
-                requireParameters(step, Set.of(REGION_REF, TARGET_REF),
-                        Set.of(REGION_REF, TARGET_REF));
-                requireRegionReference(step, regions, REGION_REF);
-                requireRegionReference(step, regions, TARGET_REF);
-                if (step.parameters().get(REGION_REF).equals(step.parameters().get(TARGET_REF))) {
-                    throw new V2ValidationException("不可堆叠储存区需要使用独立区域");
-                }
-            }
             case SELECT_CONTAINER -> requireParameters(
                     step,
                     Set.of(TaskFlowTemplates.RESET_CACHE_HAS_MORE),
@@ -852,7 +842,6 @@ public final class ConfigValidator {
     private static boolean containsInteraction(List<TaskStep> steps) {
         for (TaskStep step : steps) {
             if (CONTAINER_INTERACTION.equals(step.moduleId())
-                    || SORT_UNSTACKABLE_ITEMS.equals(step.moduleId())
                     || containsInteraction(step.steps())
                     || containsInteraction(step.otherwise())) {
                 return true;
@@ -1567,9 +1556,7 @@ public final class ConfigValidator {
                         && !ContainerContentsCategoryRule.ID.equals(binding.ruleId())) {
                     throw new V2ValidationException("整片储存区对应仅支持标记箱/木桶识别方式");
                 }
-                if (binding.markerArea().equals(binding.storageArea())
-                        && !dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(
-                                binding.ruleId())) {
+                if (binding.markerArea().equals(binding.storageArea())) {
                     throw new V2ValidationException(
                             "category marker and storage areas must differ"
                     );

@@ -110,7 +110,8 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         if (!result.succeeded()) {
             return TaskModuleResult.failed(result.message());
         }
-        if (result.categories().containsKey(UnstackableCategoryRule.CATEGORY)) {
+        if (result.categories().keySet().stream()
+                .anyMatch(UnstackableCategoryRule::isLayoutCategory)) {
             result = expandUnstackableCategories(result, cacheScan);
         }
         Map<ContainerTarget, Set<String>> accepted = new LinkedHashMap<>();
@@ -163,19 +164,26 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
 
     private CategoryZoneResult expandUnstackableCategories(CategoryZoneResult result,
             ContainerScanResult cacheScan) {
-        Set<String> selectors = new LinkedHashSet<>();
+        Set<String> unstackableKeys = new LinkedHashSet<>();
         Set<BlockPosition> cachePositions = new LinkedHashSet<>();
         if (cacheScan != null) {
             for (ContainerTarget cache : cacheScan.containers()) {
                 cachePositions.addAll(cache.entrances());
-                context.storageAutomation().unstackableItems(context, cache).stream()
-                        .map(ItemIdentity::exact).forEach(selectors::add);
+                unstackableKeys.addAll(context.storageAutomation()
+                        .unstackableItems(context, cache));
             }
         }
         Map<String, List<ContainerTarget>> categories = new LinkedHashMap<>();
         List<ClassificationLayoutEntry> layout = new ArrayList<>();
+        Set<String> labeled = new LinkedHashSet<>();
         for (ClassificationLayoutEntry entry : result.layout()) {
-            if (!UnstackableCategoryRule.CATEGORY.equals(entry.itemId())) {
+            if (entry.containers().stream().anyMatch(target -> target.entrances().stream()
+                    .noneMatch(cachePositions::contains))) {
+                labeled.add(entry.itemId());
+            }
+        }
+        for (ClassificationLayoutEntry entry : result.layout()) {
+            if (!UnstackableCategoryRule.isLayoutCategory(entry.itemId())) {
                 categories.computeIfAbsent(entry.itemId(), ignored -> new ArrayList<>())
                         .addAll(entry.containers());
                 layout.add(entry);
@@ -187,7 +195,14 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
             if (targets.isEmpty()) {
                 continue;
             }
-            for (String selector : selectors) {
+            for (String key : unstackableKeys) {
+                String family = UnstackableCategoryRule.familyCategory(key);
+                String destination = labeled.contains(family)
+                        ? family : UnstackableCategoryRule.CATEGORY;
+                if (!destination.equals(entry.itemId())) {
+                    continue;
+                }
+                String selector = ItemIdentity.exact(key);
                 categories.computeIfAbsent(selector, ignored -> new ArrayList<>()).addAll(targets);
                 layout.add(new ClassificationLayoutEntry(selector, targets));
             }

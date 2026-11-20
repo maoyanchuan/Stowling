@@ -14,6 +14,19 @@ import org.junit.jupiter.api.Test;
 
 class DirectBlockIdCategoryRuleTest {
     @Test
+    void frameOnSecondHalfOfDoubleChestMatchesItsColumn() {
+        var partner = new BlockPosition(1, 64, 0);
+        var chest = new ContainerTarget(new BlockPosition(0, 64, 0), "chest", null, null, partner);
+        var other = new ContainerTarget(new BlockPosition(2, 64, 0), "chest");
+        var sample = new CategoryMarker(new BlockPosition(1, 64, 1), "minecraft:splash_potion",
+                CategoryMarkerSource.ITEM_FRAME, -1);
+        var result = new DirectBlockIdCategoryRule()
+                .resolve(List.of(sample), List.of(chest, other));
+
+        assertEquals(List.of(chest), result.categories().get(sample.itemId()));
+    }
+
+    @Test
     void keepsRepeatedCategoryMarkersInTheirOriginalLayoutPositions() {
         ContainerTarget first = new ContainerTarget(new BlockPosition(0, 64, 0), "chest");
         ContainerTarget middle = new ContainerTarget(new BlockPosition(1, 64, 0), "chest");

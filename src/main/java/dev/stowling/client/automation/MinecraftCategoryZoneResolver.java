@@ -174,13 +174,6 @@ public final class MinecraftCategoryZoneResolver
                         "分类区 " + zone.name() + " 的识别区体积过大"
                 );
             }
-            List<CategoryMarker> markers = unstackable ? List.of() : markers(
-                    level,
-                    binding.markerArea(),
-                    Set.copyOf(binding.ignoredMarkerBlockIds()),
-                    markerContainerContents,
-                    effectiveSources
-            );
             ContainerScanResult storageScan = containerRegions.scan(
                     asRegion(binding),
                     containerTypes,
@@ -188,6 +181,14 @@ public final class MinecraftCategoryZoneResolver
             );
             if (!storageScan.succeeded()) {
                 return CategoryZoneResult.failure(storageScan.message());
+            }
+            List<CategoryMarker> markers = new ArrayList<>();
+            if (unstackable) {
+                appendItemFrameMarkers(level, binding.storageArea(), markers, true);
+            } else {
+                markers = markers(level, binding.markerArea(),
+                        Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
+                        effectiveSources);
             }
             CategoryRuleResult resolved = resolveBinding(
                     binding,
@@ -225,7 +226,7 @@ public final class MinecraftCategoryZoneResolver
             Set<CategoryMarkerSource> markerSources
     ) {
         if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
-            return rules.require(binding.ruleId()).resolve(List.of(), storageContainers);
+            return rules.require(binding.ruleId()).resolve(markers, storageContainers);
         }
         if (markerSources != null) {
             return DirectBlockIdCategoryRule.resolveExplicitSources(
@@ -312,7 +313,7 @@ public final class MinecraftCategoryZoneResolver
             }
         }
         if (markerSources.contains(CategoryMarkerSource.ITEM_FRAME)) {
-            appendItemFrameMarkers(level, area, result);
+            appendItemFrameMarkers(level, area, result, false);
         }
         result.sort(Comparator.<CategoryMarker>comparingLong(marker ->
                         Math.abs((long) marker.position().x() - area.firstX()))
@@ -443,7 +444,8 @@ public final class MinecraftCategoryZoneResolver
     private static void appendItemFrameMarkers(
             ClientLevel level,
             AreaBounds area,
-            List<CategoryMarker> result
+            List<CategoryMarker> result,
+            boolean attachedOnly
     ) {
         AABB searchArea = new AABB(
                 area.minX(),
@@ -455,15 +457,21 @@ public final class MinecraftCategoryZoneResolver
         );
         List<ItemFrame> frames = level.getEntities(
                 EntityTypeTest.forClass(ItemFrame.class),
-                searchArea,
+                searchArea.inflate(1.0),
                 frame -> frame.isAlive()
                         && !frame.isRemoved()
                         && !frame.getItem().isEmpty()
         );
         for (ItemFrame frame : frames) {
-            BlockPos position = frame.blockPosition();
+            BlockPos framePos = frame.getPos();
+            BlockPos support = framePos.relative(frame.getDirection().getOpposite());
+            BlockPos position = attachedOnly || !contains(area, framePos) ? support : framePos;
             if (!contains(area, position)) {
                 continue;
+            }
+            if (!attachedOnly) {
+                result.removeIf(marker -> marker.source() == CategoryMarkerSource.PLACED_ITEM
+                        && marker.position().equals(blockPosition(support)));
             }
             appendItemMarker(
                     result,

@@ -40,9 +40,9 @@ public final class DirectBlockIdCategoryRule implements CategoryRule {
         if (!result.succeeded() || !result.categories().isEmpty()) {
             return result;
         }
-        return CategoryRuleResult.failure(
-                "没有可分配给储存区容器的分类物品"
-        );
+        return CategoryRuleResult.failure(markers.isEmpty()
+                ? "分类物识别区未找到样品，请检查展示框或其支撑方块是否位于识别区内"
+                : "已识别 " + markers.size() + " 个分类标记，但均未匹配储存容器，请检查列坐标");
     }
 
     public static CategoryRuleResult resolveExplicitSources(

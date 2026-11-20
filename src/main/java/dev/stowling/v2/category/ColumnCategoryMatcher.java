@@ -49,12 +49,13 @@ final class ColumnCategoryMatcher {
         Map<ColumnKey, BlockPosition> columnPositions = new LinkedHashMap<>();
         for (CategoryMarker marker : markers) {
             List<ContainerTarget> matching = storageContainers.stream()
-                    .filter(container -> ((wholeStorage && marker.source()
-                            == CategoryMarkerSource.CONTAINER_CONTENTS) || matchesColumn(
-                            axis,
-                            marker.position(),
-                            container.position()
-                    )) && !replacedPositions.contains(container.position()))
+                    .filter(container -> !replacedPositions.contains(container.position()))
+                    .filter(container -> (wholeStorage
+                            && marker.source() == CategoryMarkerSource.CONTAINER_CONTENTS)
+                            || matchesColumn(axis, marker.position(), container.position())
+                            || (marker.source() == CategoryMarkerSource.ITEM_FRAME
+                                && container.partner() != null
+                                && matchesColumn(axis, marker.position(), container.partner())))
                     .toList();
             if (matching.isEmpty()) {
                 continue;

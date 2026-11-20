@@ -1,6 +1,9 @@
 package dev.stowling.v2.category;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ItemIdentity;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -12,19 +15,38 @@ public final class UnstackableCategoryRule implements CategoryRule {
     @Override
     public CategoryRuleDefinition definition() {
         return new CategoryRuleDefinition(ID, "不可堆叠物品（排除潜影盒）",
-                "储存实际堆叠上限为 1 的物品，排除所有潜影盒；无需分类物识别区。");
+                "在储存容器上挂展示框，按样品的物品类型收纳不可堆叠变体。整片无标记时收纳所有不可堆叠物品，潜影盒除外。");
     }
 
     @Override
     public CategoryRuleResult resolve(List<CategoryMarker> markers,
             List<ContainerTarget> storageContainers) {
-        return storageContainers.isEmpty() ? CategoryRuleResult.failure("储存区没有可用容器")
-                : CategoryRuleResult.success(Map.of(CATEGORY, storageContainers));
+        if (storageContainers.isEmpty()) {
+            return CategoryRuleResult.failure("储存区没有可用容器");
+        }
+        Map<String, List<ContainerTarget>> categories = new LinkedHashMap<>();
+        for (ContainerTarget target : storageContainers) {
+            markers.stream().filter(this::accepts)
+                    .filter(marker -> target.entrances().contains(marker.position()))
+                    .map(CategoryMarker::itemId).distinct()
+                    .forEach(id -> categories.computeIfAbsent(familyCategory(id),
+                            ignored -> new ArrayList<>()).add(target));
+        }
+        return CategoryRuleResult.success(categories.isEmpty()
+                ? Map.of(CATEGORY, storageContainers) : categories);
+    }
+
+    public static boolean isLayoutCategory(String id) {
+        return CATEGORY.equals(id) || id.startsWith(CATEGORY + "/");
+    }
+
+    public static String familyCategory(String inventoryKey) {
+        return CATEGORY + "/" + ItemIdentity.base(inventoryKey);
     }
 
     @Override
     public boolean accepts(CategoryMarker marker) {
-        return false;
+        return marker.source() == CategoryMarkerSource.ITEM_FRAME;
     }
 
     @Override

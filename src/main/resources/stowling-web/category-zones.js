@@ -799,12 +799,16 @@
         const wholeStorageHelp = Stowling.element("p", "muted compact-help",
             "启用后，本分类物标记箱里的物品可存入整片储存区；"
             + "识别区与储存区可不同宽，自动铺满保留整片尺寸。每种独立分类请分别添加分类物。");
+        const frameHelp = Stowling.element("p", "muted compact-help",
+            "在储存箱上挂展示框：一瓶喷溅药水可标记所有效果，一本附魔书可标记所有附魔。"
+            + "整片都没有样品时，收纳所有不可堆叠物品（潜影盒除外）。");
         /** @returns {void} */
         function refreshWholeStorage() {
             const available = rule.value === "MARKER_CONTAINER_CONTENTS";
             wholeStorageRow.hidden = !available;
             wholeStorageHelp.hidden = !available;
             marker.root.hidden = rule.value === "UNSTACKABLE_ITEMS";
+            frameHelp.hidden = !marker.root.hidden;
         }
         rule.addEventListener("change", refreshWholeStorage);
         refreshWholeStorage();
@@ -820,6 +824,7 @@
             field("分类物识别方式", rule),
             wholeStorageRow,
             wholeStorageHelp,
+            frameHelp,
             field("忽略支撑方块（每行一个）", ignored)
         );
         const overrideHeading = Stowling.element(

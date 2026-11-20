@@ -36,7 +36,9 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.category.CategoryMarker;
 import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
@@ -57,11 +59,42 @@ import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
     @Test
+    void frameSamplesRouteUnstackableVariantsByBaseItem() {
+        var books = target(10, 64, 0, "chest");
+        var partner = new BlockPosition(13, 64, 0);
+        var potions = new ContainerTarget(new BlockPosition(12, 64, 0), "chest",
+                null, null, partner);
+        var other = target(15, 64, 0, "chest");
+        var rule = new UnstackableCategoryRule();
+        String potion = "minecraft:splash_potion";
+        String book = "minecraft:enchanted_book";
+        var result = rule.resolve(List.of(
+                new CategoryMarker(partner, potion, CategoryMarkerSource.ITEM_FRAME, -1),
+                new CategoryMarker(books.position(), book, CategoryMarkerSource.ITEM_FRAME, -1)),
+                List.of(books, potions, other));
+
+        for (String key : List.of(potion + "#healing", potion + "#swiftness")) {
+            assertEquals(List.of(potions),
+                    result.categories().get(UnstackableCategoryRule.familyCategory(key)));
+        }
+        for (String key : List.of(book + "#mending", book + "#fortune_iii")) {
+            assertEquals(List.of(books),
+                    result.categories().get(UnstackableCategoryRule.familyCategory(key)));
+        }
+        assertFalse(result.categories().containsKey(
+                UnstackableCategoryRule.familyCategory("minecraft:potion")));
+        assertFalse(result.categories().containsKey(UnstackableCategoryRule.CATEGORY));
+        assertEquals(List.of(other), rule.resolve(List.of(), List.of(other)).categories()
+                .get(UnstackableCategoryRule.CATEGORY));
+    }
+
+    @Test
     void resolvesUnstackableLayoutAlongsideNormalCategoriesUsingExactInventoryKeys() {
         var workspace = new TaskRunWorkspace();
         var cache = target(0, 64, 0, "cache");
         var normal = target(10, 64, 0, "chest");
         var tools = target(12, 64, 0, "chest");
+        var fallback = target(14, 64, 0, "chest");
         String tool = "minecraft:diamond_pickaxe#damaged";
         String stackable = "minecraft:diamond_pickaxe#stackable";
         workspace.setContainerScan(ContainerScanResult.success(List.of(cache)));
@@ -98,7 +131,8 @@ class BasicModuleSemanticsTest {
                 (selected, types, volume) -> CategoryZoneResult.success(Map.of(
                         "minecraft:stone", List.of(normal),
                         dev.stowling.v2.category.UnstackableCategoryRule.CATEGORY,
-                        List.of(cache, tools))), base.coordinates(), base.regions(),
+                        List.of(cache, fallback), UnstackableCategoryRule.familyCategory(tool),
+                        List.of(tools))), base.coordinates(), base.regions(),
                 Map.of(zone.id(), zone), workspace, base.inventory(), storage);
         var module = new ResolveContainerCategoriesModule(context, TaskStep.action(UUID.randomUUID(),
                 TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
@@ -109,6 +143,7 @@ class BasicModuleSemanticsTest {
                 workspace.acceptedItemsByContainer().get(tools));
         assertEquals(Set.of("minecraft:stone"), workspace.acceptedItemsByContainer().get(normal));
         assertFalse(workspace.acceptedItemsByContainer().containsKey(cache));
+        assertFalse(workspace.acceptedItemsByContainer().containsKey(fallback));
         workspace.selectNextContainer().orElseThrow();
         assertEquals(Set.of(tool, "minecraft:stone"),
                 workspace.mixedBoxWithdrawalItems(cache, Set.of(tool, stackable, "minecraft:stone")));

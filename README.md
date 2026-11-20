@@ -1,6 +1,8 @@
 # Stowling
 
-<img src="src/main/resources/assets/stowling/icon.png" width="64" height="64" alt="">
+<p align="center">
+    <img src="src/main/resources/assets/stowling/icon.png" width="128" height="128" alt="">
+</p>
 
 Stowling is a Fabric client mod for Minecraft 26.2. It provides saved
 coordinates, regions, category zones, queued tasks, and condition listeners.

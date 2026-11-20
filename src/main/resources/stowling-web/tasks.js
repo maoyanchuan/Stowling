@@ -20,8 +20,6 @@
         moveTasks: [],
         autoTaskCount: 0,
         autoDraftActive: false,
-        unstackableTaskCount: 0,
-        unstackableDraftActive: false,
         moveAllTasks: [],
         coordinates: [],
         regions: [],
@@ -213,10 +211,9 @@
             newDraft && state.moveFormOpen
         ));
         elements.moveForm.hidden = false;
-        const total = state.moveTasks.length + state.autoTaskCount + state.unstackableTaskCount;
-        elements.movePlaceholder.hidden = total > 0
-            || newDraft || state.autoDraftActive || state.unstackableDraftActive;
-        elements.moveCount.textContent = String(total);
+        elements.movePlaceholder.hidden = state.moveTasks.length + state.autoTaskCount > 0
+            || newDraft || state.autoDraftActive;
+        elements.moveCount.textContent = String(state.moveTasks.length + state.autoTaskCount);
         for (const [id, row] of moveRows) {
             const selected = state.moveDraft.id === id;
             const expanded = selected && state.moveFormOpen;
@@ -972,15 +969,6 @@
         syncMoveDisclosure();
     });
     document.addEventListener("stowling:auto-tasks-changed", () => {
-        void loadMoveResources();
-        void loadRuns();
-    });
-    document.addEventListener("stowling:unstackable-task-count", (event) => {
-        state.unstackableTaskCount = Number(event.detail?.count || 0);
-        state.unstackableDraftActive = event.detail?.draftActive === true;
-        syncMoveDisclosure();
-    });
-    document.addEventListener("stowling:unstackable-tasks-changed", () => {
         void loadMoveResources();
         void loadRuns();
     });

@@ -1567,7 +1567,9 @@ public final class ConfigValidator {
                         && !ContainerContentsCategoryRule.ID.equals(binding.ruleId())) {
                     throw new V2ValidationException("整片储存区对应仅支持标记箱/木桶识别方式");
                 }
-                if (binding.markerArea().equals(binding.storageArea())) {
+                if (binding.markerArea().equals(binding.storageArea())
+                        && !dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(
+                                binding.ruleId())) {
                     throw new V2ValidationException(
                             "category marker and storage areas must differ"
                     );

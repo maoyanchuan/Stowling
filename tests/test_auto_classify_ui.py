@@ -152,7 +152,7 @@ def test_recognition_is_configured_only_in_the_storage_layout() -> None:
     assert "markerSources" not in javascript
     assert "ruleId" not in model
     assert "markerSources" not in model
-    assert 'field("分类物识别方式", rule)' in layout
+    assert 'field("分类方式", rule)' in layout
     assert "ruleId: rule.value" in layout
     assert "classificationAreas: [newArea()]" in model
     assert "function addClassificationArea()" in javascript
@@ -287,9 +287,9 @@ def test_auto_draft_hides_the_empty_task_placeholder() -> None:
     assert "autoDraftActive: false" in tasks
     assert "state.autoDraftActive = event.detail?.draftActive === true;" in listener
     assert "syncMoveDisclosure();" in listener
-    assert "state.moveTasks.length + state.autoTaskCount + state.unstackableTaskCount" in disclosure
     assert " ".join(placeholder.split()) == (
-        "total > 0 || newDraft || state.autoDraftActive || state.unstackableDraftActive"
+        "state.moveTasks.length + state.autoTaskCount > 0"
+        " || newDraft || state.autoDraftActive"
     )
 
 

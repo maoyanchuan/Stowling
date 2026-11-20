@@ -1722,14 +1722,6 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/auto-classify-ui.js", js)
                 ),
                 Map.entry(
-                        "/unstackable-task-model.js",
-                        read("stowling-web/unstackable-task-model.js", js)
-                ),
-                Map.entry(
-                        "/unstackable-task-ui.js",
-                        read("stowling-web/unstackable-task-ui.js", js)
-                ),
-                Map.entry(
                         "/v2-task-model.js",
                         read("stowling-web/v2-task-model.js", js)
                 ),

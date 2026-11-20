@@ -312,3 +312,27 @@ def test_invalid_auto_expansion_is_rejected(expression: str, message: str) -> No
     )
 
     assert message in result
+
+
+def test_unstackable_layout_uses_storage_bounds_without_a_marker_area() -> None:
+    result = run_model("""(() => {
+        const value = model.normalizeBinding({ruleId: 'UNSTACKABLE_ITEMS',
+            storageArea: {firstX: 10, firstY: 64, firstZ: 2,
+                secondX: 14, secondY: 66, secondZ: 3}});
+        return model.payload({name: '不可堆叠', bindings: [value]}).bindings[0];
+    })()""")
+
+    assert result["ruleId"] == "UNSTACKABLE_ITEMS"
+    for corner in ("First", "Second"):
+        for axis in ("X", "Y", "Z"):
+            assert result[f"marker{corner}{axis}"] == result[f"storage{corner}{axis}"]
+
+
+def test_marker_fields_are_preserved_for_normal_classification() -> None:
+    result = run_model("""(() => {
+        const value = binding('X', 0, 0);
+        return model.markerValues('DIRECT_BLOCK_ID', value, {...value, storageFirstX: 99});
+    })()""")
+
+    assert result["markerFirstX"] == 0
+    assert result["storageFirstX"] == 0

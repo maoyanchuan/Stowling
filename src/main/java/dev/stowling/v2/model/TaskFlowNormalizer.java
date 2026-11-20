@@ -25,6 +25,66 @@ public final class TaskFlowNormalizer {
     }
 
     public static AppConfig normalize(AppConfig config) {
+        return normalizeTasks(migrateUnstackableLayouts(config));
+    }
+
+    private static AppConfig migrateUnstackableLayouts(AppConfig config) {
+        Map<UUID, AutoClassifyDefinition> migrated = new LinkedHashMap<>();
+        List<CategoryZoneDefinition> zones = new ArrayList<>(config.categoryZones());
+        Set<String> names = new HashSet<>();
+        zones.forEach(zone -> names.add(ConfigValidator.normalizeName(zone.name())));
+        List<AutoClassifyDefinition> definitions = new ArrayList<>();
+        for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
+            String regionRef = definition.unstackableRegionRef();
+            if (regionRef == null) {
+                definitions.add(definition);
+                continue;
+            }
+            RegionDefinition region = config.regions().stream()
+                    .filter(value -> value.id().equals(ResourceReference.parse(regionRef).uuid()))
+                    .findFirst().orElseThrow(() ->
+                            new IllegalArgumentException("不可堆叠储存区域不存在"));
+            UUID zoneId = UUID.nameUUIDFromBytes(("unstackable-layout:" + regionRef)
+                    .getBytes(StandardCharsets.UTF_8));
+            if (zones.stream().noneMatch(zone -> zone.id().equals(zoneId))) {
+                AreaBounds area = new AreaBounds(region.firstX(), region.firstY(), region.firstZ(),
+                        region.secondX(), region.secondY(), region.secondZ());
+                var binding = new CategoryBindingDefinition(
+                        UUID.nameUUIDFromBytes((zoneId + ":binding").getBytes(StandardCharsets.UTF_8)),
+                        area, area, dev.stowling.v2.category.UnstackableCategoryRule.ID);
+                zones.add(new CategoryZoneDefinition(zoneId,
+                        uniqueName(region.name() + " 不可堆叠", names), List.of(binding)));
+            }
+            List<AutoClassifyAreaDefinition> areas = new ArrayList<>(definition.classificationAreas());
+            String zoneRef = ResourceReference.of(ResourceType.CATEGORY_ZONE, zoneId).encode();
+            if (areas.stream().noneMatch(area -> area.categoryZoneRef().equals(zoneRef))) {
+                areas.add(new AutoClassifyAreaDefinition(zoneRef));
+            }
+            var updated = new AutoClassifyDefinition(definition.id(), definition.name(),
+                    definition.enabled(), definition.collectionEnabled(),
+                    definition.classificationEnabled(), definition.detectionCoordinateRef(),
+                    definition.pickupRadius(), definition.cacheRegionRef(), areas,
+                    definition.collectionPriority(), definition.overflowEnabled(),
+                    definition.cleanupPolicy());
+            definitions.add(updated);
+            migrated.put(updated.classificationTaskId(), updated);
+        }
+        if (migrated.isEmpty()) return config;
+        List<TaskDefinition> tasks = config.tasks().stream().map(task -> {
+            AutoClassifyDefinition definition = migrated.get(task.id());
+            if (definition == null) return task;
+            List<TaskStep> steps = AutoClassifyTaskFactory.tasks(definition, List.of()).get(1).steps();
+            return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                    remapStepIds(steps, definition.derivedId("unstackable-layout")),
+                    task.interruptionMode(), task.interruptionTaskRef(),
+                    task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                    task.cleanupPolicy());
+        }).toList();
+        return new AppConfig(config.schemaVersion(), config.coordinates(), tasks, config.regions(),
+                zones, config.triggers(), config.taskFolders(), definitions);
+    }
+
+    private static AppConfig normalizeTasks(AppConfig config) {
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {

@@ -727,7 +727,8 @@
             Stowling.element(
                 "strong",
                 "",
-                title || `范围 ${number} · 识别区 → 储存区`
+                title || (binding.ruleId === "UNSTACKABLE_ITEMS"
+                    ? `范围 ${number} · 不可堆叠储存区` : `范围 ${number} · 识别区 → 储存区`)
             ),
             Stowling.element("span", "resource-summary-meta", bindingDescription(binding))
         );
@@ -816,7 +817,6 @@
             "category-recognition-fields"
         );
         recognition.append(
-            field("分类物识别方式", rule),
             wholeStorageRow,
             wholeStorageHelp,
             field("忽略支撑方块（每行一个）", ignored)
@@ -899,16 +899,33 @@
             });
             footer.append(remove);
         }
-        body.append(ranges, standingSection, storageSettings, settings, footer);
+        const classificationHelp = Stowling.element("p", "muted compact-help", "");
+        /** @returns {void} */
+        function refreshClassification() {
+            const unstackable = rule.value === "UNSTACKABLE_ITEMS";
+            marker.root.hidden = unstackable;
+            settings.hidden = unstackable;
+            classificationHelp.textContent = unstackable
+                ? "按实际堆叠上限为 1 筛选，排除所有潜影盒；只需设置储存区，分类任务引用本布局。"
+                : "识别分类物并匹配储存区；识别区与储存区分开设置。";
+            if (!title) {
+                identity.querySelector("strong").textContent = unstackable
+                    ? `范围 ${number} · 不可堆叠储存区` : `范围 ${number} · 识别区 → 储存区`;
+            }
+        }
+        rule.addEventListener("change", refreshClassification);
+        refreshClassification();
+        body.append(field("分类方式", rule), classificationHelp, ranges,
+            standingSection, storageSettings, settings, footer);
         card.append(summary, body);
         Settings.bindDisclosure(card, summary, body, expanded);
         host.append(card);
         return () => ({
-            ...marker.read(),
+            ...Model.markerValues(rule.value, marker.read(), storage.read()),
             ...storage.read(),
             standingArea: standingToggle.checked ? readStandingArea(standing.read()) : null,
             storagePolicy: {
-                mode: storageMode.value,
+                mode: rule.value === "UNSTACKABLE_ITEMS" ? "NORMAL" : storageMode.value,
                 loosePercent: Number(loosePercent.value),
                 looseSlots: binding.storagePolicy?.looseSlots ?? null,
                 partialBoxDestinationRef: binding.storagePolicy?.partialBoxDestinationRef ?? null,
@@ -918,8 +935,10 @@
             },
             ruleId: rule.value,
             wholeStorage: rule.value === "MARKER_CONTAINER_CONTENTS" && wholeStorage.checked,
-            ignoredMarkerBlockIds: parseBlockIds(ignored.value),
-            containerOverrides: overrideReaders.map((reader) => reader.read())
+            ignoredMarkerBlockIds: rule.value === "UNSTACKABLE_ITEMS"
+                ? [] : parseBlockIds(ignored.value),
+            containerOverrides: rule.value === "UNSTACKABLE_ITEMS"
+                ? [] : overrideReaders.map((reader) => reader.read())
         });
     }
 
@@ -958,6 +977,9 @@
         const storage = `${binding.storageFirstX}, ${binding.storageFirstY}, `
             + `${binding.storageFirstZ}`;
         const exceptions = binding.containerOverrides.length;
+        if (binding.ruleId === "UNSTACKABLE_ITEMS") {
+            return `不可堆叠物品 · 储存起点 ${storage} · 排除潜影盒`;
+        }
         return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`
             + (binding.wholeStorage ? " · 对应整片储存区" : "")
             + (binding.standingArea ? " · 已指定操作站位区域" : "");

@@ -57,6 +57,64 @@ import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
     @Test
+    void resolvesUnstackableLayoutAlongsideNormalCategoriesUsingExactInventoryKeys() {
+        var workspace = new TaskRunWorkspace();
+        var cache = target(0, 64, 0, "cache");
+        var normal = target(10, 64, 0, "chest");
+        var tools = target(12, 64, 0, "chest");
+        String tool = "minecraft:diamond_pickaxe#damaged";
+        String stackable = "minecraft:diamond_pickaxe#stackable";
+        workspace.setContainerScan(ContainerScanResult.success(List.of(cache)));
+        workspace.recordCacheContents(cache, Map.of(tool, 1, stackable, 2, "minecraft:stone", 16));
+        var area = new AreaBounds(12, 64, 0, 12, 64, 0);
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                dev.stowling.v2.category.UnstackableCategoryRule.ID);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Mixed rules", List.of(binding));
+        var base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), workspace);
+        StorageAutomationPort storage = new StorageAutomationPort() {
+            @Override
+            public Set<String> unstackableItems(TaskExecutionContext context, ContainerTarget source) {
+                assertEquals(cache, source);
+                return Set.of(tool);
+            }
+
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("resolve does not transfer items");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                throw new AssertionError("resolve does not clean up");
+            }
+        };
+        var context = new TaskExecutionContext(base.navigation(), base.droppedItems(),
+                base.containerRegions(), base.containerTransfers(), base.containerWithdrawals(),
+                base.containerInspections(), base.categoryMarkerCache(), base.foodConsumption(),
+                (selected, types, volume) -> CategoryZoneResult.success(Map.of(
+                        "minecraft:stone", List.of(normal),
+                        dev.stowling.v2.category.UnstackableCategoryRule.CATEGORY,
+                        List.of(cache, tools))), base.coordinates(), base.regions(),
+                Map.of(zone.id(), zone), workspace, base.inventory(), storage);
+        var module = new ResolveContainerCategoriesModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
+                Map.of(TaskModuleIds.CATEGORY_ZONE_REF, "category-zone:" + zone.id())));
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(Set.of(ItemIdentity.exact(tool)),
+                workspace.acceptedItemsByContainer().get(tools));
+        assertEquals(Set.of("minecraft:stone"), workspace.acceptedItemsByContainer().get(normal));
+        assertFalse(workspace.acceptedItemsByContainer().containsKey(cache));
+        workspace.selectNextContainer().orElseThrow();
+        assertEquals(Set.of(tool, "minecraft:stone"),
+                workspace.mixedBoxWithdrawalItems(cache, Set.of(tool, stackable, "minecraft:stone")));
+        workspace.deferReturnedCacheItems(Map.of(tool, 1), Map.of());
+        assertEquals(Set.of("minecraft:stone"), workspace.remainingCacheCategories(cache));
+    }
+
+    @Test
     void unstackableSelectionAndReturnUseExactItemKeys() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget cache = target(0, 64, 0, "cache");

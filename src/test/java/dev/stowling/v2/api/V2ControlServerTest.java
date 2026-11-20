@@ -275,9 +275,7 @@ class V2ControlServerTest {
 
             for (String path : List.of(
                     "/auto-classify-task-model.js",
-                    "/auto-classify-ui.js",
-                    "/unstackable-task-model.js",
-                    "/unstackable-task-ui.js"
+                    "/auto-classify-ui.js"
             )) {
                 HttpResponse<String> asset = fixture.send(
                         path,

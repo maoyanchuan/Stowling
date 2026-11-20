@@ -49,6 +49,9 @@ final class MarkerContainerScanAction {
                 new LinkedHashMap<>();
         Map<BlockPosition, Target> byPosition = new LinkedHashMap<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
+            if (dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(binding.ruleId())) {
+                continue;
+            }
             if (markerSources == null && !ContainerContentsCategoryRule.ID.equals(
                     binding.ruleId()
             )) {
@@ -76,7 +79,8 @@ final class MarkerContainerScanAction {
                 marker.bindingIds().add(binding.id());
             }
         }
-        if (cache.isEmpty() && markerSources != null) {
+        if (cache.isEmpty() && markerSources != null && zone.bindings().stream().anyMatch(binding ->
+                !dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(binding.ruleId()))) {
             return Plan.failure("分类区没有可扫描的分类标记容器");
         }
         return new Plan(

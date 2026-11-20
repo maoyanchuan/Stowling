@@ -232,20 +232,9 @@ public final class TaskModuleCatalog {
                     ))
             ),
             action(
-                    ConfigValidator.SORT_UNSTACKABLE_ITEMS,
-                    "分类不可堆叠物品",
-                    "将缓存中实际堆叠上限为 1 的物品送往独立储存区，排除潜影盒；无需分类标记。",
-                    List.of(
-                            reference(ConfigValidator.REGION_REF,
-                                    "缓存区域", "region-reference", true),
-                            reference(ConfigValidator.TARGET_REF,
-                                    "不可堆叠储存区", "region-reference", true)
-                    )
-            ),
-            action(
                     ConfigValidator.RESOLVE_UNSTACKABLE_STORAGE,
                     "解析不可堆叠储存",
-                    "从已盘点的缓存识别堆叠上限为 1 且非潜影盒的物品，关联储存区域。",
+                    "从已盘点的缓存按实际堆叠上限识别单件物品，关联储存区域。",
                     List.of(
                             reference(ConfigValidator.REGION_REF,
                                     "不可堆叠储存区", "region-reference", true),

@@ -22,6 +22,11 @@ public record CategoryBindingDefinition(
         markerArea = Objects.requireNonNull(markerArea, "markerArea");
         storageArea = Objects.requireNonNull(storageArea, "storageArea");
         ruleId = requireText(ruleId, "ruleId");
+        if (dev.stowling.v2.category.UnstackableCategoryRule.ID.equals(ruleId)) {
+            markerArea = storageArea;
+            storagePolicy = new StoragePolicy(StorageMode.NORMAL, 50, false,
+                    storagePolicy.packingArea());
+        }
         ignoredMarkerBlockIds = normalizeBlockIds(ignoredMarkerBlockIds);
         containerOverrides = containerOverrides == null
                 ? List.of()

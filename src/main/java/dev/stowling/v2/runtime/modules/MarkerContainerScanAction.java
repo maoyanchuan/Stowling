@@ -67,11 +67,6 @@ final class MarkerContainerScanAction {
             if (!scan.succeeded()) {
                 return Plan.failure(scan.message());
             }
-            if (markerSources == null && scan.containers().isEmpty()) {
-                return Plan.failure(
-                        "分类物识别区没有箱子或木桶: " + zone.name()
-                );
-            }
             for (ContainerTarget target : scan.containers()) {
                 Target marker = byPosition.computeIfAbsent(
                         target.position(),

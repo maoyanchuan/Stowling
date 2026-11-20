@@ -33,6 +33,9 @@ final class ColumnCategoryMatcher {
             boolean rejectDirectColumnConflicts,
             boolean wholeStorage
     ) {
+        if (markers.isEmpty() && overrides.isEmpty()) {
+            return CategoryRuleResult.success(Map.of());
+        }
         if (storageContainers.isEmpty()) {
             return CategoryRuleResult.failure("储存区没有可用容器");
         }

@@ -39,12 +39,6 @@ public final class ContainerContentsCategoryRule implements CategoryRule {
             List<CategoryContainerOverrideDefinition> overrides,
             boolean wholeStorage
     ) {
-        if (storageContainers.isEmpty()) {
-            return CategoryRuleResult.failure("储存区没有可用容器");
-        }
-        if (markers.isEmpty()) {
-            return CategoryRuleResult.failure("分类标记容器没有物品");
-        }
         CategoryRuleResult result = ColumnCategoryMatcher.resolve(
                 markers,
                 storageContainers,
@@ -52,7 +46,7 @@ public final class ContainerContentsCategoryRule implements CategoryRule {
                 false,
                 wholeStorage
         );
-        if (!result.succeeded() || !result.categories().isEmpty()) {
+        if (!result.succeeded() || !result.categories().isEmpty() || markers.isEmpty()) {
             return result;
         }
         return CategoryRuleResult.failure(

@@ -14,6 +14,26 @@ import org.junit.jupiter.api.Test;
 
 class DirectBlockIdCategoryRuleTest {
     @Test
+    void unmarkedSlicesContributeNoTargetsAndStillHonorManualAssignments() {
+        var chest = new ContainerTarget(new BlockPosition(81, -35, 31), "minecraft:chest");
+        var override = new CategoryContainerOverrideDefinition(UUID.randomUUID(), chest.position(),
+                CategoryContainerOverrideMode.ADD, List.of("minecraft:stone"));
+        for (CategoryRule rule : List.of(new DirectBlockIdCategoryRule(),
+                new ContainerContentsCategoryRule())) {
+            for (List<ContainerTarget> targets : List.of(List.<ContainerTarget>of(),
+                    List.of(chest))) {
+                var blank = rule.resolve(List.of(), targets);
+                assertTrue(blank.succeeded());
+                assertTrue(blank.categories().isEmpty());
+                assertTrue(blank.layout().isEmpty());
+            }
+            var manual = rule.resolve(List.of(), List.of(chest), List.of(override));
+            assertTrue(manual.succeeded());
+            assertEquals(List.of(chest), manual.categories().get("minecraft:stone"));
+        }
+    }
+
+    @Test
     void frameOnSecondHalfOfDoubleChestMatchesItsColumn() {
         var partner = new BlockPosition(1, 64, 0);
         var chest = new ContainerTarget(new BlockPosition(0, 64, 0), "chest", null, null, partner);

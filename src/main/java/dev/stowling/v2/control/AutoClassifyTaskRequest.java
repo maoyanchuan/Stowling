@@ -15,25 +15,8 @@ public record AutoClassifyTaskRequest(
         List<AutoClassifyAreaRequest> classificationAreas,
         TaskPriority collectionPriority,
         Boolean overflowEnabled,
-        TaskCleanupPolicy cleanupPolicy,
-        String unstackableRegionRef
+        TaskCleanupPolicy cleanupPolicy
 ) {
-    public AutoClassifyTaskRequest(
-            String name,
-            Boolean enabled,
-            Boolean collectionEnabled,
-            Boolean classificationEnabled,
-            AutoClassifyDetectionRequest detection,
-            String cacheRegionRef,
-            List<AutoClassifyAreaRequest> classificationAreas,
-            TaskPriority collectionPriority,
-            Boolean overflowEnabled,
-            TaskCleanupPolicy cleanupPolicy
-    ) {
-        this(name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority, overflowEnabled, cleanupPolicy, null);
-    }
-
     public AutoClassifyTaskRequest(
             String name,
             Boolean enabled,

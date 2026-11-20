@@ -867,8 +867,7 @@ public final class V2ControlServer implements AutoCloseable {
                 autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority"),
                 optionalBooleanValue(json, "overflowEnabled"),
-                cleanupPolicy(json),
-                optionalString(json, "unstackableRegionRef")
+                cleanupPolicy(json)
         );
     }
 
@@ -887,8 +886,7 @@ public final class V2ControlServer implements AutoCloseable {
                 autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority"),
                 optionalBooleanValue(json, "overflowEnabled"),
-                cleanupPolicy(json),
-                optionalString(json, "unstackableRegionRef")
+                cleanupPolicy(json)
         );
     }
 
@@ -936,7 +934,6 @@ public final class V2ControlServer implements AutoCloseable {
                 "cleanupPolicy",
                 "detection",
                 "cacheRegionRef",
-                "unstackableRegionRef",
                 "classificationAreas",
                 "collectionPriority"
         ));

@@ -683,8 +683,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.classificationAreas(),
                 request.collectionPriority(),
                 Boolean.TRUE.equals(request.overflowEnabled()),
-                request.cleanupPolicy(),
-                request.unstackableRegionRef()
+                request.cleanupPolicy()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -764,9 +763,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.collectionPriority(),
                 request.overflowEnabled() == null ? existing.overflowEnabled()
                         : request.overflowEnabled(),
-                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy(),
-                request.unstackableRegionRef() == null ? existing.unstackableRegionRef()
-                        : request.unstackableRegionRef()
+                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1257,8 +1254,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             List<AutoClassifyAreaRequest> requestedAreas,
             TaskPriority collectionPriority,
             boolean overflowEnabled,
-            dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy,
-            String unstackableRegionRef
+            dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy
     ) {
         if (detection == null) {
             throw new V2ValidationException("detection is required");
@@ -1292,8 +1288,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ? TaskPriority.NORMAL
                         : collectionPriority,
                 overflowEnabled,
-                cleanupPolicy,
-                unstackableRegionRef
+                cleanupPolicy
         );
     }
 
@@ -1313,8 +1308,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.classificationAreas(),
                 definition.collectionPriority(),
                 definition.overflowEnabled(),
-                definition.cleanupPolicy(),
-                definition.unstackableRegionRef()
+                definition.cleanupPolicy()
         );
     }
 
@@ -1354,8 +1348,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 ).encode(),
                 triggerIds,
                 definition.overflowEnabled(),
-                definition.cleanupPolicy(),
-                definition.unstackableRegionRef()
+                definition.cleanupPolicy()
         );
     }
 

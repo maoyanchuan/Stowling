@@ -1,8 +1,10 @@
 package dev.stowling.v2.model;
 
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.config.ConfigValidator;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +27,89 @@ public final class TaskFlowNormalizer {
     }
 
     public static AppConfig normalize(AppConfig config) {
+        return normalizeTasks(migrateUnstackableLayouts(config));
+    }
+
+    private static AppConfig migrateUnstackableLayouts(AppConfig config) {
+        if (config.autoClassifyTasks().stream()
+                .noneMatch(definition -> definition.unstackableRegionRef() != null)) {
+            return config;
+        }
+        List<CategoryZoneDefinition> zones = new ArrayList<>(config.categoryZones());
+        Set<String> zoneNames = new HashSet<>();
+        zones.forEach(zone -> zoneNames.add(ConfigValidator.normalizeName(zone.name())));
+        List<AutoClassifyDefinition> definitions = new ArrayList<>();
+        Map<UUID, AutoClassifyDefinition> migrated = new LinkedHashMap<>();
+        for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
+            String legacyRef = definition.unstackableRegionRef();
+            if (legacyRef == null) {
+                definitions.add(definition);
+                continue;
+            }
+            UUID regionId = ResourceReference.parse(legacyRef).uuid();
+            RegionDefinition region = config.regions().stream()
+                    .filter(value -> value.id().equals(regionId)).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("不可堆叠储存区不存在"));
+            List<AutoClassifyAreaDefinition> areas =
+                    new ArrayList<>(definition.classificationAreas());
+            String zoneRef = unstackableLayoutReference(region, legacyRef, areas, zones, zoneNames);
+            if (areas.stream().noneMatch(area -> area.categoryZoneRef().equals(zoneRef))) {
+                areas.add(new AutoClassifyAreaDefinition(zoneRef));
+            }
+            var updated = new AutoClassifyDefinition(definition.id(), definition.name(),
+                    definition.enabled(), definition.collectionEnabled(),
+                    definition.classificationEnabled(), definition.detectionCoordinateRef(),
+                    definition.pickupRadius(), definition.cacheRegionRef(), areas,
+                    definition.collectionPriority(), definition.overflowEnabled(),
+                    definition.cleanupPolicy());
+            definitions.add(updated);
+            migrated.put(updated.classificationTaskId(), updated);
+        }
+        List<TaskDefinition> tasks = config.tasks().stream().map(task -> {
+            AutoClassifyDefinition definition = migrated.get(task.id());
+            return definition == null ? task
+                    : rebuildAutoClassification(task, definition, "unstackable-layout");
+        }).toList();
+        return new AppConfig(config.schemaVersion(), config.coordinates(), tasks, config.regions(),
+                zones, config.triggers(), config.taskFolders(), definitions);
+    }
+
+    private static String unstackableLayoutReference(RegionDefinition region, String regionRef,
+            List<AutoClassifyAreaDefinition> areas, List<CategoryZoneDefinition> zones,
+            Set<String> zoneNames) {
+        var bounds = new AreaBounds(region.firstX(), region.firstY(), region.firstZ(),
+                region.secondX(), region.secondY(), region.secondZ());
+        Set<String> selected = new HashSet<>();
+        areas.forEach(area -> selected.add(area.categoryZoneRef()));
+        var existing = zones.stream()
+                .filter(zone -> zone.bindings().stream().anyMatch(binding ->
+                        UnstackableCategoryRule.ID.equals(binding.ruleId())
+                                && bounds.contains(binding.storageArea())
+                                && binding.storageArea().contains(bounds)))
+                .filter(zone -> selected.contains(layoutReference(zone.id()))
+                        || (zone.bindings().size() == 1 && zone.expansion() == null))
+                .min(Comparator.comparing(zone -> !selected.contains(layoutReference(zone.id()))));
+        if (existing.isPresent()) {
+            return layoutReference(existing.orElseThrow().id());
+        }
+        UUID zoneId = UUID.nameUUIDFromBytes(("unstackable-layout:" + regionRef)
+                .getBytes(StandardCharsets.UTF_8));
+        if (zones.stream().noneMatch(zone -> zone.id().equals(zoneId))) {
+            UUID bindingId = UUID.nameUUIDFromBytes((zoneId + ":binding")
+                    .getBytes(StandardCharsets.UTF_8));
+            var binding = new CategoryBindingDefinition(bindingId, bounds, bounds,
+                    UnstackableCategoryRule.ID);
+            zones.add(new CategoryZoneDefinition(zoneId,
+                    uniqueName(region.name() + " 不可堆叠", zoneNames), List.of(binding)));
+        }
+        return layoutReference(zoneId);
+    }
+
+    private static String layoutReference(UUID zoneId) {
+        return ResourceReference.of(ResourceType.CATEGORY_ZONE, zoneId).encode();
+    }
+
+    private static AppConfig normalizeTasks(AppConfig config) {
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
@@ -155,10 +240,15 @@ public final class TaskFlowNormalizer {
         if (definition == null || !hasTaskRecognitionOverrides(task.steps())) {
             return task;
         }
+        return rebuildAutoClassification(task, definition, "layout-recognition");
+    }
+
+    private static TaskDefinition rebuildAutoClassification(TaskDefinition task,
+            AutoClassifyDefinition definition, String role) {
         List<TaskStep> steps = AutoClassifyTaskFactory.tasks(definition, List.of())
                 .get(1).steps();
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
-                remapStepIds(steps, definition.derivedId("layout-recognition")),
+                remapStepIds(steps, definition.derivedId(role)),
                 task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
                 task.cleanupPolicy());

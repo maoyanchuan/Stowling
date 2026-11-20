@@ -48,9 +48,8 @@ public final class CoordinateResourceMigration {
                                                         .flatMap(zone -> zone.bindings().stream())
                                                         .map(CategoryBindingDefinition::storagePolicy)
                                                         .findFirst().orElse(StoragePolicy.DEFAULT)))
-                                .toList(), definition.collectionPriority(),
-                        definition.overflowEnabled(), definition.cleanupPolicy(),
-                        definition.unstackableRegionRef())).toList();
+                        .toList(), definition.collectionPriority(),
+                        definition.overflowEnabled(), definition.cleanupPolicy())).toList();
         var migrated = new StorageAutomationSettings(settings.cleanupEnabled(), List.of(),
                 List.of(), null, temporary.stream().distinct().toList(),
                 empty.stream().distinct().toList(), fallback, settings.temporaryRegionIds(),

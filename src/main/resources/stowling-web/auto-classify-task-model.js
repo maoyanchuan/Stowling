@@ -143,9 +143,6 @@
                 ? ""
                 : String(detection.pickupRadius),
             cacheRegionId: referencedId(item?.cacheRegionRef, "region"),
-            ...(item?.unstackableRegionRef ? {
-                unstackableRegionId: referencedId(item.unstackableRegionRef, "region")
-            } : {}),
             classificationAreas: Array.isArray(item?.classificationAreas)
                 ? item.classificationAreas.map((area) => ({
                     categoryZoneId: referencedId(
@@ -236,12 +233,6 @@
         } else if (!resourceExists(resources, "regions", cacheRegionId)) {
             errors.push("所选缓存区域不存在，请刷新后重试");
         }
-        const unstackableRegionId = String(draft?.unstackableRegionId ?? "").trim();
-        if (unstackableRegionId && !resourceExists(resources, "regions", unstackableRegionId)) {
-            errors.push("所选不可堆叠储存区不存在，请重新选择");
-        } else if (unstackableRegionId && unstackableRegionId === cacheRegionId) {
-            errors.push("不可堆叠储存区需要使用独立区域");
-        }
 
         const cleanup = String(draft?.cleanupDestinationRef || "");
         if (cleanup && !(cleanup.startsWith("coordinate:")
@@ -295,9 +286,6 @@
                 pickupRadius: parsedRadius(draft.pickupRadius)
             },
             cacheRegionRef: reference("region", draft.cacheRegionId),
-            ...(draft.unstackableRegionId !== undefined ? {
-                unstackableRegionRef: reference("region", draft.unstackableRegionId)
-            } : {}),
             classificationAreas: draft.classificationAreas.map((area) => ({
                 categoryZoneRef: reference(
                     "category-zone",
@@ -318,9 +306,7 @@
     function validateAreas(draft, resources, errors) {
         const areas = draft?.classificationAreas;
         if (!Array.isArray(areas) || areas.length === 0) {
-            if (!draft?.unstackableRegionId) {
-                errors.push("请至少添加一个分类选区或选择不可堆叠储存区");
-            }
+            errors.push("请至少添加一个分类选区");
             return;
         }
         const zoneIds = new Set();

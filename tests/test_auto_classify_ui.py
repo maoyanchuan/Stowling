@@ -319,3 +319,10 @@ def test_task_page_loads_model_before_ui_and_ui_after_shared_styles() -> None:
     assert "auto-task-form[hidden]" in read("styles.css")
 
 
+def test_unstackable_rule_is_configured_in_the_warehouse_layout() -> None:
+    html = read("tasks.html")
+    assert "坐标 → 仓储布局" in html
+    assert 'id="auto-unstackable-region"' not in html
+    assert "关闭不可堆叠分类" not in read("auto-classify-ui.js")
+    assert 'marker.root.hidden = rule.value === "UNSTACKABLE_ITEMS"' in read("category-zones.js")
+

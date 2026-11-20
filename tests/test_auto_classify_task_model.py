@@ -40,7 +40,7 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_unstackable_storage_can_be_the_only_classification_area() -> None:
+def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     result = _run(
         """
         (() => {
@@ -49,20 +49,19 @@ def test_unstackable_storage_can_be_the_only_classification_area() -> None:
                 ...model.newDraft(),
                 coordinateId: "pickup",
                 cacheRegionId: "cache",
-                classificationAreas: [],
-                unstackableRegionId: "storage",
+                classificationAreas: [{ categoryZoneId: "tools" }],
             };
             const resources = {
                 coordinates: [{ id: "pickup" }],
-                regions: [{ id: "cache" }, { id: "storage" }],
+                regions: [{ id: "cache" }],
+                categoryZones: [{ id: "tools" }],
             };
-            const payload = model.payload(draft, resources, []);
+            const payload = model.payload({ ...draft, unstackableRegionId: "old" }, resources, []);
             return {
-                reference: payload.unstackableRegionRef,
                 areas: payload.classificationAreas,
-                restored: model.draftFromTask(payload).unstackableRegionId,
-                overlap: model.validateDraft({
-                    ...draft, unstackableRegionId: "cache",
+                hasLegacyField: Object.hasOwn(payload, "unstackableRegionRef"),
+                missingLayout: model.validateDraft({
+                    ...draft, classificationAreas: [], unstackableRegionId: "old",
                 }, resources, []),
             };
         })()
@@ -70,10 +69,9 @@ def test_unstackable_storage_can_be_the_only_classification_area() -> None:
     )
 
     assert result == {
-        "reference": "region:storage",
-        "areas": [],
-        "restored": "storage",
-        "overlap": ["不可堆叠储存区需要使用独立区域"],
+        "areas": [{"categoryZoneRef": "category-zone:tools", "storagePolicy": None}],
+        "hasLegacyField": False,
+        "missingLayout": ["请至少添加一个分类选区"],
     }
 
 

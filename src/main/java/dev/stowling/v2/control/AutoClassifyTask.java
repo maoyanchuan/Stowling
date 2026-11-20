@@ -23,33 +23,8 @@ public record AutoClassifyTask(
         String interruptionTaskRef,
         List<UUID> triggerIds,
         boolean overflowEnabled,
-        TaskCleanupPolicy cleanupPolicy,
-        String unstackableRegionRef
+        TaskCleanupPolicy cleanupPolicy
 ) {
-    public AutoClassifyTask(
-            UUID id,
-            String name,
-            boolean enabled,
-            boolean collectionEnabled,
-            boolean classificationEnabled,
-            AutoClassifyDetection detection,
-            String cacheRegionRef,
-            List<AutoClassifyAreaDefinition> classificationAreas,
-            TaskPriority collectionPriority,
-            TaskPriority classificationPriority,
-            String collectionTaskRef,
-            String classificationTaskRef,
-            String interruptionTaskRef,
-            List<UUID> triggerIds,
-            boolean overflowEnabled,
-            TaskCleanupPolicy cleanupPolicy
-    ) {
-        this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority, classificationPriority,
-                collectionTaskRef, classificationTaskRef, interruptionTaskRef, triggerIds,
-                overflowEnabled, cleanupPolicy, null);
-    }
-
     public AutoClassifyTask(
             UUID id,
             String name,

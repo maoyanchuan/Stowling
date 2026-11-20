@@ -18,7 +18,7 @@ public record AutoClassifyDefinition(
         TaskPriority collectionPriority,
         boolean overflowEnabled,
         TaskCleanupPolicy cleanupPolicy,
-        String unstackableRegionRef
+        String unstackableRegionRef // Read legacy settings before converting them to layout refs.
 ) {
     public AutoClassifyDefinition(
             UUID id,
@@ -116,9 +116,7 @@ public record AutoClassifyDefinition(
                 )
         );
         if (classificationAreas.isEmpty() && unstackableRegionRef == null) {
-            throw new IllegalArgumentException(
-                    "请至少添加一个分类选区或选择不可堆叠储存区"
-            );
+            throw new IllegalArgumentException("请至少添加一个分类选区");
         }
         long uniqueZones = classificationAreas.stream()
                 .map(AutoClassifyAreaDefinition::categoryZoneRef)

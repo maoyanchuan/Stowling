@@ -2,35 +2,77 @@ package dev.stowling.v2.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class AutoClassifyTaskFactoryTest {
     @Test
-    void buildsUnstackableOnlyFlowWithoutCategoryMarkers() {
-        AutoClassifyDefinition original = definition(true);
-        String storage = "region:" + UUID.randomUUID();
-        var unstackable = new AutoClassifyDefinition(original.id(), original.name(),
-                original.enabled(), original.collectionEnabled(), original.classificationEnabled(),
-                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
-                List.of(), original.collectionPriority(), true, original.cleanupPolicy(), storage);
-        List<TaskStep> steps = AutoClassifyTaskFactory.tasks(unstackable, List.of()).get(1).steps();
+    void migratesUnstackableOnlyTaskToWarehouseLayout() {
+        var point = new CoordinatePoint(UUID.randomUUID(), "Drops", 0, 64, 0);
+        var cache = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 1);
+        var storage = new RegionDefinition(UUID.randomUUID(), "Tools", 10, 64, 0, 12, 65, 1);
+        String storageRef = "region:" + storage.id();
+        var legacy = new AutoClassifyDefinition(UUID.randomUUID(), "Sort", false, true, true,
+                "coordinate:" + point.id(), 8, "region:" + cache.id(), List.of(),
+                TaskPriority.NORMAL, true, null, storageRef);
+        List<TaskDefinition> oldTasks = new ArrayList<>(
+                AutoClassifyTaskFactory.tasks(legacy, List.of()));
+        TaskDefinition classification = oldTasks.get(1);
+        oldTasks.set(1, new TaskDefinition(classification.id(), classification.name(),
+                classification.priority(), false,
+                TaskFlowTemplates.sortUnstackable(legacy.cacheRegionRef(), storageRef),
+                classification.interruptionMode(), classification.interruptionTaskRef(),
+                false, true));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point), oldTasks,
+                List.of(cache, storage), List.of(), List.of(), List.of(), List.of(legacy));
 
-        assertEquals(ConfigValidator.SCAN_CONTAINERS_IN_REGION, steps.getFirst().moduleId());
-        assertEquals("true", steps.getFirst().parameters().get(ConfigValidator.SCAN_CONTENTS));
-        List<TaskStep> branch = steps.get(1).steps();
-        TaskStep resolve = branch.getFirst();
-        assertEquals(ConfigValidator.RESOLVE_UNSTACKABLE_STORAGE, resolve.moduleId());
-        assertEquals(Map.of(ConfigValidator.REGION_REF, storage), resolve.parameters());
-        assertTrue(branch.stream().noneMatch(step ->
-                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES.equals(step.moduleId())));
+        AppConfig migrated = TaskFlowNormalizer.normalize(config);
+        var updated = migrated.autoClassifyTasks().getFirst();
+        var layout = migrated.categoryZones().getFirst();
+        var binding = layout.bindings().getFirst();
+        String layoutRef = "category-zone:" + layout.id();
+        List<TaskStep> steps = migrated.tasks().get(1).steps();
+
+        assertEquals(legacy.id(), updated.id());
+        assertNull(updated.unstackableRegionRef());
+        assertEquals(List.of(new AutoClassifyAreaDefinition(layoutRef)),
+                updated.classificationAreas());
+        assertEquals(UnstackableCategoryRule.ID, binding.ruleId());
+        assertEquals(new AreaBounds(10, 64, 0, 12, 65, 1), binding.storageArea());
+        var resolve = steps.get(1).steps().get(3);
+        assertEquals(ConfigValidator.RESOLVE_CONTAINER_CATEGORIES, resolve.moduleId());
+        assertEquals(layoutRef, resolve.parameters().get(ConfigValidator.CATEGORY_ZONE_REF));
         assertEquals(ConfigValidator.PACK_OVERFLOW, steps.get(2).moduleId());
+        ConfigValidator.requireValid(migrated);
+        assertEquals(migrated, TaskFlowNormalizer.normalize(migrated));
+
+        var existing = new CategoryZoneDefinition(UUID.randomUUID(), "Existing tools layout",
+                List.of(binding));
+        var withExisting = new AppConfig(config.schemaVersion(), config.coordinates(), oldTasks,
+                config.regions(), List.of(existing), config.triggers(), config.taskFolders(),
+                config.autoClassifyTasks());
+        var reused = TaskFlowNormalizer.normalize(withExisting);
+        assertEquals(List.of(existing), reused.categoryZones());
+        assertEquals("category-zone:" + existing.id(), reused.autoClassifyTasks().getFirst()
+                .classificationAreas().getFirst().categoryZoneRef());
+
+        var ordinaryBinding = new CategoryBindingDefinition(UUID.randomUUID(),
+                new AreaBounds(10, 64, -1, 12, 64, -1), binding.storageArea(), "DIRECT_BLOCK_ID");
+        var ordinaryZone = new CategoryZoneDefinition(UUID.randomUUID(), "Regular stock",
+                List.of(ordinaryBinding));
+        var withOverlap = new AppConfig(config.schemaVersion(), config.coordinates(), oldTasks,
+                config.regions(), List.of(ordinaryZone), config.triggers(), config.taskFolders(),
+                config.autoClassifyTasks());
+        var migratedOverlap = TaskFlowNormalizer.normalize(withOverlap);
+        assertEquals(List.of(ordinaryZone, layout), migratedOverlap.categoryZones());
+        ConfigValidator.requireValid(migratedOverlap);
     }
 
     @Test

@@ -1588,13 +1588,17 @@ public final class ConfigValidator {
                             "category marker and storage areas must differ"
                     );
                 }
-                if (storageAreas.stream().anyMatch(area ->
-                        areasOverlap(area, binding.storageArea()))) {
-                    throw new V2ValidationException(
-                            "category storage areas must not overlap"
-                    );
+                // A dedicated layout runs as its own pass and can reuse legacy storage boxes.
+                boolean dedicatedUnstackable = zone.expansion() == null
+                        && zone.bindings().size() == 1
+                        && UnstackableCategoryRule.ID.equals(binding.ruleId());
+                if (!dedicatedUnstackable) {
+                    if (storageAreas.stream().anyMatch(area ->
+                            areasOverlap(area, binding.storageArea()))) {
+                        throw new V2ValidationException("category storage areas must not overlap");
+                    }
+                    storageAreas.add(binding.storageArea());
                 }
-                storageAreas.add(binding.storageArea());
                 Set<BlockPosition> overridePositions = new HashSet<>();
                 for (CategoryContainerOverrideDefinition override
                         : binding.containerOverrides()) {

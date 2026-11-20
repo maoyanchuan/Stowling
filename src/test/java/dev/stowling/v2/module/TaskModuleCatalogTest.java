@@ -20,7 +20,7 @@ class TaskModuleCatalogTest {
     void exposesOnlyRealActionsAndListeners() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 
-        assertEquals(23, modules.size());
+        assertEquals(24, modules.size());
         assertEquals(
                 3,
                 modules.stream()
@@ -28,7 +28,7 @@ class TaskModuleCatalogTest {
                         .count()
         );
         assertEquals(
-                20,
+                21,
                 modules.stream()
                         .filter(module -> module.kind() == TaskModuleKind.ACTION)
                         .count()
@@ -142,6 +142,21 @@ class TaskModuleCatalogTest {
         );
         assertFalse(assertionSource.required());
         assertEquals("managed", assertionSource.defaultValue());
+    }
+
+    @Test
+    void unstackableSortOnlyNeedsSourceAndDestinationRegions() {
+        ModuleDefinition module = TaskModuleCatalog.modules().stream()
+                .filter(candidate -> candidate.id().equals(ConfigValidator.SORT_UNSTACKABLE_ITEMS))
+                .findFirst().orElseThrow();
+
+        assertEquals("分类不可堆叠物品", module.name());
+        assertEquals(List.of(ConfigValidator.REGION_REF, ConfigValidator.TARGET_REF),
+                module.parameters().stream().map(ModuleParameter::key).toList());
+        assertTrue(module.parameters().stream().allMatch(ModuleParameter::required));
+        assertTrue(module.parameters().stream()
+                .allMatch(parameter -> parameter.kind().equals("region-reference")));
+        assertTrue(module.description().contains("排除潜影盒"));
     }
 
     @Test

@@ -67,6 +67,15 @@ public final class MinecraftItemIdentity {
         return stack.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
     }
 
+    public static Set<String> unstackableItems(List<ItemStack> stacks) {
+        return stacks.stream().flatMap(stack -> isBox(stack)
+                        ? contents(stack).nonEmptyItemCopyStream()
+                        : java.util.stream.Stream.of(stack))
+                .filter(stack -> !stack.isEmpty() && !isBox(stack) && stack.getMaxStackSize() == 1)
+                .map(MinecraftItemIdentity::key)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
     /** Recovery compares decoded components and quantities, independent of JSON key order. */
     public static boolean sameRecoveredBox(ItemStack expected, ItemStack actual) {
         if (!isBox(expected) || !isBox(actual)) return false;

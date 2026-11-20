@@ -232,13 +232,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         if (snapshot == null) {
             throw new IllegalStateException("请先盘点缓存容器库存");
         }
-        return snapshot.stacks().stream().flatMap(stack -> MinecraftItemIdentity.isBox(stack)
-                        ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
-                        : java.util.stream.Stream.of(stack))
-                .filter(stack -> !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
-                        && stack.getMaxStackSize() == 1)
-                .map(MinecraftItemIdentity::key)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return MinecraftItemIdentity.unstackableItems(snapshot.stacks());
     }
 
     @Override

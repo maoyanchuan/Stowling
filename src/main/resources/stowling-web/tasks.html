@@ -19,6 +19,8 @@
     <script src="/task-cleanup-settings.js" defer></script>
     <script src="/tasks.js" defer></script>
     <script src="/auto-classify-ui.js" defer></script>
+    <script src="/unstackable-task-model.js" defer></script>
+    <script src="/unstackable-task-ui.js" defer></script>
 </head>
 <body data-page="tasks">
     <header class="topbar">
@@ -110,6 +112,60 @@
                            role="status" hidden></p>
                         <div id="auto-task-list" class="move-task-list"
                              aria-label="已保存的自动分类任务"></div>
+                        <div id="unstackable-list" class="move-task-list"
+                             aria-label="已保存的不可堆叠分类任务"></div>
+                        <details id="unstackable-draft" class="move-saved-task" hidden>
+                            <summary class="move-task-summary">
+                                <span class="move-task-kind" aria-hidden="true">◇</span>
+                                <strong id="unstackable-title">新建 · 不可堆叠物品分类</strong>
+                            </summary>
+                            <div class="move-task-body">
+                                <form id="unstackable-form" class="move-task-form" novalidate>
+                                    <fieldset id="unstackable-fields" disabled>
+                                        <label class="move-field" for="unstackable-name">
+                                            <span>任务名称</span>
+                                            <input id="unstackable-name" maxlength="80" required
+                                                   autocomplete="off">
+                                        </label>
+                                        <label class="move-field" for="unstackable-cache">
+                                            <span>缓存区域</span>
+                                            <select id="unstackable-cache" required></select>
+                                        </label>
+                                        <label class="move-field" for="unstackable-storage">
+                                            <span>不可堆叠储存区</span>
+                                            <select id="unstackable-storage" required></select>
+                                        </label>
+                                        <p class="auto-config-note">
+                                            将实际堆叠上限为 1 的物品送入独立储存区，排除潜影盒。
+                                            同时支持提取缓存潜影盒内的不可堆叠物品，无需分类标记。
+                                            储存区放不下的物品退回缓存；中断后归还缓存并重新扫描。
+                                        </p>
+                                        <a href="/coordinates.html#regions" class="text-link">
+                                            管理容器区域 →
+                                        </a>
+                                        <label class="move-field" for="unstackable-priority">
+                                            <span>运行优先级</span>
+                                            <select id="unstackable-priority">
+                                                <option value="BACKGROUND">后台</option>
+                                                <option value="NORMAL">普通</option>
+                                                <option value="URGENT">紧急</option>
+                                            </select>
+                                        </label>
+                                        <p id="unstackable-message" class="field-message"
+                                           role="status" aria-live="polite"></p>
+                                        <div class="move-form-actions">
+                                            <button id="unstackable-remove" type="button" hidden
+                                                    class="ghost danger-action">删除任务</button>
+                                            <button id="unstackable-save" type="button"
+                                                    class="secondary">保存任务</button>
+                                            <button type="submit" class="primary">
+                                                保存并加入队列
+                                            </button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </details>
                         <div id="move-task-draft" class="move-saved-task is-draft" hidden>
                             <button id="toggle-move-draft" class="move-task-summary"
                                     type="button" aria-expanded="false"
@@ -415,6 +471,11 @@
                                     type="button" disabled>
                                 <strong>＋ 自动分类</strong>
                                 <span>检测掉落物入缓存，空闲时分类入库</span>
+                            </button>
+                            <button id="unstackable-new" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 不可堆叠物品分类</strong>
+                                <span>将潜影盒以外的不可堆叠物品送入专用储存区</span>
                             </button>
                         </div>
                     </section>

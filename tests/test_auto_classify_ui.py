@@ -287,9 +287,9 @@ def test_auto_draft_hides_the_empty_task_placeholder() -> None:
     assert "autoDraftActive: false" in tasks
     assert "state.autoDraftActive = event.detail?.draftActive === true;" in listener
     assert "syncMoveDisclosure();" in listener
+    assert "state.moveTasks.length + state.autoTaskCount + state.unstackableTaskCount" in disclosure
     assert " ".join(placeholder.split()) == (
-        "state.moveTasks.length + state.autoTaskCount > 0"
-        " || newDraft || state.autoDraftActive"
+        "total > 0 || newDraft || state.autoDraftActive || state.unstackableDraftActive"
     )
 
 

@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +29,8 @@ public final class CategoryZoneTiler {
         for (CategoryBindingDefinition template : templates) {
             int markerSpan = span(template.markerArea(), expansion.direction());
             int storageSpan = span(template.storageArea(), expansion.direction());
-            if (markerSpan != storageSpan && !template.wholeStorage()) {
+            if (markerSpan != storageSpan && !template.wholeStorage()
+                    && !UnstackableCategoryRule.ID.equals(template.ruleId())) {
                 throw new IllegalArgumentException(
                         "每个分类物的识别区和储存区在展开方向上的长度必须一致"
                 );

@@ -59,6 +59,21 @@ import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
     @Test
+    void separateSampleAboveTheStorageRowsSelectsItsFamilyAcrossTheSlice() {
+        var sample = new CategoryMarker(new BlockPosition(0, -34, 56), "minecraft:splash_potion",
+                CategoryMarkerSource.ITEM_FRAME, -1);
+        var chests = List.of(target(0, -35, 57, "chest"), target(0, -37, 57, "chest"));
+        var result = UnstackableCategoryRule.resolveMarkerArea(List.of(sample), chests);
+
+        assertTrue(result.succeeded());
+        assertEquals(Map.of(UnstackableCategoryRule.familyCategory("minecraft:splash_potion"),
+                chests), result.categories());
+        var empty = UnstackableCategoryRule.resolveMarkerArea(List.of(), chests);
+        assertTrue(empty.succeeded());
+        assertTrue(empty.categories().isEmpty());
+    }
+
+    @Test
     void frameSamplesRouteUnstackableVariantsByBaseItem() {
         var books = target(10, 64, 0, "chest");
         var partner = new BlockPosition(13, 64, 0);

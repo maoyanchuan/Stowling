@@ -15,7 +15,7 @@ public final class UnstackableCategoryRule implements CategoryRule {
     @Override
     public CategoryRuleDefinition definition() {
         return new CategoryRuleDefinition(ID, "不可堆叠物品（排除潜影盒）",
-                "在储存容器上挂展示框，按样品的物品类型收纳不可堆叠变体。整片无标记时收纳所有不可堆叠物品，潜影盒除外。");
+                "读取分类物识别区的展示框，按样品类型收纳不可堆叠物品，排除潜影盒。");
     }
 
     @Override
@@ -34,6 +34,27 @@ public final class UnstackableCategoryRule implements CategoryRule {
         }
         return CategoryRuleResult.success(categories.isEmpty()
                 ? Map.of(CATEGORY, storageContainers) : categories);
+    }
+
+    public static CategoryRuleResult resolveMarkerArea(List<CategoryMarker> markers,
+            List<ContainerTarget> storageContainers) {
+        List<CategoryMarker> families = markers.stream()
+                .filter(marker -> marker.source() == CategoryMarkerSource.ITEM_FRAME)
+                .map(marker -> new CategoryMarker(marker.position(), familyCategory(marker.itemId()),
+                        marker.source(), marker.slotIndex()))
+                .toList();
+        if (families.isEmpty()) {
+            // An unused slice must not claim inventory intended for its neighbors.
+            return CategoryRuleResult.success(Map.of());
+        }
+        if (storageContainers.isEmpty()) {
+            return CategoryRuleResult.failure("展示框对应的储存区没有可用容器");
+        }
+        String first = families.getFirst().itemId();
+        if (families.stream().allMatch(marker -> first.equals(marker.itemId()))) {
+            return CategoryRuleResult.success(Map.of(first, storageContainers));
+        }
+        return new DirectBlockIdCategoryRule().resolve(families, storageContainers);
     }
 
     public static boolean isLayoutCategory(String id) {

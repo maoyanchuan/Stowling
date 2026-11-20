@@ -205,7 +205,8 @@
                 }
             }
         }
-        if (bindings.some((binding) => binding.wholeStorage)) {
+        if (bindings.some((binding) => binding.wholeStorage
+                || binding.ruleId === "UNSTACKABLE_ITEMS")) {
             return inferWholeStorageExpansion(bindings, expansion, limits);
         }
         const candidates = ["X", "Z"].filter((axis) => {

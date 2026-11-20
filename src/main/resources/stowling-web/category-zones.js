@@ -555,7 +555,8 @@
         for (const template of templates) {
             const markerSpan = axisSpan(template, expansion.direction);
             const storageSpan = axisSpan(template, expansion.direction, "storage");
-            if (markerSpan !== storageSpan && !template.wholeStorage) {
+            if (markerSpan !== storageSpan && !template.wholeStorage
+                    && template.ruleId !== "UNSTACKABLE_ITEMS") {
                 return {
                     valid: false,
                     message: "每个分类物的识别区和储存区在展开方向上的长度必须一致"
@@ -800,15 +801,14 @@
             "启用后，本分类物标记箱里的物品可存入整片储存区；"
             + "识别区与储存区可不同宽，自动铺满保留整片尺寸。每种独立分类请分别添加分类物。");
         const frameHelp = Stowling.element("p", "muted compact-help",
-            "在储存箱上挂展示框：一瓶喷溅药水可标记所有效果，一本附魔书可标记所有附魔。"
-            + "整片都没有样品时，收纳所有不可堆叠物品（潜影盒除外）。");
+            "在分类物识别区放置展示框。一瓶喷溅药水可标记所有效果，一本附魔书可标记所有附魔。"
+            + "单片只有一种样品时，对应整片储存区。识别区与储存区相同时沿用箱上展示框规则。");
         /** @returns {void} */
         function refreshWholeStorage() {
             const available = rule.value === "MARKER_CONTAINER_CONTENTS";
             wholeStorageRow.hidden = !available;
             wholeStorageHelp.hidden = !available;
-            marker.root.hidden = rule.value === "UNSTACKABLE_ITEMS";
-            frameHelp.hidden = !marker.root.hidden;
+            frameHelp.hidden = rule.value !== "UNSTACKABLE_ITEMS";
         }
         rule.addEventListener("change", refreshWholeStorage);
         refreshWholeStorage();
@@ -910,14 +910,9 @@
         Settings.bindDisclosure(card, summary, body, expanded);
         host.append(card);
         return () => {
-            const storageValues = storage.read();
-            const markerValues = rule.value === "UNSTACKABLE_ITEMS"
-                ? Object.fromEntries(Object.entries(storageValues).map(([key, value]) =>
-                    [key.replace(/^storage/, "marker"), value]))
-                : marker.read();
             return {
-                ...markerValues,
-                ...storageValues,
+                ...marker.read(),
+                ...storage.read(),
                 standingArea: standingToggle.checked ? readStandingArea(standing.read()) : null,
                 storagePolicy: {
                     mode: storageMode.value,
@@ -972,7 +967,7 @@
         const storage = `${binding.storageFirstX}, ${binding.storageFirstY}, `
             + `${binding.storageFirstZ}`;
         if (binding.ruleId === "UNSTACKABLE_ITEMS") {
-            return `不可堆叠物品 · 储存起点 ${storage} · 排除潜影盒`;
+            return `不可堆叠物品 · 识别起点 ${marker} · 储存起点 ${storage} · 排除潜影盒`;
         }
         const exceptions = binding.containerOverrides.length;
         return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`

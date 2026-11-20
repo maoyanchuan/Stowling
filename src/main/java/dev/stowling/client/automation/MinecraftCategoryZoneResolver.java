@@ -169,7 +169,7 @@ public final class MinecraftCategoryZoneResolver
         List<ClassificationLayoutEntry> layout = new ArrayList<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
             boolean unstackable = UnstackableCategoryRule.ID.equals(binding.ruleId());
-            if (!unstackable && volume(binding.markerArea()) > maxVolume) {
+            if (volume(binding.markerArea()) > maxVolume) {
                 return CategoryZoneResult.failure(
                         "分类区 " + zone.name() + " 的识别区体积过大"
                 );
@@ -184,7 +184,8 @@ public final class MinecraftCategoryZoneResolver
             }
             List<CategoryMarker> markers = new ArrayList<>();
             if (unstackable) {
-                appendItemFrameMarkers(level, binding.storageArea(), markers, true);
+                appendItemFrameMarkers(level, binding.markerArea(), markers,
+                        sameMarkerAndStorageArea(binding));
             } else {
                 markers = markers(level, binding.markerArea(),
                         Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
@@ -199,7 +200,9 @@ public final class MinecraftCategoryZoneResolver
                     markerSources
             );
             if (!resolved.succeeded()) {
-                return CategoryZoneResult.failure(resolved.message());
+                return CategoryZoneResult.failure("分类区「" + zone.name() + "」识别起点 ("
+                        + binding.markerArea().firstX() + ", " + binding.markerArea().firstY()
+                        + ", " + binding.markerArea().firstZ() + ")：" + resolved.message());
             }
             mergeCategories(categories, resolved.categories());
             layout.addAll(resolved.layout());
@@ -226,7 +229,10 @@ public final class MinecraftCategoryZoneResolver
             Set<CategoryMarkerSource> markerSources
     ) {
         if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
-            return rules.require(binding.ruleId()).resolve(markers, storageContainers);
+            if (sameMarkerAndStorageArea(binding)) {
+                return rules.require(binding.ruleId()).resolve(markers, storageContainers);
+            }
+            return UnstackableCategoryRule.resolveMarkerArea(markers, storageContainers);
         }
         if (markerSources != null) {
             return DirectBlockIdCategoryRule.resolveExplicitSources(
@@ -249,6 +255,11 @@ public final class MinecraftCategoryZoneResolver
                 storageContainers,
                 binding.containerOverrides()
         );
+    }
+
+    private static boolean sameMarkerAndStorageArea(CategoryBindingDefinition binding) {
+        return binding.markerArea().contains(binding.storageArea())
+                && binding.storageArea().contains(binding.markerArea());
     }
 
     private static String sourceNames(

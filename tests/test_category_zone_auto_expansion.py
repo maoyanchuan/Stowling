@@ -72,6 +72,23 @@ def run_model(expression: str) -> Any:
     return json.loads(result.stdout)
 
 
+def test_unstackable_frame_and_two_wide_storage_keep_separate_bounds() -> None:
+    saved = run_model(
+        """(() => {
+            const sample = {...binding("X", 0, 0), ruleId: "UNSTACKABLE_ITEMS",
+                storageSecondX: 1};
+            return model.payload({name: "Frames", bindings: [sample],
+                expansion: area("X", 0, 25)});
+        })()"""
+    )
+
+    assert saved["expansion"]["step"] == 2
+    assert saved["expansion"]["direction"] == "X_POSITIVE"
+    template = saved["bindings"][0]
+    assert (template["markerFirstZ"], template["markerSecondX"]) == (2, 0)
+    assert (template["storageFirstZ"], template["storageSecondX"]) == (0, 1)
+
+
 @pytest.mark.parametrize("axis", ["X", "Z"])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_whole_storage_keeps_two_wide_slice_and_offsets_its_helpers(

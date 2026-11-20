@@ -324,5 +324,8 @@ def test_unstackable_rule_is_configured_in_the_warehouse_layout() -> None:
     assert "坐标 → 仓储布局" in html
     assert 'id="auto-unstackable-region"' not in html
     assert "关闭不可堆叠分类" not in read("auto-classify-ui.js")
-    assert 'marker.root.hidden = rule.value === "UNSTACKABLE_ITEMS"' in read("category-zones.js")
+    editor = read("category-zones.js")
+    assert "marker.root.hidden" not in editor
+    assert "...marker.read()" in editor
+    assert "...storage.read()" in editor
 

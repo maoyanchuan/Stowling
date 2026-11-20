@@ -5,11 +5,30 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class CategoryZoneTilerTest {
+    @Test
+    void separateFrameAreaFollowsAllThirteenUnstackableSlices() {
+        var marker = new AreaBounds(0, -34, 56, 0, -34, 56);
+        var storage = new AreaBounds(0, -37, 57, 1, -35, 57);
+        var template = new CategoryBindingDefinition(UUID.randomUUID(), marker, storage,
+                UnstackableCategoryRule.ID);
+        var expansion = new CategoryZoneExpansionDefinition(
+                new AreaBounds(0, -37, 56, 25, -34, 57), CategoryZoneExpansionAxis.X_POSITIVE,
+                2, 1);
+        var slices = CategoryZoneTiler.expand(expansion, List.of(template));
+
+        assertEquals(13, slices.size());
+        for (int i = 0; i < slices.size(); i++) {
+            assertEquals(marker.shift(i * 2, 0, 0), slices.get(i).markerArea());
+            assertEquals(storage.shift(i * 2, 0, 0), slices.get(i).storageArea());
+        }
+    }
+
     @Test
     void wholeStoragePreservesRotatedTwoWideSlicesInEveryDirection() {
         for (CategoryZoneExpansionAxis direction : CategoryZoneExpansionAxis.values()) {

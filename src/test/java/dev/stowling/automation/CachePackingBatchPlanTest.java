@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePolicy;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CachePackingBatchPlanTest {
@@ -61,6 +66,31 @@ class CachePackingBatchPlanTest {
         var tail = CachePackingBatchPlan.calculate(BOXES, 0, 3 * 64, 3 * 64, 64, 0, 0);
         assertEquals(1, tail.plannedBoxes());
         assertEquals(0, tail.nextLoad());
+    }
+
+    @Test
+    void anIncompatibleStoneStackCannotUseTheLastOccupiedSlot() {
+        String stone = "minecraft:stone";
+        String variant = "minecraft:stone#named";
+        var fullStack = new ShulkerTransferPlanner.Slot(stone, 64, 64);
+        List<ShulkerTransferPlanner.Slot> largerBox = new ArrayList<>(
+                Collections.nCopies(26, fullStack));
+        largerBox.add(new ShulkerTransferPlanner.Slot(variant, 1, 64));
+        List<ShulkerTransferPlanner.Slot> smallerBox = new ArrayList<>(
+                Collections.nCopies(9, fullStack));
+        smallerBox.add(new ShulkerTransferPlanner.Slot(stone, 37, 64));
+        smallerBox.add(new ShulkerTransferPlanner.Slot(stone, 1, 64));
+        Map<String, Integer> stock = new LinkedHashMap<>();
+        stock.put(variant, 1);
+        stock.put(stone, 2341);
+        Map<String, Integer> sizes = Map.of(stone, 64, variant, 64);
+
+        var nominal = CachePackingBatchPlan.calculate(BOXES, 0, 2342, 1665, 64, 0, 0);
+        assertEquals(63, nominal.nextLoad());
+        assertEquals(Map.of(), nominal.compatibleLoad(largerBox, stock, sizes));
+
+        var alternative = CachePackingBatchPlan.calculate(BOXES, 0, 2342, 614, 64, 0, 0);
+        assertEquals(Map.of(stone, 1114), alternative.compatibleLoad(smallerBox, stock, sizes));
     }
 
     @Test

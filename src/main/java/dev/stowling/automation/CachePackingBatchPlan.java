@@ -3,6 +3,10 @@ package dev.stowling.automation;
 import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /** Shared cache-side planning; partial boxes contribute material rather than separate trips. */
 public record CachePackingBatchPlan(int looseReserved, int materialToPack, int plannedBoxes,
@@ -38,6 +42,31 @@ public record CachePackingBatchPlan(int looseReserved, int materialToPack, int p
                 || !partial && packing < capacity && !needsConsolidation ? 0
                 : Math.max(0, Math.min(capacity, packing) - keeperItems);
         return new CachePackingBatchPlan(reserve, packing, planned, load);
+    }
+
+    /** Returns the exact items to borrow from stock, excluding the keeper itself. */
+    public Map<String, Integer> compatibleLoad(List<ShulkerTransferPlanner.Slot> keeper,
+            Map<String, Integer> stock, Map<String, Integer> stackSizes) {
+        if (nextLoad <= 0) return Map.of();
+        Map<String, Integer> available = new LinkedHashMap<>();
+        for (var slot : keeper) {
+            int count = available.getOrDefault(slot.key(), stock.getOrDefault(slot.key(), 0));
+            available.put(slot.key(), count - slot.count());
+        }
+        stock.entrySet().stream().filter(entry -> !available.containsKey(entry.getKey()))
+                .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
+                .forEach(entry -> available.put(entry.getKey(), entry.getValue()));
+        var fitting = ShulkerTransferPlanner.fitting(keeper, StoragePackingPlanner.BOX_SLOTS,
+                available, stackSizes);
+        Map<String, Integer> load = new LinkedHashMap<>();
+        int remaining = nextLoad;
+        for (var entry : fitting.entrySet()) {
+            if (remaining <= 0) break;
+            int count = Math.min(remaining, entry.getValue());
+            load.put(entry.getKey(), count);
+            remaining -= count;
+        }
+        return load;
     }
 
     public static boolean canShareUnpreparedBatch(StorageMode mode, boolean fullBox) {

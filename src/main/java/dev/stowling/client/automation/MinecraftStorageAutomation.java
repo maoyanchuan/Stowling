@@ -557,6 +557,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         final void storePackedBox(ContainerTarget target, ItemStack box,
                 Consumer<List<ItemStack>> after) {
+            storePackedBox(target, box, List.of(), after);
+        }
+
+        final void storePackedBox(ContainerTarget target, ItemStack box,
+                List<ContainerTarget> stagingFallbacks, Consumer<List<ItemStack>> after) {
             if (isEmptyBox(box)) {
                 storeEmptyBox(box, emptyBoxReturns(null), 0, () -> {
                     if (target.storagePolicy().mode() == StorageMode.BOX_ONLY) {
@@ -571,6 +576,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     || target.storagePolicy().partialBoxDestinationRef() == null
                     ? List.of(target)
                     : partialBoxContainers(context, target.storagePolicy(), configuration);
+            if (!stagingFallbacks.isEmpty()) {
+                List<ContainerTarget> candidates = new ArrayList<>(destinations);
+                candidates.addAll(stagingFallbacks);
+                destinations = EmptyBoxSupplyPlan.sources(candidates, null, List.of());
+            }
             storePackedBox(target, box, destinations, 0, after);
         }
 
@@ -929,53 +939,94 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             return items;
         }
 
-        private CachedBox keeper() {
-            CachedBox best = null;
+        private CachePackingRound packingRound(List<ItemStack> stock, List<ItemStack> partials,
+                int looseItems, int partialItems, int fullBoxes) {
+            Map<String, Integer> loose = raw(stock);
+            Map<String, Integer> available = new LinkedHashMap<>(loose);
+            Map<String, Integer> sizes = new LinkedHashMap<>();
+            stock.stream().filter(stack -> category.equals(MinecraftItemIdentity.base(stack)))
+                    .forEach(stack -> sizes.put(MinecraftItemIdentity.key(stack),
+                            stack.getMaxStackSize()));
+            for (ItemStack box : partials) {
+                boolean mixed = ItemIdentity.isMixedBox(MinecraftItemIdentity.key(box));
+                MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream().forEach(stack -> {
+                    if (!category.equals(MinecraftItemIdentity.base(stack))) return;
+                    String key = MinecraftItemIdentity.key(stack);
+                    available.merge(key, stack.getCount() * box.getCount(), Math::addExact);
+                    sizes.put(key, stack.getMaxStackSize());
+                    if (mixed) {
+                        loose.merge(key, stack.getCount() * box.getCount(), Math::addExact);
+                    }
+                });
+            }
+            CachePackingRound best = null;
+            int bestFill = 0;
+            int bestInside = 0;
             for (ContainerTarget source : sources) {
                 for (ItemStack stack : cacheSnapshots.get(source.position()).stacks()) {
                     if (!MinecraftItemIdentity.isBox(stack) || MinecraftItemIdentity.full(stack)
                             || !category.equals(MinecraftItemIdentity.boxCategory(stack))) continue;
-                    if (best == null || insideCount(stack) > insideCount(best.box())) {
-                        best = new CachedBox(source, stack.copy());
+                    int inside = insideCount(stack);
+                    CachePackingBatchPlan candidate = calculatePlan(looseItems, partialItems,
+                            inside, fullBoxes);
+                    var load = candidate.compatibleLoad(boxSlots(stack), available, sizes);
+                    int fill = inside + sum(load);
+                    if (!load.isEmpty() && (fill > bestFill
+                            || fill == bestFill && inside > bestInside)) {
+                        best = new CachePackingRound(new CachedBox(source, stack.copy()),
+                                candidate, load);
+                        bestFill = fill;
+                        bestInside = inside;
                     }
                 }
             }
-            return best;
+            if (best != null) return best;
+            // With no compatible keeper, leave single-category partials in their boxes.
+            CachePackingBatchPlan candidate = calculatePlan(looseItems, partialItems, 0, fullBoxes);
+            return new CachePackingRound(null, candidate,
+                    candidate.compatibleLoad(List.of(), loose, sizes));
+        }
+
+        private CachePackingBatchPlan calculatePlan(int loose, int partial, int inside, int full) {
+            return CachePackingBatchPlan.calculate(policy, loose, partial, inside, stackSize,
+                    looseDeficit, full, existingBoxSpace, existingBoxSpace == 0);
         }
 
         private void prepareRound() {
-            CachedBox keeper = keeper();
             int fullBoxes = fullCount();
-            int partialItems = snapshots().stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
-                    && (!MinecraftItemIdentity.full(stack)
-                            || ItemIdentity.isMixedBox(MinecraftItemIdentity.key(stack))))
+            List<ItemStack> stock = snapshots();
+            List<ItemStack> partials = stock.stream().filter(MinecraftItemIdentity::isBox)
+                    .filter(stack -> !MinecraftItemIdentity.full(stack)
+                            || ItemIdentity.isMixedBox(MinecraftItemIdentity.key(stack))).toList();
+            int partialItems = partials.stream()
                     .mapToInt(stack -> sum(raw(MinecraftItemIdentity.contents(stack)
                             .nonEmptyItemCopyStream().toList())) * stack.getCount()).sum();
-            int looseItems = sum(raw(snapshots()));
+            int looseItems = sum(raw(stock));
             if (plan == null) {
                 shareFullBox = StoragePackingPlanner.canPack(false,
                         Math.addExact(looseItems, partialItems), 0, stackSize)
                         && hasCompanionStock();
             }
-            plan = CachePackingBatchPlan.calculate(policy, looseItems, partialItems,
-                    keeper == null ? 0 : insideCount(keeper.box()), stackSize, looseDeficit,
-                    fullBoxes, existingBoxSpace, existingBoxSpace == 0);
+            CachePackingRound round = packingRound(stock, partials, looseItems, partialItems,
+                    fullBoxes);
+            plan = round.plan();
             dev.stowling.v2.runtime.TaskTrace.event("DECISION", "cache.packBatch",
                     "category=" + category + "; looseReserved=" + plan.looseReserved()
                             + "; materialToPack=" + plan.materialToPack()
                             + "; boxes=" + plan.plannedBoxes()
-                            + "; nextLoad=" + plan.nextLoad());
+                            + "; nextLoad=" + sum(round.load()));
             if ((shareFullBox && fullBoxes > 0) || fullBoxes >= remainingBatchSlots()
-                    || plan.nextLoad() <= 0 || !cleanupAvailable()) {
+                    || round.load().isEmpty() || !cleanupAvailable()) {
                 prepareReservedLoose();
                 return;
             }
+            CachedBox keeper = round.keeper();
             ContainerTarget staging = keeper == null ? initialCache : keeper.source();
             String keeperKey = keeper == null ? "" : MinecraftItemIdentity.key(keeper.box());
             int before = sum(rawOwned());
             var load = new CacheBoxBatch(context, staging, category,
-                    keeper == null ? null : keeper.source(), keeperKey, plan.nextLoad(),
-                    cacheSnapshots, sources);
+                    keeper == null ? null : keeper.source(), keeperKey, sum(round.load()),
+                    cacheSnapshots, sources, round.load());
             steps.add(new Step(load, () -> {
                 if (sum(rawOwned()) <= before) {
                     prepareReservedLoose();
@@ -985,7 +1036,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         true, null, false, 0, null);
                 ContainerTarget target = new ContainerTarget(staging.position(), staging.type(),
                         staging.standingArea(), stagingPolicy, staging.partner());
-                var pack = new Packing(context, target, rawOwned(), true, cacheSnapshots);
+                ItemStack plannedKeeper = keeper == null ? ItemStack.EMPTY : keeper.box();
+                var pack = new Packing(context, target, rawOwned(), plannedKeeper, cacheSnapshots);
                 steps.add(new Step(pack, () -> {
                     if (rawOwned().isEmpty()) prepareRound();
                     else returnUnusedRaw(0);
@@ -1026,7 +1078,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if ((existingBoxSpace > 0 || policy.mode() == StorageMode.MIXED && policy.refillLoose())
                     && sum(raw(snapshots())) < wanted && sum(rawOwned()) < wanted) {
                 var load = new CacheBoxBatch(context, initialCache, category, null, "",
-                        wanted - sum(rawOwned()), cacheSnapshots, sources);
+                        wanted - sum(rawOwned()), cacheSnapshots, sources, Map.of());
                 steps.add(new Step(load, () -> gatherLoose(0, wanted)));
             } else {
                 gatherLoose(0, wanted);
@@ -1266,6 +1318,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private record CachedBox(ContainerTarget source, ItemStack box) {
     }
 
+    private record CachePackingRound(CachedBox keeper, CachePackingBatchPlan plan,
+            Map<String, Integer> load) {
+    }
+
     private final class CacheBoxBatch extends Session {
         private final ContainerTarget cache;
         private List<ContainerTarget> sources;
@@ -1279,18 +1335,20 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private final String keeperKey;
         private final int rawBudget;
         private final List<ContainerTarget> packingSources;
+        private final Map<String, Integer> packingLoad;
+        private Map<String, Integer> managedBefore;
         private int rawBefore;
         private int donorBefore;
         private boolean donorProgress;
 
         CacheBoxBatch(TaskExecutionContext context, ContainerTarget cache) {
-            this(context, cache, null, null, "", Integer.MAX_VALUE, null, List.of());
+            this(context, cache, null, null, "", Integer.MAX_VALUE, null, List.of(), Map.of());
         }
 
         CacheBoxBatch(TaskExecutionContext context, ContainerTarget cache, String category,
                 ContainerTarget keeperSource, String keeperKey, int rawBudget,
                 Map<BlockPosition, CacheSnapshot> snapshots,
-                List<ContainerTarget> packingSources) {
+                List<ContainerTarget> packingSources, Map<String, Integer> packingLoad) {
             super(context, snapshots);
             this.cache = cache;
             this.packingCategory = category;
@@ -1298,11 +1356,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             this.keeperKey = keeperKey;
             this.rawBudget = rawBudget;
             this.packingSources = List.copyOf(packingSources);
+            this.packingLoad = Map.copyOf(packingLoad);
         }
 
         @Override
         void initialize() {
             rawBefore = packingRawCount();
+            managedBefore = owned();
             List<ContainerTarget> candidates = new ArrayList<>();
             candidates.add(cache);
             if (!context.workspace().unstackableClassification()) {
@@ -1336,6 +1396,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private boolean prepareSource(List<ItemStack> contents) {
             box = contents.stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
                     && !isEmptyBox(stack) && shouldUnpack(stack))
+                    .filter(stack -> packingLoad.isEmpty() || keeperSource != null
+                            || ItemIdentity.isMixedBox(MinecraftItemIdentity.key(stack)))
                     .filter(stack -> keeperSource == null
                             || !sameContainer(currentSource, keeperSource)
                             || !MinecraftItemIdentity.key(stack).equals(keeperKey)
@@ -1344,6 +1406,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .filter(stack -> !skippedBoxes.contains(
                             currentSource.position() + ":" + MinecraftItemIdentity.key(stack)))
                     .filter(stack -> !eligibleItems(stack).isEmpty())
+                    .filter(stack -> packingLoad.isEmpty() || !packingRequest(
+                            MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                                    .toList()).isEmpty())
                     .min(Comparator.comparingInt(this::layoutPriority))
                     .map(ItemStack::copy).orElse(ItemStack.EMPTY);
             if (box.isEmpty()) {
@@ -1543,6 +1608,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 items.merge(key, stack.getCount(), Math::addExact);
                 sizes.put(key, stack.getMaxStackSize());
             }
+            if (!packingLoad.isEmpty()) {
+                Map<String, Integer> managed = owned();
+                items.replaceAll((key, count) -> {
+                    int loaded = Math.max(0,
+                            managed.getOrDefault(key, 0) - managedBefore.getOrDefault(key, 0));
+                    return Math.min(count, packingLoad.getOrDefault(key, 0) - loaded);
+                });
+                items.values().removeIf(count -> count <= 0);
+            }
             List<ItemStack> inventory = minecraft.player.getInventory().getNonEquipmentItems();
             List<ShulkerTransferPlanner.Slot> slots = inventory.stream().filter(stack -> !stack.isEmpty())
                     .map(stack -> new ShulkerTransferPlanner.Slot(MinecraftItemIdentity.key(stack),
@@ -1640,15 +1714,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int targetExcessRemaining;
         private BlockPosition preferredSite;
         private final boolean cacheStaging;
+        private final ItemStack plannedKeeper;
 
         Packing(TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items) {
-            this(context, target, items, false, null);
+            this(context, target, items, ItemStack.EMPTY, null);
         }
 
         Packing(TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items,
-                boolean cacheStaging, Map<BlockPosition, CacheSnapshot> snapshots) {
+                ItemStack plannedKeeper, Map<BlockPosition, CacheSnapshot> snapshots) {
             super(context, snapshots);
-            this.cacheStaging = cacheStaging;
+            this.cacheStaging = snapshots != null;
+            this.plannedKeeper = plannedKeeper;
             this.target = target;
             this.policy = target.storagePolicy();
             Set<String> orderedItems = new java.util.LinkedHashSet<>(
@@ -1785,6 +1861,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void chooseBox() {
+            if (cacheStaging) {
+                box = plannedKeeper;
+                boxSource = target;
+                requestedBox = false;
+                continueBoxChoice();
+                return;
+            }
             box = inventoryStacks().stream().filter(stack -> MinecraftItemIdentity.isBox(stack)
                     && category.equals(MinecraftItemIdentity.boxCategory(stack))
                     && !MinecraftItemIdentity.full(stack)
@@ -1892,7 +1975,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             read(boxTarget, contents -> {
                 int inside = rawCount(contents);
                 int remaining = StoragePackingPlanner.BOX_SLOTS * stackSize - inside;
-                Map<String, Integer> incoming = take(rawOwned(), remaining);
+                Map<String, Integer> carried = rawOwned();
+                Map<String, Integer> incoming = cacheStaging
+                        ? ShulkerTransferPlanner.fitting(transferSlots(contents), contents.size(),
+                                carried, inventoryStackSizes())
+                        : take(carried, remaining);
                 if (!incoming.isEmpty()) {
                     int before = sum(rawOwned());
                     transfer(boxTarget, incoming, false, () -> {
@@ -1945,7 +2032,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void storeBox() {
             String key = MinecraftItemIdentity.key(box);
-            storePackedBox(target, box, updated -> {
+            List<ContainerTarget> fallbacks = cacheStaging
+                    ? context.workspace().cacheContainers() : List.of();
+            storePackedBox(target, box, fallbacks, updated -> {
+                if (cacheStaging) {
+                    finishCategory();
+                    return;
+                }
                 packedBoxes.add(key);
                 checkedPartial = false;
                 skipLooseDeposit = false;
@@ -2591,12 +2684,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     private Map<String, Integer> fittingBoxItems(ItemStack box, Map<String, Integer> incoming) {
-        List<ShulkerTransferPlanner.Slot> slots = MinecraftItemIdentity.contents(box)
-                .nonEmptyItemCopyStream().map(stack -> new ShulkerTransferPlanner.Slot(
+        return ShulkerTransferPlanner.fitting(boxSlots(box), StoragePackingPlanner.BOX_SLOTS,
+                incoming, inventoryStackSizes());
+    }
+
+    private static List<ShulkerTransferPlanner.Slot> boxSlots(ItemStack box) {
+        return transferSlots(MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream().toList());
+    }
+
+    private static List<ShulkerTransferPlanner.Slot> transferSlots(List<ItemStack> contents) {
+        return contents.stream().filter(stack -> !stack.isEmpty())
+                .map(stack -> new ShulkerTransferPlanner.Slot(
                         MinecraftItemIdentity.key(stack), stack.getCount(), stack.getMaxStackSize()))
                 .toList();
-        return ShulkerTransferPlanner.fitting(slots, StoragePackingPlanner.BOX_SLOTS,
-                incoming, inventoryStackSizes());
     }
 
     private static boolean isEmptyBox(ItemStack stack) {

@@ -2556,7 +2556,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 distance(candidate) + squared(candidate, target.position())))
                 .orElseThrow(() -> new IllegalStateException("附近没有可用打包位置，请指定单片打包区域"
                         + "；目标=" + target.position() + "；打包区域=" + allowed
-                        + "；需空置放盒和开盖空间，且下方为非容器的坚固方块"));
+                        + "。需要空置的放盒和开盖空间，且下方为不可右键交互的坚固方块"));
     }
 
     private boolean reserved(TaskExecutionContext context, BlockPosition position) {

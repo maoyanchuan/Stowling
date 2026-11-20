@@ -5,9 +5,43 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
+import net.minecraft.SharedConstants;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.server.Bootstrap;
+import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Half;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class MinecraftShulkerActionTest {
+    @BeforeAll
+    static void initializeRegistries() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+    }
+
+    @Test
+    void aSturdyClosedWoodenTrapdoorCannotSupportPlacement() {
+        BlockState trapdoor = Blocks.OAK_TRAPDOOR.defaultBlockState()
+                .setValue(TrapDoorBlock.HALF, Half.TOP);
+        EmptyBlockGetter level = EmptyBlockGetter.INSTANCE;
+        assertTrue(trapdoor.isFaceSturdy(level, BlockPos.ZERO, Direction.UP));
+        assertFalse(MinecraftShulkerAction.isPlacementSupport(trapdoor, level, BlockPos.ZERO));
+    }
+
+    @Test
+    void placementAcceptsStoneAndSkipsBlocksWithItemInteraction() {
+        EmptyBlockGetter level = EmptyBlockGetter.INSTANCE;
+        assertTrue(MinecraftShulkerAction.isPlacementSupport(
+                Blocks.STONE.defaultBlockState(), level, BlockPos.ZERO));
+        assertFalse(MinecraftShulkerAction.isPlacementSupport(
+                Blocks.TNT.defaultBlockState(), level, BlockPos.ZERO));
+    }
+
     @Test
     void placingABoxUsesSideStancesWithoutStandingInItsColumn() {
         BlockPosition box = new BlockPosition(5, -43, 32);

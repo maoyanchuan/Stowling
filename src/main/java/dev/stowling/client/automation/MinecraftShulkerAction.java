@@ -20,11 +20,16 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -32,6 +37,23 @@ import net.minecraft.world.phys.Vec3;
 
 /** Only operates on the one registered box; never asks pathfinding to mine storage blocks. */
 final class MinecraftShulkerAction implements TaskModuleExecutor {
+    private static final ClassValue<Boolean> HAS_BLOCK_INTERACTION = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            for (Class<?> block = type; block != BlockBehaviour.class;
+                    block = block.getSuperclass()) {
+                if (declaresMethod(block, "useWithoutItem", BlockState.class, Level.class,
+                        BlockPos.class, Player.class, BlockHitResult.class)
+                        || declaresMethod(block, "useItemOn", ItemStack.class, BlockState.class,
+                                Level.class, BlockPos.class, Player.class, InteractionHand.class,
+                                BlockHitResult.class)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    };
+
     static final class Resource {
         final BlockPosition position;
         final ItemStack original;
@@ -194,7 +216,8 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     }
 
     private TaskModuleResult blockedPlacement() {
-        return fail("潜影盒放置点被占用或开盖空间不足；放盒点=" + resource.position);
+        return fail("潜影盒放置点不可用。需要空置的放盒和开盖空间，且下方为不可右键交互的坚固方块。放盒点="
+                + resource.position);
     }
 
     private static BlockPos blockPos(BlockPosition position) {
@@ -471,12 +494,28 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     }
 
     private static boolean clearPlacementSite(Minecraft minecraft, BlockPos position) {
+        BlockPos support = position.below();
         return minecraft.level != null && minecraft.level.hasChunkAt(position)
                 && minecraft.level.getBlockState(position).isAir()
                 && minecraft.level.getBlockState(position.above()).isAir()
-                && minecraft.level.getBlockEntity(position.below()) == null
-                && minecraft.level.getBlockState(position.below()).isFaceSturdy(
-                        minecraft.level, position.below(), Direction.UP);
+                && minecraft.level.getBlockEntity(support) == null
+                && isPlacementSupport(minecraft.level.getBlockState(support),
+                        minecraft.level, support);
+    }
+
+    static boolean isPlacementSupport(BlockState support, BlockGetter level, BlockPos position) {
+        // Check for right-click handlers without calling them on the live world.
+        return support.isFaceSturdy(level, position, Direction.UP)
+                && !HAS_BLOCK_INTERACTION.get(support.getBlock().getClass());
+    }
+
+    private static boolean declaresMethod(Class<?> type, String name, Class<?>... parameters) {
+        try {
+            type.getDeclaredMethod(name, parameters);
+            return true;
+        } catch (NoSuchMethodException ignored) {
+            return false;
+        }
     }
 
     private int findSlot(String key, boolean tool) {

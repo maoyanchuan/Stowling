@@ -1,15 +1,15 @@
 package dev.stowling.client.automation;
 
-import dev.stowling.automation.ContainerTarget;
-import dev.stowling.automation.ContainerInteractionBatch;
 import dev.stowling.automation.ContainerClickPlan;
+import dev.stowling.automation.ContainerInteractionBatch;
+import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.ContainerTransferPort;
 import dev.stowling.automation.ContainerTransferResult;
-import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.automation.NavigationPort;
+import dev.stowling.client.interaction.ClientActionScheduler;
+import dev.stowling.v2.runtime.TaskTrace;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
-import dev.stowling.v2.runtime.TaskTrace;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,13 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
@@ -133,7 +133,7 @@ public final class MinecraftContainerTransferPort
                 return;
             }
         }
-        if (!active.pendingItemId.isEmpty()) {
+        if (active.batch != null) {
             active.phase = Phase.ROLLBACK;
             active.rollbackMessage = "容器存入已取消";
             return;
@@ -204,36 +204,30 @@ public final class MinecraftContainerTransferPort
             return fail("当前容器没有可安全转移的物品");
         }
         active.phase = Phase.CONFIRMING;
-        active.pendingItemId = candidate.itemId();
-        active.pendingCount = 0;
-        active.playerBefore = playerItemCount(menu, candidate.itemId());
-        active.pickupsBefore = MinecraftInventoryPickups.count(minecraft, candidate.itemId());
-        active.containerBefore = containerItemCount(menu, candidate.itemId());
-        active.observedDelta = -1;
-        active.observationPolls = 0;
+        active.batch = new DepositBatchConfirmation();
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
         active.pendingStartedAt = System.nanoTime();
-        var batch = new ContainerInteractionBatch(candidate.itemId());
+        var budget = new ContainerInteractionBatch(candidate.itemId(), true);
+        var before = inventoryCounts(menu);
         Map<String, Integer> request = new LinkedHashMap<>(active.remaining);
         while (candidate != null) {
             int clicks = candidate.plan().usesQuickMove() ? 1
                     : ContainerClickPlan.exact(menu.getSlot(candidate.slot()).getItem().getCount(),
                             candidate.plan().moveCount()).size();
-            if (!batch.accepts(candidate.itemId(), clicks)) break;
+            String key = candidate.itemId();
+            if (!budget.accepts(key, clicks)) break;
             active.sourceSlot = candidate.slot();
             int moved = candidate.plan().moveCount();
-            active.pendingCount += moved;
+            active.batch.record(key, moved, before);
             if (candidate.plan().usesQuickMove()) {
                 click(menu, candidate.slot(), CURSOR_PRIMARY, ContainerInput.QUICK_MOVE);
             } else {
                 splitDeposit(menu, candidate.slot(), candidate.plan());
             }
-            batch.record(moved, clicks);
+            budget.record(moved, clicks);
             if (!menu.getCarried().isEmpty()) return beginRollback("无法安全完成批量存入");
-            request.put(active.pendingItemId,
-                    request.getOrDefault(active.pendingItemId, 0) - moved);
-            candidate = findCandidate(menu, Map.of(active.pendingItemId,
-                    request.getOrDefault(active.pendingItemId, 0)));
+            decrement(request, key, moved);
+            candidate = findCandidate(menu, request);
         }
         return ContainerTransferResult.pending(
                 "等待服务器确认存入",
@@ -253,26 +247,11 @@ public final class MinecraftContainerTransferPort
                 return beginRollback("服务器未完成拆分归还");
             }
         }
-        int playerDelta = pendingOutgoingCount(menu);
-        int containerDelta = containerItemCount(menu, active.pendingItemId)
-                - active.containerBefore;
-        DepositTransferPlan.TransferObservation observation =
-                DepositTransferPlan.observeConfirmation(
-                        active.pendingCount,
-                        active.observedDelta,
-                        active.observationPolls,
-                        playerDelta,
-                        containerDelta
-                );
-        active.observedDelta = observation.delta();
-        active.observationPolls = observation.observations();
-        traceConfirmation(menu, playerDelta, containerDelta, observation.stable());
-        if (DepositTransferPlan.needsServerSnapshot(active.pendingCount, playerDelta,
-                containerDelta)) {
+        if (observeBatch(menu, DepositBatchConfirmation.Mode.LIVE)) {
             return beginResynchronization("箱子数量与拾取回执不一致，立即读取服务器快照");
         }
-        if (observation.stable()) {
-            return settleConfirmed(menu, observation.delta());
+        if (active.batch.settled()) {
+            return settleConfirmed("服务器没有确认到物品转出，尝试其他缓存");
         }
         return ContainerTransferResult.pending(
                 "等待服务器确认实际存入数量",
@@ -294,12 +273,10 @@ public final class MinecraftContainerTransferPort
 
     private ContainerTransferResult timeout() {
         TaskTrace.event("TIMEOUT", "deposit.deadline", "phase=" + active.phase
-                + "; pending=" + active.pendingCount + "; remaining=" + active.remaining,
-                0, false);
+                + "; remaining=" + active.remaining, 0, false);
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen == null) {
-            if (!active.pendingItemId.isEmpty()
-                    || active.phase == Phase.ROLLBACK) {
+            if (active.batch != null || active.phase == Phase.ROLLBACK) {
                 return awaitResolution("容器已关闭，等待恢复后确认在途物品");
             }
             return finishFailure("容器操作超时");
@@ -381,90 +358,59 @@ public final class MinecraftContainerTransferPort
         return succeed("拾取物品已存入容器");
     }
 
-    private ContainerTransferResult settleConfirmed(
-            AbstractContainerMenu menu,
-            int delta
-    ) {
-        if (!menu.getCarried().isEmpty()) {
-            return beginRollback("确认存入前仍有持有物");
+    private ContainerTransferResult settleConfirmed(String failureMessage) {
+        if (!active.batch.fullyAccepted()) {
+            int accepted = active.batch.accepted().values().stream().mapToInt(Integer::intValue)
+                    .sum();
+            return finishFailure(accepted == 0 ? failureMessage
+                    : "服务器仅确认存入 " + accepted + " 个物品，剩余物品需要换箱");
         }
-        String itemId = active.pendingItemId;
-        boolean complete = delta == active.pendingCount;
-        decrement(active.remaining, itemId, delta);
-        clearPending();
-        if (complete) {
-            active.phase = Phase.READY;
-            active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
-            if (active.remaining.isEmpty()) {
-                return complete();
-            }
-            return pollReady();
-        }
-        return finishFailure(
-                "服务器仅确认存入 " + delta + " 个物品，剩余物品需要换箱"
-        );
+        applyConfirmed();
+        active.phase = Phase.READY;
+        active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
+        return active.remaining.isEmpty() ? complete() : pollReady();
     }
 
     private ContainerTransferResult reconcileBeforeFailure(
             AbstractContainerMenu menu,
             String message
     ) {
-        if (active.pendingItemId.isEmpty()) {
+        if (active.batch == null) {
             return finishFailure(message);
         }
-        int playerDelta = pendingOutgoingCount(menu);
-        int containerDelta = containerItemCount(menu, active.pendingItemId)
-                - active.containerBefore;
-        DepositTransferPlan.TransferObservation observation =
-                DepositTransferPlan.observeSettlement(
-                        active.pendingCount,
-                        active.observedDelta,
-                        active.observationPolls,
-                        playerDelta,
-                        containerDelta
-                );
-        active.observedDelta = observation.delta();
-        active.observationPolls = observation.observations();
-        traceConfirmation(menu, playerDelta, containerDelta, observation.stable());
-        if (!observation.stable()) {
-            if (Instant.now().isAfter(active.deadline)) {
-                return beginResynchronization(message);
-            }
-            return ContainerTransferResult.pending(
-                    "等待服务器确认实际存入数量",
-                    remaining()
-            );
+        observeBatch(menu, DepositBatchConfirmation.Mode.SETTLEMENT);
+        if (active.batch.settled()) {
+            return settleConfirmed(message);
         }
-        if (observation.delta() > 0) {
-            return settleConfirmed(menu, observation.delta());
+        if (Instant.now().isAfter(active.deadline)) {
+            return beginResynchronization(message);
         }
-        return finishFailure(message);
+        return ContainerTransferResult.pending("等待服务器确认实际存入数量", remaining());
     }
 
-    private int pendingOutgoingCount(AbstractContainerMenu menu) {
-        return DepositTransferPlan.outgoingCount(active.playerBefore,
-                playerItemCount(menu, active.pendingItemId), active.pickupsBefore,
-                MinecraftInventoryPickups.count(minecraft, active.pendingItemId));
+    private Function<String, DepositBatchConfirmation.Counts> inventoryCounts(
+            AbstractContainerMenu menu
+    ) {
+        Map<String, Integer> player = itemCounts(menu, playerSlots(menu));
+        Map<String, Integer> container = itemCounts(menu, containerSlots(menu));
+        return key -> new DepositBatchConfirmation.Counts(player.getOrDefault(key, 0),
+                container.getOrDefault(key, 0), MinecraftInventoryPickups.count(minecraft, key));
     }
 
-    private void traceConfirmation(AbstractContainerMenu menu, int outgoing, int containerDelta,
-            boolean stable) {
-        TaskTrace.event("WAIT", "deposit.confirm", "phase=" + active.phase
-                + "; item=" + active.pendingItemId + "; planned=" + active.pendingCount
-                + "; playerBefore=" + active.playerBefore
-                + "; playerNow=" + playerItemCount(menu, active.pendingItemId)
-                + "; pickedUp=" + (MinecraftInventoryPickups.count(minecraft, active.pendingItemId)
-                        - active.pickupsBefore)
-                + "; outgoing=" + outgoing + "; containerBefore=" + active.containerBefore
-                + "; containerNow=" + containerItemCount(menu, active.pendingItemId)
-                + "; containerDelta=" + containerDelta + "; stablePolls=" + active.observationPolls
-                + "; confirmed=" + stable + "; cursorEmpty=" + menu.getCarried().isEmpty(),
-                (System.nanoTime() - active.pendingStartedAt) / 1_000_000, true);
+    private boolean observeBatch(AbstractContainerMenu menu, DepositBatchConfirmation.Mode mode) {
+        var current = inventoryCounts(menu);
+        boolean needsSnapshot = active.batch.observe(mode, current);
+        if (TaskTrace.active()) {
+            TaskTrace.event("WAIT", "deposit.confirm", "phase=" + active.phase
+                    + "; moves=" + active.batch.describe(current),
+                    (System.nanoTime() - active.pendingStartedAt) / 1_000_000, true);
+        }
+        return needsSnapshot;
     }
 
     private ContainerTransferResult beginResynchronization(String message) {
         TaskTrace.event("RESYNC", "deposit.reopen", "reason=" + message
-                + "; target=" + active.target.position() + "; pending=" + active.pendingCount,
+                + "; target=" + active.target.position(),
                 0, false);
         if (minecraft.player == null) return finishFailure("重新核对存入时玩家不可用");
         if (!minecraft.player.containerMenu.getCarried().isEmpty()) {
@@ -473,8 +419,7 @@ public final class MinecraftContainerTransferPort
         closeContainer();
         active.phase = Phase.RESYNCHRONIZING;
         active.rollbackMessage = message;
-        active.observedDelta = -1;
-        active.observationPolls = 0;
+        active.batch.resetUnsettled();
         active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerTransferResult.pending("正在重新读取原缓存，核对实际存入", remaining());
@@ -502,20 +447,11 @@ public final class MinecraftContainerTransferPort
             return ContainerTransferResult.pending("等待重新核对的缓存界面", remaining());
         }
         AbstractContainerMenu menu = screen.getMenu();
-        var observation = DepositTransferPlan.observeServerSnapshot(active.pendingCount,
-                active.observedDelta, active.observationPolls,
-                containerItemCount(menu, active.pendingItemId) - active.containerBefore);
-        active.observedDelta = observation.delta();
-        active.observationPolls = observation.observations();
-        traceConfirmation(menu, pendingOutgoingCount(menu),
-                containerItemCount(menu, active.pendingItemId) - active.containerBefore,
-                observation.stable());
-        if (!observation.stable()) {
+        observeBatch(menu, DepositBatchConfirmation.Mode.SERVER_SNAPSHOT);
+        if (!active.batch.settled()) {
             return ContainerTransferResult.pending("核对缓存服务器快照中的实际存入量", remaining());
         }
-        if (observation.delta() > 0) return settleConfirmed(menu, observation.delta());
-        clearPending();
-        return finishFailure("重新核对后没有确认到物品转出，尝试其他缓存");
+        return settleConfirmed("重新核对后没有确认到物品转出，尝试其他缓存");
     }
 
     private ContainerTransferResult succeed(String message) {
@@ -535,7 +471,7 @@ public final class MinecraftContainerTransferPort
     private ContainerTransferResult fail(String message) {
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen == null) {
-            if (!active.pendingItemId.isEmpty()) {
+            if (active.batch != null) {
                 return awaitResolution("容器已关闭，等待恢复后确认在途物品");
             }
             return finishFailure(message);
@@ -544,7 +480,7 @@ public final class MinecraftContainerTransferPort
         if (!restoreCarried(menu)) {
             return beginRollback(message);
         }
-        if (!active.pendingItemId.isEmpty()) {
+        if (active.batch != null) {
             return reconcileBeforeFailure(menu, message);
         }
         return finishFailure(message);
@@ -564,7 +500,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult awaitResolution(String message) {
-        if (!active.pendingItemId.isEmpty()) return beginResynchronization(message);
+        if (active.batch != null) return beginResynchronization(message);
         active.phase = Phase.ROLLBACK;
         if (active.rollbackMessage.isEmpty()) {
             active.rollbackMessage = message;
@@ -578,18 +514,19 @@ public final class MinecraftContainerTransferPort
         if (screen != null && !restoreCarried(screen.getMenu())) {
             return beginRollback(message);
         }
+        applyConfirmed();
         Map<String, Integer> remaining = remaining();
         closeContainer();
         active = null;
         return ContainerTransferResult.failed(message, remaining);
     }
 
-    private void clearPending() {
-        active.pendingItemId = "";
-        active.pendingCount = 0;
-        active.sourceSlot = -1;
-        active.observedDelta = -1;
-        active.observationPolls = 0;
+    private void applyConfirmed() {
+        if (active.batch != null) {
+            active.batch.accepted().forEach((key, count) -> decrement(active.remaining, key, count));
+            active.batch = null;
+            active.sourceSlot = -1;
+        }
     }
 
     private Map<String, Integer> remaining() {
@@ -600,13 +537,14 @@ public final class MinecraftContainerTransferPort
             AbstractContainerMenu menu,
             Map<String, Integer> remaining
     ) {
+        if (remaining.isEmpty()) return null;
         for (int slotIndex : playerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
-            if (!matchesRequest(stack, remaining)) {
-                continue;
-            }
-            int wanted = remaining.get(itemId(stack));
+            if (stack.isEmpty()) continue;
+            String key = itemId(stack);
+            int wanted = remaining.getOrDefault(key, 0);
+            if (wanted <= 0) continue;
             DepositTransferPlan plan = DepositTransferPlan.create(
                     wanted,
                     stack.getCount(),
@@ -620,7 +558,7 @@ public final class MinecraftContainerTransferPort
                 plan = DepositTransferPlan.create(wanted, stack.getCount(),
                         List.of(new DepositTransferPlan.Destination(first.slot(), first.count())));
             }
-            return new TransferCandidate(slotIndex, itemId(stack), plan);
+            return new TransferCandidate(slotIndex, key, plan);
         }
         return null;
     }
@@ -677,33 +615,16 @@ public final class MinecraftContainerTransferPort
         return MinecraftContainerInteractions.slots(menu, false);
     }
 
-    private static int playerItemCount(
+    private static Map<String, Integer> itemCounts(
             AbstractContainerMenu menu,
-            String itemId
+            List<Integer> slots
     ) {
-        return itemCount(menu, playerSlots(menu), itemId);
-    }
-
-    private static int containerItemCount(
-            AbstractContainerMenu menu,
-            String itemId
-    ) {
-        return itemCount(menu, containerSlots(menu), itemId);
-    }
-
-    private static int itemCount(
-            AbstractContainerMenu menu,
-            List<Integer> slots,
-            String itemId
-    ) {
-        int count = 0;
+        Map<String, Integer> counts = new LinkedHashMap<>();
         for (int slotIndex : slots) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
-            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
-                count = Math.addExact(count, stack.getCount());
-            }
+            if (!stack.isEmpty()) counts.merge(itemId(stack), stack.getCount(), Math::addExact);
         }
-        return count;
+        return counts;
     }
 
     private void openBlock(ContainerTarget target) {
@@ -808,15 +729,9 @@ public final class MinecraftContainerTransferPort
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;
-        private String pendingItemId = "";
-        private int pendingCount;
+        private DepositBatchConfirmation batch;
         private int sourceSlot = -1;
-        private int playerBefore;
-        private long pickupsBefore;
         private long pendingStartedAt;
-        private int containerBefore;
-        private int observedDelta = -1;
-        private int observationPolls;
         private String rollbackMessage = "";
 
         private ActiveDeposit(

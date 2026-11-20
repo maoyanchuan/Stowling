@@ -29,8 +29,6 @@
             details.push(`耐久 ${slot.remainingDurability} / ${slot.maxDurability}`);
         }
         details.push(
-            `本格 ${slot.count} 件 · 堆叠上限 ${slot.maxCount}`,
-            `同一物品变体合计 ${item.count} 件`,
             `保留自用 ${item.protectedCount} · 任务 ${item.taskCount}`
                 + ` · 待分类 ${item.classificationCount}`
         );

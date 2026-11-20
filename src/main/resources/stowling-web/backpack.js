@@ -134,7 +134,7 @@
             entry.item = item;
             entry.button.hidden = !item;
             if (item) {
-                entry.button.setAttribute("aria-label", `${item.name}，本格 ${slot.count} 件`);
+                entry.button.setAttribute("aria-label", `${item.name}，${slot.count} 件`);
                 entry.fallback.textContent = Array.from(item.name).slice(0, 2).join("");
                 entry.count.textContent = slot.count > 1 ? String(slot.count) : "";
                 entry.protection.hidden = item.protectedCount === 0;
@@ -179,7 +179,7 @@
         document.querySelector("#backpack-item-name").textContent = item.name;
         document.querySelector("#backpack-item-id").textContent = item.itemId;
         document.querySelector("#backpack-counts").textContent =
-            `同一物品变体共 ${item.count} 件 · 自用 ${item.protectedCount} 件`
+            `背包共 ${item.count} 件 · 自用 ${item.protectedCount} 件`
             + ` · 任务占用 ${item.taskCount} 件 · 待分类 ${item.classificationCount} 件`;
         keep.max = String(Model.freeCount(item));
         keep.value = String(item.protectedCount);

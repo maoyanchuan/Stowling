@@ -51,16 +51,17 @@ public final class CoordinateResourceMigration {
                                 .toList(), definition.collectionPriority(),
                         definition.overflowEnabled(), definition.cleanupPolicy(),
                         definition.unstackableRegionRef())).toList();
+        var migrated = new StorageAutomationSettings(settings.cleanupEnabled(), List.of(),
+                List.of(), null, temporary.stream().distinct().toList(),
+                empty.stream().distinct().toList(), fallback, settings.temporaryRegionIds(),
+                settings.overflowCoordinateIds(), settings.overflowRegionIds());
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,
                     config.regions(), config.categoryZones(), config.triggers(), config.taskFolders(),
                     automatic));
         }
-        return new StorageAutomationSettings(settings.cleanupEnabled(), List.of(), List.of(), null,
-                temporary.stream().distinct().toList(), empty.stream().distinct().toList(), fallback,
-                settings.temporaryRegionIds(), settings.overflowCoordinateIds(),
-                settings.overflowRegionIds());
+        return migrated;
     }
 
     private static UUID coordinate(List<CoordinatePoint> points, BlockPosition position, String name) {

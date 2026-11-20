@@ -192,19 +192,23 @@ public final class ConfigValidator {
             }
         }
         int defaultInterruptionFlows = 0;
-        for (TaskDefinition task : config.tasks()) {
+        for (int taskIndex = 0; taskIndex < config.tasks().size(); taskIndex++) {
+            TaskDefinition task = config.tasks().get(taskIndex);
             if (task.defaultInterruptionFlow()) {
                 defaultInterruptionFlows++;
             }
             requireInterruption(task, tasks);
-            for (TaskStep step : task.steps()) {
-                requireValidStep(
-                        step,
-                        coordinates,
-                        regions,
-                        categoryZones,
-                        tasks.keySet()
-                );
+            for (int stepIndex = 0; stepIndex < task.steps().size(); stepIndex++) {
+                TaskStep step = task.steps().get(stepIndex);
+                try {
+                    requireValidStep(step, coordinates, regions, categoryZones, tasks.keySet());
+                } catch (V2ValidationException exception) {
+                    throw new V2ValidationException(
+                            "tasks[" + taskIndex + "].steps[" + stepIndex + "]: "
+                                    + exception.getMessage(),
+                            exception
+                    );
+                }
             }
             validateCompiledInteraction(
                     task,
@@ -1540,18 +1544,28 @@ public final class ConfigValidator {
         Set<UUID> bindingIds = new HashSet<>();
         Set<UUID> overrideIds = new HashSet<>();
         List<AreaBounds> storageAreas = new ArrayList<>();
-        for (CategoryZoneDefinition zone : categoryZones) {
+        for (int zoneIndex = 0; zoneIndex < categoryZones.size(); zoneIndex++) {
+            CategoryZoneDefinition zone = categoryZones.get(zoneIndex);
             if (result.putIfAbsent(zone.id(), zone) != null) {
                 throw new V2ValidationException("duplicate category zone id");
             }
             validateCategoryZoneExpansion(zone);
-            for (CategoryBindingDefinition binding : zone.bindings()) {
+            for (int bindingIndex = 0; bindingIndex < zone.bindings().size(); bindingIndex++) {
+                CategoryBindingDefinition binding = zone.bindings().get(bindingIndex);
                 if (!bindingIds.add(binding.id())) {
                     throw new V2ValidationException(
                             "duplicate category binding id"
                     );
                 }
-                rules.require(binding.ruleId());
+                try {
+                    rules.require(binding.ruleId());
+                } catch (IllegalArgumentException exception) {
+                    throw new V2ValidationException(
+                            "categoryZones[" + zoneIndex + "].bindings[" + bindingIndex
+                                    + "].ruleId: " + exception.getMessage(),
+                            exception
+                    );
+                }
                 if (binding.wholeStorage()
                         && !ContainerContentsCategoryRule.ID.equals(binding.ruleId())) {
                     throw new V2ValidationException("整片储存区对应仅支持标记箱/木桶识别方式");

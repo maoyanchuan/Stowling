@@ -969,6 +969,10 @@ select[aria-invalid="true"] {
     margin-top: 0.25rem;
 }
 
+#configuration-issues li {
+    overflow-wrap: anywhere;
+}
+
 .coordinate-help {
     margin-bottom: 0.8rem;
 }

@@ -14,6 +14,7 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigStore;
+import dev.stowling.v2.config.StartupConfiguration;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2ControlServiceImpl;
 import dev.stowling.v2.runtime.TaskRunManager;
@@ -28,6 +29,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,36 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
+    @Test
+    void servesRecoveryPageAndRequiresAuthenticationForConfigurationDetails() throws Exception {
+        Path config = directory.resolve("stowling.json");
+        Files.writeString(config, """
+                {"schemaVersion":6,"pickupRegions":[]}
+                """);
+        var issues = StartupConfiguration.load(directory).issues();
+        Path token = directory.resolve("stowling-api.token");
+        Files.writeString(token, TOKEN);
+
+        var server = V2ControlServer.recoveryWithTokenFile(issues, token, 0);
+        try (Fixture fixture = new Fixture(server)) {
+            for (String path : List.of("/", "/index.html", "/tasks.html")) {
+                var page = fixture.send(path, "GET", null, false);
+                assertEquals(200, page.statusCode());
+                assertTrue(page.body().contains("配置需要修正"));
+                assertTrue(!page.body().contains(config.toString()));
+            }
+            assertEquals(401, fixture.send("/v1/status", "GET", null, false).statusCode());
+            var response = fixture.send("/v1/status", "GET", null, true);
+            assertEquals(200, response.statusCode());
+            var status = object(response);
+            assertEquals("CONFIG_INVALID", status.get("state").getAsString());
+            var issue = status.getAsJsonArray("configurationIssues").get(0).getAsJsonObject();
+            assertEquals(config.toString(), issue.get("file").getAsString());
+            assertTrue(issue.get("detail").getAsString().contains("schemaVersion 6"));
+            assertEquals(503, fixture.send("/v1/tasks", "POST", "{}", true).statusCode());
+        }
+    }
+
     @Test
     void automaticTaskAreaUsesLayoutRecognitionWithoutTaskLevelFields() throws Exception {
         var store = new ConfigStore(directory.resolve("layout-recognition.json"));
@@ -242,7 +274,7 @@ class V2ControlServerTest {
         }
     }
 
-    private static final String TOKEN = "test-token-that-is-long-enough";
+    private static final String TOKEN = "test-token-that-is-long-enough-for-file";
 
     @TempDir
     Path directory;
@@ -1299,11 +1331,15 @@ class V2ControlServerTest {
         private final String base;
 
         private Fixture(V2ControlService service) throws IOException {
-            server = new V2ControlServer(
+            this(new V2ControlServer(
                     new InetSocketAddress("127.0.0.1", 0),
                     service,
                     TOKEN
-            );
+            ));
+        }
+
+        private Fixture(V2ControlServer server) throws IOException {
+            this.server = server;
             server.start();
             base = "http://127.0.0.1:" + server.localAddress().getPort();
         }

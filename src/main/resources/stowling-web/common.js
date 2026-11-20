@@ -286,6 +286,27 @@
     }
 
     /**
+     * @param {Array<{file: string, detail: string}>} issues
+     * @returns {void}
+     */
+    function renderConfigurationIssues(issues) {
+        const host = document.querySelector("#configuration-issues");
+        if (!host) {
+            return;
+        }
+        const list = element("ul");
+        for (const issue of issues) {
+            const item = element("li");
+            item.append(
+                element("code", "", issue.file),
+                element("div", "", issue.detail)
+            );
+            list.append(item);
+        }
+        host.replaceChildren(list);
+    }
+
+    /**
      * @param {string} candidate
      * @param {boolean} restored
      * @returns {Promise<void>}
@@ -311,7 +332,10 @@
             const previousToken = authToken;
             authToken = token;
             try {
-                await request("/v1/status");
+                const status = await request("/v1/status");
+                if (Array.isArray(status?.configurationIssues)) {
+                    renderConfigurationIssues(status.configurationIssues);
+                }
             } catch (error) {
                 authToken = previousToken;
                 throw error;
@@ -354,6 +378,7 @@
         setConnectionState("未连接");
         document.querySelector("#workspace")?.setAttribute("aria-hidden", "true");
         document.querySelector("#auth-shell")?.classList.remove("connected");
+        document.querySelector("#configuration-issues")?.replaceChildren();
         const input = document.querySelector("#token-input");
         if (input) {
             input.value = "";
@@ -528,4 +553,7 @@
         showToast,
         translatedLabel
     });
+    if (document.body?.dataset.page === "config-recovery") {
+        mountPage("config-recovery");
+    }
 })();

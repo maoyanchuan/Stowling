@@ -12,6 +12,7 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.stowling.api.BearerTokenStore;
+import dev.stowling.v2.config.StartupConfiguration.Issue;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.control.AutoClassifyDetectionRequest;
@@ -58,6 +59,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,6 +80,7 @@ public final class V2ControlServer implements AutoCloseable {
 
     private final InetSocketAddress address;
     private final V2ControlService service;
+    private final List<Issue> configurationIssues;
     private final byte[] tokenHash;
     private final Map<String, StaticContent> staticContent;
     private HttpServer server;
@@ -88,13 +91,32 @@ public final class V2ControlServer implements AutoCloseable {
             V2ControlService service,
             String token
     ) {
+        this(address, Objects.requireNonNull(service, "service"), token, List.of());
+    }
+
+    private V2ControlServer(
+            InetSocketAddress address,
+            V2ControlService service,
+            String token,
+            List<Issue> configurationIssues
+    ) {
         this.address = Objects.requireNonNull(address, "address");
-        this.service = Objects.requireNonNull(service, "service");
+        this.service = service;
+        this.configurationIssues = List.copyOf(configurationIssues);
         this.tokenHash = hash(Objects.requireNonNull(token, "token"));
         if (token.isBlank()) {
             throw new IllegalArgumentException("token must not be blank");
         }
-        this.staticContent = loadStaticContent();
+        Map<String, StaticContent> content = loadStaticContent();
+        if (!configurationIssues.isEmpty()) {
+            StaticContent recovery = read("stowling-web/config-recovery.html",
+                    "text/html; charset=utf-8");
+            Map<String, StaticContent> pages = new LinkedHashMap<>(content);
+            pages.replaceAll((path, asset) -> asset.contentType().startsWith("text/html")
+                    ? recovery : asset);
+            content = Map.copyOf(pages);
+        }
+        this.staticContent = content;
     }
 
     public static V2ControlServer loopbackWithTokenFile(
@@ -104,6 +126,16 @@ public final class V2ControlServer implements AutoCloseable {
     ) {
         String token = new BearerTokenStore(tokenFile).loadOrCreate();
         return new V2ControlServer(loopback(port), service, token);
+    }
+
+    public static V2ControlServer recoveryWithTokenFile(
+            List<Issue> issues, Path tokenFile, int port
+    ) {
+        if (issues.isEmpty()) {
+            throw new IllegalArgumentException("recovery requires configuration issues");
+        }
+        String token = new BearerTokenStore(tokenFile).loadOrCreate();
+        return new V2ControlServer(loopback(port), null, token, issues);
     }
 
     public synchronized void start() throws IOException {
@@ -177,7 +209,21 @@ public final class V2ControlServer implements AutoCloseable {
                 throw new RequestFailure(400, "invalid_request", "Invalid request target");
             }
             String body = readBody(exchange.getRequestBody());
-            dispatch(exchange, path, exchange.getRequestMethod(), body);
+            String method = exchange.getRequestMethod();
+            if (configurationIssues.isEmpty()) {
+                dispatch(exchange, path, method, body);
+            } else if ("/v1/status".equals(path)) {
+                requireMethod(method, "GET");
+                requireEmpty(body);
+                sendJson(exchange, 200, Map.of(
+                        "state", "CONFIG_INVALID",
+                        "observedAt", Instant.now(),
+                        "configurationIssues", configurationIssues
+                ));
+            } else {
+                sendError(exchange, 503, "configuration_invalid",
+                        "请修正配置文件并重启 Minecraft");
+            }
         } catch (RequestFailure exception) {
             if (exception.allow != null) {
                 exchange.getResponseHeaders().set("Allow", exception.allow);

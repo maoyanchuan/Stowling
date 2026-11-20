@@ -21,8 +21,8 @@ import dev.stowling.persistence.StoredInventorySnapshot;
 import dev.stowling.persistence.StowlingDatabase;
 import dev.stowling.v2.api.V2ControlServer;
 import dev.stowling.v2.cache.CategoryMarkerCacheStore;
-import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.category.CategoryRuleRegistry;
+import dev.stowling.v2.config.StartupConfiguration;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2ControlServiceImpl;
 import dev.stowling.v2.runtime.TaskRunManager;
@@ -39,33 +39,33 @@ public final class StowlingRuntime implements AutoCloseable {
     public static final int DEFAULT_CONTROL_PORT = 8765;
 
     private final TaskRunManager taskRuns;
-    private final V2ControlServer server;
     private final ClientShutdownSequence shutdownSequence;
 
     private StowlingRuntime(
             TaskRunManager taskRuns,
-            V2ControlServer server,
-            BaritoneClientCleanup baritoneCleanup
+            List<ClientShutdownSequence.ShutdownStep> shutdownSteps
     ) {
         this.taskRuns = taskRuns;
-        this.server = server;
-        this.shutdownSequence = new ClientShutdownSequence(List.of(
-                new ClientShutdownSequence.ShutdownStep(
-                        "Baritone",
-                        baritoneCleanup::close
-                ),
-                new ClientShutdownSequence.ShutdownStep(
-                        "HTTP server",
-                        server::stop
-                )
-        ));
+        this.shutdownSequence = new ClientShutdownSequence(shutdownSteps);
     }
 
     public static StowlingRuntime start(Minecraft minecraft) throws IOException {
         Path configDirectory = FabricLoader.getInstance().getConfigDir();
         Files.createDirectories(configDirectory);
-        ConfigStore configs = new ConfigStore(configDirectory.resolve("stowling.json"));
-        configs.loadOrReset();
+        var configuration = StartupConfiguration.load(configDirectory);
+        int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);
+        Path tokenFile = configDirectory.resolve("stowling-api.token");
+        if (!configuration.issues().isEmpty()) {
+            V2ControlServer server = V2ControlServer.recoveryWithTokenFile(
+                    configuration.issues(), tokenFile, port
+            );
+            server.start();
+            Stowling.LOGGER.warn("Stowling configuration requires repair. Open the console "
+                    + "on loopback port {} for details.", port);
+            return new StowlingRuntime(null, List.of(httpShutdown(server)));
+        }
+        var configs = configuration.configs();
+        var storageSettings = configuration.storageSettings();
 
         StowlingDatabase database = new StowlingDatabase(
                 configDirectory.resolve("stowling.db")
@@ -113,9 +113,6 @@ public final class StowlingRuntime implements AutoCloseable {
                 ),
                 StandardTaskModuleFactories.create()
         );
-        var storageSettings = new dev.stowling.v2.config.StorageSettingsStore(
-                configDirectory.resolve("stowling-storage-settings.json"));
-        storageSettings.bindCoordinates(configs);
         var warehouse = new dev.stowling.client.automation.ChestTrackerInventorySource(
                 minecraft, scheduler, configs);
         moduleRuntime.setStorageAutomation(
@@ -133,19 +130,13 @@ public final class StowlingRuntime implements AutoCloseable {
                 warehouse
         );
 
-        int port = Integer.getInteger("stowling.http.port", DEFAULT_CONTROL_PORT);
-        V2ControlServer server = V2ControlServer.loopbackWithTokenFile(
-                service,
-                configDirectory.resolve("stowling-api.token"),
-                port
-        );
-        StowlingRuntime runtime = new StowlingRuntime(
-                taskRuns,
-                server,
-                new BaritoneClientCleanup(
-                        BaritoneAPI.getProvider().getPrimaryBaritone()
-                )
-        );
+        V2ControlServer server = V2ControlServer.loopbackWithTokenFile(service, tokenFile, port);
+        var baritoneCleanup = new BaritoneClientCleanup(
+                BaritoneAPI.getProvider().getPrimaryBaritone());
+        StowlingRuntime runtime = new StowlingRuntime(taskRuns, List.of(
+                new ClientShutdownSequence.ShutdownStep("Baritone", baritoneCleanup::close),
+                httpShutdown(server)
+        ));
         server.start();
         Stowling.LOGGER.info(
                 "Stowling movement runtime started on loopback port {}",
@@ -155,13 +146,21 @@ public final class StowlingRuntime implements AutoCloseable {
     }
 
     public void tick() {
-        taskRuns.tick();
+        if (taskRuns != null) {
+            taskRuns.tick();
+        }
     }
 
     @Override
     public void close() {
-        taskRuns.cancelAll();
+        if (taskRuns != null) {
+            taskRuns.cancelAll();
+        }
         shutdownSequence.close();
+    }
+
+    private static ClientShutdownSequence.ShutdownStep httpShutdown(V2ControlServer server) {
+        return new ClientShutdownSequence.ShutdownStep("HTTP server", server::stop);
     }
 
     private static List<InventoryInfo> inventory(

@@ -41,25 +41,17 @@ public final class ConfigStore {
     }
 
     public synchronized V2ConfigSnapshot loadOrReset() {
-        if (Files.isRegularFile(path)) {
-            try {
-                V2ConfigSnapshot current = read();
-                ConfigValidator.requireValid(current.config());
-                return current;
-            } catch (RuntimeException exception) {
-                String detail = exception.getMessage() == null
-                        ? exception.getClass().getSimpleName()
-                        : exception.getMessage();
-                throw new V2ValidationException(
-                        "existing configuration is invalid and was preserved: "
-                                + detail,
-                        exception
-                );
-            }
+        if (Files.notExists(path)) {
+            write(AppConfig.empty());
         }
-        AppConfig empty = AppConfig.empty();
-        write(empty);
-        return read();
+        try {
+            return read();
+        } catch (V2ValidationException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new V2ValidationException(
+                    V2ValidationException.diagnosticMessage(exception), exception);
+        }
     }
 
     public synchronized V2ConfigSnapshot read() {
@@ -79,8 +71,8 @@ public final class ConfigStore {
             validatedSnapshot = new V2ConfigSnapshot(revision(bytes), config);
             validatedBytes = bytes;
             return validatedSnapshot;
-        } catch (IOException | JsonParseException exception) {
-            throw new V2ValidationException("configuration cannot be read");
+        } catch (IOException exception) {
+            throw new V2ValidationException("无法读取配置文件，请检查文件和读取权限。", exception);
         }
     }
 
@@ -94,6 +86,7 @@ public final class ConfigStore {
             upgradeSchema(root);
             requireFields(
                     root,
+                    "$",
                     Set.of(
                             "schemaVersion",
                             "coordinates",
@@ -122,11 +115,14 @@ public final class ConfigStore {
             if (root.has("autoClassifyTasks")) {
                 requireAutoClassifyObjects(root.get("autoClassifyTasks"));
             }
-            for (JsonElement task : requireArray(root.get("tasks"), "tasks")) {
-                JsonObject taskObject = requireObject(task, "task");
+            JsonArray tasks = requireArray(root.get("tasks"), "tasks");
+            for (int index = 0; index < tasks.size(); index++) {
+                String path = "tasks[" + index + "]";
+                JsonObject taskObject = requireObject(tasks.get(index), path);
                 requireCleanupPolicy(taskObject.get("cleanupPolicy"));
                 requireFields(
                         taskObject,
+                        path,
                         Set.of(
                                 "id",
                                 "name",
@@ -143,21 +139,34 @@ public final class ConfigStore {
                         ),
                         Set.of("id", "name", "steps")
                 );
-                requireStepObjects(taskObject.get("steps"));
+                requireStepObjects(taskObject.get("steps"), path + ".steps");
             }
             return GSON.fromJson(root, AppConfig.class);
         } catch (JsonParseException exception) {
-            throw new V2ValidationException("configuration cannot be read");
+            throw new V2ValidationException(
+                    V2ValidationException.diagnosticMessage(exception), exception);
         }
     }
 
     private static void upgradeSchema(JsonObject root) {
         JsonElement value = root.get("schemaVersion");
-        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+        if (value == null || !value.isJsonPrimitive()) {
+            throw new V2ValidationException("schemaVersion 必须是整数。");
+        }
+        if (!value.getAsJsonPrimitive().isNumber()) {
             return;
         }
-        int version = value.getAsInt();
-        if (version >= 7 && version <= 14) {
+        int version;
+        try {
+            version = value.getAsBigDecimal().intValueExact();
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new V2ValidationException("schemaVersion 必须是整数。", exception);
+        }
+        if (version < 7 || version > AppConfig.CURRENT_SCHEMA_VERSION) {
+            throw new V2ValidationException("不支持 schemaVersion " + version
+                    + "。当前版本支持 7 至 " + AppConfig.CURRENT_SCHEMA_VERSION + "。");
+        }
+        if (version <= 14) {
             if (version <= 11) {
                 if (!root.has("autoClassifyTasks")) {
                     root.add("autoClassifyTasks", new JsonArray());
@@ -408,11 +417,14 @@ public final class ConfigStore {
         return result;
     }
 
-    private static void requireStepObjects(JsonElement value) {
-        for (JsonElement item : requireArray(value, "steps")) {
-            JsonObject step = requireObject(item, "step");
+    private static void requireStepObjects(JsonElement value, String path) {
+        JsonArray steps = requireArray(value, path);
+        for (int index = 0; index < steps.size(); index++) {
+            String stepPath = path + "[" + index + "]";
+            JsonObject step = requireObject(steps.get(index), stepPath);
             requireFields(
                     step,
+                    stepPath,
                     Set.of(
                             "id",
                             "kind",
@@ -423,12 +435,12 @@ public final class ConfigStore {
                     ),
                     Set.of("id", "parameters")
             );
-            requireStringParameters(step.get("parameters"));
+            requireStringParameters(step.get("parameters"), stepPath + ".parameters");
             if (step.has("steps")) {
-                requireStepObjects(step.get("steps"));
+                requireStepObjects(step.get("steps"), stepPath + ".steps");
             }
             if (step.has("otherwise")) {
-                requireStepObjects(step.get("otherwise"));
+                requireStepObjects(step.get("otherwise"), stepPath + ".otherwise");
             }
         }
     }
@@ -438,6 +450,7 @@ public final class ConfigStore {
             JsonObject trigger = requireObject(item, "task trigger");
             requireFields(
                     trigger,
+                    "triggers",
                     Set.of(
                             "id",
                             "name",
@@ -468,7 +481,7 @@ public final class ConfigStore {
     private static void requireCleanupPolicy(JsonElement value) {
         if (value == null || value.isJsonNull()) return;
         JsonObject policy = requireObject(value, "cleanupPolicy");
-        requireFields(policy,
+        requireFields(policy, "cleanupPolicy",
                 Set.of("destinationRef", "resumeMode"), Set.of());
         JsonElement mode = policy.get("resumeMode");
         if (mode != null && !mode.isJsonNull() && (!mode.isJsonPrimitive()
@@ -495,22 +508,23 @@ public final class ConfigStore {
         allowed.add("overflowEnabled");
         allowed.add("cleanupPolicy");
         allowed.add("unstackableRegionRef");
-        for (JsonElement item
-                : requireArray(value, "autoClassifyTasks")) {
-            JsonObject definition = requireObject(
-                    item,
-                    "auto classify task"
-            );
-            requireFields(definition, allowed, fields);
+        JsonArray definitions = requireArray(value, "autoClassifyTasks");
+        for (int index = 0; index < definitions.size(); index++) {
+            String path = "autoClassifyTasks[" + index + "]";
+            JsonObject definition = requireObject(definitions.get(index), path);
+            requireFields(definition, path, allowed, fields);
             requireCleanupPolicy(definition.get("cleanupPolicy"));
-            requireAutoClassifyAreas(definition.get("classificationAreas"));
+            requireAutoClassifyAreas(
+                    definition.get("classificationAreas"), path + ".classificationAreas");
         }
     }
 
-    private static void requireAutoClassifyAreas(JsonElement value) {
-        for (JsonElement item : requireArray(value, "classificationAreas")) {
-            JsonObject area = requireObject(item, "classification area");
-            requireFields(area, Set.of(
+    private static void requireAutoClassifyAreas(JsonElement value, String path) {
+        JsonArray areas = requireArray(value, path);
+        for (int index = 0; index < areas.size(); index++) {
+            String areaPath = path + "[" + index + "]";
+            JsonObject area = requireObject(areas.get(index), areaPath);
+            requireFields(area, areaPath, Set.of(
                     "categoryZoneRef",
                     "storagePolicy"
             ), Set.of("categoryZoneRef"));
@@ -521,6 +535,7 @@ public final class ConfigStore {
         for (JsonElement item : requireArray(value, "taskFolders")) {
             requireExactFields(
                     requireObject(item, "task folder"),
+                    "taskFolders",
                     Set.of("id", "name")
             );
         }
@@ -539,12 +554,7 @@ public final class ConfigStore {
         );
         for (JsonElement item : requireArray(value, "coordinates")) {
             JsonObject coordinate = requireObject(item, "coordinate");
-            if (!allowed.containsAll(coordinate.keySet())
-                    || !coordinate.keySet().containsAll(required)) {
-                throw new V2ValidationException(
-                        "configuration fields do not match schema"
-                );
-            }
+            requireFields(coordinate, "coordinates", allowed, required);
         }
     }
 
@@ -560,15 +570,18 @@ public final class ConfigStore {
                 "secondZ"
         );
         for (JsonElement item : requireArray(value, "regions")) {
-            requireExactFields(requireObject(item, "region"), fields);
+            requireExactFields(requireObject(item, "region"), "regions", fields);
         }
     }
 
     private static void requireCategoryZoneObjects(JsonElement value) {
-        for (JsonElement item : requireArray(value, "categoryZones")) {
-            JsonObject zone = requireObject(item, "category zone");
+        JsonArray zones = requireArray(value, "categoryZones");
+        for (int index = 0; index < zones.size(); index++) {
+            String zonePath = "categoryZones[" + index + "]";
+            JsonObject zone = requireObject(zones.get(index), zonePath);
             requireFields(
                     zone,
+                    zonePath,
                     Set.of("id", "name", "bindings", "expansion"),
                     Set.of("id", "name", "bindings")
             );
@@ -580,6 +593,7 @@ public final class ConfigStore {
                 );
                 requireExactFields(
                         expansionObject,
+                        zonePath + ".expansion",
                         Set.of(
                                 "area",
                                 "direction",
@@ -592,14 +606,16 @@ public final class ConfigStore {
                         "category expansion area"
                 );
             }
-            for (JsonElement bindingValue
-                    : requireArray(zone.get("bindings"), "bindings")) {
+            String bindingsPath = zonePath + ".bindings";
+            JsonArray bindings = requireArray(zone.get("bindings"), bindingsPath);
+            for (int bindingIndex = 0; bindingIndex < bindings.size(); bindingIndex++) {
+                String bindingPath = bindingsPath + "[" + bindingIndex + "]";
                 JsonObject binding = requireObject(
-                        bindingValue,
-                        "category binding"
+                        bindings.get(bindingIndex), bindingPath
                 );
                 requireFields(
                         binding,
+                        bindingPath,
                         Set.of(
                                 "id",
                                 "markerArea",
@@ -636,6 +652,7 @@ public final class ConfigStore {
             );
             requireExactFields(
                     override,
+                    "containerOverrides",
                     Set.of(
                             "id",
                             "storagePosition",
@@ -648,6 +665,7 @@ public final class ConfigStore {
                             override.get("storagePosition"),
                             "storagePosition"
                     ),
+                    "storagePosition",
                     Set.of("x", "y", "z")
             );
             requireStringArray(override.get("itemIds"), "itemIds");
@@ -671,6 +689,7 @@ public final class ConfigStore {
     private static void requireArea(JsonElement value, String name) {
         requireExactFields(
                 requireObject(value, name),
+                name,
                 Set.of(
                         "firstX",
                         "firstY",
@@ -696,28 +715,35 @@ public final class ConfigStore {
         return value.getAsJsonObject();
     }
 
-    private static void requireExactFields(JsonObject value, Set<String> fields) {
-        requireFields(value, fields, fields);
+    private static void requireExactFields(JsonObject value, String path, Set<String> fields) {
+        requireFields(value, path, fields, fields);
     }
 
     private static void requireFields(
             JsonObject value,
+            String path,
             Set<String> allowed,
             Set<String> required
     ) {
-        if (!allowed.containsAll(value.keySet())
-                || !value.keySet().containsAll(required)) {
-            throw new V2ValidationException("configuration fields do not match schema");
+        if (!allowed.containsAll(value.keySet())) {
+            var unknown = value.keySet().stream().filter(key -> !allowed.contains(key))
+                    .sorted().toList();
+            throw new V2ValidationException(path + " 包含不支持的字段 " + unknown);
+        }
+        if (!value.keySet().containsAll(required)) {
+            var missing = required.stream().filter(key -> !value.has(key)).sorted().toList();
+            throw new V2ValidationException(path + " 缺少必填字段 " + missing);
         }
     }
 
-    private static void requireStringParameters(JsonElement value) {
-        JsonObject parameters = requireObject(value, "parameters");
-        for (JsonElement parameter : parameters.asMap().values()) {
+    private static void requireStringParameters(JsonElement value, String path) {
+        JsonObject parameters = requireObject(value, path);
+        for (var entry : parameters.entrySet()) {
+            JsonElement parameter = entry.getValue();
             if (!parameter.isJsonPrimitive()
                     || !parameter.getAsJsonPrimitive().isString()) {
                 throw new V2ValidationException(
-                        "parameter values must be strings"
+                        path + "." + entry.getKey() + " must be a string"
                 );
             }
         }

@@ -8,7 +8,7 @@
         </linearGradient>
     </defs>
     <path
-        d="M14 0H32A14 14 0 0 1 46 14V32A14 14 0 0 1 32 46H4A4 4 0 0 1 0 42V14A14 14 0 0 1 14 0Z"
+        d="M14 0H32A14 14 0 0 1 46 14V32A14 14 0 0 1 32 46H0V14A14 14 0 0 1 14 0Z"
         fill="url(#brand-mark-gradient)"/>
     <text x="23" y="21.5" fill="#ffffff"
           font-family="Inter, 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif"

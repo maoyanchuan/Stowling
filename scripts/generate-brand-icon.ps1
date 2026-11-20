@@ -20,24 +20,6 @@ function Read-RequiredFile {
     return Get-Content -LiteralPath $Path -Raw
 }
 
-function Assert-Contains {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$Content,
-
-        [Parameter(Mandatory)]
-        [string]$Expected,
-
-        [Parameter(Mandatory)]
-        [string]$Context
-    )
-
-    if (-not $Content.Contains($Expected)) {
-        throw "$Context must contain: $Expected"
-    }
-}
-
 function Read-BigEndianUInt32 {
     [CmdletBinding()]
     [OutputType([uint32])]
@@ -114,48 +96,10 @@ function Assert-PngMetadata {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$stylesPath = Join-Path $repoRoot "src/main/resources/stowling-web/styles.css"
 $svgPath = Join-Path $repoRoot "src/main/resources/assets/stowling/icon.svg"
 $pngPath = Join-Path $repoRoot "src/main/resources/assets/stowling/icon.png"
 
-$styles = Read-RequiredFile -Path $stylesPath
-$brandMatch = [regex]::Match(
-    $styles,
-    "(?ms)^\.brand-mark\s*\{(?<body>.*?)^\}"
-)
-if (-not $brandMatch.Success) {
-    throw "Could not find the .brand-mark block in styles.css."
-}
-$brandStyles = $brandMatch.Groups["body"].Value
-foreach ($declaration in @(
-        "width: 46px;",
-        "height: 46px;",
-        "border-radius: 14px 14px 14px 4px;",
-        "color: #ffffff;",
-        "font-size: 1.42rem;",
-        "font-weight: 800;",
-        "background: linear-gradient(145deg, #3f8c64, #1c5138);"
-    )) {
-    Assert-Contains -Content $brandStyles -Expected $declaration -Context ".brand-mark"
-}
-
 $svg = Read-RequiredFile -Path $svgPath
-foreach ($fragment in @(
-        'viewBox="0 0 46 46"',
-        'x1="0.1495" y1="0" x2="0.8505" y2="1"',
-        'stop-color="#3f8c64"',
-        'stop-color="#1c5138"',
-        'fill="#ffffff"',
-        'font-size="22.72"',
-        'font-weight="800"',
-        '>S</text>'
-    )) {
-    Assert-Contains -Content $svg -Expected $fragment -Context "icon.svg"
-}
-if ($svg -match "<(filter|rect)\b" -or $svg -match "\bstroke=") {
-    throw "icon.svg must not add shadows, borders, or a background rectangle."
-}
-
 $resolvedBrowser = Resolve-BrowserPath -RequestedPath $BrowserPath
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
     "stowling-brand-icon-" + [guid]::NewGuid().ToString("N")

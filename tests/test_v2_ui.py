@@ -531,6 +531,14 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
         assert f"<title>{label} · Stowling</title>" in html
 
 
+def test_console_pages_use_the_packaged_brand_icon() -> None:
+    for path in sorted(WEB.glob("*.html")):
+        html = read(path.name)
+        header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+        assert '<link rel="icon" type="image/png" href="/icon.png">' in html
+        assert '<img class="brand-mark" src="/icon.png"' in header
+
+
 def test_coordinate_navigation_groups_spatial_resources() -> None:
     common = read("common.js")
     coordinates = read("coordinates.html")

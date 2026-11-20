@@ -1,9 +1,8 @@
 # Brand icon generation
 
-`generate-brand-icon.ps1` validates the live `.brand-mark` declarations in
-`styles.css`, verifies that `assets/stowling/icon.svg` uses the same dimensions, radius,
-colors, gradient, text color, size, and weight, then renders the SVG to a transparent
-512x512 PNG in headless Chrome or Edge.
+`generate-brand-icon.ps1` renders `assets/stowling/icon.svg` to a transparent 512x512
+PNG in headless Chrome or Edge. Fabric, the web console, and the repository READMEs
+use the generated PNG.
 
 Run from the repository root:
 

@@ -95,16 +95,6 @@ body[data-page] .topbar {
     padding: 18px 0 14px;
 }
 
-body[data-page] .brand-mark {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    color: #d5e8df;
-    background: #303e36;
-    box-shadow: none;
-    font-size: 18px;
-}
-
 body[data-page] h1 {
     font-size: 17px;
 }

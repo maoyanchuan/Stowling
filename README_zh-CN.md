@@ -1,5 +1,7 @@
 # Stowling
 
+<img src="src/main/resources/assets/stowling/icon.png" width="64" height="64" alt="">
+
 Stowling 是面向 Minecraft 26.2 的 Fabric 客户端模组，提供命名坐标、区域、分类区、
 优先级任务队列和条件监听器。移动与容器交互复用现有游戏接口和 Baritone 集成。
 

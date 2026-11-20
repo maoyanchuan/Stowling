@@ -28,7 +28,8 @@ public final class CategoryRuleRegistry {
     public static CategoryRuleRegistry standard() {
         return new CategoryRuleRegistry(List.of(
                 new DirectBlockIdCategoryRule(),
-                new ContainerContentsCategoryRule()
+                new ContainerContentsCategoryRule(),
+                new UnstackableCategoryRule()
         ));
     }
 

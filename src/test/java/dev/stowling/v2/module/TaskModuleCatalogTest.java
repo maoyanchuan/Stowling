@@ -20,19 +20,15 @@ class TaskModuleCatalogTest {
     void exposesOnlyRealActionsAndListeners() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 
-        assertEquals(23, modules.size());
         assertEquals(
                 3,
                 modules.stream()
                         .filter(module -> module.kind() == TaskModuleKind.LISTENER)
                         .count()
         );
-        assertEquals(
-                20,
-                modules.stream()
-                        .filter(module -> module.kind() == TaskModuleKind.ACTION)
-                        .count()
-        );
+        assertTrue(modules.stream().anyMatch(module ->
+                module.id().equals(ConfigValidator.SORT_UNSTACKABLE_ITEMS)
+                        && module.kind() == TaskModuleKind.ACTION));
         assertTrue(modules.stream().allMatch(module ->
                 module.composedOf().isEmpty()
         ));

@@ -16,6 +16,7 @@ import dev.stowling.v2.category.CategoryRuleResult;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.category.DirectBlockIdCategoryRule;
 import dev.stowling.v2.category.PottedBlockItems;
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -167,13 +168,13 @@ public final class MinecraftCategoryZoneResolver
                 new LinkedHashMap<>();
         List<ClassificationLayoutEntry> layout = new ArrayList<>();
         for (CategoryBindingDefinition binding : zone.bindings()) {
-            long markerVolume = volume(binding.markerArea());
-            if (markerVolume > maxVolume) {
+            boolean unstackable = UnstackableCategoryRule.ID.equals(binding.ruleId());
+            if (!unstackable && volume(binding.markerArea()) > maxVolume) {
                 return CategoryZoneResult.failure(
                         "分类区 " + zone.name() + " 的识别区体积过大"
                 );
             }
-            List<CategoryMarker> markers = markers(
+            List<CategoryMarker> markers = unstackable ? List.of() : markers(
                     level,
                     binding.markerArea(),
                     Set.copyOf(binding.ignoredMarkerBlockIds()),
@@ -223,6 +224,9 @@ public final class MinecraftCategoryZoneResolver
             List<ContainerTarget> storageContainers,
             Set<CategoryMarkerSource> markerSources
     ) {
+        if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
+            return rules.require(binding.ruleId()).resolve(List.of(), storageContainers);
+        }
         if (markerSources != null) {
             return DirectBlockIdCategoryRule.resolveExplicitSources(
                     markers,

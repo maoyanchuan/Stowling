@@ -26,7 +26,7 @@ class StartupConfigurationTest {
                 {"schemaVersion":%d,"coordinates":[],"tasks":[
                     {"id":"00000000-0000-0000-0000-000000000001","name":"Sort","steps":[
                         {"id":"00000000-0000-0000-0000-000000000002",
-                         "moduleId":"SORT_UNSTACKABLE_ITEMS","parameters":{}}
+                         "moduleId":"UNRECOGNIZED_MODULE","parameters":{}}
                     ]}
                 ]}
                 """.formatted(AppConfig.CURRENT_SCHEMA_VERSION);
@@ -39,13 +39,13 @@ class StartupConfigurationTest {
         assertEquals(2, issues.size());
         assertEquals(config.toString(), issues.getFirst().file());
         assertTrue(issues.getFirst().detail().contains("tasks[0].steps[0]"));
-        assertTrue(issues.getFirst().detail().contains("SORT_UNSTACKABLE_ITEMS"));
+        assertTrue(issues.getFirst().detail().contains("UNRECOGNIZED_MODULE"));
         assertEquals(storage.toString(), issues.getLast().file());
         assertTrue(issues.getLast().detail().contains("temporaryCoordinateIds[0]"));
         assertEquals(incompatible, Files.readString(config));
         assertEquals(malformed, Files.readString(storage));
 
-        Files.writeString(config, incompatible.replace("SORT_UNSTACKABLE_ITEMS",
+        Files.writeString(config, incompatible.replace("UNRECOGNIZED_MODULE",
                 "SYNC_PLAYER_INVENTORY"));
         Files.writeString(storage, "{}");
 

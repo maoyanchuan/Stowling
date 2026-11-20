@@ -3,6 +3,7 @@ package dev.stowling.v2.api;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -13,10 +14,15 @@ import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.config.StartupConfiguration;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2ControlServiceImpl;
+import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.runtime.TaskRunManager;
 import dev.stowling.v2.runtime.modules.TaskModuleRuntimeRegistry;
 import dev.stowling.v2.runtime.modules.StandardTaskModuleFactories;
@@ -40,7 +46,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
-    void servesRecoveryPageAndRequiresAuthenticationForConfigurationDetails() throws Exception {
+    void servesTheNormalConsoleAndRequiresAuthenticationForInvalidConfigurationDetails()
+            throws Exception {
         Path config = directory.resolve("stowling.json");
         Files.writeString(config, """
                 {"schemaVersion":6,"pickupRegions":[]}
@@ -54,7 +61,7 @@ class V2ControlServerTest {
             for (String path : List.of("/", "/index.html", "/tasks.html")) {
                 var page = fixture.send(path, "GET", null, false);
                 assertEquals(200, page.statusCode());
-                assertTrue(page.body().contains("配置需要修正"));
+                assertTrue(page.body().contains("id=\"app-nav\""));
                 assertTrue(!page.body().contains(config.toString()));
             }
             assertEquals(401, fixture.send("/v1/status", "GET", null, false).statusCode());
@@ -66,6 +73,39 @@ class V2ControlServerTest {
             assertEquals(config.toString(), issue.get("file").getAsString());
             assertTrue(issue.get("detail").getAsString().contains("schemaVersion 6"));
             assertEquals(503, fixture.send("/v1/tasks", "POST", "{}", true).statusCode());
+        }
+    }
+
+    @Test
+    void opensTheNormalConsoleWithSavedUnstackableStorageRanges() throws Exception {
+        Path path = directory.resolve("stowling.json");
+        var first = new AreaBounds(1, 64, 0, 1, 64, 0);
+        var second = new AreaBounds(2, 64, 0, 2, 64, 0);
+        var bindings = List.of(
+                new CategoryBindingDefinition(UUID.randomUUID(), first, first,
+                        UnstackableCategoryRule.ID),
+                new CategoryBindingDefinition(UUID.randomUUID(), second, second,
+                        UnstackableCategoryRule.ID)
+        );
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Tools", bindings);
+        var saved = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                List.of(), List.of(), List.of(zone));
+        String original = new Gson().toJson(saved);
+        Files.writeString(path, original);
+        var configuration = StartupConfiguration.load(directory);
+
+        assertTrue(configuration.issues().isEmpty());
+        assertEquals(original, Files.readString(path));
+        var service = new V2ControlServiceImpl(
+                configuration.configs(), new TaskRunManager(new FailedNavigation()), List::of);
+        try (Fixture fixture = new Fixture(service)) {
+            var status = object(fixture.send("/v1/status", "GET", null, true));
+            assertEquals("IDLE", status.get("state").getAsString());
+            assertTrue(status.get("configurationNotice").getAsString().contains("已载入"));
+            var response = fixture.send("/v1/category-zones", "GET", null, true);
+            assertEquals(200, response.statusCode());
+            var zones = object(response).getAsJsonArray("categoryZones");
+            assertEquals(2, zones.get(0).getAsJsonObject().getAsJsonArray("bindings").size());
         }
     }
 

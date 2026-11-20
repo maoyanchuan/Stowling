@@ -19,6 +19,7 @@
     let authToken = "";
     let connected = false;
     let connectBusy = false;
+    let configurationUnavailable = false;
 
     class ApiError extends Error {
         /**
@@ -286,16 +287,35 @@
     }
 
     /**
-     * @param {Array<{file: string, detail: string}>} issues
+     * @param {object} status
      * @returns {void}
      */
-    function renderConfigurationIssues(issues) {
-        const host = document.querySelector("#configuration-issues");
-        if (!host) {
+    function renderConfigurationStatus(status) {
+        const workspace = document.querySelector("#workspace");
+        if (!workspace) {
             return;
         }
+        configurationUnavailable = status?.state === "CONFIG_INVALID";
+        workspace.classList.toggle("config-unavailable", configurationUnavailable);
+        workspace.querySelector("#configuration-status")?.remove();
+        if (!configurationUnavailable && !status?.configurationNotice) {
+            return;
+        }
+        const panel = element("section", "panel");
+        panel.id = "configuration-status";
+        panel.setAttribute("role", configurationUnavailable ? "alert" : "status");
+        if (!configurationUnavailable) {
+            panel.textContent = status.configurationNotice;
+            workspace.querySelector("#app-nav")?.after(panel);
+            return;
+        }
+        panel.append(
+            element("h2", "", "配置需要修正"),
+            element("p", "", "自动化已暂停。请备份下列文件，按提示修正后重启 Minecraft。")
+        );
+        const errors = element("div", "config-errors");
         const list = element("ul");
-        for (const issue of issues) {
+        for (const issue of status.configurationIssues ?? []) {
             const item = element("li");
             item.append(
                 element("code", "", issue.file),
@@ -303,7 +323,9 @@
             );
             list.append(item);
         }
-        host.replaceChildren(list);
+        errors.append(list);
+        panel.append(errors);
+        workspace.querySelector("#app-nav")?.after(panel);
     }
 
     /**
@@ -331,25 +353,26 @@
         try {
             const previousToken = authToken;
             authToken = token;
+            let status;
             try {
-                const status = await request("/v1/status");
-                if (Array.isArray(status?.configurationIssues)) {
-                    renderConfigurationIssues(status.configurationIssues);
-                }
+                status = await request("/v1/status");
             } catch (error) {
                 authToken = previousToken;
                 throw error;
             }
             sessionStorage.setItem(TOKEN_KEY, token);
             connected = true;
+            renderConfigurationStatus(status);
             setConnectionState("已连接");
             document.querySelector("#workspace")?.setAttribute("aria-hidden", "false");
             document.querySelector("#auth-shell")?.classList.add("connected");
             if (input) {
                 input.value = "";
             }
-            for (const handler of connectedHandlers) {
-                await handler();
+            if (!configurationUnavailable) {
+                for (const handler of connectedHandlers) {
+                    await handler();
+                }
             }
             if (!restored) {
                 showToast("连接成功");
@@ -378,7 +401,7 @@
         setConnectionState("未连接");
         document.querySelector("#workspace")?.setAttribute("aria-hidden", "true");
         document.querySelector("#auth-shell")?.classList.remove("connected");
-        document.querySelector("#configuration-issues")?.replaceChildren();
+        renderConfigurationStatus(null);
         const input = document.querySelector("#token-input");
         if (input) {
             input.value = "";
@@ -398,7 +421,7 @@
      * @returns {boolean}
      */
     function isConnected() {
-        return connected;
+        return connected && !configurationUnavailable;
     }
 
     /**
@@ -553,7 +576,4 @@
         showToast,
         translatedLabel
     });
-    if (document.body?.dataset.page === "config-recovery") {
-        mountPage("config-recovery");
-    }
 })();

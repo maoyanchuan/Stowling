@@ -107,16 +107,7 @@ public final class V2ControlServer implements AutoCloseable {
         if (token.isBlank()) {
             throw new IllegalArgumentException("token must not be blank");
         }
-        Map<String, StaticContent> content = loadStaticContent();
-        if (!configurationIssues.isEmpty()) {
-            StaticContent recovery = read("stowling-web/config-recovery.html",
-                    "text/html; charset=utf-8");
-            Map<String, StaticContent> pages = new LinkedHashMap<>(content);
-            pages.replaceAll((path, asset) -> asset.contentType().startsWith("text/html")
-                    ? recovery : asset);
-            content = Map.copyOf(pages);
-        }
-        this.staticContent = content;
+        this.staticContent = loadStaticContent();
     }
 
     public static V2ControlServer loopbackWithTokenFile(

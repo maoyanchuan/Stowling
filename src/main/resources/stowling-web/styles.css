@@ -969,8 +969,12 @@ select[aria-invalid="true"] {
     margin-top: 0.25rem;
 }
 
-#configuration-issues li {
+#configuration-status .config-errors {
     overflow-wrap: anywhere;
+}
+
+.workspace.config-unavailable > :not(#app-nav, #configuration-status) {
+    display: none;
 }
 
 .coordinate-help {

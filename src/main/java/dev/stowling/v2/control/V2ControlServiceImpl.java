@@ -2,6 +2,7 @@ package dev.stowling.v2.control;
 
 import dev.stowling.control.InventoryInfo;
 import dev.stowling.v2.category.CategoryRuleRegistry;
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2ConfigSnapshot;
@@ -50,6 +51,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private final ConfigStore configs;
     private final TaskRunManager runs;
     private final Supplier<List<InventoryInfo>> inventory;
+    private final String configurationNotice;
     private Supplier<dev.stowling.inventory.WarehouseInventory> warehouse;
     private final CategoryRuleRegistry categoryRules =
             CategoryRuleRegistry.standard();
@@ -62,7 +64,24 @@ public final class V2ControlServiceImpl implements V2ControlService {
         this.configs = Objects.requireNonNull(configs, "configs");
         this.runs = Objects.requireNonNull(runs, "runs");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
-        runs.refreshTriggers(configs.read().config());
+        AppConfig config = configs.read().config();
+        this.configurationNotice = usesUnstackableCompatibility(config)
+                ? "已载入旧版不可堆叠分类设置，可以继续使用已有的储存范围和任务。"
+                : null;
+        runs.refreshTriggers(config);
+    }
+
+    private static boolean usesUnstackableCompatibility(AppConfig config) {
+        return config.categoryZones().stream().flatMap(zone -> zone.bindings().stream())
+                .anyMatch(binding -> UnstackableCategoryRule.ID.equals(binding.ruleId()))
+                || config.tasks().stream().anyMatch(task -> hasUnstackableStep(task.steps()));
+    }
+
+    private static boolean hasUnstackableStep(List<TaskStep> steps) {
+        return steps.stream().anyMatch(step ->
+                ConfigValidator.SORT_UNSTACKABLE_ITEMS.equals(step.moduleId())
+                        || hasUnstackableStep(step.steps())
+                        || hasUnstackableStep(step.otherwise()));
     }
 
     public V2ControlServiceImpl(ConfigStore configs, TaskRunManager runs,
@@ -127,7 +146,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         String state = runs.status()
                 .map(run -> run.state().name())
                 .orElse("IDLE");
-        return new StatusResponse(state, Instant.now());
+        return new StatusResponse(state, Instant.now(), configurationNotice);
     }
 
     @Override

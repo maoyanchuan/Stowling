@@ -804,6 +804,7 @@
             const available = rule.value === "MARKER_CONTAINER_CONTENTS";
             wholeStorageRow.hidden = !available;
             wholeStorageHelp.hidden = !available;
+            marker.root.hidden = rule.value === "UNSTACKABLE_ITEMS";
         }
         rule.addEventListener("change", refreshWholeStorage);
         refreshWholeStorage();
@@ -903,24 +904,32 @@
         card.append(summary, body);
         Settings.bindDisclosure(card, summary, body, expanded);
         host.append(card);
-        return () => ({
-            ...marker.read(),
-            ...storage.read(),
-            standingArea: standingToggle.checked ? readStandingArea(standing.read()) : null,
-            storagePolicy: {
-                mode: storageMode.value,
-                loosePercent: Number(loosePercent.value),
-                looseSlots: binding.storagePolicy?.looseSlots ?? null,
-                partialBoxDestinationRef: binding.storagePolicy?.partialBoxDestinationRef ?? null,
-                allowPartialBoxes: allowPartial.checked,
-                refillLoose: Boolean(binding.storagePolicy?.refillLoose),
-                packingArea: packingToggle.checked ? readStandingArea(packing.read()) : null
-            },
-            ruleId: rule.value,
-            wholeStorage: rule.value === "MARKER_CONTAINER_CONTENTS" && wholeStorage.checked,
-            ignoredMarkerBlockIds: parseBlockIds(ignored.value),
-            containerOverrides: overrideReaders.map((reader) => reader.read())
-        });
+        return () => {
+            const storageValues = storage.read();
+            const markerValues = rule.value === "UNSTACKABLE_ITEMS"
+                ? Object.fromEntries(Object.entries(storageValues).map(([key, value]) =>
+                    [key.replace(/^storage/, "marker"), value]))
+                : marker.read();
+            return {
+                ...markerValues,
+                ...storageValues,
+                standingArea: standingToggle.checked ? readStandingArea(standing.read()) : null,
+                storagePolicy: {
+                    mode: storageMode.value,
+                    loosePercent: Number(loosePercent.value),
+                    looseSlots: binding.storagePolicy?.looseSlots ?? null,
+                    partialBoxDestinationRef: binding.storagePolicy?.partialBoxDestinationRef
+                        ?? null,
+                    allowPartialBoxes: allowPartial.checked,
+                    refillLoose: Boolean(binding.storagePolicy?.refillLoose),
+                    packingArea: packingToggle.checked ? readStandingArea(packing.read()) : null
+                },
+                ruleId: rule.value,
+                wholeStorage: rule.value === "MARKER_CONTAINER_CONTENTS" && wholeStorage.checked,
+                ignoredMarkerBlockIds: parseBlockIds(ignored.value),
+                containerOverrides: overrideReaders.map((reader) => reader.read())
+            };
+        };
     }
 
     /**
@@ -957,6 +966,9 @@
             + `${binding.markerFirstZ}`;
         const storage = `${binding.storageFirstX}, ${binding.storageFirstY}, `
             + `${binding.storageFirstZ}`;
+        if (binding.ruleId === "UNSTACKABLE_ITEMS") {
+            return `不可堆叠物品 · 储存起点 ${storage} · 排除潜影盒`;
+        }
         const exceptions = binding.containerOverrides.length;
         return `识别起点 ${marker} · 储存起点 ${storage} · ${exceptions} 个例外`
             + (binding.wholeStorage ? " · 对应整片储存区" : "")

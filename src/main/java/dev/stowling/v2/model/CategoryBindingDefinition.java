@@ -1,5 +1,6 @@
 package dev.stowling.v2.model;
 
+import dev.stowling.v2.category.UnstackableCategoryRule;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -22,6 +23,9 @@ public record CategoryBindingDefinition(
         markerArea = Objects.requireNonNull(markerArea, "markerArea");
         storageArea = Objects.requireNonNull(storageArea, "storageArea");
         ruleId = requireText(ruleId, "ruleId");
+        if (UnstackableCategoryRule.ID.equals(ruleId)) {
+            markerArea = storageArea;
+        }
         ignoredMarkerBlockIds = normalizeBlockIds(ignoredMarkerBlockIds);
         containerOverrides = containerOverrides == null
                 ? List.of()

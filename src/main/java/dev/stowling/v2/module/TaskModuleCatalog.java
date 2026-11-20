@@ -242,6 +242,17 @@ public final class TaskModuleCatalog {
                     )
             ),
             action(
+                    ConfigValidator.SORT_UNSTACKABLE_ITEMS,
+                    "分类不可堆叠物品",
+                    "从缓存区域取出不可堆叠物品并移入指定区域，排除潜影盒。",
+                    List.of(
+                            reference(ConfigValidator.REGION_REF,
+                                    "缓存区域", "region-reference", true),
+                            reference(ConfigValidator.TARGET_REF,
+                                    "储存区域", "region-reference", true)
+                    )
+            ),
+            action(
                     ConfigValidator.SELECT_CONTAINER,
                     "选择容器",
                     "从当前容器输出中选择一个容器。",

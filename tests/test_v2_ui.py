@@ -15,6 +15,19 @@ def between(source: str, start: str, end: str) -> str:
     return source[content_start:source.index(end, content_start)]
 
 
+def test_configuration_notice_appears_inside_the_authenticated_console() -> None:
+    common = read("common.js")
+    authentication = between(common, "async function connectToken(", "function clearAuthentication")
+
+    assert authentication.index("await request(\"/v1/status\")") < authentication.index(
+        "renderConfigurationStatus(status)"
+    )
+    assert "workspace.querySelector(\"#app-nav\")?.after(panel)" in common
+    assert "configurationNotice" in common
+    assert "if (!configurationUnavailable)" in authentication
+    assert 'id="app-nav"' in read("index.html")
+
+
 def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
     html = read("coordinates.html")
     javascript = read("coordinates.js")

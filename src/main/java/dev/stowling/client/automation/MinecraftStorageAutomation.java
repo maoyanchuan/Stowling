@@ -799,6 +799,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int looseDeficit;
         private int existingBoxSpace;
         private CachePackingBatchPlan plan;
+        private boolean shareFullBox;
 
         CachePackingBatch(TaskExecutionContext context, ContainerTarget cache, String category,
                 ContainerTarget destination) {
@@ -816,6 +817,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void startCategory(List<ContainerTarget> configuredPartials) {
             preparedCategories.add(category);
+            plan = null;
             List<ContainerTarget> candidates = new ArrayList<>();
             candidates.add(initialCache);
             candidates.addAll(context.workspace().cacheContainers());
@@ -925,7 +927,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             || ItemIdentity.isMixedBox(MinecraftItemIdentity.key(stack))))
                     .mapToInt(stack -> sum(raw(MinecraftItemIdentity.contents(stack)
                             .nonEmptyItemCopyStream().toList())) * stack.getCount()).sum();
-            plan = CachePackingBatchPlan.calculate(policy, sum(raw(snapshots())), partialItems,
+            int looseItems = sum(raw(snapshots()));
+            if (plan == null) {
+                shareFullBox = StoragePackingPlanner.canPack(false,
+                        Math.addExact(looseItems, partialItems), 0, stackSize)
+                        && hasCompanionStock();
+            }
+            plan = CachePackingBatchPlan.calculate(policy, looseItems, partialItems,
                     keeper == null ? 0 : insideCount(keeper.box()), stackSize, looseDeficit,
                     fullBoxes, existingBoxSpace, existingBoxSpace == 0);
             dev.stowling.v2.runtime.TaskTrace.event("DECISION", "cache.packBatch",
@@ -933,7 +941,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             + "; materialToPack=" + plan.materialToPack()
                             + "; boxes=" + plan.plannedBoxes()
                             + "; nextLoad=" + plan.nextLoad());
-            if (fullBoxes >= remainingBatchSlots() || plan.nextLoad() <= 0 || !cleanupAvailable()) {
+            if ((shareFullBox && fullBoxes > 0) || fullBoxes >= remainingBatchSlots()
+                    || plan.nextLoad() <= 0 || !cleanupAvailable()) {
                 prepareReservedLoose();
                 return;
             }
@@ -972,6 +981,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void prepareReservedLoose() {
+            shareFullBox = shareFullBox && fullCount() > 0;
             gather(0);
         }
 
@@ -1008,6 +1018,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             CacheSnapshot snapshot = cacheSnapshots.get(source.position());
             Map<String, Integer> wanted = new LinkedHashMap<>();
             int slots = remainingBatchSlots();
+            if (shareFullBox) slots = Math.min(slots, 1);
             for (ItemStack stack : snapshot.stacks()) {
                 if (slots == 0) break;
                 if (!MinecraftItemIdentity.isBox(stack)
@@ -1015,11 +1026,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         || (!policy.allowPartialBoxes() || existingBoxSpace > 0
                                 || isRetainedPartialSource(source, partialSources))
                                 && !MinecraftItemIdentity.full(stack)) continue;
+                String key = MinecraftItemIdentity.key(stack);
+                if (shareFullBox && !snapshot.fullBoxKeys().contains(key)) continue;
                 int amount = Math.min(stack.getCount(), slots);
-                wanted.merge(MinecraftItemIdentity.key(stack), amount, Math::addExact);
+                wanted.merge(key, amount, Math::addExact);
                 slots -= amount;
             }
-            transfer(source, inventoryFitting(wanted, snapshot), true, () -> gather(index + 1));
+            Map<String, Integer> before = shareFullBox ? owned() : Map.of();
+            transfer(source, inventoryFitting(wanted, snapshot), true, () -> {
+                Map<String, Integer> after = shareFullBox ? owned() : Map.of();
+                if (shareFullBox && wanted.keySet().stream().anyMatch(key ->
+                        after.getOrDefault(key, 0) > before.getOrDefault(key, 0))) {
+                    finishCategoryLoad();
+                } else {
+                    gather(index + 1);
+                }
+            });
         }
 
         private void gatherLoose(int index, int wanted) {
@@ -1047,24 +1069,27 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void loadCompanionCategories() {
-            if (policy.mode() == StorageMode.BOX_ONLY && remainingBatchSlots() > 0
+            if (remainingBatchSlots() > 0
                     && minecraft.player.getInventory().getNonEquipmentItems()
                     .stream().filter(ItemStack::isEmpty).count() > RESERVED_INVENTORY_SLOTS) {
                 Map<String, Set<ContainerTarget>> partialStock = companionPartialSources();
+                Set<String> looseStock = companionLooseCategories();
+                Set<String> candidates = new LinkedHashSet<>(partialStock.keySet());
+                candidates.addAll(looseStock);
                 Set<String> ordered = new LinkedHashSet<>(
-                        context.workspace().classificationItemOrder(partialStock.keySet()));
-                ordered.addAll(partialStock.keySet());
+                        context.workspace().classificationItemOrder(candidates));
+                ordered.addAll(candidates);
                 Map<String, List<ContainerTarget>> retainedByDestination = new LinkedHashMap<>();
                 for (String next : ordered) {
                     List<ContainerTarget> targets = context.workspace().classificationTargets(next);
                     if (targets.isEmpty()) continue;
                     ContainerTarget target = targets.getFirst();
                     StoragePolicy nextPolicy = target.storagePolicy();
-                    if (nextPolicy.mode() != StorageMode.BOX_ONLY) continue;
+                    if (nextPolicy.mode() == StorageMode.NORMAL) continue;
                     List<ContainerTarget> retained = retainedByDestination.computeIfAbsent(
                             nextPolicy.partialBoxDestinationRef(),
                             ignored -> partialBoxContainers(context, nextPolicy, configuration));
-                    if (partialStock.get(next).stream()
+                    if (!looseStock.contains(next) && partialStock.get(next).stream()
                             .allMatch(source -> isRetainedPartialSource(source, retained))) {
                         continue;
                     }
@@ -1076,6 +1101,30 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
             }
             gatherOtherCategories(0);
+        }
+
+        private boolean hasCompanionStock() {
+            Set<String> remaining = context.workspace().remainingCacheCategories(initialCache);
+            return cacheSnapshots.values().stream().flatMap(snapshot ->
+                    snapshot.counts().keySet().stream()).filter(key -> !ItemIdentity.isEmptyBox(key))
+                    .anyMatch(key -> isCompanionCategory(ItemIdentity.category(key), remaining));
+        }
+
+        private Set<String> companionLooseCategories() {
+            Set<String> remaining = context.workspace().remainingCacheCategories(initialCache);
+            Set<String> categories = new LinkedHashSet<>();
+            for (CacheSnapshot snapshot : cacheSnapshots.values()) {
+                snapshot.counts().keySet().stream().filter(key -> !ItemIdentity.isBox(key))
+                        .map(ItemIdentity::category)
+                        .filter(next -> isCompanionCategory(next, remaining))
+                        .forEach(categories::add);
+            }
+            return categories;
+        }
+
+        private boolean isCompanionCategory(String next, Set<String> remaining) {
+            return !preparedCategories.contains(next) && ItemIdentity.matches(next, remaining)
+                    && !next.isEmpty() && !ItemIdentity.MIXED_BOX_CATEGORY.equals(next);
         }
 
         private boolean isRetainedPartialSource(ContainerTarget source,
@@ -1092,8 +1141,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         continue;
                     }
                     String next = MinecraftItemIdentity.boxCategory(stack);
-                    if (!preparedCategories.contains(next) && ItemIdentity.matches(next, remaining)
-                            && !next.isEmpty() && !ItemIdentity.MIXED_BOX_CATEGORY.equals(next)) {
+                    if (isCompanionCategory(next, remaining)) {
                         partialStock.computeIfAbsent(next, ignored -> new LinkedHashSet<>())
                                 .add(source);
                     }

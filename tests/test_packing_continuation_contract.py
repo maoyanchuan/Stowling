@@ -123,11 +123,11 @@ def test_pure_partial_box_categories_prepare_in_the_same_withdrawal_when_space_r
     )[0]
     assert "loadCompanionCategories()" in finish
     companion = batch.split("private void loadCompanionCategories()", 1)[1].split(
-        "private Map<String, Set<ContainerTarget>> companionPartialSources()", 1
+        "private boolean hasCompanionStock()", 1
     )[0]
     assert "remainingBatchSlots() > 0" in companion
     assert "RESERVED_INVENTORY_SLOTS" in companion
-    assert "nextPolicy.mode() != StorageMode.BOX_ONLY" in companion
+    assert "nextPolicy.mode() == StorageMode.NORMAL" in companion
     assert "retainedByDestination.computeIfAbsent(" in companion
     assert "nextPolicy.partialBoxDestinationRef()," in companion
     assert "partialBoxContainers(context, nextPolicy, configuration)" in companion
@@ -137,6 +137,34 @@ def test_pure_partial_box_categories_prepare_in_the_same_withdrawal_when_space_r
     assert "!preparedCategories.contains(next)" in batch
     assert "!ItemIdentity.MIXED_BOX_CATEGORY.equals(next)" in batch
     assert "int slots = remainingBatchSlots();" in batch
+
+
+def test_large_box_categories_load_one_confirmed_full_box_before_companions() -> None:
+    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
+    round_plan = source.split("private void prepareRound()", 1)[1].split(
+        "private void returnUnusedRaw(", 1
+    )[0]
+    assert "StoragePackingPlanner.canPack(false," in round_plan
+    assert "&& hasCompanionStock()" in round_plan
+    assert "shareFullBox && fullBoxes > 0" in round_plan
+
+    gather = source.split("private void gather(int index)", 1)[1].split(
+        "private void gatherLoose(", 1
+    )[0]
+    assert "if (shareFullBox) slots = Math.min(slots, 1);" in gather
+    assert "shareFullBox && !snapshot.fullBoxKeys().contains(key)" in gather
+    assert "after.getOrDefault(key, 0) > before.getOrDefault(key, 0)" in gather
+    assert gather.index("transfer(source,") < gather.index("finishCategoryLoad();")
+
+    companions = source.split("private void loadCompanionCategories()", 1)[1].split(
+        "private boolean hasCompanionStock()", 1
+    )[0]
+    assert "candidates.addAll(looseStock);" in companions
+    assert "nextPolicy.mode() == StorageMode.NORMAL" in companions
+    assert companions.index("startCategory(retained)") < companions.index(
+        "gatherOtherCategories(0)"
+    )
 
 
 def test_partial_box_lookup_uses_resolved_settings() -> None:

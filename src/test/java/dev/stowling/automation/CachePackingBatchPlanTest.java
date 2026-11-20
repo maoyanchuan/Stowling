@@ -76,6 +76,35 @@ class CachePackingBatchPlanTest {
     }
 
     @Test
+    void mixedModeMakesOneFullBoxBeforeReservingTheLooseQuota() {
+        StoragePolicy mixed = new StoragePolicy(StorageMode.MIXED, 50, false, null);
+        int capacity = 27 * 64;
+        var first = CachePackingBatchPlan.calculate(mixed, capacity + 64, 0, 0, 64, capacity, 0);
+
+        assertEquals(capacity, first.nextLoad());
+        assertEquals(1, first.plannedBoxes());
+        assertEquals(64, first.looseReserved());
+
+        var packed = CachePackingBatchPlan.calculate(mixed, capacity, 0, 0, 64, capacity, 1);
+        assertEquals(0, packed.nextLoad());
+        assertEquals(capacity, packed.looseReserved());
+    }
+
+    @Test
+    void pureBoxModeMakesOneFullBoxEvenWhenWarehousePartialsCanAbsorbTheInput() {
+        int capacity = 27 * 16;
+        var shortLoad = CachePackingBatchPlan.calculate(BOXES, capacity - 1, 0, 0, 16, 0, 0,
+                capacity, false);
+        var fullLoad = CachePackingBatchPlan.calculate(BOXES, capacity, 0, 0, 16, 0, 0,
+                capacity, false);
+
+        assertEquals(0, shortLoad.nextLoad());
+        assertEquals(capacity - 1, shortLoad.looseReserved());
+        assertEquals(capacity, fullLoad.nextLoad());
+        assertEquals(1, fullLoad.plannedBoxes());
+    }
+
+    @Test
     void refillingLooseFromBoxesRemainsAnExplicitMixedModeOption() {
         StoragePolicy off = new StoragePolicy(StorageMode.MIXED, 50, false, null, false);
         StoragePolicy on = new StoragePolicy(StorageMode.MIXED, 50, false, null, true);

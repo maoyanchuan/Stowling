@@ -21,12 +21,15 @@ public record CachePackingBatchPlan(int looseReserved, int materialToPack, int p
         }
         int capacity = Math.multiplyExact(StoragePackingPlanner.BOX_SLOTS, stackSize);
         int total = Math.addExact(loose, partialItems);
+        if (policy.mode() == StorageMode.NORMAL) return new CachePackingBatchPlan(total, 0, 0, 0);
         int reserve = policy.mode() != StorageMode.MIXED ? 0
                 : Math.min(policy.refillLoose() ? total : loose, Math.max(0, looseDeficit));
         reserve = Math.toIntExact(Math.min((long) total,
                 (long) reserve + Math.max(0, existingBoxSpace)));
+        if (fullBoxes == 0 && total >= capacity) {
+            reserve = Math.min(reserve, total - capacity);
+        }
         int packing = Math.max(0, total - reserve);
-        if (policy.mode() == StorageMode.NORMAL) return new CachePackingBatchPlan(total, 0, 0, 0);
         boolean partial = policy.allowPartialBoxes() && finishPartial;
         int boxes = packing / capacity + (partial && packing % capacity > 0 ? 1 : 0);
         int planned = Math.min(StoragePackingPlanner.BOX_SLOTS, fullBoxes + boxes);

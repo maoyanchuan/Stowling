@@ -16,6 +16,15 @@ public final class PlayerInventoryAccount {
     private boolean collectionStarted;
     private boolean collectAll;
     private UUID collectionTask;
+    private boolean acceptsClassification = true;
+
+    public synchronized void setAcceptsClassification(boolean accepts) {
+        acceptsClassification = accepts;
+    }
+
+    synchronized boolean acceptsClassification() {
+        return acceptsClassification;
+    }
 
     public synchronized void usePickupReceipts(UUID taskId) {
         collectionTask = Objects.requireNonNull(taskId);

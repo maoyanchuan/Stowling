@@ -52,7 +52,7 @@ class DroppedItemCollectionEngineTest {
         manager.closeAccount(previous);
         inventory.set(Map.of(GOLD, 2240));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
         MutableDrops drops = new MutableDrops();
         entries(drops, item(1, GOLD, 64));
         drops.blockedItems = Set.of(GOLD);
@@ -349,6 +349,7 @@ class DroppedItemCollectionEngineTest {
             int timeoutSeconds
     ) {
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         TaskExecutionContext context = context(workspace);
         return new DroppedItemCollectionEngine(
                 context,

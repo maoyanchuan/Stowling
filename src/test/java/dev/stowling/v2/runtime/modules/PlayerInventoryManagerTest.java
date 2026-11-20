@@ -7,12 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.automation.PlayerInventoryDelta;
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.v2.config.PlayerInventoryProtectionStore;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class PlayerInventoryManagerTest {
     @Test
@@ -20,6 +24,7 @@ class PlayerInventoryManagerTest {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of("minecraft:diamond_pickaxe", 1));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
         task.recordWithdrawn("minecraft:stone", 1293);
@@ -38,6 +43,7 @@ class PlayerInventoryManagerTest {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of("minecraft:stone", 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
         PlayerInventoryAccount other = manager.account(UUID.randomUUID());
@@ -68,13 +74,14 @@ class PlayerInventoryManagerTest {
     }
 
     @Test
-    void lateDropsBetweenTasksStayOwnedWhileUnrelatedIdleGiftsRemainProtected() {
+    void lateDropsKeepTheirOwnerWhileOtherIdleGiftsWaitForClassification() {
         MutableInventory inventory = new MutableInventory();
         MutableClock clock = new MutableClock();
         String tool = "minecraft:diamond_pickaxe";
         String wood = "minecraft:oak_log";
         inventory.set(Map.of(tool, 1));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory, clock);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount collection = manager.account(UUID.randomUUID());
         collection.beginCollection(Set.of());
@@ -88,19 +95,20 @@ class PlayerInventoryManagerTest {
 
         inventory.set(Map.of(tool, 1, wood, 2240, "minecraft:iron_pickaxe", 1));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
 
         assertTrue(manager.needsRecovery());
         PlayerInventoryAccount next = manager.account(UUID.randomUUID());
+        next.setAcceptsClassification(false);
         assertEquals(2240, manager.claimUnexpected(next, Set.of()));
         assertEquals(Map.of(wood, 2240), next.managedItems());
         assertEquals(1, manager.view(false, true, Map.of()).items().stream()
                 .filter(item -> item.itemId().equals("minecraft:iron_pickaxe"))
-                .findFirst().orElseThrow().protectedCount());
+                .findFirst().orElseThrow().classificationCount());
     }
 
     @Test
-    void latePickupWindowExpiresAndDoesNotReclassifyPersonalGiftsIndefinitely() {
+    void latePickupWindowExpiresAndNewGiftsEnterTheClassificationQueue() {
         MutableInventory inventory = new MutableInventory();
         MutableClock clock = new MutableClock();
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory, clock);
@@ -117,10 +125,11 @@ class PlayerInventoryManagerTest {
         clock.now = clock.now.plusSeconds(3);
         inventory.set(Map.of("minecraft:stone", 2));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
 
-        assertFalse(manager.needsRecovery());
-        assertEquals(2, manager.view(false, true, Map.of()).items().getFirst().protectedCount());
+        assertFalse(manager.hasAbandonedAccounts());
+        assertEquals(2,
+                manager.view(false, true, Map.of()).items().getFirst().classificationCount());
     }
 
     private static final class MutableClock extends java.time.Clock {
@@ -148,8 +157,10 @@ class PlayerInventoryManagerTest {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of(disc, 2, tool, 1));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.setAcceptsClassification(false);
         task.beginCollection(Set.of(disc));
 
         inventory.set(Map.of(disc, 34, tool, 1));
@@ -190,6 +201,7 @@ class PlayerInventoryManagerTest {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of(tool, 1, disc, 2));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
         task.beginCollection(Set.of());
@@ -211,6 +223,7 @@ class PlayerInventoryManagerTest {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of(tool, 1, disc, 2));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount cleanup = manager.account(UUID.randomUUID());
         inventory.set(Map.of(tool, 1, disc, 34));
@@ -224,21 +237,22 @@ class PlayerInventoryManagerTest {
     }
 
     @Test
-    void pickaxeGivenBeforeTaskStartIsProtectedWithoutAnyManualSetting() {
+    void pickaxeGivenBeforeTaskStartWaitsForClassificationWithoutAWebLock() {
         MutableInventory inventory = new MutableInventory();
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
         manager.observe();
         inventory.set(Map.of("minecraft:diamond_pickaxe#undamaged", 1));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
+        task.setAcceptsClassification(false);
 
         assertEquals(0, manager.claimUnexpected(task, Set.of()));
         assertTrue(task.managedItems().isEmpty());
-        assertFalse(manager.needsRecovery());
+        assertTrue(manager.needsRecovery());
         var item = manager.view(false, false, Map.of()).items().getFirst();
-        assertEquals(1, item.protectedCount());
-        assertEquals(0, item.classificationCount());
+        assertEquals(0, item.protectedCount());
+        assertEquals(1, item.classificationCount());
     }
 
     @Test
@@ -247,7 +261,7 @@ class PlayerInventoryManagerTest {
         manager.observe();
         var before = manager.view(false, true, Map.of());
         manager.allocate(before.revision(), "minecraft:stone", 16);
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
         var item = manager.view(false, true, Map.of()).items().getFirst();
         assertEquals(16, item.protectedCount());
         assertEquals(48, item.classificationCount());
@@ -262,6 +276,35 @@ class PlayerInventoryManagerTest {
     }
 
     @Test
+    void onlyWebLocksSurviveRestartAndNewPickupsOfTheSameKindStayQueued(@TempDir Path directory)
+            throws IOException {
+        String slime = "minecraft:slime_ball";
+        String pickaxe = "minecraft:netherite_pickaxe";
+        var store = new PlayerInventoryProtectionStore(directory.resolve("locks.json"));
+        var inventory = new MutableInventory();
+        inventory.set(Map.of(pickaxe, 1, slime, 15));
+        var first = new PlayerInventoryManager(inventory);
+        first.configureProtection(store.load(), store::save);
+        first.observe();
+        first.reconcileUnassignedItems();
+        assertTrue(first.view(false, false, Map.of()).items().stream()
+                .allMatch(item -> item.protectedCount() == 0));
+        first.allocate(first.view(false, false, Map.of()).revision(), pickaxe, 1);
+        first.allocate(first.view(false, false, Map.of()).revision(), slime, 5);
+
+        inventory.set(Map.of(pickaxe, 1, slime, 20));
+        var restarted = new PlayerInventoryManager(inventory);
+        restarted.configureProtection(store.load(), store::save);
+        restarted.observe();
+        restarted.reconcileUnassignedItems();
+
+        var classification = restarted.account(UUID.randomUUID());
+        assertEquals(15, restarted.claimUnexpected(classification, Set.of()));
+        assertEquals(Map.of(slime, 15), classification.managedItems());
+        assertEquals(Map.of(pickaxe, 1, slime, 5), store.load().itemCounts());
+    }
+
+    @Test
     void returningPendingClassificationItemsToPersonalUseCancelsTheirRecoveryRequest() {
         PlayerInventoryManager manager = manager(Map.of("minecraft:iron_pickaxe", 1));
         manager.observe();
@@ -271,7 +314,7 @@ class PlayerInventoryManagerTest {
 
         manager.allocate(manager.view(false, false, Map.of()).revision(),
                 "minecraft:iron_pickaxe", 1);
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
 
         assertFalse(manager.needsRecovery());
         assertEquals(1, manager.view(false, false, Map.of()).items().getFirst().protectedCount());
@@ -285,6 +328,7 @@ class PlayerInventoryManagerTest {
         String identity = "minecraft:netherite_pickaxe#undamaged";
         inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, identity)));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
         manager.recordWithdrawn(task, Map.of("minecraft:moss_block", 16));
@@ -308,6 +352,7 @@ class PlayerInventoryManagerTest {
         String identity = "minecraft:diamond_pickaxe#same_enchantments";
         inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, identity)));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
         manager.observe();
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
         manager.recordWithdrawn(task, Map.of(after, 1));
@@ -324,10 +369,11 @@ class PlayerInventoryManagerTest {
     void idleProtectionDoesNotHideMissingTaskItemsByUsingPersonalStock() {
         PlayerInventoryManager manager = manager(Map.of("minecraft:stone", 16));
         manager.observe();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), "minecraft:stone", 16);
         PlayerInventoryAccount task = manager.account(UUID.randomUUID());
         manager.recordWithdrawn(task, Map.of("minecraft:stone", 8));
         manager.closeAccount(task);
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
 
         assertEquals(Map.of("minecraft:stone", 24),
                 manager.expectedInventory().orElseThrow().itemCounts());
@@ -341,7 +387,7 @@ class PlayerInventoryManagerTest {
     }
 
     @Test
-    void newPersonalGiftsDoNotEraseAbandonedReceiptsOrManualClassificationChoices() {
+    void newGiftsJoinTheQueueAndKeepAbandonedReceiptsAndManualLocks() {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of("minecraft:stone", 16));
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
@@ -351,17 +397,17 @@ class PlayerInventoryManagerTest {
         manager.closeAccount(task);
         inventory.set(Map.of("minecraft:stone", 24, "minecraft:iron_pickaxe", 1));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
         var view = manager.view(false, true, Map.of());
         manager.allocate(view.revision(), "minecraft:stone", 12);
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
 
         var recovery = manager.account(UUID.randomUUID());
-        assertEquals(12, manager.claimUnexpected(recovery, Set.of()));
+        assertEquals(12, manager.claimUnexpected(recovery, Set.of("minecraft:stone")));
         assertEquals(Map.of("minecraft:stone", 12), recovery.managedItems());
         assertEquals(1, manager.view(false, true, Map.of()).items().stream()
                 .filter(item -> item.itemId().equals("minecraft:iron_pickaxe"))
-                .findFirst().orElseThrow().protectedCount());
+                .findFirst().orElseThrow().classificationCount());
     }
 
     @Test

@@ -117,9 +117,9 @@ class GlobalPlayerInventoryTest {
 
         assertFalse(runs.busy());
         var item = runs.playerInventory().items().getFirst();
-        assertEquals(1, item.protectedCount());
+        assertEquals(0, item.protectedCount());
         assertEquals(0, item.taskCount());
-        assertEquals(0, item.classificationCount());
+        assertEquals(1, item.classificationCount());
     }
 
     @Test
@@ -140,12 +140,10 @@ class GlobalPlayerInventoryTest {
         var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
                 AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(cache),
                 List.of(zone), List.of(), List.of(), List.of(definition));
-        runs.refreshTriggers(config);
         runs.tick();
-        var before = runs.playerInventory();
-        assertTrue(before.classificationAvailable());
-
-        runs.allocatePlayerInventory(before.revision(), IRON, 2);
+        runs.allocatePlayerInventory(runs.playerInventory().revision(), IRON, 2);
+        runs.refreshTriggers(config);
+        assertTrue(runs.playerInventory().classificationAvailable());
         runs.tick();
 
         assertTrue(runs.busy());
@@ -158,7 +156,7 @@ class GlobalPlayerInventoryTest {
     }
 
     @Test
-    void idleRuntimeKeepsNewItemsInsteadOfStartingClassification() {
+    void idleRuntimeQueuesItemsWhileClassificationIsDisabled() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         TaskModuleRuntimeRegistry registry = registry(source);
         TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
@@ -184,26 +182,32 @@ class GlobalPlayerInventoryTest {
         assertEquals(Map.of(IRON, 5, GOLD, 3), registry.inventory()
                 .expectedInventory().orElseThrow().itemCounts());
         assertTrue(registry.inventory().unassignedItems().isEmpty());
+        var items = runs.playerInventory().items();
+        assertEquals(0, items.stream().mapToInt(item -> item.protectedCount()).sum());
+        assertEquals(8, items.stream().mapToInt(item -> item.classificationCount()).sum());
     }
 
     @Test
-    void giftsBetweenTasksBecomeProtectedPersonalItems() {
+    void giftsBetweenTasksAreClaimedOnceByClassification() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
         PlayerInventoryAccount collection = manager.account(UUID.randomUUID());
         manager.closeAccount(collection);
         source.set(Map.of(IRON, 5, GOLD, 3));
         manager.observe();
         PlayerInventoryAccount classification = manager.account(UUID.randomUUID());
 
-        assertEquals(0, manager.claimUnexpected(classification, Set.of()));
-        assertTrue(classification.managedItems().isEmpty());
+        assertEquals(3, manager.claimUnexpected(classification, Set.of()));
+        assertEquals(Map.of(GOLD, 3), classification.managedItems());
         assertEquals(Map.of(IRON, 5, GOLD, 3), manager.expectedInventory()
                 .orElseThrow().itemCounts());
+        assertEquals(0, manager.claimUnexpected(classification, Set.of()));
+        classification.confirmDeposit("collected", Map.of(GOLD, 3), Map.of());
         source.set(Map.of(IRON, 5));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
         manager.closeAccount(classification);
 
         assertFalse(manager.needsRecovery());
@@ -215,6 +219,7 @@ class GlobalPlayerInventoryTest {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
         PlayerInventoryAccount account = manager.account(UUID.randomUUID());
         source.set(Map.of(IRON, 15));
         manager.observe();
@@ -223,8 +228,8 @@ class GlobalPlayerInventoryTest {
         source.set(Map.of(IRON, 8));
         manager.observe();
 
-        assertEquals(0, manager.claimUnexpected(account, Set.of()));
-        assertTrue(account.managedItems().isEmpty());
+        assertEquals(3, manager.claimUnexpected(account, Set.of()));
+        assertEquals(Map.of(IRON, 3), account.managedItems());
         assertEquals(Map.of(IRON, 8), manager.expectedInventory().orElseThrow().itemCounts());
         assertEquals(0, manager.claimUnexpected(account, Set.of()));
     }
@@ -234,6 +239,7 @@ class GlobalPlayerInventoryTest {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
         PlayerInventoryAccount retrieval = manager.account(UUID.randomUUID());
         PlayerInventoryAccount cleanup = manager.account(UUID.randomUUID());
         source.set(Map.of(IRON, 5, GOLD, 8));
@@ -246,51 +252,11 @@ class GlobalPlayerInventoryTest {
     }
 
     @Test
-    void deliveredItemsBecomeProtectedPlayerInventory() {
-        InventorySource source = new InventorySource(Map.of(IRON, 5));
-        PlayerInventoryManager manager = new PlayerInventoryManager(source);
-        manager.observe();
-        PlayerInventoryAccount retrieval = manager.account(UUID.randomUUID());
-        manager.recordWithdrawn(retrieval, Map.of(GOLD, 8));
-        source.set(Map.of(IRON, 5, GOLD, 8));
-        manager.observe();
-
-        manager.releaseToPlayer(retrieval, Map.of(GOLD, 8));
-        manager.closeAccount(retrieval);
-        PlayerInventoryAccount cleanup = manager.account(UUID.randomUUID());
-
-        assertEquals(0, manager.claimUnexpected(cleanup, Set.of()));
-        assertEquals(Map.of(IRON, 5, GOLD, 8), manager.expectedInventory()
-                .orElseThrow().itemCounts());
-        source.set(Map.of(IRON, 5, GOLD, 10));
-        manager.observe();
-        assertEquals(0, manager.claimUnexpected(cleanup, Set.of()));
-        assertTrue(cleanup.managedItems().isEmpty());
-        assertEquals(Map.of(IRON, 5, GOLD, 10), manager.expectedInventory()
-                .orElseThrow().itemCounts());
-    }
-
-    @Test
-    void invalidDeliveryDoesNotChangeEitherLedger() {
-        InventorySource source = new InventorySource(Map.of(IRON, 5));
-        PlayerInventoryManager manager = new PlayerInventoryManager(source);
-        manager.observe();
-        PlayerInventoryAccount retrieval = manager.account(UUID.randomUUID());
-        manager.recordWithdrawn(retrieval, Map.of(GOLD, 2));
-
-        assertThrows(IllegalArgumentException.class,
-                () -> manager.releaseToPlayer(retrieval, Map.of(GOLD, 3)));
-
-        assertEquals(Map.of(GOLD, 2), retrieval.managedItems());
-        assertEquals(Map.of(IRON, 5, GOLD, 2), manager.expectedInventory()
-                .orElseThrow().itemCounts());
-    }
-
-    @Test
     void unfinishedAccountIsTransferredOnceInsteadOfBeingDiscarded() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
         PlayerInventoryAccount failed = manager.account(UUID.randomUUID());
         manager.recordWithdrawn(failed, Map.of(GOLD, 3));
         source.set(Map.of(IRON, 5, GOLD, 3));
@@ -312,7 +278,7 @@ class GlobalPlayerInventoryTest {
         manager.observe();
         source.set(Map.of(IRON, 5, GOLD, 3));
         manager.observe();
-        manager.protectUntrackedItems();
+        manager.reconcileUnassignedItems();
         manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 0);
         manager.allocate(manager.view(false, true, Map.of()).revision(), GOLD, 0);
 

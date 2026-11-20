@@ -90,6 +90,10 @@ class CollectionPointIntakeTest {
         UUID second = UUID.randomUUID();
         manager.retainCollectionTasks(Set.of(first, second));
         manager.observe();
+        for (var entry : PERSONAL.entrySet()) {
+            manager.allocate(manager.view(false, false, Map.of()).revision(),
+                    entry.getKey(), entry.getValue());
+        }
         manager.recordPickup(first, box(0), 1);
         manager.recordPickup(second, box(0), 1);
         manager.observe();
@@ -99,21 +103,24 @@ class CollectionPointIntakeTest {
         manager.observe();
         var interrupted = manager.account(UUID.randomUUID());
         interrupted.usePickupReceipts(first);
+        interrupted.setAcceptsClassification(false);
         manager.claimForCleanup(interrupted);
         assertEquals(Map.of(box(0), 1), interrupted.managedItems());
         manager.closeAccount(interrupted);
         var resumed = manager.account(UUID.randomUUID());
         resumed.usePickupReceipts(first);
+        resumed.setAcceptsClassification(false);
         assertEquals(1, manager.claimUnexpected(resumed, Set.of()));
         assertEquals(0, manager.claimUnexpected(resumed, Set.of()));
         assertTrue(manager.hasCollectedInput(second));
         var diamond = manager.view(false, true, Map.of()).items().stream()
                 .filter(item -> item.key().equals("minecraft:diamond")).findFirst().orElseThrow();
-        assertEquals(1, diamond.protectedCount());
+        assertEquals(0, diamond.protectedCount());
+        assertEquals(1, diamond.classificationCount());
     }
 
     @Test
-    void otherDimensionsAndPositionsStayPersonal() {
+    void otherDimensionsAndPositionsWaitForClassification() {
         Warehouse warehouse = new Warehouse(0);
         warehouse.runs.receivedPickup(receipt(box(2), WORLD, 2.5));
         warehouse.runs.receivedPickup(receipt(box(3), "minecraft:the_nether", 0.5));
@@ -121,8 +128,9 @@ class CollectionPointIntakeTest {
         warehouse.backpack.put(box(3), 1);
         for (int tick = 0; tick < 60; tick++) warehouse.runs.tick();
         assertTrue(warehouse.runs.runs().isEmpty());
-        assertTrue(warehouse.runs.playerInventory().items().stream()
-                .allMatch(item -> item.count() == item.protectedCount()));
+        var items = warehouse.runs.playerInventory().items();
+        assertEquals(2, items.stream().mapToInt(item -> item.protectedCount()).sum());
+        assertEquals(2, items.stream().mapToInt(item -> item.classificationCount()).sum());
     }
 
     private static String box(int index) {
@@ -162,6 +170,10 @@ class CollectionPointIntakeTest {
                     AutoClassifyTaskFactory.tasks(task, List.of()), List.of(region), List.of(),
                     AutoClassifyTaskFactory.triggers(task, List.of()), List.of(), List.of(task)));
             registry.inventory().observe();
+            for (var entry : PERSONAL.entrySet()) {
+                registry.inventory().allocate(runs.playerInventory().revision(),
+                        entry.getKey(), entry.getValue());
+            }
         }
 
         private void untilStarted() {

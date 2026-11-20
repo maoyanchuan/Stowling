@@ -74,7 +74,6 @@ public record TaskExecutionContext(
         inventory = Objects.requireNonNull(inventory, "inventory");
         storageAutomation = Objects.requireNonNull(storageAutomation);
         inventory.register(workspace.inventoryAccount());
-        workspace.initialInventory().ifPresent(inventory::initialize);
         if (workspace.diagnostics() != null) {
             navigation = TaskTracePorts.wrap(NavigationPort.class, navigation);
             droppedItems = TaskTracePorts.wrap(
@@ -132,7 +131,14 @@ public record TaskExecutionContext(
         this(navigation, droppedItems, containerRegions, containerTransfers,
                 containerWithdrawals, containerInspections, categoryMarkerCache,
                 foodConsumption, categoryZonesPort, coordinates, regions, categoryZones,
-                workspace, new PlayerInventoryManager(droppedItems::playerInventorySnapshot));
+                workspace, standaloneInventory(droppedItems, workspace));
+    }
+
+    private static PlayerInventoryManager standaloneInventory(DroppedItemObserverPort droppedItems,
+            TaskRunWorkspace workspace) {
+        var inventory = new PlayerInventoryManager(droppedItems::playerInventorySnapshot);
+        workspace.initialInventory().ifPresent(inventory::initialize);
+        return inventory;
     }
 
     public TaskExecutionContext(

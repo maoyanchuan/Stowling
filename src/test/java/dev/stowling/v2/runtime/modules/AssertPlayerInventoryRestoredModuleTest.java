@@ -120,7 +120,7 @@ class AssertPlayerInventoryRestoredModuleTest {
     }
 
     @Test
-    void syncProtectsUntrackedGiftsInsteadOfAddingThemToTheTask() {
+    void normalTaskSyncLeavesUntrackedGiftsWaitingForClassification() {
         MutableDroppedItems dropped = new MutableDroppedItems(Map.of());
         TaskRunWorkspace workspace = workspace(Map.of());
         SyncPlayerInventoryModule module = syncModule(dropped, workspace);
@@ -131,6 +131,20 @@ class AssertPlayerInventoryRestoredModuleTest {
         assertEquals(TaskModuleState.SUCCEEDED, result.state());
         assertTrue(workspace.collectedItems().isEmpty());
         assertTrue(workspace.managedItems().isEmpty());
+    }
+
+    @Test
+    void activeClassificationSyncClaimsSlimeBallsAndKeepsTheLockedPickaxe() {
+        String pickaxe = "minecraft:netherite_pickaxe";
+        String slime = "minecraft:slime_ball";
+        MutableDroppedItems dropped = new MutableDroppedItems(Map.of(pickaxe, 1));
+        TaskRunWorkspace workspace = workspace(dropped.counts());
+        workspace.inventoryAccount().setAcceptsClassification(true);
+        SyncPlayerInventoryModule module = syncModule(dropped, workspace);
+        dropped.set(Map.of(pickaxe, 1, slime, 174));
+
+        assertEquals(TaskModuleState.SUCCEEDED, module.start().state());
+        assertEquals(Map.of(slime, 174), workspace.collectedItems());
     }
 
     @Test
@@ -259,6 +273,7 @@ class AssertPlayerInventoryRestoredModuleTest {
     ) {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         workspace.captureInitialInventory(counts);
+        workspace.inventoryAccount().setAcceptsClassification(false);
         return workspace;
     }
 

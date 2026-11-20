@@ -44,7 +44,7 @@ final class AssertPlayerInventoryRestoredModule
         if (latePickups > 0) {
             return TaskModuleResult.failed("结束核对时仍有刚拾取的任务物品，交给收尾存入指定位置");
         }
-        context.inventory().protectUntrackedItems();
+        context.inventory().reconcileUnassignedItems();
         PlayerInventorySnapshot expected = context.inventory().expectedInventory().orElseThrow();
         PlayerInventorySnapshot current = observed.orElseThrow().snapshot();
         if (expected.itemCounts().equals(current.itemCounts())) {

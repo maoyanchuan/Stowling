@@ -27,6 +27,7 @@ public final class MinecraftDroppedItemObserver
         implements DroppedItemObserverPort {
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private LocalPlayer inventoryPlayer;
     private volatile Map<String, String> itemNames = Map.of();
 
     public MinecraftDroppedItemObserver(
@@ -148,7 +149,13 @@ public final class MinecraftDroppedItemObserver
         }
         LocalPlayer player = minecraft.player;
         if (player == null || player.isRemoved()) {
+            inventoryPlayer = null;
             return Optional.empty();
+        }
+        if (player != inventoryPlayer) {
+            // Avoid reconciling persisted locks against the empty inventory during login.
+            if (player.inventoryMenu.getStateId() == 0) return Optional.empty();
+            inventoryPlayer = player;
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, String> pickaxes = new LinkedHashMap<>();

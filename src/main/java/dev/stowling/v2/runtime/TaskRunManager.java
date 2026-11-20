@@ -252,7 +252,7 @@ public final class TaskRunManager {
     public synchronized void tick() {
         ticks++;
         boolean inventoryAvailable = registry.inventory().observe().isPresent();
-        if (inventoryAvailable && active == null) registry.inventory().protectUntrackedItems();
+        if (inventoryAvailable && active == null) registry.inventory().reconcileUnassignedItems();
         triggers.tick();
         if (inventoryAvailable) {
             queueInventoryClassification();
@@ -434,13 +434,15 @@ public final class TaskRunManager {
                 || !registry.inventory().needsRecovery()) {
             return;
         }
+        boolean classify = registry.inventory().hasClassificationRequests()
+                && classificationAvailable();
+        if (!classify && !registry.inventory().hasAbandonedAccounts()) return;
         nextInventoryRecoveryTick = ticks + BACKGROUND_REPEAT_DELAY_TICKS;
         for (AutoClassifyDefinition definition
                 : inventoryConfig.autoClassifyTasks()) {
             if (definition.enabled()
                     && (definition.classificationEnabled()
-                            || definition.collectionEnabled()
-                            && !registry.inventory().hasClassificationRequests())) {
+                            || definition.collectionEnabled() && !classify)) {
                 TaskDefinition task = knownTasks.get(definition.id());
                 if (task != null) {
                     List<TaskStep> steps = new ArrayList<>(
@@ -491,11 +493,14 @@ public final class TaskRunManager {
     }
 
     public synchronized dev.stowling.v2.control.PlayerInventoryResponse playerInventory() {
-        boolean classificationAvailable = inventoryConfig != null
+        return registry.inventory().view(active != null || !queue.isEmpty(),
+                classificationAvailable(), registry.droppedItems().playerItemNames());
+    }
+
+    private boolean classificationAvailable() {
+        return inventoryConfig != null
                 && inventoryConfig.autoClassifyTasks().stream().anyMatch(definition ->
                         definition.enabled() && definition.classificationEnabled());
-        return registry.inventory().view(active != null || !queue.isEmpty(),
-                classificationAvailable, registry.droppedItems().playerItemNames());
     }
 
     public synchronized dev.stowling.v2.control.PlayerInventoryResponse allocatePlayerInventory(
@@ -1087,7 +1092,7 @@ public final class TaskRunManager {
     }
 
     private TaskRunSnapshot startQueued(QueuedRun queued) {
-        registry.inventory().protectUntrackedItems();
+        registry.inventory().reconcileUnassignedItems();
         queue.remove(queued);
         TaskRunSnapshot running = snapshot(
                 queued,
@@ -1101,6 +1106,12 @@ public final class TaskRunManager {
         if (triggers.collectionTasks().contains(queued.prepared.task.id())) {
             workspace.inventoryAccount().usePickupReceipts(queued.prepared.task.id());
         }
+        UUID taskId = queued.prepared.task.id();
+        workspace.inventoryAccount().setAcceptsClassification(inventoryConfig != null
+                && inventoryConfig.autoClassifyTasks().stream().anyMatch(definition ->
+                        definition.enabled() && definition.classificationEnabled()
+                                && (definition.classificationTaskId().equals(taskId)
+                                || definition.id().equals(taskId))));
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
         workspace.setDiagnostics(diagnostics);
         diagnostics.append(running.runId(), "TASK", "", "RUN", "STATE", "RUNNING",

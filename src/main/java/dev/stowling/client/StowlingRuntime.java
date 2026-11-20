@@ -23,6 +23,7 @@ import dev.stowling.persistence.StowlingDatabase;
 import dev.stowling.v2.api.V2ControlServer;
 import dev.stowling.v2.cache.CategoryMarkerCacheStore;
 import dev.stowling.v2.category.CategoryRuleRegistry;
+import dev.stowling.v2.config.PlayerInventoryProtectionStore;
 import dev.stowling.v2.config.StartupConfiguration;
 import dev.stowling.v2.control.V2ControlService;
 import dev.stowling.v2.control.V2ControlServiceImpl;
@@ -114,6 +115,9 @@ public final class StowlingRuntime implements AutoCloseable {
                 ),
                 StandardTaskModuleFactories.create()
         );
+        var protection = new PlayerInventoryProtectionStore(
+                configDirectory.resolve("stowling-player-inventory.json"));
+        moduleRuntime.inventory().configureProtection(protection.load(), protection::save);
         var warehouse = new dev.stowling.client.automation.ChestTrackerInventorySource(
                 minecraft, scheduler, configs);
         moduleRuntime.setStorageAutomation(

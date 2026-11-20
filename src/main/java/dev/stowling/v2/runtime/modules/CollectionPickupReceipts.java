@@ -15,25 +15,26 @@ final class CollectionPickupReceipts {
     private static final int SLOT_SYNC_SECONDS = 5;
     private final Clock clock;
     private final List<Receipt> incoming = new ArrayList<>();
-    private final Map<String, PersonalGain> recentGains = new LinkedHashMap<>();
+    private final Map<String, QueuedGain> recentGains = new LinkedHashMap<>();
 
     CollectionPickupReceipts(Clock clock) {
         this.clock = clock;
     }
 
     interface Confirmation {
-        void record(UUID task, String key, int count);
+        void record(UUID collectionTask, String key, int count);
     }
 
-    private record Receipt(UUID task, String key, int count, Instant expires) {}
-    private record PersonalGain(int count, Instant expires) {}
+    private record Receipt(UUID collectionTask, String key, int count, Instant expires) {}
+    private record QueuedGain(int count, Instant expires) {}
 
     boolean hasPending() {
         return !incoming.isEmpty();
     }
 
     int pendingCount(UUID task) {
-        return incoming.stream().filter(receipt -> receipt.task().equals(task))
+        if (task == null) return 0;
+        return incoming.stream().filter(receipt -> task.equals(receipt.collectionTask()))
                 .mapToInt(Receipt::count).sum();
     }
 
@@ -41,29 +42,30 @@ final class CollectionPickupReceipts {
         incoming.add(new Receipt(task, key, count, clock.instant().plusSeconds(SLOT_SYNC_SECONDS)));
     }
 
-    void retain(Set<UUID> enabled) {
-        incoming.removeIf(receipt -> !enabled.contains(receipt.task()));
-        if (enabled.isEmpty()) recentGains.clear();
+    void retain(Set<UUID> collectionTasks) {
+        incoming.removeIf(receipt -> !collectionTasks.contains(receipt.collectionTask()));
+        if (collectionTasks.isEmpty()) recentGains.clear();
     }
 
-    void forgetPersonalGain(String key) {
+    void forgetQueuedGain(String key) {
         recentGains.remove(key);
     }
 
-    void automaticReservation(String key, int change, Instant now) {
+    void automaticQueueChange(String key, int change, Instant now) {
         if (change == 0) return;
-        PersonalGain prior = recentGains.get(key);
+        QueuedGain prior = recentGains.get(key);
         int count = change + (prior == null ? 0 : prior.count());
         if (count <= 0) recentGains.remove(key);
-        else recentGains.put(key, new PersonalGain(count,
+        else recentGains.put(key, new QueuedGain(count,
                 change > 0 ? now.plusSeconds(SLOT_SYNC_SECONDS) : prior.expires()));
     }
 
-    void expirePersonalGains(Instant now) {
+    void expireQueuedGains(Instant now) {
         recentGains.values().removeIf(gain -> now.isAfter(gain.expires()));
     }
 
-    void settle(PlayerInventoryDelta difference, Map<String, Integer> kept, Confirmation confirm) {
+    void settle(PlayerInventoryDelta difference, Map<String, Integer> queued,
+            Confirmation confirm) {
         Map<String, Integer> free = new LinkedHashMap<>(difference.added());
         Instant now = clock.instant();
         var iterator = incoming.listIterator();
@@ -73,28 +75,27 @@ final class CollectionPickupReceipts {
             int available = free.getOrDefault(key, 0);
             int matched = Math.min(receipt.count(), available);
             free.put(key, available - matched);
-            matched += releasePersonalGain(key, receipt.count() - matched,
-                    difference.removed().getOrDefault(key, 0), kept, now);
-            if (matched > 0) confirm.record(receipt.task(), key, matched);
+            matched += releaseQueuedGain(key, receipt.count() - matched,
+                    difference.removed().getOrDefault(key, 0), queued, now);
+            if (matched > 0) confirm.record(receipt.collectionTask(), key, matched);
             if (matched == receipt.count() || now.isAfter(receipt.expires())) iterator.remove();
-            else if (matched > 0) iterator.set(new Receipt(receipt.task(), key,
+            else if (matched > 0) iterator.set(new Receipt(receipt.collectionTask(), key,
                     receipt.count() - matched, receipt.expires()));
         }
     }
 
-    // Only the automatic increase can be reclassified. Opening stock and manual allocations
-    // remain personal even if a packet for the same exact key precedes its slot update.
-    private int releasePersonalGain(String key, int requested, int missing,
-            Map<String, Integer> kept, Instant now) {
-        PersonalGain gain = recentGains.get(key);
+    // A late receipt can claim only a recent automatic increase in the classification queue.
+    private int releaseQueuedGain(String key, int requested, int missing,
+            Map<String, Integer> queued, Instant now) {
+        QueuedGain gain = recentGains.get(key);
         if (requested == 0 || gain == null || now.isAfter(gain.expires())) return 0;
-        int reserved = kept.getOrDefault(key, 0);
-        int count = Math.min(requested, Math.min(gain.count(), reserved) - missing);
+        int waiting = queued.getOrDefault(key, 0);
+        int count = Math.min(requested, Math.min(gain.count(), waiting - missing));
         if (count <= 0) return 0;
-        if (reserved == count) kept.remove(key);
-        else kept.put(key, reserved - count);
+        if (waiting == count) queued.remove(key);
+        else queued.put(key, waiting - count);
         if (gain.count() == count) recentGains.remove(key);
-        else recentGains.put(key, new PersonalGain(gain.count() - count, gain.expires()));
+        else recentGains.put(key, new QueuedGain(gain.count() - count, gain.expires()));
         return count;
     }
 }

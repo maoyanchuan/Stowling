@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime;
 
 import dev.stowling.automation.NavigationPort;
+import dev.stowling.automation.PickupReceipt;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AutoClassifyDefinition;
@@ -90,6 +91,11 @@ public final class TaskRunManager {
                     @Override
                     public boolean taskPending(UUID taskId) {
                         return isTaskPending(taskId);
+                    }
+
+                    @Override
+                    public boolean hasCollectedInput(UUID taskId) {
+                        return registry.inventory().hasCollectedInput(taskId);
                     }
 
                     @Override
@@ -412,6 +418,14 @@ public final class TaskRunManager {
         knownTriggers = List.copyOf(config.triggers());
         knownTasks = indexKnownTasks(config.tasks(), knownTriggers);
         triggers.refresh(config);
+        registry.inventory().retainCollectionTasks(triggers.collectionTasks());
+    }
+
+    public synchronized void receivedPickup(PickupReceipt receipt) {
+        UUID task = triggers.collectionOwner(receipt);
+        if (task != null) {
+            registry.inventory().recordPickup(task, receipt.itemId(), receipt.count());
+        }
     }
 
     private void recoverUnassignedInventory() {
@@ -663,8 +677,7 @@ public final class TaskRunManager {
             registry.inventory().observe();
             if (!registry.storageAutomation().hasTemporaryResources(
                     active.workspace.inventoryAccount().ownerId())) {
-                registry.inventory().claimUnprotectedItems(active.workspace.inventoryAccount());
-                registry.inventory().claimUnexpected(active.workspace.inventoryAccount(), Set.of());
+                registry.inventory().claimForCleanup(active.workspace.inventoryAccount());
             }
         }
         TaskDefinition cleanup = active.prepared.interruptionTask;
@@ -1085,6 +1098,9 @@ public final class TaskRunManager {
         );
         TaskRunWorkspace workspace = queued.continuation == null ? new TaskRunWorkspace(
                 registry.inventory().account(running.runId())) : queued.continuation.workspace;
+        if (triggers.collectionTasks().contains(queued.prepared.task.id())) {
+            workspace.inventoryAccount().usePickupReceipts(queued.prepared.task.id());
+        }
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
         workspace.setDiagnostics(diagnostics);
         diagnostics.append(running.runId(), "TASK", "", "RUN", "STATE", "RUNNING",

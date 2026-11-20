@@ -15,6 +15,15 @@ public final class PlayerInventoryAccount {
     private final Set<String> collectedItemIds = new java.util.LinkedHashSet<>();
     private boolean collectionStarted;
     private boolean collectAll;
+    private UUID collectionTask;
+
+    public synchronized void usePickupReceipts(UUID taskId) {
+        collectionTask = Objects.requireNonNull(taskId);
+    }
+
+    synchronized UUID collectionTask() {
+        return collectionTask;
+    }
 
     public PlayerInventoryAccount(UUID ownerId) {
         this.ownerId = Objects.requireNonNull(ownerId, "ownerId");
@@ -59,7 +68,7 @@ public final class PlayerInventoryAccount {
     public synchronized void recordCollected(String itemId, int count) {
         add(collected, itemId, count);
         add(managed, itemId, count);
-        collectedItemIds.add(itemId);
+        if (collectionTask == null) collectedItemIds.add(itemId);
     }
 
     public synchronized void recordWithdrawn(String itemId, int count) {

@@ -36,7 +36,6 @@ final class SyncPlayerInventoryModule implements TaskModuleExecutor {
         PlayerInventorySnapshot current = observed.snapshot();
         int recorded = manager.claimUnexpected(context.workspace().inventoryAccount(), itemFilter);
         PlayerInventorySnapshot expected = manager.expectedInventory().orElseThrow();
-        context.workspace().observeInventory(current.itemCounts());
         if (recorded > 0 || context.workspace().hasManagedItems()) {
             return TaskModuleResult.succeeded(
                     "全局背包有待处理物品，交给当前任务处理"

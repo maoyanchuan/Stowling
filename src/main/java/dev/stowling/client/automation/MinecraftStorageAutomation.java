@@ -2482,8 +2482,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void depositAll(int index) {
             context.inventory().observe();
-            context.inventory().claimUnprotectedItems(context.workspace().inventoryAccount());
-            context.inventory().claimUnexpected(context.workspace().inventoryAccount(), Set.of());
+            context.inventory().claimForCleanup(context.workspace().inventoryAccount());
             if (owned().isEmpty()) {
                 return;
             }

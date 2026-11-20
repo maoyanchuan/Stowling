@@ -29,7 +29,6 @@ final class DroppedItemCollectionEngine {
     private final PlayerInventoryManager inventory;
     private final Clock clock;
     private Instant lastProgressAt;
-    private PlayerInventorySnapshot startInventory;
     private PlayerInventorySnapshot currentInventory;
     private DroppedItem current;
     private boolean navigationStarted;
@@ -37,8 +36,8 @@ final class DroppedItemCollectionEngine {
     private boolean stopping;
     private boolean pickupConfirmed;
     private boolean drainChecked;
-    private boolean claimedExistingReceipts;
     private int stableTicks;
+    private int fullTicks;
     private Set<DroppedItem> observedDrops = Set.of();
 
     DroppedItemCollectionEngine(
@@ -94,19 +93,30 @@ final class DroppedItemCollectionEngine {
             return TaskModuleResult.failed("无法创建任务前背包快照");
         }
         recordInventoryObservation(observation);
-        recordCollectedFromSnapshot();
+        PlayerInventoryAccount account = context.workspace().inventoryAccount();
+        int pending = inventory.pendingPickupCount(account);
         List<DroppedItem> available = drops.stream().filter(source::canPickUp).toList();
         dev.stowling.v2.runtime.TaskTrace.event("DECISION", "pickup.capacity",
                 "entities=" + drops.size() + "; pickable=" + available.size()
+                        + "; pendingReceipts=" + pending
                         + "; carried=" + context.workspace().collectedItems()
                         + "; current=" + (current == null ? "none" : current.itemId()));
         if (!drops.isEmpty() && available.isEmpty()) {
             context.navigation().cancel();
             current = null;
-            return context.workspace().collectedItems().isEmpty()
-                    ? TaskModuleResult.failed("背包空间不足，没有可先存入缓存的任务物品，请腾出空间")
-                    : TaskModuleResult.succeeded("背包已满，先将本批物品存入缓存后继续拾取");
+            if (!context.workspace().collectedItems().isEmpty()) {
+                return TaskModuleResult.succeeded("背包已满，先将本批物品存入缓存后继续拾取");
+            }
+            if (account.collectionTask() != null) {
+                if (pending > 0 || ++fullTicks <= INVENTORY_SETTLE_TICKS) {
+                    return TaskModuleResult.waiting("背包已满，正在核对收集点拾取回执");
+                }
+                return TaskModuleResult.failed("背包已满，未认领到可存入缓存的投料；"
+                        + "可在背包管理中分配已有物品或腾出空间");
+            }
+            return TaskModuleResult.failed("背包空间不足，没有可先存入缓存的任务物品，请腾出空间");
         }
+        fullTicks = 0;
         if (timedOut()) {
             return TaskModuleResult.failed("拾取掉落物超时");
         }
@@ -125,7 +135,7 @@ final class DroppedItemCollectionEngine {
         arrivedAtCurrent = false;
         pickupConfirmed = false;
         resetStableConfirmation();
-        return tick();
+        return continueCurrent(drops);
     }
 
     void requestStop() {
@@ -152,11 +162,9 @@ final class DroppedItemCollectionEngine {
                 .orElse(null);
         if (observation != null) {
             recordInventoryObservation(observation);
-            recordCollectedFromSnapshot();
         }
         if (current == null || pickupConfirmed || !arrivedAtCurrent
                 || !source.canPickUp(current)) {
-            recordCollectedFromSnapshot();
             current = null;
             return TaskModuleResult.succeeded("拾取已停止");
         }
@@ -166,7 +174,6 @@ final class DroppedItemCollectionEngine {
                 .findFirst()
                 .orElse(null);
         if (observed == null) {
-            recordCollectedFromSnapshot();
             current = null;
             return TaskModuleResult.succeeded("最后一次拾取已记账");
         }
@@ -230,15 +237,14 @@ final class DroppedItemCollectionEngine {
             PlayerInventoryManager.Observation observation
     ) {
         PlayerInventorySnapshot snapshot = observation.snapshot();
-        if (startInventory == null) {
-            startInventory = snapshot;
-            context.workspace().captureInitialInventory(
-                    startInventory.itemCounts()
-            );
+        PlayerInventoryAccount account = context.workspace().inventoryAccount();
+        if (currentInventory == null) {
+            context.workspace().captureInitialInventory(snapshot.itemCounts());
+            inventory.claimUnexpected(account, itemFilter);
             currentInventory = snapshot;
-            context.workspace().observeInventory(snapshot.itemCounts());
             return;
         }
+        inventory.claimCollectionItems(account, itemFilter);
         if (snapshot.equals(currentInventory)) {
             return;
         }
@@ -260,23 +266,7 @@ final class DroppedItemCollectionEngine {
             drainChecked = true;
             return TaskModuleResult.running("再次确认拾取区域为空");
         }
-        recordCollectedFromSnapshot();
         return TaskModuleResult.succeeded("掉落物已拾取完毕");
-    }
-
-    private void recordCollectedFromSnapshot() {
-        if (startInventory == null || currentInventory == null) {
-            return;
-        }
-        if (!claimedExistingReceipts) {
-            inventory.claimUnexpected(context.workspace().inventoryAccount(), itemFilter);
-            claimedExistingReceipts = true;
-        } else {
-            inventory.claimCollectionItems(context.workspace().inventoryAccount(), itemFilter);
-        }
-        context.workspace().observeInventory(
-                currentInventory.itemCounts()
-        );
     }
 
     private void resetStableConfirmation() {

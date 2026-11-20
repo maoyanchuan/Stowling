@@ -5,6 +5,7 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.FoodStatus;
 import dev.stowling.automation.NavigationPort;
+import dev.stowling.automation.PickupReceipt;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
@@ -19,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 final class TaskTriggerManager {
@@ -33,6 +35,10 @@ final class TaskTriggerManager {
 
         boolean taskPending(UUID taskId);
 
+        default boolean hasCollectedInput(UUID taskId) {
+            return false;
+        }
+
         default boolean isRecoveryDrop(DroppedItem item) {
             return false;
         }
@@ -43,6 +49,7 @@ final class TaskTriggerManager {
     private final NavigationPort navigation;
     private final Host host;
     private final Map<UUID, TriggerRuntime> triggers = new LinkedHashMap<>();
+    private final Map<UUID, UUID> collectionTriggers = new LinkedHashMap<>();
     private long ticks;
 
     TaskTriggerManager(
@@ -65,6 +72,10 @@ final class TaskTriggerManager {
 
     void refresh(AppConfig config) {
         Objects.requireNonNull(config, "config");
+        collectionTriggers.clear();
+        config.autoClassifyTasks().stream()
+                .filter(task -> task.enabled() && task.collectionEnabled())
+                .forEach(task -> collectionTriggers.put(task.collectionTriggerId(), task.id()));
         Map<UUID, CoordinatePoint> coordinates = new LinkedHashMap<>();
         for (CoordinatePoint point : config.coordinates()) {
             coordinates.put(point.id(), point);
@@ -113,6 +124,36 @@ final class TaskTriggerManager {
                 existing.configuration = replacement;
             }
         }
+    }
+
+    Set<UUID> collectionTasks() {
+        return Set.copyOf(collectionTriggers.values());
+    }
+
+    UUID collectionOwner(PickupReceipt receipt) {
+        if (collectionTriggers.isEmpty() || host.isRecoveryDrop(receipt.drop())) return null;
+        TriggerConfiguration owner = null;
+        for (UUID triggerId : collectionTriggers.keySet()) {
+            TriggerRuntime runtime = triggers.get(triggerId);
+            if (runtime == null) continue;
+            TriggerConfiguration candidate = runtime.configuration;
+            TaskTriggerDefinition trigger = candidate.trigger;
+            CoordinatePoint point = candidate.coordinate;
+            if (trigger.type() != TaskTriggerType.DROPPED_ITEMS || point == null
+                    || point.dimension() != null && !point.dimension().equals(receipt.dimension())
+                    || !trigger.matches(receipt.itemId())
+                    || !receipt.within(point.x() + 0.5, point.y() + 0.5, point.z() + 0.5,
+                            pickupRadius(candidate))) continue;
+            if (owner == null || trigger.priority().preempts(owner.trigger.priority())) {
+                owner = candidate;
+            }
+        }
+        return owner == null ? null : owner.target.id();
+    }
+
+    private static int pickupRadius(TriggerConfiguration config) {
+        if (config.trigger.radius() != null) return config.trigger.radius();
+        return config.coordinate.radius() == null ? DEFAULT_RADIUS : config.coordinate.radius();
     }
 
     void tick() {
@@ -311,12 +352,9 @@ final class TaskTriggerManager {
                 coordinate.y(),
                 coordinate.z()
         );
-        int radius = coordinate.radius() == null
-                ? DEFAULT_RADIUS
-                : coordinate.radius();
-        if (trigger.radius() != null) {
-            radius = trigger.radius();
-        }
+        if (collectionTriggers.containsKey(trigger.id())
+                && host.hasCollectedInput(trigger.targetTaskId())) return ConditionResult.hit();
+        int radius = pickupRadius(runtime.configuration);
         List<DroppedItem> matches = droppedItems.observe(center, radius)
                 .stream()
                 .filter(item -> !host.isRecoveryDrop(item))

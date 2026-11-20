@@ -50,7 +50,6 @@ public final class TaskRunWorkspace {
     private Map<BlockPosition, Map<String, Integer>> cacheInventory = Map.of();
     private UUID containerScanRegionId;
     private PlayerInventorySnapshot initialInventory;
-    private PlayerInventorySnapshot lastInventory;
     private Map<UUID, Map<BlockPosition, Set<String>>> markerCache = Map.of();
     private ContainerTarget selectedContainer;
     private ContainerTarget selectedStorageTarget;
@@ -109,22 +108,11 @@ public final class TaskRunWorkspace {
     ) {
         if (initialInventory == null) {
             initialInventory = new PlayerInventorySnapshot(itemCounts);
-            lastInventory = initialInventory;
         }
     }
 
     public synchronized Optional<PlayerInventorySnapshot> initialInventory() {
         return Optional.ofNullable(initialInventory);
-    }
-
-    public synchronized Optional<PlayerInventorySnapshot> lastInventory() {
-        return Optional.ofNullable(lastInventory);
-    }
-
-    public synchronized void observeInventory(
-            Map<String, Integer> itemCounts
-    ) {
-        lastInventory = new PlayerInventorySnapshot(itemCounts);
     }
 
     public synchronized void removeCollected(String itemId, int count) {

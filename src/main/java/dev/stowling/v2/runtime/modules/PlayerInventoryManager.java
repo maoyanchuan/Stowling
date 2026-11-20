@@ -4,6 +4,7 @@ import dev.stowling.automation.PlayerInventoryDelta;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.v2.control.PlayerInventoryResponse;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -21,6 +22,10 @@ public final class PlayerInventoryManager {
     private final Source source;
     private Optional<PlayerInventorySnapshot> previous = Optional.empty();
     private final Map<UUID, PlayerInventoryAccount> accounts = new LinkedHashMap<>();
+    // Confirmed inputs belong to a collection point even between runs of its task.
+    private final Map<UUID, PlayerInventoryAccount> inputs = new LinkedHashMap<>();
+    private final CollectionPickupReceipts receipts;
+    private Set<UUID> collectionTasks = Set.of();
     private PlayerInventorySnapshot protectedInventory;
     private final Set<UUID> abandonedAccounts = new LinkedHashSet<>();
     private final Map<String, Integer> classificationItems = new LinkedHashMap<>();
@@ -37,6 +42,7 @@ public final class PlayerInventoryManager {
     PlayerInventoryManager(Source source, java.time.Clock clock) {
         this.source = Objects.requireNonNull(source, "source");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.receipts = new CollectionPickupReceipts(clock);
     }
 
     public synchronized Optional<Observation> observe() {
@@ -44,7 +50,10 @@ public final class PlayerInventoryManager {
         if (observed.isEmpty()) {
             dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.observe",
                     "available=false");
-            if (available) revision++;
+            if (available) {
+                clearCollectionInputs();
+                revision++;
+            }
             available = false;
             return Optional.empty();
         }
@@ -59,6 +68,7 @@ public final class PlayerInventoryManager {
                 .map(prior -> PlayerInventoryDelta.between(prior, current))
                 .orElseGet(() -> new PlayerInventoryDelta(Map.of(), Map.of()));
         previous = Optional.of(current);
+        settlePickupReceipts();
         dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.observe",
                 "available=true; actual=" + current.itemCounts() + "; added=" + delta.added()
                         + "; removed=" + delta.removed() + "; expected="
@@ -72,10 +82,68 @@ public final class PlayerInventoryManager {
         previous = Optional.empty();
         protectedInventory = null;
         accounts.clear();
+        clearCollectionInputs();
         abandonedAccounts.clear();
         classificationItems.clear();
         available = false;
         revision++;
+    }
+
+    /** Called by the local player's pickup packet before its entity is removed. */
+    public synchronized void recordPickup(UUID task, String key, int count) {
+        if (count <= 0) throw new IllegalArgumentException("pickup count must be positive");
+        if (!collectionTasks.contains(task)) return;
+        if (previous.isEmpty() && observe().isEmpty()) return;
+        receipts.receive(task, key, count);
+    }
+
+    public synchronized boolean hasCollectedInput(UUID task) {
+        PlayerInventoryAccount input = inputs.get(task);
+        return input != null && !input.managedItems().isEmpty();
+    }
+
+    synchronized int pendingPickupCount(PlayerInventoryAccount account) {
+        return receipts.pendingCount(account.collectionTask());
+    }
+
+    public synchronized void retainCollectionTasks(Set<UUID> enabled) {
+        collectionTasks = Set.copyOf(enabled);
+        receipts.retain(enabled);
+        inputs.entrySet().removeIf(entry -> {
+            if (enabled.contains(entry.getKey())) return false;
+            PlayerInventoryAccount input = entry.getValue();
+            if (available) {
+                reconcileMissingItems(input);
+                releaseToPlayer(input, input.managedItems());
+            }
+            accounts.remove(input.ownerId());
+            revision++;
+            return true;
+        });
+    }
+
+    private void clearCollectionInputs() {
+        inputs.values().forEach(input -> accounts.remove(input.ownerId()));
+        inputs.clear();
+        receipts.retain(Set.of());
+    }
+
+    private void settlePickupReceipts() {
+        if (!receipts.hasPending()) return;
+        var delta = PlayerInventoryDelta.between(expectedInventory().orElseThrow(),
+                previous.orElseThrow());
+        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
+        receipts.settle(delta, kept, (task, key, count) -> {
+            inputFor(task).recordManagedAcquired(key, count);
+            revision++;
+        });
+        if (!kept.equals(protectedInventory.itemCounts())) {
+            protectedInventory = protectedSnapshot(kept, previous.orElseThrow());
+        }
+    }
+
+    private PlayerInventoryAccount inputFor(UUID task) {
+        return inputs.computeIfAbsent(task, ignored -> account(UUID.randomUUID()));
     }
 
     private void reconcilePickaxeWear(PlayerInventorySnapshot observed) {
@@ -185,15 +253,7 @@ public final class PlayerInventoryManager {
         protectUntrackedItems();
         for (UUID owner : Set.copyOf(abandonedAccounts)) {
             PlayerInventoryAccount abandoned = accounts.get(owner);
-            for (Map.Entry<String, Integer> entry : abandoned.managedItems().entrySet()) {
-                if (!TaskModuleSupport.itemMatches(entry.getKey(), itemFilter)) {
-                    continue;
-                }
-                account.recordCollected(entry.getKey(), entry.getValue());
-                abandoned.confirmDeposit("managed", Map.of(entry.getKey(), entry.getValue()),
-                        Map.of());
-                claimed = Math.addExact(claimed, entry.getValue());
-            }
+            claimed += transferToCollection(abandoned, account, itemFilter);
             if (abandoned.managedItems().isEmpty()) {
                 abandonedAccounts.remove(owner);
                 accounts.remove(owner);
@@ -216,13 +276,48 @@ public final class PlayerInventoryManager {
             PlayerInventoryAccount account,
             Set<String> itemFilter
     ) {
+        if (account.collectionTask() != null) {
+            PlayerInventoryAccount input = inputs.get(account.collectionTask());
+            if (input == null) return 0;
+            reconcileMissingItems(input);
+            int claimed = transferToCollection(input, account, itemFilter);
+            if (input.managedItems().isEmpty()) {
+                accounts.remove(input.ownerId());
+                inputs.remove(account.collectionTask());
+            }
+            if (claimed > 0) {
+                revision++;
+                dev.stowling.v2.runtime.TaskTrace.event("INVENTORY", "inventory.claim",
+                        "来源=收集点拾取回执；认领=" + claimed);
+            }
+            return claimed;
+        }
         return claimUnassigned(account, key -> account.acceptsCollectionItem(key)
                 && TaskModuleSupport.itemMatches(key, itemFilter));
     }
 
+    private static int transferToCollection(PlayerInventoryAccount from, PlayerInventoryAccount to,
+            Set<String> filter) {
+        int claimed = 0;
+        for (var entry : from.managedItems().entrySet()) {
+            if (!TaskModuleSupport.itemMatches(entry.getKey(), filter)) continue;
+            int count = entry.getValue();
+            to.recordCollected(entry.getKey(), count);
+            from.confirmDeposit("managed", Map.of(entry.getKey(), count), Map.of());
+            claimed += count;
+        }
+        return claimed;
+    }
+
     /** Used after in-flight operations finish, when cleanup must store all unprotected items. */
     public synchronized int claimUnprotectedItems(PlayerInventoryAccount account) {
+        if (account.collectionTask() != null) return claimCollectionItems(account, Set.of());
         return claimUnassigned(account, key -> true);
+    }
+
+    public synchronized void claimForCleanup(PlayerInventoryAccount account) {
+        if (account.collectionTask() == null) claimUnprotectedItems(account);
+        claimUnexpected(account, Set.of());
     }
 
     private int claimUnassigned(PlayerInventoryAccount account,
@@ -251,6 +346,8 @@ public final class PlayerInventoryManager {
         Map<String, Integer> actual = previous.orElseThrow().itemCounts();
         Map<String, Integer> before = protectedInventory == null
                 ? Map.of() : protectedInventory.itemCounts();
+        Instant now = clock.instant();
+        receipts.expirePersonalGains(now);
         Set<String> keys = new LinkedHashSet<>(actual.keySet());
         keys.addAll(before.keySet());
         keys.addAll(classificationItems.keySet());
@@ -266,6 +363,9 @@ public final class PlayerInventoryManager {
             else classificationItems.remove(key);
             int kept = Math.max(reserved, count - owned - queued);
             if (kept > 0) protectedItems.put(key, kept);
+            if (!collectionTasks.isEmpty()) {
+                receipts.automaticReservation(key, kept - before.getOrDefault(key, 0), now);
+            }
         }
         PlayerInventorySnapshot next = protectedSnapshot(protectedItems, previous.orElseThrow());
         if (!next.equals(protectedInventory) || !queuedBefore.equals(classificationItems)) revision++;
@@ -325,6 +425,7 @@ public final class PlayerInventoryManager {
         if (keepCount < 0 || keepCount > free) {
             throw new IllegalArgumentException("保留数量必须在 0 与可分配数量之间");
         }
+        receipts.forgetPersonalGain(key);
         Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
         if (keepCount > 0) kept.put(key, keepCount);
         else kept.remove(key);
@@ -342,7 +443,19 @@ public final class PlayerInventoryManager {
     }
 
     public synchronized void closeAccount(PlayerInventoryAccount account) {
-        if (account.collecting() && !account.collectedItemIds().isEmpty()) {
+        UUID task = account.collectionTask();
+        if (task != null && collectionTasks.contains(task)) {
+            Map<String, Integer> managed = account.managedItems();
+            account.itemsForSource("collected").forEach((key, count) -> {
+                int remaining = Math.min(count, managed.getOrDefault(key, 0));
+                if (remaining > 0) {
+                    inputFor(task).recordManagedAcquired(key, remaining);
+                    account.confirmDeposit("collected", Map.of(key, remaining), Map.of());
+                }
+            });
+        }
+        if (task == null && account.collecting()
+                && !account.collectedItemIds().isEmpty()) {
             lateCollection = account;
             lateCollectionUntil = clock.instant().plusSeconds(2);
         }

@@ -32,7 +32,9 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         this.targetReference = targetReference(step);
         this.target = target(context, targetReference);
         this.itemSource = itemSource(step);
-        if ("collected".equals(itemSource) && context.workspace().inventoryAccount().collecting()) {
+        PlayerInventoryAccount account = context.workspace().inventoryAccount();
+        if ("collected".equals(itemSource) && account.collecting()
+                && account.collectionTask() == null) {
             if (context.inventory().observe().isEmpty()) {
                 throw new IllegalStateException("无法读取缓存存入前的真实背包");
             }

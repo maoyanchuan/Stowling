@@ -11,6 +11,7 @@ import dev.stowling.client.automation.MinecraftContainerWithdrawalPort;
 import dev.stowling.client.automation.ClientThreadNavigationPort;
 import dev.stowling.client.automation.MinecraftDroppedItemObserver;
 import dev.stowling.client.automation.MinecraftFoodConsumptionPort;
+import dev.stowling.client.automation.MinecraftInventoryPickups;
 import dev.stowling.client.interaction.BaritoneAutomationNavigation;
 import dev.stowling.client.interaction.MinecraftClientActionScheduler;
 import dev.stowling.client.interaction.MinecraftWorldObserver;
@@ -142,6 +143,7 @@ public final class StowlingRuntime implements AutoCloseable {
                 "Stowling movement runtime started on loopback port {}",
                 port
         );
+        MinecraftInventoryPickups.setCollectionListener(taskRuns::receivedPickup);
         return runtime;
     }
 
@@ -153,6 +155,7 @@ public final class StowlingRuntime implements AutoCloseable {
 
     @Override
     public void close() {
+        MinecraftInventoryPickups.setCollectionListener(null);
         if (taskRuns != null) {
             taskRuns.cancelAll();
         }

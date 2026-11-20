@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonParser;
-import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
@@ -74,8 +73,7 @@ class ConfigStoreTest {
                 original.detectionCoordinateRef());
         var automatic = new AutoClassifyDefinition(original.id(), original.name(), false,
                 true, true, original.detectionCoordinateRef(), 8, original.cacheRegionRef(),
-                List.of(new AutoClassifyAreaDefinition(originalArea.categoryZoneRef(),
-                        originalArea.ruleId(), originalArea.markerSources(), policy)),
+                List.of(new AutoClassifyAreaDefinition(originalArea.categoryZoneRef(), policy)),
                 TaskPriority.NORMAL);
         var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
                 AutoClassifyTaskFactory.tasks(automatic, List.of()), initial.regions(),
@@ -142,6 +140,51 @@ class ConfigStoreTest {
     }
 
     @Test
+    void migratesTaskRecognitionToLayoutWithoutChangingBindingsOrStoragePolicy() throws Exception {
+        AppConfig original = automaticConfiguration(false);
+        Path path = directory.resolve("legacy-recognition.json");
+        var store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), original);
+        var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        json.addProperty("schemaVersion", 14);
+        var area = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
+        area.addProperty("ruleId", "MARKER_CONTAINER_CONTENTS");
+        var sources = new com.google.gson.JsonArray();
+        sources.add("CONTAINER_CONTENTS");
+        area.add("markerSources", sources);
+        var binding = json.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                .getAsJsonArray("bindings").get(0).getAsJsonObject();
+        area.add("storagePolicy", binding.get("storagePolicy").deepCopy());
+        var branch = json.getAsJsonArray("tasks").get(1).getAsJsonObject()
+                .getAsJsonArray("steps").get(1).getAsJsonObject().getAsJsonArray("steps");
+        for (int index = 0; index < 3; index++) branch.remove(0);
+        var parameters = branch.get(0).getAsJsonObject().getAsJsonObject("parameters");
+        parameters.addProperty("categoryRuleId", "MARKER_CONTAINER_CONTENTS");
+        parameters.addProperty("markerSources", "CONTAINER_CONTENTS");
+        Files.writeString(path, json.toString());
+
+        var loaded = new ConfigStore(path).loadOrReset();
+        assertEquals(original.categoryZones(), loaded.config().categoryZones());
+        assertEquals(original.categoryZones().getFirst().bindings().getFirst().storagePolicy(),
+                loaded.config().autoClassifyTasks().getFirst().classificationAreas()
+                        .getFirst().storagePolicy());
+        assertEquals(original.tasks().getFirst(), loaded.config().tasks().getFirst());
+        var steps = loaded.config().tasks().get(1).steps().get(1).steps();
+        assertEquals("SCAN_CATEGORY_MARKERS", steps.getFirst().moduleId());
+        assertTrue(steps.stream().allMatch(step ->
+                !step.parameters().containsKey("categoryRuleId")
+                        && !step.parameters().containsKey("markerSources")));
+        assertEquals(loaded.config(), dev.stowling.v2.model.TaskFlowNormalizer
+                .normalize(loaded.config()));
+        store.save(loaded.revision(), loaded.config());
+        var savedArea = JsonParser.parseString(Files.readString(path)).getAsJsonObject()
+                .getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
+        assertEquals(java.util.Set.of("categoryZoneRef", "storagePolicy"), savedArea.keySet());
+    }
+
+    @Test
     void acceptsAutomaticTasksSavedBeforeOverflowWasAdded() throws Exception {
         Path path = directory.resolve("legacy-auto.json");
         ConfigStore store = new ConfigStore(path);
@@ -178,8 +221,7 @@ class ConfigStoreTest {
         var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Storage", List.of(binding));
         var definition = new AutoClassifyDefinition(UUID.randomUUID(), "Automatic",
                 false, true, true, "coordinate:" + point.id(), 8, "region:" + region.id(),
-                List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id(),
-                        "DIRECT_BLOCK_ID", List.of(CategoryMarkerSource.PLACED_ITEM))),
+                List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id())),
                 TaskPriority.NORMAL, overflowEnabled);
         return new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
                 AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(region),

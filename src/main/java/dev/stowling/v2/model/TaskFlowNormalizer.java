@@ -38,6 +38,7 @@ public final class TaskFlowNormalizer {
         List<TaskDefinition> baseTasks = config.tasks().stream()
                 .map(TaskFlowNormalizer::normalizeTask)
                 .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
+                .map(task -> inheritLayoutRecognition(task, autoClassifications.get(task.id())))
                 .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
                 .map(task -> autoCleanupPolicy(task, config.autoClassifyTasks()))
                 .toList();
@@ -145,6 +146,30 @@ public final class TaskFlowNormalizer {
                 config.taskFolders(),
                 config.autoClassifyTasks()
         );
+    }
+
+    private static TaskDefinition inheritLayoutRecognition(
+            TaskDefinition task,
+            AutoClassifyDefinition definition
+    ) {
+        if (definition == null || !hasTaskRecognitionOverrides(task.steps())) {
+            return task;
+        }
+        List<TaskStep> steps = AutoClassifyTaskFactory.tasks(definition, List.of())
+                .get(1).steps();
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                remapStepIds(steps, definition.derivedId("layout-recognition")),
+                task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy());
+    }
+
+    private static boolean hasTaskRecognitionOverrides(List<TaskStep> steps) {
+        return steps.stream().anyMatch(step ->
+                step.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID)
+                        || step.parameters().containsKey(ConfigValidator.MARKER_SOURCES)
+                        || hasTaskRecognitionOverrides(step.steps())
+                        || hasTaskRecognitionOverrides(step.otherwise()));
     }
 
     private static TaskDefinition upgradeAutoClassification(

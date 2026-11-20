@@ -157,7 +157,7 @@ public final class ConfigStore {
             return;
         }
         int version = value.getAsInt();
-        if (version >= 7 && version <= 13) {
+        if (version >= 7 && version <= 14) {
             if (version <= 11) {
                 if (!root.has("autoClassifyTasks")) {
                     root.add("autoClassifyTasks", new JsonArray());
@@ -167,7 +167,25 @@ public final class ConfigStore {
                 removeAutoClassifyClassificationTriggers(root);
             }
             migrateCategoryZoneExpansionTemplates(root);
+            removeAutoClassifyRecognition(root);
             root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
+        }
+    }
+
+    private static void removeAutoClassifyRecognition(JsonObject root) {
+        JsonElement tasks = root.get("autoClassifyTasks");
+        if (tasks == null || !tasks.isJsonArray()) {
+            return;
+        }
+        for (JsonElement task : tasks.getAsJsonArray()) {
+            JsonElement areas = task.getAsJsonObject().get("classificationAreas");
+            if (areas == null || !areas.isJsonArray()) {
+                continue;
+            }
+            for (JsonElement area : areas.getAsJsonArray()) {
+                area.getAsJsonObject().remove("ruleId");
+                area.getAsJsonObject().remove("markerSources");
+            }
         }
     }
 
@@ -494,11 +512,8 @@ public final class ConfigStore {
             JsonObject area = requireObject(item, "classification area");
             requireFields(area, Set.of(
                     "categoryZoneRef",
-                    "ruleId",
-                    "markerSources",
                     "storagePolicy"
-            ), Set.of("categoryZoneRef", "ruleId", "markerSources"));
-            requireStringArray(area.get("markerSources"), "markerSources");
+            ), Set.of("categoryZoneRef"));
         }
     }
 

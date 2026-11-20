@@ -76,10 +76,8 @@ final class MarkerContainerScanAction {
                 marker.bindingIds().add(binding.id());
             }
         }
-        if (cache.isEmpty()) {
-            return Plan.failure(markerSources == null
-                    ? "分类区没有使用“分类标记容器内容”规则"
-                    : "分类区没有可扫描的分类标记容器");
+        if (cache.isEmpty() && markerSources != null) {
+            return Plan.failure("分类区没有可扫描的分类标记容器");
         }
         return new Plan(
                 copyCache(cache),

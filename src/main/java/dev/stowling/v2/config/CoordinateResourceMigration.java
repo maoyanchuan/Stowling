@@ -41,7 +41,6 @@ public final class CoordinateResourceMigration {
                         definition.detectionCoordinateRef(), definition.pickupRadius(),
                         definition.cacheRegionRef(), definition.classificationAreas().stream()
                                 .map(area -> new AutoClassifyAreaDefinition(area.categoryZoneRef(),
-                                        area.ruleId(), area.markerSources(),
                                         area.storagePolicy() != null ? area.storagePolicy()
                                                 : config.categoryZones().stream().filter(zone ->
                                                         area.categoryZoneRef().equals(

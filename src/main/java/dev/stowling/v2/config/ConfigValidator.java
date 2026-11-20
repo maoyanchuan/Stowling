@@ -4,7 +4,6 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
-import dev.stowling.v2.category.DirectBlockIdCategoryRule;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
@@ -272,7 +271,6 @@ public final class ConfigValidator {
                 throw new V2ValidationException("不可堆叠储存区不存在");
             }
             Set<UUID> selectedZones = new HashSet<>();
-            CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
             for (AutoClassifyAreaDefinition area
                     : definition.classificationAreas()) {
                 requirePartialDestination(area.storagePolicy(), coordinates, regions);
@@ -292,8 +290,6 @@ public final class ConfigValidator {
                             "auto classify zones must be unique"
                     );
                 }
-                rules.require(area.ruleId());
-                requireSupportedSources(area);
             }
             requireAutoTask(
                     tasks,
@@ -331,29 +327,6 @@ public final class ConfigValidator {
                         "auto classify task triggers do not match enabled phases"
                 );
             }
-        }
-    }
-
-    private static void requireSupportedSources(
-            AutoClassifyAreaDefinition area
-    ) {
-        boolean hasContainerSource = area.markerSources().contains(
-                CategoryMarkerSource.CONTAINER_CONTENTS
-        );
-        boolean hasDisplaySource = area.markerSources().stream().anyMatch(
-                source -> source != CategoryMarkerSource.CONTAINER_CONTENTS
-        );
-        if (ContainerContentsCategoryRule.ID.equals(area.ruleId())
-                && (!hasContainerSource || hasDisplaySource)) {
-            throw new V2ValidationException(
-                    "container rule requires only container marker source"
-            );
-        }
-        if (DirectBlockIdCategoryRule.ID.equals(area.ruleId())
-                && (!hasDisplaySource || hasContainerSource)) {
-            throw new V2ValidationException(
-                    "direct rule requires only display marker sources"
-            );
         }
     }
 

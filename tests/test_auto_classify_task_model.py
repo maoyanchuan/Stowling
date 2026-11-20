@@ -108,13 +108,6 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "cacheRegionId": "",
         "classificationAreas": [{
             "categoryZoneId": "",
-            "ruleId": "DIRECT_BLOCK_ID",
-            "markerSources": [
-                "PLACED_ITEM",
-                "ITEM_FRAME",
-                "SHELF",
-                "FLOWER_POT",
-            ],
         }],
         "collectionPriority": "NORMAL",
         "enabled": False,
@@ -172,13 +165,9 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
             "storagePolicy": None,
-            "ruleId": "DIRECT_BLOCK_ID",
-            "markerSources": ["SHELF", "PLACED_ITEM"],
         }, {
             "categoryZoneId": "storage-zone",
             "storagePolicy": None,
-            "ruleId": "CONTAINER_CONTENTS",
-            "markerSources": ["CONTAINER_CONTENTS"],
         }],
         "collectionPriority": "URGENT",
         "enabled": True,
@@ -225,8 +214,6 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "classificationAreas": [{
             "categoryZoneId": "",
             "storagePolicy": None,
-            "ruleId": "DIRECT_BLOCK_ID",
-            "markerSources": ["SHELF"],
         }],
         "collectionPriority": "NORMAL",
         "enabled": False,
@@ -321,13 +308,9 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
             "storagePolicy": None,
-            "ruleId": "DIRECT_BLOCK_ID",
-            "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }, {
             "categoryZoneRef": "category-zone:zone-2",
             "storagePolicy": None,
-            "ruleId": "CONTAINER_CONTENTS",
-            "markerSources": ["CONTAINER_CONTENTS"],
         }],
         "collectionPriority": "URGENT",
     }
@@ -356,13 +339,9 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
             "storagePolicy": None,
-            "ruleId": "DIRECT_BLOCK_ID",
-            "markerSources": ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
         }, {
             "categoryZoneId": "zone-2",
             "storagePolicy": None,
-            "ruleId": "CONTAINER_CONTENTS",
-            "markerSources": ["CONTAINER_CONTENTS"],
         }],
         "collectionPriority": "URGENT",
         "enabled": False,
@@ -374,7 +353,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
 
 
 
-def test_marker_sources_reject_empty_or_unknown_legacy_values() -> None:
+def test_legacy_recognition_is_discarded_without_requiring_category_rules() -> None:
     result = _run(
         """
         (() => {
@@ -382,77 +361,40 @@ def test_marker_sources_reject_empty_or_unknown_legacy_values() -> None:
             const resources = {
                 coordinates: [{ id: "coordinate-1" }],
                 regions: [{ id: "region-1" }],
-                categoryZones: [{
-                    id: "zone-1",
-                    bindings: [{
-                        id: "binding-1",
-                        ruleId: "DIRECT_BLOCK_ID",
-                    }],
-                }],
-                categoryRules: [
-                    { id: "DIRECT_BLOCK_ID", name: "展示物精确匹配" },
-                    { id: "CONTAINER_CONTENTS", name: "标记箱内容" },
-                ],
+                categoryZones: [{ id: "zone-1" }],
             };
-            const area = {
-                categoryZoneId: "zone-1",
-                ruleId: "DIRECT_BLOCK_ID",
-                markerSources: ["PLACED_ITEM", "ITEM_FRAME", "SHELF"],
-            };
-            const base = {
-                id: "",
-                name: "自动分类",
+            const draft = {
+                ...model.newDraft([]),
                 coordinateId: "coordinate-1",
-                pickupRadius: "8",
                 cacheRegionId: "region-1",
-                classificationAreas: [area],
-                collectionPriority: "NORMAL",
-                enabled: false,
-                collectionEnabled: true,
-                classificationEnabled: true,
+                classificationAreas: [{
+                    categoryZoneId: "zone-1",
+                    ruleId: "UNKNOWN_LEGACY_RULE",
+                    markerSources: ["UNKNOWN_SOURCE"],
+                }],
             };
-            const payloadError = (markerSources) => {
-                try {
-                    model.payload({
-                        ...base,
-                        classificationAreas: [{ ...area, markerSources }],
-                    }, resources, []);
-                    return "";
-                } catch (error) {
-                    return `${error.name}:${error.message}`;
-                }
-            };
+            const body = model.payload(draft, resources, []);
             return {
-                all: model.validateDraft(base, resources, []),
-                one: model.validateDraft({
-                    ...base,
-                    classificationAreas: [{ ...area, markerSources: ["SHELF"] }],
-                }, resources, []),
-                empty: model.validateDraft({
-                    ...base,
-                    classificationAreas: [{ ...area, markerSources: [] }],
-                }, resources, []),
-                unknown: model.validateDraft({
-                    ...base,
+                errors: model.validateDraft(draft, resources, []),
+                areas: body.classificationAreas,
+                restored: model.draftFromTask({
+                    ...body,
                     classificationAreas: [{
-                        ...area,
-                        markerSources: ["ITEM_FRAME", "UNKNOWN_SOURCE"],
+                        ...body.classificationAreas[0],
+                        ruleId: "MARKER_CONTAINER_CONTENTS",
+                        markerSources: ["CONTAINER_CONTENTS"],
                     }],
-                }, resources, []),
-                emptyPayload: payloadError([]),
-                unknownPayload: payloadError(["UNKNOWN_SOURCE"]),
+                }).classificationAreas,
             };
         })()
         """
     )
 
-    assert result["all"] == []
-    assert result["one"] == []
-    assert result["empty"] == ["每个分类选区都需至少选择一种识别方式"]
-    assert result["unknown"] == ["分类物识别方式包含未知选项"]
-    assert "每个分类选区都需至少选择一种识别方式" in result["emptyPayload"]
-    assert "分类物识别方式包含未知选项" in result["unknownPayload"]
-    assert "RangeError" in result["unknownPayload"]
+    assert result == {
+        "errors": [],
+        "areas": [{"categoryZoneRef": "category-zone:zone-1", "storagePolicy": None}],
+        "restored": [{"categoryZoneId": "zone-1", "storagePolicy": None}],
+    }
 
 
 def test_deleted_resource_references_are_reported_per_resource() -> None:
@@ -752,7 +694,7 @@ def test_phase_enable_flags_are_strict_and_round_trip() -> None:
     assert result["roundTrip"]["classificationEnabled"] is True
 
 
-def test_classification_areas_require_unique_bindings_and_compatible_rules() -> None:
+def test_classification_areas_reject_duplicate_zones() -> None:
     result = _run(
         """
         (() => {
@@ -760,67 +702,19 @@ def test_classification_areas_require_unique_bindings_and_compatible_rules() -> 
             const resources = {
                 coordinates: [{ id: "coordinate-1" }],
                 regions: [{ id: "region-1" }],
-                categoryZones: [{
-                    id: "zone-1",
-                    bindings: [
-                        { id: "binding-1", ruleId: "DIRECT_BLOCK_ID" },
-                        { id: "binding-2", ruleId: "CONTAINER_CONTENTS" },
-                    ],
-                }],
-                categoryRules: [
-                    { id: "DIRECT_BLOCK_ID" },
-                    { id: "CONTAINER_CONTENTS" },
-                ],
+                categoryZones: [{ id: "zone-1" }],
             };
-            const base = {
-                id: "",
-                name: "多选区",
+            return model.validateDraft({
+                ...model.newDraft([]),
                 coordinateId: "coordinate-1",
-                pickupRadius: "8",
                 cacheRegionId: "region-1",
-                classificationAreas: [{
-                    categoryZoneId: "zone-1",
-                    ruleId: "DIRECT_BLOCK_ID",
-                    markerSources: ["PLACED_ITEM"],
-                }],
-                collectionPriority: "NORMAL",
-                enabled: false,
-                collectionEnabled: true,
-                classificationEnabled: true,
-            };
-            return {
-                duplicate: model.validateDraft({
-                    ...base,
-                    classificationAreas: [
-                        ...base.classificationAreas,
-                        { ...base.classificationAreas[0] },
-                    ],
-                }, resources, []),
-                incompatible: model.validateDraft({
-                    ...base,
-                    classificationAreas: [{
-                        categoryZoneId: "zone-1",
-                        ruleId: "CONTAINER_CONTENTS",
-                        markerSources: ["PLACED_ITEM"],
-                    }],
-                }, resources, []),
-                defaults: {
-                    direct: model.defaultMarkerSources("DIRECT_BLOCK_ID"),
-                    container: model.defaultMarkerSources("CONTAINER_CONTENTS"),
-                },
-            };
+                classificationAreas: [
+                    { categoryZoneId: "zone-1" },
+                    { categoryZoneId: "zone-1" },
+                ],
+            }, resources, []);
         })()
         """
     )
 
-    assert result["duplicate"] == ["同一个分类选区不能重复添加"]
-    assert result["incompatible"] == ["分类物识别方式配置无效"]
-    assert result["defaults"]["direct"] == [
-        "PLACED_ITEM",
-        "ITEM_FRAME",
-        "SHELF",
-        "FLOWER_POT",
-    ]
-    assert result["defaults"]["container"] == ["CONTAINER_CONTENTS"]
-
-
+    assert result == ["同一个分类选区不能重复添加"]

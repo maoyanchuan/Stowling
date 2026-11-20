@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.ArrayList;
 import java.util.List;
@@ -253,7 +252,7 @@ class AutoClassifyTaskFactoryTest {
         );
         assertEquals(TaskStepKind.IF, classification.steps().get(1).kind());
         assertEquals(
-                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES,
+                ConfigValidator.SCAN_CATEGORY_MARKERS,
                 classification.steps().get(1).steps().getFirst().moduleId()
         );
     }
@@ -272,20 +271,8 @@ class AutoClassifyTaskFactoryTest {
     }
 
     @Test
-    void allSourcesScanCacheBeforeRefreshingMarkersInsideHasContainersBranch() {
-        AutoClassifyDefinition definition = definition(
-                false,
-                true,
-                true,
-                List.of(
-                        CategoryMarkerSource.PLACED_ITEM,
-                        CategoryMarkerSource.ITEM_FRAME,
-                        CategoryMarkerSource.SHELF,
-                        CategoryMarkerSource.FLOWER_POT,
-                        CategoryMarkerSource.CONTAINER_CONTENTS
-                ),
-                "MARKER_CONTAINER_CONTENTS"
-        );
+    void scansCacheBeforeRefreshingLayoutMarkersInsideHasContainersBranch() {
+        AutoClassifyDefinition definition = definition(false);
 
         TaskDefinition classification = AutoClassifyTaskFactory.tasks(
                 definition,
@@ -329,10 +316,10 @@ class AutoClassifyTaskFactoryTest {
         );
         TaskStep resolve = classify.get(3);
         assertEquals(ConfigValidator.RESOLVE_CONTAINER_CATEGORIES, resolve.moduleId());
-        assertEquals(
-                markerScan.parameters().get(ConfigValidator.MARKER_SOURCES),
-                resolve.parameters().get(ConfigValidator.MARKER_SOURCES)
-        );
+        assertFalse(markerScan.parameters().containsKey(ConfigValidator.MARKER_SOURCES));
+        assertFalse(markerScan.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID));
+        assertFalse(resolve.parameters().containsKey(ConfigValidator.MARKER_SOURCES));
+        assertFalse(resolve.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID));
     }
 
     @Test
@@ -395,16 +382,8 @@ class AutoClassifyTaskFactoryTest {
         String firstZoneRef = "category-zone:" + UUID.randomUUID();
         String secondZoneRef = "category-zone:" + UUID.randomUUID();
         AutoClassifyDefinition definition = definition(List.of(
-                new AutoClassifyAreaDefinition(
-                        firstZoneRef,
-                        "DIRECT_BLOCK_ID",
-                        List.of(CategoryMarkerSource.PLACED_ITEM)
-                ),
-                new AutoClassifyAreaDefinition(
-                        secondZoneRef,
-                        "MARKER_CONTAINER_CONTENTS",
-                        List.of(CategoryMarkerSource.CONTAINER_CONTENTS)
-                )
+                new AutoClassifyAreaDefinition(firstZoneRef),
+                new AutoClassifyAreaDefinition(secondZoneRef)
         ));
 
         TaskDefinition classification = AutoClassifyTaskFactory.tasks(
@@ -431,32 +410,20 @@ class AutoClassifyTaskFactoryTest {
                         ConfigValidator.CATEGORY_ZONE_REF
                 )
         );
-        assertEquals(
-                "DIRECT_BLOCK_ID",
-                firstResolve.parameters().get(
-                        ConfigValidator.CATEGORY_RULE_ID
-                )
-        );
+        assertFalse(firstResolve.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID));
         assertEquals(
                 secondZoneRef,
                 secondResolve.parameters().get(
                         ConfigValidator.CATEGORY_ZONE_REF
                 )
         );
-        assertEquals(
-                "MARKER_CONTAINER_CONTENTS",
-                secondResolve.parameters().get(
-                        ConfigValidator.CATEGORY_RULE_ID
-                )
-        );
-        assertEquals(
-                "PLACED_ITEM,ITEM_FRAME,SHELF,FLOWER_POT",
-                firstResolve.parameters().get(ConfigValidator.MARKER_SOURCES)
-        );
+        assertFalse(secondResolve.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID));
+        assertFalse(firstResolve.parameters().containsKey(ConfigValidator.MARKER_SOURCES));
+        assertFalse(secondResolve.parameters().containsKey(ConfigValidator.MARKER_SOURCES));
     }
 
     private static AutoClassifyDefinition definition(boolean enabled) {
-        return definition(enabled, List.of(CategoryMarkerSource.PLACED_ITEM));
+        return definition(enabled, true, true);
     }
 
     private static AutoClassifyDefinition definition(
@@ -464,56 +431,9 @@ class AutoClassifyTaskFactoryTest {
             boolean collectionEnabled,
             boolean classificationEnabled
     ) {
-        return definition(
-                enabled,
-                collectionEnabled,
-                classificationEnabled,
-                List.of(CategoryMarkerSource.PLACED_ITEM)
-        );
-    }
-
-    private static AutoClassifyDefinition definition(
-            boolean enabled,
-            List<CategoryMarkerSource> markerSources
-    ) {
-        return definition(
-                enabled,
-                true,
-                true,
-                markerSources,
-                "DIRECT_BLOCK_ID"
-        );
-    }
-
-    private static AutoClassifyDefinition definition(
-            boolean enabled,
-            boolean collectionEnabled,
-            boolean classificationEnabled,
-            List<CategoryMarkerSource> markerSources
-    ) {
-        return definition(
-                enabled,
-                collectionEnabled,
-                classificationEnabled,
-                markerSources,
-                "DIRECT_BLOCK_ID"
-        );
-    }
-
-    private static AutoClassifyDefinition definition(
-            boolean enabled,
-            boolean collectionEnabled,
-            boolean classificationEnabled,
-            List<CategoryMarkerSource> markerSources,
-            String ruleId
-    ) {
         String zoneRef = "category-zone:" + UUID.randomUUID();
         return definition(
-                List.of(new AutoClassifyAreaDefinition(
-                        zoneRef,
-                        ruleId,
-                        markerSources
-                )),
+                List.of(new AutoClassifyAreaDefinition(zoneRef)),
                 enabled,
                 collectionEnabled,
                 classificationEnabled

@@ -71,6 +71,10 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         Map<BlockPosition, Set<String>> markerContents = new LinkedHashMap<>();
         if (requiresContainerContents()) {
             for (CategoryBindingDefinition binding : zone.bindings()) {
+                if (markerSources == null && !ContainerContentsCategoryRule.ID.equals(
+                        binding.ruleId())) {
+                    continue;
+                }
                 Map<BlockPosition, Set<String>> cached = context
                         .categoryMarkerCache()
                         .contents(binding.id())

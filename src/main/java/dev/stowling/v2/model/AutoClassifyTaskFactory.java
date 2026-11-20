@@ -1,7 +1,5 @@
 package dev.stowling.v2.model;
 
-import dev.stowling.v2.category.CategoryMarkerSource;
-import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -68,28 +66,10 @@ public final class AutoClassifyTaskFactory {
         }
         List<TaskStep> classificationSteps = new ArrayList<>();
         for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
-            String markerSources = markerSources(
-                    ContainerContentsCategoryRule.ID.equals(area.ruleId())
-                            ? List.of(CategoryMarkerSource.CONTAINER_CONTENTS)
-                            : CategoryMarkerSource.SMART_SOURCES
-            );
             Map<String, String> scan = new LinkedHashMap<>();
-            scan.put(ConfigValidator.MARKER_SOURCES, markerSources);
-            scan.put(ConfigValidator.CATEGORY_RULE_ID, area.ruleId());
             scan.put(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true");
-            List<TaskStep> preResolveSteps = List.of();
-            if (ContainerContentsCategoryRule.ID.equals(area.ruleId())
-                    && area.markerSources().contains(
-                            CategoryMarkerSource.CONTAINER_CONTENTS
-                    )) {
-                preResolveSteps = TaskFlowTemplates.refreshMarkers(
-                        area.categoryZoneRef(),
-                        null,
-                        markerSources,
-                        null,
-                        area.ruleId()
-                );
-            }
+            List<TaskStep> preResolveSteps = TaskFlowTemplates.refreshMarkers(
+                    area.categoryZoneRef(), null);
             classificationSteps.addAll(
                     TaskFlowTemplates.sortByCategoryZone(
                             definition.cacheRegionRef(),
@@ -212,14 +192,6 @@ public final class AutoClassifyTaskFactory {
             ids.add(definition.classificationTriggerId());
         }
         return Set.copyOf(ids);
-    }
-
-    public static String markerSources(
-            Collection<CategoryMarkerSource> sources
-    ) {
-        return sources.stream()
-                .map(Enum::name)
-                .collect(java.util.stream.Collectors.joining(","));
     }
 
     public static String uniqueName(

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
@@ -65,7 +64,7 @@ class AutoClassifyAreaMigrationTest {
                         secondBindingId,
                         new AreaBounds(30, 64, 20, 34, 64, 20),
                         new AreaBounds(30, 64, 18, 34, 64, 18),
-                        "CONTAINER_CONTENTS"
+                        "MARKER_CONTAINER_CONTENTS"
                 ))
         );
         String zoneRef = ResourceReference.of(
@@ -81,11 +80,7 @@ class AutoClassifyAreaMigrationTest {
                 "coordinate:" + coordinateId,
                 8,
                 "region:" + regionId,
-                List.of(new AutoClassifyAreaDefinition(
-                        zoneRef,
-                        "DIRECT_BLOCK_ID",
-                        List.of(CategoryMarkerSource.PLACED_ITEM)
-                )),
+                List.of(new AutoClassifyAreaDefinition(zoneRef)),
                 TaskPriority.NORMAL
         );
         AppConfig config = new AppConfig(
@@ -145,14 +140,7 @@ class AutoClassifyAreaMigrationTest {
         assertEquals(AppConfig.CURRENT_SCHEMA_VERSION, store.read()
                 .config().schemaVersion());
         assertEquals(1, migrated.classificationAreas().size());
-        assertEquals(
-                "DIRECT_BLOCK_ID",
-                migrated.classificationAreas().getFirst().ruleId()
-        );
-        assertEquals(
-                CategoryMarkerSource.SMART_SOURCES,
-                migrated.classificationAreas().getFirst().markerSources()
-        );
+        assertEquals(zoneRef, migrated.classificationAreas().getFirst().categoryZoneRef());
         assertEquals(
                 List.of(definition.collectionTriggerId()),
                 store.read().config().triggers().stream()

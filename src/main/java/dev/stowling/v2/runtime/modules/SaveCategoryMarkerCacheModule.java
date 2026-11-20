@@ -39,7 +39,8 @@ final class SaveCategoryMarkerCacheModule implements TaskModuleExecutor {
                     "当前分类标记计划不属于所配置的分类区"
             );
         }
-        if (!context.workspace().allMarkerContainersRead()) {
+        if (context.workspace().markerTargetCount() > 0
+                && !context.workspace().allMarkerContainersRead()) {
             return TaskModuleResult.failed(
                     "分类标记容器尚未全部读取: "
                             + context.workspace().markerReadCount()
@@ -47,9 +48,12 @@ final class SaveCategoryMarkerCacheModule implements TaskModuleExecutor {
                             + context.workspace().markerTargetCount()
             );
         }
-        context.categoryMarkerCache().replaceBindings(
-                context.workspace().markerCache()
-        );
+        if (context.workspace().markerTargetCount() > 0
+                || !context.workspace().markerCache().isEmpty()) {
+            context.categoryMarkerCache().replaceBindings(
+                    context.workspace().markerCache()
+            );
+        }
         return TaskModuleResult.succeeded("分类标记缓存已保存");
     }
 

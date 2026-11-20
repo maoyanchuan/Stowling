@@ -14,7 +14,6 @@ import com.sun.net.httpserver.HttpServer;
 import dev.stowling.api.BearerTokenStore;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
-import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.control.AutoClassifyDetectionRequest;
 import dev.stowling.v2.control.AutoClassifyAreaRequest;
 import dev.stowling.v2.control.AutoClassifyTaskRequest;
@@ -862,12 +861,10 @@ public final class V2ControlServer implements AutoCloseable {
         List<AutoClassifyAreaRequest> result = new ArrayList<>();
         for (JsonElement value : array(json, "classificationAreas")) {
             JsonObject area = jsonObject(value, "classification area");
-            requireFieldsAny(area, Set.of("categoryZoneRef", "ruleId", "markerSources",
-                    "storagePolicy"), Set.of("categoryZoneRef", "ruleId", "markerSources"));
+            requireFieldsAny(area, Set.of("categoryZoneRef", "storagePolicy"),
+                    Set.of("categoryZoneRef"));
             result.add(new AutoClassifyAreaRequest(
                     string(area, "categoryZoneRef"),
-                    string(area, "ruleId"),
-                    markerSources(area),
                     area.has("storagePolicy") ? storagePolicy(area) : null
             ));
         }
@@ -890,23 +887,6 @@ public final class V2ControlServer implements AutoCloseable {
                 string(detection, "coordinateRef"),
                 optionalInteger(detection, "pickupRadius")
         );
-    }
-
-    private static List<CategoryMarkerSource> markerSources(JsonObject json) {
-        List<CategoryMarkerSource> result = new ArrayList<>();
-        for (String value : stringArray(json, "markerSources")) {
-            try {
-                result.add(CategoryMarkerSource.valueOf(
-                        value.trim().toUpperCase(java.util.Locale.ROOT)
-                ));
-            } catch (IllegalArgumentException exception) {
-                throw invalid("markerSources contains an unknown source");
-            }
-        }
-        if (result.isEmpty()) {
-            throw invalid("markerSources must contain at least one source");
-        }
-        return List.copyOf(result);
     }
 
     private static Set<String> autoClassifyFields(boolean revision) {

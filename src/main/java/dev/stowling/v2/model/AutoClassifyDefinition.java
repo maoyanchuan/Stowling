@@ -1,6 +1,5 @@
 package dev.stowling.v2.model;
 
-import dev.stowling.v2.category.CategoryMarkerSource;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;

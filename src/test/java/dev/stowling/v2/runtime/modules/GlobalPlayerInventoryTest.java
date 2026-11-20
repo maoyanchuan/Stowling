@@ -12,7 +12,6 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
-import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
@@ -136,8 +135,7 @@ class GlobalPlayerInventoryTest {
                         new AreaBounds(5, 64, 0, 5, 64, 0), "DIRECT_BLOCK_ID")));
         var definition = new AutoClassifyDefinition(UUID.randomUUID(), "Automatic",
                 true, false, true, "coordinate:" + point.id(), 2, "region:" + cache.id(),
-                List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id(),
-                        "DIRECT_BLOCK_ID", List.of(CategoryMarkerSource.PLACED_ITEM))),
+                List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id())),
                 TaskPriority.NORMAL);
         var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
                 AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(cache),
@@ -167,8 +165,7 @@ class GlobalPlayerInventoryTest {
         AutoClassifyDefinition definition = new AutoClassifyDefinition(
                 UUID.randomUUID(), "Recovery", true, true, false,
                 "coordinate:" + UUID.randomUUID(), 2, "region:" + UUID.randomUUID(),
-                List.of(new AutoClassifyAreaDefinition("category-zone:" + UUID.randomUUID(),
-                        "DIRECT_BLOCK_ID", List.of(CategoryMarkerSource.PLACED_ITEM))),
+                List.of(new AutoClassifyAreaDefinition("category-zone:" + UUID.randomUUID())),
                 TaskPriority.NORMAL
         );
         TaskDefinition task = new TaskDefinition(definition.id(), "Recovery", List.of(

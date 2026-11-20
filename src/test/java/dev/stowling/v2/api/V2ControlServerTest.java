@@ -38,6 +38,41 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void automaticTaskAreaUsesLayoutRecognitionWithoutTaskLevelFields() throws Exception {
+        var store = new ConfigStore(directory.resolve("layout-recognition.json"));
+        var point = new dev.stowling.v2.model.CoordinatePoint(UUID.randomUUID(), "Drops", 0, 64, 0);
+        var region = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 1);
+        var binding = new dev.stowling.v2.model.CategoryBindingDefinition(UUID.randomUUID(),
+                new dev.stowling.v2.model.AreaBounds(5, 64, 0, 5, 64, 0),
+                new dev.stowling.v2.model.AreaBounds(5, 64, 1, 5, 64, 1), "DIRECT_BLOCK_ID");
+        var zone = new dev.stowling.v2.model.CategoryZoneDefinition(UUID.randomUUID(), "Storage",
+                List.of(binding));
+        store.save(store.loadOrReset().revision(), new dev.stowling.v2.model.AppConfig(
+                dev.stowling.v2.model.AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
+                List.of(), List.of(region), List.of(zone)));
+        var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
+                List::of);
+        String body = """
+                {"name":"Automatic","enabled":false,"collectionEnabled":true,
+                "classificationEnabled":true,"detection":{"coordinateRef":"coordinate:%s",
+                "pickupRadius":8},"cacheRegionRef":"region:%s",
+                "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
+                "collectionPriority":"NORMAL"}
+                """.formatted(point.id(), region.id(), zone.id());
+        try (Fixture fixture = new Fixture(service)) {
+            assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST", body, false)
+                    .statusCode());
+            var response = fixture.send("/v1/auto-classify-tasks", "POST", body, true);
+            assertEquals(201, response.statusCode());
+            var area = object(response).getAsJsonObject("item")
+                    .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
+            assertEquals("category-zone:" + zone.id(), area.get("categoryZoneRef").getAsString());
+            assertTrue(!area.has("ruleId"));
+            assertTrue(!area.has("markerSources"));
+        }
+    }
+
+    @Test
     void detailedDiagnosticsRequireAuthenticationAndValidateTheirReadCursor() throws Exception {
         ConfigStore store = new ConfigStore(directory.resolve("diagnostics.json"));
         store.loadOrReset();

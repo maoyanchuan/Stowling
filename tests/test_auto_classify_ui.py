@@ -3,13 +3,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "main" / "resources" / "stowling-web"
-MARKER_SOURCES = (
-    "ITEM_FRAME",
-    "SHELF",
-    "PLACED_ITEM",
-    "FLOWER_POT",
-    "CONTAINER_CONTENTS",
-)
 
 
 def read(name: str) -> str:
@@ -148,38 +141,24 @@ def test_overflow_switch_is_visible_outside_both_collapsed_phase_sections() -> N
     assert form.index('id="auto-overflow-section"') < form.index('id="auto-cleanup-settings"')
 
 
-def test_recognition_uses_two_consolidated_modes_in_each_area() -> None:
-    html = read("tasks.html")
+def test_recognition_is_configured_only_in_the_storage_layout() -> None:
     javascript = read("auto-classify-ui.js")
     model = read("auto-classify-task-model.js")
-    form = between(html, 'id="auto-task-form"', "</form>")
+    layout = read("category-zones.js")
 
-    assert 'id="auto-classification-areas"' in form
-    assert 'id="add-auto-classification-area"' in form
-    assert 'name="markerSources"' not in form
-    for source in MARKER_SOURCES:
-        assert source in model
-    assert "Auto.defaultMarkerSources(" in javascript
-    assert 'new Option("智能识别", smartRuleId)' in javascript
-    assert 'new Option("标记箱/木桶", containerRuleId)' in javascript
-    assert "分类物识别方式 · 可多选" not in javascript
+    assert "分类物识别方式" not in javascript
+    assert "识别方式使用仓储布局中各分类物的设置。" in javascript
+    assert "ruleId" not in javascript
+    assert "markerSources" not in javascript
+    assert "ruleId" not in model
+    assert "markerSources" not in model
+    assert 'field("分类物识别方式", rule)' in layout
+    assert "ruleId: rule.value" in layout
     assert "classificationAreas: [newArea()]" in model
     assert "function addClassificationArea()" in javascript
     assert "function removeClassificationArea(index)" in javascript
-    assert "new Option(" in javascript
-    assert "zone.name || \"未命名分类区\"" in javascript
-    assert "option.dataset.ruleId = zone.bindings?.[0]?.ruleId" in javascript
-    assert "分类区中的范围" not in javascript
-    assert "bindingId:" not in model
-    assert "labeledControl(\"分类范围\", range)" in javascript
-    assert "labeledControl(\"分类物识别方式\", recognition)" in javascript
-    assert "labeledControl(\"分类方法\", method)" not in javascript
-    assert "自动读取展示框、展示架和摆放方块" not in javascript
-    assert "花盆内物品" in read("category-zones.js")
+    assert 'labeledControl("分类范围", range)' in javascript
     assert "elements.addArea.addEventListener" in javascript
-    assert 'value="BACKGROUND"' not in form
-    assert '<option value="NORMAL">普通</option>' in form
-    assert '<option value="URGENT">紧急</option>' in form
 
 
 def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
@@ -195,7 +174,6 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
         '"/v1/coordinates"',
         '"/v1/regions"',
         '"/v1/category-zones"',
-        '"/v1/category-rules"',
         '"/v1/tasks"',
     ):
         assert route in loading
@@ -203,7 +181,7 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
     assert "Array.isArray(coordinates.coordinates)" in loading
     assert "Array.isArray(regions.regions)" in loading
     assert "Array.isArray(zones.categoryZones)" in loading
-    assert "Array.isArray(rules.rules)" in loading
+    assert "/v1/category-rules" not in loading
     assert "Array.isArray(allTasks.tasks) ? allTasks.tasks : []" in loading
     assert "state.revision = String(tasks.revision || \"\");" in loading
 

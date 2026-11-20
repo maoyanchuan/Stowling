@@ -13,8 +13,7 @@
         resources: {
             coordinates: [],
             regions: [],
-            categoryZones: [],
-            categoryRules: []
+            categoryZones: []
         },
         draft: Auto.newDraft([]),
         ready: false,
@@ -88,14 +87,12 @@
                 coordinates,
                 regions,
                 zones,
-                rules,
                 allTasks
             ] = await Promise.all([
                 Stowling.request("/v1/auto-classify-tasks"),
                 Stowling.request("/v1/coordinates"),
                 Stowling.request("/v1/regions"),
                 Stowling.request("/v1/category-zones"),
-                Stowling.request("/v1/category-rules"),
                 Stowling.request("/v1/tasks")
             ]);
             state.revision = String(tasks.revision || "");
@@ -106,8 +103,7 @@
                 regions: Array.isArray(regions.regions) ? regions.regions : [],
                 categoryZones: Array.isArray(zones.categoryZones)
                     ? zones.categoryZones
-                    : [],
-                categoryRules: Array.isArray(rules.rules) ? rules.rules : []
+                    : []
             };
             state.ready = true;
             if (state.draft.id && !state.dirty) {
@@ -187,8 +183,6 @@
                 zone.name || "未命名分类区",
                 zone.id
             );
-            option.dataset.ruleId = zone.bindings?.[0]?.ruleId
-                || "DIRECT_BLOCK_ID";
             range.append(option);
         }
         const selectedZone = state.resources.categoryZones.find(
@@ -203,47 +197,11 @@
 
         const policy = area.storagePolicy || selectedZone?.bindings?.[0]?.storagePolicy || {};
         const storage = window.StowlingStoragePolicyEditor.create(policy, state.resources);
-        const recognition = document.createElement("select");
-        const smartRuleId = categoryRuleId(
-            ["DIRECT_BLOCK_ID"],
-            "DIRECT_BLOCK_ID"
-        );
-        const containerRuleId = categoryRuleId(
-            ["MARKER_CONTAINER_CONTENTS", "CONTAINER_CONTENTS"],
-            "MARKER_CONTAINER_CONTENTS"
-        );
-        recognition.append(
-            new Option("智能识别", smartRuleId),
-            new Option("标记箱/木桶", containerRuleId)
-        );
-        recognition.value = Auto.isContainerRuleId(area.ruleId)
-                || area.markerSources.includes("CONTAINER_CONTENTS")
-            ? containerRuleId
-            : smartRuleId;
-
-        /**
-         * @param {Event} event
-         * @returns {void}
-         */
-        function syncRange(event) {
-            if (event.target !== range) {
-                return;
-            }
-            const option = range.selectedOptions[0];
-            if (option?.dataset.ruleId) {
-                recognition.value = Auto.isContainerRuleId(
-                    option.dataset.ruleId
-                )
-                    ? containerRuleId
-                    : smartRuleId;
-            }
-        }
-
-        range.addEventListener("input", syncRange);
         const fields = Stowling.element("div", "auto-area-fields");
         fields.append(
             labeledControl("分类范围", range),
-            labeledControl("分类物识别方式", recognition),
+            Stowling.element("p", "muted compact-help",
+                "识别方式使用仓储布局中各分类物的设置。"),
             storage.root
         );
         const disclosure = window.StowlingSettings.disclosure(
@@ -269,26 +227,9 @@
             },
             read: () => ({
                 categoryZoneId: range.value,
-                storagePolicy: storage.read(),
-                ruleId: recognition.value,
-                markerSources: Auto.defaultMarkerSources(recognition.value)
+                storagePolicy: storage.read()
             })
         };
-    }
-
-    /**
-     * @param {Array<string>} preferredIds
-     * @param {string} fallback
-     * @returns {string}
-     */
-    function categoryRuleId(preferredIds, fallback) {
-        const rules = state.resources.categoryRules;
-        for (const id of preferredIds) {
-            if (rules.some((rule) => rule.id === id)) {
-                return id;
-            }
-        }
-        return fallback;
     }
 
     /**

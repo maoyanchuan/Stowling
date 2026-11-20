@@ -15,7 +15,6 @@ import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.v2.model.CoordinatePoint;
-import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CategoryZoneExpansionAxis;
 import dev.stowling.v2.model.RegionDefinition;
@@ -270,17 +269,10 @@ class V2ControlServiceImplTest {
                                 8
                         ),
                         "region:" + region.id(),
-                        List.of(new AutoClassifyAreaRequest(
-                                "category-zone:" + zone.id(),
-                                "DIRECT_BLOCK_ID",
-                                List.of(CategoryMarkerSource.PLACED_ITEM)
-                        ), new AutoClassifyAreaRequest(
-                                "category-zone:" + containerZone.id(),
-                                "CONTAINER_CONTENTS",
-                                List.of(
-                                        CategoryMarkerSource.CONTAINER_CONTENTS
-                                )
-                        )),
+                        List.of(
+                                new AutoClassifyAreaRequest("category-zone:" + zone.id()),
+                                new AutoClassifyAreaRequest("category-zone:" + containerZone.id())
+                        ),
                         TaskPriority.NORMAL,
                         true
                 )
@@ -306,11 +298,7 @@ class V2ControlServiceImplTest {
                                 8
                         ),
                         "region:" + region.id(),
-                        List.of(new AutoClassifyAreaRequest(
-                                "category-zone:" + zone.id(),
-                                "DIRECT_BLOCK_ID",
-                                List.of(CategoryMarkerSource.PLACED_ITEM)
-                        )),
+                        List.of(new AutoClassifyAreaRequest("category-zone:" + zone.id())),
                         TaskPriority.NORMAL
                 )
         );
@@ -360,13 +348,7 @@ class V2ControlServiceImplTest {
                                         8
                                 ),
                                 "region:" + region.id(),
-                                List.of(new AutoClassifyAreaRequest(
-                                        "category-zone:" + zone.id(),
-                                        "DIRECT_BLOCK_ID",
-                                        List.of(
-                                                CategoryMarkerSource.PLACED_ITEM
-                                        )
-                                )),
+                                List.of(new AutoClassifyAreaRequest("category-zone:" + zone.id())),
                                 TaskPriority.NORMAL
                         )
                 )

@@ -1339,6 +1339,92 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void displayOnlyLayoutRefreshNeedsNeitherContainerScanNorMarkerCache() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(),
+                new AreaBounds(0, 64, 0, 0, 64, 0),
+                new AreaBounds(0, 64, 1, 0, 64, 1), "DIRECT_BLOCK_ID");
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Display", List.of(binding));
+        TaskExecutionContext context = contextWithMarker(workspace, Map.of(zone.id(), zone),
+                CategoryMarkerCachePort.UNAVAILABLE);
+        var scan = new ScanCategoryMarkersModule(context, TaskStep.action(UUID.randomUUID(),
+                TaskModuleIds.SCAN_CATEGORY_MARKERS,
+                Map.of(TaskModuleIds.CATEGORY_ZONE_REF, "category-zone:" + zone.id())));
+
+        assertEquals(TaskModuleState.SUCCEEDED, scan.start().state());
+        assertEquals(0, workspace.markerTargetCount());
+        assertEquals(TaskModuleState.SUCCEEDED, new SaveCategoryMarkerCacheModule(context,
+                markerSaveStep(zone)).start().state());
+    }
+
+    @Test
+    void mixedLayoutOnlyScansAndLoadsCacheForItsContainerBinding() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        var display = new CategoryBindingDefinition(UUID.randomUUID(),
+                new AreaBounds(0, 64, 0, 0, 64, 0),
+                new AreaBounds(0, 64, 1, 0, 64, 1), "DIRECT_BLOCK_ID");
+        var container = new CategoryBindingDefinition(UUID.randomUUID(),
+                new AreaBounds(2, 64, 0, 2, 64, 0),
+                new AreaBounds(2, 64, 1, 2, 64, 1), "MARKER_CONTAINER_CONTENTS");
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Mixed",
+                List.of(display, container));
+        ContainerTarget marker = target(2, 64, 0, "marker");
+        ContainerTarget storage = target(2, 64, 1, "storage");
+        List<UUID> scanned = new ArrayList<>();
+        List<UUID> loaded = new ArrayList<>();
+        var contents = Map.of(marker.position(), Set.of("minecraft:iron_ingot"));
+        CategoryMarkerCachePort cache = new CategoryMarkerCachePort() {
+            @Override
+            public Optional<Map<BlockPosition, Set<String>>> contents(UUID bindingId) {
+                loaded.add(bindingId);
+                return container.id().equals(bindingId) ? Optional.of(contents) : Optional.empty();
+            }
+
+            @Override
+            public void replaceBindings(Map<UUID, Map<BlockPosition, Set<String>>> values) {
+                throw new AssertionError("cache is already populated");
+            }
+        };
+        CategoryZonePort resolver = new CategoryZonePort() {
+            @Override
+            public CategoryZoneResult resolve(CategoryZoneDefinition selected,
+                    Set<String> types, int volume) {
+                throw new AssertionError("marker contents must be supplied");
+            }
+
+            @Override
+            public CategoryZoneResult resolve(CategoryZoneDefinition selected,
+                    Set<String> types, int volume,
+                    Map<BlockPosition, Set<String>> markerContents) {
+                assertEquals(zone, selected);
+                assertEquals(contents, markerContents);
+                return CategoryZoneResult.success(
+                        Map.of("minecraft:iron_ingot", List.of(storage)));
+            }
+        };
+        TaskExecutionContext base = contextWithMarker(workspace, Map.of(zone.id(), zone), cache);
+        TaskExecutionContext context = new TaskExecutionContext(base.navigation(),
+                base.droppedItems(), (region, types, volume) -> {
+                    scanned.add(region.id());
+                    return ContainerScanResult.success(List.of(marker));
+                }, base.containerTransfers(), base.containerWithdrawals(),
+                base.containerInspections(), cache, base.foodConsumption(), resolver,
+                base.coordinates(), base.regions(), Map.of(zone.id(), zone), workspace);
+
+        var plan = MarkerContainerScanAction.scan(context, zone, 100);
+        assertEquals("", plan.error());
+        assertEquals(List.of(container.id()), scanned);
+        assertEquals(Set.of(container.id()), plan.cache().keySet());
+        assertEquals(1, plan.targets().size());
+        var resolve = new ResolveContainerCategoriesModule(context, TaskStep.action(
+                UUID.randomUUID(), TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
+                Map.of(TaskModuleIds.CATEGORY_ZONE_REF, "category-zone:" + zone.id(),
+                        TaskModuleIds.ALLOW_EMPTY_CONTAINER_SCAN, "true")));
+        assertEquals(TaskModuleState.SUCCEEDED, resolve.start().state());
+        assertEquals(List.of(container.id()), loaded);
+    }
+
+    @Test
     void explicitAllMarkerSourcesAllowBindingsWithoutMarkerContainers() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         CategoryZoneDefinition zone = new CategoryZoneDefinition(

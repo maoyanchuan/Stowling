@@ -311,6 +311,10 @@ public final class PlayerInventoryManager {
         abandonedAccounts.remove(account.ownerId());
     }
 
+    public synchronized Set<String> protectedItemKeys() {
+        return protectedInventory == null ? Set.of() : protectedInventory.itemCounts().keySet();
+    }
+
     public synchronized Optional<PlayerInventorySnapshot> expectedInventory() {
         if (protectedInventory == null) {
             return Optional.empty();

@@ -1,10 +1,13 @@
 package dev.stowling.client.automation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AreaBounds;
+import java.util.LinkedHashMap;
+import java.util.Set;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -61,5 +64,30 @@ class MinecraftShulkerActionTest {
         assertTrue(area.contains(box.offset(0, 0, -1)));
         assertFalse(area.contains(box.offset(2, 0, 0)));
         assertFalse(area.contains(box.offset(1, 1, 0)));
+    }
+
+    @Test
+    void miningPrefersTheLockedPickaxeEvenWhenAnotherVariantComesFirst() {
+        var pickaxes = new LinkedHashMap<Integer, String>();
+        pickaxes.put(9, "minecraft:diamond_pickaxe#stest-1");
+        pickaxes.put(36, "minecraft:diamond_pickaxe#stest-2");
+
+        assertEquals(36, MinecraftShulkerAction.selectMiningToolSlot(
+                pickaxes, Set.of("minecraft:diamond_pickaxe#stest-2")));
+    }
+
+    @Test
+    void miningFallsBackToInventoryOrderWhenNoLockedPickaxeIsPresent() {
+        var pickaxes = new LinkedHashMap<Integer, String>();
+        pickaxes.put(9, "minecraft:diamond_pickaxe");
+        pickaxes.put(36, "minecraft:iron_pickaxe");
+
+        assertEquals(9, MinecraftShulkerAction.selectMiningToolSlot(pickaxes, Set.of()));
+    }
+
+    @Test
+    void miningLeavesTheCurrentHandAloneWhenNoPickaxeIsPresent() {
+        assertEquals(-1, MinecraftShulkerAction.selectMiningToolSlot(
+                new LinkedHashMap<>(), Set.of("minecraft:diamond_pickaxe")));
     }
 }

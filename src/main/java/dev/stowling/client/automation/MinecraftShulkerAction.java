@@ -11,8 +11,10 @@ import dev.stowling.v2.runtime.modules.TaskExecutionContext;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.SequencedMap;
 import java.util.Set;
 import java.util.Comparator;
 import net.minecraft.client.Minecraft;
@@ -236,7 +238,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private TaskModuleResult prepareHand(BlockPos position) {
         selected = minecraft.player.getInventory().getSelectedSlot();
         if (place) {
-            int source = findSlot(MinecraftItemIdentity.key(resource.original), false);
+            int source = findBoxSlot(MinecraftItemIdentity.key(resource.original));
             if (source < 0) {
                 return fail("任务持有的潜影盒已不在背包中");
             }
@@ -245,7 +247,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
             if (!sameBlock(position)) {
                 return fail("登记的潜影盒已变化，停止挖掘");
             }
-            int tool = findSlot("", true);
+            int tool = findMiningToolSlot();
             if (tool >= 0) {
                 swap(tool);
             }
@@ -518,18 +520,38 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         }
     }
 
-    private int findSlot(String key, boolean tool) {
+    private int findBoxSlot(String key) {
         for (int index : MinecraftStorageAccess.slots(minecraft.player.inventoryMenu, true)) {
             Slot slot = minecraft.player.inventoryMenu.getSlot(index);
             if (slot.getContainerSlot() >= 36 || slot.getItem().isEmpty()) {
                 continue;
             }
-            if (tool ? slot.getItem().is(ItemTags.PICKAXES)
-                    : MinecraftItemIdentity.key(slot.getItem()).equals(key)) {
+            if (MinecraftItemIdentity.key(slot.getItem()).equals(key)) {
                 return index;
             }
         }
         return -1;
+    }
+
+    private int findMiningToolSlot() {
+        var menu = minecraft.player.inventoryMenu;
+        var pickaxes = new LinkedHashMap<Integer, String>();
+        for (int index : MinecraftStorageAccess.slots(menu, true)) {
+            Slot slot = menu.getSlot(index);
+            ItemStack stack = slot.getItem();
+            if (slot.getContainerSlot() < 36 && !stack.isEmpty() && stack.is(ItemTags.PICKAXES)) {
+                pickaxes.put(index, MinecraftItemIdentity.key(stack));
+            }
+        }
+        return selectMiningToolSlot(pickaxes, context.inventory().protectedItemKeys());
+    }
+
+    static int selectMiningToolSlot(SequencedMap<Integer, String> pickaxes,
+            Set<String> protectedItemKeys) {
+        for (var candidate : pickaxes.entrySet()) {
+            if (protectedItemKeys.contains(candidate.getValue())) return candidate.getKey();
+        }
+        return pickaxes.isEmpty() ? -1 : pickaxes.firstEntry().getKey();
     }
 
     private void swap(int source) {

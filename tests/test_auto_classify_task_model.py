@@ -40,6 +40,43 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_unstackable_storage_can_be_the_only_classification_area() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingAutoClassifyTaskModel;
+            const draft = {
+                ...model.newDraft(),
+                coordinateId: "pickup",
+                cacheRegionId: "cache",
+                classificationAreas: [],
+                unstackableRegionId: "storage",
+            };
+            const resources = {
+                coordinates: [{ id: "pickup" }],
+                regions: [{ id: "cache" }, { id: "storage" }],
+            };
+            const payload = model.payload(draft, resources, []);
+            return {
+                reference: payload.unstackableRegionRef,
+                areas: payload.classificationAreas,
+                restored: model.draftFromTask(payload).unstackableRegionId,
+                overlap: model.validateDraft({
+                    ...draft, unstackableRegionId: "cache",
+                }, resources, []),
+            };
+        })()
+        """
+    )
+
+    assert result == {
+        "reference": "region:storage",
+        "areas": [],
+        "restored": "storage",
+        "overlap": ["不可堆叠储存区需要使用独立区域"],
+    }
+
+
 def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
     result = _run(
         """

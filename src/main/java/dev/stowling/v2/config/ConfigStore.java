@@ -476,6 +476,7 @@ public final class ConfigStore {
         Set<String> allowed = new java.util.HashSet<>(fields);
         allowed.add("overflowEnabled");
         allowed.add("cleanupPolicy");
+        allowed.add("unstackableRegionRef");
         for (JsonElement item
                 : requireArray(value, "autoClassifyTasks")) {
             JsonObject definition = requireObject(

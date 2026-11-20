@@ -26,6 +26,7 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.automation.FoodStatus;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.WorldObservation;
@@ -55,6 +56,28 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
+    @Test
+    void unstackableSelectionAndReturnUseExactItemKeys() {
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        ContainerTarget cache = target(0, 64, 0, "cache");
+        ContainerTarget storage = target(10, 64, 0, "chest");
+        String potion = "minecraft:potion";
+        String otherPotion = potion + "#different_effect";
+        String stackablePotion = potion + "#stackable_override";
+        Set<String> eligible = Set.of(ItemIdentity.exact(potion), ItemIdentity.exact(otherPotion));
+        workspace.setUnstackableClassification(List.of(storage), Map.of(storage, eligible),
+                List.of(cache));
+        workspace.recordCacheContents(cache, Map.of(
+                stackablePotion, 2, "minecraft:shulker_box#filled@minecraft:potion", 1));
+
+        assertEquals(cache, workspace.selectNextContainer().orElseThrow());
+        assertEquals(Set.of(potion, otherPotion), workspace.mixedBoxWithdrawalItems(cache,
+                Set.of(potion, otherPotion, stackablePotion)));
+        workspace.deferReturnedCacheItems(Map.of(potion, 1), Map.of());
+        assertEquals(Set.of(otherPotion), workspace.mixedBoxWithdrawalItems(cache,
+                Set.of(potion, otherPotion, stackablePotion)));
+    }
+
     @Test
     void boxDrainsCarryTheRemainingBatchCapacityInsteadOfStartingAnotherFullBatch() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();

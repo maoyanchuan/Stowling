@@ -5,6 +5,7 @@ import dev.stowling.automation.DroppedItem;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Shared storage and cleanup actions; independent of the task that invokes them. */
@@ -39,6 +40,10 @@ public interface StorageAutomationPort {
     default TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
             List<ContainerTarget> containers) {
         throw new IllegalStateException("当前环境不支持缓存库存盘点");
+    }
+
+    default Set<String> unstackableItems(TaskExecutionContext context, ContainerTarget cache) {
+        throw new IllegalStateException("当前环境不支持读取物品堆叠上限");
     }
 
     default Comparator<ContainerTarget> storageOrder(Map<String, Integer> items) {

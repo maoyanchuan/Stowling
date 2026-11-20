@@ -99,6 +99,10 @@ public final class AutoClassifyTaskFactory {
                     )
             );
         }
+        if (definition.unstackableRegionRef() != null) {
+            classificationSteps.addAll(TaskFlowTemplates.sortUnstackable(
+                    definition.cacheRegionRef(), definition.unstackableRegionRef()));
+        }
         if (definition.overflowEnabled()) {
             classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheRegionRef()));
         }

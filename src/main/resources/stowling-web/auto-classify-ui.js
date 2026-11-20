@@ -36,6 +36,7 @@
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
+        unstackable: document.querySelector("#auto-unstackable-region"),
         overflow: document.querySelector("#auto-overflow-enabled"),
         areas: document.querySelector("#auto-classification-areas"),
         addArea: document.querySelector("#add-auto-classification-area"),
@@ -166,9 +167,6 @@
         }
         elements.areas.replaceChildren();
         areaReaders = [];
-        if (state.draft.classificationAreas.length === 0) {
-            state.draft.classificationAreas.push(Auto.newArea());
-        }
         state.draft.classificationAreas.forEach((area, index) => {
             areaReaders.push(appendClassificationArea(area, index));
         });
@@ -327,9 +325,6 @@
         }
         readForm();
         state.draft.classificationAreas.splice(index, 1);
-        if (state.draft.classificationAreas.length === 0) {
-            state.draft.classificationAreas.push(Auto.newArea());
-        }
         state.dirty = true;
         showMessage("未保存修改");
         renderClassificationAreas();
@@ -346,6 +341,8 @@
             "请选择坐标页面的检测点");
         populateSelect(elements.cache, state.resources.regions, draft.cacheRegionId,
             "请选择包含缓存箱子的区域");
+        populateSelect(elements.unstackable, state.resources.regions,
+            draft.unstackableRegionId || "", "关闭不可堆叠分类");
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
         elements.overflow.checked = Boolean(draft.overflowEnabled);
@@ -366,6 +363,7 @@
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
             cacheRegionId: elements.cache.value,
+            unstackableRegionId: elements.unstackable.value,
             classificationAreas: areaReaders.map((reader) => reader.read()),
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
@@ -403,7 +401,8 @@
             overview.append(Stowling.element("span", "",
                 `${cache?.name || "缓存区域已删除"} · `
                 + `${draft.classificationAreas.length} 个分类选区`
-                + (zoneNames.length > 0 ? `（${zoneNames.join("、")}）` : "")));
+                + (zoneNames.length > 0 ? `（${zoneNames.join("、")}）` : "")
+                + (draft.unstackableRegionId ? " · 不可堆叠分类" : "")));
             const priority = window.StowlingTaskModel.priorityLabel(item.collectionPriority);
             const status = Stowling.element("span", "move-task-state",
                 item.enabled ? "监听中" : "已保存");

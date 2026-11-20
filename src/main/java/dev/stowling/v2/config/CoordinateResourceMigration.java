@@ -50,7 +50,8 @@ public final class CoordinateResourceMigration {
                                                         .map(CategoryBindingDefinition::storagePolicy)
                                                         .findFirst().orElse(StoragePolicy.DEFAULT)))
                                 .toList(), definition.collectionPriority(),
-                        definition.overflowEnabled(), definition.cleanupPolicy())).toList();
+                        definition.overflowEnabled(), definition.cleanupPolicy(),
+                        definition.unstackableRegionRef())).toList();
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,

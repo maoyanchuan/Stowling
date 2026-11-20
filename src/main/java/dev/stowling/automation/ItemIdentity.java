@@ -40,7 +40,12 @@ public final class ItemIdentity {
     }
 
     public static boolean matches(String key, Set<String> categories) {
-        return categories.contains(key) || categories.contains(category(key));
+        return categories.contains(key) || categories.contains(category(key))
+                || categories.contains(exact(key));
+    }
+
+    public static String exact(String key) {
+        return "=" + key;
     }
 
 }

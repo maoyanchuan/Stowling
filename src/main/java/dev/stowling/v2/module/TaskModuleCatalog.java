@@ -232,6 +232,16 @@ public final class TaskModuleCatalog {
                     ))
             ),
             action(
+                    ConfigValidator.RESOLVE_UNSTACKABLE_STORAGE,
+                    "解析不可堆叠储存",
+                    "从已盘点的缓存按实际堆叠上限识别单件物品，关联储存区域。",
+                    List.of(
+                            reference(ConfigValidator.REGION_REF,
+                                    "不可堆叠储存区", "region-reference", true),
+                            text(ConfigValidator.CONTAINER_TYPES, "容器类型", false)
+                    )
+            ),
+            action(
                     ConfigValidator.SELECT_CONTAINER,
                     "选择容器",
                     "从当前容器输出中选择一个容器。",

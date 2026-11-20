@@ -128,6 +128,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
         Set<String> present = context.workspace().cacheContents(cache)
                 .map(Map::keySet).orElse(Set.of());
+        if (context.workspace().unstackableClassification()) {
+            boolean hasFilledBox = present.stream().anyMatch(key ->
+                    ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key));
+            return hasFilledBox && !context.workspace().remainingCacheCategories(cache).isEmpty()
+                    ? Optional.of(new CacheBoxBatch(context, cache)) : Optional.empty();
+        }
         Set<String> keys = context.workspace().mixedBoxWithdrawalItems(cache, present);
         List<String> ordered = new ArrayList<>(context.workspace().classificationItemOrder(keys));
         keys.stream().filter(key -> !ordered.contains(key)).forEach(ordered::add);
@@ -217,6 +223,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     public TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
             List<ContainerTarget> containers) {
         return new CacheInventoryScan(context, containers);
+    }
+
+    @Override
+    public Set<String> unstackableItems(TaskExecutionContext context, ContainerTarget cache) {
+        CacheSnapshot snapshot = cacheSnapshotsByRun.getOrDefault(context.workspace(), Map.of())
+                .get(cache.position());
+        if (snapshot == null) {
+            throw new IllegalStateException("请先盘点缓存容器库存");
+        }
+        return snapshot.stacks().stream().flatMap(stack -> MinecraftItemIdentity.isBox(stack)
+                        ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                        : java.util.stream.Stream.of(stack))
+                .filter(stack -> !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
+                        && stack.getMaxStackSize() == 1)
+                .map(MinecraftItemIdentity::key)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     @Override
@@ -1281,7 +1303,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             rawBefore = packingRawCount();
             List<ContainerTarget> candidates = new ArrayList<>();
             candidates.add(cache);
-            candidates.addAll(context.workspace().cacheContainers());
+            if (!context.workspace().unstackableClassification()) {
+                candidates.addAll(context.workspace().cacheContainers());
+            }
             candidates.addAll(packingSources);
             sources = EmptyBoxSupplyPlan.sources(candidates, null, List.of());
             visitNext();
@@ -1332,7 +1356,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         .map(MinecraftItemIdentity::key).collect(java.util.stream.Collectors.toSet());
                 keys = context.workspace().mixedBoxWithdrawalItems(currentSource, keys);
                 if (keys.isEmpty()) return false;
-                var loose = new ContainerBatchWithdrawal(context, currentSource, keys,
+                var loose = new ContainerBatchWithdrawal(context, currentSource, selectors(keys),
                         remainingBatchSlots());
                 steps.add(new Step(loose, this::visitNext));
                 return true;
@@ -1371,7 +1395,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     return;
                 }
                 drain = new ContainerBatchWithdrawal(context,
-                        new ContainerTarget(site, "minecraft:shulker_box"), innerKeys,
+                        new ContainerTarget(site, "minecraft:shulker_box"), selectors(innerKeys),
                         Math.min(StoragePackingPlanner.BOX_SLOTS, remainingBatchSlots() + 1));
                 steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource,
                         true), () -> steps.add(new Step(drain, this::recoverBox))));
@@ -1389,7 +1413,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .collect(java.util.stream.Collectors.toSet());
         }
 
+        private Set<String> selectors(Set<String> keys) {
+            return context.workspace().unstackableClassification()
+                    ? keys.stream().map(ItemIdentity::exact)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet())
+                    : keys;
+        }
+
         private boolean shouldUnpack(ItemStack candidate) {
+            if (context.workspace().unstackableClassification()) return true;
             if (packingCategory != null) {
                 return ItemIdentity.isMixedBox(MinecraftItemIdentity.key(candidate))
                         || !MinecraftItemIdentity.full(candidate)

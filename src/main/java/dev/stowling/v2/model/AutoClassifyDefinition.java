@@ -18,8 +18,28 @@ public record AutoClassifyDefinition(
         List<AutoClassifyAreaDefinition> classificationAreas,
         TaskPriority collectionPriority,
         boolean overflowEnabled,
-        TaskCleanupPolicy cleanupPolicy
+        TaskCleanupPolicy cleanupPolicy,
+        String unstackableRegionRef
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            int pickupRadius,
+            String cacheRegionRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheRegionRef, classificationAreas,
+                collectionPriority, overflowEnabled, cleanupPolicy, null);
+    }
+
     public AutoClassifyDefinition(
             UUID id,
             String name,
@@ -84,15 +104,21 @@ public record AutoClassifyDefinition(
                 ResourceType.REGION,
                 "cacheRegionRef"
         );
+        unstackableRegionRef = unstackableRegionRef == null || unstackableRegionRef.isBlank()
+                ? null : requireReference(unstackableRegionRef, ResourceType.REGION,
+                        "unstackableRegionRef");
+        if (cacheRegionRef.equals(unstackableRegionRef)) {
+            throw new IllegalArgumentException("不可堆叠储存区需要使用独立区域");
+        }
         classificationAreas = List.copyOf(
                 Objects.requireNonNull(
                         classificationAreas,
                         "classificationAreas"
                 )
         );
-        if (classificationAreas.isEmpty()) {
+        if (classificationAreas.isEmpty() && unstackableRegionRef == null) {
             throw new IllegalArgumentException(
-                    "classificationAreas must contain at least one area"
+                    "请至少添加一个分类选区或选择不可堆叠储存区"
             );
         }
         long uniqueZones = classificationAreas.stream()

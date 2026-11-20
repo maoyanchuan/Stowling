@@ -36,6 +36,7 @@ public final class TaskRunWorkspace {
             new LinkedHashMap<>();
     private final List<ContainerTarget> targetContainers = new ArrayList<>();
     private List<ClassificationLayoutEntry> classificationLayout = List.of();
+    private boolean unstackableClassification;
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
     private Set<BlockPosition> partialBoxStoragePositions = Set.of();
@@ -185,6 +186,7 @@ public final class TaskRunWorkspace {
         containerScanRegionId = regionId;
         containerScan = scan;
         classificationLayout = List.of();
+        unstackableClassification = false;
         cacheInventory = Map.of();
         cacheContainers.clear();
         unavailableTargets.clear();
@@ -261,7 +263,9 @@ public final class TaskRunWorkspace {
             Set<String> categories) {
         Map<String, Integer> items = cacheInventory.get(target.position());
         return items == null || items.keySet().stream()
-                .anyMatch(key -> ItemIdentity.isMixedBox(key)
+                .anyMatch(key -> (unstackableClassification
+                            ? ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key)
+                            : ItemIdentity.isMixedBox(key))
                         || ItemIdentity.matches(key, categories));
     }
 
@@ -282,6 +286,7 @@ public final class TaskRunWorkspace {
             Map<ContainerTarget, Set<String>> accepted
     ) {
         classificationLayout = List.of();
+        unstackableClassification = false;
         partialBoxStoragePositions = Set.of();
         targetContainers.clear();
         targetContainers.addAll(targets);
@@ -327,6 +332,7 @@ public final class TaskRunWorkspace {
             Set<BlockPosition> partialBoxStoragePositions
     ) {
         classificationLayout = List.copyOf(layout);
+        unstackableClassification = false;
         this.partialBoxStoragePositions = Set.copyOf(partialBoxStoragePositions);
         targetContainers.clear();
         targetContainers.addAll(targets);
@@ -353,6 +359,16 @@ public final class TaskRunWorkspace {
         storageUsesCacheFallback = false;
         cacheHasMore = false;
         deferredCacheCategories.clear();
+    }
+
+    public synchronized void setUnstackableClassification(List<ContainerTarget> targets,
+            Map<ContainerTarget, Set<String>> accepted, List<ContainerTarget> cacheTargets) {
+        setResolvedCategories(targets, accepted, cacheTargets);
+        unstackableClassification = true;
+    }
+
+    public synchronized boolean unstackableClassification() {
+        return unstackableClassification;
     }
 
     public synchronized List<String> classificationItemOrder(Set<String> items) {
@@ -459,7 +475,8 @@ public final class TaskRunWorkspace {
         Set<String> categories = new LinkedHashSet<>(withdrawItemIdsFor(target));
         if (selectedContainer != null && selectedContainer.position().equals(target.position())) {
             categories.removeIf(key ->
-                    deferredCacheCategories.contains(ItemIdentity.category(key)));
+                    deferredCacheCategories.contains(unstackableClassification
+                            ? key : ItemIdentity.category(key)));
         }
         return Set.copyOf(categories);
     }
@@ -488,7 +505,8 @@ public final class TaskRunWorkspace {
             Map<String, Integer> remaining) {
         requested.forEach((key, count) -> {
             if (count > remaining.getOrDefault(key, 0)) {
-                deferredCacheCategories.add(ItemIdentity.category(key));
+                deferredCacheCategories.add(unstackableClassification
+                        ? ItemIdentity.exact(key) : ItemIdentity.category(key));
             }
         });
     }

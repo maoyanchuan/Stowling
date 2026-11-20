@@ -1,5 +1,6 @@
 package dev.stowling.v2.runtime.modules;
 
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.TaskStep;
 import java.util.List;
 import java.util.function.BiFunction;
@@ -30,6 +31,8 @@ public final class StandardTaskModuleFactories {
                         TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
                         ResolveContainerCategoriesModule::new
                 ),
+                factory(ConfigValidator.RESOLVE_UNSTACKABLE_STORAGE,
+                        ResolveUnstackableStorageModule::new),
                 factory(
                         TaskModuleIds.SELECT_CONTAINER,
                         SelectContainerModule::new

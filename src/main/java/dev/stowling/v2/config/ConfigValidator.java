@@ -44,6 +44,7 @@ public final class ConfigValidator {
             "SCAN_CONTAINERS_IN_REGION";
     public static final String RESOLVE_CONTAINER_CATEGORIES =
             "RESOLVE_CONTAINER_CATEGORIES";
+    public static final String RESOLVE_UNSTACKABLE_STORAGE = "RESOLVE_UNSTACKABLE_STORAGE";
     public static final String SELECT_CONTAINER = "SELECT_CONTAINER";
     public static final String WITHDRAW_ITEMS = "WITHDRAW_ITEMS";
     public static final String PACK_OVERFLOW = "PACK_OVERFLOW";
@@ -265,6 +266,10 @@ public final class ConfigValidator {
                 throw new V2ValidationException(
                         "auto classify cache region does not exist"
                 );
+            }
+            if (definition.unstackableRegionRef() != null && !regions.containsKey(
+                    ResourceReference.parse(definition.unstackableRegionRef()).uuid())) {
+                throw new V2ValidationException("不可堆叠储存区不存在");
             }
             Set<UUID> selectedZones = new HashSet<>();
             CategoryRuleRegistry rules = CategoryRuleRegistry.standard();
@@ -675,6 +680,10 @@ public final class ConfigValidator {
             );
             case RESOLVE_CONTAINER_CATEGORIES ->
                     requireResolveCategoryStep(step, categoryZones);
+            case RESOLVE_UNSTACKABLE_STORAGE -> {
+                requireParameters(step, Set.of(REGION_REF, CONTAINER_TYPES), Set.of(REGION_REF));
+                requireRegionReference(step, regions, REGION_REF);
+            }
             case SELECT_CONTAINER -> requireParameters(
                     step,
                     Set.of(TaskFlowTemplates.RESET_CACHE_HAS_MORE),

@@ -468,6 +468,19 @@ public final class TaskFlowTemplates {
         return List.of(scan, depositManaged, assertClean);
     }
 
+    public static List<TaskStep> sortUnstackable(String cacheRegionRef, String storageRegionRef) {
+        TaskStep scan = TaskStep.action(UUID.randomUUID(),
+                ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                Map.of(ConfigValidator.REGION_REF, cacheRegionRef,
+                        ConfigValidator.SCAN_CONTENTS, "true"));
+        List<TaskStep> classify = new ArrayList<>();
+        classify.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.RESOLVE_UNSTACKABLE_STORAGE,
+                Map.of(ConfigValidator.REGION_REF, storageRegionRef)));
+        classify.addAll(sortTail());
+        return List.of(scan, TaskStep.conditional(UUID.randomUUID(),
+                conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()), classify, List.of()));
+    }
+
     private static List<TaskStep> sortTail() {
         TaskStep selectContainer = TaskStep.action(
                 UUID.randomUUID(),

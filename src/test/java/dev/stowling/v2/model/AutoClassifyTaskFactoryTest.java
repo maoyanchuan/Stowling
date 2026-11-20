@@ -8,10 +8,32 @@ import dev.stowling.v2.category.CategoryMarkerSource;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class AutoClassifyTaskFactoryTest {
+    @Test
+    void buildsUnstackableOnlyFlowWithoutCategoryMarkers() {
+        AutoClassifyDefinition original = definition(true);
+        String storage = "region:" + UUID.randomUUID();
+        var unstackable = new AutoClassifyDefinition(original.id(), original.name(),
+                original.enabled(), original.collectionEnabled(), original.classificationEnabled(),
+                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
+                List.of(), original.collectionPriority(), true, original.cleanupPolicy(), storage);
+        List<TaskStep> steps = AutoClassifyTaskFactory.tasks(unstackable, List.of()).get(1).steps();
+
+        assertEquals(ConfigValidator.SCAN_CONTAINERS_IN_REGION, steps.getFirst().moduleId());
+        assertEquals("true", steps.getFirst().parameters().get(ConfigValidator.SCAN_CONTENTS));
+        List<TaskStep> branch = steps.get(1).steps();
+        TaskStep resolve = branch.getFirst();
+        assertEquals(ConfigValidator.RESOLVE_UNSTACKABLE_STORAGE, resolve.moduleId());
+        assertEquals(Map.of(ConfigValidator.REGION_REF, storage), resolve.parameters());
+        assertTrue(branch.stream().noneMatch(step ->
+                ConfigValidator.RESOLVE_CONTAINER_CATEGORIES.equals(step.moduleId())));
+        assertEquals(ConfigValidator.PACK_OVERFLOW, steps.get(2).moduleId());
+    }
+
     @Test
     void overflowIsOptInAndRunsAfterEveryClassificationAreaButBeforeReconciliation() {
         AutoClassifyDefinition original = definition(true);

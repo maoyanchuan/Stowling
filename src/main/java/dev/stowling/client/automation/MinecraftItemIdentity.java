@@ -2,22 +2,31 @@ package dev.stowling.client.automation;
 
 import com.google.common.collect.MapMaker;
 import dev.stowling.automation.ItemIdentity;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 public final class MinecraftItemIdentity {
     // Keep a key while inventories or tasks reference it, then release its component snapshot.
     private static final ConcurrentMap<Variant, String> VARIANT_KEYS =
+            new MapMaker().weakValues().makeMap();
+    private static final ConcurrentMap<Variant, String> PERSISTENT_KEYS =
             new MapMaker().weakValues().makeMap();
     private static final String SESSION =
             Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), 36);
@@ -33,18 +42,48 @@ public final class MinecraftItemIdentity {
     public static String key(ItemStack stack) {
         String base = base(stack);
         boolean box = !stack.isEmpty() && ItemIdentity.isBox(base);
-        DataComponentPatch patch = stack.getComponentsPatch();
-        if (box && stack.get(DataComponents.CONTAINER) == null) {
-            ItemStack normalized = stack.copy();
-            normalized.set(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
-            patch = normalized.getComponentsPatch();
-        }
+        DataComponentPatch patch = normalizedPatch(stack, box);
         if (patch.isEmpty()) return base;
         return VARIANT_KEYS.computeIfAbsent(new Variant(base, patch), variant -> {
             String category = box ? boxCategory(stack) : "";
             return variant.base() + "#s" + SESSION + "-" + Long.toString(NEXT_ID.incrementAndGet(), 36)
                     + (category.isEmpty() ? "" : "@" + category);
         });
+    }
+
+    static String persistentKey(ItemStack stack, RegistryAccess registries) {
+        String base = base(stack);
+        boolean box = !stack.isEmpty() && ItemIdentity.isBox(base);
+        DataComponentPatch patch = normalizedPatch(stack, box);
+        if (patch.isEmpty()) return base;
+        return PERSISTENT_KEYS.computeIfAbsent(new Variant(base, patch), variant -> {
+            var nbt = DataComponentPatch.CODEC.encodeStart(
+                    RegistryOps.create(NbtOps.INSTANCE, registries), variant.patch()).result()
+                    .orElseThrow(() -> new IllegalStateException("无法生成背包锁定的物品身份"));
+            // SNBT preserves tag types and sorts compound keys, including nested compounds.
+            String category = box ? boxCategory(stack) : "";
+            return base + "#p1-" + digest(nbt.toString())
+                    + (category.isEmpty() ? "" : "@" + category);
+        });
+    }
+
+    private static DataComponentPatch normalizedPatch(ItemStack stack, boolean box) {
+        if (!box || stack.get(DataComponents.CONTAINER) != null) {
+            return stack.getComponentsPatch();
+        }
+        ItemStack normalized = stack.copy();
+        normalized.set(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
+        return normalized.getComponentsPatch();
+    }
+
+    private static String digest(String data) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256")
+                    .digest(data.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private record Variant(String base, DataComponentPatch patch) {

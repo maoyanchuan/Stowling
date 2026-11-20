@@ -9,6 +9,7 @@ import dev.stowling.automation.PlayerInventoryDelta;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.v2.config.PlayerInventoryProtectionStore;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
@@ -302,6 +303,65 @@ class PlayerInventoryManagerTest {
         assertEquals(15, restarted.claimUnexpected(classification, Set.of()));
         assertEquals(Map.of(slime, 15), classification.managedItems());
         assertEquals(Map.of(pickaxe, 1, slime, 5), store.load().itemCounts());
+    }
+
+    @Test
+    void componentLockUsesTheSameIdentityAcrossRuntimeSessions(@TempDir Path directory)
+            throws IOException {
+        String before = "minecraft:netherite_pickaxe#sfirst-1";
+        String after = "minecraft:netherite_pickaxe#ssecond-7";
+        String other = "minecraft:netherite_pickaxe#ssecond-8";
+        String exact = "minecraft:netherite_pickaxe#p1-original";
+        String wearIdentity = "minecraft:netherite_pickaxe#p1-undamaged";
+        var store = new PlayerInventoryProtectionStore(directory.resolve("locks.json"));
+        var inventory = new MutableInventory();
+        inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, wearIdentity),
+                Map.of(before, exact)));
+        var first = new PlayerInventoryManager(inventory);
+        first.configureProtection(store.load(), store::save);
+        first.observe();
+        first.allocate(first.view(false, false, Map.of()).revision(), before, 1);
+
+        assertEquals(Map.of(exact, 1), store.load().itemCounts());
+        inventory.set(new PlayerInventorySnapshot(Map.of(after, 1, other, 1),
+                Map.of(after, wearIdentity, other, wearIdentity),
+                Map.of(after, exact, other, "minecraft:netherite_pickaxe#p1-other")));
+        var restarted = new PlayerInventoryManager(inventory);
+        restarted.configureProtection(store.load(), store::save);
+        restarted.observe();
+        restarted.reconcileUnassignedItems();
+
+        var classification = restarted.account(UUID.randomUUID());
+        assertEquals(1, restarted.claimUnexpected(classification, Set.of()));
+        assertEquals(Map.of(other, 1), classification.managedItems());
+        assertEquals(Map.of(exact, 1), store.load().itemCounts());
+    }
+
+    @Test
+    void migratesAUniqueLegacyLockFromThePreviousFileFormat(@TempDir Path directory)
+            throws IOException {
+        Path file = directory.resolve("locks.json");
+        Files.writeString(file, """
+                {"itemCounts":{"minecraft:netherite_pickaxe#sold-1":1},
+                 "pickaxeIdentities":{"minecraft:netherite_pickaxe#sold-1":
+                 "minecraft:netherite_pickaxe#sold-2"}}
+                """);
+        var store = new PlayerInventoryProtectionStore(file);
+        String current = "minecraft:netherite_pickaxe#snew-5";
+        String stable = "minecraft:netherite_pickaxe#p1-current";
+        var inventory = new MutableInventory();
+        inventory.set(new PlayerInventorySnapshot(Map.of(current, 1),
+                Map.of(current, "minecraft:netherite_pickaxe#p1-undamaged"),
+                Map.of(current, stable)));
+        var manager = new PlayerInventoryManager(inventory);
+        manager.configureProtection(store.load(), store::save);
+
+        manager.observe();
+        manager.reconcileUnassignedItems();
+
+        assertEquals(1, manager.view(false, true, Map.of()).items().getFirst().protectedCount());
+        assertFalse(manager.needsRecovery());
+        assertEquals(Map.of(stable, 1), store.load().itemCounts());
     }
 
     @Test

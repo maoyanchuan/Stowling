@@ -70,7 +70,7 @@ public final class PlayerInventoryManager {
         available = true;
         PlayerInventorySnapshot current = observed.orElseThrow();
         if (!previous.equals(observed)) revision++;
-        initialize(savedProtection);
+        if (protectedInventory == null) restoreProtection(current);
         reconcilePickaxeWear(current);
         boolean baseline = previous.isEmpty();
         PlayerInventoryDelta delta = previous
@@ -197,13 +197,71 @@ public final class PlayerInventoryManager {
             PlayerInventorySnapshot observed) {
         Map<String, String> previousIdentities = protectedInventory == null
                 ? Map.of() : protectedInventory.pickaxeIdentities();
+        Map<String, String> previousPersistent = protectedInventory == null
+                ? Map.of() : protectedInventory.persistentIdentities();
         Map<String, String> pickaxes = new LinkedHashMap<>();
+        Map<String, String> persistent = new LinkedHashMap<>();
         for (String key : items.keySet()) {
             String identity = observed.pickaxeIdentities().getOrDefault(key,
                     previousIdentities.get(key));
             if (identity != null) pickaxes.put(key, identity);
+            String stableKey = observed.persistentIdentities().getOrDefault(key,
+                    previousPersistent.get(key));
+            if (stableKey != null) persistent.put(key, stableKey);
         }
-        return new PlayerInventorySnapshot(items, pickaxes);
+        return new PlayerInventorySnapshot(items, pickaxes, persistent);
+    }
+
+    private void restoreProtection(PlayerInventorySnapshot observed) {
+        Map<String, Integer> kept = new LinkedHashMap<>();
+        Map<String, Integer> stored = new LinkedHashMap<>(savedProtection.itemCounts());
+        Map<String, Integer> remaining = new LinkedHashMap<>(stored);
+        Map<String, String> pickaxes = new LinkedHashMap<>(savedProtection.pickaxeIdentities());
+        Set<String> matched = new LinkedHashSet<>();
+        for (String key : observed.itemCounts().keySet()) {
+            String stableKey = observed.persistentKey(key);
+            int count = remaining.getOrDefault(stableKey, 0);
+            int reserved = Math.min(observed.count(key), count);
+            if (reserved == 0) continue;
+            matched.add(stableKey);
+            kept.put(key, reserved);
+            remaining.put(stableKey, count - reserved);
+        }
+        for (String oldKey : savedProtection.itemCounts().keySet()) {
+            if (matched.contains(oldKey)) continue;
+            String wearIdentity = pickaxes.get(oldKey);
+            var candidates = observed.itemCounts().keySet().stream()
+                    .filter(key -> !kept.containsKey(key))
+                    .filter(key -> !stored.containsKey(observed.persistentKey(key)))
+                    .filter(key -> matchesSavedVariant(oldKey, wearIdentity, key, observed))
+                    .limit(2).toList();
+            if (candidates.size() != 1) continue;
+            String key = candidates.getFirst();
+            String stableKey = observed.persistentKey(key);
+            int count = stored.remove(oldKey);
+            kept.put(key, Math.min(count, observed.count(key)));
+            stored.put(stableKey, count);
+            pickaxes.remove(oldKey);
+            String newWearIdentity = observed.pickaxeIdentities().get(key);
+            if (newWearIdentity != null) pickaxes.put(stableKey, newWearIdentity);
+        }
+        persistProtection(stored, pickaxes);
+        initialize(protectedSnapshot(kept, observed));
+    }
+
+    private static boolean matchesSavedVariant(String oldKey, String wearIdentity, String key,
+            PlayerInventorySnapshot observed) {
+        String currentWear = observed.pickaxeIdentities().get(key);
+        if (wearIdentity != null && wearIdentity.equals(currentWear)) return true;
+        // Old session keys identify a type and box category, but contain no component data.
+        return isSessionKey(oldKey) && observed.persistentIdentities().containsKey(key)
+                && ItemIdentity.base(oldKey).equals(ItemIdentity.base(key))
+                && ItemIdentity.category(oldKey).equals(ItemIdentity.category(key))
+                && (wearIdentity == null || currentWear != null && isSessionKey(wearIdentity));
+    }
+
+    private static boolean isSessionKey(String key) {
+        return key.startsWith("#s", ItemIdentity.base(key).length());
     }
 
     synchronized void initialize(PlayerInventorySnapshot baseline) {
@@ -213,11 +271,30 @@ public final class PlayerInventoryManager {
     }
 
     private void updateProtection(PlayerInventorySnapshot next) {
-        if (!next.equals(protectedInventory) && !next.equals(savedProtection)) {
-            saveProtection.accept(next);
-            savedProtection = next;
+        if (next.equals(protectedInventory)) return;
+        Map<String, Integer> stored = new LinkedHashMap<>(savedProtection.itemCounts());
+        Map<String, String> pickaxes = new LinkedHashMap<>(savedProtection.pickaxeIdentities());
+        for (String key : protectedInventory.itemCounts().keySet()) {
+            String stableKey = protectedInventory.persistentKey(key);
+            stored.remove(stableKey);
+            pickaxes.remove(stableKey);
         }
+        Map<String, Integer> reserved = new LinkedHashMap<>();
+        next.itemCounts().forEach((key, count) ->
+                reserved.merge(next.persistentKey(key), count, Math::addExact));
+        stored.putAll(reserved);
+        next.pickaxeIdentities().forEach((key, identity) ->
+                pickaxes.put(next.persistentKey(key), identity));
+        persistProtection(stored, pickaxes);
         protectedInventory = next;
+    }
+
+    private void persistProtection(Map<String, Integer> stored, Map<String, String> pickaxes) {
+        var snapshot = new PlayerInventorySnapshot(stored, pickaxes);
+        if (!snapshot.equals(savedProtection)) {
+            saveProtection.accept(snapshot);
+            savedProtection = snapshot;
+        }
     }
 
     public synchronized PlayerInventoryAccount account(UUID ownerId) {

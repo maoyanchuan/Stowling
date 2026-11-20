@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.stowling.automation.ItemIdentity;
 import java.util.List;
 import net.minecraft.SharedConstants;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.item.ItemStack;
@@ -59,6 +61,19 @@ class MinecraftRecoveredBoxIdentityTest {
         assertNotEquals(originalKey, MinecraftItemIdentity.key(tool));
         assertEquals(originalKey, MinecraftItemIdentity.key(original));
         assertEquals("minecraft:stone", MinecraftItemIdentity.key(new ItemStack(Items.STONE, 16)));
+    }
+
+    @Test
+    void persistentIdentityIgnoresOuterCountAndDistinguishesStoredComponents() {
+        var registries = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+        ItemStack original = box(List.of(new ItemStack(Items.STONE, 16)));
+        String persistent = MinecraftItemIdentity.persistentKey(original, registries);
+        assertNotEquals(MinecraftItemIdentity.key(original), persistent);
+        assertEquals(persistent,
+                MinecraftItemIdentity.persistentKey(original.copyWithCount(2), registries));
+        assertNotEquals(persistent, MinecraftItemIdentity.persistentKey(
+                box(List.of(new ItemStack(Items.STONE, 17))), registries));
+        assertEquals("minecraft:stone", ItemIdentity.category(persistent));
     }
 
     @Test

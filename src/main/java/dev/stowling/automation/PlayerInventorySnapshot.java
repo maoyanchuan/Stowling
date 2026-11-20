@@ -5,9 +5,14 @@ import java.util.Map;
 import java.util.Objects;
 
 public record PlayerInventorySnapshot(Map<String, Integer> itemCounts,
-        Map<String, String> pickaxeIdentities) {
+        Map<String, String> pickaxeIdentities, Map<String, String> persistentIdentities) {
     public PlayerInventorySnapshot(Map<String, Integer> itemCounts) {
         this(itemCounts, Map.of());
+    }
+
+    public PlayerInventorySnapshot(Map<String, Integer> itemCounts,
+            Map<String, String> pickaxeIdentities) {
+        this(itemCounts, pickaxeIdentities, Map.of());
     }
 
     public PlayerInventorySnapshot {
@@ -27,12 +32,22 @@ public record PlayerInventorySnapshot(Map<String, Integer> itemCounts,
         }
         itemCounts = Map.copyOf(checked);
         pickaxeIdentities = Map.copyOf(pickaxeIdentities);
+        persistentIdentities = persistentIdentities == null
+                ? Map.of() : Map.copyOf(persistentIdentities);
         if (!itemCounts.keySet().containsAll(pickaxeIdentities.keySet())) {
             throw new IllegalArgumentException("pickaxe identities must belong to snapshot items");
+        }
+        if (!itemCounts.keySet().containsAll(persistentIdentities.keySet())) {
+            throw new IllegalArgumentException(
+                    "persistent identities must belong to snapshot items");
         }
     }
 
     public int count(String itemId) {
         return itemCounts.getOrDefault(itemId, 0);
+    }
+
+    public String persistentKey(String itemId) {
+        return persistentIdentities.getOrDefault(itemId, itemId);
     }
 }

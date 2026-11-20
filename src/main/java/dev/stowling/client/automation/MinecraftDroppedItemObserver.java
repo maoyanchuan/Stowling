@@ -143,7 +143,7 @@ public final class MinecraftDroppedItemObserver
         return readInventory(true);
     }
 
-    private Optional<PlayerInventorySnapshot> readInventory(boolean trackToolWear) {
+    private Optional<PlayerInventorySnapshot> readInventory(boolean includeIdentities) {
         if (!scheduler.isClientThread()) {
             return Optional.empty();
         }
@@ -159,7 +159,9 @@ public final class MinecraftDroppedItemObserver
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, String> pickaxes = new LinkedHashMap<>();
+        Map<String, String> persistent = new LinkedHashMap<>();
         Map<String, String> names = new LinkedHashMap<>();
+        var registries = player.level().registryAccess();
         for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
             if (stack.isEmpty() || stack.getCount() <= 0) {
                 continue;
@@ -167,14 +169,18 @@ public final class MinecraftDroppedItemObserver
             String key = itemId(stack);
             counts.merge(key, stack.getCount(), Math::addExact);
             names.put(key, stack.getHoverName().getString());
-            if (trackToolWear && stack.is(ItemTags.PICKAXES) && stack.isDamageableItem()) {
+            if (includeIdentities && key.indexOf('#') >= 0) {
+                persistent.computeIfAbsent(key,
+                        ignored -> MinecraftItemIdentity.persistentKey(stack, registries));
+            }
+            if (includeIdentities && stack.is(ItemTags.PICKAXES) && stack.isDamageableItem()) {
                 ItemStack undamaged = stack.copyWithCount(1);
                 undamaged.setDamageValue(0);
-                pickaxes.put(key, itemId(undamaged));
+                pickaxes.put(key, MinecraftItemIdentity.persistentKey(undamaged, registries));
             }
         }
         itemNames = Map.copyOf(names);
-        return Optional.of(new PlayerInventorySnapshot(counts, pickaxes));
+        return Optional.of(new PlayerInventorySnapshot(counts, pickaxes, persistent));
     }
 
     @Override

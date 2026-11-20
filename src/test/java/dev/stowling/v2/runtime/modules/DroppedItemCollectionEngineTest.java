@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -104,6 +105,79 @@ class DroppedItemCollectionEngineTest {
                 Map.of(IRON, 4),
                 workspace.initialInventory().orElseThrow().itemCounts()
         );
+    }
+
+    @Test
+    void reroutesWhenTheSameDropMovesAndCancelsWhenItDisappears() {
+        MutableDrops drops = new MutableDrops();
+        RecordingNavigation navigation = new RecordingNavigation();
+        DroppedItem original = item(10, GOLD, 1);
+        BlockPosition landed = original.position().offset(1, -1, 0);
+        entries(drops, original);
+        var engine = engine(drops, new MutableInventory(), new TaskRunWorkspace(),
+                new MutableClock(), 120, navigation);
+
+        assertEquals(TaskModuleState.RUNNING, engine.start().state());
+        entries(drops, new DroppedItem(original.entityId(), GOLD, 1, landed));
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        assertEquals(List.of(original.position(), landed), navigation.targets);
+        assertEquals(1, navigation.cancellations);
+
+        drops.clear();
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        assertEquals(2, navigation.cancellations);
+    }
+
+    @Test
+    void retriesATemporaryPathFailureWithinTheSameCollection() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        MutableClock clock = new MutableClock();
+        RecordingNavigation navigation = new RecordingNavigation();
+        DroppedItem drop = item(10, GOLD, 1);
+        entries(drops, drop);
+        var engine = engine(drops, inventory, workspace, clock, 120, navigation);
+
+        assertEquals(TaskModuleState.RUNNING, engine.start().state());
+        navigation.status = NavigationStatus.FAILED;
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        clock.advance(Duration.ofMillis(499));
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        assertEquals(List.of(drop.position()), navigation.targets);
+
+        clock.advance(Duration.ofMillis(1));
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        assertEquals(List.of(drop.position(), drop.position()), navigation.targets);
+
+        navigation.status = NavigationStatus.ARRIVED;
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        drops.clear();
+        inventory.set(Map.of(GOLD, 1));
+        assertEquals(TaskModuleState.SUCCEEDED, tickUntilFinished(engine, 45).state());
+        assertEquals(Map.of(GOLD, 1), workspace.collectedItems());
+    }
+
+    @Test
+    void anUnreachableStationaryDropFailsAfterTwoRetries() {
+        MutableDrops drops = new MutableDrops();
+        MutableClock clock = new MutableClock();
+        RecordingNavigation navigation = new RecordingNavigation();
+        entries(drops, item(10, GOLD, 1));
+        var engine = engine(drops, new MutableInventory(), new TaskRunWorkspace(),
+                clock, 120, navigation);
+
+        assertEquals(TaskModuleState.RUNNING, engine.start().state());
+        navigation.status = NavigationStatus.FAILED;
+        for (int retry = 0; retry < 2; retry++) {
+            assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+            clock.advance(Duration.ofMillis(500));
+            assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        }
+
+        assertEquals(TaskModuleState.FAILED, engine.tick().state());
+        assertEquals(3, navigation.targets.size());
     }
 
     @Test
@@ -348,9 +422,21 @@ class DroppedItemCollectionEngineTest {
             MutableClock clock,
             int timeoutSeconds
     ) {
+        return engine(drops, inventory, workspace, clock, timeoutSeconds,
+                new AlwaysArrivedNavigation());
+    }
+
+    private static DroppedItemCollectionEngine engine(
+            MutableDrops drops,
+            MutableInventory inventory,
+            TaskRunWorkspace workspace,
+            MutableClock clock,
+            int timeoutSeconds,
+            NavigationPort navigation
+    ) {
         PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
         inventory.snapshot().ifPresent(manager::initialize);
-        TaskExecutionContext context = context(workspace);
+        TaskExecutionContext context = context(workspace, navigation);
         return new DroppedItemCollectionEngine(
                 context,
                 drops,
@@ -376,8 +462,13 @@ class DroppedItemCollectionEngineTest {
     }
 
     private static TaskExecutionContext context(TaskRunWorkspace workspace) {
+        return context(workspace, new AlwaysArrivedNavigation());
+    }
+
+    private static TaskExecutionContext context(TaskRunWorkspace workspace,
+            NavigationPort navigation) {
         return new TaskExecutionContext(
-                new AlwaysArrivedNavigation(),
+                navigation,
                 new EmptyDroppedItems(),
                 (region, types, volume) ->
                         ContainerScanResult.failure("unused"),
@@ -502,6 +593,29 @@ class DroppedItemCollectionEngineTest {
 
         @Override
         public void cancel() {
+        }
+    }
+
+    private static final class RecordingNavigation implements NavigationPort {
+        private final List<BlockPosition> targets = new ArrayList<>();
+        private NavigationStatus status = NavigationStatus.NAVIGATING;
+        private int cancellations;
+
+        @Override
+        public NavigationStatus start(BlockPosition target) {
+            targets.add(target);
+            return NavigationStatus.NAVIGATING;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target) {
+            assertEquals(targets.getLast(), target);
+            return status;
+        }
+
+        @Override
+        public void cancel() {
+            cancellations++;
         }
     }
 

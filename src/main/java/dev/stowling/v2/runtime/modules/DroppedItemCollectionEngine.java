@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.domain.BlockPosition;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,6 +22,9 @@ final class DroppedItemCollectionEngine {
     }
 
     private static final int INVENTORY_SETTLE_TICKS = 20;
+    private static final int PICKUP_ARRIVAL_RADIUS = 1;
+    private static final int NAVIGATION_RETRIES = 2;
+    private static final Duration NAVIGATION_RETRY_DELAY = Duration.ofMillis(500);
 
     private final TaskExecutionContext context;
     private final Source source;
@@ -31,7 +35,9 @@ final class DroppedItemCollectionEngine {
     private Instant lastProgressAt;
     private PlayerInventorySnapshot currentInventory;
     private DroppedItem current;
-    private boolean navigationStarted;
+    private BlockPosition navigationTarget;
+    private Instant navigationRetryAt;
+    private int navigationRetries;
     private boolean arrivedAtCurrent;
     private boolean stopping;
     private boolean pickupConfirmed;
@@ -131,7 +137,7 @@ final class DroppedItemCollectionEngine {
             return confirmEmpty();
         }
         current = available.getFirst();
-        navigationStarted = false;
+        navigationTarget = null;
         arrivedAtCurrent = false;
         pickupConfirmed = false;
         resetStableConfirmation();
@@ -187,31 +193,53 @@ final class DroppedItemCollectionEngine {
                 .findFirst()
                 .orElse(null);
         if (observed == null) {
+            context.navigation().cancel();
             current = null;
-            navigationStarted = false;
             arrivedAtCurrent = false;
             pickupConfirmed = false;
             resetStableConfirmation();
             return TaskModuleResult.running("已拾取一组掉落物");
         }
         current = observed;
+        return navigateToCurrent();
+    }
+
+    private TaskModuleResult navigateToCurrent() {
+        BlockPosition position = current.position();
         NavigationStatus status;
-        if (!navigationStarted) {
-            navigationStarted = true;
-            status = context.navigation().start(observed.position());
-        } else {
-            status = context.navigation().status(observed.position(), 1);
-        }
-        return switch (status) {
-            case ARRIVED -> {
-                arrivedAtCurrent = true;
-                yield TaskModuleResult.running(
-                        "等待拾取 " + observed.itemId()
-                );
+        if (!position.equals(navigationTarget)) {
+            if (navigationTarget != null) {
+                context.navigation().cancel();
             }
+            navigationTarget = position;
+            navigationRetryAt = null;
+            navigationRetries = 0;
+            status = context.navigation().start(navigationTarget);
+        } else if (navigationRetryAt != null) {
+            if (clock.instant().isBefore(navigationRetryAt)) {
+                return TaskModuleResult.running("等待重试掉落物寻路");
+            }
+            navigationRetryAt = null;
+            status = context.navigation().start(navigationTarget);
+        } else {
+            status = context.navigation().status(navigationTarget, PICKUP_ARRIVAL_RADIUS);
+        }
+        arrivedAtCurrent = status == NavigationStatus.ARRIVED;
+        return switch (status) {
+            case ARRIVED -> TaskModuleResult.running("等待拾取 " + current.itemId());
             case NAVIGATING -> TaskModuleResult.running("正在前往掉落物");
-            case FAILED -> TaskModuleResult.failed("无法前往掉落物");
+            case FAILED -> retryNavigation();
         };
+    }
+
+    private TaskModuleResult retryNavigation() {
+        context.navigation().cancel();
+        if (navigationRetries >= NAVIGATION_RETRIES) {
+            return TaskModuleResult.failed("无法前往掉落物");
+        }
+        navigationRetries++;
+        navigationRetryAt = clock.instant().plus(NAVIGATION_RETRY_DELAY);
+        return TaskModuleResult.running("等待重试掉落物寻路");
     }
 
     private List<DroppedItem> matches() {

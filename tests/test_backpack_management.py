@@ -43,6 +43,29 @@ def test_allocating_personal_quantity_preserves_the_exact_identity_and_revision(
     assert run_model("model.freeCount(item)") == 3
 
 
+def test_slot_order_places_quickbar_below_the_three_inventory_rows() -> None:
+    assert run_model("model.slotOrder()") == list(range(9, 36)) + list(range(9))
+
+
+@pytest.mark.parametrize("count, max_count", [(64, 64), (6, 64), (9, 16), (1, 1), (12, 24)])
+def test_tooltip_distinguishes_slot_capacity_and_group_protection(
+    count: int, max_count: int
+) -> None:
+    result = run_model(
+        "model.slotDetails("
+        f"{{count: {count}, maxCount: {max_count}, tooltip: ['经验修补'], "
+        "maxDurability: 100, remainingDurability: 70}, "
+        "{count: 67, protectedCount: 17, taskCount: 30, classificationCount: 20})"
+    )
+    assert result == [
+        "经验修补",
+        "耐久 70 / 100",
+        f"本格 {count} 件 · 堆叠上限 {max_count}",
+        "同一物品变体合计 67 件",
+        "保留自用 17 · 任务 30 · 待分类 20",
+    ]
+
+
 @pytest.mark.parametrize(
     "expression",
     [

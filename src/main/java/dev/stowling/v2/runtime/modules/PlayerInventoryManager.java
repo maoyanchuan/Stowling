@@ -1,12 +1,14 @@
 package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.PlayerInventoryDelta;
+import dev.stowling.automation.PlayerInventorySlot;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.v2.control.PlayerInventoryResponse;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -494,6 +496,11 @@ public final class PlayerInventoryManager {
 
     public synchronized PlayerInventoryResponse view(boolean busy, boolean classificationAvailable,
             Map<String, String> names) {
+        return view(busy, classificationAvailable, names, List.of());
+    }
+
+    public synchronized PlayerInventoryResponse view(boolean busy, boolean classificationAvailable,
+            Map<String, String> names, List<PlayerInventorySlot> slots) {
         Map<String, Integer> managed = managedCounts();
         Map<String, Integer> protectedItems = protectedInventory == null
                 ? Map.of() : protectedInventory.itemCounts();
@@ -510,7 +517,7 @@ public final class PlayerInventoryManager {
                             kept, taskCount, queued);
                 }).toList();
         return new PlayerInventoryResponse(Long.toString(revision), available, busy,
-                classificationAvailable, items);
+                classificationAvailable, items, available ? slots : List.of());
     }
 
     public synchronized void allocate(String expectedRevision, String key, int keepCount) {

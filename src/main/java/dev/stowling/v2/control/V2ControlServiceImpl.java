@@ -160,6 +160,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public String playerItemIcon(String model) {
+        return runs.playerItemIcon(model);
+    }
+
+    @Override
     public PlayerInventoryResponse allocatePlayerInventory(String revision, String key,
             int keepCount) {
         return runs.allocatePlayerInventory(revision, key, keepCount);

@@ -26,4 +26,12 @@ public interface DroppedItemObserverPort {
     default Map<String, String> playerItemNames() {
         return Map.of();
     }
+
+    default List<PlayerInventorySlot> playerInventorySlots() {
+        return List.of();
+    }
+
+    default String playerItemIcon(String model) {
+        return "";
+    }
 }

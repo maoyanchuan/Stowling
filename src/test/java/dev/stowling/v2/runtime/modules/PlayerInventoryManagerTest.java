@@ -6,11 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.automation.PlayerInventoryDelta;
+import dev.stowling.automation.PlayerInventorySlot;
 import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.v2.config.PlayerInventoryProtectionStore;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -254,6 +256,32 @@ class PlayerInventoryManagerTest {
         var item = manager.view(false, false, Map.of()).items().getFirst();
         assertEquals(0, item.protectedCount());
         assertEquals(1, item.classificationCount());
+    }
+
+    @Test
+    void movingStacksDoesNotMoveTheProtectionToASeparateItemOrChangeItsRevision() {
+        String pearl = "minecraft:ender_pearl";
+        String sword = "minecraft:diamond_sword#named";
+        PlayerInventoryManager manager = manager(Map.of(pearl, 20, sword, 1));
+        manager.observe();
+        manager.allocate(manager.view(false, true, Map.of()).revision(), pearl, 18);
+        var partial = new PlayerInventorySlot(10, pearl, pearl, 4, 16, List.of(), 0, 0);
+        var full = new PlayerInventorySlot(13, pearl, pearl, 16, 16, List.of(), 0, 0);
+        var tool = new PlayerInventorySlot(0, sword, "minecraft:diamond_sword",
+                1, 1, List.of("Sharpness V"), 100, 1561);
+        var before = manager.view(false, true, Map.of(), List.of(tool, partial, full));
+
+        var moved = new PlayerInventorySlot(8, pearl, pearl, 16, 16, List.of(), 0, 0);
+        manager.observe();
+        var after = manager.view(false, true, Map.of(), List.of(tool, moved, partial));
+
+        assertEquals(before.revision(), after.revision());
+        assertEquals(before.items(), after.items());
+        assertEquals(List.of(tool, moved, partial), after.slots());
+        assertEquals(18, after.items().stream().filter(item -> item.key().equals(pearl))
+                .findFirst().orElseThrow().protectedCount());
+        assertEquals(0, after.items().stream().filter(item -> item.key().equals(sword))
+                .findFirst().orElseThrow().protectedCount());
     }
 
     @Test

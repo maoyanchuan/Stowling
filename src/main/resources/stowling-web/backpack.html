@@ -34,7 +34,7 @@
                         <h2 id="backpack-title">当前背包</h2>
                         <p class="muted compact-help">
                             在已启用的自动收集点捡到的投料会送往该点的缓存，任务启动前捡到的也算。
-                            只有在此保存的保留数量才会锁定自用。其余物品进入待分类，
+                            自用保护按物品变体和保留数量生效，换格后仍然有效。其余物品进入待分类，
                             包括原有物品、寻路时捡到的杂物和空闲时收到的投料。
                         </p>
                     </div>
@@ -42,14 +42,17 @@
                 </div>
                 <p id="backpack-status" class="field-message" role="status"></p>
                 <div class="backpack-browser">
-                    <div id="backpack-items" class="backpack-items"
-                         aria-label="选择背包物品"></div>
+                    <div>
+                        <div id="backpack-items" class="backpack-items"
+                             role="group" aria-label="背包和快捷栏"></div>
+                        <p id="backpack-empty" class="muted compact-help" hidden>背包中没有物品</p>
+                    </div>
                     <form id="backpack-editor" class="backpack-editor" hidden>
                         <h3 id="backpack-item-name"></h3>
                         <p id="backpack-item-id" class="muted compact-help"></p>
                         <p id="backpack-counts"></p>
                         <label class="move-field">
-                            <span>保留自用数量</span>
+                            <span>此物品变体的保留自用总数</span>
                             <input id="backpack-keep" type="number" min="0" step="1" required>
                         </label>
                         <p id="backpack-preview" class="muted compact-help" aria-live="polite"></p>
@@ -72,6 +75,7 @@
             </section>
         </div>
     </main>
+    <div id="backpack-tooltip" class="backpack-tooltip" role="tooltip" hidden></div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

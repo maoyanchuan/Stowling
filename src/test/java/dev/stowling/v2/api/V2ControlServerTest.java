@@ -203,6 +203,11 @@ class V2ControlServerTest {
             public Optional<Map<String, Integer>> playerItemCounts() {
                 return Optional.of(Map.of("minecraft:stone", 64));
             }
+
+            @Override
+            public String playerItemIcon(String model) {
+                return "minecraft:stone".equals(model) ? "data:image/png;base64,c3RvbmU=" : "";
+            }
         };
         var registry = new TaskModuleRuntimeRegistry(navigation, drops, base.containerRegions(),
                 base.containerTransfers(), base.containerWithdrawals(), base.containerInspections(),
@@ -215,6 +220,12 @@ class V2ControlServerTest {
                 assertEquals(200, fixture.send(asset, "GET", null, false).statusCode());
             }
             assertEquals(401, fixture.send("/v1/player-inventory", "GET", null, false).statusCode());
+            String iconPath = "/v1/player-inventory/icons/minecraft:stone";
+            assertEquals(401, fixture.send(iconPath, "GET", null, false).statusCode());
+            assertEquals(405, fixture.send(iconPath, "PUT", null, true).statusCode());
+            HttpResponse<String> icon = fixture.send(iconPath, "GET", null, true);
+            assertEquals(200, icon.statusCode());
+            assertEquals("\"data:image/png;base64,c3RvbmU=\"", icon.body());
             JsonObject view = object(fixture.send("/v1/player-inventory", "GET", null, true));
             JsonObject allocation = new JsonObject();
             allocation.addProperty("revision", view.get("revision").getAsString());

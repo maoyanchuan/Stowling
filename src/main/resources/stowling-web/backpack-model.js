@@ -17,5 +17,25 @@
         return {revision: String(snapshot.revision), key: String(item.key), keepCount: keep};
     }
 
-    window.StowlingBackpackModel = Object.freeze({freeCount, allocation});
+    /** @returns {number[]} */
+    function slotOrder() {
+        return Array.from({length: 36}, (_, index) => (index + 9) % 36);
+    }
+
+    /** @param {object} slot @param {object} item @returns {string[]} */
+    function slotDetails(slot, item) {
+        const details = [...slot.tooltip];
+        if (slot.maxDurability > 0) {
+            details.push(`耐久 ${slot.remainingDurability} / ${slot.maxDurability}`);
+        }
+        details.push(
+            `本格 ${slot.count} 件 · 堆叠上限 ${slot.maxCount}`,
+            `同一物品变体合计 ${item.count} 件`,
+            `保留自用 ${item.protectedCount} · 任务 ${item.taskCount}`
+                + ` · 待分类 ${item.classificationCount}`
+        );
+        return details;
+    }
+
+    window.StowlingBackpackModel = Object.freeze({freeCount, allocation, slotOrder, slotDetails});
 })();

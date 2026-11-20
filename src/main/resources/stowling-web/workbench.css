@@ -889,30 +889,50 @@ body[data-page] .resource-browser-item[aria-current="true"] {
 
 body[data-page] .backpack-browser {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr);
+    grid-template-columns: minmax(0, 32rem) minmax(280px, 1fr);
     gap: 24px;
     align-items: start;
 }
 
 body[data-page] .backpack-items {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: clamp(3px, 0.5vw, 7px);
+    max-width: 32rem;
+}
+
+body[data-page] .backpack-slot {
+    display: grid;
+    aspect-ratio: 1;
+    min-width: 0;
+    border: 1px solid #414746;
+    border-radius: 6px;
+    background: #202423;
+    box-shadow: inset 0 1px 3px #151818;
+}
+
+body[data-page] .backpack-slot:nth-child(n + 28) {
+    margin-block-start: 6px;
 }
 
 body[data-page] .backpack-item {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+    position: relative;
+    display: grid;
+    place-items: center;
     min-width: 0;
-    padding: 18px;
-    text-align: left;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    border: 1px solid #45484b;
-    border-radius: 12px;
-    background: #202224;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: #ecf0ed;
+}
+
+body[data-page] .backpack-item:hover:not(:disabled),
+body[data-page] .backpack-item:focus-visible {
+    transform: none;
+    border-color: #83a697;
+    background: #293531;
+    outline-offset: 1px;
 }
 
 body[data-page] .backpack-item[aria-pressed="true"] {
@@ -921,7 +941,64 @@ body[data-page] .backpack-item[aria-pressed="true"] {
 }
 
 body[data-page] .backpack-quantity {
-    font-size: 1.3rem;
+    position: absolute;
+    inset: auto 3px 0 auto;
+    font-size: clamp(0.65rem, 1.6vw, 0.95rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 1px 2px 2px #000, 0 0 3px #000;
+}
+
+body[data-page] .backpack-icon {
+    width: 78%;
+    aspect-ratio: 1;
+    image-rendering: pixelated;
+}
+
+body[data-page] .backpack-icon-fallback {
+    display: grid;
+    place-items: center;
+    width: 76%;
+    aspect-ratio: 1;
+    border-radius: 4px;
+    background: #34443d;
+    font-size: clamp(0.6rem, 1.4vw, 0.9rem);
+    font-weight: 700;
+    line-height: 1;
+}
+
+body[data-page] .backpack-protection {
+    position: absolute;
+    inset: 0 auto auto 2px;
+    color: #b5e6c4;
+    font-size: clamp(0.6rem, 1.1vw, 0.76rem);
+    font-weight: 700;
+    text-shadow: 1px 1px 2px #000, 0 0 3px #000;
+}
+
+body[data-page] .backpack-tooltip {
+    position: fixed;
+    z-index: 20;
+    max-width: min(25rem, calc(100vw - 16px));
+    max-height: calc(100vh - 16px);
+    overflow: auto;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    padding: 9px 12px;
+    border: 1px solid #776091;
+    border-radius: 6px;
+    background: #1b1423;
+    box-shadow: 0 5px 16px #0008;
+    color: #ddcfe8;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+body[data-page] .backpack-tooltip-title {
+    display: block;
+    margin-bottom: 3px;
+    color: #fbf6ff;
 }
 
 body[data-page] .backpack-editor {

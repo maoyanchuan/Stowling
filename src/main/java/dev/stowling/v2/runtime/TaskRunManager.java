@@ -493,8 +493,14 @@ public final class TaskRunManager {
     }
 
     public synchronized dev.stowling.v2.control.PlayerInventoryResponse playerInventory() {
+        var observer = registry.droppedItems();
         return registry.inventory().view(active != null || !queue.isEmpty(),
-                classificationAvailable(), registry.droppedItems().playerItemNames());
+                classificationAvailable(), observer.playerItemNames(),
+                observer.playerInventorySlots());
+    }
+
+    public String playerItemIcon(String model) {
+        return registry.droppedItems().playerItemIcon(model);
     }
 
     private boolean classificationAvailable() {

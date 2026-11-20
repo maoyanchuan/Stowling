@@ -77,6 +77,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class V2ControlServer implements AutoCloseable {
     private static final int MAX_REQUEST_BYTES = 64 * 1024;
     private static final String JSON_TYPE = "application/json; charset=utf-8";
+    private static final String INVENTORY_ICON_PATH = "/v1/player-inventory/icons/";
 
     private final InetSocketAddress address;
     private final V2ControlService service;
@@ -270,6 +271,13 @@ public final class V2ControlServer implements AutoCloseable {
             String method,
             String body
     ) throws IOException {
+        if (path.startsWith(INVENTORY_ICON_PATH)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            String model = path.substring(INVENTORY_ICON_PATH.length());
+            sendJson(exchange, 200, service.playerItemIcon(model));
+            return;
+        }
         if ("/v1/player-inventory".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);

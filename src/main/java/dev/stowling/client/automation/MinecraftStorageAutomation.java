@@ -67,6 +67,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final Supplier<WarehouseInventory> materialWarehouse;
     private final RobotWarehouseCache robotWarehouse;
     private final Map<UUID, MinecraftShulkerAction.Resource> resources = new LinkedHashMap<>();
+    private record IntakeStash(ContainerTarget supply, Map<String, Integer> items) {
+    }
+
+    private final Map<UUID, IntakeStash> intakeStashes = new LinkedHashMap<>();
     private final Map<TaskRunWorkspace, Map<BlockPosition, CacheSnapshot>> cacheSnapshotsByRun =
             new WeakHashMap<>();
 
@@ -105,12 +109,24 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public boolean hasTemporaryResources(UUID owner) {
-        return resources.containsKey(owner);
+        return resources.containsKey(owner) || intakeStashes.containsKey(owner);
     }
 
     @Override
     public void releaseTemporaryResources(UUID owner) {
         resources.remove(owner);
+        intakeStashes.remove(owner);
+    }
+
+    @Override
+    public void adoptTemporaryResources(UUID previousOwner, UUID nextOwner) {
+        if (hasTemporaryResources(nextOwner)) {
+            throw new IllegalStateException("接收分类收尾前仍有未处理的缓存打包资源");
+        }
+        var resource = resources.remove(previousOwner);
+        if (resource != null) resources.put(nextOwner, resource);
+        var stash = intakeStashes.remove(previousOwner);
+        if (stash != null) intakeStashes.put(nextOwner, stash);
     }
 
     @Override
@@ -233,6 +249,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor cleanup(TaskExecutionContext context) {
         return cleanup(context, false);
+    }
+
+    @Override
+    public TaskModuleExecutor storeCacheIntake(TaskExecutionContext context,
+            List<ContainerTarget> containers, boolean pack) {
+        return new CacheIntake(context, containers, pack);
     }
 
     @Override
@@ -402,6 +424,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private CacheSnapshot recordCacheContents(TaskExecutionContext context, ContainerTarget target,
             List<ItemStack> stacks) {
         List<ItemStack> occupied = stacks.stream().filter(stack -> !stack.isEmpty()).toList();
+        context.workspace().recordCacheCapacity(target, stacks.size(), occupied.size());
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Integer> stackSizes = new LinkedHashMap<>();
         Set<String> fullBoxKeys = new LinkedHashSet<>();
@@ -762,6 +785,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         final void recover(Runnable after) {
+            IntakeStash stash = intakeStashes.get(owner());
+            if (stash != null) {
+                restoreIntakeStash(stash, after);
+                return;
+            }
             MinecraftShulkerAction.Resource resource = resources.get(owner());
             if (resource == null) {
                 after.run();
@@ -816,6 +844,47 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     breakBox.run();
                 });
             }
+        }
+
+        private void restoreIntakeStash(IntakeStash stash, Runnable after) {
+            var resource = resources.get(owner());
+            boolean full = minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .noneMatch(ItemStack::isEmpty);
+            if (full) {
+                if (resource == null) {
+                    throw new IllegalStateException("任务物品暂存在空盒供应箱，请腾出一格后继续收尾");
+                }
+                if (!resource.placed) {
+                    steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                            () -> restoreIntakeStash(stash, after)));
+                    return;
+                }
+                var placed = new ContainerTarget(resource.position, "minecraft:shulker_box");
+                read(placed, contents -> {
+                    Map<String, Integer> raw = new LinkedHashMap<>();
+                    owned().forEach((key, count) -> {
+                        if (!ItemIdentity.isBox(key)) raw.put(key, count);
+                    });
+                    Map<String, Integer> fitting = ShulkerTransferPlanner.fitting(
+                            transferSlots(contents), contents.size(), raw, inventoryStackSizes());
+                    if (fitting.isEmpty()) {
+                        throw new IllegalStateException("暂存物品仍在空盒供应箱，请腾出一格后继续收尾");
+                    }
+                    transfer(placed, fitting, false, () -> restoreIntakeStash(stash, after));
+                });
+                return;
+            }
+            Map<String, Integer> before = owned();
+            transfer(stash.supply(), stash.items(), true, () -> {
+                boolean restored = stash.items().entrySet().stream().allMatch(entry ->
+                        owned().getOrDefault(entry.getKey(), 0)
+                                >= before.getOrDefault(entry.getKey(), 0) + entry.getValue());
+                if (!restored) {
+                    throw new IllegalStateException("空盒供应箱中的暂存任务物品未取回，等待收尾");
+                }
+                intakeStashes.remove(owner());
+                recover(after);
+            });
         }
 
         private void makeRecoverySpace(MinecraftShulkerAction.Resource resource, int index,
@@ -875,6 +944,152 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private record Step(TaskModuleExecutor action, Runnable after, Runnable failed) {
         Step(TaskModuleExecutor action, Runnable after) {
             this(action, after, null);
+        }
+    }
+
+    private final class CacheIntake extends Session {
+        private final List<ContainerTarget> caches;
+        private final boolean pack;
+        private int compressionCursor;
+        private boolean exchanging;
+        private boolean stopAfterExchange;
+        private BlockPosition site;
+
+        CacheIntake(TaskExecutionContext context, List<ContainerTarget> caches, boolean pack) {
+            super(context);
+            this.caches = List.copyOf(caches);
+            this.pack = pack;
+        }
+
+        @Override
+        void initialize() {
+            if (caches.isEmpty()) throw new IllegalStateException("缓存区域没有可用容器");
+            if (hasTemporaryResources(owner())) {
+                throw new IllegalStateException("缓存装盒前请先完成上次潜影盒收尾");
+            }
+            if (pack) packNext();
+            else deposit(0);
+        }
+
+        private Map<String, Integer> rawOwned() {
+            Map<String, Integer> result = new LinkedHashMap<>();
+            owned().forEach((key, count) -> {
+                if (!ItemIdentity.isBox(key)) result.put(key, count);
+            });
+            return result;
+        }
+
+        private void packNext() {
+            if (rawOwned().isEmpty()) {
+                deposit(0);
+                return;
+            }
+            site = chooseSite(context, caches.getFirst(), null, configuration);
+            ItemStack empty = ownedEmptyBox(owned());
+            if (!empty.isEmpty()) place(empty);
+            else if (minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .anyMatch(ItemStack::isEmpty)) {
+                withdrawEmptyBox(0, this::place);
+            } else {
+                exchangeEmptyBox(0);
+            }
+        }
+
+        private void exchangeEmptyBox(int index) {
+            List<ContainerTarget> supplies = emptyBoxSources(context);
+            if (index >= supplies.size()) {
+                throw new IllegalStateException("空盒供应不足，无法为满背包打包，请补充空潜影盒");
+            }
+            ContainerTarget supply = supplies.get(index);
+            var exchange = new MinecraftEmptyBoxExchange(minecraft, context, supply);
+            exchanging = true;
+            steps.add(new Step(exchange, () -> {
+                intakeStashes.put(owner(), new IntakeStash(supply, exchange.stashed()));
+                place(exchange.box());
+                exchanging = false;
+                if (stopAfterExchange) super.requestStop();
+            }, () -> {
+                exchanging = false;
+                if (stopAfterExchange) super.requestStop();
+                else exchangeEmptyBox(index + 1);
+            }));
+        }
+
+        private void place(ItemStack empty) {
+            var resource = new MinecraftShulkerAction.Resource(site, empty);
+            resources.put(owner(), resource);
+            var target = new ContainerTarget(site, "minecraft:shulker_box");
+            steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                    () -> read(target, contents -> {
+                        Map<String, Integer> fitting = ShulkerTransferPlanner.fitting(
+                                transferSlots(contents), contents.size(), rawOwned(),
+                                inventoryStackSizes());
+                        if (fitting.isEmpty()) {
+                            throw new IllegalStateException("潜影盒无法接收当前投料");
+                        }
+                        int before = sum(rawOwned());
+                        transfer(target, fitting, false, () -> {
+                            if (sum(rawOwned()) >= before) {
+                                throw new IllegalStateException("投料装盒未确认，等待收尾");
+                            }
+                            recover(this::packNext);
+                        });
+                    })));
+        }
+
+        private void deposit(int index) {
+            if (owned().isEmpty()) return;
+            if (index >= caches.size()) {
+                if (pack && compressionCursor < caches.size()) loadCacheRaw();
+                return;
+            }
+            ContainerTarget cache = caches.get(index);
+            var access = new MinecraftStorageAccess(minecraft, context, cache, owned(), false, false);
+            Runnable next = () -> deposit(index + 1);
+            steps.add(new Step(access, next, next));
+        }
+
+        private void loadCacheRaw() {
+            if (compressionCursor >= caches.size() || compressionSlots() == 0) {
+                if (!rawOwned().isEmpty()) packNext();
+                return;
+            }
+            ContainerTarget cache = caches.get(compressionCursor++);
+            readCache(cache, contents -> {
+                Set<String> raw = contents.stream().filter(stack -> !stack.isEmpty()
+                        && !MinecraftItemIdentity.isBox(stack))
+                        .map(MinecraftItemIdentity::key).map(ItemIdentity::exact)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                if (raw.isEmpty()) {
+                    loadCacheRaw();
+                } else {
+                    var withdrawal = new ContainerBatchWithdrawal(context, cache, raw,
+                            compressionSlots());
+                    steps.add(new Step(withdrawal, this::loadCacheRaw));
+                }
+            });
+        }
+
+        private int compressionSlots() {
+            long empty = minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .filter(ItemStack::isEmpty).count();
+            return Math.min(remainingBatchSlots(), Math.max(0, (int) empty - 1));
+        }
+
+        @Override
+        public void requestStop() {
+            stopAfterExchange = true;
+            if (!exchanging) super.requestStop();
+        }
+
+        @Override
+        public boolean safeToStop() {
+            return !exchanging && super.safeToStop();
+        }
+
+        @Override
+        String completionMessage() {
+            return owned().isEmpty() ? "投料已存入缓存" : "缓存无法接收更多物品，需要先分类腾出空间";
         }
     }
 

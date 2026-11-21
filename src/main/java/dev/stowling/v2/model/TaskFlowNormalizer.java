@@ -61,7 +61,8 @@ public final class TaskFlowNormalizer {
                     definition.classificationEnabled(), definition.detectionCoordinateRef(),
                     definition.pickupRadius(), definition.cacheRegionRef(), areas,
                     definition.collectionPriority(), definition.overflowEnabled(),
-                    definition.cleanupPolicy(), null, definition.overflowDestinationRef());
+                    definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
+                    definition.cachePolicy());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -303,48 +304,44 @@ public final class TaskFlowNormalizer {
     }
 
     private static TaskDefinition upgradeAutoCollection(
-            TaskDefinition task,
-            AutoClassifyDefinition definition
-    ) {
-        if (definition == null || task.steps().size() < 4) {
-            return task;
-        }
+            TaskDefinition task, AutoClassifyDefinition definition) {
+        if (definition == null || task.steps().size() < 2) return task;
         List<TaskStep> steps = task.steps();
-        if (!ConfigValidator.COLLECT_DROPPED_ITEMS.equals(steps.get(0).moduleId())
-                || !ConfigValidator.SCAN_CONTAINERS_IN_REGION.equals(steps.get(1).moduleId())
-                || steps.get(2).kind() != TaskStepKind.REPEAT) {
+        TaskStep generatedBatch = AutoClassifyTaskFactory.tasks(definition, List.of())
+                .getFirst().steps().get(1);
+        TaskStep intake = generatedBatch.steps().get(1);
+        List<TaskStep> upgraded = new ArrayList<>(steps);
+        TaskStep second = steps.get(1);
+        if (second.kind() == TaskStepKind.REPEAT && second.steps().size() >= 3
+                && ConfigValidator.SCAN_CONTAINERS_IN_REGION
+                        .equals(second.steps().getFirst().moduleId())) {
+            if (containsCacheIntake(second.steps())) return task;
+            List<TaskStep> body = new ArrayList<>(second.steps());
+            body.set(1, remapStepIds(List.of(intake), definition.derivedId("cache-intake"))
+                    .getFirst());
+            upgraded.set(1, new TaskStep(second.id(), second.kind(), second.moduleId(),
+                    second.parameters(), body, second.otherwise()));
+        } else if (steps.size() >= 4
+                && ConfigValidator.SCAN_CONTAINERS_IN_REGION.equals(second.moduleId())) {
+            boolean legacyTail = ConfigValidator.ASSERT_NO_MANAGED_ITEMS
+                    .equals(steps.get(3).moduleId());
+            TaskStep batch = TaskFlowTemplates.collectionBatches(steps.getFirst(), second, intake);
+            upgraded = new ArrayList<>(List.of(steps.getFirst()));
+            upgraded.addAll(remapStepIds(List.of(batch), definition.derivedId("cache-intake")));
+            if (legacyTail) {
+                Map<String, String> parameters = new LinkedHashMap<>(steps.getFirst().parameters());
+                parameters.putAll(second.parameters());
+                upgraded.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
+                        definition.cacheRegionRef(), parameters), steps.get(3).id()));
+            }
+            upgraded.addAll(steps.subList(legacyTail ? 4 : 3, steps.size()));
+        } else {
             return task;
         }
-        boolean legacyTail = ConfigValidator.ASSERT_NO_MANAGED_ITEMS
-                .equals(steps.get(3).moduleId());
-        int tailStart = legacyTail ? 4 : 3;
-        TaskStep batches = TaskFlowTemplates.collectionBatches(steps.get(0), steps.get(1),
-                steps.get(2));
-        UUID seed = UUID.nameUUIDFromBytes((task.id() + ":collection-batches")
-                .getBytes(StandardCharsets.UTF_8));
-        List<TaskStep> upgraded = new ArrayList<>(List.of(steps.getFirst()));
-        upgraded.addAll(remapStepIds(List.of(batches), seed));
-        if (legacyTail) {
-            Map<String, String> parameters = new LinkedHashMap<>(steps.get(0).parameters());
-            parameters.putAll(steps.get(1).parameters());
-            upgraded.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
-                    definition.cacheRegionRef(), parameters),
-                    steps.get(3).id()));
-        }
-        upgraded.addAll(steps.subList(tailStart, steps.size()));
-        return new TaskDefinition(
-                task.id(),
-                task.name(),
-                task.priority(),
-                task.repeatWhenIdle(),
-                upgraded,
-                task.interruptionMode(),
-                task.interruptionTaskRef(),
-                task.defaultInterruptionFlow(),
-                task.requeueAfterInterruption(),
-                task.folderId(),
-                task.cleanupPolicy()
-        );
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                upgraded, task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy());
     }
 
     private static TaskDefinition normalizeTask(TaskDefinition task, boolean autoClassify) {
@@ -362,6 +359,11 @@ public final class TaskFlowNormalizer {
                 task.folderId(),
                 task.cleanupPolicy()
         );
+    }
+
+    private static boolean containsCacheIntake(List<TaskStep> steps) {
+        return steps.stream().anyMatch(step -> "MANAGE_CACHE_INTAKE".equals(step.moduleId())
+                || containsCacheIntake(step.steps()) || containsCacheIntake(step.otherwise()));
     }
 
     private static List<TaskStep> normalizeSteps(List<TaskStep> steps, boolean autoClassify) {

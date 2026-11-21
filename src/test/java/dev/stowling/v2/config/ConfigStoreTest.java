@@ -28,6 +28,28 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void cacheIntakePolicyPersistsAcrossConfigurationRestart() throws Exception {
+        AppConfig initial = automaticConfiguration(false);
+        var original = initial.autoClassifyTasks().getFirst();
+        var policy = new dev.stowling.v2.model.CacheIntakePolicy(
+                dev.stowling.v2.model.CacheIntakePolicy.Mode.CLASSIFY_FIRST, 65);
+        var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
+                true, true, original.detectionCoordinateRef(), original.pickupRadius(),
+                original.cacheRegionRef(), original.classificationAreas(),
+                original.collectionPriority(), original.overflowEnabled(), original.cleanupPolicy(),
+                null, original.overflowDestinationRef(), policy);
+        var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
+                AutoClassifyTaskFactory.tasks(definition, List.of()), initial.regions(),
+                initial.categoryZones(), List.of(), List.of(), List.of(definition));
+        Path path = directory.resolve("cache-intake.json");
+        ConfigStore store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), config);
+
+        assertEquals(policy, new ConfigStore(path).loadOrReset().config()
+                .autoClassifyTasks().getFirst().cachePolicy());
+    }
+
+    @Test
     void reusesValidatedConfigAndDetectsSameLengthExternalEdits() throws Exception {
         Path path = directory.resolve("stowling.json");
         ConfigStore store = new ConfigStore(path);

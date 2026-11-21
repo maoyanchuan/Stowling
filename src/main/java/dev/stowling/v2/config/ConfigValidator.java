@@ -658,6 +658,20 @@ public final class ConfigValidator {
             );
         }
         switch (step.moduleId()) {
+            case "MANAGE_CACHE_INTAKE" -> {
+                requireParameters(step, Set.of("cacheIntakeMode", "cacheThresholdPercent",
+                        "classificationTaskRef"), Set.of("cacheIntakeMode",
+                        "cacheThresholdPercent"));
+                new dev.stowling.v2.model.CacheIntakePolicy(
+                        dev.stowling.v2.model.CacheIntakePolicy.Mode.valueOf(
+                                step.parameters().get("cacheIntakeMode")),
+                        Integer.parseInt(step.parameters().get("cacheThresholdPercent")));
+                String taskRef = step.parameters().get("classificationTaskRef");
+                if (taskRef != null && !taskRef.isBlank()
+                        && ResourceReference.parse(taskRef).type() != ResourceType.TASK) {
+                    throw new V2ValidationException("缓存分类需要引用任务");
+                }
+            }
             case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {
                 requireParameters(step, ROBOT_WAREHOUSE.equals(step.moduleId())
                         ? Set.of(REGION_REF, TARGET_REF) : Set.of(REGION_REF), Set.of());

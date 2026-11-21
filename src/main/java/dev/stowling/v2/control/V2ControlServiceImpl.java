@@ -791,7 +791,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.collectionPriority(),
                 overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
                         false),
-                request.cleanupPolicy(), request.overflowDestinationRef()
+                request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy()
         );
         requireWarehouseLocation(definition.overflowDestinationRef());
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
@@ -874,7 +874,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         existing.overflowEnabled()),
                 request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy(),
                 request.overflowDestinationRef() == null ? existing.overflowDestinationRef()
-                        : request.overflowDestinationRef()
+                        : request.overflowDestinationRef(),
+                request.cachePolicy() == null ? existing.cachePolicy() : request.cachePolicy()
         );
         if (!Objects.equals(existing.overflowDestinationRef(), replacement.overflowDestinationRef())) {
             requireWarehouseLocation(replacement.overflowDestinationRef());
@@ -1377,7 +1378,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             TaskPriority collectionPriority,
             boolean overflowEnabled,
             dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy,
-            String overflowDestinationRef
+            String overflowDestinationRef,
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy
     ) {
         if (detection == null) {
             throw new V2ValidationException("detection is required");
@@ -1411,7 +1413,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ? TaskPriority.NORMAL
                         : collectionPriority,
                 overflowEnabled,
-                cleanupPolicy, null, overflowDestinationRef
+                cleanupPolicy, null, overflowDestinationRef, cachePolicy
         );
     }
 
@@ -1431,7 +1433,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.classificationAreas(),
                 definition.collectionPriority(),
                 definition.overflowEnabled(),
-                definition.cleanupPolicy(), null, definition.overflowDestinationRef()
+                definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
+                definition.cachePolicy()
         );
     }
 
@@ -1471,7 +1474,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 ).encode(),
                 triggerIds,
                 definition.overflowEnabled(),
-                definition.cleanupPolicy(), definition.overflowDestinationRef()
+                definition.cleanupPolicy(), definition.overflowDestinationRef(), definition.cachePolicy()
         );
     }
 

@@ -35,6 +35,7 @@ const state = {
 const elements = {
     name: {value: "全物品"}, point: {value: "pickup"}, radius: {value: "8"},
     cache: {value: "cache"}, priority: {value: "NORMAL"},
+    cacheMode: {value: "PACK_FIRST"}, cacheThreshold: {value: "80"},
     collectEnabled: {checked: true}, classifyEnabled: {checked: true},
     warehouseEnabled: {checked: true}
 };

@@ -19,8 +19,19 @@ public record AutoClassifyDefinition(
         boolean overflowEnabled,
         TaskCleanupPolicy cleanupPolicy,
         String unstackableRegionRef, // Read legacy settings before converting them to layout refs.
-        String overflowDestinationRef
+        String overflowDestinationRef,
+        CacheIntakePolicy cachePolicy
 ) {
+    public AutoClassifyDefinition(UUID id, String name, boolean enabled,
+            boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
+            int pickupRadius, String cacheRegionRef, List<AutoClassifyAreaDefinition> areas,
+            TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef, String overflowDestinationRef) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
+                pickupRadius, cacheRegionRef, areas, priority, overflowEnabled, cleanupPolicy,
+                unstackableRegionRef, overflowDestinationRef, null);
+    }
+
     public AutoClassifyDefinition(UUID id, String name, boolean enabled,
             boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
             int pickupRadius, String cacheRegionRef, List<AutoClassifyAreaDefinition> areas,
@@ -90,6 +101,7 @@ public record AutoClassifyDefinition(
     public static final int MAX_PICKUP_RADIUS = 64;
 
     public AutoClassifyDefinition {
+        cachePolicy = cachePolicy == null ? CacheIntakePolicy.DEFAULT : cachePolicy;
         cleanupPolicy = cleanupPolicy == null || cleanupPolicy.destinationRef() == null
                 ? new TaskCleanupPolicy(cacheRegionRef, TaskResumeMode.RESTART) : cleanupPolicy;
         if (cleanupPolicy.resumeMode() != TaskResumeMode.RESTART) {

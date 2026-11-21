@@ -31,6 +31,44 @@ public final class TaskRunWorkspace {
     private dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy =
             dev.stowling.v2.model.TaskCleanupPolicy.DEFAULT;
     private final TaskProgress progress = new TaskProgress();
+    private Map<UUID, dev.stowling.v2.model.TaskDefinition> knownTasks = Map.of();
+    private final Map<BlockPosition, int[]> cacheCapacity = new LinkedHashMap<>();
+
+    public synchronized void configureTasks(
+            Map<UUID, dev.stowling.v2.model.TaskDefinition> tasks) {
+        knownTasks = Map.copyOf(tasks);
+    }
+
+    public synchronized dev.stowling.v2.model.TaskDefinition task(UUID id) {
+        return knownTasks.get(id);
+    }
+
+    public synchronized void recordCacheCapacity(ContainerTarget target, int slots, int occupied) {
+        if (slots <= 0 || occupied < 0 || occupied > slots) {
+            throw new IllegalArgumentException("invalid cache capacity");
+        }
+        cacheCapacity.put(target.position(), new int[] {slots, occupied});
+    }
+
+    public synchronized boolean hasCacheCapacity(ContainerTarget target) {
+        return cacheCapacity.containsKey(target.position());
+    }
+
+    public synchronized void invalidateCacheCapacity(List<ContainerTarget> targets) {
+        targets.forEach(target -> cacheCapacity.remove(target.position()));
+    }
+
+    public synchronized boolean cacheAtThreshold(List<ContainerTarget> targets, int percent) {
+        long slots = 0;
+        long occupied = 0;
+        for (ContainerTarget target : targets) {
+            int[] capacity = cacheCapacity.get(target.position());
+            if (capacity == null) throw new IllegalStateException("缓存容量尚未完成盘点");
+            slots += capacity[0];
+            occupied += capacity[1];
+        }
+        return slots > 0 && occupied * 100 >= slots * percent;
+    }
     private final Map<UUID, Integer> cacheUpdates = new LinkedHashMap<>();
     private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer =
             new LinkedHashMap<>();

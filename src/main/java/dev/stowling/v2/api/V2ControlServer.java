@@ -936,7 +936,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalPriority(json, "collectionPriority"),
                 optionalBooleanValue(json, "overflowEnabled"),
                 cleanupPolicy(json),
-                optionalString(json, "overflowDestinationRef")
+                optionalString(json, "overflowDestinationRef"),
+                cachePolicy(json)
         );
     }
 
@@ -956,7 +957,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalPriority(json, "collectionPriority"),
                 optionalBooleanValue(json, "overflowEnabled"),
                 cleanupPolicy(json),
-                optionalString(json, "overflowDestinationRef")
+                optionalString(json, "overflowDestinationRef"),
+                cachePolicy(json)
         );
     }
 
@@ -974,6 +976,20 @@ public final class V2ControlServer implements AutoCloseable {
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static dev.stowling.v2.model.CacheIntakePolicy cachePolicy(JsonObject json) {
+        if (!json.has("cachePolicy") || json.get("cachePolicy").isJsonNull()) return null;
+        JsonObject policy = jsonObject(json.get("cachePolicy"), "cachePolicy");
+        requireFieldsAny(policy, Set.of("mode", "thresholdPercent"),
+                Set.of("mode", "thresholdPercent"));
+        try {
+            return new dev.stowling.v2.model.CacheIntakePolicy(
+                    dev.stowling.v2.model.CacheIntakePolicy.Mode.valueOf(string(policy, "mode")),
+                    integer(policy, "thresholdPercent"));
+        } catch (IllegalArgumentException exception) {
+            throw new V2ValidationException("请选择有效的缓存策略和 1 到 100 的容量百分比");
+        }
     }
 
     private static AutoClassifyDetectionRequest autoClassifyDetection(
@@ -1003,6 +1019,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "overflowEnabled",
                 "overflowDestinationRef",
                 "cleanupPolicy",
+                "cachePolicy",
                 "detection",
                 "cacheRegionRef",
                 "classificationAreas",

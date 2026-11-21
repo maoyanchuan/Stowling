@@ -24,7 +24,8 @@ public record AutoClassifyTask(
         List<UUID> triggerIds,
         boolean overflowEnabled,
         TaskCleanupPolicy cleanupPolicy,
-        String overflowDestinationRef
+        String overflowDestinationRef,
+        dev.stowling.v2.model.CacheIntakePolicy cachePolicy
 ) {
     public AutoClassifyTask(
             UUID id,
@@ -46,7 +47,7 @@ public record AutoClassifyTask(
         this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
                 cacheRegionRef, classificationAreas, collectionPriority,
                 classificationPriority, collectionTaskRef, classificationTaskRef,
-                interruptionTaskRef, triggerIds, overflowEnabled, null, null);
+                interruptionTaskRef, triggerIds, overflowEnabled, null, null, null);
     }
 
     public AutoClassifyTask(
@@ -72,6 +73,8 @@ public record AutoClassifyTask(
     }
 
     public AutoClassifyTask {
+        cachePolicy = cachePolicy == null
+                ? dev.stowling.v2.model.CacheIntakePolicy.DEFAULT : cachePolicy;
         classificationAreas = List.copyOf(classificationAreas);
         triggerIds = List.copyOf(triggerIds);
     }

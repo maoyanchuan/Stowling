@@ -511,12 +511,14 @@ public final class ConfigStore {
         allowed.add("overflowDestinationRef");
         allowed.add("cleanupPolicy");
         allowed.add("unstackableRegionRef");
+        allowed.add("cachePolicy");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
             JsonObject definition = requireObject(definitions.get(index), path);
             requireFields(definition, path, allowed, fields);
             requireCleanupPolicy(definition.get("cleanupPolicy"));
+            requireCachePolicy(definition.get("cachePolicy"));
             requireAutoClassifyAreas(
                     definition.get("classificationAreas"), path + ".classificationAreas");
         }
@@ -531,6 +533,22 @@ public final class ConfigStore {
                     "categoryZoneRef",
                     "storagePolicy"
             ), Set.of("categoryZoneRef"));
+        }
+    }
+
+    private static void requireCachePolicy(JsonElement value) {
+        if (value == null || value.isJsonNull()) return;
+        JsonObject policy = requireObject(value, "cachePolicy");
+        requireExactFields(policy, "cachePolicy", Set.of("mode", "thresholdPercent"));
+        if (!policy.get("mode").isJsonPrimitive()
+                || !Set.of("PACK_FIRST", "CLASSIFY_FIRST")
+                        .contains(policy.get("mode").getAsString())) {
+            throw new V2ValidationException("cachePolicy.mode is invalid");
+        }
+        JsonElement percent = policy.get("thresholdPercent");
+        if (!percent.isJsonPrimitive() || !percent.getAsJsonPrimitive().isNumber()
+                || !percent.getAsString().matches("[0-9]+")) {
+            throw new V2ValidationException("cachePolicy.thresholdPercent 必须是整数");
         }
     }
 

@@ -1269,6 +1269,7 @@ public final class TaskRunManager {
             PreparedRun prepared,
             TaskRunWorkspace workspace
     ) {
+        workspace.configureTasks(prepared.tasks);
         return new TaskExecutionContext(
                 navigation,
                 registry.droppedItems(),

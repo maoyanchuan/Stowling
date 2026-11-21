@@ -11,6 +11,7 @@ public final class StandardTaskModuleFactories {
 
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
+                factory("MANAGE_CACHE_INTAKE", ManageCacheIntakeModule::new),
                 factory(dev.stowling.v2.model.MaterialRequirements.MODULE,
                         (context, step) -> context.storageAutomation()
                                 .collectMaterials(context, step)),

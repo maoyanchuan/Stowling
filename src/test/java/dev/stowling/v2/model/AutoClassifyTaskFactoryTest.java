@@ -249,7 +249,8 @@ class AutoClassifyTaskFactoryTest {
         TaskStep batches = upgraded.steps().get(1);
         assertEquals(TaskStepKind.REPEAT, batches.kind());
         assertEquals(oldSteps.get(1).parameters(), batches.steps().get(0).parameters());
-        assertEquals(oldSteps.get(2).parameters(), batches.steps().get(1).parameters());
+        assertEquals("MANAGE_CACHE_INTAKE", batches.steps().get(1).moduleId());
+        assertEquals("80", batches.steps().get(1).parameters().get("cacheThresholdPercent"));
         assertEquals(ConfigValidator.COLLECT_DROPPED_ITEMS, batches.steps().getLast().moduleId());
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY,
                 upgraded.steps().get(2).moduleId());

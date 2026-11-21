@@ -60,6 +60,11 @@ public interface StorageAutomationPort {
         throw new IllegalStateException("当前环境不支持缓存库存盘点");
     }
 
+    default TaskModuleExecutor storeCacheIntake(TaskExecutionContext context,
+            List<ContainerTarget> containers, boolean pack) {
+        throw new IllegalStateException("当前环境不支持缓存投料打包");
+    }
+
     default Set<String> unstackableItems(TaskExecutionContext context, ContainerTarget cache) {
         throw new IllegalStateException("当前环境不支持读取物品堆叠上限");
     }
@@ -97,6 +102,9 @@ public interface StorageAutomationPort {
 
     default boolean hasTemporaryResources(UUID owner) {
         return false;
+    }
+
+    default void adoptTemporaryResources(UUID previousOwner, UUID nextOwner) {
     }
 
     /** Releases tracking after the user takes responsibility for the temporary resources. */

@@ -48,7 +48,12 @@ public final class AutoClassifyTaskFactory {
                         definition.cacheRegionRef(),
                         Map.of(
                                 ConfigValidator.PICKUP_RADIUS,
-                                Integer.toString(definition.pickupRadius())
+                                Integer.toString(definition.pickupRadius()),
+                                "cacheIntakeMode", definition.cachePolicy().mode().name(),
+                                "cacheThresholdPercent",
+                                Integer.toString(definition.cachePolicy().thresholdPercent()),
+                                "classificationTaskRef",
+                                definition.classificationEnabled() ? classificationRef : ""
                         )
                 )
         );

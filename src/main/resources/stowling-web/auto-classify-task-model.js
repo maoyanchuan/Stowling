@@ -116,6 +116,7 @@
             coordinateId: "",
             pickupRadius: DEFAULT_PICKUP_RADIUS,
             cacheRegionId: "",
+            cachePolicy: {mode: "PACK_FIRST", thresholdPercent: 80},
             classificationAreas: [newArea()],
             collectionPriority: "NORMAL",
             enabled: false,
@@ -144,6 +145,8 @@
                 ? ""
                 : String(detection.pickupRadius),
             cacheRegionId: referencedId(item?.cacheRegionRef, "region"),
+            cachePolicy: item?.cachePolicy
+                ? {...item.cachePolicy} : {mode: "PACK_FIRST", thresholdPercent: 80},
             classificationAreas: Array.isArray(item?.classificationAreas)
                 ? item.classificationAreas.map((area) => ({
                     categoryZoneId: referencedId(
@@ -210,6 +213,14 @@
      */
     function validateDraft(draft, resources, items, allTasks = []) {
         const errors = [];
+        const policy = draft?.cachePolicy || {mode: "PACK_FIRST", thresholdPercent: 80};
+        if (!["PACK_FIRST", "CLASSIFY_FIRST"].includes(policy.mode)) {
+            errors.push("请选择缓存打包优先或分类优先");
+        }
+        if (!Number.isInteger(policy.thresholdPercent)
+            || policy.thresholdPercent < 1 || policy.thresholdPercent > 100) {
+            errors.push("缓存容量阈值必须为 1 到 100 的整数百分比");
+        }
         const name = String(draft?.name ?? "").trim();
         if (name.length < 1 || name.length > 80) {
             errors.push("任务名称需为1～80个字符");
@@ -292,6 +303,7 @@
                 pickupRadius: parsedRadius(draft.pickupRadius)
             },
             cacheRegionRef: reference("region", draft.cacheRegionId),
+            cachePolicy: draft.cachePolicy || {mode: "PACK_FIRST", thresholdPercent: 80},
             classificationAreas: draft.classificationAreas.map((area) => ({
                 categoryZoneRef: reference(
                     "category-zone",

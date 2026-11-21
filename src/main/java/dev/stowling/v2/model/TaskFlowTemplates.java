@@ -151,6 +151,9 @@ public final class TaskFlowTemplates {
         Map<String, String> collect = new LinkedHashMap<>(collectParameters);
         collect.remove(ConfigValidator.CONTAINER_TYPES);
         collect.remove(ConfigValidator.MAX_VOLUME);
+        collect.remove("cacheIntakeMode");
+        collect.remove("cacheThresholdPercent");
+        collect.remove("classificationTaskRef");
         collect.put(ConfigValidator.AREA_REF, areaRef);
         TaskStep collectStep = TaskStep.action(
                 UUID.randomUUID(),
@@ -198,6 +201,12 @@ public final class TaskFlowTemplates {
                 conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
                 List.of(selectContainer, move, deposit)
         );
+        if (collectParameters.containsKey("cacheIntakeMode")) {
+            depositCollected = TaskStep.action(UUID.randomUUID(), "MANAGE_CACHE_INTAKE", Map.of(
+                    "cacheIntakeMode", collectParameters.get("cacheIntakeMode"),
+                    "cacheThresholdPercent", collectParameters.get("cacheThresholdPercent"),
+                    "classificationTaskRef", collectParameters.get("classificationTaskRef")));
+        }
         List<TaskStep> result = new ArrayList<>(List.of(collectStep,
                 collectionBatches(collectStep, scanStep, depositCollected)));
         result.addAll(reconcileInventory(regionRef, collectParameters));

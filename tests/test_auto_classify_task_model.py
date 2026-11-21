@@ -122,6 +122,7 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "coordinateId": "",
         "pickupRadius": "8",
         "cacheRegionId": "",
+        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
         }],
@@ -179,6 +180,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "coordinateId": "coordinate-1",
         "pickupRadius": "12",
         "cacheRegionId": "cache-1",
+        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
             "storagePolicy": None,
@@ -229,6 +231,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "coordinateId": "",
         "pickupRadius": "8",
         "cacheRegionId": "",
+        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
             "storagePolicy": None,
@@ -327,6 +330,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
             "pickupRadius": 8,
         },
         "cacheRegionRef": "region:region-1",
+        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
             "storagePolicy": None,
@@ -346,6 +350,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "classificationEnabled",
         "detection",
         "cacheRegionRef",
+        "cachePolicy",
         "classificationAreas",
         "collectionPriority",
     ]
@@ -360,6 +365,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "coordinateId": "coordinate-1",
         "pickupRadius": "8",
         "cacheRegionId": "region-1",
+        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
             "storagePolicy": None,
@@ -743,3 +749,42 @@ def test_classification_areas_reject_duplicate_zones() -> None:
     )
 
     assert result == ["同一个分类选区不能重复添加"]
+
+
+def test_cache_policy_defaults_and_selected_settings_survive_payload_round_trip() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingAutoClassifyTaskModel;
+            const draft = {...model.newDraft(), coordinateId: "pickup", cacheRegionId: "cache",
+                classificationAreas: [{categoryZoneId: "zone"}],
+                cachePolicy: {mode: "CLASSIFY_FIRST", thresholdPercent: 65}};
+            const resources = {coordinates: [{id: "pickup"}], regions: [{id: "cache"}],
+                categoryZones: [{id: "zone"}]};
+            const payload = model.payload(draft, resources, []);
+            return {defaults: model.newDraft().cachePolicy,
+                legacy: model.draftFromTask({}).cachePolicy,
+                saved: payload.cachePolicy,
+                reopened: model.draftFromTask(payload).cachePolicy};
+        })()
+        """
+    )
+    default = {"mode": "PACK_FIRST", "thresholdPercent": 80}
+    selected = {"mode": "CLASSIFY_FIRST", "thresholdPercent": 65}
+    assert result == {"defaults": default, "legacy": default,
+                      "saved": selected, "reopened": selected}
+
+
+@pytest.mark.parametrize("threshold", [0, 101, 80.5])
+def test_cache_policy_rejects_invalid_percentages(threshold: float) -> None:
+    result = _run(
+        f"""
+        (() => {{
+            const model = window.StowlingAutoClassifyTaskModel;
+            const draft = {{...model.newDraft(),
+                cachePolicy: {{mode: "PACK_FIRST", thresholdPercent: {threshold}}}}};
+            return model.validateDraft(draft, {{}}, []);
+        }})()
+        """
+    )
+    assert "缓存容量阈值必须为 1 到 100 的整数百分比" in result

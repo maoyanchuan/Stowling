@@ -638,6 +638,17 @@ public final class PlayerInventoryManager {
         revision++;
     }
 
+    /** Returns inline classification cargo to its collecting task for shared cleanup. */
+    public synchronized void transferManaged(
+            PlayerInventoryAccount from, PlayerInventoryAccount to) {
+        register(from);
+        register(to);
+        Map<String, Integer> items = from.managedItems();
+        items.forEach(to::recordWithdrawn);
+        from.confirmDeposit("managed", items, Map.of());
+        revision++;
+    }
+
     public synchronized Optional<PlayerInventorySnapshot> current() {
         return previous;
     }

@@ -189,7 +189,8 @@ class V2ControlServerTest {
                 "classificationEnabled":true,"detection":{"coordinateRef":"coordinate:%s",
                 "pickupRadius":8},"cacheRegionRef":"region:%s",
                 "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
-                "collectionPriority":"NORMAL"}
+                "collectionPriority":"NORMAL",
+                "cachePolicy":{"mode":"CLASSIFY_FIRST","thresholdPercent":65}}
                 """.formatted(point.id(), region.id(), zone.id());
         try (Fixture fixture = new Fixture(service)) {
             assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST", body, false)
@@ -198,6 +199,16 @@ class V2ControlServerTest {
             assertEquals(201, response.statusCode());
             var item = object(response).getAsJsonObject("item");
             assertFalse(item.get("enabled").getAsBoolean());
+            assertEquals("CLASSIFY_FIRST",
+                    item.getAsJsonObject("cachePolicy").get("mode").getAsString());
+            assertEquals(65,
+                    item.getAsJsonObject("cachePolicy").get("thresholdPercent").getAsInt());
+            assertEquals(65, new ConfigStore(directory.resolve("layout-recognition.json"))
+                    .loadOrReset().config().autoClassifyTasks().getFirst()
+                    .cachePolicy().thresholdPercent());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"thresholdPercent\":65", "\"thresholdPercent\":101"), true)
+                    .statusCode());
             var area = item.getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
             assertEquals("category-zone:" + zone.id(), area.get("categoryZoneRef").getAsString());
             assertTrue(!area.has("ruleId"));

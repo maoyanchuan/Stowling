@@ -23,6 +23,29 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PlayerInventoryManagerTest {
     @Test
+    void inlineSortingReturnsItsCargoToTheCollectingAccountWithoutChangingGlobalCounts() {
+        MutableInventory inventory = new MutableInventory();
+        inventory.set(Map.of("minecraft:diamond_pickaxe", 1));
+        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+        inventory.snapshot().ifPresent(manager::initialize);
+        manager.observe();
+        PlayerInventoryAccount collecting = manager.account(UUID.randomUUID());
+        PlayerInventoryAccount sorting = manager.account(UUID.randomUUID());
+        collecting.recordCollected("minecraft:stone", 64);
+        sorting.recordWithdrawn("minecraft:gold_ingot", 32);
+        var before = manager.expectedInventory().orElseThrow();
+
+        manager.transferManaged(sorting, collecting);
+        manager.closeAccount(sorting);
+
+        assertEquals(before, manager.expectedInventory().orElseThrow());
+        assertTrue(sorting.managedItems().isEmpty());
+        assertEquals(Map.of("minecraft:stone", 64, "minecraft:gold_ingot", 32),
+                collecting.managedItems());
+        assertFalse(manager.hasAbandonedAccounts());
+    }
+
+    @Test
     void settledCleanupRemovesPhantomRemainderWithoutCountingItAsDelivery() {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of("minecraft:diamond_pickaxe", 1));

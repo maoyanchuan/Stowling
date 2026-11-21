@@ -36,6 +36,8 @@
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
+        cacheMode: document.querySelector("#auto-cache-mode"),
+        cacheThreshold: document.querySelector("#auto-cache-threshold"),
         areas: document.querySelector("#auto-classification-areas"),
         addArea: document.querySelector("#add-auto-classification-area"),
         collectHeader: document.querySelector("#auto-collect-toggle"),
@@ -278,6 +280,8 @@
         elements.name.value = draft.name;
         elements.radius.value = draft.pickupRadius;
         elements.priority.value = draft.collectionPriority;
+        elements.cacheMode.value = draft.cachePolicy.mode;
+        elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         populateSelect(elements.cache, state.resources.regions, draft.cacheRegionId,
@@ -302,6 +306,8 @@
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
             cacheRegionId: elements.cache.value,
+            cachePolicy: {mode: elements.cacheMode.value,
+                thresholdPercent: Number(elements.cacheThreshold.value)},
             classificationAreas: areaReaders.map((reader) => reader.read()),
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
@@ -451,7 +457,7 @@
         syncForm();
         renderList();
         showMessage(item
-            ? "已保存；拾取物存入缓存后，再创建后台分类任务。"
+            ? "已保存；收集物品时将按缓存容量阈值执行所选策略。"
             : "配置检测点、缓存区域与分类选区后保存任务。");
     }
 

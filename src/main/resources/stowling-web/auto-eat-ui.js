@@ -7,7 +7,6 @@
     /** @param {string} id @returns {HTMLElement} */
     const $ = (id) => document.getElementById(id);
     const list = $("auto-eat-list");
-    const detailRows = $("task-editor-eat-rows");
     const status = $("auto-eat-status");
     const newTask = $("new-auto-eat");
     const draft = $("auto-eat-draft");
@@ -79,7 +78,6 @@
     function renderTasks() {
         draftBody.append(form);
         list.replaceChildren();
-        detailRows.replaceChildren();
         rows.clear();
         for (const task of tasks) {
             const settings = task.settings;
@@ -115,8 +113,7 @@
                 void setListening(task.id, listening.checked);
             });
             header.append(button, listening);
-            row.append(header);
-            detailRows.append(body);
+            row.append(header, body);
             list.append(row);
             rows.set(task.id, {button, body, status: state, listening, enabled: settings.enabled});
         }
@@ -208,7 +205,6 @@
             fillForm(task?.settings);
             row.body.append(form);
         }
-        if (editor.expanded) window.StowlingTaskWorkbench?.openEditor("eat");
         updateControls();
         notifyTaskCount();
         row.button.focus();
@@ -316,17 +312,9 @@
         }
     }
 
-    window.StowlingTaskWorkbench?.watchDraft(() => !!editor?.dirty);
-    document.addEventListener("stowling:task-editor-change", (event) => {
-        if (event.detail !== "eat" && editor?.expanded) {
-            editor.expanded = false;
-            updateControls();
-        }
-    });
     newTask.addEventListener("click", () => selectTask());
     draftToggle.addEventListener("click", () => {
         editor.expanded = !editor.expanded;
-        if (editor.expanded) window.StowlingTaskWorkbench?.openEditor("eat");
         updateControls();
     });
     $("cancel-auto-eat").addEventListener("click", cancelEditor);

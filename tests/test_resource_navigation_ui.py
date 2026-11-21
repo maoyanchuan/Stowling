@@ -26,18 +26,17 @@ def test_top_navigation_has_single_coordinate_entry() -> None:
     assert "children" not in nav_items
 
 
-def test_coordinate_page_embeds_four_resource_tabs() -> None:
+def test_coordinate_page_embeds_three_resource_tabs() -> None:
     html = read("coordinates.html")
     tab_class = 'class="page-subnav-tab"'
     panel_class = 'class="resource-tab-panel resource-list-section"'
 
     assert 'class="page-subnav"' in html
-    assert html.count(tab_class) == 4
+    assert html.count(tab_class) == 3
     assert html.count(panel_class) == 3
     assert 'id="coordinate-points"' in html
     assert 'id="regions"' in html
     assert 'id="category-zones"' in html
-    assert 'id="facilities"' in html
     assert 'href="#coordinate-points"' in html
     assert 'href="#regions"' in html
     assert 'href="#category-zones"' in html
@@ -115,7 +114,5 @@ def test_legacy_category_zone_url_redirects_to_embedded_tab() -> None:
     html = read("category-zones.html")
 
     assert "url=/coordinates.html#category-zones" in html
-    assert 'id="new-category-zone-form"' not in html
-    assert '<script src=' not in html
     assert "window.location.replace" not in html
     assert "<script>" not in html

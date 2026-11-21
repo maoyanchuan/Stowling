@@ -25,7 +25,6 @@
     const preview = byId("material-preview");
     const items = byId("material-preview-items");
     const list = byId("material-task-list");
-    const detailRows = byId("task-editor-material-rows");
     const add = byId("new-material-task");
     const remove = byId("delete-material-task");
     const taskRows = new Map();
@@ -161,7 +160,6 @@
             liquids.setExpanded(false);
             fillForm(task);
         }
-        if (current.expanded) window.StowlingTaskWorkbench?.openEditor("material");
         controls();
         notifyCount();
         row.button.focus();
@@ -178,7 +176,6 @@
     function renderRows() {
         draftBody.append(form);
         list.replaceChildren();
-        detailRows.replaceChildren();
         taskRows.clear();
         for (const task of rows) {
             const parameters = task.steps[0].parameters;
@@ -211,8 +208,7 @@
             run.setAttribute("aria-label", `运行：${task.name}`);
             run.addEventListener("click", () => void runTask(task.id));
             head.append(summary, run);
-            card.append(head);
-            detailRows.append(body);
+            card.append(head, body);
             if (current?.id === task.id) {
                 body.append(form);
             }
@@ -393,16 +389,8 @@
         document.dispatchEvent(new Event("stowling:tasks-changed"));
     }
 
-    window.StowlingTaskWorkbench?.watchDraft(() => !!current?.dirty);
-    document.addEventListener("stowling:task-editor-change", (event) => {
-        if (event.detail !== "material" && current?.expanded) {
-            current.expanded = false;
-            controls();
-        }
-    });
     add.addEventListener("click", () => {
         if (current?.id === null && current.expanded) {
-            window.StowlingTaskWorkbench?.openEditor("material");
             draftToggle.focus();
         } else {
             selectTask(null);

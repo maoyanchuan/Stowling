@@ -24,7 +24,7 @@ def test_inventory_management_follows_tasks_in_navigation() -> None:
     assert (WEB / "storage.js").exists()
 
 
-def test_monitor_disclosure_has_summary_queue_and_logs() -> None:
+def test_narrow_rail_has_queue_above_logs_and_move_workbench_on_the_right() -> None:
     html = read("tasks.html")
     rail = between(
         html,
@@ -32,8 +32,6 @@ def test_monitor_disclosure_has_summary_queue_and_logs() -> None:
         "</aside>",
     )
     assert rail.index('id="task-queue-list"') < rail.index('id="task-log-list"')
-    assert 'class="panel task-monitor"' in html
-    assert html.index('id="task-monitor-summary"') < html.index('<aside class="task-monitor-rail"')
     assert html.index("</aside>") < html.index('id="task-selection-area"')
     assert "data-task-tab=" not in html
     assert "data-task-panel=" not in html
@@ -98,7 +96,7 @@ def test_log_icons_download_one_current_run_file_and_clear_the_buffer() -> None:
     assert "innerHTML" not in javascript
 
 
-def test_task_details_show_status_and_leave_actions_in_queue() -> None:
+def test_task_details_use_static_names_and_keep_interruption_recovery() -> None:
     html = read("tasks.html")
     javascript = read("tasks.js")
     runtime = between(javascript, "function runtimeCard(run)", "function renderQueue")
@@ -113,19 +111,21 @@ def test_task_details_show_status_and_leave_actions_in_queue() -> None:
     assert "查看任务配置" not in javascript
     assert 'Stowling.element("strong", "", run.taskName)' in runtime
     assert '"选择任务"' not in runtime
-    assert "retryInterruption(run.runId)" not in runtime
-    assert "skipInterruption(run.runId)" not in runtime
-    assert "cancelRun(run.runId)" not in runtime
+    assert "retryInterruption(run.runId)" in runtime
+    assert "skipInterruption(run.runId)" in runtime
+    assert "cancelRun(run.runId)" in runtime
 
 
-def test_force_stop_is_available_for_active_runs_in_queue() -> None:
+def test_force_stop_is_available_for_active_runs_in_both_monitor_views() -> None:
     javascript = read("tasks.js")
     runtime = between(javascript, "function runtimeCard(run)", "function renderQueue")
     queue = between(javascript, "function renderQueue()", "function railAction")
     button = between(javascript, "function forceStopButton(runId)", "function listeningStateLabel")
     action = between(javascript, "async function forceStopRun(runId)", "document.addEventListener")
 
-    assert "forceStopButton(run.runId)" not in runtime
+    assert "if (isActiveRun(run)) {\n            actions.append(forceStopButton(run.runId))" in (
+        runtime
+    )
     assert "if (entry.run && isActiveRun(entry.run))" in queue
     assert "actions.append(forceStopButton(entry.run.runId))" in queue
     assert 'railAction("强制停止", () => void forceStopRun(runId))' in button
@@ -135,15 +135,17 @@ def test_force_stop_is_available_for_active_runs_in_queue() -> None:
     assert "await loadRuns();" in action
 
 
+def test_layout_keeps_a_scrollable_monitor_rail_and_responsive_columns() -> None:
+    css = read("styles.css")
+    console = between(css, ".task-console {", "}")
+    rail = between(css, ".task-monitor-rail {", "}")
+    assert "grid-template-columns: 300px minmax(0, 1fr)" in console
+    assert "position: sticky" in rail
+    assert "grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr)" in rail
+    assert "overscroll-behavior: contain" in css
+    assert "@media (max-width: 779px)" in css
+    assert "@media (max-width: 520px)" in css
 
-def test_workbench_and_monitor_switch_to_one_column_on_narrow_screens() -> None:
-    css = read("workbench.css")
-    workbench = between(css, "body[data-page] .task-workbench {", "}")
-    rail = between(css, "body[data-page] .task-monitor-rail {", "}")
-    assert "grid-template-columns: minmax(290px, 2fr) minmax(0, 3fr)" in workbench
-    assert "grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr)" in rail
-    assert "grid-template-columns: minmax(0, 1fr)" in css.split("@media (max-width: 780px)")[-1]
-    assert "overscroll-behavior: contain" in read("styles.css")
 
 def test_monitor_and_move_resources_load_independently_then_connect_together() -> None:
     javascript = read("tasks.js")

@@ -40,27 +40,31 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_robot_warehouse_options_keep_disabled_and_legacy_locations() -> None:
+def test_robot_warehouse_location_settings_keep_other_facilities() -> None:
     result = _run(
         """
         (() => {
             const model = window.StowlingAutoClassifyTaskModel;
             const oldSettings = {overflowCoordinateIds: ["old"], emptyBoxCoordinateIds: ["box"]};
-            const saved = {
-                robotWarehouseEnabled: false,
-                overflowCoordinateIds: ["point"],
-                overflowRegionIds: ["area"],
-            };
+            const saved = model.warehouseSettingsPayload(oldSettings, {
+                enabled: false, locations: ["coordinate:point", "region:area"],
+            });
             const options = model.warehouseLocationOptions({
                 coordinates: [{id: "point", name: "溢出箱", x: 1, y: 64, z: 2}],
                 regions: [{id: "area", name: "仓库"}],
             });
-            return {options, reopened: model.warehouseDraft(saved),
+            return {saved, options, reopened: model.warehouseDraft(saved),
                 migrated: model.warehouseDraft(oldSettings)};
         })()
         """
     )
 
+    assert result["saved"] == {
+        "overflowCoordinateIds": ["point"],
+        "overflowRegionIds": ["area"],
+        "emptyBoxCoordinateIds": ["box"],
+        "robotWarehouseEnabled": False,
+    }
     assert result["options"] == [
         {"id": "coordinate:point", "name": "坐标 · 溢出箱 (1, 64, 2)"},
         {"id": "region:area", "name": "区域 · 仓库"},

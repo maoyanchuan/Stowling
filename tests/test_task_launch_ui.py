@@ -85,15 +85,14 @@ def test_saved_task_summary_actions_are_separate_from_disclosure_and_save() -> N
     assert "${endpoint}/${encodeURIComponent(id)}/${operation}" in eat_switch
 
 
-def test_material_task_opens_the_detail_panel_and_uses_shared_switch() -> None:
+def test_material_task_uses_inline_disclosure_and_shared_switch() -> None:
     html = read("tasks.html")
     draft = between(html, 'id="material-editor"', 'id="auto-eat-draft"')
     assert 'id="toggle-material-draft"' in draft
     assert 'aria-expanded="false"' in draft
     assert 'aria-controls="material-draft-body"' in draft
-    editor = between(html, 'id="task-editor-material"', "</section>")
-    assert 'id="material-draft-body" class="move-task-body" hidden' in editor
-    assert 'aria-describedby="material-boxed-note"' in editor
+    assert 'id="material-draft-body" class="move-task-body" hidden' in draft
+    assert 'aria-describedby="material-boxed-note"' in draft
 
     source = read("material-collection-ui.js")
     select = between(source, "function selectTask(task)", "function closeEditor()")

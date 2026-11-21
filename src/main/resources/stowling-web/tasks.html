@@ -42,11 +42,7 @@
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
-            <details id="task-monitor" class="panel task-monitor">
-                <summary class="task-monitor-summary">
-                    <strong>运行与日志</strong>
-                    <span id="task-monitor-summary" class="muted">等待连接</span>
-                </summary>
+            <div class="task-console">
                 <aside class="task-monitor-rail" aria-label="任务运行与日志">
                     <section class="panel task-queue-panel" aria-labelledby="queue-title">
                         <div class="panel-heading rail-heading">
@@ -93,8 +89,6 @@
                              aria-label="任务进度记录" aria-live="off" tabindex="0"></div>
                     </section>
                 </aside>
-            </details>
-            <div class="task-console">
                 <div id="task-selection-area" class="task-workbench"
                      aria-label="任务展示与选择">
                     <section id="task-display-area" class="panel task-display-placeholder"
@@ -104,105 +98,262 @@
                                 <h2 id="task-display-title">已保存任务</h2>
                                 <span id="move-task-count" class="count-label">0</span>
                             </div>
-                            <div class="task-heading-actions">
-                                <button id="refresh-move-tasks" class="ghost compact"
-                                        type="button">刷新</button>
-                                <a class="text-link" href="/coordinates.html#robot-warehouse"
-                                   data-warehouse-link>机器人仓库</a>
-                                <details id="new-task-menu" class="task-create-menu">
-                                    <summary class="task-create-trigger">＋ 新建任务</summary>
-                                    <div class="task-create-options">
-                                        <button id="new-move-task" type="button" disabled>
-                                            移动到坐标
-                                        </button>
-                                        <button id="new-auto-task" type="button" disabled>
-                                            自动分类
-                                        </button>
-                                        <button id="new-auto-eat" type="button" disabled>
-                                            自动进食
-                                        </button>
-                                        <button id="new-material-task" type="button" disabled>
-                                            自动收集材料
-                                        </button>
-                                    </div>
-                                </details>
-                            </div>
+                            <button id="refresh-move-tasks" class="ghost compact"
+                                    type="button">刷新</button>
                         </div>
-                        <div class="task-list-scroll">
-                            <p id="move-resources-message" class="field-message"
-                               role="status">连接后可查看已保存任务</p>
-                            <p id="move-task-placeholder" class="muted move-placeholder">
-                                暂无已保存任务，点击「新建任务」开始。
-                            </p>
-                            <div id="move-task-list" class="move-task-list"
-                                 aria-label="已保存的移动任务"></div>
-                            <p id="auto-resources-message" class="field-message"
-                               role="status" hidden></p>
-                            <div id="auto-task-list" class="move-task-list"
-                                 aria-label="已保存的自动分类任务"></div>
-                            <p id="auto-eat-status" class="field-message" role="status" hidden></p>
-                            <div id="auto-eat-list" class="move-task-list"
-                                 aria-label="已保存的自动进食任务"></div>
-                            <div id="material-task-list" class="move-task-list"
-                                 aria-label="已保存的自动收集材料任务"></div>
-                            <article id="material-editor" class="move-saved-task is-draft" hidden>
-                                <button id="toggle-material-draft" class="move-task-summary"
+                        <p id="move-resources-message" class="field-message"
+                           role="status">连接后可查看已保存任务</p>
+                        <p id="move-task-placeholder" class="muted move-placeholder">
+                            暂无已保存任务，从下方选择一种任务开始。
+                        </p>
+                        <div id="move-task-list" class="move-task-list"
+                             aria-label="已保存的移动任务"></div>
+                        <p id="auto-resources-message" class="field-message"
+                           role="status" hidden></p>
+                        <div id="auto-task-list" class="move-task-list"
+                             aria-label="已保存的自动分类任务"></div>
+                        <p id="auto-eat-status" class="field-message" role="status" hidden></p>
+                        <div id="auto-eat-list" class="move-task-list"
+                             aria-label="已保存的自动进食任务"></div>
+                        <div id="material-task-list" class="move-task-list"
+                             aria-label="已保存的自动收集材料任务"></div>
+                        <article id="robot-warehouse-draft" class="move-saved-task is-draft"
+                                 hidden>
+                            <div class="task-card-header">
+                                <button id="toggle-robot-warehouse" class="move-task-summary"
                                         type="button" aria-expanded="false"
-                                        aria-controls="material-draft-body">
-                                    <span class="move-task-kind" aria-hidden="true">料</span>
+                                        aria-controls="robot-warehouse-body">
+                                    <span class="move-task-kind" aria-hidden="true">仓</span>
                                     <span class="move-task-overview">
-                                        <strong>新建 · 自动收集材料</strong>
-                                        <span>上传投影并选择交付位置</span>
+                                        <strong>机器人仓库</strong>
+                                        <span id="robot-warehouse-summary">设置存放位置</span>
                                     </span>
-                                    <span class="move-task-state">未保存</span>
-                                    <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                                </button>
-                            </article>
-                            <article id="auto-eat-draft" class="move-saved-task is-draft" hidden>
-                                <button id="toggle-auto-eat-draft" class="move-task-summary"
-                                        type="button" aria-expanded="false"
-                                        aria-controls="auto-eat-draft-body">
-                                    <span class="move-task-kind" aria-hidden="true">食</span>
-                                    <span class="move-task-overview">
-                                        <strong>新建 · 自动进食</strong>
-                                        <span>设置饱食度与食物来源</span>
-                                    </span>
-                                    <span class="move-task-state">未保存</span>
-                                    <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                                </button>
-                            </article>
-                            <div id="move-task-draft" class="move-saved-task is-draft" hidden>
-                                <button id="toggle-move-draft" class="move-task-summary"
-                                        type="button" aria-expanded="false"
-                                        aria-controls="move-draft-body">
-                                    <span class="move-task-kind" aria-hidden="true">↗</span>
-                                    <span class="move-task-overview">
-                                        <strong>新建 · 移动到坐标</strong>
-                                        <span>配置目标后保存为任务</span>
-                                    </span>
-                                    <span class="move-task-state">未保存</span>
+                                    <span id="robot-warehouse-state" class="move-task-state"></span>
                                     <span class="move-task-chevron" aria-hidden="true">⌄</span>
                                 </button>
                             </div>
-                            <article id="auto-task-draft" class="move-saved-task is-draft" hidden>
-                                <button id="toggle-auto-draft" class="move-task-summary"
-                                        type="button" aria-expanded="false"
-                                        aria-controls="auto-draft-body">
-                                    <span class="move-task-kind" aria-hidden="true">⇄</span>
-                                    <span class="move-task-overview">
-                                        <strong>新建 · 自动分类</strong>
-                                        <span>启用缓存，空闲时分类</span>
-                                    </span>
-                                    <span class="move-task-state">未保存</span>
-                                    <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                                </button>
-                            </article>
-                        </div>
-                    </section>
-                    <section class="task-editor-panel" aria-labelledby="task-editor-title">
-                        <h2 id="task-editor-title">任务配置</h2>
-                        <p class="muted task-editor-placeholder">选择任务查看配置</p>
-                        <div id="task-editor-move" class="task-editor-group" hidden>
+                            <div id="robot-warehouse-body" class="move-task-body" hidden>
+                                <form id="robot-warehouse-form" class="move-task-form">
+                                    <fieldset id="robot-warehouse-fields" disabled>
+                                        <label class="move-field" for="robot-warehouse-enabled">
+                                            <span>启用机器人仓库</span>
+                                            <input id="robot-warehouse-enabled" type="checkbox"
+                                                   class="settings-switch" role="switch">
+                                        </label>
+                                        <label class="move-field" for="robot-warehouse-location">
+                                            <span>存放坐标或区域</span>
+                                            <select id="robot-warehouse-location"></select>
+                                        </label>
+                                        <button id="add-robot-warehouse-location" class="secondary"
+                                                type="button">添加位置</button>
+                                        <div id="robot-warehouse-locations" class="card-list"
+                                             aria-label="仓库位置"></div>
+                                        <p id="robot-warehouse-message" class="field-message error"
+                                           role="status" hidden></p>
+                                        <div class="move-form-actions">
+                                            <a class="text-link"
+                                               href="/coordinates.html#coordinate-points">
+                                                管理坐标和区域
+                                            </a>
+                                            <button id="cancel-robot-warehouse" class="ghost"
+                                                    type="button">取消</button>
+                                            <button id="save-robot-warehouse" class="primary"
+                                                    type="submit">保存仓库</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </article>
+                        <article id="material-editor" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-material-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="material-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">料</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 自动收集材料</strong>
+                                    <span>上传投影并选择交付位置</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
+                            <div id="material-draft-body" class="move-task-body" hidden>
+                                <form id="material-task-form" class="move-task-form">
+                                    <fieldset disabled>
+                                        <label class="move-field" for="material-name">
+                                            <span>任务名称</span>
+                                            <input id="material-name" maxlength="80"
+                                                   required autocomplete="off">
+                                        </label>
+                                        <label class="move-field" for="material-file">
+                                            <span>投影文件（.litematic）</span>
+                                            <input id="material-file" type="file"
+                                                   accept=".litematic">
+                                        </label>
+                                        <label class="move-field" for="material-destination">
+                                            <span>交付容器或区域</span>
+                                            <select id="material-destination" required></select>
+                                        </label>
+                                        <label class="move-field material-switch-field"
+                                               for="material-boxed-delivery">
+                                            <span>按潜影盒交付</span>
+                                            <input id="material-boxed-delivery" type="checkbox"
+                                                   aria-describedby="material-boxed-note">
+                                        </label>
+                                        <div id="material-boxed-options"
+                                             class="settings-detail" hidden>
+                                            <label class="move-field material-switch-field"
+                                                   for="material-single-material-boxes">
+                                                <span>每盒只装一种材料</span>
+                                                <input id="material-single-material-boxes"
+                                                       type="checkbox" disabled>
+                                            </label>
+                                            <p id="material-boxed-note" class="move-target-note">
+                                                默认混装。散料使用公共设施的空潜影盒装箱，
+                                                清单所需的空潜影盒单独交付。
+                                            </p>
+                                        </div>
+                                        <details id="material-liquid-settings"
+                                                 class="settings-disclosure">
+                                            <summary id="material-liquid-summary"
+                                                     class="settings-row">
+                                                <span class="settings-copy">
+                                                    <strong>液体材料</strong>
+                                                </span>
+                                                <span class="settings-chevron"
+                                                      aria-hidden="true">›</span>
+                                            </summary>
+                                            <div id="material-liquid-options"
+                                                 class="settings-detail" hidden>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-ice-instead-of-water">
+                                                    <span>用普通冰代替水桶</span>
+                                                    <input id="material-ice-instead-of-water"
+                                                           type="checkbox">
+                                                </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-skip-water">
+                                                    <span>跳过水桶</span>
+                                                    <input id="material-skip-water" type="checkbox">
+                                                </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-skip-lava">
+                                                    <span>跳过岩浆</span>
+                                                    <input id="material-skip-lava" type="checkbox">
+                                                </label>
+                                            </div>
+                                        </details>
+                                        <p id="material-preview-status" class="field-message"
+                                           role="status">选择投影文件后自动解析材料</p>
+                                        <details id="material-preview" hidden>
+                                            <summary id="material-preview-title">
+                                                材料清单
+                                            </summary>
+                                            <ul id="material-preview-items"></ul>
+                                        </details>
+                                        <p class="move-target-note">
+                                            从 Chest Tracker 已记录的仓库取料，
+                                            交付处已有的材料会抵扣需求。
+                                        </p>
+                                        <div class="move-form-actions">
+                                            <button id="delete-material-task"
+                                                    class="ghost danger-action task-delete-action"
+                                                    type="button" hidden>删除任务</button>
+                                            <button id="material-cancel" class="secondary"
+                                                    type="button">取消</button>
+                                            <button id="material-save" class="primary"
+                                                    type="submit" disabled>保存任务</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </article>
+                        <article id="auto-eat-draft" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-auto-eat-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="auto-eat-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">食</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 自动进食</strong>
+                                    <span>设置饱食度与食物来源</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
+                            <div id="auto-eat-draft-body" class="move-task-body" hidden>
+                                <form id="auto-eat-form" class="move-task-form">
+                                    <fieldset disabled>
+                                        <label class="move-field" for="auto-eat-name">
+                                            <span>任务名称</span>
+                                            <input id="auto-eat-name" maxlength="80" required
+                                                   autocomplete="off">
+                                        </label>
+                                        <label class="move-field" for="auto-eat-threshold">
+                                            <span>饱食度不高于</span>
+                                            <input id="auto-eat-threshold" type="number" min="0"
+                                                   max="19" step="1" required>
+                                        </label>
+                                        <label class="move-field" for="auto-eat-interval">
+                                            <span>检查间隔（秒）</span>
+                                            <input id="auto-eat-interval" type="number" min="1"
+                                                   max="60" step="1" required>
+                                        </label>
+                                        <label class="move-field" for="auto-eat-food">
+                                            <span>食物 ID</span>
+                                            <input id="auto-eat-food" placeholder="minecraft:bread"
+                                                   pattern="[a-z0-9_.\-]+:[a-z0-9_.\/\-]+"
+                                                   spellcheck="false" autocomplete="off" required>
+                                        </label>
+                                        <label class="move-field" for="auto-eat-source">
+                                            <span>补给方式</span>
+                                            <select id="auto-eat-source">
+                                                <option value="inventory">只吃背包锁定食物</option>
+                                                <option value="chest">用完后从食物箱补给</option>
+                                            </select>
+                                        </label>
+                                        <div id="auto-eat-coordinate-field" class="move-field"
+                                             hidden>
+                                            <span>
+                                                <label for="auto-eat-coordinate">食物箱坐标</label>
+                                            </span>
+                                            <div>
+                                                <select id="auto-eat-coordinate" disabled></select>
+                                                <a href="/coordinates.html#coordinate-points"
+                                                   class="text-link">管理坐标 →</a>
+                                            </div>
+                                        </div>
+                                        <p id="auto-eat-inventory-note" class="move-target-note">
+                                            在 <a href="/backpack.html" class="text-link">背包管理</a>
+                                            将食物设为「保留自用」。
+                                        </p>
+                                        <p id="auto-eat-chest-note" class="move-target-note" hidden>
+                                            优先吃背包锁定的食物，取回的食物自动设为「保留自用」。
+                                        </p>
+                                        <p id="auto-eat-message" class="field-message"
+                                           role="status" aria-live="polite"></p>
+                                        <div class="move-form-actions">
+                                            <button id="delete-auto-eat"
+                                                    class="ghost danger-action task-delete-action"
+                                                    type="button" hidden>删除任务</button>
+                                            <button id="cancel-auto-eat" class="secondary"
+                                                    type="button">取消</button>
+                                            <button class="primary" type="submit">保存任务</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </article>
+                        <div id="move-task-draft" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-move-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="move-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">↗</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 移动到坐标</strong>
+                                    <span>配置目标后保存为任务</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
                             <div id="move-draft-body" class="move-task-body" hidden>
                                 <form id="move-task-form" class="move-task-form"
                                       hidden novalidate>
@@ -253,19 +404,16 @@
                                         <p id="move-target-note" class="move-target-note">
                                             精确到达目标方块；手动坐标在当前维度生效。
                                         </p>
-                                        <details class="task-advanced">
-                                            <summary>高级设置</summary>
-                                            <label class="move-field move-priority"
-                                                   for="move-priority">
-                                                <span>运行优先级</span>
-                                                <select id="move-priority">
-                                                    <option value="NORMAL">普通</option>
-                                                    <option value="URGENT">紧急</option>
-                                                    <option value="BACKGROUND">后台</option>
-                                                </select>
-                                            </label>
-                                            <div id="move-cleanup-settings"></div>
-                                        </details>
+                                        <label class="move-field move-priority"
+                                               for="move-priority">
+                                            <span>运行优先级</span>
+                                            <select id="move-priority">
+                                                <option value="NORMAL">普通</option>
+                                                <option value="URGENT">紧急</option>
+                                                <option value="BACKGROUND">后台</option>
+                                            </select>
+                                        </label>
+                                        <div id="move-cleanup-settings"></div>
                                         <p id="move-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">
@@ -278,9 +426,19 @@
                                     </fieldset>
                                 </form>
                             </div>
-                            <div id="task-editor-move-rows"></div>
                         </div>
-                        <div id="task-editor-classify" class="task-editor-group" hidden>
+                        <article id="auto-task-draft" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-auto-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="auto-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">⇄</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 自动分类</strong>
+                                    <span>启用缓存，空闲时分类</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
                             <div id="auto-draft-body" class="move-task-body" hidden>
                                 <form id="auto-task-form" class="auto-task-form" hidden novalidate>
                                     <fieldset id="auto-task-fields" disabled>
@@ -418,15 +576,7 @@
                                                 <option value="">请先启用机器人仓库</option>
                                             </select>
                                         </label>
-                                        <a class="text-link warehouse-settings-link"
-                                           href="/coordinates.html#robot-warehouse"
-                                           data-warehouse-link>
-                                            管理机器人仓库位置
-                                        </a>
-                                        <details class="task-advanced">
-                                            <summary>高级设置</summary>
-                                            <div id="auto-cleanup-settings"></div>
-                                        </details>
+                                        <div id="auto-cleanup-settings"></div>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">
@@ -439,165 +589,40 @@
                                     </fieldset>
                                 </form>
                             </div>
-                            <div id="task-editor-classify-rows"></div>
+                        </article>
+                    </section>
+                    <section class="panel task-selection-panel"
+                             aria-labelledby="task-list-title">
+                        <div class="panel-heading">
+                            <h2 id="task-list-title">任务选择</h2>
                         </div>
-                        <div id="task-editor-eat" class="task-editor-group" hidden>
-                            <div id="auto-eat-draft-body" class="move-task-body" hidden>
-                                <form id="auto-eat-form" class="move-task-form">
-                                    <fieldset disabled>
-                                        <label class="move-field" for="auto-eat-name">
-                                            <span>任务名称</span>
-                                            <input id="auto-eat-name" maxlength="80" required
-                                                   autocomplete="off">
-                                        </label>
-                                        <label class="move-field" for="auto-eat-threshold">
-                                            <span>饱食度不高于</span>
-                                            <input id="auto-eat-threshold" type="number" min="0"
-                                                   max="19" step="1" required>
-                                        </label>
-                                        <label class="move-field" for="auto-eat-interval">
-                                            <span>检查间隔（秒）</span>
-                                            <input id="auto-eat-interval" type="number" min="1"
-                                                   max="60" step="1" required>
-                                        </label>
-                                        <label class="move-field" for="auto-eat-food">
-                                            <span>食物 ID</span>
-                                            <input id="auto-eat-food" placeholder="minecraft:bread"
-                                                   pattern="[a-z0-9_.\-]+:[a-z0-9_.\/\-]+"
-                                                   spellcheck="false" autocomplete="off" required>
-                                        </label>
-                                        <label class="move-field" for="auto-eat-source">
-                                            <span>补给方式</span>
-                                            <select id="auto-eat-source">
-                                                <option value="inventory">只吃背包锁定食物</option>
-                                                <option value="chest">用完后从食物箱补给</option>
-                                            </select>
-                                        </label>
-                                        <div id="auto-eat-coordinate-field" class="move-field"
-                                             hidden>
-                                            <span>
-                                                <label for="auto-eat-coordinate">食物箱坐标</label>
-                                            </span>
-                                            <div>
-                                                <select id="auto-eat-coordinate" disabled></select>
-                                                <a href="/coordinates.html#coordinate-points"
-                                                   class="text-link">管理坐标 →</a>
-                                            </div>
-                                        </div>
-                                        <p id="auto-eat-inventory-note" class="move-target-note">
-                                            在 <a href="/backpack.html" class="text-link">背包管理</a>
-                                            将食物设为「保留自用」。
-                                        </p>
-                                        <p id="auto-eat-chest-note" class="move-target-note" hidden>
-                                            优先吃背包锁定的食物，取回的食物自动设为「保留自用」。
-                                        </p>
-                                        <p id="auto-eat-message" class="field-message"
-                                           role="status" aria-live="polite"></p>
-                                        <div class="move-form-actions">
-                                            <button id="delete-auto-eat"
-                                                    class="ghost danger-action task-delete-action"
-                                                    type="button" hidden>删除任务</button>
-                                            <button id="cancel-auto-eat" class="secondary"
-                                                    type="button">取消</button>
-                                            <button class="primary" type="submit">保存任务</button>
-                                        </div>
-                                    </fieldset>
-                                </form>
-                            </div>
-                            <div id="task-editor-eat-rows"></div>
-                        </div>
-                        <div id="task-editor-material" class="task-editor-group" hidden>
-                            <div id="material-draft-body" class="move-task-body" hidden>
-                                <form id="material-task-form" class="move-task-form">
-                                    <fieldset disabled>
-                                        <label class="move-field" for="material-name">
-                                            <span>任务名称</span>
-                                            <input id="material-name" maxlength="80"
-                                                   required autocomplete="off">
-                                        </label>
-                                        <label class="move-field" for="material-file">
-                                            <span>投影文件（.litematic）</span>
-                                            <input id="material-file" type="file"
-                                                   accept=".litematic">
-                                        </label>
-                                        <label class="move-field" for="material-destination">
-                                            <span>交付容器或区域</span>
-                                            <select id="material-destination" required></select>
-                                        </label>
-                                        <label class="move-field material-switch-field"
-                                               for="material-boxed-delivery">
-                                            <span>按潜影盒交付</span>
-                                            <input id="material-boxed-delivery" type="checkbox"
-                                                   aria-describedby="material-boxed-note">
-                                        </label>
-                                        <div id="material-boxed-options"
-                                             class="settings-detail" hidden>
-                                            <label class="move-field material-switch-field"
-                                                   for="material-single-material-boxes">
-                                                <span>每盒只装一种材料</span>
-                                                <input id="material-single-material-boxes"
-                                                       type="checkbox" disabled>
-                                            </label>
-                                            <p id="material-boxed-note" class="move-target-note">
-                                                默认混装。散料使用公共设施的空潜影盒装箱，
-                                                清单所需的空潜影盒单独交付。
-                                            </p>
-                                        </div>
-                                        <details id="material-liquid-settings"
-                                                 class="settings-disclosure">
-                                            <summary id="material-liquid-summary"
-                                                     class="settings-row">
-                                                <span class="settings-copy">
-                                                    <strong>液体材料</strong>
-                                                </span>
-                                                <span class="settings-chevron"
-                                                      aria-hidden="true">›</span>
-                                            </summary>
-                                            <div id="material-liquid-options"
-                                                 class="settings-detail" hidden>
-                                                <label class="move-field material-switch-field"
-                                                       for="material-ice-instead-of-water">
-                                                    <span>用普通冰代替水桶</span>
-                                                    <input id="material-ice-instead-of-water"
-                                                           type="checkbox">
-                                                </label>
-                                                <label class="move-field material-switch-field"
-                                                       for="material-skip-water">
-                                                    <span>跳过水桶</span>
-                                                    <input id="material-skip-water" type="checkbox">
-                                                </label>
-                                                <label class="move-field material-switch-field"
-                                                       for="material-skip-lava">
-                                                    <span>跳过岩浆</span>
-                                                    <input id="material-skip-lava" type="checkbox">
-                                                </label>
-                                            </div>
-                                        </details>
-                                        <p id="material-preview-status" class="field-message"
-                                           role="status">选择投影文件后自动解析材料</p>
-                                        <details id="material-preview" hidden>
-                                            <summary id="material-preview-title">
-                                                材料清单
-                                            </summary>
-                                            <ul id="material-preview-items"></ul>
-                                        </details>
-                                        <p class="move-target-note">
-                                            从 Chest Tracker 已记录的仓库取料，
-                                            交付处已有的材料会抵扣需求。
-                                        </p>
-                                        <div class="move-form-actions">
-                                            <button id="delete-material-task"
-                                                    class="ghost danger-action task-delete-action"
-                                                    type="button" hidden>删除任务</button>
-                                            <button id="material-cancel" class="secondary"
-                                                    type="button">取消</button>
-                                            <button id="material-save" class="primary"
-                                                    type="submit" disabled>保存任务</button>
-                                        </div>
-                                    </fieldset>
-                                </form>
-                            </div>
-                            <div id="task-editor-material-rows"></div>
+                        <div class="move-task-options">
+                            <button id="new-move-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 移动到坐标</strong>
+                                <span>保存目标坐标，按需加入队列</span>
+                            </button>
+                            <button id="new-auto-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 自动分类</strong>
+                                <span>检测掉落物入缓存，空闲时分类入库</span>
+                            </button>
+                            <button id="new-auto-eat" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 自动进食</strong>
+                                <span>饱食度偏低时吃随身食物或到箱子取食</span>
+                            </button>
+                            <button id="new-material-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 自动收集材料</strong>
+                                <span>上传投影，自动从仓库取料并交付</span>
+                            </button>
+                            <button id="new-robot-warehouse" class="move-task-option is-new"
+                                    aria-controls="robot-warehouse-draft" aria-expanded="false"
+                                    type="button" disabled>
+                                <strong>＋ 机器人仓库</strong>
+                                <span>装盒存放分类目标装不下的物品</span>
+                            </button>
                         </div>
                     </section>
                 </div>

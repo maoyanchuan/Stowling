@@ -21,6 +21,8 @@
         autoTaskCount: 0,
         autoEatTaskCount: 0,
         materialTaskCount: 0,
+        robotWarehouseCount: 0,
+        robotWarehouseDraftActive: false,
         materialDraftActive: false,
         autoDraftActive: false,
         autoEatDraftActive: false,
@@ -58,9 +60,6 @@
         moveResourcesMessage: document.querySelector("#move-resources-message"),
         newMove: document.querySelector("#new-move-task"),
         moveList: document.querySelector("#move-task-list"),
-        moveEditorRows: document.querySelector("#task-editor-move-rows"),
-        createMenu: document.querySelector("#new-task-menu"),
-        monitorSummary: document.querySelector("#task-monitor-summary"),
         refreshMove: document.querySelector("#refresh-move-tasks"),
         removeMove: document.querySelector("#delete-move-task"),
         runtime: document.querySelector("#runtime-list"),
@@ -78,41 +77,6 @@
     };
 
     const moveRows = new Map();
-    let activeEditor = "";
-    let lastQueue = "";
-    const taskDraftChecks = [() => state.moveDirty];
-
-    /** @param {string} kind @returns {void} */
-    function openEditor(kind) {
-        elements.createMenu.open = false;
-        const editor = document.querySelector("#task-editor-" + kind);
-        if (activeEditor !== kind) {
-            if (activeEditor) document.querySelector("#task-editor-" + activeEditor).hidden = true;
-            activeEditor = kind;
-            editor.hidden = false;
-            document.dispatchEvent(new CustomEvent("stowling:task-editor-change", {detail: kind}));
-        }
-        if (window.matchMedia?.("(max-width: 780px)")?.matches) {
-            queueMicrotask(() => editor.scrollIntoView({block: "nearest"}));
-        }
-    }
-
-    /** @param {() => boolean} hasChanges @returns {void} */
-    function watchDraft(hasChanges) {
-        taskDraftChecks.push(hasChanges);
-    }
-
-    window.StowlingTaskWorkbench = Object.freeze({openEditor, watchDraft});
-
-    for (const link of document.querySelectorAll("[data-warehouse-link]")) {
-        link.addEventListener("click", (event) => {
-            if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-            if (taskDraftChecks.some((check) => check())
-                    && !window.confirm("当前任务有未保存修改，仍要前往机器人仓库吗？")) {
-                event.preventDefault();
-            }
-        });
-    }
 
     /**
      * @returns {Promise<void>}
@@ -198,7 +162,6 @@
         // Keep the one editor alive while rebuilding its surrounding task rows.
         elements.moveDraftBody.append(elements.moveForm);
         elements.moveList.replaceChildren();
-        elements.moveEditorRows.replaceChildren();
         moveRows.clear();
         for (const task of state.moveTasks) {
             const draft = Move.draftFromTask(task);
@@ -239,8 +202,7 @@
             run.setAttribute("aria-label", `加入队列：${task.name}`);
             run.addEventListener("click", () => void queueMoveTask(task.id));
             header.append(button, run);
-            card.append(header);
-            elements.moveEditorRows.append(body);
+            card.append(header, body);
             elements.moveList.append(card);
             moveRows.set(task.id, { button, body, status, run });
         }
@@ -260,9 +222,10 @@
         ));
         elements.moveForm.hidden = false;
         const savedCount = state.moveTasks.length + state.autoTaskCount + state.autoEatTaskCount
-            + state.materialTaskCount;
+            + state.materialTaskCount + state.robotWarehouseCount;
         elements.movePlaceholder.hidden = savedCount > 0 || newDraft || state.autoDraftActive
-            || state.autoEatDraftActive || state.materialDraftActive;
+            || state.autoEatDraftActive || state.materialDraftActive
+            || state.robotWarehouseDraftActive;
         elements.moveCount.textContent = String(savedCount);
         for (const [id, row] of moveRows) {
             const selected = state.moveDraft.id === id;
@@ -284,14 +247,12 @@
         }
         if (task && state.moveDraft.id === task.id) {
             state.moveFormOpen = !state.moveFormOpen;
-            if (state.moveFormOpen) openEditor("move");
             syncMoveDisclosure();
             return;
         }
         if (state.moveDirty && !window.confirm("当前修改尚未保存，切换任务会丢弃修改。继续？")) {
             return;
         }
-        openEditor("move");
         state.moveDraft = task
             ? Move.draftFromTask(task) : Move.newDraft(state.moveAllTasks);
         state.moveDirty = false;
@@ -316,7 +277,6 @@
             return;
         }
         state.moveFormOpen = !state.moveFormOpen;
-        if (state.moveFormOpen) openEditor("move");
         syncMoveDisclosure();
     }
 
@@ -605,7 +565,7 @@
             state.runs = Array.isArray(runs?.runs) ? runs.runs : [];
             state.queue = Array.isArray(runs?.queue) ? runs.queue : [];
             state.triggerStatuses = Array.isArray(runs?.triggers) ? runs.triggers : [];
-            if (elements.runDetails.open) renderRuntime();
+            renderRuntime();
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
@@ -685,7 +645,7 @@
             state.triggerStatuses = Array.isArray(response?.triggers)
                 ? response.triggers
                 : [];
-            if (elements.runDetails.open) renderRuntime();
+            renderRuntime();
             renderQueue();
             appendMonitorLogs();
             showMonitorSync();
@@ -693,7 +653,6 @@
         } catch (error) {
             if (requestId <= state.lastRunResponseId) return;
             elements.monitorMessage.textContent = "同步失败 · 显示上次状态";
-            elements.monitorSummary.textContent = "同步失败 · 展开查看上次状态";
             elements.monitorMessage.classList.add("is-stale");
             Stowling.handleError(error, "读取运行状态失败");
         }
@@ -769,6 +728,25 @@
         footer.append(Stowling.element(
             "span", "muted compact-help", Stowling.formatDate(run.updatedAt)
         ));
+        const actions = Stowling.element("div", "action-row");
+        if (run.state === "INTERRUPTION_FAILED") {
+            const retry = Stowling.element("button", "primary compact", "重试收尾");
+            retry.type = "button";
+            retry.addEventListener("click", () => { void retryInterruption(run.runId); });
+            const skip = Stowling.element("button", "secondary compact", "尝试跳过收尾");
+            skip.type = "button";
+            skip.addEventListener("click", () => { void skipInterruption(run.runId); });
+            actions.append(retry, skip);
+        } else if (isActiveRun(run)) {
+            const cancel = Stowling.element("button", "secondary compact", "取消任务");
+            cancel.type = "button";
+            cancel.addEventListener("click", () => { void cancelRun(run.runId); });
+            actions.append(cancel);
+        }
+        if (isActiveRun(run)) {
+            actions.append(forceStopButton(run.runId));
+        }
+        footer.append(actions);
         card.append(footer);
         return card;
     }
@@ -778,23 +756,11 @@
      */
     function renderQueue() {
         const scrollTop = elements.queueList.scrollTop;
+        elements.queueList.replaceChildren();
         const entries = Monitor.queueEntries(
             state.runs, state.queue, state.triggerStatuses
         );
         elements.queueCount.textContent = String(entries.length);
-        if (Stowling.isConnected()) {
-            const active = entries.filter((entry) => entry.run && isActiveRun(entry.run)).length;
-            const queued = entries.filter((entry) => entry.state === "QUEUED").length;
-            elements.monitorSummary.textContent = active || queued
-                ? "执行 " + active + " 项 · 排队 " + queued + " 项" : "无执行或排队任务";
-        }
-        const queue = JSON.stringify(entries.map((entry) => [
-            entry.kind, entry.taskName, entry.state, entry.priority, entry.message,
-            entry.run?.runId, entry.run?.state
-        ]));
-        if (queue === lastQueue) return;
-        lastQueue = queue;
-        elements.queueList.replaceChildren();
         if (entries.length === 0) {
             elements.queueList.append(Stowling.emptyState("暂无排队或监听任务"));
         }
@@ -1065,11 +1031,10 @@
         state.materialDraftActive = event.detail.draftActive;
         syncMoveDisclosure();
     });
-    document.addEventListener("stowling:task-editor-change", (event) => {
-        if (event.detail !== "move" && state.moveFormOpen) {
-            state.moveFormOpen = false;
-            syncMoveDisclosure();
-        }
+    document.addEventListener("stowling:robot-warehouse-count", (event) => {
+        state.robotWarehouseCount = event.detail.count;
+        state.robotWarehouseDraftActive = event.detail.draftActive;
+        syncMoveDisclosure();
     });
     document.addEventListener("stowling:material-tasks-changed", () => {
         void loadMoveResources();
@@ -1134,9 +1099,6 @@
             elements.runDetails.close();
         }
     });
-    if (window.location?.hash === "#task-monitor") {
-        document.querySelector("#task-monitor").open = true;
-    }
     renderQueue();
     renderMonitorLogs();
     syncMoveForm();
@@ -1149,7 +1111,6 @@
             void loadRuns();
         } else {
             elements.monitorMessage.textContent = "未连接 · 等待同步";
-            elements.monitorSummary.textContent = "等待连接";
             elements.monitorMessage.classList.add("is-stale");
         }
     }, 3000);

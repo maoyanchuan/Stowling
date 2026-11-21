@@ -36,27 +36,91 @@ def opening_tag(source: str, element_id: str) -> str:
     return match.group(0)
 
 
-
-def test_task_workbench_has_saved_rows_and_a_separate_editor() -> None:
+def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     html = read("tasks.html")
-    display = between(html, 'id="task-display-area"', "</section>")
-    menu = between(display, 'id="new-task-menu"', "</details>")
-    editor = between(html, 'class="task-editor-panel"', "</section>")
-    for kind, option, draft_body in (
-        ("move", "new-move-task", "move-draft-body"),
-        ("classify", "new-auto-task", "auto-draft-body"),
-        ("eat", "new-auto-eat", "auto-eat-draft-body"),
-        ("material", "new-material-task", "material-draft-body"),
+    workbench = between(
+        html,
+        'id="task-selection-area"',
+        '<dialog id="task-run-details"',
+    )
+
+    assert workbench.index('id="task-display-area"') < workbench.index(
+        'class="panel task-selection-panel"'
+    )
+    display = between(
+        workbench,
+        'id="task-display-area"',
+        '<section class="panel task-selection-panel"',
+    )
+    assert 'id="task-display-title">已保存任务</h2>' in display
+    for retained in (
+        'id="move-task-list"',
+        'id="refresh-move-tasks"',
+        'id="move-resources-message"',
+        'id="move-task-count"',
+        'id="move-task-placeholder"',
+        'id="move-task-draft"',
+        'id="toggle-move-draft"',
+        'id="move-draft-body"',
+        'id="move-task-form"',
+        'id="auto-task-list"',
+        'id="auto-resources-message"',
+        'id="auto-task-draft"',
+        'id="toggle-auto-draft"',
+        'id="auto-draft-body"',
+        'id="auto-task-form"',
     ):
-        assert f'id="{option}"' in menu
-        assert f'id="task-editor-{kind}-rows"' in editor
-        assert "hidden" in opening_tag(editor, draft_body)
-        assert f'aria-controls="{draft_body}"' in display
-    assert display.index('id="new-task-menu"') < display.index('id="move-task-list"')
-    assert 'id="move-task-form"' not in display
-    assert 'id="move-task-form"' in editor
-    assert 'href="/coordinates.html#robot-warehouse"' in display
-    assert "保存并加入队列" not in editor
+        assert retained in display
+    assert 'id="new-move-task"' not in display
+    assert 'id="move-task-fields"' in display
+    for field_id in (
+        "move-task-name",
+        "move-target-x",
+        "move-target-y",
+        "move-target-z",
+        "move-saved-coordinate",
+        "move-priority",
+        "save-move-task",
+    ):
+        assert f'id="{field_id}"' in display
+    assert "data-move-source=\"manual\"" in display
+    assert "data-move-source=\"saved\"" in display
+    assert "保存任务" in display
+    assert "保存并加入队列" not in display
+    assert "hidden" in opening_tag(display, "move-task-form")
+    assert "hidden" in opening_tag(display, "move-task-draft")
+    assert "hidden" in opening_tag(display, "move-draft-body")
+    toggle = opening_tag(display, "toggle-move-draft")
+    assert 'aria-expanded="false"' in toggle
+
+    selection = between(
+        workbench,
+        'class="panel task-selection-panel"',
+        "</section>",
+    )
+    assert 'id="task-list-title">任务选择</h2>' in selection
+    assert 'id="new-move-task"' in selection
+    assert 'id="new-auto-task"' in selection
+    warehouse_card = between(selection, 'id="new-robot-warehouse"', "</button>")
+    assert 'class="move-task-option is-new"' in warehouse_card
+    assert 'aria-controls="robot-warehouse-draft"' in warehouse_card
+    assert "＋ 机器人仓库" in warehouse_card
+    assert selection.index('id="new-material-task"') < selection.index('id="new-robot-warehouse"')
+    assert "移动到坐标" in selection
+    assert "自动分类" in selection
+    for moved in (
+        'id="move-task-list"',
+        'id="refresh-move-tasks"',
+        'id="move-resources-message"',
+        'id="move-task-form"',
+        'id="auto-task-list"',
+        'id="auto-task-draft"',
+        'id="auto-task-form"',
+    ):
+        assert moved not in selection
+    assert "添加移动任务" not in selection
+    assert "设置目标坐标，保存或运行" in selection
+
 
 def test_task_page_keeps_only_the_fixed_move_editor_and_monitor() -> None:
     html = read("tasks.html")
@@ -81,6 +145,7 @@ def test_task_page_keeps_only_the_fixed_move_editor_and_monitor() -> None:
         'id="run-priority-select"',
         'id="run-task-button"',
         'id="task-launch-note"',
+        'id="task-editor-title"',
         'id="task-draft-status"',
     ):
         assert removed not in html
@@ -288,8 +353,9 @@ def test_move_disclosure_uses_row_controls_and_guards_disconnected_actions() -> 
     )
 
     assert "elements.moveDraftCard.hidden = !newDraft;" in disclosure
-    assert "newDraft && state.moveFormOpen" in disclosure
-    assert "elements.movePlaceholder.hidden = savedCount > 0 || newDraft" in disclosure
+    assert "elements.moveDraftBody.hidden = !newDraft || !state.moveFormOpen;" in disclosure
+    placeholder = "elements.movePlaceholder.hidden = state.moveTasks.length > 0"
+    assert placeholder + " || newDraft;" in disclosure
     same_task = selection.index("if (task && state.moveDraft.id === task.id)")
     dirty_confirm = selection.index(
         "if (state.moveDirty && !window.confirm("
@@ -327,9 +393,13 @@ def test_queue_and_details_use_static_task_names_and_keep_recovery() -> None:
         'entry.state === "QUEUED" ? "取消排队" : "取消任务"',
     ):
         assert retained in queue
-    assert "失败原因：" in runtime
-    assert "retryInterruption(run.runId)" not in runtime
-    assert "cancelRun(run.runId)" not in runtime
+    for retained in (
+        "失败原因：",
+        "retryInterruption(run.runId)",
+        "skipInterruption(run.runId)",
+        "cancelRun(run.runId)",
+    ):
+        assert retained in runtime
 
 
 def test_interruption_recovery_and_monitor_endpoints_are_retained() -> None:
@@ -586,15 +656,8 @@ for (const source of ["manual", "saved"]) {
     button.dataset.moveSource = source;
     sourceButtons.push(button);
 }
-const listeners = new Map();
 const document = {
     body: new FakeElement("body"),
-    addEventListener: (type, handler) => {
-        listeners.set(type, [...(listeners.get(type) || []), handler]);
-    },
-    dispatchEvent: (event) => {
-        for (const handler of listeners.get(event.type) || []) handler(event);
-    },
     createElement: (tagName) => new FakeElement(tagName),
     querySelector: (selector) => {
         if (!selector.startsWith("#")) {
@@ -756,12 +819,6 @@ const Stowling = {
 };
 
 global.document = document;
-global.CustomEvent = class extends Event {
-    constructor(type, options) {
-        super(type);
-        this.detail = options.detail;
-    }
-};
 global.window = {
     Stowling,
     StowlingSettings: {reveal: (element, expanded) => { element.hidden = !expanded; }},
@@ -832,8 +889,8 @@ const savedRun = (taskId) => savedRow(taskId)?.querySelector("button.move-task-r
  * @param {string} taskId
  * @returns {FakeElement | undefined}
  */
-const savedBody = (taskId) => node("task-editor-move-rows").children
-    .find((body) => body.id === savedSummary(taskId)?.getAttribute("aria-controls"));
+const savedBody = (taskId) => savedRow(taskId)
+    ?.querySelector(".move-task-body");
 /**
  * @returns {string[]}
  */
@@ -870,7 +927,7 @@ const moveButton = savedSummary;
         row.dataset.taskId,
         disclosure(row.dataset.taskId),
     ]));
-    const initialFormHidden = node("task-editor-move").hidden;
+    const initialFormHidden = node("move-task-form").hidden;
     const initialDraftHidden = node("move-task-draft").hidden;
     const initialPlaceholderHidden = node("move-task-placeholder").hidden;
     const initialCount = node("move-task-count").textContent;
@@ -924,11 +981,8 @@ const moveButton = savedSummary;
     };
 
     const requestsBeforeNewDraft = requests.length;
-    node("new-task-menu").open = true;
     node("new-move-task").click();
     const newDraft = {
-        menuClosed: !node("new-task-menu").open,
-        editorOpen: !node("task-editor-move").hidden,
         name: node("move-task-name").value,
         cardHidden: node("move-task-draft").hidden,
         expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
@@ -958,11 +1012,6 @@ const moveButton = savedSummary;
         x: node("move-target-x").value,
     };
     const newDraftToggleConfirmDelta = confirmRequests.length - confirmBeforeDraftToggle;
-    window.StowlingTaskWorkbench.openEditor("eat");
-    const otherEditorOpened = node("task-editor-move").hidden && !node("task-editor-eat").hidden;
-    node("toggle-move-draft").click();
-    const preservedAfterEditorSwitch = node("task-editor-eat").hidden
-        && !node("task-editor-move").hidden && node("move-target-x").value === "+1";
     const requestsBeforeFirstSave = requests.length;
     node("move-task-form").dispatchEvent("submit");
     await settle();
@@ -1082,7 +1131,7 @@ const moveButton = savedSummary;
         .filter((row) => row.querySelector("button.move-task-summary")
             .getAttribute("aria-expanded") === "true")
         .map((row) => row.dataset.taskId);
-    const refreshedCollapsedFormHidden = savedBody("existing-manual").hidden;
+    const refreshedCollapsedFormHidden = node("move-task-form").hidden;
     moveButton("existing-manual").click();
 
     node("move-target-x").value = "42";
@@ -1185,8 +1234,6 @@ const moveButton = savedSummary;
         newDraftCollapsed,
         newDraftReexpanded,
         newDraftToggleConfirmDelta,
-        otherEditorOpened,
-        preservedAfterEditorSwitch,
         requestsBeforeFirstSave,
         createdWrite,
         savedOnly,
@@ -1414,6 +1461,7 @@ def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
     collapsed = result["manualCollapsedDirty"]
     assert collapsed["disclosure"]["expanded"] == "false"
     assert collapsed["disclosure"]["hidden"] is True
+    assert collapsed["formHidden"] is True
     assert collapsed["name"] == "未保存手动移动"
     assert collapsed["x"] == "777"
 
@@ -1442,10 +1490,6 @@ def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
     draft = result["newDraft"]
     assert draft["name"] == "移动到坐标 3"
     assert draft["cardHidden"] is False
-    assert draft["menuClosed"] is True
-    assert draft["editorOpen"] is True
-    assert result["otherEditorOpened"] is True
-    assert result["preservedAfterEditorSwitch"] is True
     assert draft["expanded"] == "true"
     assert draft["bodyHidden"] is False
     assert draft["formHidden"] is False
@@ -1457,6 +1501,7 @@ def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
     collapsed_draft = result["newDraftCollapsed"]
     assert collapsed_draft["expanded"] == "false"
     assert collapsed_draft["bodyHidden"] is True
+    assert collapsed_draft["formHidden"] is True
     assert collapsed_draft["name"] == "新移动任务"
     assert collapsed_draft["x"] == "+1"
     reexpanded_draft = result["newDraftReexpanded"]

@@ -334,6 +334,22 @@
     }
 
     /**
+     * @param {object} settings
+     * @param {{enabled: boolean, locations: Array<string>}} draft
+     * @returns {object}
+     */
+    function warehouseSettingsPayload(settings, draft) {
+        return {
+            ...settings,
+            robotWarehouseEnabled: draft.enabled,
+            overflowCoordinateIds: draft.locations.filter((ref) => ref.startsWith("coordinate:"))
+                .map((ref) => referencedId(ref, "coordinate")),
+            overflowRegionIds: draft.locations.filter((ref) => ref.startsWith("region:"))
+                .map((ref) => referencedId(ref, "region"))
+        };
+    }
+
+    /**
      * @param {object} draft
      * @param {unknown} resources
      * @param {Array<string>} errors
@@ -368,7 +384,8 @@
         payload,
         validateDraft,
         warehouseDraft,
-        warehouseLocationOptions
+        warehouseLocationOptions,
+        warehouseSettingsPayload
     });
 })();
 

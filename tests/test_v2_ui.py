@@ -366,11 +366,11 @@ def test_task_page_supports_monitor_actions_and_fixed_move_launch() -> None:
     assert 'run.state === "INTERRUPTION_FAILED"' in tasks
     failed_actions = between(
         tasks,
-        'if (entry.run?.state === "INTERRUPTION_FAILED")',
-        "else if (entry.run)",
+        'if (run.state === "INTERRUPTION_FAILED")',
+        "else if (isActiveRun(run))",
     )
-    assert "retryInterruption(entry.run.runId)" in failed_actions
-    assert "skipInterruption(entry.run.runId)" in failed_actions
+    assert "retryInterruption(run.runId)" in failed_actions
+    assert "skipInterruption(run.runId)" in failed_actions
     assert "取消任务" not in failed_actions
     assert "run.completedSteps" in tasks
     assert "run.totalSteps" in tasks
@@ -464,7 +464,7 @@ def test_dashboard_uses_new_resource_endpoints_only() -> None:
 
 
 def test_category_zone_page_uses_automatic_display_bindings() -> None:
-    html = read("coordinates.html")
+    html = read("category-zones.html")
     javascript = read("category-zones.js")
     model = read("category-zone-model.js")
 
@@ -533,6 +533,7 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
         ("index.html", "状态概览"),
         ("coordinates.html", "坐标管理"),
         ("tasks.html", "任务管理"),
+        ("category-zones.html", "分类区管理"),
         ("storage.html", "库存管理"),
     )
     for name, label in pages:
@@ -545,22 +546,32 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
 
 def test_console_pages_use_the_packaged_brand_icon() -> None:
     for path in sorted(WEB.glob("*.html")):
-        if path.name == "category-zones.html":
-            continue
         html = read(path.name)
         header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
         assert '<link rel="icon" type="image/png" href="/icon.png">' in html
         assert '<img class="brand-mark" src="/icon.png"' in header
 
 
-
 def test_coordinate_navigation_groups_spatial_resources() -> None:
     common = read("common.js")
     coordinates = read("coordinates.html")
+    styles = read("styles.css")
+
     assert 'label: "坐标"' in common
-    for name in ("coordinate-points", "regions", "category-zones", "facilities"):
-        assert f'href="#{name}"' in coordinates
-        assert f'aria-controls="{name}"' in coordinates
+    assert 'label: "坐标点"' in common
+    assert 'href: "/coordinates.html#coordinate-points"' in common
+    assert 'label: "区域"' in common
+    assert 'href: "/coordinates.html#regions"' in common
+    assert 'label: "分类区"' in common
+    assert 'href: "/category-zones.html"' in common
+    assert 'className = "workspace-nav-group"' in common
+    assert 'className = "workspace-subnav"' in common
+    assert 'window.addEventListener("hashchange", mountNavigation);' in common
+    assert 'id="coordinate-points"' in coordinates
+    assert 'id="regions"' in coordinates
+    assert ".workspace-nav-group" in styles
+    assert ".workspace-subnav" in styles
+
 
 def test_header_and_content_share_responsive_page_width() -> None:
     styles = read("styles.css")
@@ -629,7 +640,7 @@ def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:
     assert "bindingDescription(binding)" in javascript
 
 
-def test_task_console_has_monitor_and_separate_list_and_editor_panels() -> None:
+def test_task_console_shows_monitor_beside_fixed_move_panels() -> None:
     html = read("tasks.html")
     rail = between(html, '<aside class="task-monitor-rail"', "</aside>")
     selection = between(
@@ -643,12 +654,12 @@ def test_task_console_has_monitor_and_separate_list_and_editor_panels() -> None:
     assert "data-task-panel=" not in html
     for marker in ("task-queue-list", "task-log-list", "export-task-logs"):
         assert marker in rail
-    for marker in ("task-display-area", "new-task-menu", "task-editor-panel"):
+    for marker in ("task-display-area", "task-list-title", "task-selection-panel"):
         assert marker in selection
     for removed in ("task-list-count", 'id="task-list"', "task-run-panel"):
         assert removed not in selection
     assert selection.index('id="task-display-area"') < selection.index(
-        'class="task-editor-panel"'
+        'class="panel task-selection-panel"'
     )
     assert 'id="task-run-details"' in html
     assert 'id="runtime-list"' in html

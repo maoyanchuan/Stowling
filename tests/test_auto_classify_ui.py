@@ -123,23 +123,29 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
 
-def test_robot_warehouse_edits_locations_and_classification_selects_a_saved_destination() -> None:
+def test_robot_warehouse_is_a_switched_submenu_inside_the_classification_task() -> None:
     html = read("tasks.html")
     form = between(html, 'id="auto-task-form"', "</form>")
     assert 'id="auto-overflow-destination"' in form
     assert "溢出存入位置" in form
-    warehouse = between(html, 'id="robot-warehouse-draft"', "</article>")
-    assert 'id="robot-warehouse-enabled"' in warehouse
+    header = between(form, 'id="toggle-robot-warehouse"', 'id="robot-warehouse-body"')
+    assert 'aria-controls="robot-warehouse-body"' in header
+    assert 'aria-expanded="false"' in header
+    assert 'id="robot-warehouse-enabled"' in header
+    assert 'role="switch"' in header
+    warehouse = between(form, 'id="robot-warehouse-body"', "</section>")
+    assert "hidden" in warehouse
     assert 'id="robot-warehouse-location"' in warehouse
     assert 'id="add-robot-warehouse-location"' in warehouse
     assert 'id="robot-warehouse-locations"' in warehouse
+    assert 'id="auto-overflow-destination"' in warehouse
+    assert '<form id="robot-warehouse-form"' not in html
+    assert 'id="save-robot-warehouse"' not in html
+    assert form.index('id="auto-sort-body"') < form.index('id="toggle-robot-warehouse"')
 
     javascript = read("auto-classify-ui.js")
-    assert "解除关联" not in javascript
-    assert "saved.locations.includes(option.id)" in javascript
-    assert "!Auto.warehouseDraft(state.warehouseSnapshot?.settings).enabled" in javascript
-    assert "Auto.warehouseSettingsPayload(settings, state.warehouseDraft)" in javascript
-    assert 'Stowling.request("/v1/storage-settings", {' in javascript
+    assert 'togglePhase("warehouse")' in javascript
+    assert "overflowEnabled: elements.warehouseEnabled.checked" in javascript
 
 
 def test_recognition_is_configured_only_in_the_storage_layout() -> None:
@@ -294,8 +300,8 @@ def test_auto_draft_hides_the_empty_task_placeholder() -> None:
     assert "state.autoDraftActive = event.detail?.draftActive === true;" in listener
     assert "syncMoveDisclosure();" in listener
     assert "savedCount > 0 || newDraft || state.autoDraftActive" in placeholder
-    assert "|| state.robotWarehouseDraftActive" in placeholder
-    assert "+ state.robotWarehouseCount" in disclosure
+    assert "robotWarehouseDraftActive" not in tasks
+    assert "robotWarehouseCount" not in tasks
 
 
 def test_dirty_auto_task_switch_is_disabled_and_deletion_warns() -> None:

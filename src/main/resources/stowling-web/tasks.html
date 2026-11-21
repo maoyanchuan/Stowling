@@ -117,58 +117,6 @@
                              aria-label="已保存的自动进食任务"></div>
                         <div id="material-task-list" class="move-task-list"
                              aria-label="已保存的自动收集材料任务"></div>
-                        <article id="robot-warehouse-draft" class="move-saved-task is-draft"
-                                 hidden>
-                            <div class="task-card-header">
-                                <button id="toggle-robot-warehouse" class="move-task-summary"
-                                        type="button" aria-expanded="false"
-                                        aria-controls="robot-warehouse-body">
-                                    <span class="move-task-kind" aria-hidden="true">仓</span>
-                                    <span class="move-task-overview">
-                                        <strong>机器人仓库</strong>
-                                        <span id="robot-warehouse-summary">设置存放位置</span>
-                                    </span>
-                                    <span id="robot-warehouse-state" class="move-task-state"></span>
-                                    <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                                </button>
-                            </div>
-                            <div id="robot-warehouse-body" class="move-task-body" hidden>
-                                <form id="robot-warehouse-form" class="move-task-form">
-                                    <fieldset id="robot-warehouse-fields" disabled>
-                                        <label class="move-field" for="robot-warehouse-enabled">
-                                            <span>启用机器人仓库</span>
-                                            <input id="robot-warehouse-enabled" type="checkbox"
-                                                   class="settings-switch" role="switch">
-                                        </label>
-                                        <label class="move-field" for="robot-warehouse-location">
-                                            <span>存放坐标或区域</span>
-                                            <select id="robot-warehouse-location"></select>
-                                        </label>
-                                        <button id="add-robot-warehouse-location" class="secondary"
-                                                type="button">添加位置</button>
-                                        <div id="robot-warehouse-locations" class="card-list"
-                                             aria-label="仓库位置"></div>
-                                        <p class="auto-config-note">
-                                            专供机器人存放储存区已满后的溢出物品，无需标识物。
-                                            物品混装入潜影盒，优先利用仓库已有盒子的空位。
-                                            请将这些容器留给机器人使用。
-                                        </p>
-                                        <p id="robot-warehouse-message" class="field-message error"
-                                           role="status" hidden></p>
-                                        <div class="move-form-actions">
-                                            <a class="text-link"
-                                               href="/coordinates.html#coordinate-points">
-                                                管理坐标和区域
-                                            </a>
-                                            <button id="cancel-robot-warehouse" class="ghost"
-                                                    type="button">取消</button>
-                                            <button id="save-robot-warehouse" class="primary"
-                                                    type="submit">保存仓库</button>
-                                        </div>
-                                    </fieldset>
-                                </form>
-                            </div>
-                        </article>
                         <article id="material-editor" class="move-saved-task is-draft" hidden>
                             <button id="toggle-material-draft" class="move-task-summary"
                                     type="button" aria-expanded="false"
@@ -575,15 +523,74 @@
                                                 </p>
                                             </div>
                                         </section>
-                                        <label class="move-field" for="auto-overflow-destination">
-                                            <span>溢出存入位置</span>
-                                            <select id="auto-overflow-destination" disabled>
-                                                <option value="">请先启用机器人仓库</option>
-                                            </select>
-                                        </label>
-                                        <p class="auto-config-note">
-                                            确认对应储存区已满后，将溢出物品装盒存入所选机器人仓库。
-                                        </p>
+                                        <section class="auto-config-section"
+                                                 aria-labelledby="robot-warehouse-title">
+                                            <div class="auto-phase-header">
+                                                <button id="toggle-robot-warehouse"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="robot-warehouse-body">
+                                                    <span class="auto-phase-title">
+                                                        <span class="auto-phase-index"
+                                                              aria-hidden="true">3</span>
+                                                        <span class="auto-phase-copy">
+                                                            <strong id="robot-warehouse-title">
+                                                                机器人仓库
+                                                            </strong>
+                                                            <small>储存区已满后，装盒存放溢出物品</small>
+                                                        </span>
+                                                    </span>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true">⌄</span>
+                                                </button>
+                                                <label class="auto-phase-switch"
+                                                       for="robot-warehouse-enabled">
+                                                    <span class="visually-hidden">
+                                                        启用本任务的机器人仓库
+                                                    </span>
+                                                    <input id="robot-warehouse-enabled"
+                                                           type="checkbox" role="switch">
+                                                    <span class="auto-switch-track"
+                                                          aria-hidden="true"></span>
+                                                </label>
+                                            </div>
+                                            <div id="robot-warehouse-body"
+                                                 class="auto-phase-body" hidden>
+                                                <fieldset id="robot-warehouse-fields" disabled>
+                                                    <label class="move-field"
+                                                           for="auto-overflow-destination">
+                                                        <span>溢出存入位置</span>
+                                                        <select id="auto-overflow-destination">
+                                                            <option value="auto">
+                                                                自动选择仓库位置
+                                                            </option>
+                                                        </select>
+                                                    </label>
+                                                    <label class="move-field"
+                                                           for="robot-warehouse-location">
+                                                        <span>添加存放坐标或区域</span>
+                                                        <select id="robot-warehouse-location">
+                                                        </select>
+                                                    </label>
+                                                    <button id="add-robot-warehouse-location"
+                                                            class="secondary" type="button">
+                                                        添加位置
+                                                    </button>
+                                                    <div id="robot-warehouse-locations"
+                                                         class="card-list"
+                                                         aria-label="仓库位置"></div>
+                                                    <p class="auto-config-note">
+                                                        无需标识物，物品混装入潜影盒，优先补满已有盒子。
+                                                        请将这些容器留给机器人使用。
+                                                        仓库位置共用，开关只控制当前任务；随任务一起保存。
+                                                    </p>
+                                                    <a class="text-link"
+                                                       href="/coordinates.html#coordinate-points">
+                                                        管理坐标和区域
+                                                    </a>
+                                                </fieldset>
+                                            </div>
+                                        </section>
                                         <div id="auto-cleanup-settings"></div>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
@@ -624,12 +631,6 @@
                                     type="button" disabled>
                                 <strong>＋ 自动收集材料</strong>
                                 <span>上传投影，自动从仓库取料并交付</span>
-                            </button>
-                            <button id="new-robot-warehouse" class="move-task-option is-new"
-                                    aria-controls="robot-warehouse-draft" aria-expanded="false"
-                                    type="button" disabled>
-                                <strong>＋ 机器人仓库</strong>
-                                <span>装盒存放分类目标装不下的物品</span>
                             </button>
                         </div>
                     </section>

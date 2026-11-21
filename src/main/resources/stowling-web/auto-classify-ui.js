@@ -25,8 +25,7 @@
         warehouseSnapshot: null,
         warehouseDraft: Auto.warehouseDraft({}),
         warehouseDraftRevision: "",
-        warehouseOpen: false,
-        phase: { collection: false, classification: false }
+        phase: { collection: false, classification: false, warehouse: false }
     };
     const elements = {
         list: document.querySelector("#auto-task-list"),
@@ -54,20 +53,13 @@
         newTask: document.querySelector("#new-auto-task"),
         refresh: document.querySelector("#refresh-move-tasks"),
         remove: document.querySelector("#delete-auto-task"),
-        warehouseCard: document.querySelector("#robot-warehouse-draft"),
         warehouseToggle: document.querySelector("#toggle-robot-warehouse"),
-        warehouseSummary: document.querySelector("#robot-warehouse-summary"),
-        warehouseState: document.querySelector("#robot-warehouse-state"),
         warehouseBody: document.querySelector("#robot-warehouse-body"),
-        warehouseForm: document.querySelector("#robot-warehouse-form"),
         warehouseFields: document.querySelector("#robot-warehouse-fields"),
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouseLocation: document.querySelector("#robot-warehouse-location"),
         warehouseLocations: document.querySelector("#robot-warehouse-locations"),
-        addWarehouseLocation: document.querySelector("#add-robot-warehouse-location"),
-        warehouseMessage: document.querySelector("#robot-warehouse-message"),
-        newWarehouse: document.querySelector("#new-robot-warehouse"),
-        cancelWarehouse: document.querySelector("#cancel-robot-warehouse")
+        addWarehouseLocation: document.querySelector("#add-robot-warehouse-location")
     };
     const rows = new Map();
     const phaseDisabledControls = new Map();
@@ -115,7 +107,7 @@
             state.items = Array.isArray(tasks.items) ? tasks.items : [];
             state.allTasks = Array.isArray(allTasks.tasks) ? allTasks.tasks : [];
             state.warehouseSnapshot = warehouse;
-            if (!state.warehouseOpen) state.warehouseDraft = Auto.warehouseDraft(warehouse.settings);
+            if (!state.dirty) resetWarehouseDraft();
             state.resources = {
                 coordinates: Array.isArray(coordinates.coordinates) ? coordinates.coordinates : [],
                 regions: Array.isArray(regions.regions) ? regions.regions : [],
@@ -137,7 +129,6 @@
             elements.resourceMessage.hidden = true;
             syncForm();
             renderList();
-            renderWarehouse();
         } catch (error) {
             state.ready = false;
             elements.resourceMessage.hidden = false;
@@ -303,7 +294,8 @@
             "请选择包含缓存箱子的区域");
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
-        renderOverflowDestination();
+        elements.warehouseEnabled.checked = draft.overflowEnabled;
+        renderWarehouse();
         cleanup.resources(state.resources.coordinates, state.resources.regions);
         cleanup.set({destinationRef: draft.cleanupDestinationRef, resumeMode: "RESTART"});
         renderClassificationAreas();
@@ -316,7 +308,6 @@
             elements.classifyEnabled.checked = false;
         }
         const overflow = elements.overflowDestination.value;
-        const warehouse = Auto.warehouseDraft(state.warehouseSnapshot?.settings);
         state.draft = {
             ...state.draft,
             name: elements.name.value,
@@ -327,9 +318,8 @@
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
             classificationEnabled: elements.classifyEnabled.checked,
-            overflowEnabled: warehouse.enabled ? Boolean(overflow) : state.draft.overflowEnabled,
-            overflowDestinationRef: warehouse.enabled ? (overflow === "auto" ? "" : overflow)
-                : state.draft.overflowDestinationRef,
+            overflowEnabled: elements.warehouseEnabled.checked,
+            overflowDestinationRef: overflow === "auto" ? "" : overflow,
             cleanupDestinationRef: cleanup.read().destinationRef || ""
         };
     }
@@ -398,34 +388,19 @@
 
     /** @returns {void} */
     function renderOverflowDestination() {
-        const saved = Auto.warehouseDraft(state.warehouseSnapshot?.settings);
         const select = elements.overflowDestination;
-        if (!saved.enabled) {
-            select.replaceChildren(new Option("请先启用机器人仓库", ""));
-            return;
-        }
         const options = Auto.warehouseLocationOptions(state.resources)
-            .filter((option) => saved.locations.includes(option.id));
+            .filter((option) => state.warehouseDraft.locations.includes(option.id));
         options.unshift({id: "auto", name: "自动选择仓库位置"});
-        const selected = state.draft.overflowEnabled
-            ? state.draft.overflowDestinationRef || "auto" : "";
-        populateSelect(select, options, selected, "不存入机器人仓库");
+        const selected = state.draft.overflowDestinationRef || "auto";
+        populateSelect(select, options, selected, "请选择存入位置");
     }
 
     /** @returns {void} */
     function renderWarehouse() {
-        const saved = Auto.warehouseDraft(state.warehouseSnapshot?.settings);
-        const configured = saved.locations.length > 0;
         const draft = state.warehouseDraft;
         const options = Auto.warehouseLocationOptions(state.resources);
         const available = options.filter((option) => !draft.locations.includes(option.id));
-        elements.warehouseCard.hidden = !configured && !state.warehouseOpen;
-        elements.warehouseCard.classList.toggle("is-draft", !configured);
-        elements.warehouseSummary.textContent = configured
-            ? `${saved.locations.length} 个存放位置` : "设置存放位置";
-        elements.warehouseState.textContent = saved.enabled ? "已启用"
-            : configured ? "已停用" : "未保存";
-        elements.warehouseEnabled.checked = draft.enabled;
         populateSelect(elements.warehouseLocation, available, "",
             available.length ? "请选择已有坐标或区域" : "没有可添加的位置");
         elements.warehouseLocations.replaceChildren();
@@ -436,15 +411,19 @@
             remove.type = "button";
             remove.setAttribute("aria-label", `移除 ${name}`);
             remove.addEventListener("click", () => {
+                readForm();
                 draft.locations = draft.locations.filter((location) => location !== ref);
+                if (state.draft.overflowDestinationRef === ref) {
+                    state.draft.overflowDestinationRef = "";
+                }
+                state.dirty = true;
+                showMessage("未保存修改");
                 renderWarehouse();
             });
             row.append(Stowling.element("span", "", name), remove);
             elements.warehouseLocations.append(row);
         }
-        document.dispatchEvent(new CustomEvent("stowling:robot-warehouse-count", {
-            detail: {count: configured ? 1 : 0, draftActive: !configured && state.warehouseOpen}
-        }));
+        renderOverflowDestination();
         updateControls();
     }
 
@@ -460,15 +439,16 @@
         elements.form.hidden = false;
         elements.draftToggle.setAttribute("aria-expanded", String(isNew && state.expanded));
         elements.remove.hidden = !state.draft.id;
-        elements.newWarehouse.disabled = disabled;
-        elements.warehouseToggle.disabled = disabled;
-        elements.newWarehouse.setAttribute("aria-expanded", String(state.warehouseOpen));
-        elements.warehouseToggle.setAttribute("aria-expanded", String(state.warehouseOpen));
-        elements.warehouseBody.hidden = !state.warehouseOpen;
-        elements.warehouseFields.disabled = disabled;
+        const warehouseEnabled = elements.warehouseEnabled.checked;
+        elements.warehouseToggle.disabled = disabled || !warehouseEnabled;
+        elements.warehouseToggle.setAttribute("aria-expanded",
+            String(warehouseEnabled && state.phase.warehouse));
+        void window.StowlingSettings.reveal(elements.warehouseBody,
+            warehouseEnabled && state.phase.warehouse);
+        elements.warehouseToggle.closest(".auto-config-section").dataset.enabled
+            = String(warehouseEnabled);
+        elements.warehouseFields.disabled = disabled || !warehouseEnabled;
         elements.addWarehouseLocation.disabled = !elements.warehouseLocation.value;
-        elements.overflowDestination.disabled = disabled
-            || !Auto.warehouseDraft(state.warehouseSnapshot?.settings).enabled;
         for (const [id, row] of rows) {
             const selected = state.draft.id === id;
             const expanded = selected && state.expanded;
@@ -531,6 +511,8 @@
         state.dirty = false;
         state.phase.collection = false;
         state.phase.classification = false;
+        state.phase.warehouse = false;
+        resetWarehouseDraft();
         syncForm();
         renderList();
         showMessage(item
@@ -539,7 +521,7 @@
     }
 
     /**
-     * @param {"collection" | "classification"} phase
+     * @param {"collection" | "classification" | "warehouse"} phase
      * @returns {void}
      */
     function togglePhase(phase) {
@@ -547,7 +529,8 @@
             return;
         }
         const enabled = phase === "collection"
-            ? elements.collectEnabled.checked : elements.classifyEnabled.checked;
+            ? elements.collectEnabled.checked : phase === "classification"
+                ? elements.classifyEnabled.checked : elements.warehouseEnabled.checked;
         if (!enabled) return;
         if (phase === "classification" && !state.phase[phase]) {
             areaReaders.forEach(reader => reader.collapse());
@@ -627,6 +610,15 @@
         let payload;
         try {
             payload = Auto.payload(state.draft, state.resources, state.items, state.allTasks);
+            if (state.draft.overflowEnabled) {
+                if (!state.warehouseDraft.locations.length) {
+                    throw new RangeError("启用机器人仓库前请添加至少一个存放位置");
+                }
+                const destination = state.draft.overflowDestinationRef;
+                if (destination && !state.warehouseDraft.locations.includes(destination)) {
+                    throw new RangeError("请选择机器人仓库中的存放位置");
+                }
+            }
             delete payload.enabled;
         } catch (error) {
             showMessage(String(error.message || error), true);
@@ -635,6 +627,7 @@
         state.busy = true;
         updateControls();
         try {
+            await saveWarehouse();
             if (!state.draft.id || state.dirty) {
                 const id = state.draft.id;
                 const response = await Stowling.request(id
@@ -702,77 +695,39 @@
      * @returns {Promise<void>}
      */
     async function saveWarehouse() {
-        if (unavailable() || !state.warehouseSnapshot) return;
-        if (state.warehouseDraft.enabled && !state.warehouseDraft.locations.length) {
-            elements.warehouseMessage.textContent = "启用仓库前请添加至少一个存放位置";
-            elements.warehouseMessage.hidden = false;
-            return;
-        }
-        state.busy = true;
-        elements.warehouseMessage.hidden = true;
-        updateControls();
-        try {
-            const {settings} = state.warehouseSnapshot;
-            const response = await Stowling.request("/v1/storage-settings", {
-                method: "PUT",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({revision: state.warehouseDraftRevision,
-                    settings: Auto.warehouseSettingsPayload(settings, state.warehouseDraft)})
-            });
-            state.warehouseSnapshot = response;
-            state.warehouseDraft = Auto.warehouseDraft(response.settings);
-            state.warehouseOpen = false;
-            renderWarehouse();
-            renderOverflowDestination();
-            Stowling.showToast("机器人仓库已保存");
-        } catch (error) {
-            elements.warehouseMessage.hidden = false;
-            elements.warehouseMessage.textContent = String(error.message || error);
-            Stowling.handleError(error, "保存机器人仓库失败");
-        } finally {
-            state.busy = false;
-            updateControls();
-            if (!state.warehouseOpen) focusWarehouseEntry();
-        }
+        const {settings} = state.warehouseSnapshot;
+        const draft = {
+            ...state.warehouseDraft,
+            enabled: state.draft.overflowEnabled || state.warehouseDraft.enabled
+        };
+        if (JSON.stringify(draft) === JSON.stringify(Auto.warehouseDraft(settings))) return;
+        const replacement = Auto.warehouseSettingsPayload(settings, draft);
+        state.warehouseSnapshot = await Stowling.request("/v1/storage-settings", {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({revision: state.warehouseDraftRevision, settings: replacement})
+        });
+        resetWarehouseDraft();
     }
 
     /** @returns {void} */
-    function focusWarehouseEntry() {
-        (elements.warehouseCard.hidden ? elements.newWarehouse : elements.warehouseToggle).focus();
-    }
-
-    /** @param {boolean} open @returns {void} */
-    function showWarehouseDraft(open) {
-        state.warehouseOpen = open;
+    function resetWarehouseDraft() {
         state.warehouseDraft = Auto.warehouseDraft(state.warehouseSnapshot?.settings);
         state.warehouseDraftRevision = state.warehouseSnapshot?.revision || "";
-        if (open && !state.warehouseDraft.locations.length) state.warehouseDraft.enabled = true;
-        elements.warehouseMessage.hidden = true;
-        renderWarehouse();
-        if (open) elements.warehouseLocation.focus();
-        else focusWarehouseEntry();
     }
 
-    elements.newWarehouse.addEventListener("click", () =>
-        showWarehouseDraft(!state.warehouseOpen));
     elements.warehouseToggle.addEventListener("click", () =>
-        showWarehouseDraft(!state.warehouseOpen));
-    elements.cancelWarehouse.addEventListener("click", () => showWarehouseDraft(false));
+        togglePhase("warehouse"));
     elements.warehouseLocation.addEventListener("change", updateControls);
-    elements.warehouseEnabled.addEventListener("change", () => {
-        state.warehouseDraft.enabled = elements.warehouseEnabled.checked;
-    });
     elements.addWarehouseLocation.addEventListener("click", () => {
         const ref = elements.warehouseLocation.value;
         if (!ref || state.warehouseDraft.locations.includes(ref)) return;
+        readForm();
         state.warehouseDraft.locations.push(ref);
-        elements.warehouseMessage.hidden = true;
+        state.dirty = true;
+        showMessage("未保存修改");
         renderWarehouse();
         elements.warehouseLocation.focus();
-    });
-    elements.warehouseForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        void saveWarehouse();
     });
     elements.newTask.addEventListener("click", () => selectTask());
     elements.draftToggle.addEventListener("click", () => {
@@ -794,6 +749,9 @@
     elements.addArea.addEventListener("click", addClassificationArea);
     elements.refresh.addEventListener("click", () => void loadResources());
     elements.form.addEventListener("input", (event) => {
+        if (event.target === elements.warehouseEnabled) {
+            state.phase.warehouse = elements.warehouseEnabled.checked;
+        }
         if (event.target === elements.classifyEnabled) {
             state.phase.classification = elements.classifyEnabled.checked;
             if (elements.classifyEnabled.checked) {

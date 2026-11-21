@@ -21,8 +21,6 @@
         autoTaskCount: 0,
         autoEatTaskCount: 0,
         materialTaskCount: 0,
-        robotWarehouseCount: 0,
-        robotWarehouseDraftActive: false,
         materialDraftActive: false,
         autoDraftActive: false,
         autoEatDraftActive: false,
@@ -222,10 +220,9 @@
         ));
         elements.moveForm.hidden = false;
         const savedCount = state.moveTasks.length + state.autoTaskCount + state.autoEatTaskCount
-            + state.materialTaskCount + state.robotWarehouseCount;
+            + state.materialTaskCount;
         elements.movePlaceholder.hidden = savedCount > 0 || newDraft || state.autoDraftActive
-            || state.autoEatDraftActive || state.materialDraftActive
-            || state.robotWarehouseDraftActive;
+            || state.autoEatDraftActive || state.materialDraftActive;
         elements.moveCount.textContent = String(savedCount);
         for (const [id, row] of moveRows) {
             const selected = state.moveDraft.id === id;
@@ -1029,11 +1026,6 @@
     document.addEventListener("stowling:material-task-count", (event) => {
         state.materialTaskCount = event.detail.count;
         state.materialDraftActive = event.detail.draftActive;
-        syncMoveDisclosure();
-    });
-    document.addEventListener("stowling:robot-warehouse-count", (event) => {
-        state.robotWarehouseCount = event.detail.count;
-        state.robotWarehouseDraftActive = event.detail.draftActive;
         syncMoveDisclosure();
     });
     document.addEventListener("stowling:material-tasks-changed", () => {

@@ -101,11 +101,9 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     assert 'id="task-list-title">任务选择</h2>' in selection
     assert 'id="new-move-task"' in selection
     assert 'id="new-auto-task"' in selection
-    warehouse_card = between(selection, 'id="new-robot-warehouse"', "</button>")
-    assert 'class="move-task-option is-new"' in warehouse_card
-    assert 'aria-controls="robot-warehouse-draft"' in warehouse_card
-    assert "＋ 机器人仓库" in warehouse_card
-    assert selection.index('id="new-material-task"') < selection.index('id="new-robot-warehouse"')
+    assert 'id="new-robot-warehouse"' not in html
+    assert 'id="robot-warehouse-draft"' not in html
+    assert "机器人仓库" not in selection
     assert "移动到坐标" in selection
     assert "自动分类" in selection
     for moved in (

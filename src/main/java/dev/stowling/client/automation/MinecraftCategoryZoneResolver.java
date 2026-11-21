@@ -35,6 +35,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.entity.ShelfBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -50,6 +51,8 @@ public final class MinecraftCategoryZoneResolver
     );
     private static final Set<CategoryMarkerSource> ALL_MARKER_SOURCES =
             Set.copyOf(EnumSet.allOf(CategoryMarkerSource.class));
+    private static final Set<CategoryMarkerSource> SMART_MARKER_SOURCES =
+            Set.copyOf(CategoryMarkerSource.SMART_SOURCES);
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
@@ -161,9 +164,6 @@ public final class MinecraftCategoryZoneResolver
             Map<BlockPosition, Set<String>> markerContainerContents,
             Set<CategoryMarkerSource> markerSources
     ) {
-        Set<CategoryMarkerSource> effectiveSources = markerSources == null
-                ? ALL_MARKER_SOURCES
-                : markerSources;
         Map<String, List<ContainerTarget>> categories =
                 new LinkedHashMap<>();
         List<ClassificationLayoutEntry> layout = new ArrayList<>();
@@ -189,7 +189,7 @@ public final class MinecraftCategoryZoneResolver
             } else {
                 markers = markers(level, binding.markerArea(),
                         Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
-                        effectiveSources);
+                        markerSourcesFor(binding.ruleId(), markerSources));
             }
             CategoryRuleResult resolved = resolveBinding(
                     binding,
@@ -224,6 +224,21 @@ public final class MinecraftCategoryZoneResolver
             );
         }
         return CategoryZoneResult.success(categories, layout);
+    }
+
+    static Set<CategoryMarkerSource> markerSourcesFor(
+            String ruleId,
+            Set<CategoryMarkerSource> explicitSources
+    ) {
+        if (explicitSources != null) {
+            return explicitSources;
+        }
+        return switch (ruleId) {
+            case DirectBlockIdCategoryRule.ID -> SMART_MARKER_SOURCES;
+            case ContainerContentsCategoryRule.ID ->
+                    Set.of(CategoryMarkerSource.CONTAINER_CONTENTS);
+            default -> ALL_MARKER_SOURCES;
+        };
     }
 
     private CategoryRuleResult resolveBinding(
@@ -340,8 +355,8 @@ public final class MinecraftCategoryZoneResolver
         return List.copyOf(result);
     }
 
-    private static void appendBlockMarkers(
-            ClientLevel level,
+    static void appendBlockMarkers(
+            LevelReader level,
             BlockPos position,
             Set<String> ignoredBlockIds,
             Map<BlockPosition, Set<String>> markerContainerContents,
@@ -355,20 +370,15 @@ public final class MinecraftCategoryZoneResolver
         String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock())
                 .toString();
         BlockPosition markerPosition = blockPosition(position);
-        if (markerContainerContents.containsKey(markerPosition)) {
-            if (markerSources.contains(
-                    CategoryMarkerSource.CONTAINER_CONTENTS
-            )) {
-                appendContainerContents(
-                        markerPosition,
-                        markerContainerContents.get(markerPosition),
-                        result
-                );
+        if (markerSources.contains(CategoryMarkerSource.CONTAINER_CONTENTS)) {
+            Set<String> contents = markerContainerContents.get(markerPosition);
+            if (contents != null) {
+                appendContainerContents(markerPosition, contents, result);
+                return;
             }
-            return;
-        }
-        if (MARKER_CONTAINER_TYPES.contains(blockId)) {
-            return;
+            if (MARKER_CONTAINER_TYPES.contains(blockId)) {
+                return;
+            }
         }
         String pottedItemId = pottedItemId(state, blockId);
         if (pottedItemId != null) {

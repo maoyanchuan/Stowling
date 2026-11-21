@@ -307,6 +307,17 @@ public final class TaskModuleCatalog {
                     )
             ),
             action(
+                    dev.stowling.v2.model.MaterialRequirements.MODULE,
+                    "自动收集材料",
+                    "从仓库批量取出投影材料并交付到指定容器或区域。",
+                    List.of(
+                            reference(ConfigValidator.TARGET_REF, "交付位置",
+                                    "resource-reference", true),
+                            text(dev.stowling.v2.model.MaterialRequirements.PARAMETER,
+                                    "材料清单", true)
+                    )
+            ),
+            action(
                     ConfigValidator.WITHDRAW_FOOD,
                     "取出食物",
                     "从食物箱取出指定食物，可将补给加入背包的自用保留数量。",

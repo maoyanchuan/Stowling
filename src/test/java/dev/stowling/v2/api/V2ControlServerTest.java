@@ -47,6 +47,49 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void validatesSchematicUploadsAfterAuthentication() throws Exception {
+        var store = new ConfigStore(directory.resolve("material-collection.json"));
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
+                List::of);
+        try (Fixture fixture = new Fixture(service)) {
+            String path = "/v1/schematic-materials";
+            assertEquals(401, fixture.send(path, "POST", "invalid", false).statusCode());
+            assertEquals(405, fixture.send(path, "GET", null, true).statusCode());
+            assertEquals(400, fixture.send(path, "POST", "invalid", true).statusCode());
+        }
+    }
+
+    @Test
+    void savesMaterialRequirementsWithoutStartingTheTask() throws Exception {
+        var store = new ConfigStore(directory.resolve("saved-material-collection.json"));
+        var region = new RegionDefinition(UUID.randomUUID(), "Delivery", 0, 64, 0, 2, 64, 2);
+        store.save(store.loadOrReset().revision(), new AppConfig(
+                AppConfig.CURRENT_SCHEMA_VERSION, List.of(), List.of(), List.of(region),
+                List.of()));
+        var runs = new TaskRunManager(new FailedNavigation());
+        String target = "region:" + region.id();
+        String requirements = new Gson().toJson(Map.of("minecraft:glass", 65));
+        String body = new Gson().toJson(Map.of(
+                "name", "Glass delivery",
+                "steps", List.of(Map.of("moduleId", "COLLECT_SCHEMATIC_MATERIALS",
+                        "parameters", Map.of("targetRef", target, "materials", requirements))),
+                "cleanupPolicy", Map.of("destinationRef", target, "resumeMode", "CONTINUE")));
+        try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
+            var response = fixture.send("/v1/tasks", "POST", body, true);
+            assertEquals(201, response.statusCode());
+            var task = store.read().config().tasks().getFirst();
+            assertEquals(requirements, task.steps().getFirst().parameters().get("materials"));
+            assertEquals(target, task.cleanupPolicy().destinationRef());
+            assertEquals(400, fixture.send("/v1/tasks", "POST",
+                    body.replace("Glass delivery", "Invalid delivery").replace(":65", ":-65"),
+                    true).statusCode());
+            var status = object(fixture.send("/v1/status", "GET", null, true));
+            assertEquals("IDLE", status.get("state").getAsString());
+        }
+    }
+
+    @Test
     void servesTheNormalConsoleAndRequiresAuthenticationForInvalidConfigurationDetails()
             throws Exception {
         Path config = directory.resolve("stowling.json");

@@ -657,6 +657,16 @@ public final class ConfigValidator {
                     categoryZones
             );
             case MOVE_TO_COORDINATE -> requireMoveStep(step, coordinates);
+            case dev.stowling.v2.model.MaterialRequirements.MODULE -> {
+                var fields = Set.of(TARGET_REF,
+                        dev.stowling.v2.model.MaterialRequirements.PARAMETER);
+                requireParameters(step, fields, fields);
+                String destination = step.parameters().get(TARGET_REF);
+                new dev.stowling.v2.model.TaskCleanupPolicy(destination, null);
+                requireInteractionResource(destination, coordinates, regions, categoryZones);
+                dev.stowling.v2.model.MaterialRequirements.parse(
+                        step.parameters().get(dev.stowling.v2.model.MaterialRequirements.PARAMETER));
+            }
             case COLLECT_DROPPED_ITEMS -> requireCollectStep(
                     step,
                     coordinates,

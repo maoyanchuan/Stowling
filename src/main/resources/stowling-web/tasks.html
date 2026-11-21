@@ -20,6 +20,7 @@
     <script src="/tasks.js" defer></script>
     <script src="/auto-classify-ui.js" defer></script>
     <script src="/auto-eat-ui.js" defer></script>
+    <script src="/material-collection-ui.js" defer></script>
 </head>
 <body data-page="tasks">
     <header class="topbar">
@@ -114,6 +115,46 @@
                         <p id="auto-eat-status" class="field-message" role="status" hidden></p>
                         <div id="auto-eat-list" class="move-task-list"
                              aria-label="已保存的自动进食任务"></div>
+                        <p id="material-status" class="field-message" role="status" hidden></p>
+                        <div id="material-task-list" class="move-task-list"
+                             aria-label="已保存的自动收集材料任务"></div>
+                        <article id="material-editor" class="move-saved-task move-task-body"
+                                 hidden>
+                            <form id="material-task-form" class="move-task-form">
+                                <h3 id="material-editor-title">新建 · 自动收集材料</h3>
+                                <fieldset>
+                                    <label class="move-field" for="material-name">
+                                        <span>任务名称</span>
+                                        <input id="material-name" maxlength="80"
+                                               required autocomplete="off">
+                                    </label>
+                                    <label class="move-field" for="material-file">
+                                        <span>投影文件（.litematic）</span>
+                                        <input id="material-file" type="file" accept=".litematic">
+                                    </label>
+                                    <label class="move-field" for="material-destination">
+                                        <span>交付容器或区域</span>
+                                        <select id="material-destination" required></select>
+                                    </label>
+                                    <p id="material-preview-status" class="field-message"
+                                       role="status">选择投影文件后自动解析材料</p>
+                                    <details id="material-preview" hidden>
+                                        <summary id="material-preview-title">材料清单</summary>
+                                        <ul id="material-preview-items"></ul>
+                                    </details>
+                                    <p class="move-target-note">
+                                        从 Chest Tracker 已记录的仓库取料，
+                                        交付处已有的材料会抵扣需求。
+                                    </p>
+                                    <div class="move-form-actions">
+                                        <button id="material-cancel" class="secondary"
+                                                type="button">取消</button>
+                                        <button id="material-save" class="primary"
+                                                type="submit" disabled>保存任务</button>
+                                    </div>
+                                </fieldset>
+                            </form>
+                        </article>
                         <article id="auto-eat-draft" class="move-saved-task is-draft" hidden>
                             <button id="toggle-auto-eat-draft" class="move-task-summary"
                                     type="button" aria-expanded="false"
@@ -483,6 +524,11 @@
                                     type="button" disabled>
                                 <strong>＋ 自动进食</strong>
                                 <span>饱食度偏低时吃随身食物或到箱子取食</span>
+                            </button>
+                            <button id="new-material-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 自动收集材料</strong>
+                                <span>上传投影，自动从仓库取料并交付</span>
                             </button>
                         </div>
                     </section>

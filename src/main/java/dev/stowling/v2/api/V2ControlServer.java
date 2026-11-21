@@ -201,6 +201,10 @@ public final class V2ControlServer implements AutoCloseable {
                     || path.contains("\\")) {
                 throw new RequestFailure(400, "invalid_request", "Invalid request target");
             }
+            if (configurationIssues.isEmpty() && "/v1/schematic-materials".equals(path)) {
+                previewSchematic(exchange);
+                return;
+            }
             String body = readBody(exchange.getRequestBody());
             String method = exchange.getRequestMethod();
             if (configurationIssues.isEmpty()) {
@@ -1615,15 +1619,44 @@ public final class V2ControlServer implements AutoCloseable {
         return new RequestFailure(400, "invalid_request", message);
     }
 
-    private static String readBody(InputStream input)
-            throws IOException, RequestFailure {
+    private static void previewSchematic(HttpExchange exchange) throws IOException {
+        requireMethod(exchange.getRequestMethod(), "POST");
+        var bytes = readBytes(exchange.getRequestBody(),
+                dev.stowling.client.automation.LitematicMaterials.MAX_UPLOAD_BYTES);
+        dev.stowling.client.automation.LitematicMaterials.Preview preview;
+        try {
+            preview = dev.stowling.client.automation.LitematicMaterials.read(
+                    new java.io.ByteArrayInputStream(bytes));
+        } catch (IOException | RuntimeException exception) {
+            throw invalid("无法解析投影，请检查 .litematic 文件格式和大小");
+        }
+        if (!preview.items().isEmpty()) {
+            dev.stowling.v2.model.MaterialRequirements.parse(
+                    V2Json.gson().toJson(preview.items()));
+        }
+        sendJson(exchange, 200, preview);
+    }
+
+    private static String readBody(InputStream input) throws IOException {
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(readBytes(input, MAX_REQUEST_BYTES)))
+                    .toString();
+        } catch (CharacterCodingException exception) {
+            throw invalid("request body must be valid UTF-8");
+        }
+    }
+
+    private static byte[] readBytes(InputStream input, int limit) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int total = 0;
         int count;
         while ((count = input.read(buffer)) != -1) {
             total += count;
-            if (total > MAX_REQUEST_BYTES) {
+            if (total > limit) {
                 throw new RequestFailure(
                         413,
                         "request_too_large",
@@ -1632,15 +1665,7 @@ public final class V2ControlServer implements AutoCloseable {
             }
             output.write(buffer, 0, count);
         }
-        try {
-            return StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(output.toByteArray()))
-                    .toString();
-        } catch (CharacterCodingException exception) {
-            throw invalid("request body must be valid UTF-8");
-        }
+        return output.toByteArray();
     }
 
     private boolean authorized(Headers headers) {
@@ -1818,6 +1843,10 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/auto-eat-ui.js",
                         read("stowling-web/auto-eat-ui.js", js)
+                ),
+                Map.entry(
+                        "/material-collection-ui.js",
+                        read("stowling-web/material-collection-ui.js", js)
                 ),
                 Map.entry(
                         "/auto-classify-ui.js",

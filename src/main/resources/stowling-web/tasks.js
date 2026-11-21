@@ -20,6 +20,8 @@
         moveTasks: [],
         autoTaskCount: 0,
         autoEatTaskCount: 0,
+        materialTaskCount: 0,
+        materialDraftActive: false,
         autoDraftActive: false,
         autoEatDraftActive: false,
         moveAllTasks: [],
@@ -217,9 +219,10 @@
             newDraft && state.moveFormOpen
         ));
         elements.moveForm.hidden = false;
-        const savedCount = state.moveTasks.length + state.autoTaskCount + state.autoEatTaskCount;
+        const savedCount = state.moveTasks.length + state.autoTaskCount + state.autoEatTaskCount
+            + state.materialTaskCount;
         elements.movePlaceholder.hidden = savedCount > 0 || newDraft || state.autoDraftActive
-            || state.autoEatDraftActive;
+            || state.autoEatDraftActive || state.materialDraftActive;
         elements.moveCount.textContent = String(savedCount);
         for (const [id, row] of moveRows) {
             const selected = state.moveDraft.id === id;
@@ -1019,6 +1022,15 @@
         state.autoEatTaskCount = Number(event.detail?.count || 0);
         state.autoEatDraftActive = event.detail?.draftActive === true;
         syncMoveDisclosure();
+    });
+    document.addEventListener("stowling:material-task-count", (event) => {
+        state.materialTaskCount = event.detail.count;
+        state.materialDraftActive = event.detail.draftActive;
+        syncMoveDisclosure();
+    });
+    document.addEventListener("stowling:material-tasks-changed", () => {
+        void loadMoveResources();
+        void loadRuns();
     });
     document.addEventListener("stowling:auto-eat-tasks-changed", () => {
         void loadMoveResources();

@@ -11,6 +11,9 @@ public final class StandardTaskModuleFactories {
 
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
+                factory(dev.stowling.v2.model.MaterialRequirements.MODULE,
+                        (context, step) -> context.storageAutomation()
+                                .collectMaterials(context, step)),
                 factory("PACK_OVERFLOW", OverflowItemsModule::create),
                 factory("GLOBAL_INVENTORY_CLEANUP",
                         (context, step) -> context.storageAutomation().cleanup(context,

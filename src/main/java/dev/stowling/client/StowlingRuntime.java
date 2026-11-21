@@ -122,7 +122,8 @@ public final class StowlingRuntime implements AutoCloseable {
                 minecraft, scheduler, configs);
         moduleRuntime.setStorageAutomation(
                 new dev.stowling.client.automation.MinecraftStorageAutomation(
-                        minecraft, storageSettings, containerScanner, warehouse));
+                        minecraft, storageSettings, containerScanner, warehouse,
+                        warehouse::getForDisplay));
         TaskRunManager taskRuns = new TaskRunManager(
                 navigationPort,
                 moduleRuntime

@@ -28,6 +28,11 @@ public interface StorageAutomationPort {
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
 
+    default TaskModuleExecutor collectMaterials(TaskExecutionContext context,
+            dev.stowling.v2.model.TaskStep step) {
+        throw new IllegalStateException("当前环境不支持从仓库收集投影材料");
+    }
+
     default TaskModuleExecutor cleanup(TaskExecutionContext context, boolean overflowEnabled) {
         return cleanup(context);
     }

@@ -14,11 +14,15 @@ import dev.stowling.inventory.RecordedStorageCapacity;
 import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.MaterialRequirements;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.StorageAutomationSettings;
 import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
+import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.runtime.modules.ContainerBatchWithdrawal;
 import dev.stowling.v2.runtime.modules.StorageAutomationPort;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
@@ -44,6 +48,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 /** Shared packing and cleanup coordinator. One active task owns the client's interaction slot. */
@@ -52,6 +57,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final StorageSettingsStore settings;
     private final dev.stowling.automation.ContainerRegionPort containerRegions;
     private final Supplier<WarehouseInventory> warehouse;
+    private final Supplier<WarehouseInventory> materialWarehouse;
     private final Map<UUID, MinecraftShulkerAction.Resource> resources = new LinkedHashMap<>();
     private final Map<TaskRunWorkspace, Map<BlockPosition, CacheSnapshot>> cacheSnapshotsByRun =
             new WeakHashMap<>();
@@ -69,10 +75,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings,
             dev.stowling.automation.ContainerRegionPort containerRegions,
             Supplier<WarehouseInventory> warehouse) {
+        this(minecraft, settings, containerRegions, warehouse, warehouse);
+    }
+
+    public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings,
+            dev.stowling.automation.ContainerRegionPort containerRegions,
+            Supplier<WarehouseInventory> warehouse, Supplier<WarehouseInventory> materialWarehouse) {
         this.minecraft = minecraft;
         this.settings = settings;
         this.containerRegions = containerRegions;
         this.warehouse = warehouse;
+        this.materialWarehouse = materialWarehouse;
     }
 
     @Override
@@ -106,6 +119,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
             Map<String, Integer> items) {
         return new Packing(context, target, items);
+    }
+
+    @Override
+    public TaskModuleExecutor collectMaterials(TaskExecutionContext context, TaskStep step) {
+        return new MaterialCollection(context,
+                ResourceReference.parse(step.parameters().get("targetRef")),
+                MaterialRequirements.parse(step.parameters().get(MaterialRequirements.PARAMETER)));
     }
 
     @Override
@@ -792,6 +812,338 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private record Step(TaskModuleExecutor action, Runnable after, Runnable failed) {
         Step(TaskModuleExecutor action, Runnable after) {
             this(action, after, null);
+        }
+    }
+
+    private final class MaterialCollection extends Session {
+        private final ResourceReference destination;
+        private final Map<String, Integer> needed;
+        private final Map<String, String> materialByKey = new LinkedHashMap<>();
+        private final Map<BlockPosition, Map<String, Integer>> observedDeliveries =
+                new LinkedHashMap<>();
+        private List<ContainerTarget> destinations;
+        private List<ContainerTarget> sources;
+        private AreaBounds destinationBounds;
+        private String dimension;
+        private String warehouseProblem;
+        private int sourceIndex;
+        private int unavailableSources;
+        private boolean returningBox;
+        private boolean stopAfterBox;
+
+        MaterialCollection(TaskExecutionContext context, ResourceReference destination,
+                Map<String, Integer> required) {
+            super(context);
+            this.destination = destination;
+            needed = new LinkedHashMap<>(required);
+        }
+
+        @Override
+        void initialize() {
+            if (minecraft.level == null || minecraft.player == null) {
+                throw new IllegalStateException("请先进入仓库所在世界");
+            }
+            dimension = minecraft.level.dimension().identifier().toString();
+            List<BlockPosition> points = List.of();
+            List<RegionDefinition> regions = List.of();
+            if (destination.type() == ResourceType.COORDINATE) {
+                var point = context.coordinates().get(destination.uuid());
+                if (point.dimension() != null && !point.dimension().equals(dimension)) {
+                    throw new IllegalStateException("请先进入交付容器所在维度");
+                }
+                points = List.of(new BlockPosition(point.x(), point.y(), point.z()));
+            } else {
+                var region = context.regions().get(destination.uuid());
+                regions = List.of(region);
+                destinationBounds = new AreaBounds(region.firstX(), region.firstY(),
+                        region.firstZ(), region.secondX(), region.secondY(), region.secondZ());
+            }
+            destinations = TemporaryContainerResolver.resolve(points, regions, containerRegions,
+                    Set.copyOf(configuration.emptyBoxContainers()), "材料交付");
+            if (destinations.isEmpty()) {
+                throw new IllegalStateException("交付区域没有可用的箱子或木桶");
+            }
+            destinations.forEach(target -> observedDeliveries.put(target.position(),
+                    context.workspace().progress().deliveredTo(target.position())));
+            inspectDestination(0);
+        }
+
+        @Override
+        public TaskModuleResult tick() {
+            if (dimension != null && (minecraft.level == null
+                    || !dimension.equals(minecraft.level.dimension().identifier().toString()))) {
+                cancel();
+                terminal = TaskModuleResult.failed("已离开材料收集所在维度");
+                return terminal;
+            }
+            return super.tick();
+        }
+
+        private void inspectDestination(int index) {
+            if (index < destinations.size() && !needed.isEmpty()) {
+                read(destinations.get(index), contents -> {
+                    contents.forEach(stack -> {
+                        credit(material(stack), stack.getCount());
+                        if (MinecraftItemIdentity.isBox(stack)) {
+                            MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                                    .forEach(inner -> credit(material(inner), inner.getCount()));
+                        }
+                    });
+                    inspectDestination(index + 1);
+                });
+            } else if (!needed.isEmpty()) {
+                planSources();
+            }
+        }
+
+        private void planSources() {
+            WarehouseInventory stock = materialWarehouse.get();
+            if (stock == null || !"READY".equals(stock.state())) {
+                warehouseProblem = stock == null ? "仓库库存不可用" : stock.message();
+                finishShort();
+                return;
+            }
+            sources = stock.containers().stream()
+                    .filter(container -> dimension.equals(container.dimension()))
+                    .filter(container -> container.items().stream().anyMatch(entry ->
+                            needed.containsKey(entry.itemId())
+                                    || needed.containsKey(MaterialRequirements.WATER_BOTTLE)
+                                            && "minecraft:potion".equals(entry.itemId())))
+                    .filter(container -> container.positions().stream().noneMatch(
+                            configuration.emptyBoxContainers()::contains))
+                    .filter(container -> destinationBounds == null
+                            || container.positions().stream()
+                                    .noneMatch(destinationBounds::contains))
+                    .map(container -> new ContainerTarget(container.positions().getFirst(),
+                            "container", null, null, container.positions().size() > 1
+                                    ? container.positions().get(1) : null))
+                    .filter(source -> destinations.stream().noneMatch(
+                            target -> sameContainer(source, target)))
+                    .sorted(Comparator.comparingDouble(MinecraftStorageAutomation.this
+                            ::storageDistance))
+                    .toList();
+            nextSource();
+        }
+
+        private void nextSource() {
+            if (needed.isEmpty()) {
+                return;
+            }
+            if (sourceIndex >= sources.size()) {
+                finishShort();
+                return;
+            }
+            inspectSource(sources.get(sourceIndex++));
+        }
+
+        private void inspectSource(ContainerTarget source) {
+            if (needed.isEmpty()) {
+                return;
+            }
+            read(source, contents -> takeFrom(source, contents), this::skipSource);
+        }
+
+        private void takeFrom(ContainerTarget source, List<ItemStack> contents) {
+            Map<String, Integer> wanted = matching(contents);
+            if (!wanted.isEmpty()) {
+                withdraw(source, wanted, () -> {
+                    if (!owned().isEmpty()) {
+                        deliver(0, () -> inspectSource(source));
+                    } else {
+                        unpack(source, contents);
+                    }
+                }, this::skipSource);
+            } else {
+                unpack(source, contents);
+            }
+        }
+
+        private void unpack(ContainerTarget source, List<ItemStack> contents) {
+            ItemStack box = contents.stream().filter(MinecraftItemIdentity::isBox)
+                    .filter(stack -> !matching(MinecraftItemIdentity.contents(stack)
+                            .nonEmptyItemCopyStream().toList()).isEmpty())
+                    .findFirst().orElse(ItemStack.EMPTY);
+            if (box.isEmpty()) {
+                nextSource();
+                return;
+            }
+            if (!cleanupAvailable()) {
+                throw new IllegalStateException("拆取盒装材料前请配置任务中断存放位置");
+            }
+            if (minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .noneMatch(ItemStack::isEmpty)) {
+                skipSource();
+                return;
+            }
+            BlockPosition site;
+            try {
+                site = chooseSite(context, source, null, configuration);
+            } catch (IllegalStateException exception) {
+                skipSource();
+                return;
+            }
+            String key = MinecraftItemIdentity.key(box);
+            returningBox = true;
+            var takeBox = new MinecraftStorageAccess(minecraft, context, source,
+                    Map.of(key, 1), true, false);
+            steps.add(new Step(takeBox, () -> {
+                if (takeBox.remaining().getOrDefault(key, 0) != 0) {
+                    returningBox = false;
+                    skipSource();
+                    return;
+                }
+                var resource = new MinecraftShulkerAction.Resource(site, box);
+                resources.put(owner(), resource);
+                var boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
+                steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                        () -> read(boxTarget, items -> takeBoxMaterials(
+                                source, boxTarget, resource, items))));
+            }));
+        }
+
+        private void takeBoxMaterials(ContainerTarget source, ContainerTarget boxTarget,
+                MinecraftShulkerAction.Resource resource, List<ItemStack> contents) {
+            var inventory = minecraft.player.getInventory().getNonEquipmentItems();
+            List<ShulkerTransferPlanner.Slot> occupied = inventory.stream()
+                    .filter(stack -> !stack.isEmpty())
+                    .map(stack -> new ShulkerTransferPlanner.Slot(MinecraftItemIdentity.key(stack),
+                            stack.getCount(), stack.getMaxStackSize())).toList();
+            Map<String, Integer> sizes = new LinkedHashMap<>();
+            contents.stream().filter(stack -> !stack.isEmpty()).forEach(stack ->
+                    sizes.put(MinecraftItemIdentity.key(stack), stack.getMaxStackSize()));
+            var fits = ShulkerTransferPlanner.fittingInventory(occupied, inventory.size() - 1,
+                    matching(contents), sizes);
+            withdraw(boxTarget, fits, () -> recover(() -> {
+                String key = MinecraftItemIdentity.key(resource.expected);
+                var putBack = new MinecraftStorageAccess(minecraft, context, source,
+                        Map.of(key, 1), false, false);
+                steps.add(new Step(putBack, () -> {
+                    returningBox = false;
+                    if (putBack.remaining().getOrDefault(key, 0) != 0) {
+                        throw new IllegalStateException("仓库容器无法接收归还的潜影盒");
+                    }
+                    boolean deliveredDuringRecovery = creditDeliveries();
+                    if (stopAfterBox) {
+                        super.requestStop();
+                    } else if (!owned().isEmpty()) {
+                        deliver(0, () -> inspectSource(source));
+                    } else if (deliveredDuringRecovery) {
+                        inspectSource(source);
+                    } else {
+                        skipSource();
+                    }
+                }));
+            }), null);
+        }
+
+        private void withdraw(ContainerTarget source, Map<String, Integer> items,
+                Runnable after, Runnable failed) {
+            var action = new MinecraftStorageAccess(minecraft, context, source, items, true, false);
+            steps.add(new Step(action, after, failed == null ? null : () -> {
+                if (owned().isEmpty()) {
+                    failed.run();
+                } else {
+                    deliver(0, failed);
+                }
+            }));
+        }
+
+        private void deliver(int index, Runnable after) {
+            Map<String, Integer> batch = owned();
+            if (batch.isEmpty()) {
+                after.run();
+                return;
+            }
+            if (index >= destinations.size()) {
+                throw new IllegalStateException("交付容器已满或不可用，剩余材料等待收尾");
+            }
+            var action = new MinecraftStorageAccess(minecraft, context, destinations.get(index),
+                    batch, false, false);
+            Runnable settled = () -> {
+                creditDeliveries();
+                deliver(index + 1, after);
+            };
+            steps.add(new Step(action, settled, settled));
+        }
+
+        private Map<String, Integer> matching(List<ItemStack> stacks) {
+            Map<String, Integer> remaining = new LinkedHashMap<>(needed);
+            Map<String, Integer> result = new LinkedHashMap<>();
+            for (ItemStack stack : stacks) {
+                String material = material(stack);
+                int count = Math.min(remaining.getOrDefault(material, 0), stack.getCount());
+                if (count > 0) {
+                    String key = MinecraftItemIdentity.key(stack);
+                    materialByKey.put(key, material);
+                    result.merge(key, count, Math::addExact);
+                    remaining.computeIfPresent(material, (ignored, left) -> left - count);
+                }
+            }
+            return result;
+        }
+
+        private String material(ItemStack stack) {
+            if (stack.isEmpty() || (MinecraftItemIdentity.isBox(stack) && !isEmptyBox(stack))) {
+                return "";
+            }
+            var potion = stack.get(DataComponents.POTION_CONTENTS);
+            if (potion != null && potion.is(Potions.WATER)
+                    && MaterialRequirements.WATER_BOTTLE.equals(
+                            MinecraftItemIdentity.base(stack) + "[water]")) {
+                return MaterialRequirements.WATER_BOTTLE;
+            }
+            return MinecraftItemIdentity.base(stack);
+        }
+
+        private void credit(String material, int count) {
+            if (material != null && count > 0) {
+                needed.computeIfPresent(material, (ignored, left) ->
+                        count < left ? left - count : null);
+            }
+        }
+
+        private boolean creditDeliveries() {
+            boolean changed = false;
+            for (ContainerTarget target : destinations) {
+                var position = target.position();
+                var current = context.workspace().progress().deliveredTo(position);
+                var previous = observedDeliveries.put(position, current);
+                if (!current.equals(previous)) {
+                    changed = true;
+                    current.forEach((key, count) ->
+                            credit(materialByKey.get(key), count - previous.getOrDefault(key, 0)));
+                }
+            }
+            return changed;
+        }
+
+        private void skipSource() {
+            unavailableSources++;
+            nextSource();
+        }
+
+        private void finishShort() {
+            String missing = needed.entrySet().stream()
+                    .map(item -> item.getKey() + " × " + item.getValue())
+                    .collect(java.util.stream.Collectors.joining("、"));
+            String reason = warehouseProblem == null
+                    ? unavailableSources == 0 ? "" : "（" + unavailableSources + " 个来源无法完成取料）"
+                    : "（" + warehouseProblem + "）";
+            terminal = TaskModuleResult.failed("仍缺材料" + reason + "：" + missing);
+        }
+
+        @Override
+        public void requestStop() {
+            if (returningBox && terminal == null) {
+                stopAfterBox = true;
+            } else {
+                super.requestStop();
+            }
+        }
+
+        @Override
+        public boolean safeToStop() {
+            return (!returningBox || terminal != null) && super.safeToStop();
         }
     }
 

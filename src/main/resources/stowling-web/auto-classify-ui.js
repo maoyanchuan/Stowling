@@ -22,6 +22,8 @@
         dirty: false,
         active: false,
         expanded: false,
+        warehouseDraftOpen: false,
+        openWarehouseId: "",
         phase: { collection: false, classification: false }
     };
     const elements = {
@@ -35,7 +37,6 @@
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
-        overflow: document.querySelector("#auto-overflow-enabled"),
         areas: document.querySelector("#auto-classification-areas"),
         addArea: document.querySelector("#add-auto-classification-area"),
         collectHeader: document.querySelector("#auto-collect-toggle"),
@@ -49,9 +50,18 @@
         resourceMessage: document.querySelector("#auto-resources-message"),
         newTask: document.querySelector("#new-auto-task"),
         refresh: document.querySelector("#refresh-move-tasks"),
-        remove: document.querySelector("#delete-auto-task")
+        remove: document.querySelector("#delete-auto-task"),
+        warehouseList: document.querySelector("#robot-warehouse-list"),
+        warehouseDraft: document.querySelector("#robot-warehouse-draft"),
+        warehouseForm: document.querySelector("#robot-warehouse-form"),
+        warehouseSource: document.querySelector("#robot-warehouse-source"),
+        warehouseMessage: document.querySelector("#robot-warehouse-message"),
+        newWarehouse: document.querySelector("#new-robot-warehouse"),
+        saveWarehouse: document.querySelector("#save-robot-warehouse"),
+        cancelWarehouse: document.querySelector("#cancel-robot-warehouse")
     };
     const rows = new Map();
+    const warehouseRows = new Map();
     const phaseDisabledControls = new Map();
     let areaReaders = [];
 
@@ -280,7 +290,6 @@
             "请选择包含缓存箱子的区域");
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
-        elements.overflow.checked = Boolean(draft.overflowEnabled);
         cleanup.resources(state.resources.coordinates, state.resources.regions);
         cleanup.set({destinationRef: draft.cleanupDestinationRef, resumeMode: "RESTART"});
         renderClassificationAreas();
@@ -302,7 +311,6 @@
             collectionPriority: elements.priority.value,
             collectionEnabled: elements.collectEnabled.checked,
             classificationEnabled: elements.classifyEnabled.checked,
-            overflowEnabled: elements.overflow.checked,
             cleanupDestinationRef: cleanup.read().destinationRef || ""
         };
     }
@@ -366,7 +374,60 @@
                 draftActive: state.active && !state.draft.id
             }
         }));
+        renderWarehouses();
         updateControls();
+    }
+
+    /** @returns {void} */
+    function renderWarehouses() {
+        const linked = state.items.filter((task) => task.overflowEnabled);
+        elements.warehouseList.replaceChildren();
+        elements.warehouseList.hidden = linked.length === 0;
+        warehouseRows.clear();
+        for (const item of linked) {
+            const card = Stowling.element("article", "move-saved-task");
+            const header = Stowling.element("div", "task-card-header");
+            const button = Stowling.element("button", "move-task-summary");
+            const body = Stowling.element("div", "move-task-body");
+            const icon = Stowling.element("span", "move-task-kind", "仓");
+            const overview = Stowling.element("span", "move-task-overview");
+            const status = Stowling.element("span", "move-task-state",
+                item.classificationEnabled ? "已关联" : "后台分类已停用");
+            const chevron = Stowling.element("span", "move-task-chevron", "⌄");
+            const facilities = Stowling.element("a", "text-link", "配置溢出箱或区域");
+            const unlink = Stowling.element("button", "ghost danger-action", "解除关联");
+            const actions = Stowling.element("div", "move-form-actions");
+            button.type = "button";
+            unlink.type = "button";
+            body.id = `robot-warehouse-body-${item.id}`;
+            facilities.href = "/coordinates.html#facilities";
+            icon.setAttribute("aria-hidden", "true");
+            chevron.setAttribute("aria-hidden", "true");
+            button.setAttribute("aria-controls", body.id);
+            overview.append(Stowling.element("strong", "", "机器人仓库"),
+                Stowling.element("span", "", `关联自动分类 · ${item.name}`));
+            button.append(icon, overview, status, chevron);
+            button.addEventListener("click", () => {
+                state.openWarehouseId = state.openWarehouseId === item.id ? "" : item.id;
+                updateControls();
+            });
+            unlink.addEventListener("click", () => void setWarehouseLink(item.id, false));
+            actions.append(facilities, unlink);
+            body.append(actions);
+            header.append(button);
+            card.append(header, body);
+            elements.warehouseList.append(card);
+            warehouseRows.set(item.id, {button, body, unlink});
+        }
+        const available = state.items.filter((task) => !task.overflowEnabled);
+        const selected = elements.warehouseSource.value;
+        const prompt = available.length ? "请选择自动分类任务"
+            : state.items.length ? "所有自动分类任务均已关联" : "请先保存自动分类任务";
+        populateSelect(elements.warehouseSource, available,
+            available.some((task) => task.id === selected) ? selected : "", prompt);
+        document.dispatchEvent(new CustomEvent("stowling:robot-warehouse-count", {
+            detail: {count: linked.length, draftActive: state.warehouseDraftOpen}
+        }));
     }
 
     /** @returns {void} */
@@ -381,6 +442,20 @@
         elements.form.hidden = false;
         elements.draftToggle.setAttribute("aria-expanded", String(isNew && state.expanded));
         elements.remove.hidden = !state.draft.id;
+        elements.newWarehouse.disabled = disabled;
+        elements.newWarehouse.setAttribute("aria-expanded", String(state.warehouseDraftOpen));
+        elements.warehouseDraft.hidden = !state.warehouseDraftOpen;
+        elements.warehouseSource.disabled = disabled
+            || elements.warehouseSource.options.length < 2;
+        elements.saveWarehouse.disabled = disabled || !elements.warehouseSource.value;
+        elements.cancelWarehouse.disabled = state.busy;
+        for (const [id, row] of warehouseRows) {
+            const expanded = state.openWarehouseId === id;
+            row.button.disabled = disabled;
+            row.unlink.disabled = disabled;
+            row.button.setAttribute("aria-expanded", String(expanded));
+            row.body.hidden = !expanded;
+        }
         for (const [id, row] of rows) {
             const selected = state.draft.id === id;
             const expanded = selected && state.expanded;
@@ -540,6 +615,7 @@
         try {
             payload = Auto.payload(state.draft, state.resources, state.items, state.allTasks);
             delete payload.enabled;
+            delete payload.overflowEnabled;
         } catch (error) {
             showMessage(String(error.message || error), true);
             return;
@@ -610,6 +686,68 @@
         }
     }
 
+    /**
+     * @param {string} id
+     * @param {boolean} linked
+     * @returns {Promise<void>}
+     */
+    async function setWarehouseLink(id, linked) {
+        const item = state.items.find((task) => task.id === id);
+        if (unavailable() || !item || item.overflowEnabled === linked) return;
+        state.busy = true;
+        elements.warehouseMessage.hidden = true;
+        updateControls();
+        try {
+            const path = `/v1/auto-classify-tasks/${encodeURIComponent(id)}`;
+            const response = await Stowling.request(path, {
+                method: "PUT",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(Auto.warehouseLinkPayload(item, state.revision, linked))
+            });
+            if (response.item?.id !== id) throw new Error("仓库关联未返回，请刷新重试");
+            state.revision = String(response.revision || "");
+            state.items = state.items.map((task) => task.id === id ? response.item : task);
+            if (linked) state.warehouseDraftOpen = false;
+            state.openWarehouseId = "";
+            renderList();
+            Stowling.showToast(linked ? "机器人仓库已保存" : "机器人仓库关联已解除");
+            document.dispatchEvent(new Event("stowling:auto-tasks-changed"));
+        } catch (error) {
+            elements.warehouseMessage.hidden = false;
+            elements.warehouseMessage.textContent = String(error.message || error);
+            Stowling.handleError(error, "保存机器人仓库关联失败");
+        } finally {
+            state.busy = false;
+            updateControls();
+            if (elements.warehouseMessage.hidden) {
+                (warehouseRows.get(id)?.button || elements.newWarehouse).focus();
+            }
+        }
+    }
+
+    /** @param {boolean} open @returns {void} */
+    function showWarehouseDraft(open) {
+        state.warehouseDraftOpen = open;
+        elements.warehouseMessage.hidden = true;
+        renderWarehouses();
+        updateControls();
+        if (open) {
+            const control = elements.warehouseSource.disabled
+                ? elements.cancelWarehouse : elements.warehouseSource;
+            control.focus();
+        } else {
+            elements.newWarehouse.focus();
+        }
+    }
+
+    elements.newWarehouse.addEventListener("click", () =>
+        showWarehouseDraft(!state.warehouseDraftOpen));
+    elements.cancelWarehouse.addEventListener("click", () => showWarehouseDraft(false));
+    elements.warehouseSource.addEventListener("change", updateControls);
+    elements.warehouseForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void setWarehouseLink(elements.warehouseSource.value, true);
+    });
     elements.newTask.addEventListener("click", () => selectTask());
     elements.draftToggle.addEventListener("click", () => {
         if (!unavailable()) {

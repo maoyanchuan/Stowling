@@ -41,7 +41,6 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-detection-point",
         "auto-pickup-radius",
         "auto-cache-region",
-        "auto-overflow-enabled",
         "auto-collect-priority",
         "auto-classification-areas",
         "add-auto-classification-area",
@@ -124,22 +123,22 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
 
-def test_overflow_switch_is_visible_outside_both_collapsed_phase_sections() -> None:
+def test_robot_warehouse_has_its_own_editor_and_uses_saved_classification_links() -> None:
     html = read("tasks.html")
     form = between(html, 'id="auto-task-form"', "</form>")
-    for title in ("auto-collect-title", "auto-sort-title"):
-        section = between(form, f'aria-labelledby="{title}"', "</section>")
-        assert 'id="auto-overflow-enabled"' not in section
-    overflow = between(form, 'id="auto-overflow-section"', "</section>")
-    assert 'id="auto-overflow-enabled"' in overflow
-    assert 'role="switch"' in overflow
-    assert 'class="auto-switch-track"' in overflow
-    assert "启用机器人仓库" in overflow
-    assert "只将分类目标装不下的物品" in overflow
-    assert "盒内物品和位置由机器人缓存记录" in overflow
-    assert " hidden" not in overflow
-    assert form.index('id="auto-sort-body"') < form.index('id="auto-overflow-section"')
-    assert form.index('id="auto-overflow-section"') < form.index('id="auto-cleanup-settings"')
+    assert "机器人仓库" not in form
+    warehouse = between(html, 'id="robot-warehouse-draft"', "</article>")
+    assert 'id="robot-warehouse-source"' in warehouse
+    assert 'href="/coordinates.html#facilities"' in warehouse
+    assert "把分类目标装不下的物品装盒入库" in warehouse
+    assert 'id="robot-warehouse-list"' in html
+
+    javascript = read("auto-classify-ui.js")
+    assert "state.items.filter((task) => task.overflowEnabled)" in javascript
+    assert "state.items.filter((task) => !task.overflowEnabled)" in javascript
+    assert "setWarehouseLink(elements.warehouseSource.value, true)" in javascript
+    assert "setWarehouseLink(item.id, false)" in javascript
+    assert "delete payload.overflowEnabled;" in javascript
 
 
 def test_recognition_is_configured_only_in_the_storage_layout() -> None:
@@ -293,10 +292,9 @@ def test_auto_draft_hides_the_empty_task_placeholder() -> None:
     assert "autoDraftActive: false" in tasks
     assert "state.autoDraftActive = event.detail?.draftActive === true;" in listener
     assert "syncMoveDisclosure();" in listener
-    assert " ".join(placeholder.split()) == (
-        "state.moveTasks.length + state.autoTaskCount > 0"
-        " || newDraft || state.autoDraftActive"
-    )
+    assert "savedCount > 0 || newDraft || state.autoDraftActive" in placeholder
+    assert "|| state.robotWarehouseDraftActive" in placeholder
+    assert "+ state.robotWarehouseCount" in disclosure
 
 
 def test_dirty_auto_task_switch_is_disabled_and_deletion_warns() -> None:

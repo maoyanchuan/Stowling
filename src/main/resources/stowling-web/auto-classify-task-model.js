@@ -298,6 +298,26 @@
     }
 
     /**
+     * @param {object} item
+     * @param {string} revision
+     * @param {boolean} linked
+     * @returns {object}
+     */
+    function warehouseLinkPayload(item, revision, linked) {
+        const {name, detection, cacheRegionRef, collectionPriority} = item;
+        return {
+            revision,
+            name,
+            detection,
+            cacheRegionRef,
+            collectionPriority,
+            classificationAreas: item.classificationAreas.map(({categoryZoneRef, storagePolicy}) =>
+                storagePolicy ? {categoryZoneRef, storagePolicy} : {categoryZoneRef}),
+            overflowEnabled: linked
+        };
+    }
+
+    /**
      * @param {object} draft
      * @param {unknown} resources
      * @param {Array<string>} errors
@@ -330,7 +350,8 @@
         newArea,
         newDraft,
         payload,
-        validateDraft
+        validateDraft,
+        warehouseLinkPayload
     });
 })();
 

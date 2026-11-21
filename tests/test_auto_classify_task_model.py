@@ -40,6 +40,47 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_robot_warehouse_link_keeps_saved_classification_settings() -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingAutoClassifyTaskModel;
+            const saved = {
+                name: "全物品",
+                enabled: true,
+                classificationEnabled: true,
+                detection: {coordinateRef: "coordinate:pickup", pickupRadius: 8},
+                cacheRegionRef: "region:cache",
+                collectionPriority: "URGENT",
+                cleanupPolicy: {destinationRef: "region:cleanup", resumeMode: "RESTART"},
+                classificationAreas: [
+                    {categoryZoneRef: "category-zone:all", storagePolicy: null},
+                    {categoryZoneRef: "category-zone:tools",
+                        storagePolicy: {mode: "BOX_ONLY", allowPartialBoxes: true}},
+                ],
+            };
+            return [model.warehouseLinkPayload(saved, "4", true),
+                model.warehouseLinkPayload(saved, "5", false)];
+        })()
+        """
+    )
+
+    assert result[0] == {
+        "revision": "4",
+        "name": "全物品",
+        "detection": {"coordinateRef": "coordinate:pickup", "pickupRadius": 8},
+        "cacheRegionRef": "region:cache",
+        "collectionPriority": "URGENT",
+        "classificationAreas": [
+            {"categoryZoneRef": "category-zone:all"},
+            {"categoryZoneRef": "category-zone:tools",
+             "storagePolicy": {"mode": "BOX_ONLY", "allowPartialBoxes": True}},
+        ],
+        "overflowEnabled": True,
+    }
+    assert result[1] == {**result[0], "revision": "5", "overflowEnabled": False}
+
+
 def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     result = _run(
         """

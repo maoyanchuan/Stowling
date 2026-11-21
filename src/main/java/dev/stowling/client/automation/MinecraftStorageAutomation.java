@@ -57,6 +57,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.AABB;
 
 /** Shared packing and cleanup coordinator. One active task owns the client's interaction slot. */
 public final class MinecraftStorageAutomation implements StorageAutomationPort {
@@ -892,6 +893,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             List<ContainerTarget> destinations = taskCleanupContainers(context, configuration)
                     .stream().filter(target -> !target.entrances().contains(resource.position))
                     .toList();
+            context.inventory().observe();
+            for (ItemStack stack : inventoryStacks()) {
+                if (MinecraftItemIdentity.isBox(stack)) continue;
+                String key = MinecraftItemIdentity.key(stack);
+                if (owned().getOrDefault(key, 0) >= stack.getCount()) break;
+                if (context.inventory().claimRecoveryInput(context.workspace().inventoryAccount(),
+                        key, stack.getCount()) > 0) break;
+            }
             ItemStack movable = inventoryStacks().stream().filter(stack ->
                     owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) >= stack.getCount())
                     .min(Comparator.comparingInt(stack -> MinecraftItemIdentity.isBox(stack) ? 1 : 0))
@@ -3846,11 +3855,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         if ((long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 4096) {
             throw new IllegalStateException("单片打包区域最多包含 4096 个方块位置");
         }
+        var hazards = MinecraftPickupSafety.hazards(minecraft.player, new AABB(minX, minY, minZ,
+                maxX + 1.0, maxY + 2.0, maxZ + 1.0).inflate(3));
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
                     BlockPosition candidate = new BlockPosition(x, y, z);
                     if (!reserved(context, candidate)
+                            && MinecraftPickupSafety.safePackingSite(candidate, hazards)
                             && MinecraftShulkerAction.validSite(minecraft, position(candidate))) {
                         candidates.add(candidate);
                     }
@@ -3860,6 +3872,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         if (candidates.isEmpty() && configuration.fallbackPackingPosition() != null) {
             BlockPosition fallback = configuration.fallbackPackingPosition();
             if (!reserved(context, fallback)
+                    && MinecraftPickupSafety.safePackingSite(fallback,
+                            MinecraftPickupSafety.hazards(minecraft.player, fallback))
                     && MinecraftShulkerAction.validSite(minecraft, position(fallback))) {
                 return fallback;
             }
@@ -3868,7 +3882,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 distance(candidate) + squared(candidate, target.position())))
                 .orElseThrow(() -> new IllegalStateException("附近没有可用打包位置，请指定单片打包区域"
                         + "；目标=" + target.position() + "；打包区域=" + allowed
-                        + "。需要空置的放盒和开盖空间，且下方为不可右键交互的坚固方块"));
+                        + "。需要避开掉落物拾取范围，留出放盒和开盖空间，"
+                        + "且下方为不可右键交互的坚固方块"));
     }
 
     private boolean reserved(TaskExecutionContext context, BlockPosition position) {

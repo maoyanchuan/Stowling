@@ -8,12 +8,14 @@ import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalComposite;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.client.automation.MinecraftPickupSafety;
 import dev.stowling.v2.model.AreaBounds;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 
@@ -58,7 +60,8 @@ public final class BaritoneNavigationService implements NavigationService {
         return player != null && player.isWithinBlockInteractionRange(
                 new BlockPos(target.x(), target.y(), target.z()),
                 0.0D
-        );
+        ) && MinecraftPickupSafety.safe(player.getBoundingBox(),
+                MinecraftPickupSafety.hazards(player, target));
     }
 
     @Override
@@ -69,8 +72,10 @@ public final class BaritoneNavigationService implements NavigationService {
         if (player == null) {
             return false;
         }
+        var hazards = MinecraftPickupSafety.hazards(player, target);
         Optional<Goal> goal = interactionGoal(target, standingArea, player.blockInteractionRange(),
-                player.getEyeHeight(), rejectedStances);
+                player.getEyeHeight(), rejectedStances, feet -> MinecraftPickupSafety.safe(
+                        MinecraftPickupSafety.bodyAt(player, feet), hazards));
         goal.ifPresent(baritone.getCustomGoalProcess()::setGoalAndPath);
         return goal.isPresent();
     }
@@ -92,6 +97,13 @@ public final class BaritoneNavigationService implements NavigationService {
             double eyeHeight,
             Set<BlockPosition> rejectedStances
     ) {
+        return interactionGoal(target, area, reach, eyeHeight, rejectedStances, feet -> true);
+    }
+
+    static Optional<Goal> interactionGoal(
+            BlockPosition target, AreaBounds area, double reach, double eyeHeight,
+            Set<BlockPosition> rejectedStances, Predicate<BlockPosition> safeStance
+    ) {
         if (area == null) {
             area = new AreaBounds(Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
                     Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
@@ -109,7 +121,7 @@ public final class BaritoneNavigationService implements NavigationService {
                             || withinReach(target, x + 0.5, y + eyeHeight + 0.5,
                                     z + 0.5, reach)) {
                         BlockPosition stance = new BlockPosition((int) x, (int) y, (int) z);
-                        if (!rejectedStances.contains(stance)) {
+                        if (!rejectedStances.contains(stance) && safeStance.test(stance)) {
                             goals.add(new GoalBlock(stance.x(), stance.y(), stance.z()));
                         }
                     }

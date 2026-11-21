@@ -234,6 +234,16 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 return finish(true, "精确存取已确认，可安全停止");
             }
         }
+        if (!MinecraftPickupSafety.safe(minecraft.player.getBoundingBox(),
+                MinecraftPickupSafety.hazards(minecraft.player, target.position()))) {
+            if (!menu.getCarried().isEmpty()) {
+                return TaskModuleResult.waiting("等待鼠标物品归位后离开投料范围");
+            }
+            minecraft.player.closeContainer();
+            visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
+            opened = false;
+            return TaskModuleResult.waiting("离开掉落物拾取范围后继续存取");
+        }
         contents = slots(menu, false).stream()
                 .map(index -> menu.getSlot(index).getItem().copy()).toList();
         if (inspect) {

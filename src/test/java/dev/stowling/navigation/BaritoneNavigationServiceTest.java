@@ -8,11 +8,34 @@ import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.client.automation.MinecraftPickupSafety;
 import dev.stowling.v2.model.AreaBounds;
+import java.util.List;
 import java.util.Set;
+import net.minecraft.world.phys.AABB;
 import org.junit.jupiter.api.Test;
 
 class BaritoneNavigationServiceTest {
+    @Test
+    void storageLeavesThePickupPointEvenWhenItAlreadyReachesTheCache() {
+        BlockPosition chest = new BlockPosition(5, -43, 32);
+        var drops = List.of(new AABB(5.3, -44, 34.3, 5.55, -43.75, 34.55));
+        Goal goal = BaritoneNavigationService.interactionGoal(chest, null, 4.5, 1.62,
+                Set.of(), feet -> MinecraftPickupSafety.safe(new AABB(feet.x() + 0.2,
+                        feet.y(), feet.z() + 0.2, feet.x() + 0.8, feet.y() + 1.8,
+                        feet.z() + 0.8), drops)).orElseThrow();
+
+        assertFalse(goal.isInGoal(5, -44, 34));
+        assertTrue(goal.isInGoal(5, -44, 31));
+    }
+
+    @Test
+    void configuredStandingAreaCannotFallBackToAnUnsafePickupPoint() {
+        assertTrue(BaritoneNavigationService.interactionGoal(new BlockPosition(5, -43, 32),
+                new AreaBounds(5, -44, 34, 5, -44, 34), 4.5, 1.62, Set.of(),
+                feet -> false).isEmpty());
+    }
+
     @Test
     void standingGoalRequiresTheSpecifiedStepAndExcludesTheSpaceBelowTheChest() {
         Goal goal = BaritoneNavigationService.interactionGoal(new BlockPosition(0, 68, 0),

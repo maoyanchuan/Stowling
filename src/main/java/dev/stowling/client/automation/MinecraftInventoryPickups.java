@@ -27,6 +27,7 @@ public final class MinecraftInventoryPickups {
         if (minecraft.level.getEntity(packet.getItemId()) instanceof ItemEntity entity
                 && !entity.getItem().isEmpty()) {
             String key = MinecraftItemIdentity.key(entity.getItem());
+            MinecraftPickupSafety.received(minecraft, entity);
             PICKUPS.record(minecraft.level, key, packet.getAmount());
             Consumer<PickupReceipt> listener = collectionListener;
             if (listener != null) {

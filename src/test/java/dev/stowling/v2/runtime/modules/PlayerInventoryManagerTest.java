@@ -23,6 +23,80 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PlayerInventoryManagerTest {
     @Test
+    void recoveryBorrowsOneStackFromItsOwnInputWithoutClaimingTheWholeFullBackpack() {
+        String wood = "minecraft:oak_slab";
+        var source = new MutableInventory();
+        var inventory = new PlayerInventoryManager(source);
+        inventory.observe();
+        UUID collectionTask = UUID.randomUUID();
+        inventory.retainCollectionTasks(Set.of(collectionTask));
+        source.set(Map.of(wood, 2176));
+        inventory.recordPickup(collectionTask, wood, 2176);
+        inventory.observe();
+        var recovery = inventory.account(UUID.randomUUID());
+        recovery.setRecoveryInputTask(collectionTask);
+        var before = inventory.expectedInventory().orElseThrow();
+
+        assertEquals(64, inventory.claimRecoveryInput(recovery, wood, 64));
+        assertEquals(0, inventory.claimRecoveryInput(recovery, wood, 64));
+        assertEquals(Map.of(wood, 64), recovery.managedItems());
+        assertEquals(before, inventory.expectedInventory().orElseThrow());
+        recovery.confirmDeposit("managed", Map.of(wood, 64), Map.of());
+        source.set(Map.of(wood, 2112));
+        inventory.observe();
+        inventory.closeAccount(recovery);
+
+        var next = inventory.account(UUID.randomUUID());
+        next.usePickupReceipts(collectionTask);
+        assertEquals(2112, inventory.claimCollectionItems(next, Set.of()));
+        assertEquals(Map.of(wood, 2112), next.managedItems());
+        assertFalse(inventory.hasAbandonedAccounts());
+    }
+
+    @Test
+    void recoveryCannotBorrowProtectedItemsOrAnotherCollectionPointsReceipts() {
+        String wood = "minecraft:oak_slab";
+        var source = new MutableInventory();
+        source.set(Map.of(wood, 64));
+        var inventory = new PlayerInventoryManager(source);
+        source.snapshot().ifPresent(inventory::initialize);
+        inventory.observe();
+        UUID ownPoint = UUID.randomUUID();
+        UUID otherPoint = UUID.randomUUID();
+        inventory.retainCollectionTasks(Set.of(ownPoint, otherPoint));
+        inventory.recordPickup(otherPoint, wood, 64);
+        source.set(Map.of(wood, 128));
+        inventory.observe();
+        var recovery = inventory.account(UUID.randomUUID());
+        recovery.setRecoveryInputTask(ownPoint);
+
+        assertEquals(0, inventory.claimRecoveryInput(recovery, wood, 64));
+        assertTrue(recovery.managedItems().isEmpty());
+        assertTrue(inventory.hasCollectedInput(otherPoint));
+        assertEquals(128, inventory.expectedInventory().orElseThrow().count(wood));
+    }
+
+    @Test
+    void recoveryDoesNotBorrowAPartialStackThatCannotFreeAnInventorySlot() {
+        String wood = "minecraft:oak_slab";
+        var source = new MutableInventory();
+        var inventory = new PlayerInventoryManager(source);
+        inventory.observe();
+        UUID collectionTask = UUID.randomUUID();
+        inventory.retainCollectionTasks(Set.of(collectionTask));
+        inventory.recordPickup(collectionTask, wood, 16);
+        source.set(Map.of(wood, 16));
+        inventory.observe();
+        var recovery = inventory.account(UUID.randomUUID());
+        recovery.usePickupReceipts(collectionTask);
+
+        assertEquals(0, inventory.claimRecoveryInput(recovery, wood, 64));
+        assertTrue(recovery.managedItems().isEmpty());
+        assertEquals(16, inventory.claimRecoveryInput(recovery, wood, 16));
+        assertFalse(inventory.hasCollectedInput(collectionTask));
+    }
+
+    @Test
     void inlineSortingReturnsItsCargoToTheCollectingAccountWithoutChangingGlobalCounts() {
         MutableInventory inventory = new MutableInventory();
         inventory.set(Map.of("minecraft:diamond_pickaxe", 1));

@@ -1182,6 +1182,12 @@ public final class TaskRunManager {
                         definition.enabled() && definition.classificationEnabled()
                                 && (definition.classificationTaskId().equals(taskId)
                                 || definition.id().equals(taskId))));
+        if (inventoryConfig != null) {
+            inventoryConfig.autoClassifyTasks().stream().filter(definition ->
+                    definition.classificationTaskId().equals(taskId)).findFirst().ifPresent(
+                            definition -> workspace.inventoryAccount()
+                                    .setRecoveryInputTask(definition.id()));
+        }
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
         workspace.setDiagnostics(diagnostics);
         diagnostics.append(running.runId(), "TASK", "", "RUN", "STATE", "RUNNING",

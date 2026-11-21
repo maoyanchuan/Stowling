@@ -16,6 +16,7 @@ public final class PlayerInventoryAccount {
     private boolean collectionStarted;
     private boolean collectAll;
     private UUID collectionTask;
+    private UUID recoveryInputTask;
     private boolean acceptsClassification = true;
 
     public synchronized void setAcceptsClassification(boolean accepts) {
@@ -32,6 +33,14 @@ public final class PlayerInventoryAccount {
 
     synchronized UUID collectionTask() {
         return collectionTask;
+    }
+
+    public synchronized void setRecoveryInputTask(UUID taskId) {
+        recoveryInputTask = taskId;
+    }
+
+    synchronized UUID recoveryInputTask() {
+        return collectionTask == null ? recoveryInputTask : collectionTask;
     }
 
     public PlayerInventoryAccount(UUID ownerId) {

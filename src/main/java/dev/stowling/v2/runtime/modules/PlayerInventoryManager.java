@@ -436,6 +436,26 @@ public final class PlayerInventoryManager {
                 && TaskModuleSupport.itemMatches(key, itemFilter));
     }
 
+    /** Borrows at most one requested stack from this warehouse's input to recover its placed box. */
+    public synchronized int claimRecoveryInput(PlayerInventoryAccount account, String key,
+            int stackCount) {
+        register(account);
+        PlayerInventoryAccount input = inputs.get(account.recoveryInputTask());
+        if (input == null) return 0;
+        reconcileMissingItems(input);
+        int needed = Math.max(0, stackCount - account.managedItems().getOrDefault(key, 0));
+        if (needed == 0 || input.managedItems().getOrDefault(key, 0) < needed) return 0;
+        int claimed = needed;
+        account.recordWithdrawn(key, claimed);
+        input.confirmDeposit("managed", Map.of(key, claimed), Map.of());
+        if (input.managedItems().isEmpty()) {
+            accounts.remove(input.ownerId());
+            inputs.remove(account.recoveryInputTask());
+        }
+        revision++;
+        return claimed;
+    }
+
     private static int transferToCollection(PlayerInventoryAccount from, PlayerInventoryAccount to,
             Set<String> filter) {
         int claimed = 0;

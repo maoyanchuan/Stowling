@@ -113,6 +113,8 @@ final class ManageCacheIntakeModule implements TaskModuleExecutor {
         var task = context.workspace().task(ResourceReference.parse(classificationRef).uuid());
         if (task == null) throw new IllegalStateException("缓存分类任务不存在");
         sortingWorkspace = new TaskRunWorkspace();
+        sortingWorkspace.inventoryAccount().setRecoveryInputTask(
+                context.workspace().inventoryAccount().recoveryInputTask());
         sortingWorkspace.configureCleanup(context.workspace().cleanupPolicy());
         sortingWorkspace.setDiagnostics(context.workspace().diagnostics());
         TaskExecutionContext sorting = new TaskExecutionContext(context.navigation(),

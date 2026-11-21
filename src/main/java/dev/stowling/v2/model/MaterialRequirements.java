@@ -34,7 +34,7 @@ public final class MaterialRequirements {
         boolean collectMinecarts = Boolean.parseBoolean(
                 parameters.getOrDefault(COLLECT_MINECARTS, "true"));
         if (ice && skipWater) {
-            throw new IllegalArgumentException("用普通冰代替水桶和跳过水桶不能同时开启");
+            throw new IllegalArgumentException("用普通冰代替水桶和不收集水桶不能同时开启");
         }
         if (!ice && !skipWater && !skipLava && collectShulkerBoxes && collectMinecarts) {
             return original;

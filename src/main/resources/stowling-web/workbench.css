@@ -409,6 +409,16 @@ body[data-page] .material-switch-field {
     justify-content: space-between;
 }
 
+#material-boxed-modes input[type="radio"] {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--accent);
+}
+
 .material-section-description {
     min-width: 0;
     margin-left: auto;

@@ -127,9 +127,11 @@ def test_material_unstackable_submenu_keeps_liquids_and_adds_collection_switches
     assert "不可堆叠材料" in submenu
     for option in (
         "material-ice-instead-of-water", "material-skip-water", "material-skip-lava",
-        "material-collect-shulker-boxes", "material-collect-minecarts",
+        "material-skip-shulker-boxes", "material-skip-minecarts",
     ):
         assert f'id="{option}"' in submenu
+    for label in ("不收集水桶", "不收集岩浆桶", "不收集潜影盒", "不收集矿车"):
+        assert f"<span>{label}</span>" in submenu
 
     source = read("material-collection-ui.js")
     assert "if (iceInsteadOfWater.checked) skipWater.checked = false;" in source
@@ -142,7 +144,7 @@ def test_material_editor_groups_source_delivery_and_unstackable_settings() -> No
     sections = (
         ("source", "投影与材料", ("material-file", "material-preview-status", "material-preview")),
         ("delivery", "交付设置", ("material-destination", "material-boxed-delivery")),
-        ("unstackable", "不可堆叠材料", ("material-collect-minecarts",)),
+        ("unstackable", "不可堆叠材料", ("material-skip-minecarts",)),
     )
     assert editor.count("<details ") == 3
     assert editor.index('id="material-name"') < editor.index("<details ")
@@ -156,18 +158,23 @@ def test_material_editor_groups_source_delivery_and_unstackable_settings() -> No
     assert editor.index('id="material-save"') > editor.rindex("</details>")
 
 
-def test_material_boxed_delivery_defaults_to_mixed_and_can_use_single_material_boxes() -> None:
+def test_material_boxed_delivery_has_a_switchable_submenu_and_two_radio_choices() -> None:
     html = read("tasks.html")
     options = between(html, 'id="material-boxed-options"', "</div>")
-    assert 'id="material-single-material-boxes"' in options
-    assert 'type="checkbox" disabled' in options
-    assert "默认混装" in options
+    assert 'id="material-mixed-boxes"' in options
+    assert 'id="material-pure-boxes"' in options
+    assert options.count('type="radio"') == 2
+    assert options.count('name="material-boxed-mode"') == 2
+    assert 'role="radiogroup"' in options
+    assert "混杂盒交付" in options
+    assert "纯净盒交付" in options
 
     source = read("material-collection-ui.js")
-    assert "boxedOptions.hidden = !boxedDelivery.checked;" in source
-    assert ('singleMaterialBoxes.checked = '
+    assert 'Settings.optionalSection("按潜影盒交付"' in source
+    assert 'byId("material-boxed-settings").replaceChildren(boxedSettings.root);' in source
+    assert ('pureBoxes.checked = '
             'params?.singleMaterialBoxes?.toLowerCase() === "true"') in source
-    assert "singleMaterialBoxes: String(singleMaterialBoxes.checked)" in source
+    assert "singleMaterialBoxes: String(pureBoxes.checked)" in source
 
 
 def test_refresh_only_rereads_task_runs() -> None:

@@ -29,30 +29,51 @@ class Element {
         this.tagName = tag.toUpperCase(); this.textContent = text;
         this.children = []; this.listeners = {}; this.attributes = {};
         this.value = ''; this.checked = false; this.disabled = false;
+        this.dataset = {}; this.style = {}; this.className = '';
+        this.classList = {/** @param {...string} names @returns {void} */
+            add: (...names) => {this.className += ' ' + names.join(' ');}};
     }
     /** @param {...Element} children @returns {void} */
-    append(...children) {this.children.push(...children);}
+    append(...children) {
+        for (const child of children) {
+            child.parentElement = this;
+            this.children.push(child);
+        }
+    }
     /** @param {...Element} children @returns {void} */
     replaceChildren(...children) {this.children = children;}
     /** @param {string} key @param {string} value @returns {void} */
     setAttribute(key, value) {this.attributes[key] = value;}
     /** @param {string} type @param {Function} handler @returns {void} */
-    addEventListener(type, handler) {this.listeners[type] = handler;}
+    addEventListener(type, handler) {(this.listeners[type] ||= []).push(handler);}
     /** @param {string} type @returns {void} */
     emit(type) {
-        this.listeners[type]?.({target: this, /** @returns {void} */ preventDefault() {}});
+        for (const handler of this.listeners[type] || []) {
+            handler({target: this, /** @returns {void} */ preventDefault() {}});
+        }
     }
     /** @param {Element} option @returns {void} */
     add(option) {this.append(option);}
     /** @returns {Element} */
     querySelector() {return element('fieldset');}
+    /** @param {string} selector @returns {Array<Element>} */
+    querySelectorAll(selector) {
+        const tags = selector.split(',').map(tag => tag.trim().toUpperCase());
+        return this.children.flatMap(child => [child, ...child.querySelectorAll(selector)])
+            .filter(child => tags.includes(child.tagName));
+    }
     /** @returns {void} */
     focus() {}
 }
 const elements = new Map();
 /** @param {string} id @returns {Element} */
 function element(id) {
-    if (!elements.has(id)) elements.set(id, new Element());
+    if (!elements.has(id)) {
+        const input = ['material-mixed-boxes', 'material-pure-boxes'].includes(id);
+        const node = new Element(input ? 'input' : 'div');
+        node.id = id;
+        elements.set(id, node);
+    }
     return elements.get(id);
 }
 globalThis.Option = class extends Element {
@@ -95,21 +116,14 @@ globalThis.window = {
             if (path === '/v1/regions') return {regions: [{id: 'delivery', name: '自动收材料'}]};
             return {revision: 'current', tasks: [saved]};
         }
-    },
-    StowlingSettings: {
-        /** @param {Element} control @returns {Element} */ switchControl: control => control,
-        /** @param {Element} body @param {boolean} expanded @returns {Promise<void>} */
-        async reveal(body, expanded) {body.hidden = !expanded;},
-        /** @param {Element} root @param {Element} summary @param {Element} body
-         * @returns {{setExpanded: (value: boolean) => void}} */
-        bindDisclosure(root, summary, body) {
-            /** @param {boolean} value @returns {void} */
-            function setExpanded(value) {root.open = value; body.hidden = !value;}
-            setExpanded(false);
-            return {setExpanded};
-        }
     }
 };
+element('material-boxed-options').append(
+    element('material-mixed-boxes'), element('material-pure-boxes'));
+/** @returns {Element} */
+function boxedHeader() {
+    return element('material-boxed-settings').children[0].children[0].children[0];
+}
 /** @returns {Array<string>} */
 function preview() {return element('material-preview-items').children.map(row => row.textContent);}
 /** @param {string} id @param {boolean} checked @returns {void} */
@@ -120,6 +134,7 @@ async function save() {
     await new Promise(resolve => setImmediate(resolve));
 }
 (async () => {
+    vm.runInThisContext(fs.readFileSync(process.argv[4], 'utf8'));
     vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
     await connected();
     element('material-task-list').children[0].children[0].children[0].emit('click');
@@ -136,7 +151,7 @@ def run_ui(expression: str, parameters: dict[str, str] | None = None) -> Any:
     payload = {"materials": json.dumps(MATERIALS), **(parameters or {})}
     completed = subprocess.run(
         [NODE, "-e", RUNNER, str(WEB / "material-collection-ui.js"),
-         expression, json.dumps(payload)],
+         expression, json.dumps(payload), str(WEB / "settings-ui.js")],
         check=True, capture_output=True, encoding="utf-8",
     )
     return json.loads(completed.stdout)
@@ -144,40 +159,40 @@ def run_ui(expression: str, parameters: dict[str, str] | None = None) -> Any:
 
 def test_existing_tasks_keep_both_collections_and_show_saved_delivery_summary() -> None:
     result = run_ui("""({
-        boxes: element('material-collect-shulker-boxes').checked,
-        carts: element('material-collect-minecarts').checked,
+        skipBoxes: element('material-skip-shulker-boxes').checked,
+        skipCarts: element('material-skip-minecarts').checked,
         delivery: element('material-delivery-description').textContent,
         rules: element('material-unstackable-description').textContent,
         closed: ['source', 'delivery', 'unstackable'].every(key =>
             !element(`material-${key}-settings`).open),
         rows: preview()
     })""")
-    assert result["boxes"] is True
-    assert result["carts"] is True
+    assert result["skipBoxes"] is False
+    assert result["skipCarts"] is False
     assert result["closed"] is True
-    assert result["delivery"] == "区域 · 自动收材料 · 混合盒装"
+    assert result["delivery"] == "区域 · 自动收材料 · 混杂盒交付"
     assert result["rules"] == "全部收集"
     assert set(result["rows"]) == {f"{material} × 2" for material in MATERIALS}
 
 
-@pytest.mark.parametrize("boxes,carts", [(False, True), (True, False), (False, False)])
+@pytest.mark.parametrize("skip_boxes,skip_carts", [(True, False), (False, True), (True, True)])
 def test_switches_filter_every_variant_and_preserve_original_materials_on_save(
-    boxes: bool, carts: bool
+    skip_boxes: bool, skip_carts: bool
 ) -> None:
     result = run_ui(f"""(async () => {{
-        toggle('material-collect-shulker-boxes', {str(boxes).lower()});
-        toggle('material-collect-minecarts', {str(carts).lower()});
+        toggle('material-skip-shulker-boxes', {str(skip_boxes).lower()});
+        toggle('material-skip-minecarts', {str(skip_carts).lower()});
         const rows = preview();
         const count = element('material-source-description').textContent;
         await save();
         return {{rows, count, saved: posts[0].steps[0].parameters}};
     }})()""")
-    excluded = (set() if boxes else BOXES) | (set() if carts else CARTS)
+    excluded = (BOXES if skip_boxes else set()) | (CARTS if skip_carts else set())
     expected = set(MATERIALS) - excluded
     assert set(result["rows"]) == {f"{material} × 2" for material in expected}
     assert result["count"] == f"{len(expected)} 种材料"
-    assert result["saved"]["collectShulkerBoxes"] == str(boxes).lower()
-    assert result["saved"]["collectMinecarts"] == str(carts).lower()
+    assert result["saved"]["collectShulkerBoxes"] == str(not skip_boxes).lower()
+    assert result["saved"]["collectMinecarts"] == str(not skip_carts).lower()
     assert result["saved"]["boxedDelivery"] == "true"
     assert json.loads(result["saved"]["materials"]) == MATERIALS
 
@@ -185,8 +200,8 @@ def test_switches_filter_every_variant_and_preserve_original_materials_on_save(
 def test_saved_switches_restore_and_reenabling_restores_the_preview() -> None:
     result = run_ui("""(() => {
         const before = preview();
-        toggle('material-collect-shulker-boxes', true);
-        toggle('material-collect-minecarts', true);
+        toggle('material-skip-shulker-boxes', false);
+        toggle('material-skip-minecarts', false);
         return {before, after: preview(), rules:
             element('material-unstackable-description').textContent};
     })()""", {"collectShulkerBoxes": "false", "collectMinecarts": "false"})
@@ -197,8 +212,89 @@ def test_saved_switches_restore_and_reenabling_restores_the_preview() -> None:
 
 def test_disabling_all_requested_materials_shows_an_empty_preview_message() -> None:
     result = run_ui("""(() => {
-        toggle('material-collect-shulker-boxes', false);
-        toggle('material-collect-minecarts', false);
+        toggle('material-skip-shulker-boxes', true);
+        toggle('material-skip-minecarts', true);
         return {rows: preview(), count: element('material-source-description').textContent};
     })()""", {"materials": json.dumps({"minecraft:shulker_box": 1, "minecraft:minecart": 2})})
     assert result == {"rows": ["按当前设置无需收集材料"], "count": "0 种材料"}
+
+
+def test_boxed_submenu_folds_without_changing_the_selected_delivery_mode() -> None:
+    result = run_ui("""(async () => {
+        const header = boxedHeader();
+        const initial = element('material-boxed-options').hidden;
+        header.emit('click');
+        const expanded = header.attributes['aria-expanded'];
+        toggle('material-pure-boxes', true);
+        const pure = {mixed: element('material-mixed-boxes').checked,
+            pure: element('material-pure-boxes').checked};
+        toggle('material-mixed-boxes', true);
+        const mixed = {mixed: element('material-mixed-boxes').checked,
+            pure: element('material-pure-boxes').checked};
+        header.emit('click');
+        const folded = {hidden: element('material-boxed-options').hidden,
+            enabled: element('material-boxed-delivery').checked};
+        await save();
+        return {initial, expanded, pure, mixed, folded, saved: posts[0].steps[0].parameters};
+    })()""")
+    assert result["initial"] is True
+    assert result["expanded"] == "true"
+    assert result["pure"] == {"mixed": False, "pure": True}
+    assert result["mixed"] == {"mixed": True, "pure": False}
+    assert result["folded"] == {"hidden": True, "enabled": True}
+    assert result["saved"]["boxedDelivery"] == "true"
+    assert result["saved"]["singleMaterialBoxes"] == "false"
+
+
+@pytest.mark.parametrize("single", [False, True])
+def test_boxed_switch_preserves_saved_mode_and_disables_both_choices_when_off(single: bool) -> None:
+    result = run_ui("""(async () => {
+        const restored = {mixed: element('material-mixed-boxes').checked,
+            pure: element('material-pure-boxes').checked};
+        toggle('material-boxed-delivery', false);
+        const off = {hidden: element('material-boxed-options').hidden,
+            mixedDisabled: element('material-mixed-boxes').disabled,
+            pureDisabled: element('material-pure-boxes').disabled,
+            summary: element('material-delivery-description').textContent};
+        toggle('material-boxed-delivery', true);
+        const on = {hidden: element('material-boxed-options').hidden,
+            mixedDisabled: element('material-mixed-boxes').disabled,
+            pureDisabled: element('material-pure-boxes').disabled};
+        await save();
+        return {restored, off, on, saved: posts[0].steps[0].parameters};
+    })()""", {"singleMaterialBoxes": str(single).lower()})
+    assert result["restored"] == {"mixed": not single, "pure": single}
+    assert result["off"] == {
+        "hidden": True, "mixedDisabled": True, "pureDisabled": True,
+        "summary": "区域 · 自动收材料 · 散装交付",
+    }
+    assert result["on"] == {"hidden": False, "mixedDisabled": False, "pureDisabled": False}
+    assert result["saved"]["boxedDelivery"] == "true"
+    assert result["saved"]["singleMaterialBoxes"] == str(single).lower()
+
+
+def test_all_exclusion_switches_use_the_same_direction_and_keep_water_options_exclusive() -> None:
+    materials = {"minecraft:water_bucket": 2, "minecraft:lava_bucket": 1,
+                 "minecraft:shulker_box": 3, "minecraft:minecart": 4}
+    result = run_ui("""(async () => {
+        toggle('material-ice-instead-of-water', true);
+        toggle('material-skip-water', true);
+        toggle('material-skip-lava', true);
+        toggle('material-skip-shulker-boxes', true);
+        toggle('material-skip-minecarts', true);
+        const excluded = {rows: preview(), ice: element('material-ice-instead-of-water').checked,
+            summary: element('material-unstackable-description').textContent};
+        toggle('material-ice-instead-of-water', true);
+        const ice = {rows: preview(), skipWater: element('material-skip-water').checked};
+        await save();
+        return {excluded, ice, saved: posts[0].steps[0].parameters};
+    })()""", {"materials": json.dumps(materials)})
+    assert result["excluded"] == {
+        "rows": ["按当前设置无需收集材料"], "ice": False,
+        "summary": "不收集水桶 · 不收集岩浆桶 · 不收集潜影盒 · 不收集矿车",
+    }
+    assert result["ice"] == {"rows": ["minecraft:ice × 2"], "skipWater": False}
+    assert result["saved"]["iceInsteadOfWater"] == "true"
+    assert result["saved"]["skipWaterBuckets"] == "false"
+    assert result["saved"]["collectShulkerBoxes"] == "false"
+    assert result["saved"]["collectMinecarts"] == "false"

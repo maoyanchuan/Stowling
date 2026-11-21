@@ -196,26 +196,41 @@
                                                     <select id="material-destination"
                                                             required></select>
                                                 </label>
-                                                <label class="move-field material-switch-field"
-                                                       for="material-boxed-delivery">
-                                                    <span>按潜影盒交付</span>
+                                                <div id="material-boxed-settings">
                                                     <input id="material-boxed-delivery"
                                                            type="checkbox"
                                                            aria-describedby="material-boxed-note">
-                                                </label>
-                                                <div id="material-boxed-options"
-                                                     class="settings-detail" hidden>
-                                                    <label class="move-field material-switch-field"
-                                                           for="material-single-material-boxes">
-                                                        <span>每盒只装一种材料</span>
-                                                        <input id="material-single-material-boxes"
-                                                               type="checkbox" disabled>
-                                                    </label>
-                                                    <p id="material-boxed-note"
-                                                       class="move-target-note">
-                                                        默认混装。散料使用公共设施的空潜影盒装箱，
-                                                        清单所需的空潜影盒单独交付。
-                                                    </p>
+                                                    <div id="material-boxed-options"
+                                                         class="settings-detail" hidden>
+                                                        <div id="material-boxed-modes"
+                                                             role="radiogroup"
+                                                             aria-label="潜影盒交付方式">
+                                                            <label class="move-field
+                                                                          material-switch-field"
+                                                                   for="material-mixed-boxes">
+                                                                <span>混杂盒交付</span>
+                                                                <input id="material-mixed-boxes"
+                                                                       type="radio" checked
+                                                                       name="material-boxed-mode"
+                                                                       value="mixed">
+                                                            </label>
+                                                            <label class="move-field
+                                                                          material-switch-field"
+                                                                   for="material-pure-boxes">
+                                                                <span>纯净盒交付</span>
+                                                                <input id="material-pure-boxes"
+                                                                       type="radio"
+                                                                       name="material-boxed-mode"
+                                                                       value="pure">
+                                                            </label>
+                                                        </div>
+                                                        <p id="material-boxed-note"
+                                                           class="move-target-note">
+                                                            混杂盒可混装多种材料；纯净盒每盒只装一种材料。
+                                                            散料使用公共设施的空潜影盒装箱，
+                                                            清单所需的空潜影盒单独交付。
+                                                        </p>
+                                                    </div>
                                                 </div>
                                                 <p class="move-target-note">
                                                     交付处已有的材料会抵扣需求。
@@ -247,29 +262,29 @@
                                                 </label>
                                                 <label class="move-field material-switch-field"
                                                        for="material-skip-water">
-                                                    <span>跳过水桶</span>
+                                                    <span>不收集水桶</span>
                                                     <input id="material-skip-water" type="checkbox">
                                                 </label>
                                                 <label class="move-field material-switch-field"
                                                        for="material-skip-lava">
-                                                    <span>跳过岩浆</span>
+                                                    <span>不收集岩浆桶</span>
                                                     <input id="material-skip-lava" type="checkbox">
                                                 </label>
                                                 <label class="move-field material-switch-field"
-                                                       for="material-collect-shulker-boxes">
-                                                    <span>收集潜影盒</span>
-                                                    <input id="material-collect-shulker-boxes"
-                                                           type="checkbox" checked>
+                                                       for="material-skip-shulker-boxes">
+                                                    <span>不收集潜影盒</span>
+                                                    <input id="material-skip-shulker-boxes"
+                                                           type="checkbox">
                                                 </label>
                                                 <label class="move-field material-switch-field"
-                                                       for="material-collect-minecarts">
-                                                    <span>收集矿车</span>
-                                                    <input id="material-collect-minecarts"
-                                                           type="checkbox" checked>
+                                                       for="material-skip-minecarts">
+                                                    <span>不收集矿车</span>
+                                                    <input id="material-skip-minecarts"
+                                                           type="checkbox">
                                                 </label>
                                                 <p class="move-target-note">
                                                     潜影盒包含所有颜色，矿车包含各类变种。
-                                                    开关仅控制清单材料，装箱用盒由交付设置控制。
+                                                    开启“不收集”即排除该类材料，装箱用盒由交付设置控制。
                                                 </p>
                                             </div>
                                         </details>

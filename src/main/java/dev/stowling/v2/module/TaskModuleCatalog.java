@@ -325,15 +325,15 @@ public final class TaskModuleCatalog {
                                     "按潜影盒交付", false),
                             booleanParameter(
                                     dev.stowling.v2.model.MaterialRequirements.SINGLE_MATERIAL_BOXES,
-                                    "每盒只装一种材料", false),
+                                    "纯净盒交付", false),
                             booleanParameter(
                                     dev.stowling.v2.model.MaterialRequirements.ICE_INSTEAD_OF_WATER,
                                     "用普通冰代替水桶", false),
                             booleanParameter(
                                     dev.stowling.v2.model.MaterialRequirements.SKIP_WATER_BUCKETS,
-                                    "跳过水桶", false),
+                                    "不收集水桶", false),
                             booleanParameter(dev.stowling.v2.model.MaterialRequirements.SKIP_LAVA,
-                                    "跳过岩浆", false),
+                                    "不收集岩浆桶", false),
                             new ModuleParameter(
                                     dev.stowling.v2.model.MaterialRequirements.COLLECT_SHULKER_BOXES,
                                     "收集潜影盒", "boolean", false,

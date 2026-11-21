@@ -152,7 +152,8 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                             new WarehouseInventory.Entry(MinecraftItemIdentity.key(inner),
                                     MinecraftItemIdentity.base(inner),
                                     inner.getHoverName().getString(), inner.getCount(), 0,
-                                    inner.getMaxStackSize())).toList();
+                                    inner.getMaxStackSize(),
+                                    MinecraftItemIdentity.iconModel(inner))).toList();
                     for (int index = 0; index < stack.getCount(); index++) {
                         boxes.add(new WarehouseInventory.Box(MinecraftItemIdentity.boxCategory(stack),
                                 content.size(), boxItems));
@@ -183,7 +184,8 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         long packed = previous == null ? 0 : previous.boxed();
         items.put(key, new WarehouseInventory.Entry(key, MinecraftItemIdentity.base(stack),
                 stack.getHoverName().getString(), loose + (boxed ? 0 : count),
-                packed + (boxed ? count : 0), stack.getMaxStackSize()));
+                packed + (boxed ? count : 0), stack.getMaxStackSize(),
+                MinecraftItemIdentity.iconModel(stack)));
     }
 
     private static BlockPosition position(net.minecraft.core.BlockPos position) {

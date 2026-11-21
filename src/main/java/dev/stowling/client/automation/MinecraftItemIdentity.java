@@ -39,6 +39,11 @@ public final class MinecraftItemIdentity {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
+    static String iconModel(ItemStack stack) {
+        var model = stack.get(DataComponents.ITEM_MODEL);
+        return model == null ? base(stack) : model.toString();
+    }
+
     public static String key(ItemStack stack) {
         String base = base(stack);
         boolean box = !stack.isEmpty() && ItemIdentity.isBox(base);

@@ -38,15 +38,14 @@
                 <div class="warehouse-filters">
                     <label>查看范围<select id="inventory-area">
                         <option value="">整个仓库</option></select></label>
-                    <label>维度<select id="inventory-dimension">
-                        <option value="">全部维度</option></select></label>
                     <label>搜索物品<input id="inventory-query" type="search"
                         placeholder="输入名称或物品 ID"></label>
                 </div>
                 <div id="inventory-metrics" class="warehouse-metrics"></div>
                 <p id="storage-message" class="field-message" role="status" aria-live="polite"></p>
                 <p class="muted compact-help warehouse-help">
-                    物品数量＝散装＋潜影盒内物品，按属性分别统计。区域筛选使用当前维度的坐标范围。
+                    物品数量＝散装＋潜影盒内物品，按属性分别统计。
+                    选择区域时，按角色当前所在世界的坐标范围筛选。
                     未满盒与满盒的外壳计入盒子统计，空盒作为物品列出。
                     刷新记录不会驱动机器人盘点；箱子被其他人改动后，请重新打开以更新记录。
                 </p>

@@ -11,7 +11,6 @@
         const area = (snapshot.areas || []).find(value => value.id === filters.areaId);
         const unique = new Map();
         for (const container of snapshot.containers || []) {
-            if (filters.dimension && container.dimension !== filters.dimension) continue;
             if (area && (container.dimension !== area.dimension
                     || !container.positions.some(point => area.bounds.some(bound =>
                         contains(point, bound))))) continue;

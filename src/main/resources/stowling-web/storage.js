@@ -4,7 +4,6 @@
     const Model = globalThis.StowlingWarehouseModel;
     const PAGE_SIZE = 50;
     const area = document.querySelector("#inventory-area");
-    const dimension = document.querySelector("#inventory-dimension");
     const query = document.querySelector("#inventory-query");
     const list = document.querySelector("#inventory-list");
     const metrics = document.querySelector("#inventory-metrics");
@@ -27,19 +26,12 @@
             const response = await S.request("/v1/warehouse-inventory");
             snapshot = response;
             const selectedArea = area.value;
-            const selectedDimension = dimension.value;
             area.replaceChildren(new Option("整个仓库", ""));
             snapshot.areas.forEach(value => area.append(new Option(value.name, value.id)));
             area.value = snapshot.areas.some(value => value.id === selectedArea) ? selectedArea : "";
-            dimension.replaceChildren(new Option("全部维度", ""));
-            const dimensions = new Set(snapshot.containers.map(value => value.dimension));
-            if (snapshot.currentDimension) dimensions.add(snapshot.currentDimension);
-            Array.from(dimensions).sort().forEach(value =>
-                dimension.append(new Option(S.dimensionLabel(value), value)));
-            dimension.value = dimensions.has(selectedDimension) ? selectedDimension : "";
-            syncArea();
             message.classList.remove("error");
-            message.textContent = snapshot.message + " · 页面读取：" + S.formatDate(snapshot.readAt);
+            message.textContent =
+                snapshot.message + " · 页面读取：" + S.formatDate(snapshot.readAt);
             render();
         } catch (error) {
             message.classList.add("error");
@@ -52,15 +44,8 @@
     }
 
     /** @returns {void} */
-    function syncArea() {
-        const selected = snapshot.areas.find(value => value.id === area.value);
-        dimension.disabled = Boolean(selected);
-        if (selected) dimension.value = selected.dimension;
-    }
-
-    /** @returns {void} */
     function render() {
-        const containers = Model.containers(snapshot, {areaId: area.value, dimension: dimension.value});
+        const containers = Model.containers(snapshot, {areaId: area.value});
         const rows = Model.aggregate(containers, query.value);
         metrics.replaceChildren();
         const full = containers.reduce((sum, value) => sum + value.fullBoxes, 0);
@@ -89,10 +74,12 @@
             const card = document.createElement("details");
             card.className = "warehouse-item";
             const summary = document.createElement("summary");
+            const heading = S.element("div", "warehouse-item-heading");
             const title = S.element("div", "warehouse-item-name");
             title.append(S.element("strong", "", item.name),
                 S.element("small", "muted", item.itemId));
-            summary.append(title, numberCell("总数量", item.total), numberCell("散装", item.loose),
+            heading.append(itemIcon(item), title);
+            summary.append(heading, numberCell("总数量", item.total), numberCell("散装", item.loose),
                 numberCell("盒内", item.boxed), numberCell("容器", item.locations.length));
             const locations = S.element("div", "warehouse-locations");
             for (const location of item.locations) {
@@ -100,9 +87,9 @@
                 const position = container.positions[0];
                 const row = S.element("div", "warehouse-location");
                 row.append(S.element("strong", "", container.name),
-                    S.element("span", "", `${S.dimensionLabel(container.dimension)} · `
-                        + `${position.x}, ${position.y}, ${position.z}`),
-                    S.element("span", "", `散装 ${format(location.loose)} · 盒内 ${format(location.boxed)}`),
+                    S.element("span", "", `${position.x}, ${position.y}, ${position.z}`),
+                    S.element("span", "", `散装 ${format(location.loose)} · `
+                        + `盒内 ${format(location.boxed)}`),
                     S.element("span", "muted compact-help", "记录时间："
                         + (container.recordedAt ? S.formatDate(container.recordedAt) : "未知")));
                 locations.append(row);
@@ -110,6 +97,25 @@
             card.append(summary, locations);
             list.append(card);
         }
+    }
+
+    /** @param {{name: string, itemId: string, icon?: string}} item @returns {HTMLElement} */
+    function itemIcon(item) {
+        const icon = S.element("span", "warehouse-item-icon");
+        const image = S.element("img");
+        const initials = Array.from(item.name).slice(0, 2).join("");
+        const fallback = S.element("span", "", initials);
+        icon.setAttribute("aria-hidden", "true");
+        image.alt = "";
+        image.hidden = true;
+        icon.append(image, fallback);
+        void S.itemIcon(item.icon || item.itemId).then(source => {
+            if (!source) return;
+            image.src = source;
+            image.hidden = false;
+            fallback.hidden = true;
+        });
+        return icon;
     }
 
     /** @param {string} label @param {number} value @returns {HTMLElement} */
@@ -125,8 +131,7 @@
         return Number(value).toLocaleString("zh-CN");
     }
 
-    area.addEventListener("change", () => {page = 0; syncArea(); render();});
-    dimension.addEventListener("change", () => {page = 0; render();});
+    area.addEventListener("change", () => {page = 0; render();});
     query.addEventListener("input", () => {page = 0; render();});
     previous.addEventListener("click", () => {page--; render();});
     next.addEventListener("click", () => {page++; render();});

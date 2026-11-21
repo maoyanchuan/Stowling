@@ -18,7 +18,6 @@ import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -222,11 +221,10 @@ public final class MinecraftDroppedItemObserver
         if (before != null && before.key().equals(key) && before.count() == stack.getCount()) {
             return false;
         }
-        var model = stack.get(DataComponents.ITEM_MODEL);
         int maximum = stack.isDamageableItem() ? stack.getMaxDamage() : 0;
         int remaining = maximum > 0 ? Math.max(0, maximum - stack.getDamageValue()) : 0;
         presentation[index] = new PlayerInventorySlot(index, key,
-                model == null ? MinecraftItemIdentity.base(stack) : model.toString(),
+                MinecraftItemIdentity.iconModel(stack),
                 stack.getCount(), stack.getMaxStackSize(), tooltip(stack, player),
                 remaining, maximum);
         return true;

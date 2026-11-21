@@ -22,7 +22,6 @@
     let saving = false;
     let generation = 0;
     const slots = new Map();
-    const icons = new Map();
     let hovered = null;
     let focused = null;
     let tooltipSlot = null;
@@ -106,18 +105,10 @@
         entry.image.removeAttribute("src");
         entry.fallback.hidden = false;
         if (!model) return;
-        if (!icons.has(model)) {
-            icons.set(model, S.request(`/v1/player-inventory/icons/${model}`).catch(() => {
-                icons.delete(model);
-                return null;
-            }));
-        }
-        void icons.get(model).then(source => {
+        void S.itemIcon(model).then(source => {
             if (entry.model !== model) return;
             if (source === null) entry.model = "";
-            if (typeof source !== "string" || !source.startsWith("data:image/png;base64,")) {
-                return;
-            }
+            if (!source) return;
             entry.image.src = source;
             entry.image.hidden = false;
             entry.fallback.hidden = true;

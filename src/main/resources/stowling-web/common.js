@@ -2,11 +2,6 @@
     "use strict";
 
     const TOKEN_KEY = "stowling.control.token";
-    const DIMENSION_LABELS = new Map([
-        ["minecraft:overworld", "主世界"],
-        ["minecraft:the_nether", "下界"],
-        ["minecraft:the_end", "末地"]
-    ]);
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "坐标" },
@@ -15,6 +10,7 @@
         { page: "storage", href: "/storage.html", label: "库存管理" }
     ]);
     const connectedHandlers = new Set();
+    const itemIcons = new Map();
 
     let authToken = "";
     let connected = false;
@@ -108,6 +104,20 @@
         } finally {
             window.clearTimeout(timeout);
         }
+    }
+
+    /** @param {string} model @returns {Promise<string | null>} */
+    function itemIcon(model) {
+        if (!itemIcons.has(model)) {
+            itemIcons.set(model, request(`/v1/player-inventory/icons/${model}`).then(source => {
+                return typeof source === "string" && source.startsWith("data:image/png;base64,")
+                    ? source : "";
+            }).catch(() => {
+                itemIcons.delete(model);
+                return null;
+            }));
+        }
+        return itemIcons.get(model);
     }
 
     /**
@@ -497,14 +507,6 @@
      * @param {unknown} value
      * @returns {string}
      */
-    function dimensionLabel(value) {
-        return translatedLabel(DIMENSION_LABELS, value, "未选择");
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
     function revisionLabel(value) {
         const raw = String(value ?? "");
         return `配置版本：${raw.slice(0, 12) || "--"}`;
@@ -562,12 +564,12 @@
         bindCoordinateInputs,
         clearAuthentication,
         clone,
-        dimensionLabel,
         element,
         emptyState,
         formatDate,
         handleError,
         isConnected,
+        itemIcon,
         mountPage,
         onConnected,
         parseCoordinateTriple,

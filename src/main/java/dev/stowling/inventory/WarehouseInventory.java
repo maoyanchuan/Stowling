@@ -20,7 +20,10 @@ public record WarehouseInventory(
     }
 
     public record Entry(String key, String itemId, String name, long loose, long boxed,
-            int stackSize) {
+            int stackSize, String icon) {
+        public Entry(String key, String itemId, String name, long loose, long boxed, int stackSize) {
+            this(key, itemId, name, loose, boxed, stackSize, itemId);
+        }
     }
 
     public record Box(String category, int occupiedSlots, List<Entry> items) {

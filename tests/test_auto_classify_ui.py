@@ -53,8 +53,6 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-classify-enabled",
         "auto-task-message",
         "save-auto-task",
-        "start-auto-task",
-        "stop-auto-task",
         "delete-auto-task",
     ):
         assert f'id="{element_id}"' in display
@@ -230,9 +228,9 @@ def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:
     assert "enabled:" not in form_reader
 
 
-def test_auto_ui_posts_new_disabled_drafts_and_puts_with_revision() -> None:
+def test_auto_ui_saves_settings_without_changing_listening() -> None:
     javascript = read("auto-classify-ui.js")
-    save = between(javascript, "async function saveTask(", "async function stopTask(")
+    save = between(javascript, "async function saveTask()", "async function deleteTask()")
 
     assert "payload = Auto.payload(" in save
     assert "state.draft, state.resources, state.items, state.allTasks" in save
@@ -241,19 +239,24 @@ def test_auto_ui_posts_new_disabled_drafts_and_puts_with_revision() -> None:
     assert 'method: id ? "PUT" : "POST"' in save
     assert "...payload, revision: state.revision" in save
     assert "? { ...payload, revision: state.revision } : payload" in save
-    assert "/start" in save
+    assert "delete payload.enabled;" in save
+    assert "/start" not in save
+    assert "/stop" not in save
     assert "const item = response.item;" in javascript
     assert "state.revision = String(response.revision || \"\");" in javascript
 
 
-def test_auto_ui_stop_delete_and_saved_task_count_contracts() -> None:
+def test_auto_ui_switch_delete_and_saved_task_count_contracts() -> None:
     javascript = read("auto-classify-ui.js")
     tasks = read("tasks.js")
-    stop = between(javascript, "async function stopTask(", "elements.newTask")
+    switch = between(javascript, "async function setListening(", "function applySave(")
+    delete = between(javascript, "async function deleteTask()", "elements.newTask")
 
-    assert "/stop" in stop
-    assert 'method: remove ? "DELETE" : "POST"' in stop
-    assert "body: JSON.stringify({ revision: state.revision })" in stop
+    assert 'const operation = enabled ? "start" : "stop";' in switch
+    assert 'method: "POST"' in switch
+    assert 'method: "DELETE"' in delete
+    assert "body: JSON.stringify({ revision: state.revision })" in switch
+    assert "body: JSON.stringify({ revision: state.revision })" in delete
     assert "const item = response.item;" in javascript
     assert "state.revision = String(response.revision || \"\");" in javascript
     assert 'new CustomEvent("stowling:auto-task-count"' in javascript
@@ -293,17 +296,14 @@ def test_auto_draft_hides_the_empty_task_placeholder() -> None:
     )
 
 
-def test_stopping_a_dirty_auto_task_warns_before_discarding_edits() -> None:
+def test_dirty_auto_task_switch_is_disabled_and_deletion_warns() -> None:
     javascript = read("auto-classify-ui.js")
-    stop = between(javascript, "async function stopTask(", "elements.newTask")
+    delete = between(javascript, "async function deleteTask()", "elements.newTask")
     warning = 'const warning = state.dirty ? "未保存修改将被丢弃。" : "";'
     confirmation = 'window.confirm(`${prompt}${warning}`)'
 
-    assert "停止掉落物监听？" in stop
-    assert warning in stop
-    assert confirmation in stop
-    assert stop.index(warning) < stop.index(confirmation) < stop.index("Stowling.request(")
-    assert "if (!window.confirm(`${prompt}${warning}`)) {\n            return;" in stop
+    assert "row.listening.disabled = disabled || (selected && state.dirty);" in javascript
+    assert delete.index(warning) < delete.index(confirmation) < delete.index("Stowling.request(")
 
 
 def test_task_page_loads_model_before_ui_and_ui_after_shared_styles() -> None:

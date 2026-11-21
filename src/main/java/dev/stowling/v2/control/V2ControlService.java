@@ -121,6 +121,8 @@ public interface V2ControlService {
 
     AutoEatTaskListResponse saveAutoEatTask(UUID id, String revision, AutoEatTask.Settings settings);
 
+    AutoEatTaskListResponse setAutoEatListening(UUID id, RevisionRequest request, boolean enabled);
+
     AutoEatTaskListResponse deleteAutoEatTask(UUID id, RevisionRequest request);
 
     AutoClassifyTaskListResponse autoClassifyTasks();

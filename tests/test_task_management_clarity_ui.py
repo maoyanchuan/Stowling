@@ -52,7 +52,6 @@ def test_display_area_and_selection_panel_keep_the_fixed_move_workbench() -> Non
         'id="move-task-name"',
         'id="move-saved-coordinate"',
         'id="save-move-task"',
-        'id="run-move-task"',
         'id="move-task-list"',
         'id="refresh-move-tasks"',
     ):

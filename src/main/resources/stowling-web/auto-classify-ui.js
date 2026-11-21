@@ -49,9 +49,6 @@
         resourceMessage: document.querySelector("#auto-resources-message"),
         newTask: document.querySelector("#new-auto-task"),
         refresh: document.querySelector("#refresh-move-tasks"),
-        save: document.querySelector("#save-auto-task"),
-        start: document.querySelector("#start-auto-task"),
-        stop: document.querySelector("#stop-auto-task"),
         remove: document.querySelector("#delete-auto-task")
     };
     const rows = new Map();
@@ -383,9 +380,6 @@
         void window.StowlingSettings.reveal(elements.draftBody, isNew && state.expanded);
         elements.form.hidden = false;
         elements.draftToggle.setAttribute("aria-expanded", String(isNew && state.expanded));
-        elements.start.textContent = state.draft.enabled
-            ? "保存并继续监听" : "保存并开始监听";
-        elements.stop.hidden = !state.draft.id || !state.draft.enabled;
         elements.remove.hidden = !state.draft.id;
         for (const [id, row] of rows) {
             const selected = state.draft.id === id;
@@ -453,7 +447,7 @@
         renderList();
         showMessage(item
             ? "已保存；拾取物存入缓存后，再创建后台分类任务。"
-            : "配置检测点、缓存区域与分类选区后，保存或开始监听。");
+            : "配置检测点、缓存区域与分类选区后保存任务。");
     }
 
     /**
@@ -536,11 +530,8 @@
         renderList();
     }
 
-    /**
-     * @param {boolean} [start]
-     * @returns {Promise<void>}
-     */
-    async function saveTask(start = false) {
+    /** @returns {Promise<void>} */
+    async function saveTask() {
         if (unavailable() || !state.expanded) {
             return;
         }
@@ -548,13 +539,13 @@
         let payload;
         try {
             payload = Auto.payload(state.draft, state.resources, state.items, state.allTasks);
+            delete payload.enabled;
         } catch (error) {
             showMessage(String(error.message || error), true);
             return;
         }
         state.busy = true;
         updateControls();
-        let saved = false;
         try {
             if (!state.draft.id || state.dirty) {
                 const id = state.draft.id;
@@ -566,27 +557,12 @@
                     body: JSON.stringify(id ? { ...payload, revision: state.revision } : payload)
                 });
                 applySave(response);
-                saved = true;
             }
-            if (start) {
-                const response = await Stowling.request(
-                    `/v1/auto-classify-tasks/${encodeURIComponent(state.draft.id)}/start`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ revision: state.revision })
-                    }
-                );
-                applySave(response);
-            }
-            const message = start
-                ? "已开始监听；拾取物存入缓存后会创建后台分类任务。"
-                : "自动分类已保存";
-            showMessage(message);
-            Stowling.showToast(message);
+            showMessage("自动分类已保存");
+            Stowling.showToast("自动分类已保存");
         } catch (error) {
-            showMessage(saved ? "任务已保存，但启动失败，请重试或刷新。"
-                : String(error.message || "保存失败，请刷新重试。"), true);
-            Stowling.handleError(error, "保存或启动自动分类失败");
+            showMessage(String(error.message || "保存失败，请刷新重试。"), true);
+            Stowling.handleError(error, "保存自动分类失败");
         } finally {
             state.busy = false;
             updateControls();
@@ -594,17 +570,12 @@
         }
     }
 
-    /**
-     * @param {boolean} [remove]
-     * @returns {Promise<void>}
-     */
-    async function stopTask(remove = false) {
+    /** @returns {Promise<void>} */
+    async function deleteTask() {
         if (unavailable() || !state.draft.id) {
             return;
         }
-        const prompt = remove
-            ? "删除整个自动分类任务？若任务正在运行，请先取消并完成收尾。"
-            : "停止掉落物监听？已经排队或正在执行的流程仍会继续。";
+        const prompt = "删除整个自动分类任务？若任务正在运行，请先取消并完成收尾。";
         const warning = state.dirty ? "未保存修改将被丢弃。" : "";
         if (!window.confirm(`${prompt}${warning}`)) {
             return;
@@ -614,30 +585,24 @@
         try {
             const id = state.draft.id;
             const response = await Stowling.request(
-                `/v1/auto-classify-tasks/${encodeURIComponent(id)}${remove ? "" : "/stop"}`, {
-                    method: remove ? "DELETE" : "POST",
+                `/v1/auto-classify-tasks/${encodeURIComponent(id)}`, {
+                    method: "DELETE",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ revision: state.revision })
                 }
             );
-            if (remove) {
-                state.revision = String(response.revision || "");
-                state.items = state.items.filter((item) => item.id !== id);
-                state.draft = Auto.newDraft(state.items, state.allTasks);
-                state.dirty = false;
-                state.active = false;
-                state.expanded = false;
-                syncForm();
-                renderList();
-            } else {
-                applySave(response);
-            }
-            const message = remove ? "自动分类任务已删除" : "已停止监听，排队中的流程不受影响";
-            showMessage(message);
-            Stowling.showToast(message);
+            state.revision = String(response.revision || "");
+            state.items = state.items.filter((item) => item.id !== id);
+            state.draft = Auto.newDraft(state.items, state.allTasks);
+            state.dirty = false;
+            state.active = false;
+            state.expanded = false;
+            syncForm();
+            renderList();
+            Stowling.showToast("自动分类任务已删除");
         } catch (error) {
             showMessage(String(error.message || "操作失败，请刷新重试"), true);
-            Stowling.handleError(error, remove ? "删除自动分类失败" : "停止监听失败");
+            Stowling.handleError(error, "删除自动分类失败");
         } finally {
             state.busy = false;
             updateControls();
@@ -684,13 +649,11 @@
         showMessage("未保存修改");
         updateControls();
     });
-    elements.save.addEventListener("click", () => void saveTask());
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
-        void saveTask(true);
+        void saveTask();
     });
-    elements.stop.addEventListener("click", () => void stopTask());
-    elements.remove.addEventListener("click", () => void stopTask(true));
+    elements.remove.addEventListener("click", () => void deleteTask());
     document.addEventListener("stowling:tasks-changed", () => void loadResources());
     Stowling.onConnected(loadResources);
     updateControls();

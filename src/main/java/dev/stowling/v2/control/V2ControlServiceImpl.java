@@ -676,11 +676,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, revision);
         AppConfig config = current.config();
-        if (id != null) {
-            requireAutoEat(current, id);
-        }
+        boolean listening = id != null && requireAutoEat(current, id).settings().enabled();
         TaskDefinition task = settings.task(id == null ? UUID.randomUUID() : id);
-        TaskTriggerDefinition listener = settings.trigger(task);
+        TaskTriggerDefinition listener = settings.trigger(task, listening);
         List<TaskDefinition> tasks = new ArrayList<>(config.tasks());
         tasks.removeIf(item -> item.id().equals(task.id()));
         tasks.add(task);
@@ -696,6 +694,29 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public synchronized AutoEatTaskListResponse setAutoEatListening(
+            UUID id, RevisionRequest request, boolean enabled
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        if (requireAutoEat(current, id).settings().enabled() == enabled) {
+            return autoEatResponse(current, id);
+        }
+        AppConfig config = current.config();
+        UUID listenerId = AutoEatTask.listenerId(id);
+        List<TaskTriggerDefinition> triggers = config.triggers().stream()
+                .map(trigger -> trigger.id().equals(listenerId)
+                        ? trigger.withEnabled(enabled) : trigger)
+                .toList();
+        AppConfig updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, config.coordinates(),
+                config.tasks(), config.regions(), config.categoryZones(), triggers,
+                config.taskFolders(), config.autoClassifyTasks());
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return autoEatResponse(saved, id);
+    }
+
+    @Override
     public synchronized AutoEatTaskListResponse deleteAutoEatTask(UUID id, RevisionRequest request) {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
@@ -707,11 +728,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return autoEatResponse(configs.read(), null);
     }
 
-    private static void requireAutoEat(V2ConfigSnapshot snapshot, UUID id) {
-        if (autoEatResponse(snapshot, null).items().stream()
-                .noneMatch(item -> item.id().equals(id))) {
-            throw new V2NotFoundException("自动进食任务不存在");
-        }
+    private static AutoEatTask requireAutoEat(V2ConfigSnapshot snapshot, UUID id) {
+        return autoEatResponse(snapshot, null).items().stream()
+                .filter(item -> item.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new V2NotFoundException("自动进食任务不存在"));
     }
 
     private static AutoEatTaskListResponse autoEatResponse(V2ConfigSnapshot snapshot, UUID id) {

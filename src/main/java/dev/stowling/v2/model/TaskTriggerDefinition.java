@@ -218,6 +218,12 @@ public record TaskTriggerDefinition(
         return !Boolean.TRUE.equals(disabled);
     }
 
+    public TaskTriggerDefinition withEnabled(boolean enabled) {
+        return new TaskTriggerDefinition(id, name, type, targetTaskId, priority, intervalTicks,
+                cooldownTicks, coordinateId, itemFilter, foodLevelThreshold, cacheRegionId, radius,
+                enabled ? null : true, requiredProtectedFood);
+    }
+
     private static String requireName(String value) {
         Objects.requireNonNull(value, "name");
         String trimmed = value.trim();

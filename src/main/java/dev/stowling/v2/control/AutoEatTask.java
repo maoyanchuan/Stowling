@@ -35,12 +35,12 @@ public record AutoEatTask(UUID id, Settings settings) {
                     TaskFlowTemplates.scheduledEating(target, foodItemId, foodLevelThreshold));
         }
 
-        TaskTriggerDefinition trigger(TaskDefinition task) {
+        TaskTriggerDefinition trigger(TaskDefinition task, boolean listening) {
             int ticks = intervalSeconds * 20;
             return new TaskTriggerDefinition(listenerId(task.id()), task.name(),
                     TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW, task.id(), task.priority(), ticks,
                     Math.max(ticks, TaskTriggerDefinition.DEFAULT_COOLDOWN_TICKS), null, null,
-                    foodLevelThreshold, null, null, enabled ? null : true,
+                    foodLevelThreshold, null, null, listening ? null : true,
                     coordinateId == null ? foodItemId : null);
         }
     }

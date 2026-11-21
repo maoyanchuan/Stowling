@@ -126,7 +126,7 @@ class V2ControlServerTest {
         var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
                 List::of);
         String body = """
-                {"name":"Automatic","enabled":false,"collectionEnabled":true,
+                {"name":"Automatic","collectionEnabled":true,
                 "classificationEnabled":true,"detection":{"coordinateRef":"coordinate:%s",
                 "pickupRadius":8},"cacheRegionRef":"region:%s",
                 "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
@@ -137,11 +137,44 @@ class V2ControlServerTest {
                     .statusCode());
             var response = fixture.send("/v1/auto-classify-tasks", "POST", body, true);
             assertEquals(201, response.statusCode());
-            var area = object(response).getAsJsonObject("item")
-                    .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
+            var item = object(response).getAsJsonObject("item");
+            assertFalse(item.get("enabled").getAsBoolean());
+            var area = item.getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
             assertEquals("category-zone:" + zone.id(), area.get("categoryZoneRef").getAsString());
             assertTrue(!area.has("ruleId"));
             assertTrue(!area.has("markerSources"));
+        }
+    }
+
+    @Test
+    void autoEatSavingAndListeningUseSeparateAuthenticatedRoutes() throws Exception {
+        var store = new ConfigStore(directory.resolve("auto-eat-listening.json"));
+        var revision = store.loadOrReset().revision();
+        var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
+                List::of);
+        String body = """
+                {"revision":"%s","name":"Meal","foodItemId":"minecraft:bread",
+                "foodLevelThreshold":18,"intervalSeconds":2}
+                """.formatted(revision);
+        try (Fixture fixture = new Fixture(service)) {
+            var created = fixture.send("/v1/auto-eat-tasks", "POST", body, true);
+            assertEquals(201, created.statusCode());
+            var saved = object(created);
+            String path = "/v1/auto-eat-tasks/" + saved.get("taskId").getAsString();
+            String savedRevision = saved.get("revision").getAsString();
+            String start = new Gson().toJson(Map.of("revision", savedRevision));
+            assertEquals(401, fixture.send(path + "/start", "POST", start, false).statusCode());
+            assertEquals(405, fixture.send(path + "/start", "GET", null, true).statusCode());
+            assertTrue(service.taskRuns().triggers().isEmpty());
+
+            var started = fixture.send(path + "/start", "POST", start, true);
+            assertEquals(200, started.statusCode());
+            assertEquals(1, service.taskRuns().triggers().size());
+            assertEquals(409, fixture.send(path + "/stop", "POST", start, true).statusCode());
+            String newRevision = object(started).get("revision").getAsString();
+            String stop = new Gson().toJson(Map.of("revision", newRevision));
+            assertEquals(200, fixture.send(path + "/stop", "POST", stop, true).statusCode());
+            assertTrue(service.taskRuns().triggers().isEmpty());
         }
     }
 

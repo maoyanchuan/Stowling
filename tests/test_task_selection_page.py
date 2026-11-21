@@ -81,13 +81,12 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
         "move-saved-coordinate",
         "move-priority",
         "save-move-task",
-        "run-move-task",
     ):
         assert f'id="{field_id}"' in display
     assert "data-move-source=\"manual\"" in display
     assert "data-move-source=\"saved\"" in display
     assert "保存任务" in display
-    assert "保存并加入队列" in display
+    assert "保存并加入队列" not in display
     assert "hidden" in opening_tag(display, "move-task-form")
     assert "hidden" in opening_tag(display, "move-task-draft")
     assert "hidden" in opening_tag(display, "move-draft-body")
@@ -273,7 +272,8 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
 
 def test_move_save_and_queue_routes_use_explicit_task_ids() -> None:
     javascript = read("tasks.js")
-    save = between(javascript, "async function saveMoveTask(", "async function loadAll()")
+    save = between(javascript, "async function saveMoveTask()", "async function queueMoveTask(")
+    queue = between(javascript, "async function queueMoveTask(", "async function deleteMoveTask()")
     apply_save = between(
         javascript,
         "function applyMoveSave(response, existingId)",
@@ -294,10 +294,11 @@ def test_move_save_and_queue_routes_use_explicit_task_ids() -> None:
     assert "applyMoveSave(response, task.id);" in save
     assert "method: task.id ? \"PUT\" : \"POST\"" in save
     assert "{ ...payload, revision: state.moveRevision }" in save
-    assert "`/v1/tasks/${encodeURIComponent(state.moveDraft.id)}/runs`" in save
-    assert "body: JSON.stringify({})" in save
+    assert "/runs" not in save
+    assert "`/v1/tasks/${encodeURIComponent(id)}/runs`" in queue
+    assert "body: JSON.stringify({})" in queue
     assert "/v1/coordinates" not in save
-    assert "method: \"POST\"" in save
+    assert 'method: "POST"' in queue
     assert '"/v1/task-folders"' not in javascript
     assert '"/v1/task-triggers"' not in javascript
 
@@ -312,7 +313,7 @@ def test_move_form_uses_input_events_and_preserves_both_source_values() -> None:
     source_handler = between(
         javascript,
         "for (const button of elements.moveSources)",
-        "elements.saveMove.addEventListener",
+        "elements.removeMove.addEventListener",
     )
 
     assert 'elements.moveForm.addEventListener("input", () => {' in javascript
@@ -363,8 +364,9 @@ def test_move_disclosure_uses_row_controls_and_guards_disconnected_actions() -> 
         "|| !Stowling.isConnected()",
     ):
         assert retained in selection
-    assert "for (const row of moveRows.values())" in controls
+    assert "for (const [id, row] of moveRows)" in controls
     assert "row.button.disabled = disabled;" in controls
+    assert "row.run.disabled = disabled || unsaved;" in controls
     assert "elements.newMove.disabled = disabled;" in controls
     assert "elements.moveDraftToggle.disabled = disabled;" in controls
     assert "elements.refreshMove.disabled = state.moveBusy || state.moveLoading" in controls
@@ -423,6 +425,7 @@ const requests = [];
 const connectedHandlers = [];
 const sourceButtons = [];
 const errors = [];
+const toasts = [];
 const confirmRequests = [];
 let runReads = 0;
 let taskSequence = 0;
@@ -744,7 +747,7 @@ const Stowling = {
     emptyState: (text) => Stowling.element("p", "empty-state", text),
     formatDate: () => "2026-11-16 00:00",
     handleError: (error, context) => errors.push(`${context}: ${error}`),
-    showToast: () => {},
+    showToast: (message) => toasts.push(message),
     request: async (path, options = {}) => {
         const method = String(options.method || "GET").toUpperCase();
         const body = options.body ? JSON.parse(options.body) : null;
@@ -760,6 +763,9 @@ const Stowling = {
             }
             if (path === "/v1/tasks") {
                 return { revision, tasks: tasksState };
+            }
+            if (path === "/v1/regions") {
+                return { regions: [] };
             }
             if (path === "/v1/coordinates") {
                 return {
@@ -810,6 +816,12 @@ const Stowling = {
 global.document = document;
 global.window = {
     Stowling,
+    StowlingSettings: {reveal: (element, expanded) => { element.hidden = !expanded; }},
+    StowlingTaskCleanupSettings: {create: () => ({
+        resources() {},
+        set() {},
+        read() { return {}; },
+    })},
     setInterval: () => 1,
     setTimeout: () => 1,
     confirm: (message) => {
@@ -863,6 +875,11 @@ const savedRow = (taskId) => savedRows()
  */
 const savedSummary = (taskId) => savedRow(taskId)
     ?.querySelector("button.move-task-summary");
+/**
+ * @param {string} taskId
+ * @returns {FakeElement | undefined}
+ */
+const savedRun = (taskId) => savedRow(taskId)?.querySelector("button.move-task-run");
 /**
  * @param {string} taskId
  * @returns {FakeElement | undefined}
@@ -996,6 +1013,9 @@ const moveButton = savedSummary;
     const createdWrite = requests.find(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
     );
+    const savedOnly = !requests.some((entry) => entry.path.endsWith("/runs"));
+    savedRun("server-created-id-1").click();
+    await settle();
     const createRun = requests.find(
         (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
     );
@@ -1024,7 +1044,7 @@ const moveButton = savedSummary;
         coordinateId: node("move-saved-coordinate").value,
         source: sourceButton("saved").getAttribute("aria-pressed"),
     };
-    node("save-move-task").click();
+    node("move-task-form").dispatchEvent("submit");
     await settle();
     const savedWrite = requests.filter(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
@@ -1035,7 +1055,7 @@ const moveButton = savedSummary;
     const writesBeforeInvalid = requests.filter(
         (entry) => entry.method !== "GET"
     ).length;
-    node("save-move-task").click();
+    node("move-task-form").dispatchEvent("submit");
     await settle();
     const invalidMessage = node("move-task-message").textContent;
     const writesAfterInvalid = requests.filter(
@@ -1045,7 +1065,7 @@ const moveButton = savedSummary;
     moveButton("existing-saved").click();
     node("move-task-name").value = "更新后的保存移动";
     node("move-task-form").dispatchEvent("input");
-    node("save-move-task").click();
+    node("move-task-form").dispatchEvent("submit");
     await settle();
     const putWrite = requests.find((entry) => entry.method === "PUT");
 
@@ -1054,10 +1074,11 @@ const moveButton = savedSummary;
     const taskWritesBeforeQueueFailure = requests.filter(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
     ).length;
-    failNextRun = true;
     node("move-task-form").dispatchEvent("submit");
     await settle();
-    const queueFailureMessage = node("move-task-message").textContent;
+    failNextRun = true;
+    savedRun("server-created-id-3").click();
+    await settle();
     const queueFailureDisclosure = disclosure("server-created-id-3");
     const queueFailureFormHidden = node("move-task-form").hidden;
     const taskWritesAfterQueueFailure = requests.filter(
@@ -1066,7 +1087,7 @@ const moveButton = savedSummary;
     const runRequestsBeforeRetry = requests.filter(
         (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
     ).length;
-    node("move-task-form").dispatchEvent("submit");
+    savedRun("server-created-id-3").click();
     await settle();
     const taskWritesAfterQueueRetry = requests.filter(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
@@ -1074,7 +1095,7 @@ const moveButton = savedSummary;
     const runRequestsAfterRetry = requests.filter(
         (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
     ).length;
-    const queueRetryMessage = node("move-task-message").textContent;
+    const queueRetryMessage = toasts.at(-1);
     const queueRetryDisclosure = disclosure("server-created-id-3");
     const queueRetryFormHidden = node("move-task-form").hidden;
 
@@ -1127,7 +1148,7 @@ const moveButton = savedSummary;
     const writesBeforeNewDuplicate = requests.filter(
         (entry) => entry.method !== "GET"
     ).length;
-    node("save-move-task").click();
+    node("move-task-form").dispatchEvent("submit");
     await settle();
     const localNewDuplicate = {
         message: node("move-task-message").textContent,
@@ -1144,7 +1165,7 @@ const moveButton = savedSummary;
     const writesBeforeEditDuplicate = requests.filter(
         (entry) => entry.method !== "GET"
     ).length;
-    node("save-move-task").click();
+    node("move-task-form").dispatchEvent("submit");
     await settle();
     const localEditDuplicate = {
         message: node("move-task-message").textContent,
@@ -1164,7 +1185,7 @@ const moveButton = savedSummary;
     const taskWritesBeforeConcurrentDuplicate = requests.filter(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
     ).length;
-    node("save-move-task").click();
+    node("move-task-form").dispatchEvent("submit");
     await settle();
     const concurrentDuplicate = {
         message: node("move-task-message").textContent,
@@ -1210,6 +1231,7 @@ const moveButton = savedSummary;
         newDraftToggleConfirmDelta,
         requestsBeforeFirstSave,
         createdWrite,
+        savedOnly,
         createRun,
         createdListIds,
         createdFormX,
@@ -1230,7 +1252,6 @@ const moveButton = savedSummary;
         taskWritesAfterQueueRetry,
         runRequestsBeforeRetry,
         runRequestsAfterRetry,
-        queueFailureMessage,
         queueFailureDisclosure,
         queueFailureFormHidden,
         queueRetryMessage,
@@ -1313,6 +1334,7 @@ def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
     assert "初始任务" in result["initialQueueText"]
 
     assert result["createdWrite"]["method"] == "POST"
+    assert result["savedOnly"] is True
     assert "id" not in result["createdWrite"]["body"]
     assert result["createdWrite"]["body"]["name"] == "新移动任务"
     assert result["createdWrite"]["body"]["steps"][0]["parameters"] == {
@@ -1356,7 +1378,6 @@ def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
         == result["taskWritesBeforeQueueFailure"] + 1
     )
     assert result["taskWritesAfterQueueRetry"] == result["taskWritesAfterQueueFailure"]
-    assert "任务已保存，但加入队列失败" in result["queueFailureMessage"]
     assert result["runRequestsAfterRetry"] == result["runRequestsBeforeRetry"] + 1
     assert "任务已加入队列" in result["queueRetryMessage"]
     assert result["refreshedCleanX"] == "30"

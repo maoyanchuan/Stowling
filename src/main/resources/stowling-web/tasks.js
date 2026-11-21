@@ -57,9 +57,7 @@
         newMove: document.querySelector("#new-move-task"),
         moveList: document.querySelector("#move-task-list"),
         refreshMove: document.querySelector("#refresh-move-tasks"),
-        saveMove: document.querySelector("#save-move-task"),
         removeMove: document.querySelector("#delete-move-task"),
-        runMove: document.querySelector("#run-move-task"),
         runtime: document.querySelector("#runtime-list"),
         queueList: document.querySelector("#task-queue-list"),
         refreshRuns: document.querySelector("#refresh-runs-button"),
@@ -194,9 +192,15 @@
             if (state.moveDraft.id === task.id) {
                 body.append(elements.moveForm);
             }
-            card.append(button, body);
+            const header = Stowling.element("div", "task-card-header");
+            const run = Stowling.element("button", "secondary move-task-run", "加入队列");
+            run.type = "button";
+            run.setAttribute("aria-label", `加入队列：${task.name}`);
+            run.addEventListener("click", () => void queueMoveTask(task.id));
+            header.append(button, run);
+            card.append(header, body);
             elements.moveList.append(card);
-            moveRows.set(task.id, { button, body, status });
+            moveRows.set(task.id, { button, body, status, run });
         }
         updateMoveControls();
     }
@@ -342,16 +346,17 @@
         elements.refreshMove.disabled = state.moveBusy || state.moveLoading
             || !Stowling.isConnected();
         elements.moveDraftToggle.disabled = disabled;
-        for (const row of moveRows.values()) {
+        for (const [id, row] of moveRows) {
+            const unsaved = state.moveDraft.id === id && state.moveDirty;
             row.button.disabled = disabled;
+            row.run.disabled = disabled || unsaved;
+            row.run.title = unsaved ? "先保存当前修改，再加入队列" : "加入运行队列";
         }
         elements.moveCoordinate.disabled = state.moveDraft.source !== "saved"
             || state.coordinates.length === 0;
         for (const input of [elements.moveX, elements.moveY, elements.moveZ]) {
             input.disabled = state.moveDraft.source !== "manual";
         }
-        elements.runMove.textContent = state.moveDraft.id && !state.moveDirty
-            ? "加入运行队列" : "保存并加入队列";
         elements.removeMove.hidden = !state.moveDraft.id;
         elements.removeMove.disabled = disabled;
         syncMoveDisclosure();
@@ -388,7 +393,7 @@
         const tasks = allTasks.filter(Move.isMoveTask);
         const saved = tasks.find((task) => task.id === id);
         if (!id || !saved) {
-            throw new Error("保存响应缺少任务编号或内容，请刷新任务列表后再运行");
+            throw new Error("保存响应缺少任务编号或内容，请刷新任务列表");
         }
         state.moveRevision = String(response.revision || "");
         state.moveAllTasks = allTasks;
@@ -400,11 +405,8 @@
         renderMoveTaskList();
     }
 
-    /**
-     * @param {boolean} [enqueue]
-     * @returns {Promise<void>}
-     */
-    async function saveMoveTask(enqueue = false) {
+    /** @returns {Promise<void>} */
+    async function saveMoveTask() {
         if (state.moveBusy || state.moveLoading || !state.moveResourcesReady
                 || !Stowling.isConnected() || !state.moveFormOpen) {
             return;
@@ -430,7 +432,6 @@
         }
         state.moveBusy = true;
         updateMoveControls();
-        let stage = "save";
         try {
             if (!task.id || state.moveDirty) {
                 showMoveMessage("正在保存任务…");
@@ -446,36 +447,40 @@
                 document.dispatchEvent(new Event("stowling:tasks-changed"));
             }
             showMoveMessage("任务已保存");
-            if (enqueue) {
-                stage = "queue";
-                const response = await Stowling.request(
-                    `/v1/tasks/${encodeURIComponent(state.moveDraft.id)}/runs`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({})
-                    }
-                );
-                const message = response?.state === "QUEUED"
-                    ? "任务已加入队列" : "任务已开始运行";
-                showMoveMessage(message);
-                await loadRuns();
-                Stowling.showToast(message);
-            } else {
-                Stowling.showToast("移动任务已保存");
-            }
+            Stowling.showToast("移动任务已保存");
         } catch (error) {
-            if (stage === "save" && isTaskNameConflict(error)) {
+            if (isTaskNameConflict(error)) {
                 showMoveMessage("任务名称已存在，请使用其他名称", true);
             } else {
-                const message = stage === "queue"
-                    ? "任务已保存，但加入队列失败，可再次尝试"
-                    : "保存失败，请检查输入或刷新重试";
-                showMoveMessage(message, true);
-                Stowling.handleError(
-                    error,
-                    stage === "queue" ? "加入队列失败" : "保存移动任务失败"
-                );
+                showMoveMessage("保存失败，请检查输入或刷新重试", true);
+                Stowling.handleError(error, "保存移动任务失败");
             }
+        } finally {
+            state.moveBusy = false;
+            updateMoveControls();
+        }
+    }
+
+    /**
+     * @param {string} id
+     * @returns {Promise<void>}
+     */
+    async function queueMoveTask(id) {
+        const row = moveRows.get(id);
+        if (!row || row.run.disabled || !Stowling.isConnected()) return;
+        state.moveBusy = true;
+        updateMoveControls();
+        try {
+            const response = await Stowling.request(`/v1/tasks/${encodeURIComponent(id)}/runs`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({})
+            });
+            Stowling.showToast(response?.state === "QUEUED"
+                ? "任务已加入队列" : "任务已开始运行");
+            await loadRuns();
+        } catch (error) {
+            Stowling.handleError(error, "加入队列失败");
         } finally {
             state.moveBusy = false;
             updateMoveControls();
@@ -1047,11 +1052,10 @@
             updateMoveControls();
         });
     }
-    elements.saveMove.addEventListener("click", () => void saveMoveTask());
     elements.removeMove.addEventListener("click", () => void deleteMoveTask());
     elements.moveForm.addEventListener("submit", (event) => {
         event.preventDefault();
-        void saveMoveTask(true);
+        void saveMoveTask();
     });
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
     elements.exportLogs.addEventListener("click", exportMonitorLogs);

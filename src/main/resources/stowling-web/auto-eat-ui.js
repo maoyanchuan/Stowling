@@ -56,6 +56,10 @@
         for (const [id, row] of rows) {
             const selected = editor?.id === id;
             row.button.disabled = disabled;
+            row.listening.disabled = disabled || (selected && editor.dirty);
+            row.listening.checked = row.enabled;
+            row.listening.title = selected && editor.dirty
+                ? "先保存当前修改，再切换监听" : "饱食度监听";
             disclose(row.button, row.body, selected && editor.expanded);
             row.status.textContent = selected && editor.dirty
                 ? "未保存修改"
@@ -101,9 +105,17 @@
             if (editor?.id === task.id) {
                 body.append(form);
             }
-            row.append(button, body);
+            const header = S.element("div", "task-card-header");
+            const listening = Settings.switchControl(
+                document.createElement("input"), `监听任务：${settings.name}`
+            );
+            listening.addEventListener("change", () => {
+                void setListening(task.id, listening.checked);
+            });
+            header.append(button, listening);
+            row.append(header, body);
             list.append(row);
-            rows.set(task.id, {button, body, status: state, enabled: settings.enabled});
+            rows.set(task.id, {button, body, status: state, listening, enabled: settings.enabled});
         }
         updateControls();
         notifyTaskCount();
@@ -165,7 +177,6 @@
         $("auto-eat-food").value = settings?.foodItemId ?? "minecraft:bread";
         $("auto-eat-threshold").value = settings?.foodLevelThreshold ?? 18;
         $("auto-eat-interval").value = settings?.intervalSeconds ?? 1;
-        $("auto-eat-enabled").checked = settings?.enabled ?? true;
         source.value = settings?.coordinateId ? "chest" : "inventory";
         coordinate.replaceChildren(new Option("请选择食物箱所在方块", ""));
         for (const point of coordinates) {
@@ -209,6 +220,45 @@
     }
 
     /**
+     * @param {string} id
+     * @param {boolean} enabled
+     * @returns {Promise<void>}
+     */
+    async function setListening(id, enabled) {
+        const row = rows.get(id);
+        if (!row || row.listening.disabled || unavailable()) {
+            updateControls();
+            return;
+        }
+        const previousRevision = revision;
+        busy = true;
+        updateControls();
+        try {
+            const operation = enabled ? "start" : "stop";
+            const response = await S.request(`${endpoint}/${encodeURIComponent(id)}/${operation}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ revision: previousRevision })
+            });
+            const updated = response.items.find((task) => task.id === id);
+            row.enabled = updated.settings.enabled;
+            revision = response.revision;
+            tasks = response.items;
+            if (editor?.revision === previousRevision) {
+                editor.revision = revision;
+            }
+            document.dispatchEvent(new Event("stowling:auto-eat-tasks-changed"));
+            document.dispatchEvent(new Event("stowling:tasks-changed"));
+            S.showToast(row.enabled ? "已开始饱食度监听" : "已停止饱食度监听");
+        } catch (error) {
+            S.handleError(error, "切换自动进食监听失败");
+        } finally {
+            busy = false;
+            updateControls();
+        }
+    }
+
+    /**
      * @param {boolean} deleting
      * @returns {Promise<void>}
      */
@@ -224,8 +274,7 @@
                 foodItemId: $("auto-eat-food").value.trim(),
                 coordinateId: source.value === "chest" ? coordinate.value : null,
                 foodLevelThreshold: $("auto-eat-threshold").valueAsNumber,
-                intervalSeconds: $("auto-eat-interval").valueAsNumber,
-                enabled: $("auto-eat-enabled").checked
+                intervalSeconds: $("auto-eat-interval").valueAsNumber
             });
         }
         busy = true;

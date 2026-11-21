@@ -51,7 +51,7 @@ class V2ControlServiceImplTest {
         assertEquals(List.of(new AutoEatTask(created.taskId(), paused)), restored.items());
         assertTrue(restoredService.taskRuns().triggers().isEmpty());
 
-        var carry = new AutoEatTask.Settings("Meal", "minecraft:bread", null, 18, 2, true);
+        var carry = new AutoEatTask.Settings("Meal", "minecraft:bread", null, 18, 2, false);
         var updated = restoredService.saveAutoEatTask(created.taskId(), restored.revision(), carry);
         assertEquals(List.of(new AutoEatTask(created.taskId(), carry)), updated.items());
         assertEquals("minecraft:bread",
@@ -60,6 +60,33 @@ class V2ControlServiceImplTest {
                 created.taskId(), new RevisionRequest(updated.revision()));
         assertTrue(deleted.items().isEmpty());
         assertTrue(restoredService.taskTriggers().triggers().isEmpty());
+    }
+
+    @Test
+    void onlyTheListeningOperationChangesAutoEatState() {
+        V2ControlService service = service();
+        var settings = new AutoEatTask.Settings("Meal", "minecraft:bread", null, 18, 2, true);
+        var created = service.saveAutoEatTask(null, service.autoEatTasks().revision(), settings);
+        var id = created.taskId();
+        assertFalse(created.items().getFirst().settings().enabled());
+        assertTrue(service.taskRuns().triggers().isEmpty());
+
+        var paused = service.saveAutoEatTask(id, created.revision(), settings);
+        assertFalse(paused.items().getFirst().settings().enabled());
+        var started = service.setAutoEatListening(id, new RevisionRequest(paused.revision()), true);
+        assertTrue(started.items().getFirst().settings().enabled());
+        assertEquals(1, service.taskRuns().triggers().size());
+
+        var edit = new AutoEatTask.Settings("Meal", "minecraft:bread", null, 17, 2, false);
+        var updated = service.saveAutoEatTask(id, started.revision(), edit);
+        assertTrue(updated.items().getFirst().settings().enabled());
+        assertEquals(17, updated.items().getFirst().settings().foodLevelThreshold());
+        assertEquals(1, service.taskRuns().triggers().size());
+
+        var stopped = service.setAutoEatListening(id, new RevisionRequest(updated.revision()),
+                false);
+        assertFalse(stopped.items().getFirst().settings().enabled());
+        assertTrue(service.taskRuns().triggers().isEmpty());
     }
 
     @Test

@@ -175,11 +175,6 @@
                                         <p id="auto-eat-chest-note" class="move-target-note" hidden>
                                             优先吃背包锁定的食物，取回的食物自动设为「保留自用」。
                                         </p>
-                                        <label class="move-field" for="auto-eat-enabled">
-                                            <span>启用饱食度监听</span>
-                                            <input id="auto-eat-enabled" class="settings-switch"
-                                                   type="checkbox" role="switch">
-                                        </label>
                                         <p id="auto-eat-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">
@@ -272,10 +267,8 @@
                                             <button id="delete-move-task"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
-                                            <button id="save-move-task" class="secondary"
-                                                    type="button">保存任务</button>
-                                            <button id="run-move-task" class="primary"
-                                                    type="submit">保存并加入队列</button>
+                                            <button id="save-move-task" class="primary"
+                                                    type="submit">保存任务</button>
                                         </div>
                                     </fieldset>
                                 </form>
@@ -462,12 +455,8 @@
                                             <button id="delete-auto-task"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
-                                            <button id="save-auto-task" class="secondary"
-                                                    type="button">保存任务</button>
-                                            <button id="start-auto-task" class="primary"
-                                                    type="submit">保存并开始监听</button>
-                                            <button id="stop-auto-task" class="ghost"
-                                                    type="button" hidden>停止监听</button>
+                                            <button id="save-auto-task" class="primary"
+                                                    type="submit">保存任务</button>
                                         </div>
                                     </fieldset>
                                 </form>
@@ -483,7 +472,7 @@
                             <button id="new-move-task" class="move-task-option is-new"
                                     type="button" disabled>
                                 <strong>＋ 移动到坐标</strong>
-                                <span>设置目标坐标，保存或运行</span>
+                                <span>保存目标坐标，按需加入队列</span>
                             </button>
                             <button id="new-auto-task" class="move-task-option is-new"
                                     type="button" disabled>

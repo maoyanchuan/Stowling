@@ -474,7 +474,15 @@ public final class V2ControlServer implements AutoCloseable {
             return;
         }
         if (path.startsWith("/v1/auto-eat-tasks/")) {
-            UUID id = pathUuid(path, "/v1/auto-eat-tasks/");
+            String suffix = path.substring("/v1/auto-eat-tasks/".length());
+            if (suffix.endsWith("/start") || suffix.endsWith("/stop")) {
+                requireMethod(method, "POST");
+                UUID id = uuid(suffix.substring(0, suffix.lastIndexOf('/')));
+                sendJson(exchange, 200, service.setAutoEatListening(
+                        id, revision(body), suffix.endsWith("/start")));
+                return;
+            }
+            UUID id = uuid(suffix);
             if ("PUT".equals(method)) {
                 JsonObject json = object(body);
                 sendJson(exchange, 200, service.saveAutoEatTask(id, string(json, "revision"),
@@ -901,7 +909,7 @@ public final class V2ControlServer implements AutoCloseable {
 
     private static AutoEatTask.Settings autoEatSettings(JsonObject json) {
         Set<String> required = Set.of("revision", "name", "foodItemId", "foodLevelThreshold",
-                "intervalSeconds", "enabled");
+                "intervalSeconds");
         requireFieldsAny(json, Set.of("revision", "name", "foodItemId", "coordinateId",
                 "foodLevelThreshold", "intervalSeconds", "enabled"), required);
         return new AutoEatTask.Settings(string(json, "name"), string(json, "foodItemId"),

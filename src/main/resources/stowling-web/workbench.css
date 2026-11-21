@@ -225,6 +225,11 @@ body[data-page] :is(.move-saved-task, .coordinate-point-editor) {
     min-width: 0;
 }
 
+.task-card-header > .move-task-run {
+    flex: none;
+    white-space: nowrap;
+}
+
 body[data-page] :is(.move-task-summary, .coordinate-point-summary) {
     min-height: 70px;
     gap: 12px;

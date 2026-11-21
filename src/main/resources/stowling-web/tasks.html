@@ -137,45 +137,107 @@
                                             <input id="material-name" maxlength="80"
                                                    required autocomplete="off">
                                         </label>
-                                        <label class="move-field" for="material-file">
-                                            <span>投影文件（.litematic）</span>
-                                            <input id="material-file" type="file"
-                                                   accept=".litematic">
-                                        </label>
-                                        <label class="move-field" for="material-destination">
-                                            <span>交付容器或区域</span>
-                                            <select id="material-destination" required></select>
-                                        </label>
-                                        <label class="move-field material-switch-field"
-                                               for="material-boxed-delivery">
-                                            <span>按潜影盒交付</span>
-                                            <input id="material-boxed-delivery" type="checkbox"
-                                                   aria-describedby="material-boxed-note">
-                                        </label>
-                                        <div id="material-boxed-options"
-                                             class="settings-detail" hidden>
-                                            <label class="move-field material-switch-field"
-                                                   for="material-single-material-boxes">
-                                                <span>每盒只装一种材料</span>
-                                                <input id="material-single-material-boxes"
-                                                       type="checkbox" disabled>
-                                            </label>
-                                            <p id="material-boxed-note" class="move-target-note">
-                                                默认混装。散料使用公共设施的空潜影盒装箱，
-                                                清单所需的空潜影盒单独交付。
-                                            </p>
-                                        </div>
-                                        <details id="material-liquid-settings"
+                                        <details id="material-source-settings"
                                                  class="settings-disclosure">
-                                            <summary id="material-liquid-summary"
+                                            <summary id="material-source-summary"
                                                      class="settings-row">
                                                 <span class="settings-copy">
-                                                    <strong>液体材料</strong>
+                                                    <strong>投影与材料</strong>
+                                                </span>
+                                                <span id="material-source-description"
+                                                      class="settings-description
+                                                             material-section-description">
+                                                    未选择投影
                                                 </span>
                                                 <span class="settings-chevron"
                                                       aria-hidden="true">›</span>
                                             </summary>
-                                            <div id="material-liquid-options"
+                                            <div id="material-source-options"
+                                                 class="settings-detail" hidden>
+                                                <label class="move-field" for="material-file">
+                                                    <span>投影文件（.litematic）</span>
+                                                    <input id="material-file" type="file"
+                                                           accept=".litematic">
+                                                </label>
+                                                <p id="material-preview-status"
+                                                   class="field-message" role="status">
+                                                    选择投影文件后自动解析材料
+                                                </p>
+                                                <div id="material-preview" hidden>
+                                                    <p id="material-preview-title"
+                                                       class="move-target-note">材料清单</p>
+                                                    <ul id="material-preview-items"></ul>
+                                                </div>
+                                                <p class="move-target-note">
+                                                    从 Chest Tracker 已记录的仓库取料。
+                                                </p>
+                                            </div>
+                                        </details>
+                                        <details id="material-delivery-settings"
+                                                 class="settings-disclosure">
+                                            <summary id="material-delivery-summary"
+                                                     class="settings-row">
+                                                <span class="settings-copy">
+                                                    <strong>交付设置</strong>
+                                                </span>
+                                                <span id="material-delivery-description"
+                                                      class="settings-description
+                                                             material-section-description">
+                                                    选择交付位置
+                                                </span>
+                                                <span class="settings-chevron"
+                                                      aria-hidden="true">›</span>
+                                            </summary>
+                                            <div id="material-delivery-options"
+                                                 class="settings-detail" hidden>
+                                                <label class="move-field"
+                                                       for="material-destination">
+                                                    <span>交付容器或区域</span>
+                                                    <select id="material-destination"
+                                                            required></select>
+                                                </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-boxed-delivery">
+                                                    <span>按潜影盒交付</span>
+                                                    <input id="material-boxed-delivery"
+                                                           type="checkbox"
+                                                           aria-describedby="material-boxed-note">
+                                                </label>
+                                                <div id="material-boxed-options"
+                                                     class="settings-detail" hidden>
+                                                    <label class="move-field material-switch-field"
+                                                           for="material-single-material-boxes">
+                                                        <span>每盒只装一种材料</span>
+                                                        <input id="material-single-material-boxes"
+                                                               type="checkbox" disabled>
+                                                    </label>
+                                                    <p id="material-boxed-note"
+                                                       class="move-target-note">
+                                                        默认混装。散料使用公共设施的空潜影盒装箱，
+                                                        清单所需的空潜影盒单独交付。
+                                                    </p>
+                                                </div>
+                                                <p class="move-target-note">
+                                                    交付处已有的材料会抵扣需求。
+                                                </p>
+                                            </div>
+                                        </details>
+                                        <details id="material-unstackable-settings"
+                                                 class="settings-disclosure">
+                                            <summary id="material-unstackable-summary"
+                                                     class="settings-row">
+                                                <span class="settings-copy">
+                                                    <strong>不可堆叠材料</strong>
+                                                </span>
+                                                <span id="material-unstackable-description"
+                                                      class="settings-description
+                                                             material-section-description">
+                                                    全部收集
+                                                </span>
+                                                <span class="settings-chevron"
+                                                      aria-hidden="true">›</span>
+                                            </summary>
+                                            <div id="material-unstackable-options"
                                                  class="settings-detail" hidden>
                                                 <label class="move-field material-switch-field"
                                                        for="material-ice-instead-of-water">
@@ -193,20 +255,24 @@
                                                     <span>跳过岩浆</span>
                                                     <input id="material-skip-lava" type="checkbox">
                                                 </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-collect-shulker-boxes">
+                                                    <span>收集潜影盒</span>
+                                                    <input id="material-collect-shulker-boxes"
+                                                           type="checkbox" checked>
+                                                </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-collect-minecarts">
+                                                    <span>收集矿车</span>
+                                                    <input id="material-collect-minecarts"
+                                                           type="checkbox" checked>
+                                                </label>
+                                                <p class="move-target-note">
+                                                    潜影盒包含所有颜色，矿车包含各类变种。
+                                                    开关仅控制清单材料，装箱用盒由交付设置控制。
+                                                </p>
                                             </div>
                                         </details>
-                                        <p id="material-preview-status" class="field-message"
-                                           role="status">选择投影文件后自动解析材料</p>
-                                        <details id="material-preview" hidden>
-                                            <summary id="material-preview-title">
-                                                材料清单
-                                            </summary>
-                                            <ul id="material-preview-items"></ul>
-                                        </details>
-                                        <p class="move-target-note">
-                                            从 Chest Tracker 已记录的仓库取料，
-                                            交付处已有的材料会抵扣需求。
-                                        </p>
                                         <div class="move-form-actions">
                                             <button id="delete-material-task"
                                                     class="ghost danger-action task-delete-action"

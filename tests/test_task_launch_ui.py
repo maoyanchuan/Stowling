@@ -120,17 +120,40 @@ def test_material_task_card_keeps_delete_in_editor_and_uses_transient_feedback()
     assert 'S.showToast("材料收集任务已删除")' in source
 
 
-def test_material_liquid_submenu_has_two_exclusive_water_options_and_a_lava_option() -> None:
+def test_material_unstackable_submenu_keeps_liquids_and_adds_collection_switches() -> None:
     html = read("tasks.html")
-    submenu = between(html, 'id="material-liquid-settings"', "</details>")
-    assert 'id="material-liquid-summary"' in submenu
-    for option in ("material-ice-instead-of-water", "material-skip-water", "material-skip-lava"):
+    submenu = between(html, 'id="material-unstackable-settings"', "</details>")
+    assert 'id="material-unstackable-summary"' in submenu
+    assert "不可堆叠材料" in submenu
+    for option in (
+        "material-ice-instead-of-water", "material-skip-water", "material-skip-lava",
+        "material-collect-shulker-boxes", "material-collect-minecarts",
+    ):
         assert f'id="{option}"' in submenu
 
     source = read("material-collection-ui.js")
     assert "if (iceInsteadOfWater.checked) skipWater.checked = false;" in source
     assert "if (skipWater.checked) iceInsteadOfWater.checked = false;" in source
     assert 'skipLava.addEventListener("change", renderPreview);' in source
+
+
+def test_material_editor_groups_source_delivery_and_unstackable_settings() -> None:
+    editor = between(read("tasks.html"), 'id="material-task-form"', "</form>")
+    sections = (
+        ("source", "投影与材料", ("material-file", "material-preview-status", "material-preview")),
+        ("delivery", "交付设置", ("material-destination", "material-boxed-delivery")),
+        ("unstackable", "不可堆叠材料", ("material-collect-minecarts",)),
+    )
+    assert editor.count("<details ") == 3
+    assert editor.index('id="material-name"') < editor.index("<details ")
+    for key, title, fields in sections:
+        section = between(editor, f'id="material-{key}-settings"', "</details>")
+        assert 'class="settings-disclosure"' in section
+        assert f"<strong>{title}</strong>" in section
+        assert f'id="material-{key}-description"' in section
+        for field in fields:
+            assert f'id="{field}"' in section
+    assert editor.index('id="material-save"') > editor.rindex("</details>")
 
 
 def test_material_boxed_delivery_defaults_to_mixed_and_can_use_single_material_boxes() -> None:

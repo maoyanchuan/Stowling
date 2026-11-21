@@ -17,6 +17,17 @@ import org.junit.jupiter.api.Test;
 
 class TaskModuleCatalogTest {
     @Test
+    void keepsUnstackableMaterialCollectionEnabledByDefault() {
+        var module = TaskModuleCatalog.modules().stream().filter(candidate ->
+                candidate.id().equals("COLLECT_SCHEMATIC_MATERIALS")).findFirst().orElseThrow();
+        for (String key : List.of("collectShulkerBoxes", "collectMinecarts")) {
+            assertEquals("boolean", parameter(module, key).kind());
+            assertEquals("true", parameter(module, key).defaultValue());
+            assertFalse(parameter(module, key).required());
+        }
+    }
+
+    @Test
     void exposesOnlyRealActionsAndListeners() {
         List<ModuleDefinition> modules = TaskModuleCatalog.modules();
 

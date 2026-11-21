@@ -5,11 +5,85 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.Gson;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class MaterialRequirementsTest {
+    @Test
+    void collectsAllBoxColorsAndMinecartVariantsByDefaultForExistingTasks() {
+        var materials = unstackableMaterials();
+
+        assertEquals(materials, MaterialRequirements.forCollection(Map.of(
+                MaterialRequirements.PARAMETER, new Gson().toJson(materials))));
+    }
+
+    @Test
+    void disablesBoxAndMinecartCollectionIndependentlyWithoutRemovingOtherMaterials() {
+        var materials = unstackableMaterials();
+        String original = new Gson().toJson(materials);
+        for (String disabled : List.of(MaterialRequirements.COLLECT_SHULKER_BOXES,
+                MaterialRequirements.COLLECT_MINECARTS)) {
+            var expected = new LinkedHashMap<>(materials);
+            String suffix = disabled.equals(MaterialRequirements.COLLECT_SHULKER_BOXES)
+                    ? "shulker_box" : "minecart";
+            expected.keySet().removeIf(id -> id.startsWith("minecraft:") && id.endsWith(suffix));
+            var requested = MaterialRequirements.forCollection(Map.of(
+                    MaterialRequirements.PARAMETER, original, disabled, "false"));
+
+            assertEquals(expected, requested);
+            assertThrows(UnsupportedOperationException.class,
+                    () -> requested.put("minecraft:dirt", 1));
+            assertEquals(materials, MaterialRequirements.parse(original));
+        }
+    }
+
+    @Test
+    void combinesCollectionSwitchesWithLiquidRulesWithoutChangingPackingSettings() {
+        var materials = unstackableMaterials();
+        materials.put("minecraft:water_bucket", 2);
+        materials.put("minecraft:lava_bucket", 1);
+        materials.put("minecraft:ice", 3);
+
+        var requested = MaterialRequirements.forCollection(Map.of(
+                MaterialRequirements.PARAMETER, new Gson().toJson(materials),
+                MaterialRequirements.COLLECT_SHULKER_BOXES, "false",
+                MaterialRequirements.COLLECT_MINECARTS, "false",
+                MaterialRequirements.ICE_INSTEAD_OF_WATER, "true",
+                MaterialRequirements.SKIP_LAVA, "true",
+                MaterialRequirements.BOXED_DELIVERY, "true"));
+
+        assertEquals(Map.of("minecraft:stone", 64, "example:red_shulker_box", 1,
+                "example:chest_minecart", 1, "minecraft:ice", 5), requested);
+    }
+
+    @Test
+    void acceptsAnEmptyCollectionAfterDisablingBothMaterialGroups() {
+        assertEquals(Map.of(), MaterialRequirements.forCollection(Map.of(
+                MaterialRequirements.PARAMETER,
+                "{\"minecraft:shulker_box\":1,\"minecraft:minecart\":2}",
+                MaterialRequirements.COLLECT_SHULKER_BOXES, "false",
+                MaterialRequirements.COLLECT_MINECARTS, "false")));
+    }
+
+    private static Map<String, Integer> unstackableMaterials() {
+        var materials = new LinkedHashMap<>(Map.of("minecraft:stone", 64,
+                "minecraft:shulker_box", 1, "example:red_shulker_box", 1,
+                "example:chest_minecart", 1));
+        for (String color : List.of("white", "orange", "magenta", "light_blue", "yellow",
+                "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown",
+                "green", "red", "black")) {
+            materials.put("minecraft:" + color + "_shulker_box", 1);
+        }
+        for (String cart : List.of("minecart", "chest_minecart", "hopper_minecart",
+                "furnace_minecart", "tnt_minecart", "command_block_minecart")) {
+            materials.put("minecraft:" + cart, 2);
+        }
+        return materials;
+    }
+
     @Test
     void convertsWaterBucketsToOrdinaryIceAndSkipsLavaBuckets() {
         var parameters = Map.of(

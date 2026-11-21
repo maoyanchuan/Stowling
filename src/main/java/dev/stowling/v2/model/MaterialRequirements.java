@@ -13,6 +13,8 @@ public final class MaterialRequirements {
     public static final String ICE_INSTEAD_OF_WATER = "iceInsteadOfWater";
     public static final String SKIP_WATER_BUCKETS = "skipWaterBuckets";
     public static final String SKIP_LAVA = "skipLava";
+    public static final String COLLECT_SHULKER_BOXES = "collectShulkerBoxes";
+    public static final String COLLECT_MINECARTS = "collectMinecarts";
     public static final String WATER_BOTTLE = "minecraft:potion[water]";
     private static final Pattern ITEM_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_./-]+");
     private static final int MAX_LENGTH = 56_000;
@@ -27,16 +29,28 @@ public final class MaterialRequirements {
         // Older tasks used a single setting for the ice substitution and the lava exclusion.
         boolean skipLava = Boolean.parseBoolean(
                 parameters.getOrDefault(SKIP_LAVA, Boolean.toString(ice)));
+        boolean collectShulkerBoxes = Boolean.parseBoolean(
+                parameters.getOrDefault(COLLECT_SHULKER_BOXES, "true"));
+        boolean collectMinecarts = Boolean.parseBoolean(
+                parameters.getOrDefault(COLLECT_MINECARTS, "true"));
         if (ice && skipWater) {
             throw new IllegalArgumentException("用普通冰代替水桶和跳过水桶不能同时开启");
         }
-        if (!ice && !skipWater && !skipLava) {
+        if (!ice && !skipWater && !skipLava && collectShulkerBoxes && collectMinecarts) {
             return original;
         }
         Map<String, Integer> requested = new LinkedHashMap<>(original);
         Integer waterBuckets = ice || skipWater ? requested.remove("minecraft:water_bucket") : null;
         if (skipLava) {
             requested.remove("minecraft:lava_bucket");
+        }
+        if (!collectShulkerBoxes) {
+            requested.keySet().removeIf(id -> id.equals("minecraft:shulker_box")
+                    || id.startsWith("minecraft:") && id.endsWith("_shulker_box"));
+        }
+        if (!collectMinecarts) {
+            requested.keySet().removeIf(id -> id.equals("minecraft:minecart")
+                    || id.startsWith("minecraft:") && id.endsWith("_minecart"));
         }
         if (ice && waterBuckets != null) {
             try {

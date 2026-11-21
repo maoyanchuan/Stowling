@@ -76,7 +76,8 @@ class V2ControlServerTest {
                         "parameters", Map.of("targetRef", target, "materials", requirements,
                                 "boxedDelivery", "true", "singleMaterialBoxes", "true",
                                 "iceInsteadOfWater", "true",
-                                "skipWaterBuckets", "false", "skipLava", "false"))),
+                                "skipWaterBuckets", "false", "skipLava", "false",
+                                "collectShulkerBoxes", "false", "collectMinecarts", "true"))),
                 "cleanupPolicy", Map.of("destinationRef", target, "resumeMode", "CONTINUE")));
         try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
             var response = fixture.send("/v1/tasks", "POST", body, true);
@@ -88,6 +89,12 @@ class V2ControlServerTest {
             assertEquals("true", task.steps().getFirst().parameters().get("iceInsteadOfWater"));
             assertEquals("false", task.steps().getFirst().parameters().get("skipWaterBuckets"));
             assertEquals("false", task.steps().getFirst().parameters().get("skipLava"));
+            assertEquals("false", task.steps().getFirst().parameters().get("collectShulkerBoxes"));
+            assertEquals("true", task.steps().getFirst().parameters().get("collectMinecarts"));
+            assertEquals(task.steps().getFirst().parameters(),
+                    new ConfigStore(directory.resolve("saved-material-collection.json"))
+                            .loadOrReset().config().tasks().getFirst().steps().getFirst()
+                            .parameters());
             assertEquals(target, task.cleanupPolicy().destinationRef());
             assertEquals(400, fixture.send("/v1/tasks", "POST",
                     body.replace("Glass delivery", "Invalid delivery").replace(":65", ":-65"),
@@ -100,6 +107,13 @@ class V2ControlServerTest {
                     .replace("Glass delivery", "Invalid packing option")
                     .replace("\"singleMaterialBoxes\":\"true\"",
                             "\"singleMaterialBoxes\":\"invalid\""), true).statusCode());
+            for (String option : List.of("collectShulkerBoxes", "collectMinecarts")) {
+                String value = task.steps().getFirst().parameters().get(option);
+                assertEquals(400, fixture.send("/v1/tasks", "POST", body
+                        .replace("Glass delivery", "Invalid material option")
+                        .replace("\"" + option + "\":\"" + value + "\"",
+                                "\"" + option + "\":\"invalid\""), true).statusCode());
+            }
             var status = object(fixture.send("/v1/status", "GET", null, true));
             assertEquals("IDLE", status.get("state").getAsString());
         }

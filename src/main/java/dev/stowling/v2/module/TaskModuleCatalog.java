@@ -333,7 +333,15 @@ public final class TaskModuleCatalog {
                                     dev.stowling.v2.model.MaterialRequirements.SKIP_WATER_BUCKETS,
                                     "跳过水桶", false),
                             booleanParameter(dev.stowling.v2.model.MaterialRequirements.SKIP_LAVA,
-                                    "跳过岩浆", false)
+                                    "跳过岩浆", false),
+                            new ModuleParameter(
+                                    dev.stowling.v2.model.MaterialRequirements.COLLECT_SHULKER_BOXES,
+                                    "收集潜影盒", "boolean", false,
+                                    List.of(), null, null, null, "true"),
+                            new ModuleParameter(
+                                    dev.stowling.v2.model.MaterialRequirements.COLLECT_MINECARTS,
+                                    "收集矿车", "boolean", false,
+                                    List.of(), null, null, null, "true")
                     )
             ),
             action(

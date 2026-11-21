@@ -19,8 +19,14 @@
     const iceInsteadOfWater = Settings.switchControl(byId("material-ice-instead-of-water"));
     const skipWater = Settings.switchControl(byId("material-skip-water"));
     const skipLava = Settings.switchControl(byId("material-skip-lava"));
-    const liquids = Settings.bindDisclosure(byId("material-liquid-settings"),
-        byId("material-liquid-summary"), byId("material-liquid-options"));
+    const collectShulkerBoxes = Settings.switchControl(byId("material-collect-shulker-boxes"));
+    const collectMinecarts = Settings.switchControl(byId("material-collect-minecarts"));
+    const sourceSettings = Settings.bindDisclosure(byId("material-source-settings"),
+        byId("material-source-summary"), byId("material-source-options"));
+    const deliverySettings = Settings.bindDisclosure(byId("material-delivery-settings"),
+        byId("material-delivery-summary"), byId("material-delivery-options"));
+    const unstackableSettings = Settings.bindDisclosure(byId("material-unstackable-settings"),
+        byId("material-unstackable-summary"), byId("material-unstackable-options"));
     const previewStatus = byId("material-preview-status");
     const preview = byId("material-preview");
     const items = byId("material-preview-items");
@@ -97,7 +103,41 @@
         if (skipLava.checked) {
             delete requested["minecraft:lava_bucket"];
         }
+        for (const id of Object.keys(requested)) {
+            const shulkerBox = id === "minecraft:shulker_box"
+                || id.startsWith("minecraft:") && id.endsWith("_shulker_box");
+            const minecart = id === "minecraft:minecart"
+                || id.startsWith("minecraft:") && id.endsWith("_minecart");
+            if ((!collectShulkerBoxes.checked && shulkerBox)
+                    || (!collectMinecarts.checked && minecart)) {
+                delete requested[id];
+            }
+        }
         return requested;
+    }
+
+    /** @param {boolean} boxed @param {boolean} single @returns {string} */
+    function deliveryMethod(boxed, single) {
+        return boxed ? (single ? "分种盒装" : "混合盒装") : "散装交付";
+    }
+
+    /** @returns {void} */
+    function renderSummaries() {
+        const count = Object.keys(requestedMaterials()).length;
+        const warnings = Object.keys(unsupported).length;
+        byId("material-source-description").textContent = Object.keys(materials).length
+            ? `${count} 种材料${warnings ? ` · ${warnings} 种需人工处理` : ""}`
+            : warnings ? `${warnings} 种需人工处理` : "未选择投影";
+        const target = locations.get(destination.value) || "选择交付位置";
+        const method = deliveryMethod(boxedDelivery.checked, singleMaterialBoxes.checked);
+        byId("material-delivery-description").textContent = `${target} · ${method}`;
+        const rules = [];
+        if (iceInsteadOfWater.checked) rules.push("普通冰替代水桶");
+        if (skipWater.checked) rules.push("跳过水桶");
+        if (skipLava.checked) rules.push("跳过岩浆");
+        if (!collectShulkerBoxes.checked) rules.push("不收集潜影盒");
+        if (!collectMinecarts.checked) rules.push("不收集矿车");
+        byId("material-unstackable-description").textContent = rules.join(" · ") || "全部收集";
     }
 
     /** @returns {void} */
@@ -116,6 +156,7 @@
         for (const [id, count] of Object.entries(unsupported)) {
             items.append(S.element("li", "muted", `需人工处理 · ${id} × ${count}`));
         }
+        renderSummaries();
         controls();
     }
 
@@ -123,6 +164,7 @@
     function updateBoxedOptions() {
         boxedOptions.hidden = !boxedDelivery.checked;
         singleMaterialBoxes.disabled = !boxedDelivery.checked;
+        renderSummaries();
     }
 
     /** @param {object|null} task @returns {void} */
@@ -139,10 +181,11 @@
         skipWater.checked = params?.skipWaterBuckets?.toLowerCase() === "true";
         skipLava.checked = params?.skipLava === undefined
             ? iceInsteadOfWater.checked : params.skipLava.toLowerCase() === "true";
+        collectShulkerBoxes.checked = params?.collectShulkerBoxes?.toLowerCase() !== "false";
+        collectMinecarts.checked = params?.collectMinecarts?.toLowerCase() !== "false";
         updateBoxedOptions();
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
-        preview.open = false;
         renderPreview();
     }
 
@@ -157,7 +200,9 @@
             if (current?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
             current = {id, revision, step: task?.steps[0].id, expanded: true, dirty: false};
             row.body.append(form);
-            liquids.setExpanded(false);
+            sourceSettings.setExpanded(false);
+            deliverySettings.setExpanded(false);
+            unstackableSettings.setExpanded(false);
             fillForm(task);
         }
         controls();
@@ -180,10 +225,8 @@
         for (const task of rows) {
             const parameters = task.steps[0].parameters;
             const target = locations.get(parameters.targetRef) || "交付位置";
-            const method = parameters.boxedDelivery?.toLowerCase() === "true"
-                ? (parameters.singleMaterialBoxes?.toLowerCase() === "true"
-                    ? "分种盒装" : "混合盒装")
-                : "散装交付";
+            const method = deliveryMethod(parameters.boxedDelivery?.toLowerCase() === "true",
+                parameters.singleMaterialBoxes?.toLowerCase() === "true");
             const card = S.element("article", "move-saved-task");
             const head = S.element("div", "task-card-header");
             const summary = S.element("button", "move-task-summary");
@@ -255,6 +298,7 @@
             }
             renderDestinations(destination.value);
             applyTasks(tasks);
+            renderSummaries();
         } catch (error) {
             S.handleError(error, "读取材料任务失败");
         } finally {
@@ -290,7 +334,7 @@
             previewStatus.textContent = Object.keys(materials).length
                 ? warnings ? `解析完成，${warnings} 种方块或实体需人工处理` : "解析完成"
                 : "投影没有可收集的材料";
-            preview.open = true;
+            sourceSettings.setExpanded(true);
         } catch (error) {
             previewStatus.textContent = error.message + retained;
             file.value = "";
@@ -318,7 +362,9 @@
                     singleMaterialBoxes: String(singleMaterialBoxes.checked),
                     iceInsteadOfWater: String(iceInsteadOfWater.checked),
                     skipWaterBuckets: String(skipWater.checked),
-                    skipLava: String(skipLava.checked)
+                    skipLava: String(skipLava.checked),
+                    collectShulkerBoxes: String(collectShulkerBoxes.checked),
+                    collectMinecarts: String(collectMinecarts.checked)
                 }
             }],
             cleanupPolicy: {destinationRef: targetRef, resumeMode: "CONTINUE"}
@@ -337,6 +383,7 @@
             S.showToast("材料收集任务已保存");
         } catch (error) {
             previewStatus.textContent = error.message;
+            sourceSettings.setExpanded(true);
         } finally {
             busy = false;
             controls();
@@ -415,7 +462,10 @@
         renderPreview();
     });
     skipLava.addEventListener("change", renderPreview);
+    collectShulkerBoxes.addEventListener("change", renderPreview);
+    collectMinecarts.addEventListener("change", renderPreview);
     form.addEventListener("input", (event) => {
+        renderSummaries();
         if (current && event.target !== file && !current.dirty) {
             current.dirty = true;
             controls();

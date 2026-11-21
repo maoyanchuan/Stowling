@@ -13,8 +13,26 @@ public record StorageAutomationSettings(
         java.util.UUID fallbackCoordinateId,
         List<java.util.UUID> temporaryRegionIds,
         List<java.util.UUID> overflowCoordinateIds,
-        List<java.util.UUID> overflowRegionIds
+        List<java.util.UUID> overflowRegionIds,
+        java.util.UUID unstackableOverflowRegionId
 ) {
+    public StorageAutomationSettings(
+            boolean cleanupEnabled,
+            List<BlockPosition> temporaryContainers,
+            List<BlockPosition> emptyBoxContainers,
+            BlockPosition fallbackPackingPosition,
+            List<java.util.UUID> temporaryCoordinateIds,
+            List<java.util.UUID> emptyBoxCoordinateIds,
+            java.util.UUID fallbackCoordinateId,
+            List<java.util.UUID> temporaryRegionIds,
+            List<java.util.UUID> overflowCoordinateIds,
+            List<java.util.UUID> overflowRegionIds
+    ) {
+        this(cleanupEnabled, temporaryContainers, emptyBoxContainers, fallbackPackingPosition,
+                temporaryCoordinateIds, emptyBoxCoordinateIds, fallbackCoordinateId,
+                temporaryRegionIds, overflowCoordinateIds, overflowRegionIds, null);
+    }
+
     public StorageAutomationSettings(
             boolean cleanupEnabled,
             List<BlockPosition> temporaryContainers,
@@ -37,6 +55,10 @@ public record StorageAutomationSettings(
         overflowCoordinateIds = overflowCoordinateIds == null ? List.of()
                 : List.copyOf(overflowCoordinateIds);
         overflowRegionIds = overflowRegionIds == null ? List.of() : List.copyOf(overflowRegionIds);
+        if (unstackableOverflowRegionId != null
+                && overflowRegionIds.contains(unstackableOverflowRegionId)) {
+            throw new IllegalArgumentException("不可堆叠溢出区域必须与普通溢出区域分开配置");
+        }
         if (overflowCoordinateIds.size() + overflowRegionIds.size() > 64) {
             throw new IllegalArgumentException("溢出设施最多引用 64 个点位或区域");
         }

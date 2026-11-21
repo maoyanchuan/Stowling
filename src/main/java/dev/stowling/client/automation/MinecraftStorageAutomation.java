@@ -6,6 +6,7 @@ import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.EmptyBoxSupplyPlan;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.automation.ShulkerTransferPlanner;
+import dev.stowling.automation.TemporaryContainerResolver;
 import dev.stowling.automation.CachePackingBatchPlan;
 import dev.stowling.automation.PartialBoxSourcePlan;
 import dev.stowling.domain.BlockPosition;
@@ -13,6 +14,7 @@ import dev.stowling.inventory.RecordedStorageCapacity;
 import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.StorageAutomationSettings;
 import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
@@ -237,10 +239,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         return snapshot.stacks().stream().flatMap(stack -> MinecraftItemIdentity.isBox(stack)
                         ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
                         : java.util.stream.Stream.of(stack))
-                .filter(stack -> !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
-                        && stack.getMaxStackSize() == 1)
+                .filter(MinecraftStorageAutomation::isUnstackableItem)
                 .map(MinecraftItemIdentity::key)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private static boolean isUnstackableItem(ItemStack stack) {
+        return !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
+                && stack.getMaxStackSize() == 1;
     }
 
     @Override
@@ -2299,9 +2305,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class Overflow extends Session {
         private boolean initialized;
-        private final dev.stowling.v2.model.RegionDefinition cacheRegion;
+        private final RegionDefinition cacheRegion;
         private List<ContainerTarget> cacheSources = List.of();
         private List<ContainerTarget> destinations;
+        private RegionDefinition unstackableRegion;
+        private List<ContainerTarget> unstackableDestinations;
+        private final Set<BlockPosition> reservedPositions = new LinkedHashSet<>();
+        private int storedUnstackable;
+        private boolean unstackableFull;
+        private boolean storedOrdinary;
         private ContainerVisitPlan sources;
         private ContainerTarget currentSource;
         private ContainerTarget boxTarget;
@@ -2310,7 +2322,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private final Set<String> unusableBoxes = new java.util.HashSet<>();
         private final Set<String> undrainableBoxes = new java.util.HashSet<>();
 
-        Overflow(TaskExecutionContext context, dev.stowling.v2.model.RegionDefinition cacheRegion) {
+        Overflow(TaskExecutionContext context, RegionDefinition cacheRegion) {
             super(context);
             this.cacheRegion = cacheRegion;
         }
@@ -2326,6 +2338,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (destinations.isEmpty()) {
                 throw new IllegalStateException("请先在公共设施配置溢出箱或溢出区域");
             }
+            unstackableRegion = settings.unstackableOverflowRegion();
+            if (unstackableRegion != null) {
+                reservedPositions.addAll(configuration.emptyBoxContainers());
+                destinations.forEach(target -> reservedPositions.addAll(target.entrances()));
+                context.workspace().containerScan().stream()
+                        .flatMap(scan -> scan.containers().stream())
+                        .forEach(target -> reservedPositions.addAll(target.entrances()));
+            }
             if (hasTemporaryResources(owner())) {
                 throw new IllegalStateException("尚有未回收潜影盒，请先执行全局收尾");
             }
@@ -2333,6 +2353,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (cacheRegion != null) {
                 var scan = containerRegions.scanComplete(cacheRegion, Set.of(), 1_000_000);
                 if (!scan.succeeded()) throw new IllegalStateException(scan.message());
+                if (unstackableRegion != null) {
+                    scan.containers().forEach(target ->
+                            reservedPositions.addAll(target.entrances()));
+                }
                 caches = scan.containers().stream().filter(target -> destinations.stream()
                         .noneMatch(destination -> destination.entrances().stream()
                                 .anyMatch(target.entrances()::contains)))
@@ -2350,7 +2374,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void packOwned() {
             if (!rawOwned().isEmpty()) {
-                findReusableOverflowBox(0);
+                Map<String, Integer> items = unstackableOwned();
+                if (items.isEmpty()) {
+                    findReusableOverflowBox(0);
+                } else {
+                    storeUnstackable(0, items);
+                }
                 return;
             }
             ItemStack filled = inventoryStacks().stream().filter(MinecraftItemIdentity::isBox)
@@ -2360,11 +2389,21 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (!filled.isEmpty()) {
                 box = filled;
                 reusedFrom = null;
-                if (MinecraftItemIdentity.full(box)
+                Set<String> unstackable = unstackableRegion == null ? Set.of()
+                        : MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
+                                .filter(MinecraftStorageAutomation::isUnstackableItem)
+                                .map(MinecraftItemIdentity::key).map(ItemIdentity::exact)
+                                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                if (!unstackable.isEmpty()) {
+                    unpackOverflowBox(unstackable, true);
+                } else if (MinecraftItemIdentity.full(box)
                         || undrainableBoxes.contains(MinecraftItemIdentity.key(box))) {
                     storeOverflowBox(0);
                 } else {
-                    unpackOverflowBox();
+                    Set<String> contents = MinecraftItemIdentity.contents(box)
+                            .nonEmptyItemCopyStream().map(MinecraftItemIdentity::key)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                    unpackOverflowBox(contents, false);
                 }
                 return;
             }
@@ -2373,6 +2412,59 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             } else {
                 visitSource();
             }
+        }
+
+        private Map<String, Integer> unstackableOwned() {
+            if (unstackableRegion == null) return Map.of();
+            Map<String, Integer> managed = owned();
+            Map<String, Integer> items = new LinkedHashMap<>();
+            for (ItemStack stack : inventoryStacks()) {
+                if (!isUnstackableItem(stack)) continue;
+                String key = MinecraftItemIdentity.key(stack);
+                int count = managed.getOrDefault(key, 0);
+                if (count > 0) items.put(key, count);
+            }
+            return items;
+        }
+
+        private List<ContainerTarget> unstackableDestinations() {
+            if (unstackableDestinations != null) return unstackableDestinations;
+            var scan = containerRegions.scanComplete(unstackableRegion,
+                    TemporaryContainerResolver.TYPES, 1_000_000);
+            if (!scan.succeeded()) {
+                throw new IllegalStateException("不可堆叠溢出区域扫描失败：" + scan.message());
+            }
+            if (scan.containers().isEmpty()) {
+                throw new IllegalStateException("不可堆叠溢出区域没有箱子或木桶");
+            }
+            if (scan.containers().stream().flatMap(target -> target.entrances().stream())
+                    .anyMatch(reservedPositions::contains)) {
+                throw new IllegalStateException("不可堆叠溢出与缓存、普通溢出或空盒供应共用容器");
+            }
+            unstackableDestinations = scan.containers();
+            return unstackableDestinations;
+        }
+
+        private void storeUnstackable(int index, Map<String, Integer> items) {
+            List<ContainerTarget> targets = unstackableDestinations();
+            if (index >= targets.size()) {
+                unstackableFull = true;
+                findReusableOverflowBox(0);
+                return;
+            }
+            ContainerTarget target = targets.get(index);
+            transfer(target, items, false, contents -> {
+                Map<String, Integer> remaining = unstackableOwned();
+                storedUnstackable += sum(items) - sum(remaining);
+                if (remaining.isEmpty()) {
+                    packOwned();
+                } else if (!contents.isEmpty() && contents.stream().noneMatch(ItemStack::isEmpty)) {
+                    storeUnstackable(index + 1, remaining);
+                } else {
+                    throw new IllegalStateException("不可堆叠溢出箱有空位但未能完成存放："
+                            + target.position());
+                }
+            });
         }
 
         private void findReusableOverflowBox(int index) {
@@ -2429,21 +2521,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
         }
 
-        private void unpackOverflowBox() {
+        private void unpackOverflowBox(Set<String> items, boolean requireItems) {
             BlockPosition site = chooseSite(context,
                     currentSource == null ? destinations.getFirst() : currentSource,
                     null, configuration);
             var resource = new MinecraftShulkerAction.Resource(site, box);
             resources.put(owner(), resource);
-            var contents = MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
-                    .map(MinecraftItemIdentity::key).collect(java.util.stream.Collectors.toSet());
             var drain = new ContainerBatchWithdrawal(context,
-                    new ContainerTarget(site, "minecraft:shulker_box"), contents,
+                    new ContainerTarget(site, "minecraft:shulker_box"), items,
                     Math.min(StoragePackingPlanner.BOX_SLOTS, remainingBatchSlots() + 1));
             steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
                     () -> steps.add(new Step(drain, () -> recover(() -> {
                         box = resource.expected;
                         if (drain.withdrawn().isEmpty()) {
+                            if (requireItems) {
+                                throw new IllegalStateException("未能取出潜影盒中的不可堆叠物品");
+                            }
                             undrainableBoxes.add(MinecraftItemIdentity.key(box));
                         }
                         packOwned();
@@ -2514,6 +2607,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     Map.of(key, 1), false, false);
             Runnable after = () -> {
                 if (owned().getOrDefault(key, 0) == before - 1) {
+                    storedOrdinary = true;
                     reusedFrom = null;
                     packOwned();
                 } else {
@@ -2554,6 +2648,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         String completionMessage() {
+            if (unstackableFull && storedUnstackable == 0) {
+                return "不可堆叠溢出区已满，剩余物品已打包送往普通溢出";
+            }
+            if (storedUnstackable > 0) {
+                String stored = "已送往不可堆叠溢出区 " + storedUnstackable + " 件";
+                return storedOrdinary ? stored + "，其余已打包送往普通溢出" : stored;
+            }
             return "无法处理的缓存物品已打包送往溢出设施";
         }
     }

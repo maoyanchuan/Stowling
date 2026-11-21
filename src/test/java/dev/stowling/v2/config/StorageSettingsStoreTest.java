@@ -25,23 +25,37 @@ class StorageSettingsStoreTest {
         var initial = config.loadOrReset();
         UUID pointId = UUID.randomUUID();
         UUID regionId = UUID.randomUUID();
+        UUID unstackableId = UUID.randomUUID();
         var point = new CoordinatePoint(pointId, "Overflow", 20, 64, 30);
         var region = new RegionDefinition(regionId, "Overflow area", 21, 64, 30, 22, 64, 31);
+        var unstackable = new RegionDefinition(unstackableId, "Unstackable", 31, 64, 30,
+                32, 64, 31);
         config.save(initial.revision(), new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
-                List.of(point), List.of(), List.of(region), List.of(), List.of()));
+                List.of(point), List.of(), List.of(region, unstackable), List.of(), List.of()));
         Path file = directory.resolve("storage.json");
         StorageSettingsStore store = new StorageSettingsStore(file);
         store.bindCoordinates(config);
         var settings = new StorageAutomationSettings(false, List.of(), List.of(), null,
-                List.of(), List.of(), null, List.of(), List.of(pointId), List.of(regionId));
+                List.of(), List.of(), null, List.of(), List.of(pointId), List.of(regionId),
+                unstackableId);
         store.save(store.read().revision(), settings);
         var reopened = new StorageSettingsStore(file);
         reopened.bindCoordinates(config);
         assertEquals(settings, reopened.read().settings());
         assertEquals(List.of(new BlockPosition(20, 64, 30)), reopened.overflowPositions());
         assertEquals(List.of(region), reopened.overflowRegions());
+        assertEquals(unstackable, reopened.unstackableOverflowRegion());
+        assertEquals(unstackableId, reopened.resolved().unstackableOverflowRegionId());
         assertEquals(List.of(pointId), reopened.resolved().overflowCoordinateIds());
         assertEquals(settings, CoordinateResourceMigration.migrate(config, settings));
+    }
+
+    @Test
+    void unstackableOverflowCannotReferenceTheOrdinaryOverflowRegion() {
+        UUID id = UUID.randomUUID();
+        assertThrows(IllegalArgumentException.class, () -> new StorageAutomationSettings(false,
+                List.of(), List.of(), null, List.of(), List.of(), null, List.of(),
+                List.of(), List.of(id), id));
     }
 
     @Test

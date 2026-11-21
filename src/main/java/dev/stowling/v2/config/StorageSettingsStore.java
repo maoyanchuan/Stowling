@@ -2,6 +2,7 @@ package dev.stowling.v2.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.StorageAutomationSettings;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -41,7 +42,19 @@ public final class StorageSettingsStore {
                 settings.fallbackCoordinateId() == null ? null
                         : resolve.apply(settings.fallbackCoordinateId()),
                 java.util.List.of(), java.util.List.of(), null, settings.temporaryRegionIds(),
-                settings.overflowCoordinateIds(), settings.overflowRegionIds());
+                settings.overflowCoordinateIds(), settings.overflowRegionIds(),
+                settings.unstackableOverflowRegionId());
+    }
+
+    public synchronized RegionDefinition unstackableOverflowRegion() {
+        var id = settings.unstackableOverflowRegionId();
+        if (id == null) return null;
+        if (coordinates == null) {
+            throw new IllegalStateException("不可堆叠溢出区域未绑定公共设施");
+        }
+        return coordinates.read().config().regions().stream()
+                .filter(region -> id.equals(region.id())).findFirst().orElseThrow(() ->
+                        new IllegalStateException("不可堆叠溢出设施引用的区域不存在"));
     }
 
     public synchronized java.util.List<dev.stowling.domain.BlockPosition> overflowPositions() {

@@ -10,6 +10,7 @@
     const temporary = document.createElement("select");
     const empty = document.createElement("select");
     const overflow = document.createElement("select");
+    const unstackableOverflow = document.createElement("select");
     temporary.multiple = empty.multiple = overflow.multiple = true;
     temporary.size = empty.size = overflow.size = 6;
     const fallback = document.createElement("select");
@@ -46,6 +47,7 @@
             revision = response.revision;
             const value = response.settings;
             enabled.checked = value.cleanupEnabled;
+            unstackableOverflow.replaceChildren(new Option("未配置", ""));
             for (const [select, ids] of [[temporary, value.temporaryCoordinateIds || []],
                     [overflow, value.overflowCoordinateIds || []],
                     [empty, value.emptyBoxCoordinateIds || []],
@@ -62,6 +64,7 @@
                 }
             }
             for (const region of regions.regions) {
+                unstackableOverflow.append(new Option(region.name, region.id));
                 for (const [select, ids] of [[temporary, value.temporaryRegionIds || []],
                         [overflow, value.overflowRegionIds || []]]) {
                     const option = new Option(`[区域] ${region.name} · `
@@ -72,6 +75,7 @@
                     select.append(option);
                 }
             }
+            unstackableOverflow.value = value.unstackableOverflowRegionId || "";
             save.disabled = false;
             message.textContent = "任务的中断存放位置请在任务内选择。这里的暂存仅兼容旧任务；溢出支持点位或区域。";
         } catch (error) {
@@ -96,8 +100,11 @@
     });
     heading.append(S.element("h2", "", "公共设施"), link, regionLink, add);
     const sections = [["旧任务收尾（兼容）", enabled], ["旧任务暂存（兼容）", temporary],
-        ["空潜影盒供应箱", empty], ["后备打包位置", fallback], ["溢出箱", overflow]];
+        ["空潜影盒供应箱", empty], ["后备打包位置", fallback], ["溢出箱", overflow],
+        ["不可堆叠溢出区域", unstackableOverflow]];
     const fields = sections.map(([name, control]) => field(name, control));
+    fields.at(-1).append(S.element("small", "muted",
+        "指定独立区域内的箱子或木桶。都存满后，剩余不可堆叠物品才会送往普通溢出。"));
     const navigation = S.element("nav", "resource-browser-list");
     navigation.setAttribute("aria-label", "选择公共设施用途");
     const buttons = sections.map(([name], index) => {
@@ -105,6 +112,7 @@
         button.type = "button";
         button.addEventListener("click", () => {
             activeSection = index;
+            add.hidden = sections[index][1] === unstackableOverflow;
             fields.forEach((row, number) => {row.hidden = number !== index;});
             buttons.forEach((item, number) => {
                 item.setAttribute("aria-current", String(number === index));
@@ -168,6 +176,7 @@
                     overflowRegionIds: selected(overflow)
                         .filter(value => value.startsWith("region:"))
                         .map(value => value.slice("region:".length)),
+                    unstackableOverflowRegionId: unstackableOverflow.value || null,
                     fallbackCoordinateId: fallback.value || null
                 }})});
             revision = response.revision;

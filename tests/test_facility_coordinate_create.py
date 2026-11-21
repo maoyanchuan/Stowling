@@ -77,7 +77,9 @@ globalThis.window = {Stowling: {
         if (options) {saved = JSON.parse(options.body); return {revision: 'next'};}
         if (path === '/v1/coordinates') return {coordinates: [{id: 'old', name: 'Old', x: 1,y: 2,z: 3}]};
         if (path === '/v1/regions') return {regions: [{id: 'area', name: 'Staging',
-            firstX: 1, firstY: 2, firstZ: 3, secondX: 4, secondY: 5, secondZ: 6}]};
+            firstX: 1, firstY: 2, firstZ: 3, secondX: 4, secondY: 5, secondZ: 6},
+            {id: 'unstackable', name: 'Unstackable',
+                firstX: 7, firstY: 2, firstZ: 3, secondX: 8, secondY: 5, secondZ: 6}]};
         return {revision: 'old', settings: {cleanupEnabled: true, temporaryCoordinateIds: ['old'],
             temporaryRegionIds: ['area']}};
     }
@@ -120,7 +122,8 @@ def test_facilities_mount_and_new_point_is_selected_without_losing_other_referen
 def test_overflow_facility_keeps_regions_when_adding_a_coordinate() -> None:
     runner = RUNNER.replace("'空潜影盒供应箱'", "'溢出箱'").replace(
         "temporaryRegionIds: ['area']}};",
-        "temporaryRegionIds: ['area'], overflowRegionIds: ['area']}};",
+        "temporaryRegionIds: ['area'], overflowRegionIds: ['area'], "
+        "unstackableOverflowRegionId: 'unstackable'}};",
     )
     result = subprocess.run(
         [str(NODE), "-e", runner, str(WEB / "storage-settings.js")],
@@ -131,5 +134,6 @@ def test_overflow_facility_keeps_regions_when_adding_a_coordinate() -> None:
     settings = value["saved"]["settings"]
     assert settings["overflowCoordinateIds"] == ["new"]
     assert settings["overflowRegionIds"] == ["area"]
+    assert settings["unstackableOverflowRegionId"] == "unstackable"
     assert settings["temporaryCoordinateIds"] == ["old"]
     assert settings["temporaryRegionIds"] == ["area"]

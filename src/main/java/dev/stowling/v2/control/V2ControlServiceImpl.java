@@ -131,7 +131,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
         Set<UUID> regions = configs.read().config().regions().stream()
                 .map(RegionDefinition::id).collect(java.util.stream.Collectors.toSet());
         if (!regions.containsAll(settings.temporaryRegionIds())
-                || !regions.containsAll(settings.overflowRegionIds())) {
+                || !regions.containsAll(settings.overflowRegionIds())
+                || (settings.unstackableOverflowRegionId() != null
+                        && !regions.contains(settings.unstackableOverflowRegionId()))) {
             throw new IllegalArgumentException("公共设施引用的区域不存在，请刷新后重新选择");
         }
         if (!settings.temporaryContainers().isEmpty() || !settings.emptyBoxContainers().isEmpty()
@@ -406,6 +408,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
             var facilities = storageSettings.read().settings();
             if (facilities.temporaryRegionIds().contains(id)) references.add("公共设施·暂存区域");
             if (facilities.overflowRegionIds().contains(id)) references.add("公共设施·溢出区域");
+            if (id.equals(facilities.unstackableOverflowRegionId())) {
+                references.add("公共设施·不可堆叠溢出区域");
+            }
         }
         if (!references.isEmpty()) {
             throw new V2ValidationException(

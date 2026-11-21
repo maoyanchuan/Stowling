@@ -53,7 +53,8 @@ public final class CoordinateResourceMigration {
         var migrated = new StorageAutomationSettings(settings.cleanupEnabled(), List.of(),
                 List.of(), null, temporary.stream().distinct().toList(),
                 empty.stream().distinct().toList(), fallback, settings.temporaryRegionIds(),
-                settings.overflowCoordinateIds(), settings.overflowRegionIds());
+                settings.overflowCoordinateIds(), settings.overflowRegionIds(),
+                settings.unstackableOverflowRegionId());
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,

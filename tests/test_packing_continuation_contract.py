@@ -4,6 +4,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_overflow_only_advances_past_a_confirmed_full_unstackable_container() -> None:
+    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
+    dedicated = source.split("private List<ContainerTarget> unstackableDestinations()", 1)[1]
+    dedicated = dedicated.split("private void findReusableOverflowBox(", 1)[0]
+    assert "scanComplete(unstackableRegion," in dedicated
+    assert "if (!scan.succeeded())" in dedicated
+    assert "if (scan.containers().isEmpty())" in dedicated
+
+    store = dedicated.split("private void storeUnstackable(", 1)[1]
+    assert store.index("if (index >= targets.size())") < store.index("findReusableOverflowBox(0)")
+    assert store.index("transfer(target, items, false, contents ->") < store.index(
+        "!contents.isEmpty() && contents.stream().noneMatch(ItemStack::isEmpty)"
+    ) < store.index("storeUnstackable(index + 1, remaining)")
+    assert store.count("findReusableOverflowBox(0)") == 1
+    assert "不可堆叠溢出箱有空位但未能完成存放" in store
+
+
+def test_overflow_extracts_unstackable_contents_before_forwarding_a_full_shulker() -> None:
+    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
+              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
+    pack = source.split("private void packOwned() {", 1)[1].split(
+        "private Map<String, Integer> unstackableOwned()", 1
+    )[0]
+    assert pack.index(".filter(MinecraftStorageAutomation::isUnstackableItem)") < pack.index(
+        "unpackOverflowBox(unstackable, true)"
+    ) < pack.index("MinecraftItemIdentity.full(box)")
+    assert "storeUnstackable(0, items)" in pack
+
+
 def test_packing_continues_after_storing_a_filled_box() -> None:
     source = (ROOT / "src/main/java/dev/stowling/client/automation/"
               "MinecraftStorageAutomation.java").read_text(encoding="utf-8")

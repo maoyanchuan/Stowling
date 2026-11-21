@@ -152,11 +152,19 @@
                                             <input id="material-boxed-delivery" type="checkbox"
                                                    aria-describedby="material-boxed-note">
                                         </label>
-                                        <p id="material-boxed-note" class="move-target-note"
-                                           hidden>
-                                            符合缺口的整盒可直接交付。散料使用公共设施的空潜影盒装箱，
-                                            清单所需的空潜影盒单独交付。
-                                        </p>
+                                        <div id="material-boxed-options"
+                                             class="settings-detail" hidden>
+                                            <label class="move-field material-switch-field"
+                                                   for="material-single-material-boxes">
+                                                <span>每盒只装一种材料</span>
+                                                <input id="material-single-material-boxes"
+                                                       type="checkbox" disabled>
+                                            </label>
+                                            <p id="material-boxed-note" class="move-target-note">
+                                                默认混装。散料使用公共设施的空潜影盒装箱，
+                                                清单所需的空潜影盒单独交付。
+                                            </p>
+                                        </div>
                                         <details id="material-liquid-settings"
                                                  class="settings-disclosure">
                                             <summary id="material-liquid-summary"

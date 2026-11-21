@@ -319,6 +319,9 @@ public final class TaskModuleCatalog {
                                     dev.stowling.v2.model.MaterialRequirements.BOXED_DELIVERY,
                                     "按潜影盒交付", false),
                             booleanParameter(
+                                    dev.stowling.v2.model.MaterialRequirements.SINGLE_MATERIAL_BOXES,
+                                    "每盒只装一种材料", false),
+                            booleanParameter(
                                     dev.stowling.v2.model.MaterialRequirements.ICE_INSTEAD_OF_WATER,
                                     "用普通冰代替水桶", false),
                             booleanParameter(

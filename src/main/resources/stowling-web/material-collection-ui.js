@@ -14,12 +14,13 @@
     const file = byId("material-file");
     const destination = byId("material-destination");
     const boxedDelivery = Settings.switchControl(byId("material-boxed-delivery"));
+    const singleMaterialBoxes = Settings.switchControl(byId("material-single-material-boxes"));
+    const boxedOptions = byId("material-boxed-options");
     const iceInsteadOfWater = Settings.switchControl(byId("material-ice-instead-of-water"));
     const skipWater = Settings.switchControl(byId("material-skip-water"));
     const skipLava = Settings.switchControl(byId("material-skip-lava"));
     const liquids = Settings.bindDisclosure(byId("material-liquid-settings"),
         byId("material-liquid-summary"), byId("material-liquid-options"));
-    const boxedNote = byId("material-boxed-note");
     const previewStatus = byId("material-preview-status");
     const preview = byId("material-preview");
     const items = byId("material-preview-items");
@@ -118,6 +119,12 @@
         controls();
     }
 
+    /** @returns {void} */
+    function updateBoxedOptions() {
+        boxedOptions.hidden = !boxedDelivery.checked;
+        singleMaterialBoxes.disabled = !boxedDelivery.checked;
+    }
+
     /** @param {object|null} task @returns {void} */
     function fillForm(task) {
         const params = task?.steps[0].parameters;
@@ -127,11 +134,12 @@
         file.value = "";
         renderDestinations(params?.targetRef || "");
         boxedDelivery.checked = params?.boxedDelivery?.toLowerCase() === "true";
+        singleMaterialBoxes.checked = params?.singleMaterialBoxes?.toLowerCase() === "true";
         iceInsteadOfWater.checked = params?.iceInsteadOfWater?.toLowerCase() === "true";
         skipWater.checked = params?.skipWaterBuckets?.toLowerCase() === "true";
         skipLava.checked = params?.skipLava === undefined
             ? iceInsteadOfWater.checked : params.skipLava.toLowerCase() === "true";
-        boxedNote.hidden = !boxedDelivery.checked;
+        updateBoxedOptions();
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
         preview.open = false;
@@ -173,7 +181,9 @@
             const parameters = task.steps[0].parameters;
             const target = locations.get(parameters.targetRef) || "交付位置";
             const method = parameters.boxedDelivery?.toLowerCase() === "true"
-                ? "盒装交付" : "散装交付";
+                ? (parameters.singleMaterialBoxes?.toLowerCase() === "true"
+                    ? "分种盒装" : "混合盒装")
+                : "散装交付";
             const card = S.element("article", "move-saved-task");
             const head = S.element("div", "task-card-header");
             const summary = S.element("button", "move-task-summary");
@@ -305,6 +315,7 @@
                     targetRef,
                     materials: JSON.stringify(materials),
                     boxedDelivery: String(boxedDelivery.checked),
+                    singleMaterialBoxes: String(singleMaterialBoxes.checked),
                     iceInsteadOfWater: String(iceInsteadOfWater.checked),
                     skipWaterBuckets: String(skipWater.checked),
                     skipLava: String(skipLava.checked)
@@ -394,9 +405,7 @@
     });
     byId("refresh-move-tasks").addEventListener("click", () => void load());
     file.addEventListener("change", () => void parseFile());
-    boxedDelivery.addEventListener("change", () => {
-        boxedNote.hidden = !boxedDelivery.checked;
-    });
+    boxedDelivery.addEventListener("change", updateBoxedOptions);
     iceInsteadOfWater.addEventListener("change", () => {
         if (iceInsteadOfWater.checked) skipWater.checked = false;
         renderPreview();

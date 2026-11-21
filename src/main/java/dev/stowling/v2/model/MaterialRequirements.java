@@ -9,6 +9,7 @@ public final class MaterialRequirements {
     public static final String MODULE = "COLLECT_SCHEMATIC_MATERIALS";
     public static final String PARAMETER = "materials";
     public static final String BOXED_DELIVERY = "boxedDelivery";
+    public static final String SINGLE_MATERIAL_BOXES = "singleMaterialBoxes";
     public static final String ICE_INSTEAD_OF_WATER = "iceInsteadOfWater";
     public static final String SKIP_WATER_BUCKETS = "skipWaterBuckets";
     public static final String SKIP_LAVA = "skipLava";

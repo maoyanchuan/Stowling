@@ -74,7 +74,8 @@ class V2ControlServerTest {
                 "name", "Glass delivery",
                 "steps", List.of(Map.of("moduleId", "COLLECT_SCHEMATIC_MATERIALS",
                         "parameters", Map.of("targetRef", target, "materials", requirements,
-                                "boxedDelivery", "true", "iceInsteadOfWater", "true",
+                                "boxedDelivery", "true", "singleMaterialBoxes", "true",
+                                "iceInsteadOfWater", "true",
                                 "skipWaterBuckets", "false", "skipLava", "false"))),
                 "cleanupPolicy", Map.of("destinationRef", target, "resumeMode", "CONTINUE")));
         try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
@@ -83,6 +84,7 @@ class V2ControlServerTest {
             var task = store.read().config().tasks().getFirst();
             assertEquals(requirements, task.steps().getFirst().parameters().get("materials"));
             assertEquals("true", task.steps().getFirst().parameters().get("boxedDelivery"));
+            assertEquals("true", task.steps().getFirst().parameters().get("singleMaterialBoxes"));
             assertEquals("true", task.steps().getFirst().parameters().get("iceInsteadOfWater"));
             assertEquals("false", task.steps().getFirst().parameters().get("skipWaterBuckets"));
             assertEquals("false", task.steps().getFirst().parameters().get("skipLava"));
@@ -94,6 +96,10 @@ class V2ControlServerTest {
                     .replace("Glass delivery", "Conflicting water options")
                     .replace("\"skipWaterBuckets\":\"false\"", "\"skipWaterBuckets\":\"true\""),
                     true).statusCode());
+            assertEquals(400, fixture.send("/v1/tasks", "POST", body
+                    .replace("Glass delivery", "Invalid packing option")
+                    .replace("\"singleMaterialBoxes\":\"true\"",
+                            "\"singleMaterialBoxes\":\"invalid\""), true).statusCode());
             var status = object(fixture.send("/v1/status", "GET", null, true));
             assertEquals("IDLE", status.get("state").getAsString());
         }

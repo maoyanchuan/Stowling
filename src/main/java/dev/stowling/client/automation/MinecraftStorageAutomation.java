@@ -123,10 +123,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public TaskModuleExecutor collectMaterials(TaskExecutionContext context, TaskStep step) {
+        var parameters = step.parameters();
         return new MaterialCollection(context,
-                ResourceReference.parse(step.parameters().get("targetRef")),
-                MaterialRequirements.forCollection(step.parameters()),
-                Boolean.parseBoolean(step.parameters().get(MaterialRequirements.BOXED_DELIVERY)));
+                ResourceReference.parse(parameters.get("targetRef")),
+                MaterialRequirements.forCollection(parameters),
+                Boolean.parseBoolean(parameters.get(MaterialRequirements.BOXED_DELIVERY)),
+                Boolean.parseBoolean(parameters.get(MaterialRequirements.SINGLE_MATERIAL_BOXES)));
     }
 
     @Override
@@ -819,6 +821,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final class MaterialCollection extends Session {
         private final ResourceReference destination;
         private final boolean boxedDelivery;
+        private final boolean singleMaterialBoxes;
         private final Map<String, Integer> needed;
         private final Map<String, String> materialByKey = new LinkedHashMap<>();
         private final Map<String, Map<String, Integer>> boxContentsByKey = new LinkedHashMap<>();
@@ -841,10 +844,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private boolean stopAfterBox;
 
         MaterialCollection(TaskExecutionContext context, ResourceReference destination,
-                Map<String, Integer> required, boolean boxedDelivery) {
+                Map<String, Integer> required, boolean boxedDelivery,
+                boolean singleMaterialBoxes) {
             super(context);
             this.destination = destination;
             this.boxedDelivery = boxedDelivery;
+            this.singleMaterialBoxes = boxedDelivery && singleMaterialBoxes;
             needed = new LinkedHashMap<>(required);
         }
 
@@ -929,7 +934,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .filter(source -> destinations.stream().noneMatch(
                             target -> sameContainer(source.target(), target)))
                     .toList();
-            if (boxedDelivery) {
+            if (singleMaterialBoxes) {
                 materialOrder = List.copyOf(needed.keySet());
                 nextMaterial();
             } else {
@@ -965,13 +970,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (needed.isEmpty()) {
                 return;
             }
-            if (boxedDelivery && !needed.containsKey(packingMaterial)) {
+            if (singleMaterialBoxes && !needed.containsKey(packingMaterial)) {
                 nextMaterial();
                 return;
             }
             if (sourceIndex >= sources.size()) {
                 flush(true, () -> {
-                    if (boxedDelivery) nextMaterial();
+                    if (singleMaterialBoxes) nextMaterial();
                     else if (!needed.isEmpty()) finishShort();
                 });
                 return;
@@ -1019,7 +1024,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void continueSource(ContainerTarget source, List<ItemStack> contents) {
-            if (boxedDelivery && !needed.containsKey(packingMaterial)) {
+            if (singleMaterialBoxes && !needed.containsKey(packingMaterial)) {
                 nextMaterial();
                 return;
             }
@@ -1050,7 +1055,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     if (slotsForBoxes == 0) break;
                     if (!MinecraftItemIdentity.isBox(stack) || isEmptyBox(stack)) continue;
                     var materials = materialsInBox(stack);
-                    if (!MaterialRequirements.canDeliverBox(packingMaterial, remaining, materials,
+                    if (singleMaterialBoxes && !MaterialRequirements.canDeliverBox(
+                            packingMaterial, remaining, materials,
                             MinecraftItemIdentity.full(stack), hasLooseOrPartial)) continue;
                     int count = MaterialRequirements.reserveBoxes(remaining, materials,
                             Math.min(stack.getCount(), slotsForBoxes));
@@ -1152,8 +1158,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     super.requestStop();
                 } else if (hasFullBatch()) {
                     flush(uncollected().isEmpty(), () -> {
-                        if (boxedDelivery && !needed.containsKey(packingMaterial)) nextMaterial();
-                        else collectFrom(source);
+                        if (singleMaterialBoxes && !needed.containsKey(packingMaterial)) {
+                            nextMaterial();
+                        } else {
+                            collectFrom(source);
+                        }
                     });
                 } else if (acquired || deliveredDuringRecovery) {
                     collectFrom(source);
@@ -1262,7 +1271,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private Map<String, Integer> uncollected() {
             Map<String, Integer> remaining = new LinkedHashMap<>();
-            if (!boxedDelivery) {
+            if (!singleMaterialBoxes) {
                 remaining.putAll(needed);
             } else if (needed.containsKey(packingMaterial)) {
                 remaining.put(packingMaterial, needed.get(packingMaterial));

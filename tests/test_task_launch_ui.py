@@ -133,6 +133,20 @@ def test_material_liquid_submenu_has_two_exclusive_water_options_and_a_lava_opti
     assert 'skipLava.addEventListener("change", renderPreview);' in source
 
 
+def test_material_boxed_delivery_defaults_to_mixed_and_can_use_single_material_boxes() -> None:
+    html = read("tasks.html")
+    options = between(html, 'id="material-boxed-options"', "</div>")
+    assert 'id="material-single-material-boxes"' in options
+    assert 'type="checkbox" disabled' in options
+    assert "默认混装" in options
+
+    source = read("material-collection-ui.js")
+    assert "boxedOptions.hidden = !boxedDelivery.checked;" in source
+    assert ('singleMaterialBoxes.checked = '
+            'params?.singleMaterialBoxes?.toLowerCase() === "true"') in source
+    assert "singleMaterialBoxes: String(singleMaterialBoxes.checked)" in source
+
+
 def test_refresh_only_rereads_task_runs() -> None:
     javascript = read("tasks.js")
     refresh = between(

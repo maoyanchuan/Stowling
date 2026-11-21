@@ -660,13 +660,17 @@ public final class ConfigValidator {
             case dev.stowling.v2.model.MaterialRequirements.MODULE -> {
                 var materials = dev.stowling.v2.model.MaterialRequirements.PARAMETER;
                 var boxedDelivery = dev.stowling.v2.model.MaterialRequirements.BOXED_DELIVERY;
+                var singleMaterialBoxes =
+                        dev.stowling.v2.model.MaterialRequirements.SINGLE_MATERIAL_BOXES;
                 var iceInsteadOfWater =
                         dev.stowling.v2.model.MaterialRequirements.ICE_INSTEAD_OF_WATER;
                 var skipWater = dev.stowling.v2.model.MaterialRequirements.SKIP_WATER_BUCKETS;
                 var skipLava = dev.stowling.v2.model.MaterialRequirements.SKIP_LAVA;
                 requireParameters(step, Set.of(TARGET_REF, materials, boxedDelivery,
-                        iceInsteadOfWater, skipWater, skipLava), Set.of(TARGET_REF, materials));
+                        singleMaterialBoxes, iceInsteadOfWater, skipWater, skipLava),
+                        Set.of(TARGET_REF, materials));
                 requireOptionalBoolean(step, boxedDelivery);
+                requireOptionalBoolean(step, singleMaterialBoxes);
                 requireOptionalBoolean(step, iceInsteadOfWater);
                 requireOptionalBoolean(step, skipWater);
                 requireOptionalBoolean(step, skipLava);

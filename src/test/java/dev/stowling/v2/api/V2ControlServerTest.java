@@ -73,13 +73,15 @@ class V2ControlServerTest {
         String body = new Gson().toJson(Map.of(
                 "name", "Glass delivery",
                 "steps", List.of(Map.of("moduleId", "COLLECT_SCHEMATIC_MATERIALS",
-                        "parameters", Map.of("targetRef", target, "materials", requirements))),
+                        "parameters", Map.of("targetRef", target, "materials", requirements,
+                                "boxedDelivery", "true"))),
                 "cleanupPolicy", Map.of("destinationRef", target, "resumeMode", "CONTINUE")));
         try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
             var response = fixture.send("/v1/tasks", "POST", body, true);
             assertEquals(201, response.statusCode());
             var task = store.read().config().tasks().getFirst();
             assertEquals(requirements, task.steps().getFirst().parameters().get("materials"));
+            assertEquals("true", task.steps().getFirst().parameters().get("boxedDelivery"));
             assertEquals(target, task.cleanupPolicy().destinationRef());
             assertEquals(400, fixture.send("/v1/tasks", "POST",
                     body.replace("Glass delivery", "Invalid delivery").replace(":65", ":-65"),

@@ -12,9 +12,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.HopperMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
@@ -25,7 +30,9 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final ContainerTarget target;
     private MinecraftContainerVisit visit;
     private final Map<String, Integer> remaining;
-    private final Set<String> requestedBases;
+    private Set<String> requestedBases;
+    private Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan;
+    private final boolean quickWithdrawal;
     private final boolean withdraw;
     private final boolean inspect;
     private final boolean emptyBoxSupply;
@@ -52,6 +59,12 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         this(minecraft, context, target, requested, withdraw, inspect, false);
     }
 
+    static MinecraftStorageAccess collect(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget source, Function<List<ItemStack>, Map<String, Integer>> plan) {
+        return new MinecraftStorageAccess(minecraft, context, source, Map.of(),
+                true, false, false, plan);
+    }
+
     static MinecraftStorageAccess withdrawEmptyBox(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget supply, String key) {
         return new MinecraftStorageAccess(minecraft, context, supply, Map.of(key, 1),
@@ -61,16 +74,24 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
             boolean inspect, boolean emptyBoxSupply) {
+        this(minecraft, context, target, requested, withdraw, inspect, emptyBoxSupply, null);
+    }
+
+    private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
+            boolean inspect, boolean emptyBoxSupply,
+            Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan) {
         this.minecraft = minecraft;
         this.context = context;
         this.target = target;
         this.visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
         this.remaining = new LinkedHashMap<>(requested);
-        this.requestedBases = requested.keySet().stream().map(ItemIdentity::base)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        this.requestedBases = itemBases(requested);
         this.withdraw = withdraw;
         this.inspect = inspect;
         this.emptyBoxSupply = emptyBoxSupply;
+        this.withdrawalPlan = withdrawalPlan;
+        this.quickWithdrawal = withdrawalPlan != null;
     }
 
     List<ItemStack> contents() {
@@ -204,6 +225,12 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         if (inspect) {
             return finish(true, "已读取容器内容");
         }
+        if (withdrawalPlan != null) {
+            var planned = withdrawalPlan.apply(contents);
+            remaining.putAll(planned);
+            requestedBases = itemBases(planned);
+            withdrawalPlan = null;
+        }
         Move candidate = findMove(menu, Map.of());
         if (candidate == null) return finish(true, "容器存取已完成");
         pendingKey = candidate.key();
@@ -218,8 +245,13 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                     MinecraftInventoryPickups.count(minecraft, item)));
             pendingMoves.merge(key, candidate.amount(), Math::addExact);
             pendingCount += candidate.amount();
-            MinecraftContainerInteractions.moveExact(minecraft, menu, candidate.source(),
-                    candidate.destination(), candidate.amount());
+            if (candidate.destination() == -1) {
+                MinecraftContainerInteractions.click(minecraft, menu, candidate.source(), 0,
+                        ContainerInput.QUICK_MOVE);
+            } else {
+                MinecraftContainerInteractions.moveExact(minecraft, menu, candidate.source(),
+                        candidate.destination(), candidate.amount());
+            }
             batch.record(candidate.amount(), candidate.clicks());
             candidate = findMove(menu, pendingMoves);
         }
@@ -230,6 +262,9 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     }
 
     private Move findMove(AbstractContainerMenu menu, Map<String, Integer> planned) {
+        var destinations = slots(menu, withdraw);
+        boolean quick = quickWithdrawal && (menu instanceof ChestMenu
+                || menu instanceof ShulkerBoxMenu || menu instanceof HopperMenu);
         for (int source : slots(menu, !withdraw)) {
             Slot from = menu.getSlot(source);
             ItemStack stack = from.getItem();
@@ -242,13 +277,13 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             }
             wanted -= planned.getOrDefault(key, 0);
             if (wanted <= 0) continue;
-            for (int destination : slots(menu, withdraw)) {
+            if (quick && wanted >= stack.getCount() && destinations.stream().map(menu::getSlot)
+                    .mapToInt(slot -> capacity(slot, stack)).sum() >= stack.getCount()) {
+                return new Move(source, -1, key, stack.getCount(), 1);
+            }
+            for (int destination : destinations) {
                 Slot slot = menu.getSlot(destination);
-                ItemStack current = slot.getItem();
-                if (!slot.mayPlace(stack) || !current.isEmpty()
-                        && !ItemStack.isSameItemSameComponents(current, stack)) continue;
-                int capacity = slot.getMaxStackSize(stack) - current.getCount();
-                int amount = Math.min(Math.min(wanted, stack.getCount()), capacity);
+                int amount = Math.min(Math.min(wanted, stack.getCount()), capacity(slot, stack));
                 if (amount > 0) {
                     int clicks = ContainerClickPlan.exact(stack.getCount(), amount).size();
                     return new Move(source, destination, key, amount, clicks);
@@ -256,6 +291,20 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             }
         }
         return null;
+    }
+
+    private static int capacity(Slot slot, ItemStack stack) {
+        ItemStack current = slot.getItem();
+        if (!slot.mayPlace(stack) || !current.isEmpty()
+                && !ItemStack.isSameItemSameComponents(current, stack)) {
+            return 0;
+        }
+        return Math.max(0, slot.getMaxStackSize(stack) - current.getCount());
+    }
+
+    private static Set<String> itemBases(Map<String, Integer> requested) {
+        return requested.keySet().stream().map(ItemIdentity::base)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private record Move(int source, int destination, String key, int amount, int clicks) {

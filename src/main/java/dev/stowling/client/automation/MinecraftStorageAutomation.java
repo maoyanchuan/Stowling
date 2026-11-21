@@ -125,7 +125,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     public TaskModuleExecutor collectMaterials(TaskExecutionContext context, TaskStep step) {
         return new MaterialCollection(context,
                 ResourceReference.parse(step.parameters().get("targetRef")),
-                MaterialRequirements.parse(step.parameters().get(MaterialRequirements.PARAMETER)));
+                MaterialRequirements.parse(step.parameters().get(MaterialRequirements.PARAMETER)),
+                Boolean.parseBoolean(step.parameters().get(MaterialRequirements.BOXED_DELIVERY)));
     }
 
     @Override
@@ -817,8 +818,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class MaterialCollection extends Session {
         private final ResourceReference destination;
+        private final boolean boxedDelivery;
         private final Map<String, Integer> needed;
         private final Map<String, String> materialByKey = new LinkedHashMap<>();
+        private final Map<String, Map<String, Integer>> boxContentsByKey = new LinkedHashMap<>();
         private final Map<BlockPosition, Map<String, Integer>> observedDeliveries =
                 new LinkedHashMap<>();
         private List<ContainerTarget> destinations;
@@ -826,15 +829,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private AreaBounds destinationBounds;
         private String dimension;
         private String warehouseProblem;
+        private boolean canPackLoose;
         private int sourceIndex;
         private int unavailableSources;
         private boolean returningBox;
         private boolean stopAfterBox;
 
         MaterialCollection(TaskExecutionContext context, ResourceReference destination,
-                Map<String, Integer> required) {
+                Map<String, Integer> required, boolean boxedDelivery) {
             super(context);
             this.destination = destination;
+            this.boxedDelivery = boxedDelivery;
             needed = new LinkedHashMap<>(required);
         }
 
@@ -865,6 +870,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             destinations.forEach(target -> observedDeliveries.put(target.position(),
                     context.workspace().progress().deliveredTo(target.position())));
+            canPackLoose = !boxedDelivery || !emptyBoxSources(context).isEmpty();
             inspectDestination(0);
         }
 
@@ -930,48 +936,118 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             if (sourceIndex >= sources.size()) {
-                finishShort();
+                flush(() -> {
+                    if (!needed.isEmpty()) finishShort();
+                });
                 return;
             }
-            inspectSource(sources.get(sourceIndex++));
+            if (hasFullBatch()) {
+                flush(this::nextSource);
+                return;
+            }
+            collectFrom(sources.get(sourceIndex++));
         }
 
-        private void inspectSource(ContainerTarget source) {
+        private void collectFrom(ContainerTarget source) {
             if (needed.isEmpty()) {
                 return;
             }
-            read(source, contents -> takeFrom(source, contents), this::skipSource);
+            var access = MinecraftStorageAccess.collect(minecraft, context, source,
+                    this::planWithdrawal);
+            steps.add(new Step(access, () -> {
+                var contents = access.contents();
+                if (hasFullBatch()) {
+                    flush(() -> continueSource(source, contents));
+                } else {
+                    unpack(source, contents);
+                }
+            }, this::skipSource));
         }
 
-        private void takeFrom(ContainerTarget source, List<ItemStack> contents) {
-            Map<String, Integer> wanted = matching(contents);
-            if (!wanted.isEmpty()) {
-                withdraw(source, wanted, () -> {
-                    if (!owned().isEmpty()) {
-                        deliver(0, () -> inspectSource(source));
-                    } else {
-                        unpack(source, contents);
-                    }
-                }, this::skipSource);
+        private boolean hasFullBatch() {
+            return !owned().isEmpty()
+                    && (freeInventorySlots() <= packingReserve()
+                            || uncollected().isEmpty());
+        }
+
+        private int packingReserve() {
+            return boxedDelivery && owned().keySet().stream()
+                    .anyMatch(key -> !ItemIdentity.isBox(key)) ? 1 : 0;
+        }
+
+        private long freeInventorySlots() {
+            return minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .filter(ItemStack::isEmpty).count();
+        }
+
+        private void continueSource(ContainerTarget source, List<ItemStack> contents) {
+            if (needed.isEmpty()) {
+                return;
+            }
+            if (contents.stream().anyMatch(stack -> needed.containsKey(material(stack))
+                    || MinecraftItemIdentity.isBox(stack) && !isEmptyBox(stack)
+                            && materialsInBox(stack).keySet().stream().anyMatch(
+                                    needed::containsKey))) {
+                collectFrom(source);
             } else {
-                unpack(source, contents);
+                nextSource();
             }
         }
 
+        private Map<String, Integer> planWithdrawal(List<ItemStack> contents) {
+            Map<String, Integer> remaining = uncollected();
+            Map<String, Integer> wanted = new LinkedHashMap<>();
+            int free = (int) freeInventorySlots();
+            int packedSlots = 0;
+            if (boxedDelivery) {
+                int slotsForBoxes = Math.max(0, free - packingReserve());
+                for (ItemStack stack : contents) {
+                    if (slotsForBoxes == 0) break;
+                    if (!MinecraftItemIdentity.isBox(stack) || isEmptyBox(stack)) continue;
+                    var materials = materialsInBox(stack);
+                    int count = MaterialRequirements.reserveBoxes(remaining, materials,
+                            Math.min(stack.getCount(), slotsForBoxes));
+                    if (count > 0) {
+                        String key = MinecraftItemIdentity.key(stack);
+                        boxContentsByKey.put(key, materials);
+                        wanted.merge(key, count, Math::addExact);
+                        slotsForBoxes -= count;
+                        packedSlots += count;
+                    }
+                }
+            }
+            boolean canTakeLoose = canPackLoose && (!boxedDelivery || packedSlots < free);
+            Map<String, Integer> loose = matching(contents, remaining);
+            loose.forEach((key, count) -> {
+                if (canTakeLoose || ItemIdentity.isBox(key)) {
+                    wanted.put(key, count);
+                } else if (!canPackLoose) {
+                    warehouseProblem = "盒装散料需要在公共设施配置空潜影盒供应";
+                }
+            });
+            int reserve = boxedDelivery && canTakeLoose ? 1 : packingReserve();
+            return fitInventory(contents, wanted, reserve);
+        }
+
         private void unpack(ContainerTarget source, List<ItemStack> contents) {
+            var remaining = uncollected();
             ItemStack box = contents.stream().filter(MinecraftItemIdentity::isBox)
-                    .filter(stack -> !matching(MinecraftItemIdentity.contents(stack)
-                            .nonEmptyItemCopyStream().toList()).isEmpty())
+                    .filter(stack -> materialsInBox(stack).keySet().stream()
+                            .anyMatch(remaining::containsKey))
                     .findFirst().orElse(ItemStack.EMPTY);
             if (box.isEmpty()) {
+                nextSource();
+                return;
+            }
+            if (!canPackLoose) {
+                warehouseProblem = "装盒或拆取部分库存需要配置空潜影盒供应";
                 nextSource();
                 return;
             }
             if (!cleanupAvailable()) {
                 throw new IllegalStateException("拆取盒装材料前请配置任务中断存放位置");
             }
-            if (minecraft.player.getInventory().getNonEquipmentItems().stream()
-                    .noneMatch(ItemStack::isEmpty)) {
+            if (freeInventorySlots() == 0) {
                 skipSource();
                 return;
             }
@@ -996,56 +1072,96 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 resources.put(owner(), resource);
                 var boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
                 steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
-                        () -> read(boxTarget, items -> takeBoxMaterials(
-                                source, boxTarget, resource, items))));
+                        () -> takeBoxMaterials(source, boxTarget, resource)));
             }));
         }
 
         private void takeBoxMaterials(ContainerTarget source, ContainerTarget boxTarget,
-                MinecraftShulkerAction.Resource resource, List<ItemStack> contents) {
+                MinecraftShulkerAction.Resource resource) {
+            var before = owned();
+            var access = MinecraftStorageAccess.collect(minecraft, context, boxTarget,
+                    contents -> fitInventory(contents, matching(contents, uncollected()), 1));
+            Runnable settled = () -> {
+                boolean acquired = !owned().equals(before);
+                recover(() -> returnSourceBox(source, resource, acquired));
+            };
+            steps.add(new Step(access, settled, settled));
+        }
+
+        private void returnSourceBox(ContainerTarget source, MinecraftShulkerAction.Resource resource,
+                boolean acquired) {
+            String key = MinecraftItemIdentity.key(resource.expected);
+            var putBack = new MinecraftStorageAccess(minecraft, context, source,
+                    Map.of(key, 1), false, false);
+            steps.add(new Step(putBack, () -> {
+                returningBox = false;
+                if (putBack.remaining().getOrDefault(key, 0) != 0) {
+                    throw new IllegalStateException("仓库容器无法接收归还的潜影盒");
+                }
+                boolean deliveredDuringRecovery = creditDeliveries();
+                if (stopAfterBox) {
+                    super.requestStop();
+                } else if (hasFullBatch()) {
+                    flush(() -> collectFrom(source));
+                } else if (acquired || deliveredDuringRecovery) {
+                    collectFrom(source);
+                } else {
+                    skipSource();
+                }
+            }));
+        }
+
+        private Map<String, Integer> fitInventory(List<ItemStack> contents,
+                Map<String, Integer> wanted, int reserve) {
             var inventory = minecraft.player.getInventory().getNonEquipmentItems();
-            List<ShulkerTransferPlanner.Slot> occupied = inventory.stream()
-                    .filter(stack -> !stack.isEmpty())
-                    .map(stack -> new ShulkerTransferPlanner.Slot(MinecraftItemIdentity.key(stack),
-                            stack.getCount(), stack.getMaxStackSize())).toList();
             Map<String, Integer> sizes = new LinkedHashMap<>();
             contents.stream().filter(stack -> !stack.isEmpty()).forEach(stack ->
                     sizes.put(MinecraftItemIdentity.key(stack), stack.getMaxStackSize()));
-            var fits = ShulkerTransferPlanner.fittingInventory(occupied, inventory.size() - 1,
-                    matching(contents), sizes);
-            withdraw(boxTarget, fits, () -> recover(() -> {
-                String key = MinecraftItemIdentity.key(resource.expected);
-                var putBack = new MinecraftStorageAccess(minecraft, context, source,
-                        Map.of(key, 1), false, false);
-                steps.add(new Step(putBack, () -> {
-                    returningBox = false;
-                    if (putBack.remaining().getOrDefault(key, 0) != 0) {
-                        throw new IllegalStateException("仓库容器无法接收归还的潜影盒");
-                    }
-                    boolean deliveredDuringRecovery = creditDeliveries();
-                    if (stopAfterBox) {
-                        super.requestStop();
-                    } else if (!owned().isEmpty()) {
-                        deliver(0, () -> inspectSource(source));
-                    } else if (deliveredDuringRecovery) {
-                        inspectSource(source);
-                    } else {
-                        skipSource();
-                    }
-                }));
-            }), null);
+            return ShulkerTransferPlanner.fittingInventory(transferSlots(inventory),
+                    inventory.size() - reserve, wanted, sizes);
         }
 
-        private void withdraw(ContainerTarget source, Map<String, Integer> items,
-                Runnable after, Runnable failed) {
-            var action = new MinecraftStorageAccess(minecraft, context, source, items, true, false);
-            steps.add(new Step(action, after, failed == null ? null : () -> {
-                if (owned().isEmpty()) {
-                    failed.run();
-                } else {
-                    deliver(0, failed);
-                }
-            }));
+        private void flush(Runnable after) {
+            if (boxedDelivery) {
+                packLoose(() -> deliver(0, after));
+            } else {
+                deliver(0, after);
+            }
+        }
+
+        private void packLoose(Runnable after) {
+            Map<String, Integer> loose = new LinkedHashMap<>(owned());
+            loose.keySet().removeIf(ItemIdentity::isBox);
+            if (loose.isEmpty()) {
+                after.run();
+                return;
+            }
+            returningBox = true;
+            withdrawEmptyBox(0, empty -> {
+                BlockPosition site = chooseSite(context, destinations.getFirst(), null,
+                        configuration);
+                var resource = new MinecraftShulkerAction.Resource(site, empty);
+                resources.put(owner(), resource);
+                var boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
+                var items = fittingBoxItems(empty, loose);
+                steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                        () -> transfer(boxTarget, items, false,
+                                () -> recover(() -> finishPacking(resource, after)))));
+            });
+        }
+
+        private void finishPacking(MinecraftShulkerAction.Resource resource, Runnable after) {
+            returningBox = false;
+            var contents = materialsInBox(resource.expected);
+            if (contents.isEmpty()) {
+                throw new IllegalStateException("未能将材料装入潜影盒，剩余材料等待收尾");
+            }
+            boxContentsByKey.put(MinecraftItemIdentity.key(resource.expected), contents);
+            if (stopAfterBox) {
+                super.requestStop();
+            } else {
+                packLoose(after);
+            }
         }
 
         private void deliver(int index, Runnable after) {
@@ -1066,8 +1182,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             steps.add(new Step(action, settled, settled));
         }
 
-        private Map<String, Integer> matching(List<ItemStack> stacks) {
+        private Map<String, Integer> uncollected() {
             Map<String, Integer> remaining = new LinkedHashMap<>(needed);
+            owned().forEach((key, count) -> forEachMaterial(key, count, (material, amount) ->
+                    remaining.computeIfPresent(material, (ignored, left) ->
+                            amount < left ? left - amount : null)));
+            return remaining;
+        }
+
+        private Map<String, Integer> matching(List<ItemStack> stacks,
+                Map<String, Integer> remaining) {
             Map<String, Integer> result = new LinkedHashMap<>();
             for (ItemStack stack : stacks) {
                 String material = material(stack);
@@ -1080,6 +1204,23 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
             }
             return result;
+        }
+
+        private Map<String, Integer> materialsInBox(ItemStack box) {
+            Map<String, Integer> contents = new LinkedHashMap<>();
+            MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream().forEach(stack ->
+                    contents.merge(material(stack), stack.getCount(), Math::addExact));
+            return contents;
+        }
+
+        private void forEachMaterial(String key, int count,
+                java.util.function.ObjIntConsumer<String> consumer) {
+            var contents = boxContentsByKey.get(key);
+            if (contents != null) {
+                contents.forEach((material, amount) -> consumer.accept(material, amount * count));
+            } else {
+                consumer.accept(materialByKey.get(key), count);
+            }
         }
 
         private String material(ItemStack stack) {
@@ -1110,8 +1251,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 var previous = observedDeliveries.put(position, current);
                 if (!current.equals(previous)) {
                     changed = true;
-                    current.forEach((key, count) ->
-                            credit(materialByKey.get(key), count - previous.getOrDefault(key, 0)));
+                    current.forEach((key, count) -> forEachMaterial(key,
+                            count - previous.getOrDefault(key, 0), this::credit));
                 }
             }
             return changed;

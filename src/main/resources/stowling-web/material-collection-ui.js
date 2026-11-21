@@ -10,6 +10,8 @@
     const name = byId("material-name");
     const file = byId("material-file");
     const destination = byId("material-destination");
+    const boxedDelivery = byId("material-boxed-delivery");
+    const boxedNote = byId("material-boxed-note");
     const status = byId("material-status");
     const previewStatus = byId("material-preview-status");
     const preview = byId("material-preview");
@@ -81,6 +83,8 @@
         name.value = task?.name || "自动收集材料";
         file.value = "";
         renderDestinations(params?.targetRef || "");
+        boxedDelivery.checked = params?.boxedDelivery?.toLowerCase() === "true";
+        boxedNote.hidden = !boxedDelivery.checked;
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
         byId("material-editor-title").textContent = task ? "编辑 · 自动收集材料"
@@ -102,14 +106,17 @@
     function renderRows() {
         list.replaceChildren();
         for (const task of rows) {
-            const target = locations.get(task.steps[0].parameters.targetRef) || "交付位置";
+            const parameters = task.steps[0].parameters;
+            const target = locations.get(parameters.targetRef) || "交付位置";
+            const method = parameters.boxedDelivery?.toLowerCase() === "true"
+                ? "盒装交付" : "散装交付";
             const card = S.element("article", "move-saved-task");
             const head = S.element("div", "task-card-header");
             const summary = S.element("button", "move-task-summary");
             summary.type = "button";
             const overview = S.element("span", "move-task-overview");
             overview.append(S.element("strong", "", task.name),
-                S.element("span", "", `自动收集材料 · ${target}`));
+                S.element("span", "", `${method} · ${target}`));
             summary.append(S.element("span", "move-task-kind", "料"), overview);
             summary.addEventListener("click", () => openEditor(task));
             const run = S.element("button", "secondary compact", "运行");
@@ -210,7 +217,11 @@
             steps: [{
                 ...(current ? {id: current.step} : {}),
                 moduleId: moduleId,
-                parameters: {targetRef, materials: JSON.stringify(materials)}
+                parameters: {
+                    targetRef,
+                    materials: JSON.stringify(materials),
+                    boxedDelivery: String(boxedDelivery.checked)
+                }
             }],
             cleanupPolicy: {destinationRef: targetRef, resumeMode: "CONTINUE"}
         };
@@ -283,6 +294,9 @@
     byId("material-cancel").addEventListener("click", closeEditor);
     byId("refresh-move-tasks").addEventListener("click", () => void load());
     file.addEventListener("change", () => void parseFile());
+    boxedDelivery.addEventListener("change", () => {
+        boxedNote.hidden = !boxedDelivery.checked;
+    });
     form.addEventListener("submit", (event) => void save(event));
     document.addEventListener("stowling:tasks-changed", () => void load());
     S.onConnected(load);

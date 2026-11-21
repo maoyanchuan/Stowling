@@ -314,7 +314,10 @@ public final class TaskModuleCatalog {
                             reference(ConfigValidator.TARGET_REF, "交付位置",
                                     "resource-reference", true),
                             text(dev.stowling.v2.model.MaterialRequirements.PARAMETER,
-                                    "材料清单", true)
+                                    "材料清单", true),
+                            booleanParameter(
+                                    dev.stowling.v2.model.MaterialRequirements.BOXED_DELIVERY,
+                                    "按潜影盒交付", false)
                     )
             ),
             action(

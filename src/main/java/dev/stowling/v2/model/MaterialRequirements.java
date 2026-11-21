@@ -8,11 +8,27 @@ import java.util.regex.Pattern;
 public final class MaterialRequirements {
     public static final String MODULE = "COLLECT_SCHEMATIC_MATERIALS";
     public static final String PARAMETER = "materials";
+    public static final String BOXED_DELIVERY = "boxedDelivery";
     public static final String WATER_BOTTLE = "minecraft:potion[water]";
     private static final Pattern ITEM_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_./-]+");
     private static final int MAX_LENGTH = 56_000;
 
     private MaterialRequirements() {
+    }
+
+    public static int reserveBoxes(Map<String, Integer> remaining, Map<String, Integer> contents,
+            int available) {
+        if (contents.isEmpty()) {
+            return 0;
+        }
+        int count = available;
+        for (var entry : contents.entrySet()) {
+            count = Math.min(count, remaining.getOrDefault(entry.getKey(), 0) / entry.getValue());
+        }
+        int reserved = count;
+        contents.forEach((material, amount) -> remaining.computeIfPresent(material,
+                (ignored, left) -> left - amount * reserved));
+        return reserved;
     }
 
     public static Map<String, Integer> parse(String value) {

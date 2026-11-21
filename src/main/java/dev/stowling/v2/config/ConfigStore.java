@@ -539,7 +539,13 @@ public final class ConfigStore {
     private static void requireCachePolicy(JsonElement value) {
         if (value == null || value.isJsonNull()) return;
         JsonObject policy = requireObject(value, "cachePolicy");
-        requireExactFields(policy, "cachePolicy", Set.of("mode", "thresholdPercent"));
+        requireFields(policy, "cachePolicy", Set.of("enabled", "mode", "thresholdPercent"),
+                Set.of("mode", "thresholdPercent"));
+        JsonElement enabled = policy.get("enabled");
+        if (enabled != null && (!enabled.isJsonPrimitive()
+                || !enabled.getAsJsonPrimitive().isBoolean())) {
+            throw new V2ValidationException("cachePolicy.enabled 必须是布尔值");
+        }
         if (!policy.get("mode").isJsonPrimitive()
                 || !Set.of("PACK_FIRST", "CLASSIFY_FIRST")
                         .contains(policy.get("mode").getAsString())) {

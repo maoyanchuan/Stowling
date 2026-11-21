@@ -957,6 +957,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
     }
 
+    /** Experimental intake packing; ordinary collection never creates this session. */
     private final class CacheIntake extends Session {
         private final List<ContainerTarget> caches;
         private final boolean pack;

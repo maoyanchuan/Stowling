@@ -315,7 +315,9 @@ public final class TaskFlowNormalizer {
         if (second.kind() == TaskStepKind.REPEAT && second.steps().size() >= 3
                 && ConfigValidator.SCAN_CONTAINERS_IN_REGION
                         .equals(second.steps().getFirst().moduleId())) {
-            if (containsCacheIntake(second.steps())) return task;
+            if (containsCacheIntake(second.steps()) == definition.cachePolicy().enabled()) {
+                return task;
+            }
             List<TaskStep> body = new ArrayList<>(second.steps());
             body.set(1, remapStepIds(List.of(intake), definition.derivedId("cache-intake"))
                     .getFirst());

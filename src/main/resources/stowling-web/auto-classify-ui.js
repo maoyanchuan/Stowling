@@ -23,7 +23,7 @@
         active: false,
         expanded: false,
         warehouseSnapshot: null,
-        phase: { collection: false, classification: false }
+        phase: { collection: false, pickup: false, packing: false, classification: false }
     };
     const elements = {
         list: document.querySelector("#auto-task-list"),
@@ -38,6 +38,11 @@
         cache: document.querySelector("#auto-cache-region"),
         cacheMode: document.querySelector("#auto-cache-mode"),
         cacheThreshold: document.querySelector("#auto-cache-threshold"),
+        cacheEnabled: document.querySelector("#auto-cache-packing-enabled"),
+        pickupHeader: document.querySelector("#auto-pickup-toggle"),
+        pickupBody: document.querySelector("#auto-pickup-body"),
+        packingHeader: document.querySelector("#auto-packing-toggle"),
+        packingBody: document.querySelector("#auto-packing-body"),
         areas: document.querySelector("#auto-classification-areas"),
         addArea: document.querySelector("#add-auto-classification-area"),
         collectHeader: document.querySelector("#auto-collect-toggle"),
@@ -282,6 +287,7 @@
         elements.priority.value = draft.collectionPriority;
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
+        elements.cacheEnabled.checked = draft.cachePolicy.enabled;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         populateSelect(elements.cache, state.resources.regions, draft.cacheRegionId,
@@ -299,6 +305,7 @@
     function readForm() {
         if (!elements.collectEnabled.checked) {
             elements.classifyEnabled.checked = false;
+            elements.cacheEnabled.checked = false;
         }
         state.draft = {
             ...state.draft,
@@ -306,7 +313,7 @@
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
             cacheRegionId: elements.cache.value,
-            cachePolicy: {mode: elements.cacheMode.value,
+            cachePolicy: {enabled: elements.cacheEnabled.checked, mode: elements.cacheMode.value,
                 thresholdPercent: Number(elements.cacheThreshold.value)},
             classificationAreas: areaReaders.map((reader) => reader.read()),
             collectionPriority: elements.priority.value,
@@ -406,19 +413,21 @@
         }
         const phaseStates = [
             ["collection", elements.collectHeader, elements.collectBody],
+            ["pickup", elements.pickupHeader, elements.pickupBody],
+            ["packing", elements.packingHeader, elements.packingBody],
             ["classification", elements.classifyHeader, elements.classifyBody]
         ];
         for (const [phase, header, body] of phaseStates) {
             if (!header || !body) {
                 continue;
             }
-            const enabled = phase === "collection"
-                ? elements.collectEnabled.checked : elements.classifyEnabled.checked;
+            const enabled = phaseEnabled(phase);
             header.disabled = disabled || !enabled;
             header.title = enabled ? "展开或收起子任务设置" : "";
             header.setAttribute("aria-expanded", String(enabled && state.phase[phase]));
             void window.StowlingSettings.reveal(body, enabled && state.phase[phase]);
             header.closest(".auto-config-section").dataset.enabled = String(enabled);
+            if (phase === "collection") continue;
             for (const control of body.querySelectorAll("input, select, textarea, button")) {
                 if (!enabled && !phaseDisabledControls.has(control)) {
                     phaseDisabledControls.set(control, control.disabled);
@@ -453,24 +462,36 @@
         state.expanded = true;
         state.dirty = false;
         state.phase.collection = false;
+        state.phase.pickup = false;
+        state.phase.packing = false;
         state.phase.classification = false;
         syncForm();
         renderList();
         showMessage(item
-            ? "已保存；收集物品时将按缓存容量阈值执行所选策略。"
+            ? "已保存；可分别设置掉落物拾取和实验性打包缓存。"
             : "配置检测点、缓存区域与分类选区后保存任务。");
     }
 
     /**
-     * @param {"collection" | "classification"} phase
+     * @param {string} phase
+     * @returns {boolean}
+     */
+    function phaseEnabled(phase) {
+        if (phase === "pickup") return elements.collectEnabled.checked;
+        if (phase === "packing") return elements.cacheEnabled.checked;
+        if (phase === "classification") return elements.classifyEnabled.checked;
+        return true;
+    }
+
+    /**
+     * @param {string} phase
      * @returns {void}
      */
     function togglePhase(phase) {
         if (unavailable()) {
             return;
         }
-        const enabled = phase === "collection"
-            ? elements.collectEnabled.checked : elements.classifyEnabled.checked;
+        const enabled = phaseEnabled(phase);
         if (!enabled) return;
         if (phase === "classification" && !state.phase[phase]) {
             areaReaders.forEach(reader => reader.collapse());
@@ -633,9 +654,13 @@
         }
     });
     elements.collectHeader.addEventListener("click", () => togglePhase("collection"));
+    elements.pickupHeader.addEventListener("click", () => togglePhase("pickup"));
+    elements.packingHeader.addEventListener("click", () => togglePhase("packing"));
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
-    elements.collectBody.addEventListener("invalid", () => {
+    elements.collectBody.addEventListener("invalid", (event) => {
         state.phase.collection = true;
+        if (elements.pickupBody.contains(event.target)) state.phase.pickup = true;
+        if (elements.packingBody.contains(event.target)) state.phase.packing = true;
         updateControls();
     }, true);
     elements.classifyBody.addEventListener("invalid", () => {
@@ -653,11 +678,15 @@
             }
         }
         if (event.target === elements.collectEnabled) {
-            state.phase.collection = elements.collectEnabled.checked;
+            state.phase.pickup = elements.collectEnabled.checked;
             if (!elements.collectEnabled.checked) {
                 elements.classifyEnabled.checked = false;
                 state.phase.classification = false;
             }
+        }
+        if (event.target === elements.cacheEnabled) {
+            state.phase.packing = elements.cacheEnabled.checked;
+            if (elements.cacheEnabled.checked) elements.collectEnabled.checked = true;
         }
         readForm();
         state.dirty = true;

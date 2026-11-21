@@ -981,10 +981,11 @@ public final class V2ControlServer implements AutoCloseable {
     private static dev.stowling.v2.model.CacheIntakePolicy cachePolicy(JsonObject json) {
         if (!json.has("cachePolicy") || json.get("cachePolicy").isJsonNull()) return null;
         JsonObject policy = jsonObject(json.get("cachePolicy"), "cachePolicy");
-        requireFieldsAny(policy, Set.of("mode", "thresholdPercent"),
+        requireFieldsAny(policy, Set.of("enabled", "mode", "thresholdPercent"),
                 Set.of("mode", "thresholdPercent"));
         try {
             return new dev.stowling.v2.model.CacheIntakePolicy(
+                    optionalBoolean(policy, "enabled"),
                     dev.stowling.v2.model.CacheIntakePolicy.Mode.valueOf(string(policy, "mode")),
                     integer(policy, "thresholdPercent"));
         } catch (IllegalArgumentException exception) {

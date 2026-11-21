@@ -190,7 +190,7 @@ class V2ControlServerTest {
                 "pickupRadius":8},"cacheRegionRef":"region:%s",
                 "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
                 "collectionPriority":"NORMAL",
-                "cachePolicy":{"mode":"CLASSIFY_FIRST","thresholdPercent":65}}
+                "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65}}
                 """.formatted(point.id(), region.id(), zone.id());
         try (Fixture fixture = new Fixture(service)) {
             assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST", body, false)
@@ -199,6 +199,7 @@ class V2ControlServerTest {
             assertEquals(201, response.statusCode());
             var item = object(response).getAsJsonObject("item");
             assertFalse(item.get("enabled").getAsBoolean());
+            assertTrue(item.getAsJsonObject("cachePolicy").get("enabled").getAsBoolean());
             assertEquals("CLASSIFY_FIRST",
                     item.getAsJsonObject("cachePolicy").get("mode").getAsString());
             assertEquals(65,
@@ -209,6 +210,8 @@ class V2ControlServerTest {
             assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
                     body.replace("\"thresholdPercent\":65", "\"thresholdPercent\":101"), true)
                     .statusCode());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"enabled\":true", "\"enabled\":\"true\""), true).statusCode());
             var area = item.getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
             assertEquals("category-zone:" + zone.id(), area.get("categoryZoneRef").getAsString());
             assertTrue(!area.has("ruleId"));

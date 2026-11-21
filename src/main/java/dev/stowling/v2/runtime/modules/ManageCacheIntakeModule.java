@@ -8,7 +8,7 @@ import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.runtime.TaskFlowExecutor;
 import java.util.List;
 
-/** Handles cache pressure inside collection so a background sort cannot be starved. */
+/** Experimental cache pressure handling, generated only when packing intake is enabled. */
 final class ManageCacheIntakeModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final CacheIntakePolicy policy;

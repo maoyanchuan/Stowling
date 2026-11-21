@@ -4556,6 +4556,24 @@ button:active:not(:disabled) {
     min-width: 0;
 }
 
+.auto-cache-submenu + .auto-cache-submenu {
+    margin-top: 0.75rem;
+}
+
+.auto-cache-submenu .auto-phase-toggle > strong {
+    flex: 1;
+    font-size: 0.84rem;
+}
+
+.auto-experimental-tag {
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
 .auto-phase-toggle {
     display: flex;
     align-items: center;

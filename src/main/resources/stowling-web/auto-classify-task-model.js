@@ -3,6 +3,9 @@
 
     const DEFAULT_NAME = "自动分类";
     const DEFAULT_PICKUP_RADIUS = "8";
+    const DEFAULT_CACHE_POLICY = Object.freeze({
+        enabled: false, mode: "PACK_FIRST", thresholdPercent: 80
+    });
     const COLLECTION_PRIORITIES = Object.freeze([
         "NORMAL",
         "URGENT"
@@ -116,7 +119,7 @@
             coordinateId: "",
             pickupRadius: DEFAULT_PICKUP_RADIUS,
             cacheRegionId: "",
-            cachePolicy: {mode: "PACK_FIRST", thresholdPercent: 80},
+            cachePolicy: {...DEFAULT_CACHE_POLICY},
             classificationAreas: [newArea()],
             collectionPriority: "NORMAL",
             enabled: false,
@@ -145,8 +148,7 @@
                 ? ""
                 : String(detection.pickupRadius),
             cacheRegionId: referencedId(item?.cacheRegionRef, "region"),
-            cachePolicy: item?.cachePolicy
-                ? {...item.cachePolicy} : {mode: "PACK_FIRST", thresholdPercent: 80},
+            cachePolicy: {...DEFAULT_CACHE_POLICY, ...item?.cachePolicy},
             classificationAreas: Array.isArray(item?.classificationAreas)
                 ? item.classificationAreas.map((area) => ({
                     categoryZoneId: referencedId(
@@ -213,7 +215,10 @@
      */
     function validateDraft(draft, resources, items, allTasks = []) {
         const errors = [];
-        const policy = draft?.cachePolicy || {mode: "PACK_FIRST", thresholdPercent: 80};
+        const policy = {...DEFAULT_CACHE_POLICY, ...draft?.cachePolicy};
+        if (typeof policy.enabled !== "boolean") {
+            errors.push("打包缓存开关需为布尔值");
+        }
         if (!["PACK_FIRST", "CLASSIFY_FIRST"].includes(policy.mode)) {
             errors.push("请选择缓存打包优先或分类优先");
         }
@@ -266,7 +271,7 @@
             errors.push("启用状态需为布尔值");
         }
         if (typeof draft?.collectionEnabled !== "boolean") {
-            errors.push("启用缓存需为布尔值");
+            errors.push("掉落物拾取需为布尔值");
         }
         if (typeof draft?.classificationEnabled !== "boolean") {
             errors.push("后台分类需为布尔值");
@@ -303,7 +308,7 @@
                 pickupRadius: parsedRadius(draft.pickupRadius)
             },
             cacheRegionRef: reference("region", draft.cacheRegionId),
-            cachePolicy: draft.cachePolicy || {mode: "PACK_FIRST", thresholdPercent: 80},
+            cachePolicy: {...DEFAULT_CACHE_POLICY, ...draft.cachePolicy},
             classificationAreas: draft.classificationAreas.map((area) => ({
                 categoryZoneRef: reference(
                     "category-zone",

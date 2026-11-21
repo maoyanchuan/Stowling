@@ -122,7 +122,7 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "coordinateId": "",
         "pickupRadius": "8",
         "cacheRegionId": "",
-        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
+        "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
         }],
@@ -180,7 +180,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "coordinateId": "coordinate-1",
         "pickupRadius": "12",
         "cacheRegionId": "cache-1",
-        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
+        "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
             "storagePolicy": None,
@@ -231,7 +231,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "coordinateId": "",
         "pickupRadius": "8",
         "cacheRegionId": "",
-        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
+        "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
             "storagePolicy": None,
@@ -330,7 +330,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
             "pickupRadius": 8,
         },
         "cacheRegionRef": "region:region-1",
-        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
+        "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
             "storagePolicy": None,
@@ -365,7 +365,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "coordinateId": "coordinate-1",
         "pickupRadius": "8",
         "cacheRegionId": "region-1",
-        "cachePolicy": {"mode": "PACK_FIRST", "thresholdPercent": 80},
+        "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
             "storagePolicy": None,
@@ -718,7 +718,7 @@ def test_phase_enable_flags_are_strict_and_round_trip() -> None:
     assert result["body"]["collectionEnabled"] is False
     assert result["body"]["classificationEnabled"] is True
     assert result["invalid"] == [
-        "启用缓存需为布尔值",
+        "掉落物拾取需为布尔值",
         "后台分类需为布尔值",
     ]
     assert result["roundTrip"]["collectionEnabled"] is False
@@ -758,7 +758,7 @@ def test_cache_policy_defaults_and_selected_settings_survive_payload_round_trip(
             const model = window.StowlingAutoClassifyTaskModel;
             const draft = {...model.newDraft(), coordinateId: "pickup", cacheRegionId: "cache",
                 classificationAreas: [{categoryZoneId: "zone"}],
-                cachePolicy: {mode: "CLASSIFY_FIRST", thresholdPercent: 65}};
+                cachePolicy: {enabled: true, mode: "CLASSIFY_FIRST", thresholdPercent: 65}};
             const resources = {coordinates: [{id: "pickup"}], regions: [{id: "cache"}],
                 categoryZones: [{id: "zone"}]};
             const payload = model.payload(draft, resources, []);
@@ -769,8 +769,8 @@ def test_cache_policy_defaults_and_selected_settings_survive_payload_round_trip(
         })()
         """
     )
-    default = {"mode": "PACK_FIRST", "thresholdPercent": 80}
-    selected = {"mode": "CLASSIFY_FIRST", "thresholdPercent": 65}
+    default = {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80}
+    selected = {"enabled": True, "mode": "CLASSIFY_FIRST", "thresholdPercent": 65}
     assert result == {"defaults": default, "legacy": default,
                       "saved": selected, "reopened": selected}
 
@@ -788,3 +788,43 @@ def test_cache_policy_rejects_invalid_percentages(threshold: float) -> None:
         """
     )
     assert "缓存容量阈值必须为 1 到 100 的整数百分比" in result
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_packing_switch_survives_save_without_losing_its_settings(enabled: bool) -> None:
+    result = _run(
+        f"""
+        (() => {{
+            const model = window.StowlingAutoClassifyTaskModel;
+            const draft = {{...model.newDraft(), coordinateId: "pickup", cacheRegionId: "cache",
+                classificationAreas: [{{categoryZoneId: "zone"}}],
+                cachePolicy: {{enabled: {json.dumps(enabled)},
+                    mode: "CLASSIFY_FIRST", thresholdPercent: 65}}}};
+            const resources = {{coordinates: [{{id: "pickup"}}], regions: [{{id: "cache"}}],
+                categoryZones: [{{id: "zone"}}]}};
+            return model.draftFromTask(model.payload(draft, resources, [])).cachePolicy;
+        }})()
+        """
+    )
+    assert result == {"enabled": enabled, "mode": "CLASSIFY_FIRST", "thresholdPercent": 65}
+
+
+def test_legacy_packing_policy_is_disabled_but_keeps_its_selected_values() -> None:
+    result = _run(
+        "window.StowlingAutoClassifyTaskModel.draftFromTask({cachePolicy: "
+        "{mode: 'CLASSIFY_FIRST', thresholdPercent: 65}}).cachePolicy"
+    )
+    assert result == {"enabled": False, "mode": "CLASSIFY_FIRST", "thresholdPercent": 65}
+
+
+@pytest.mark.parametrize("enabled", [None, 0, "true"])
+def test_packing_switch_rejects_non_boolean_values(enabled: Any) -> None:
+    result = _run(
+        f"""
+        window.StowlingAutoClassifyTaskModel.validateDraft({{
+            ...window.StowlingAutoClassifyTaskModel.newDraft(),
+            cachePolicy: {{enabled: {json.dumps(enabled)}, mode: "PACK_FIRST", thresholdPercent: 80}}
+        }}, {{}}, [])
+        """
+    )
+    assert "打包缓存开关需为布尔值" in result

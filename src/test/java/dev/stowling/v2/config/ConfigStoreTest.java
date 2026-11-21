@@ -32,7 +32,7 @@ class ConfigStoreTest {
         AppConfig initial = automaticConfiguration(false);
         var original = initial.autoClassifyTasks().getFirst();
         var policy = new dev.stowling.v2.model.CacheIntakePolicy(
-                dev.stowling.v2.model.CacheIntakePolicy.Mode.CLASSIFY_FIRST, 65);
+                true, dev.stowling.v2.model.CacheIntakePolicy.Mode.CLASSIFY_FIRST, 65);
         var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
                 true, true, original.detectionCoordinateRef(), original.pickupRadius(),
                 original.cacheRegionRef(), original.classificationAreas(),
@@ -47,6 +47,14 @@ class ConfigStoreTest {
 
         assertEquals(policy, new ConfigStore(path).loadOrReset().config()
                 .autoClassifyTasks().getFirst().cachePolicy());
+        var legacy = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        legacy.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonObject("cachePolicy").remove("enabled");
+        Files.writeString(path, legacy.toString());
+        var migrated = new ConfigStore(path).loadOrReset().config()
+                .autoClassifyTasks().getFirst().cachePolicy();
+        assertTrue(!migrated.enabled());
+        assertEquals(65, migrated.thresholdPercent());
     }
 
     @Test

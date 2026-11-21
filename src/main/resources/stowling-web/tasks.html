@@ -424,74 +424,137 @@
                                                     <span class="move-task-chevron"
                                                           aria-hidden="true">⌄</span>
                                                 </button>
-                                                <label class="auto-phase-switch"
-                                                       for="auto-collect-enabled">
-                                                    <span class="visually-hidden">
-                                                        启用缓存
-                                                    </span>
-                                                    <input id="auto-collect-enabled"
-                                                           type="checkbox" role="switch">
-                                                    <span class="auto-switch-track"
-                                                          aria-hidden="true"></span>
-                                                </label>
                                             </div>
                                             <div id="auto-collect-body"
                                                  class="auto-phase-body" hidden>
-                                                <div class="auto-field-grid">
-                                                    <label class="move-field"
-                                                           for="auto-detection-point">
-                                                        <span>掉落物检测点</span>
-                                                        <select id="auto-detection-point" required>
-                                                            <option value="">请选择坐标点</option>
-                                                        </select>
-                                                    </label>
-                                                    <label class="move-field"
-                                                           for="auto-pickup-radius">
-                                                        <span>检测与拾取半径（格）</span>
-                                                        <input id="auto-pickup-radius"
-                                                               type="number" min="1" max="64"
-                                                               step="1" value="8">
-                                                    </label>
-                                                </div>
-                                                <label class="move-field"
-                                                       for="auto-cache-region">
-                                                    <span>缓存区域</span>
-                                                    <select id="auto-cache-region" required>
-                                                        <option value="">
-                                                            请选择包含缓存箱子的区域
-                                                        </option>
-                                                    </select>
-                                                </label>
-                                                <p class="auto-config-note">
-                                                    扫描区域内的多个箱子，只存入本次拾取的物品，
-                                                    不动原有工具和食物。
-                                                </p>
-                                                <div class="move-fields">
-                                                    <label class="move-field"
-                                                           for="auto-cache-mode">
-                                                        <span>缓存达到阈值后</span>
-                                                        <select id="auto-cache-mode">
-                                                            <option value="PACK_FIRST">
-                                                                打包优先
-                                                            </option>
-                                                            <option value="CLASSIFY_FIRST">
-                                                                分类优先
-                                                            </option>
-                                                        </select>
-                                                    </label>
-                                                    <label class="move-field"
-                                                           for="auto-cache-threshold">
-                                                        <span>缓存容量阈值（%）</span>
-                                                        <input id="auto-cache-threshold"
-                                                               type="number" min="1" max="100"
-                                                               step="1" value="80" required>
-                                                    </label>
-                                                </div>
-                                                <p class="auto-config-note">
-                                                    按所有缓存箱已占用的槽位计算，默认 80%。
-                                                    打包优先会将投料装盒回存，盒子也放不下时再分类；
-                                                    分类优先会先腾出缓存空间。装盒需要空潜影盒供应。
-                                                </p>
+                                                <section class="auto-config-section
+                                                                auto-cache-submenu"
+                                                         aria-labelledby="auto-pickup-title">
+                                                    <div class="auto-phase-header">
+                                                        <button id="auto-pickup-toggle"
+                                                                class="auto-phase-toggle"
+                                                                type="button"
+                                                                aria-expanded="false"
+                                                                aria-controls="auto-pickup-body">
+                                                            <strong id="auto-pickup-title">
+                                                                掉落物拾取
+                                                            </strong>
+                                                            <span class="move-task-chevron"
+                                                                  aria-hidden="true">⌄</span>
+                                                        </button>
+                                                        <label class="auto-phase-switch"
+                                                               for="auto-collect-enabled">
+                                                            <span class="visually-hidden">
+                                                                掉落物拾取
+                                                            </span>
+                                                            <input id="auto-collect-enabled"
+                                                                   type="checkbox" role="switch">
+                                                            <span class="auto-switch-track"
+                                                                  aria-hidden="true"></span>
+                                                        </label>
+                                                    </div>
+                                                    <div id="auto-pickup-body"
+                                                         class="auto-phase-body" hidden>
+                                                        <div class="auto-field-grid">
+                                                            <label class="move-field"
+                                                                   for="auto-detection-point">
+                                                                <span>掉落物检测点</span>
+                                                                <select id="auto-detection-point"
+                                                                        required>
+                                                                    <option value="">
+                                                                        请选择坐标点
+                                                                    </option>
+                                                                </select>
+                                                            </label>
+                                                            <label class="move-field"
+                                                                   for="auto-pickup-radius">
+                                                                <span>检测与拾取半径（格）</span>
+                                                                <input id="auto-pickup-radius"
+                                                                       type="number" min="1"
+                                                                       max="64"
+                                                                       step="1" value="8">
+                                                            </label>
+                                                        </div>
+                                                        <label class="move-field"
+                                                               for="auto-cache-region">
+                                                            <span>缓存区域</span>
+                                                            <select id="auto-cache-region" required>
+                                                                <option value="">
+                                                                    请选择包含缓存箱子的区域
+                                                                </option>
+                                                            </select>
+                                                        </label>
+                                                        <p class="auto-config-note">
+                                                            扫描区域内的多个箱子，只存入本次拾取的物品，
+                                                            不动原有工具和食物。
+                                                        </p>
+                                                    </div>
+                                                </section>
+                                                <section class="auto-config-section
+                                                                auto-cache-submenu"
+                                                         aria-labelledby="auto-packing-title">
+                                                    <div class="auto-phase-header">
+                                                        <button id="auto-packing-toggle"
+                                                                class="auto-phase-toggle"
+                                                                type="button"
+                                                                aria-expanded="false"
+                                                                aria-controls="auto-packing-body">
+                                                            <strong id="auto-packing-title">
+                                                                打包缓存
+                                                            </strong>
+                                                            <span class="auto-experimental-tag">
+                                                                实验性
+                                                            </span>
+                                                            <span class="move-task-chevron"
+                                                                  aria-hidden="true">⌄</span>
+                                                        </button>
+                                                        <label class="auto-phase-switch"
+                                                               for="auto-cache-packing-enabled">
+                                                            <span class="visually-hidden">
+                                                                打包缓存（实验性）
+                                                            </span>
+                                                            <input id="auto-cache-packing-enabled"
+                                                                   type="checkbox" role="switch">
+                                                            <span class="auto-switch-track"
+                                                                  aria-hidden="true"></span>
+                                                        </label>
+                                                    </div>
+                                                    <div id="auto-packing-body"
+                                                         class="auto-phase-body" hidden>
+                                                        <p class="auto-config-note">
+                                                            实验性功能，默认关闭。开启后，在拾取过程中
+                                                            处理缓存容量不足，尝试装盒或分类腾出空间。
+                                                            关闭后只执行普通拾取和存入缓存。
+                                                        </p>
+                                                        <div class="move-fields">
+                                                            <label class="move-field"
+                                                                   for="auto-cache-mode">
+                                                                <span>缓存达到阈值后</span>
+                                                                <select id="auto-cache-mode">
+                                                                    <option value="PACK_FIRST">
+                                                                        打包优先
+                                                                    </option>
+                                                                    <option value="CLASSIFY_FIRST">
+                                                                        分类优先
+                                                                    </option>
+                                                                </select>
+                                                            </label>
+                                                            <label class="move-field"
+                                                                   for="auto-cache-threshold">
+                                                                <span>缓存容量阈值（%）</span>
+                                                                <input id="auto-cache-threshold"
+                                                                       type="number" min="1"
+                                                                       max="100"
+                                                                       step="1" value="80" required>
+                                                            </label>
+                                                        </div>
+                                                        <p class="auto-config-note">
+                                                            按所有缓存箱已占用的槽位计算，默认 80%。
+                                                            打包优先会将投料装盒回存，盒子也放不下时再分类；
+                                                            分类优先会先腾出缓存空间。装盒需要空潜影盒供应。
+                                                        </p>
+                                                    </div>
+                                                </section>
                                                 <label class="move-field move-priority"
                                                        for="auto-collect-priority">
                                                     <span>收集优先级</span>

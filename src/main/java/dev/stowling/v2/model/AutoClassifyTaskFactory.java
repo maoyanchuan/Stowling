@@ -42,19 +42,21 @@ public final class AutoClassifyTaskFactory {
                 ResourceType.TASK,
                 definition.interruptionTaskId()
         ).encode();
+        Map<String, String> collectionParameters = new LinkedHashMap<>();
+        collectionParameters.put(ConfigValidator.PICKUP_RADIUS,
+                Integer.toString(definition.pickupRadius()));
+        if (definition.cachePolicy().enabled()) {
+            collectionParameters.put("cacheIntakeMode", definition.cachePolicy().mode().name());
+            collectionParameters.put("cacheThresholdPercent",
+                    Integer.toString(definition.cachePolicy().thresholdPercent()));
+            collectionParameters.put("classificationTaskRef",
+                    definition.classificationEnabled() ? classificationRef : "");
+        }
         List<TaskStep> collectionSteps = new ArrayList<>(
                 TaskFlowTemplates.collect(
                         definition.detectionCoordinateRef(),
                         definition.cacheRegionRef(),
-                        Map.of(
-                                ConfigValidator.PICKUP_RADIUS,
-                                Integer.toString(definition.pickupRadius()),
-                                "cacheIntakeMode", definition.cachePolicy().mode().name(),
-                                "cacheThresholdPercent",
-                                Integer.toString(definition.cachePolicy().thresholdPercent()),
-                                "classificationTaskRef",
-                                definition.classificationEnabled() ? classificationRef : ""
-                        )
+                        collectionParameters
                 )
         );
         if (definition.classificationEnabled()) {

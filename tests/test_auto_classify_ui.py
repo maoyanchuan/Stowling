@@ -98,8 +98,8 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
 
     assert 'aria-expanded="false"' in collect_header
     assert 'aria-controls="auto-collect-body"' in collect_header
-    assert 'id="auto-collect-enabled"' in collect_header
-    assert 'role="switch"' in collect_header
+    assert 'id="auto-collect-enabled"' not in collect_header
+    assert 'id="auto-collect-enabled"' in collect_body
     assert "hidden" in collect_body
     assert 'aria-expanded="false"' in sort_header
     assert 'aria-controls="auto-sort-body"' in sort_header
@@ -121,6 +121,30 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "reveal(body, enabled && state.phase[phase])" in javascript
     assert "header.disabled = disabled || !enabled" in javascript
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
+
+
+def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
+    html = read("tasks.html")
+    javascript = read("auto-classify-ui.js")
+    collect = between(html, 'id="auto-collect-body"', 'for="auto-collect-priority"')
+    pickup = between(collect, 'id="auto-pickup-toggle"', 'id="auto-packing-toggle"')
+    packing = between(collect, 'id="auto-packing-toggle"', '</section>')
+
+    assert "掉落物拾取" in pickup
+    assert 'id="auto-collect-enabled"' in pickup
+    for field in ("auto-detection-point", "auto-pickup-radius", "auto-cache-region"):
+        assert f'id="{field}"' in pickup
+        assert f'id="{field}"' not in packing
+    assert "打包缓存" in packing
+    assert "实验性" in packing
+    assert "默认关闭" in packing
+    assert 'id="auto-cache-packing-enabled"' in packing
+    assert 'id="auto-cache-mode"' in packing
+    assert 'id="auto-cache-threshold"' in packing
+    assert 'role="switch"' in packing
+    assert 'togglePhase("pickup")' in javascript
+    assert 'togglePhase("packing")' in javascript
+    assert "enabled: elements.cacheEnabled.checked" in javascript
 
 
 def test_robot_warehouse_keeps_only_a_switch_inside_the_classification_task() -> None:
@@ -226,7 +250,7 @@ def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:
     assert "collectionEnabled: elements.collectEnabled.checked" in form_reader
     assert "classificationEnabled: elements.classifyEnabled.checked" in form_reader
     assert "length ?" not in form_reader
-    assert "enabled:" not in form_reader
+    assert "\n            enabled:" not in form_reader
 
 
 def test_auto_ui_saves_settings_without_changing_listening() -> None:

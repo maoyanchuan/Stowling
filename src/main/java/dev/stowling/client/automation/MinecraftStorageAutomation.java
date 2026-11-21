@@ -12,6 +12,8 @@ import dev.stowling.automation.PartialBoxSourcePlan;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedStorageCapacity;
 import dev.stowling.inventory.WarehouseInventory;
+import dev.stowling.v2.cache.RobotWarehouseCache;
+import dev.stowling.v2.cache.RobotWarehouseCache.Location;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.MaterialRequirements;
@@ -30,6 +32,7 @@ import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
 import dev.stowling.v2.runtime.modules.TaskRunWorkspace;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -44,12 +47,14 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.level.storage.LevelResource;
 
 /** Shared packing and cleanup coordinator. One active task owns the client's interaction slot. */
 public final class MinecraftStorageAutomation implements StorageAutomationPort {
@@ -58,6 +63,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final dev.stowling.automation.ContainerRegionPort containerRegions;
     private final Supplier<WarehouseInventory> warehouse;
     private final Supplier<WarehouseInventory> materialWarehouse;
+    private final RobotWarehouseCache robotWarehouse;
     private final Map<UUID, MinecraftShulkerAction.Resource> resources = new LinkedHashMap<>();
     private final Map<TaskRunWorkspace, Map<BlockPosition, CacheSnapshot>> cacheSnapshotsByRun =
             new WeakHashMap<>();
@@ -86,6 +92,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         this.containerRegions = containerRegions;
         this.warehouse = warehouse;
         this.materialWarehouse = materialWarehouse;
+        robotWarehouse = new RobotWarehouseCache(FabricLoader.getInstance().getConfigDir()
+                .resolve("stowling-robot-warehouse-cache.json"));
     }
 
     @Override
@@ -227,13 +235,42 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public TaskModuleExecutor cleanup(TaskExecutionContext context, boolean overflowEnabled) {
-        return new Cleanup(context, overflowEnabled);
+        return new Cleanup(context, overflowEnabled, false);
     }
 
     @Override
-    public TaskModuleExecutor overflow(TaskExecutionContext context,
-            dev.stowling.v2.model.RegionDefinition cacheRegion) {
-        return new Overflow(context, cacheRegion);
+    public TaskModuleExecutor cleanupToRobotWarehouse(TaskExecutionContext context) {
+        return new Cleanup(context, true, true);
+    }
+
+    @Override
+    public TaskModuleExecutor overflow(TaskExecutionContext context, RegionDefinition cacheRegion) {
+        return new Overflow(context, cacheRegion, false);
+    }
+
+    @Override
+    public TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
+            RegionDefinition cacheRegion) {
+        return new Overflow(context, cacheRegion, true);
+    }
+
+    private String robotWarehouseScope() {
+        if (minecraft.level == null || minecraft.player == null) {
+            throw new IllegalStateException("进入世界后才能使用机器人仓库");
+        }
+        var local = minecraft.getSingleplayerServer();
+        var remote = minecraft.getCurrentServer();
+        String world;
+        if (local != null) {
+            world = "world:" + local.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
+        } else if (remote != null && !remote.ip.isBlank()) {
+            world = "server:" + remote.ip;
+        } else {
+            throw new IllegalStateException("无法识别当前世界的机器人仓库缓存");
+        }
+        String scope = world + "\n" + minecraft.player.getUUID() + "\n"
+                + minecraft.level.dimension().identifier();
+        return UUID.nameUUIDFromBytes(scope.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private List<ContainerTarget> emptyBoxSources(TaskExecutionContext context) {
@@ -246,7 +283,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     private List<ContainerTarget> overflowContainers() {
-        return dev.stowling.automation.TemporaryContainerResolver.resolve(settings.overflowPositions(),
+        String dimension = minecraft.level.dimension().identifier().toString();
+        return TemporaryContainerResolver.resolve(settings.overflowPositions(dimension),
                 settings.overflowRegions(), containerRegions,
                 Set.copyOf(settings.resolved().emptyBoxContainers()), "溢出");
     }
@@ -2912,6 +2950,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final class Overflow extends Session {
         private boolean initialized;
         private final RegionDefinition cacheRegion;
+        private final boolean boxedOnly;
+        private String warehouseScope;
         private List<ContainerTarget> cacheSources = List.of();
         private List<ContainerTarget> destinations;
         private RegionDefinition unstackableRegion;
@@ -2928,9 +2968,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private final Set<String> unusableBoxes = new java.util.HashSet<>();
         private final Set<String> undrainableBoxes = new java.util.HashSet<>();
 
-        Overflow(TaskExecutionContext context, RegionDefinition cacheRegion) {
+        Overflow(TaskExecutionContext context, RegionDefinition cacheRegion, boolean boxedOnly) {
             super(context);
             this.cacheRegion = cacheRegion;
+            this.boxedOnly = boxedOnly;
         }
 
         @Override
@@ -2940,11 +2981,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (!cleanupAvailable()) {
                 throw new IllegalStateException("溢出打包前请配置任务中断存放位置");
             }
+            warehouseScope = robotWarehouseScope();
             destinations = overflowContainers();
             if (destinations.isEmpty()) {
                 throw new IllegalStateException("请先在公共设施配置溢出箱或溢出区域");
             }
-            unstackableRegion = settings.unstackableOverflowRegion();
+            robotWarehouse.prepare();
+            unstackableRegion = boxedOnly ? null : settings.unstackableOverflowRegion();
             if (unstackableRegion != null) {
                 reservedPositions.addAll(configuration.emptyBoxContainers());
                 destinations.forEach(target -> reservedPositions.addAll(target.entrances()));
@@ -3002,7 +3045,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
                 if (!unstackable.isEmpty()) {
                     unpackOverflowBox(unstackable, true);
-                } else if (MinecraftItemIdentity.full(box)
+                } else if (boxedOnly || MinecraftItemIdentity.full(box)
                         || undrainableBoxes.contains(MinecraftItemIdentity.key(box))) {
                     storeOverflowBox(0);
                 } else {
@@ -3074,40 +3117,69 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void findReusableOverflowBox(int index) {
-            if (index >= destinations.size()) {
-                useOwnedOrEmptyBox();
-                return;
-            }
-            ContainerTarget destination = destinations.get(index);
-            read(destination, contents -> {
-                ItemStack reusable = contents.stream().filter(MinecraftItemIdentity::isBox)
-                        .filter(stack -> !unusableBoxes.contains(destination.position() + ":"
-                                + MinecraftItemIdentity.key(stack)))
-                        .filter(stack -> !fittingBoxItems(stack, rawOwned()).isEmpty())
-                        .max(Comparator.<ItemStack>comparingInt(stack ->
-                                sum(fittingBoxItems(stack, rawOwned())))
-                                .thenComparingInt(MinecraftStorageAutomation::insideCount))
-                        .map(ItemStack::copy).orElse(ItemStack.EMPTY);
-                if (reusable.isEmpty()) {
-                    findReusableOverflowBox(index + 1);
+            for (int next = index; next < destinations.size(); next++) {
+                ContainerTarget destination = destinations.get(next);
+                Location location = warehouseLocation(destination);
+                Set<String> indexed = robotWarehouse.boxes(location).keySet();
+                if (!indexed.isEmpty()) {
+                    int following = next + 1;
+                    read(destination, contents -> reuseIndexedBox(destination, location, indexed,
+                            contents, following), () -> findReusableOverflowBox(following));
                     return;
                 }
-                String key = MinecraftItemIdentity.key(reusable);
-                int before = owned().getOrDefault(key, 0);
-                var access = new MinecraftStorageAccess(minecraft, context, destination,
-                        Map.of(key, 1), true, false);
-                Runnable acquired = () -> {
-                    if (owned().getOrDefault(key, 0) == before + 1) {
-                        box = reusable;
-                        reusedFrom = destination;
-                        placeOverflowBox();
-                    } else {
-                        unusableBoxes.add(destination.position() + ":" + key);
-                        findReusableOverflowBox(index + 1);
-                    }
-                };
-                steps.add(new Step(access, acquired, acquired));
-            }, () -> findReusableOverflowBox(index + 1));
+            }
+            useOwnedOrEmptyBox();
+        }
+
+        private void reuseIndexedBox(ContainerTarget destination, Location location,
+                Set<String> indexed, List<ItemStack> contents, int following) {
+            Map<String, Integer> observed = new LinkedHashMap<>();
+            List<ItemStack> indexedBoxes = new ArrayList<>();
+            for (ItemStack stack : contents) {
+                if (!MinecraftItemIdentity.isBox(stack)) continue;
+                String fingerprint = boxFingerprint(stack);
+                if (!indexed.contains(fingerprint)) continue;
+                observed.merge(fingerprint, stack.getCount(), Math::addExact);
+                indexedBoxes.add(stack);
+            }
+            robotWarehouse.reconcile(location, observed);
+            Map<String, Integer> items = rawOwned();
+            ItemStack reusable = indexedBoxes.stream()
+                    .filter(stack -> !unusableBoxes.contains(destination.position() + ":"
+                            + MinecraftItemIdentity.key(stack)))
+                    .filter(stack -> !fittingBoxItems(stack, items).isEmpty())
+                    .max(Comparator.<ItemStack>comparingInt(stack ->
+                            sum(fittingBoxItems(stack, items)))
+                            .thenComparingInt(MinecraftStorageAutomation::insideCount))
+                    .map(ItemStack::copy).orElse(ItemStack.EMPTY);
+            if (reusable.isEmpty()) {
+                findReusableOverflowBox(following);
+                return;
+            }
+            String key = MinecraftItemIdentity.key(reusable);
+            String fingerprint = boxFingerprint(reusable);
+            int before = owned().getOrDefault(key, 0);
+            var access = MinecraftStorageAccess.warehouseBox(minecraft, context, destination,
+                    key, true, () -> robotWarehouse.withdrawn(location, fingerprint));
+            Runnable acquired = () -> {
+                if (owned().getOrDefault(key, 0) == before + 1) {
+                    box = reusable;
+                    reusedFrom = destination;
+                    placeOverflowBox();
+                } else {
+                    unusableBoxes.add(destination.position() + ":" + key);
+                    findReusableOverflowBox(following);
+                }
+            };
+            steps.add(new Step(access, acquired, acquired));
+        }
+
+        private Location warehouseLocation(ContainerTarget target) {
+            return new Location(warehouseScope, target.position());
+        }
+
+        private String boxFingerprint(ItemStack stack) {
+            return MinecraftItemIdentity.persistentKey(stack, minecraft.level.registryAccess());
         }
 
         private void useOwnedOrEmptyBox() {
@@ -3209,8 +3281,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             String key = MinecraftItemIdentity.key(box);
             int before = owned().getOrDefault(key, 0);
-            var access = new MinecraftStorageAccess(minecraft, context, returns.get(index),
-                    Map.of(key, 1), false, false);
+            ContainerTarget destination = returns.get(index);
+            Location location = warehouseLocation(destination);
+            String fingerprint = boxFingerprint(box);
+            Map<String, Integer> contents = new LinkedHashMap<>();
+            MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream().forEach(stack ->
+                    contents.merge(MinecraftItemIdentity.base(stack), stack.getCount(),
+                            Math::addExact));
+            var access = MinecraftStorageAccess.warehouseBox(minecraft, context, destination,
+                    key, false, () -> robotWarehouse.stored(location, fingerprint, contents));
             Runnable after = () -> {
                 if (owned().getOrDefault(key, 0) == before - 1) {
                     storedOrdinary = true;
@@ -3254,6 +3333,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         String completionMessage() {
+            if (boxedOnly) return storedOrdinary ? "余料已装盒存入机器人仓库"
+                    : "没有待存入机器人仓库的余料";
             if (unstackableFull && storedUnstackable == 0) {
                 return "不可堆叠溢出区已满，剩余物品已打包送往普通溢出";
             }
@@ -3268,12 +3349,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final class Cleanup extends Session {
         private List<ContainerTarget> targets;
         private final boolean overflowEnabled;
+        private final boolean boxedOnly;
         private boolean overflowAttempted;
         private String lastFailure = "";
 
-        Cleanup(TaskExecutionContext context, boolean overflowEnabled) {
+        Cleanup(TaskExecutionContext context, boolean overflowEnabled, boolean boxedOnly) {
             super(context);
             this.overflowEnabled = overflowEnabled;
+            this.boxedOnly = boxedOnly;
         }
 
         @Override
@@ -3328,7 +3411,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (index >= targets.size()) {
                 if (overflowEnabled && !overflowAttempted) {
                     overflowAttempted = true;
-                    steps.add(new Step(new Overflow(context, null), () -> depositAll(index)));
+                    steps.add(new Step(new Overflow(context, null, boxedOnly),
+                            () -> depositAll(index)));
                     return;
                 }
                 throw new IllegalStateException("任务指定存放位置未能接收剩余 " + sum(owned())

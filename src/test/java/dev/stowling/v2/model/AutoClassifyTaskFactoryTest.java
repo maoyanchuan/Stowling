@@ -9,6 +9,7 @@ import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -49,7 +50,7 @@ class AutoClassifyTaskFactoryTest {
         var resolve = steps.get(1).steps().get(3);
         assertEquals(ConfigValidator.RESOLVE_CONTAINER_CATEGORIES, resolve.moduleId());
         assertEquals(layoutRef, resolve.parameters().get(ConfigValidator.CATEGORY_ZONE_REF));
-        assertEquals(ConfigValidator.PACK_OVERFLOW, steps.get(2).moduleId());
+        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, steps.get(2).moduleId());
         ConfigValidator.requireValid(migrated);
         assertEquals(migrated, TaskFlowNormalizer.normalize(migrated));
 
@@ -86,27 +87,49 @@ class AutoClassifyTaskFactoryTest {
         List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
         List<TaskStep> collect = tasks.getFirst().steps();
         List<TaskStep> batch = collect.get(1).steps();
-        assertEquals(ConfigValidator.PACK_OVERFLOW, batch.get(2).moduleId());
+        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, batch.get(2).moduleId());
         assertTrue(batch.get(2).parameters().isEmpty());
         assertEquals(ConfigValidator.ASSERT_NO_MANAGED_ITEMS, batch.get(3).moduleId());
         assertEquals(ConfigValidator.COLLECT_DROPPED_ITEMS, batch.getLast().moduleId());
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, collect.get(2).moduleId());
         List<TaskStep> latePickups = collect.get(3).steps();
-        assertEquals(ConfigValidator.PACK_OVERFLOW, latePickups.get(2).moduleId());
+        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, latePickups.get(2).moduleId());
         assertTrue(latePickups.get(2).parameters().isEmpty());
         List<TaskStep> classify = tasks.get(1).steps();
         int index = original.classificationAreas().size() * 2;
-        assertEquals(ConfigValidator.PACK_OVERFLOW, classify.get(index).moduleId());
+        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, classify.get(index).moduleId());
         assertEquals(original.cacheRegionRef(), classify.get(index).parameters()
                 .get(ConfigValidator.REGION_REF));
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, classify.get(index + 1).moduleId());
         assertTrue(AutoClassifyTaskFactory.tasks(original, List.of()).stream()
                 .flatMap(task -> task.steps().stream())
-                .noneMatch(step -> ConfigValidator.PACK_OVERFLOW.equals(step.moduleId())));
+                .noneMatch(step -> ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId())));
         AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks,
                 List.of(), List.of(), List.of(), List.of(), List.of(enabled));
         AppConfig normalized = TaskFlowNormalizer.normalize(config);
         assertEquals(tasks, normalized.tasks());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+    }
+
+    @Test
+    void upgradesNestedAutomaticOverflowAndPreservesStandaloneOverflow() {
+        AutoClassifyDefinition definition = definition(true);
+        TaskStep oldOverflow = TaskStep.action(UUID.randomUUID(), ConfigValidator.PACK_OVERFLOW,
+                Map.of(ConfigValidator.REGION_REF, definition.cacheRegionRef()));
+        TaskStep loop = TaskStep.repeat(UUID.randomUUID(), Map.of(), List.of(oldOverflow));
+        var automatic = new TaskDefinition(definition.id(), "Auto", List.of(loop));
+        var standalone = new TaskDefinition(UUID.randomUUID(), "Custom", List.of(oldOverflow));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                List.of(automatic, standalone), List.of(), List.of(), List.of(), List.of(),
+                List.of(definition));
+
+        var normalized = TaskFlowNormalizer.normalize(config);
+        var upgraded = normalized.tasks().getFirst().steps().getFirst().steps().getFirst();
+
+        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, upgraded.moduleId());
+        assertEquals(oldOverflow.id(), upgraded.id());
+        assertEquals(oldOverflow.parameters(), upgraded.parameters());
+        assertEquals(oldOverflow, normalized.tasks().getLast().steps().getFirst());
         assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
     }
 

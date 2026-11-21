@@ -38,6 +38,7 @@ import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.category.CategoryMarker;
 import dev.stowling.v2.category.CategoryMarkerSource;
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -370,6 +371,7 @@ class BasicModuleSemanticsTest {
         RegionDefinition region = new RegionDefinition(UUID.randomUUID(), "Cache",
                 0, 64, 0, 2, 64, 2);
         List<RegionDefinition> requests = new ArrayList<>();
+        List<RegionDefinition> warehouseRequests = new ArrayList<>();
         StorageAutomationPort storage = new StorageAutomationPort() {
             @Override
             public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
@@ -402,6 +404,13 @@ class BasicModuleSemanticsTest {
                     }
                 };
             }
+
+            @Override
+            public TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
+                    RegionDefinition cacheRegion) {
+                warehouseRequests.add(cacheRegion);
+                return overflow(context, cacheRegion);
+            }
         };
         TaskExecutionContext base = context(new ForbiddenNavigation(), new RecordingTransfers(),
                 new FailedWithdrawals(), new FoodPort(), new TaskRunWorkspace());
@@ -420,6 +429,17 @@ class BasicModuleSemanticsTest {
                 TaskStep.action(UUID.randomUUID(), "PACK_OVERFLOW", Map.of()));
         assertEquals(2, requests.size());
         assertNull(requests.getLast());
+
+        var factory = StandardTaskModuleFactories.create().stream()
+                .filter(value -> ConfigValidator.ROBOT_WAREHOUSE.equals(value.moduleId()))
+                .findFirst().orElseThrow();
+        factory.create(TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
+                Map.of(ConfigValidator.REGION_REF, "region:" + region.id())), context);
+        factory.create(TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
+                Map.of()), context);
+        assertEquals(2, warehouseRequests.size());
+        assertEquals(region, warehouseRequests.getFirst());
+        assertNull(warehouseRequests.getLast());
     }
 
     @Test

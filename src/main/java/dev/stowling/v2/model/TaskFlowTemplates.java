@@ -226,7 +226,7 @@ public final class TaskFlowTemplates {
     }
 
     public static TaskStep overflow(String cacheRegionRef) {
-        return TaskStep.action(UUID.randomUUID(), ConfigValidator.PACK_OVERFLOW,
+        return TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
                 cacheRegionRef == null ? Map.of() : Map.of(ConfigValidator.REGION_REF,
                         cacheRegionRef));
     }

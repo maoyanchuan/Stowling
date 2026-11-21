@@ -6,6 +6,7 @@ import dev.stowling.inventory.RecordedContainerCapacity;
 import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.config.ConfigStore;
+import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -31,14 +32,16 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
     private final ConfigStore configs;
+    private final StorageSettingsStore storageSettings;
     private Object activeBank;
     private final Map<String, CachedContainer> cached = new LinkedHashMap<>();
 
     public ChestTrackerInventorySource(Minecraft minecraft, ClientActionScheduler scheduler,
-            ConfigStore configs) {
+            ConfigStore configs, StorageSettingsStore storageSettings) {
         this.minecraft = minecraft;
         this.scheduler = scheduler;
         this.configs = configs;
+        this.storageSettings = storageSettings;
     }
 
     @Override
@@ -84,11 +87,16 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
             activeBank = loaded.orElseThrow();
         }
         Set<String> seen = new HashSet<>();
+        List<AreaBounds> warehouseAreas = storageSettings.overflowRegions().stream()
+                .map(region -> new AreaBounds(region.firstX(), region.firstY(), region.firstZ(),
+                        region.secondX(), region.secondY(), region.secondZ())).toList();
         for (var bankEntry : loaded.orElseThrow().getAllMemories().entrySet()) {
             var key = bankEntry.getKey();
             if (key.equals(CommonKeys.ENDER_CHEST_KEY) || key.equals(CommonKeys.SHARE_ENDER_CHEST)) {
                 continue;
             }
+            String dimensionId = key.toString();
+            var warehousePoints = Set.copyOf(storageSettings.overflowPositions(dimensionId));
             for (var entry : bankEntry.getValue().getMemories().entrySet()) {
                 Memory memory = entry.getValue();
                 if (memory.entityUuid() != null) {
@@ -97,7 +105,10 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                 List<BlockPosition> positions = new ArrayList<>();
                 positions.add(position(entry.getKey()));
                 memory.otherPositions().forEach(point -> positions.add(position(point)));
-                String dimensionId = key.toString();
+                if (positions.stream().anyMatch(point -> warehousePoints.contains(point)
+                        || warehouseAreas.stream().anyMatch(area -> area.contains(point)))) {
+                    continue;
+                }
                 if (positions.stream().anyMatch(point ->
                         seen.contains(dimensionId + ":" + point))) {
                     continue;

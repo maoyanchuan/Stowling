@@ -68,6 +68,10 @@ public final class TaskModuleCatalog {
                     "把背包余料或缓存中无法分类的余料装盒后送往公共溢出设施。",
                     List.of(reference(ConfigValidator.REGION_REF, "缓存区域", "region-reference",
                             false))),
+            action(ConfigValidator.ROBOT_WAREHOUSE, "机器人仓库",
+                    "把分类余料装进潜影盒存入溢出设施，盒内物品和位置由机器人缓存记录。",
+                    List.of(reference(ConfigValidator.REGION_REF, "缓存区域", "region-reference",
+                            false))),
             action(
                     ConfigValidator.CONTAINER_INTERACTION,
                     "容器交互",

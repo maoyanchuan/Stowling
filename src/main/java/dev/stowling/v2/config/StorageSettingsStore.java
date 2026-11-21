@@ -58,12 +58,19 @@ public final class StorageSettingsStore {
     }
 
     public synchronized java.util.List<dev.stowling.domain.BlockPosition> overflowPositions() {
+        return overflowPositions(null);
+    }
+
+    public synchronized java.util.List<dev.stowling.domain.BlockPosition> overflowPositions(
+            String dimension) {
         if (settings.overflowCoordinateIds().isEmpty()) return java.util.List.of();
         if (coordinates == null) throw new IllegalStateException("溢出坐标未绑定公共设施");
         var points = coordinates.read().config().coordinates();
         return settings.overflowCoordinateIds().stream().map(id -> points.stream()
                 .filter(point -> point.id().equals(id)).findFirst().orElseThrow(() ->
                         new IllegalStateException("溢出设施引用的坐标不存在")))
+                .filter(point -> dimension == null || point.dimension() == null
+                        || point.dimension().equals(dimension))
                 .map(point -> new dev.stowling.domain.BlockPosition(point.x(), point.y(), point.z()))
                 .toList();
     }

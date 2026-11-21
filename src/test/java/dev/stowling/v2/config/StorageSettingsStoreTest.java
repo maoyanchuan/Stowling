@@ -26,7 +26,8 @@ class StorageSettingsStoreTest {
         UUID pointId = UUID.randomUUID();
         UUID regionId = UUID.randomUUID();
         UUID unstackableId = UUID.randomUUID();
-        var point = new CoordinatePoint(pointId, "Overflow", 20, 64, 30);
+        var point = new CoordinatePoint(pointId, "Overflow", 20, 64, 30,
+                "minecraft:overworld", null);
         var region = new RegionDefinition(regionId, "Overflow area", 21, 64, 30, 22, 64, 31);
         var unstackable = new RegionDefinition(unstackableId, "Unstackable", 31, 64, 30,
                 32, 64, 31);
@@ -43,6 +44,8 @@ class StorageSettingsStoreTest {
         reopened.bindCoordinates(config);
         assertEquals(settings, reopened.read().settings());
         assertEquals(List.of(new BlockPosition(20, 64, 30)), reopened.overflowPositions());
+        assertEquals(reopened.overflowPositions(), reopened.overflowPositions("minecraft:overworld"));
+        assertEquals(List.of(), reopened.overflowPositions("minecraft:the_nether"));
         assertEquals(List.of(region), reopened.overflowRegions());
         assertEquals(unstackable, reopened.unstackableOverflowRegion());
         assertEquals(unstackableId, reopened.resolved().unstackableOverflowRegionId());

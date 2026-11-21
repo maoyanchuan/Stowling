@@ -49,6 +49,7 @@ public final class ConfigValidator {
     public static final String SELECT_CONTAINER = "SELECT_CONTAINER";
     public static final String WITHDRAW_ITEMS = "WITHDRAW_ITEMS";
     public static final String PACK_OVERFLOW = "PACK_OVERFLOW";
+    public static final String ROBOT_WAREHOUSE = "ROBOT_WAREHOUSE";
     public static final String SELECT_STORAGE_TARGET = "SELECT_STORAGE_TARGET";
     public static final String DEPOSIT_ITEMS_TO_CONTAINERS =
             "DEPOSIT_ITEMS_TO_CONTAINERS";
@@ -644,7 +645,7 @@ public final class ConfigValidator {
             );
         }
         switch (step.moduleId()) {
-            case PACK_OVERFLOW -> {
+            case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {
                 requireParameters(step, Set.of(REGION_REF), Set.of());
                 if (step.parameters().containsKey(REGION_REF)) {
                     requireRegionReference(step, regions, REGION_REF);

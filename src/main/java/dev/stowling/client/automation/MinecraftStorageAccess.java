@@ -36,6 +36,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final boolean withdraw;
     private final boolean inspect;
     private final boolean emptyBoxSupply;
+    private final Runnable warehouseConfirmation;
     private List<ItemStack> contents = List.of();
     private boolean opened;
     private boolean stop;
@@ -62,7 +63,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     static MinecraftStorageAccess collect(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget source, Function<List<ItemStack>, Map<String, Integer>> plan) {
         return new MinecraftStorageAccess(minecraft, context, source, Map.of(),
-                true, false, false, plan);
+                true, false, false, plan, null);
     }
 
     static MinecraftStorageAccess withdrawEmptyBox(Minecraft minecraft, TaskExecutionContext context,
@@ -71,16 +72,23 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 true, false, true);
     }
 
+    static MinecraftStorageAccess warehouseBox(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget target, String key, boolean withdraw, Runnable confirmation) {
+        return new MinecraftStorageAccess(minecraft, context, target, Map.of(key, 1), withdraw,
+                false, false, null, confirmation);
+    }
+
     private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
             boolean inspect, boolean emptyBoxSupply) {
-        this(minecraft, context, target, requested, withdraw, inspect, emptyBoxSupply, null);
+        this(minecraft, context, target, requested, withdraw, inspect, emptyBoxSupply, null, null);
     }
 
     private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
             boolean inspect, boolean emptyBoxSupply,
-            Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan) {
+            Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan,
+            Runnable warehouseConfirmation) {
         this.minecraft = minecraft;
         this.context = context;
         this.target = target;
@@ -92,6 +100,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         this.emptyBoxSupply = emptyBoxSupply;
         this.withdrawalPlan = withdrawalPlan;
         this.quickWithdrawal = withdrawalPlan != null;
+        this.warehouseConfirmation = warehouseConfirmation;
     }
 
     List<ItemStack> contents() {
@@ -176,10 +185,12 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                     menu.getCarried().isEmpty());
             boolean destinationConfirmed = pendingConfirmation.matchesServerContainer(
                     key -> count(menu, false, key), menu.getCarried().isEmpty());
-            if (!confirmed && !serverReread && menu.getCarried().isEmpty()
-                    && pendingConfirmation.hasContainerProgress(key -> count(menu, false, key))) {
+            if (!serverReread && menu.getCarried().isEmpty()
+                    && (warehouseConfirmation != null || !confirmed
+                            && pendingConfirmation.hasContainerProgress(
+                                    key -> count(menu, false, key)))) {
                 dev.stowling.v2.runtime.TaskTrace.event("RESYNC", "storage.reopen",
-                        "批量存取两侧数量不一致，读取服务器快照; items=" + pendingMoves, 0, false);
+                        "读取服务器快照确认容器存取; items=" + pendingMoves, 0, false);
                 minecraft.player.closeContainer();
                 visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
                 opened = false;
@@ -215,6 +226,9 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             pendingMoves.clear();
             pendingBefore.clear();
             age = 0;
+            if (warehouseConfirmation != null && !accepted.isEmpty()) {
+                warehouseConfirmation.run();
+            }
             if (partial) return finish(false, "服务器仅接受本批部分物品，已记账，剩余物品交给下一容器");
             if (stop) {
                 return finish(true, "精确存取已确认，可安全停止");

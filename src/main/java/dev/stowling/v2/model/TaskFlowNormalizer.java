@@ -121,7 +121,8 @@ public final class TaskFlowNormalizer {
             originalTasks.put(task.id(), task);
         }
         List<TaskDefinition> baseTasks = config.tasks().stream()
-                .map(TaskFlowNormalizer::normalizeTask)
+                .map(task -> normalizeTask(task, autoCollections.containsKey(task.id())
+                        || autoClassifications.containsKey(task.id())))
                 .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
                 .map(task -> inheritLayoutRecognition(task, autoClassifications.get(task.id())))
                 .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
@@ -275,7 +276,7 @@ public final class TaskFlowNormalizer {
                 (task.id() + ":global-inventory").getBytes(StandardCharsets.UTF_8)
         );
         if (definition.overflowEnabled() && steps.stream().noneMatch(step ->
-                ConfigValidator.PACK_OVERFLOW.equals(step.moduleId()))) {
+                ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId()))) {
             steps.addAll(remapStepIds(List.of(TaskFlowTemplates.overflow(
                     definition.cacheRegionRef())), definition.derivedId("overflow")));
         }
@@ -316,7 +317,7 @@ public final class TaskFlowNormalizer {
         boolean legacyTail = ConfigValidator.ASSERT_NO_MANAGED_ITEMS
                 .equals(steps.get(3).moduleId());
         int tailStart = legacyTail ? 4 : 3;
-        if (!legacyTail && ConfigValidator.PACK_OVERFLOW.equals(steps.get(3).moduleId())) {
+        if (!legacyTail && ConfigValidator.ROBOT_WAREHOUSE.equals(steps.get(3).moduleId())) {
             tailStart++;
         }
         TaskStep batches = TaskFlowTemplates.collectionBatches(steps.get(0), steps.get(1),
@@ -348,8 +349,8 @@ public final class TaskFlowNormalizer {
         );
     }
 
-    private static TaskDefinition normalizeTask(TaskDefinition task) {
-        List<TaskStep> steps = normalizeSteps(task.steps());
+    private static TaskDefinition normalizeTask(TaskDefinition task, boolean autoClassify) {
+        List<TaskStep> steps = normalizeSteps(task.steps(), autoClassify);
         return new TaskDefinition(
                 task.id(),
                 task.name(),
@@ -365,17 +366,17 @@ public final class TaskFlowNormalizer {
         );
     }
 
-    private static List<TaskStep> normalizeSteps(List<TaskStep> steps) {
+    private static List<TaskStep> normalizeSteps(List<TaskStep> steps, boolean autoClassify) {
         List<TaskStep> result = new ArrayList<>();
         for (TaskStep step : steps) {
-            result.addAll(normalizeStep(step));
+            result.addAll(normalizeStep(step, autoClassify));
         }
         return List.copyOf(result);
     }
 
-    private static List<TaskStep> normalizeStep(TaskStep step) {
-        List<TaskStep> nested = normalizeSteps(step.steps());
-        List<TaskStep> otherwise = normalizeSteps(step.otherwise());
+    private static List<TaskStep> normalizeStep(TaskStep step, boolean autoClassify) {
+        List<TaskStep> nested = normalizeSteps(step.steps(), autoClassify);
+        List<TaskStep> otherwise = normalizeSteps(step.otherwise(), autoClassify);
         Map<String, String> parameters = normalizeParameters(
                 step.moduleId(),
                 step.kind(),
@@ -434,7 +435,8 @@ public final class TaskFlowNormalizer {
             default -> List.of(new TaskStep(
                     step.id(),
                     TaskStepKind.ACTION,
-                    step.moduleId(),
+                    autoClassify && ConfigValidator.PACK_OVERFLOW.equals(step.moduleId())
+                            ? ConfigValidator.ROBOT_WAREHOUSE : step.moduleId(),
                     parameters,
                     nested,
                     otherwise

@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.PickupReceipt;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -767,7 +768,11 @@ public final class TaskRunManager {
             cleanup = new TaskDefinition(UUID.randomUUID(), "全局物品收尾",
                     List.of(TaskStep.action(UUID.randomUUID(), "GLOBAL_INVENTORY_CLEANUP",
                             Map.of("overflowEnabled", Boolean.toString(
-                                    usesOverflow(active.prepared.steps))))));
+                                            usesModule(active.prepared.steps,
+                                                    ConfigValidator.PACK_OVERFLOW)),
+                                    "robotWarehouseEnabled", Boolean.toString(
+                                            usesModule(active.prepared.steps,
+                                                    ConfigValidator.ROBOT_WAREHOUSE))))));
         }
         if (cleanup == null || !active.workspace.hasManagedItems()
                 && !registry.storageAutomation().hasTemporaryResources(
@@ -816,9 +821,9 @@ public final class TaskRunManager {
         }
     }
 
-    private static boolean usesOverflow(List<TaskStep> steps) {
-        return steps.stream().anyMatch(step -> "PACK_OVERFLOW".equals(step.moduleId())
-                || usesOverflow(step.steps()) || usesOverflow(step.otherwise()));
+    private static boolean usesModule(List<TaskStep> steps, String moduleId) {
+        return steps.stream().anyMatch(step -> moduleId.equals(step.moduleId())
+                || usesModule(step.steps(), moduleId) || usesModule(step.otherwise(), moduleId));
     }
 
     private void failInterruption(String message) {

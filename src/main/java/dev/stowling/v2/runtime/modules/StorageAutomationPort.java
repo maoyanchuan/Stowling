@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
+import dev.stowling.v2.model.RegionDefinition;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -37,9 +38,18 @@ public interface StorageAutomationPort {
         return cleanup(context);
     }
 
+    default TaskModuleExecutor cleanupToRobotWarehouse(TaskExecutionContext context) {
+        return cleanup(context, true);
+    }
+
     default TaskModuleExecutor overflow(TaskExecutionContext context,
-            dev.stowling.v2.model.RegionDefinition cacheRegion) {
+            RegionDefinition cacheRegion) {
         throw new IllegalStateException("当前环境不支持溢出打包");
+    }
+
+    default TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
+            RegionDefinition cacheRegion) {
+        throw new IllegalStateException("当前环境不支持机器人仓库");
     }
 
     default TaskModuleExecutor scanCacheContents(TaskExecutionContext context,

@@ -1,6 +1,9 @@
 package dev.stowling.v2.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,9 +39,51 @@ class MaterialRequirementsTest {
     void acceptsAnEmptyCollectionAfterSkippingLava() {
         var requested = MaterialRequirements.forCollection(Map.of(
                 MaterialRequirements.PARAMETER, "{\"minecraft:lava_bucket\":1}",
-                MaterialRequirements.ICE_INSTEAD_OF_WATER, "true"));
+                MaterialRequirements.SKIP_LAVA, "true"));
 
         assertEquals(Map.of(), requested);
+    }
+
+    @Test
+    void makesTheLavaOptionIndependentOfBothWaterOptions() {
+        String original = "{\"minecraft:water_bucket\":2,\"minecraft:lava_bucket\":1}";
+        assertEquals(Map.of("minecraft:ice", 2, "minecraft:lava_bucket", 1),
+                MaterialRequirements.forCollection(Map.of(
+                        MaterialRequirements.PARAMETER, original,
+                        MaterialRequirements.ICE_INSTEAD_OF_WATER, "true",
+                        MaterialRequirements.SKIP_LAVA, "false")));
+        assertEquals(Map.of("minecraft:lava_bucket", 1),
+                MaterialRequirements.forCollection(Map.of(
+                        MaterialRequirements.PARAMETER, original,
+                        MaterialRequirements.SKIP_WATER_BUCKETS, "true")));
+        assertEquals(Map.of("minecraft:water_bucket", 2),
+                MaterialRequirements.forCollection(Map.of(
+                        MaterialRequirements.PARAMETER, original,
+                        MaterialRequirements.SKIP_LAVA, "true")));
+    }
+
+    @Test
+    void rejectsBothWaterOptionsEnabled() {
+        assertThrows(IllegalArgumentException.class, () -> MaterialRequirements.forCollection(
+                Map.of(MaterialRequirements.PARAMETER, "{\"minecraft:water_bucket\":2}",
+                        MaterialRequirements.SKIP_WATER_BUCKETS, "true",
+                        MaterialRequirements.ICE_INSTEAD_OF_WATER, "true")));
+    }
+
+    @Test
+    void deliversAStockBoxIntactOnlyWhenItPreservesTheMaterialGroup() {
+        String stone = "minecraft:stone";
+        var remaining = Map.of(stone, 100);
+        assertFalse(MaterialRequirements.canDeliverBox(stone, remaining,
+                Map.of(stone, 35), false, false));
+        assertFalse(MaterialRequirements.canDeliverBox(stone, remaining,
+                Map.of(stone, 100), false, true));
+        assertFalse(MaterialRequirements.canDeliverBox(stone, remaining,
+                Map.of(stone, 100, "minecraft:glass", 1), false, false));
+        assertTrue(MaterialRequirements.canDeliverBox(stone, remaining,
+                Map.of(stone, 100), false, false));
+        assertTrue(MaterialRequirements.canDeliverBox(stone, Map.of(stone, 2000),
+                Map.of(stone, 1728), true, true));
     }
 
     @Test

@@ -10,6 +10,8 @@ public final class MaterialRequirements {
     public static final String PARAMETER = "materials";
     public static final String BOXED_DELIVERY = "boxedDelivery";
     public static final String ICE_INSTEAD_OF_WATER = "iceInsteadOfWater";
+    public static final String SKIP_WATER_BUCKETS = "skipWaterBuckets";
+    public static final String SKIP_LAVA = "skipLava";
     public static final String WATER_BOTTLE = "minecraft:potion[water]";
     private static final Pattern ITEM_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_./-]+");
     private static final int MAX_LENGTH = 56_000;
@@ -19,13 +21,23 @@ public final class MaterialRequirements {
 
     public static Map<String, Integer> forCollection(Map<String, String> parameters) {
         Map<String, Integer> original = parse(parameters.get(PARAMETER));
-        if (!Boolean.parseBoolean(parameters.get(ICE_INSTEAD_OF_WATER))) {
+        boolean ice = Boolean.parseBoolean(parameters.get(ICE_INSTEAD_OF_WATER));
+        boolean skipWater = Boolean.parseBoolean(parameters.get(SKIP_WATER_BUCKETS));
+        // Older tasks used a single setting for the ice substitution and the lava exclusion.
+        boolean skipLava = Boolean.parseBoolean(
+                parameters.getOrDefault(SKIP_LAVA, Boolean.toString(ice)));
+        if (ice && skipWater) {
+            throw new IllegalArgumentException("用普通冰代替水桶和跳过水桶不能同时开启");
+        }
+        if (!ice && !skipWater && !skipLava) {
             return original;
         }
         Map<String, Integer> requested = new LinkedHashMap<>(original);
-        Integer waterBuckets = requested.remove("minecraft:water_bucket");
-        requested.remove("minecraft:lava_bucket");
-        if (waterBuckets != null) {
+        Integer waterBuckets = ice || skipWater ? requested.remove("minecraft:water_bucket") : null;
+        if (skipLava) {
+            requested.remove("minecraft:lava_bucket");
+        }
+        if (ice && waterBuckets != null) {
             try {
                 requested.merge("minecraft:ice", waterBuckets, Math::addExact);
             } catch (ArithmeticException exception) {
@@ -48,6 +60,16 @@ public final class MaterialRequirements {
         contents.forEach((material, amount) -> remaining.computeIfPresent(material,
                 (ignored, left) -> left - amount * reserved));
         return reserved;
+    }
+
+    public static boolean canDeliverBox(String material, Map<String, Integer> remaining,
+            Map<String, Integer> contents, boolean full, boolean hasLooseOrPartial) {
+        if (contents.size() != 1 || !contents.containsKey(material)) {
+            return false;
+        }
+        int count = contents.get(material);
+        int needed = remaining.getOrDefault(material, 0);
+        return full ? count <= needed : !hasLooseOrPartial && count == needed;
     }
 
     public static Map<String, Integer> parse(String value) {

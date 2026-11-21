@@ -120,6 +120,19 @@ def test_material_task_card_keeps_delete_in_editor_and_uses_transient_feedback()
     assert 'S.showToast("材料收集任务已删除")' in source
 
 
+def test_material_liquid_submenu_has_two_exclusive_water_options_and_a_lava_option() -> None:
+    html = read("tasks.html")
+    submenu = between(html, 'id="material-liquid-settings"', "</details>")
+    assert 'id="material-liquid-summary"' in submenu
+    for option in ("material-ice-instead-of-water", "material-skip-water", "material-skip-lava"):
+        assert f'id="{option}"' in submenu
+
+    source = read("material-collection-ui.js")
+    assert "if (iceInsteadOfWater.checked) skipWater.checked = false;" in source
+    assert "if (skipWater.checked) iceInsteadOfWater.checked = false;" in source
+    assert 'skipLava.addEventListener("change", renderPreview);' in source
+
+
 def test_refresh_only_rereads_task_runs() -> None:
     javascript = read("tasks.js")
     refresh = between(

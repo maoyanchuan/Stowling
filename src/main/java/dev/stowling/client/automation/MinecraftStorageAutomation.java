@@ -826,6 +826,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 new LinkedHashMap<>();
         private List<ContainerTarget> destinations;
         private List<ContainerTarget> sources;
+        private List<MaterialSource> warehouseSources;
+        private List<String> materialOrder;
+        private int materialIndex;
+        private String packingMaterial;
+        private String partialBoxKey;
         private AreaBounds destinationBounds;
         private String dimension;
         private String warehouseProblem;
@@ -912,40 +917,67 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 finishShort();
                 return;
             }
-            sources = stock.containers().stream()
+            warehouseSources = stock.containers().stream()
                     .filter(container -> dimension.equals(container.dimension()))
-                    .filter(container -> container.items().stream().anyMatch(entry ->
-                            needed.containsKey(entry.itemId())
-                                    || needed.containsKey(MaterialRequirements.WATER_BOTTLE)
-                                            && "minecraft:potion".equals(entry.itemId())))
                     .filter(container -> container.positions().stream().noneMatch(
                             configuration.emptyBoxContainers()::contains))
                     .filter(container -> destinationBounds == null
                             || container.positions().stream()
                                     .noneMatch(destinationBounds::contains))
-                    .map(container -> new ContainerTarget(container.positions().getFirst(),
-                            "container", null, null, container.positions().size() > 1
-                                    ? container.positions().get(1) : null))
+                    .map(MaterialSource::from)
+                    .filter(source -> needed.keySet().stream().anyMatch(source::has))
                     .filter(source -> destinations.stream().noneMatch(
-                            target -> sameContainer(source, target)))
-                    .sorted(Comparator.comparingDouble(MinecraftStorageAutomation.this
-                            ::storageDistance))
+                            target -> sameContainer(source.target(), target)))
                     .toList();
-            nextSource();
+            if (boxedDelivery) {
+                materialOrder = List.copyOf(needed.keySet());
+                nextMaterial();
+            } else {
+                sources = sortedSources(warehouseSources);
+                nextSource();
+            }
+        }
+
+        private List<ContainerTarget> sortedSources(List<MaterialSource> candidates) {
+            return candidates.stream().map(MaterialSource::target).sorted(
+                    Comparator.comparingDouble(MinecraftStorageAutomation.this::storageDistance))
+                    .toList();
+        }
+
+        private void nextMaterial() {
+            while (materialIndex < materialOrder.size()) {
+                packingMaterial = materialOrder.get(materialIndex++);
+                if (!needed.containsKey(packingMaterial)) continue;
+                var candidates = warehouseSources.stream()
+                        .filter(source -> source.has(packingMaterial)).toList();
+                if (candidates.isEmpty()) continue;
+                sources = sortedSources(candidates);
+                sourceIndex = 0;
+                nextSource();
+                return;
+            }
+            if (!needed.isEmpty()) {
+                finishShort();
+            }
         }
 
         private void nextSource() {
             if (needed.isEmpty()) {
                 return;
             }
+            if (boxedDelivery && !needed.containsKey(packingMaterial)) {
+                nextMaterial();
+                return;
+            }
             if (sourceIndex >= sources.size()) {
-                flush(() -> {
-                    if (!needed.isEmpty()) finishShort();
+                flush(true, () -> {
+                    if (boxedDelivery) nextMaterial();
+                    else if (!needed.isEmpty()) finishShort();
                 });
                 return;
             }
             if (hasFullBatch()) {
-                flush(this::nextSource);
+                flush(uncollected().isEmpty(), this::nextSource);
                 return;
             }
             collectFrom(sources.get(sourceIndex++));
@@ -960,7 +992,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             steps.add(new Step(access, () -> {
                 var contents = access.contents();
                 if (hasFullBatch()) {
-                    flush(() -> continueSource(source, contents));
+                    flush(uncollected().isEmpty(), () -> continueSource(source, contents));
                 } else {
                     unpack(source, contents);
                 }
@@ -968,13 +1000,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private boolean hasFullBatch() {
-            return !owned().isEmpty()
-                    && (freeInventorySlots() <= packingReserve()
-                            || uncollected().isEmpty());
+            var batch = owned();
+            if (batch.isEmpty()) return false;
+            boolean transferable = partialBoxKey == null || batch.size() > 1
+                    || batch.getOrDefault(partialBoxKey, 0) > 1;
+            return uncollected().isEmpty()
+                    || transferable && freeInventorySlots() <= packingReserve();
         }
 
         private int packingReserve() {
-            return boxedDelivery && owned().keySet().stream()
+            return boxedDelivery && partialBoxKey == null && owned().keySet().stream()
                     .anyMatch(key -> !ItemIdentity.isBox(key)) ? 1 : 0;
         }
 
@@ -984,13 +1019,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void continueSource(ContainerTarget source, List<ItemStack> contents) {
-            if (needed.isEmpty()) {
+            if (boxedDelivery && !needed.containsKey(packingMaterial)) {
+                nextMaterial();
                 return;
             }
-            if (contents.stream().anyMatch(stack -> needed.containsKey(material(stack))
+            var remaining = uncollected();
+            if (remaining.isEmpty()) {
+                nextSource();
+                return;
+            }
+            if (contents.stream().anyMatch(stack -> remaining.containsKey(material(stack))
                     || MinecraftItemIdentity.isBox(stack) && !isEmptyBox(stack)
                             && materialsInBox(stack).keySet().stream().anyMatch(
-                                    needed::containsKey))) {
+                                    remaining::containsKey))) {
                 collectFrom(source);
             } else {
                 nextSource();
@@ -1003,11 +1044,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             int free = (int) freeInventorySlots();
             int packedSlots = 0;
             if (boxedDelivery) {
+                boolean hasLooseOrPartial = partialBoxKey != null || packingReserve() != 0;
                 int slotsForBoxes = Math.max(0, free - packingReserve());
                 for (ItemStack stack : contents) {
                     if (slotsForBoxes == 0) break;
                     if (!MinecraftItemIdentity.isBox(stack) || isEmptyBox(stack)) continue;
                     var materials = materialsInBox(stack);
+                    if (!MaterialRequirements.canDeliverBox(packingMaterial, remaining, materials,
+                            MinecraftItemIdentity.full(stack), hasLooseOrPartial)) continue;
                     int count = MaterialRequirements.reserveBoxes(remaining, materials,
                             Math.min(stack.getCount(), slotsForBoxes));
                     if (count > 0) {
@@ -1019,7 +1063,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     }
                 }
             }
-            boolean canTakeLoose = canPackLoose && (!boxedDelivery || packedSlots < free);
+            boolean canTakeLoose = canPackLoose
+                    && (!boxedDelivery || partialBoxKey != null || packedSlots < free);
             Map<String, Integer> loose = matching(contents, remaining);
             loose.forEach((key, count) -> {
                 if (canTakeLoose || ItemIdentity.isBox(key)) {
@@ -1028,7 +1073,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     warehouseProblem = "盒装散料需要在公共设施配置空潜影盒供应";
                 }
             });
-            int reserve = boxedDelivery && canTakeLoose ? 1 : packingReserve();
+            int reserve = boxedDelivery && canTakeLoose && partialBoxKey == null
+                    ? 1 : packingReserve();
             return fitInventory(contents, wanted, reserve);
         }
 
@@ -1105,7 +1151,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (stopAfterBox) {
                     super.requestStop();
                 } else if (hasFullBatch()) {
-                    flush(() -> collectFrom(source));
+                    flush(uncollected().isEmpty(), () -> {
+                        if (boxedDelivery && !needed.containsKey(packingMaterial)) nextMaterial();
+                        else collectFrom(source);
+                    });
                 } else if (acquired || deliveredDuringRecovery) {
                     collectFrom(source);
                 } else {
@@ -1124,9 +1173,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     inventory.size() - reserve, wanted, sizes);
         }
 
-        private void flush(Runnable after) {
+        private void flush(boolean finishBox, Runnable after) {
             if (boxedDelivery) {
-                packLoose(() -> deliver(0, after));
+                packLoose(() -> {
+                    if (finishBox) partialBoxKey = null;
+                    deliver(0, after);
+                });
             } else {
                 deliver(0, after);
             }
@@ -1139,18 +1191,32 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 after.run();
                 return;
             }
+            if (partialBoxKey == null) {
+                returningBox = true;
+                withdrawEmptyBox(0, empty -> packInto(empty, fittingBoxItems(empty, loose), after));
+                return;
+            }
+            ItemStack currentBox = inventoryStacks().stream()
+                    .filter(stack -> partialBoxKey.equals(MinecraftItemIdentity.key(stack)))
+                    .findFirst().orElseThrow(() -> new IllegalStateException("待补满的潜影盒不在背包中"));
+            var fits = fittingBoxItems(currentBox, loose);
+            if (fits.isEmpty()) {
+                partialBoxKey = null;
+                deliver(0, () -> packLoose(after));
+                return;
+            }
+            packInto(currentBox, fits, after);
+        }
+
+        private void packInto(ItemStack box, Map<String, Integer> items, Runnable after) {
             returningBox = true;
-            withdrawEmptyBox(0, empty -> {
-                BlockPosition site = chooseSite(context, destinations.getFirst(), null,
-                        configuration);
-                var resource = new MinecraftShulkerAction.Resource(site, empty);
-                resources.put(owner(), resource);
-                var boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
-                var items = fittingBoxItems(empty, loose);
-                steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
-                        () -> transfer(boxTarget, items, false,
-                                () -> recover(() -> finishPacking(resource, after)))));
-            });
+            BlockPosition site = chooseSite(context, destinations.getFirst(), null, configuration);
+            var resource = new MinecraftShulkerAction.Resource(site, box);
+            resources.put(owner(), resource);
+            var boxTarget = new ContainerTarget(site, "minecraft:shulker_box");
+            steps.add(new Step(new MinecraftShulkerAction(minecraft, context, resource, true),
+                    () -> transfer(boxTarget, items, false,
+                            () -> recover(() -> finishPacking(resource, after)))));
         }
 
         private void finishPacking(MinecraftShulkerAction.Resource resource, Runnable after) {
@@ -1159,7 +1225,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (contents.isEmpty()) {
                 throw new IllegalStateException("未能将材料装入潜影盒，剩余材料等待收尾");
             }
-            boxContentsByKey.put(MinecraftItemIdentity.key(resource.expected), contents);
+            String key = MinecraftItemIdentity.key(resource.expected);
+            boxContentsByKey.put(key, contents);
+            partialBoxKey = MinecraftItemIdentity.full(resource.expected) ? null : key;
             if (stopAfterBox) {
                 super.requestStop();
             } else {
@@ -1168,7 +1236,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void deliver(int index, Runnable after) {
-            Map<String, Integer> batch = owned();
+            Map<String, Integer> batch = new LinkedHashMap<>(owned());
+            if (boxedDelivery) {
+                batch.keySet().removeIf(key -> !ItemIdentity.isBox(key));
+                if (partialBoxKey != null) {
+                    batch.computeIfPresent(partialBoxKey, (ignored, count) ->
+                            count > 1 ? count - 1 : null);
+                }
+            }
             if (batch.isEmpty()) {
                 after.run();
                 return;
@@ -1186,7 +1261,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private Map<String, Integer> uncollected() {
-            Map<String, Integer> remaining = new LinkedHashMap<>(needed);
+            Map<String, Integer> remaining = new LinkedHashMap<>();
+            if (!boxedDelivery) {
+                remaining.putAll(needed);
+            } else if (needed.containsKey(packingMaterial)) {
+                remaining.put(packingMaterial, needed.get(packingMaterial));
+            }
             owned().forEach((key, count) -> forEachMaterial(key, count, (material, amount) ->
                     remaining.computeIfPresent(material, (ignored, left) ->
                             amount < left ? left - amount : null)));
@@ -1288,6 +1368,22 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         public boolean safeToStop() {
             return (!returningBox || terminal != null) && super.safeToStop();
+        }
+    }
+
+    private record MaterialSource(ContainerTarget target, Set<String> items) {
+        static MaterialSource from(WarehouseInventory.Container container) {
+            var positions = container.positions();
+            var target = new ContainerTarget(positions.getFirst(), "container", null, null,
+                    positions.size() > 1 ? positions.get(1) : null);
+            var items = container.items().stream().map(WarehouseInventory.Entry::itemId)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            return new MaterialSource(target, items);
+        }
+
+        boolean has(String material) {
+            return items.contains(material) || MaterialRequirements.WATER_BOTTLE.equals(material)
+                    && items.contains("minecraft:potion");
         }
     }
 

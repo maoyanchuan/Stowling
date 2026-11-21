@@ -15,6 +15,10 @@
     const destination = byId("material-destination");
     const boxedDelivery = Settings.switchControl(byId("material-boxed-delivery"));
     const iceInsteadOfWater = Settings.switchControl(byId("material-ice-instead-of-water"));
+    const skipWater = Settings.switchControl(byId("material-skip-water"));
+    const skipLava = Settings.switchControl(byId("material-skip-lava"));
+    const liquids = Settings.bindDisclosure(byId("material-liquid-settings"),
+        byId("material-liquid-summary"), byId("material-liquid-options"));
     const boxedNote = byId("material-boxed-note");
     const previewStatus = byId("material-preview-status");
     const preview = byId("material-preview");
@@ -81,14 +85,17 @@
 
     /** @returns {Record<string, number>} */
     function requestedMaterials() {
-        if (!iceInsteadOfWater.checked) return materials;
         const requested = {...materials};
-        const waterBuckets = requested["minecraft:water_bucket"];
-        if (waterBuckets) {
-            requested["minecraft:ice"] = (requested["minecraft:ice"] || 0) + waterBuckets;
+        if (iceInsteadOfWater.checked || skipWater.checked) {
+            const waterBuckets = requested["minecraft:water_bucket"];
+            if (iceInsteadOfWater.checked && waterBuckets) {
+                requested["minecraft:ice"] = (requested["minecraft:ice"] || 0) + waterBuckets;
+            }
+            delete requested["minecraft:water_bucket"];
         }
-        delete requested["minecraft:water_bucket"];
-        delete requested["minecraft:lava_bucket"];
+        if (skipLava.checked) {
+            delete requested["minecraft:lava_bucket"];
+        }
         return requested;
     }
 
@@ -121,6 +128,9 @@
         renderDestinations(params?.targetRef || "");
         boxedDelivery.checked = params?.boxedDelivery?.toLowerCase() === "true";
         iceInsteadOfWater.checked = params?.iceInsteadOfWater?.toLowerCase() === "true";
+        skipWater.checked = params?.skipWaterBuckets?.toLowerCase() === "true";
+        skipLava.checked = params?.skipLava === undefined
+            ? iceInsteadOfWater.checked : params.skipLava.toLowerCase() === "true";
         boxedNote.hidden = !boxedDelivery.checked;
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
@@ -139,6 +149,7 @@
             if (current?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
             current = {id, revision, step: task?.steps[0].id, expanded: true, dirty: false};
             row.body.append(form);
+            liquids.setExpanded(false);
             fillForm(task);
         }
         controls();
@@ -294,7 +305,9 @@
                     targetRef,
                     materials: JSON.stringify(materials),
                     boxedDelivery: String(boxedDelivery.checked),
-                    iceInsteadOfWater: String(iceInsteadOfWater.checked)
+                    iceInsteadOfWater: String(iceInsteadOfWater.checked),
+                    skipWaterBuckets: String(skipWater.checked),
+                    skipLava: String(skipLava.checked)
                 }
             }],
             cleanupPolicy: {destinationRef: targetRef, resumeMode: "CONTINUE"}
@@ -384,7 +397,15 @@
     boxedDelivery.addEventListener("change", () => {
         boxedNote.hidden = !boxedDelivery.checked;
     });
-    iceInsteadOfWater.addEventListener("change", renderPreview);
+    iceInsteadOfWater.addEventListener("change", () => {
+        if (iceInsteadOfWater.checked) skipWater.checked = false;
+        renderPreview();
+    });
+    skipWater.addEventListener("change", () => {
+        if (skipWater.checked) iceInsteadOfWater.checked = false;
+        renderPreview();
+    });
+    skipLava.addEventListener("change", renderPreview);
     form.addEventListener("input", (event) => {
         if (current && event.target !== file && !current.dirty) {
             current.dirty = true;

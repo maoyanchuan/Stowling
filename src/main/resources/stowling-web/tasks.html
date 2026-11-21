@@ -157,12 +157,36 @@
                                             符合缺口的整盒可直接交付。散料使用公共设施的空潜影盒装箱，
                                             清单所需的空潜影盒单独交付。
                                         </p>
-                                        <label class="move-field material-switch-field"
-                                               for="material-ice-instead-of-water">
-                                            <span>用普通冰代替水桶，跳过岩浆</span>
-                                            <input id="material-ice-instead-of-water"
-                                                   type="checkbox">
-                                        </label>
+                                        <details id="material-liquid-settings"
+                                                 class="settings-disclosure">
+                                            <summary id="material-liquid-summary"
+                                                     class="settings-row">
+                                                <span class="settings-copy">
+                                                    <strong>液体材料</strong>
+                                                </span>
+                                                <span class="settings-chevron"
+                                                      aria-hidden="true">›</span>
+                                            </summary>
+                                            <div id="material-liquid-options"
+                                                 class="settings-detail" hidden>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-ice-instead-of-water">
+                                                    <span>用普通冰代替水桶</span>
+                                                    <input id="material-ice-instead-of-water"
+                                                           type="checkbox">
+                                                </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-skip-water">
+                                                    <span>跳过水桶</span>
+                                                    <input id="material-skip-water" type="checkbox">
+                                                </label>
+                                                <label class="move-field material-switch-field"
+                                                       for="material-skip-lava">
+                                                    <span>跳过岩浆</span>
+                                                    <input id="material-skip-lava" type="checkbox">
+                                                </label>
+                                            </div>
+                                        </details>
                                         <p id="material-preview-status" class="field-message"
                                            role="status">选择投影文件后自动解析材料</p>
                                         <details id="material-preview" hidden>

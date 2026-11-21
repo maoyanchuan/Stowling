@@ -74,7 +74,8 @@ class V2ControlServerTest {
                 "name", "Glass delivery",
                 "steps", List.of(Map.of("moduleId", "COLLECT_SCHEMATIC_MATERIALS",
                         "parameters", Map.of("targetRef", target, "materials", requirements,
-                                "boxedDelivery", "true", "iceInsteadOfWater", "true"))),
+                                "boxedDelivery", "true", "iceInsteadOfWater", "true",
+                                "skipWaterBuckets", "false", "skipLava", "false"))),
                 "cleanupPolicy", Map.of("destinationRef", target, "resumeMode", "CONTINUE")));
         try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
             var response = fixture.send("/v1/tasks", "POST", body, true);
@@ -83,9 +84,15 @@ class V2ControlServerTest {
             assertEquals(requirements, task.steps().getFirst().parameters().get("materials"));
             assertEquals("true", task.steps().getFirst().parameters().get("boxedDelivery"));
             assertEquals("true", task.steps().getFirst().parameters().get("iceInsteadOfWater"));
+            assertEquals("false", task.steps().getFirst().parameters().get("skipWaterBuckets"));
+            assertEquals("false", task.steps().getFirst().parameters().get("skipLava"));
             assertEquals(target, task.cleanupPolicy().destinationRef());
             assertEquals(400, fixture.send("/v1/tasks", "POST",
                     body.replace("Glass delivery", "Invalid delivery").replace(":65", ":-65"),
+                    true).statusCode());
+            assertEquals(400, fixture.send("/v1/tasks", "POST", body
+                    .replace("Glass delivery", "Conflicting water options")
+                    .replace("\"skipWaterBuckets\":\"false\"", "\"skipWaterBuckets\":\"true\""),
                     true).statusCode());
             var status = object(fixture.send("/v1/status", "GET", null, true));
             assertEquals("IDLE", status.get("state").getAsString());

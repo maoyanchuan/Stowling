@@ -65,11 +65,11 @@ public final class TaskModuleCatalog {
                     )
             ),
             action(ConfigValidator.PACK_OVERFLOW, "打包溢出物品",
-                    "把背包余料或缓存中无法分类的余料装盒后送往公共溢出设施。",
+                    "把分类目标装不下的物品送往公共溢出设施。",
                     List.of(reference(ConfigValidator.REGION_REF, "缓存区域", "region-reference",
                             false))),
             action(ConfigValidator.ROBOT_WAREHOUSE, "机器人仓库",
-                    "把分类余料装进潜影盒存入溢出设施，盒内物品和位置由机器人缓存记录。",
+                    "分类目标均无空间时，将对应物品装盒入库，并由机器人缓存记录位置。",
                     List.of(reference(ConfigValidator.REGION_REF, "缓存区域", "region-reference",
                             false))),
             action(

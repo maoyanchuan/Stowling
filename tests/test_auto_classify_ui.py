@@ -135,6 +135,7 @@ def test_overflow_switch_is_visible_outside_both_collapsed_phase_sections() -> N
     assert 'role="switch"' in overflow
     assert 'class="auto-switch-track"' in overflow
     assert "启用机器人仓库" in overflow
+    assert "只将分类目标装不下的物品" in overflow
     assert "盒内物品和位置由机器人缓存记录" in overflow
     assert " hidden" not in overflow
     assert form.index('id="auto-sort-body"') < form.index('id="auto-overflow-section"')

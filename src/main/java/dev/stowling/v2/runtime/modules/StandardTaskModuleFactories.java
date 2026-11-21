@@ -17,12 +17,8 @@ public final class StandardTaskModuleFactories {
                 factory(ConfigValidator.PACK_OVERFLOW, OverflowItemsModule::create),
                 factory(ConfigValidator.ROBOT_WAREHOUSE, OverflowItemsModule::create),
                 factory("GLOBAL_INVENTORY_CLEANUP",
-                        (context, step) -> TaskModuleSupport.booleanParameter(
-                                step, "robotWarehouseEnabled", false)
-                                ? context.storageAutomation().cleanupToRobotWarehouse(context)
-                                : context.storageAutomation().cleanup(context,
-                                        TaskModuleSupport.booleanParameter(
-                                                step, "overflowEnabled", false))),
+                        (context, step) -> context.storageAutomation().cleanup(context,
+                                TaskModuleSupport.booleanParameter(step, "overflowEnabled", false))),
                 factory(
                         TaskModuleIds.MOVE_TO_COORDINATE,
                         MoveToCoordinateModule::new

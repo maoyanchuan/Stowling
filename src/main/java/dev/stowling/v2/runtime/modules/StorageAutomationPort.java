@@ -38,10 +38,6 @@ public interface StorageAutomationPort {
         return cleanup(context);
     }
 
-    default TaskModuleExecutor cleanupToRobotWarehouse(TaskExecutionContext context) {
-        return cleanup(context, true);
-    }
-
     default TaskModuleExecutor overflow(TaskExecutionContext context,
             RegionDefinition cacheRegion) {
         throw new IllegalStateException("当前环境不支持溢出打包");

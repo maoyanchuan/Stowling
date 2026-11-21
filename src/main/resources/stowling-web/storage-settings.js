@@ -104,7 +104,7 @@
         ["不可堆叠溢出区域", unstackableOverflow]];
     const fields = sections.map(([name, control]) => field(name, control));
     fields[4].append(S.element("small", "muted",
-        "机器人仓库使用这些箱子或区域存放装有余料的潜影盒。请预留独立容器。"));
+        "机器人仓库在此存放分类目标装不下的物品。请预留独立容器。"));
     fields.at(-1).append(S.element("small", "muted",
         "旧版打包溢出物品模块使用。机器人仓库会将不可堆叠余料一同装盒。"));
     const navigation = S.element("nav", "resource-browser-list");

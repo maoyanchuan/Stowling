@@ -281,7 +281,7 @@ public final class TaskFlowNormalizer {
                     definition.cacheRegionRef())), definition.derivedId("overflow")));
         }
         steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
-                definition.cacheRegionRef(), Map.of(), definition.overflowEnabled()
+                definition.cacheRegionRef(), Map.of()
         ), seed));
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps, task.interruptionMode(), task.interruptionTaskRef(),
@@ -317,11 +317,8 @@ public final class TaskFlowNormalizer {
         boolean legacyTail = ConfigValidator.ASSERT_NO_MANAGED_ITEMS
                 .equals(steps.get(3).moduleId());
         int tailStart = legacyTail ? 4 : 3;
-        if (!legacyTail && ConfigValidator.ROBOT_WAREHOUSE.equals(steps.get(3).moduleId())) {
-            tailStart++;
-        }
         TaskStep batches = TaskFlowTemplates.collectionBatches(steps.get(0), steps.get(1),
-                steps.get(2), definition.overflowEnabled());
+                steps.get(2));
         UUID seed = UUID.nameUUIDFromBytes((task.id() + ":collection-batches")
                 .getBytes(StandardCharsets.UTF_8));
         List<TaskStep> upgraded = new ArrayList<>(List.of(steps.getFirst()));
@@ -330,7 +327,7 @@ public final class TaskFlowNormalizer {
             Map<String, String> parameters = new LinkedHashMap<>(steps.get(0).parameters());
             parameters.putAll(steps.get(1).parameters());
             upgraded.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
-                    definition.cacheRegionRef(), parameters, definition.overflowEnabled()),
+                    definition.cacheRegionRef(), parameters),
                     steps.get(3).id()));
         }
         upgraded.addAll(steps.subList(tailStart, steps.size()));
@@ -375,6 +372,11 @@ public final class TaskFlowNormalizer {
     }
 
     private static List<TaskStep> normalizeStep(TaskStep step, boolean autoClassify) {
+        boolean overflow = ConfigValidator.PACK_OVERFLOW.equals(step.moduleId())
+                || ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId());
+        if (autoClassify && overflow && !step.parameters().containsKey(ConfigValidator.REGION_REF)) {
+            return List.of();
+        }
         List<TaskStep> nested = normalizeSteps(step.steps(), autoClassify);
         List<TaskStep> otherwise = normalizeSteps(step.otherwise(), autoClassify);
         Map<String, String> parameters = normalizeParameters(
@@ -435,7 +437,7 @@ public final class TaskFlowNormalizer {
             default -> List.of(new TaskStep(
                     step.id(),
                     TaskStepKind.ACTION,
-                    autoClassify && ConfigValidator.PACK_OVERFLOW.equals(step.moduleId())
+                    autoClassify && overflow
                             ? ConfigValidator.ROBOT_WAREHOUSE : step.moduleId(),
                     parameters,
                     nested,

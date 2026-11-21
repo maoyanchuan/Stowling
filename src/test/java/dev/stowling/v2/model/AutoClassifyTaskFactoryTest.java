@@ -87,14 +87,11 @@ class AutoClassifyTaskFactoryTest {
         List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
         List<TaskStep> collect = tasks.getFirst().steps();
         List<TaskStep> batch = collect.get(1).steps();
-        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, batch.get(2).moduleId());
-        assertTrue(batch.get(2).parameters().isEmpty());
-        assertEquals(ConfigValidator.ASSERT_NO_MANAGED_ITEMS, batch.get(3).moduleId());
+        assertEquals(ConfigValidator.ASSERT_NO_MANAGED_ITEMS, batch.get(2).moduleId());
         assertEquals(ConfigValidator.COLLECT_DROPPED_ITEMS, batch.getLast().moduleId());
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, collect.get(2).moduleId());
         List<TaskStep> latePickups = collect.get(3).steps();
-        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, latePickups.get(2).moduleId());
-        assertTrue(latePickups.get(2).parameters().isEmpty());
+        assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, latePickups.get(2).moduleId());
         List<TaskStep> classify = tasks.get(1).steps();
         int index = original.classificationAreas().size() * 2;
         assertEquals(ConfigValidator.ROBOT_WAREHOUSE, classify.get(index).moduleId());
@@ -109,6 +106,25 @@ class AutoClassifyTaskFactoryTest {
         AppConfig normalized = TaskFlowNormalizer.normalize(config);
         assertEquals(tasks, normalized.tasks());
         assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+    }
+
+    @Test
+    void removesOldWarehouseStepsThatRanBeforeClassification() {
+        AutoClassifyDefinition definition = definition(true);
+        TaskStep scan = TaskStep.action(UUID.randomUUID(), ConfigValidator.SCAN_CONTAINERS_IN_REGION,
+                Map.of(ConfigValidator.REGION_REF, definition.cacheRegionRef()));
+        TaskStep earlyWarehouse = TaskFlowTemplates.overflow(null);
+        TaskStep loop = TaskStep.repeat(UUID.randomUUID(),
+                Map.of(TaskFlowTemplates.CONDITION, TaskCondition.HAS_MANAGED_ITEMS.name()),
+                List.of(scan, earlyWarehouse));
+        var collection = new TaskDefinition(definition.id(), "Collect", List.of(loop));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                List.of(collection), List.of(), List.of(), List.of(), List.of(),
+                List.of(definition));
+
+        var normalized = TaskFlowNormalizer.normalize(config);
+
+        assertEquals(List.of(scan), normalized.tasks().getFirst().steps().getFirst().steps());
     }
 
     @Test

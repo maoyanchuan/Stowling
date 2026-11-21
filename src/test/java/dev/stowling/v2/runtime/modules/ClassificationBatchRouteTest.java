@@ -15,6 +15,26 @@ import org.junit.jupiter.api.Test;
 
 class ClassificationBatchRouteTest {
     @Test
+    void overflowChecksAllResolvedLayoutsAndExcludesUnmatchedItems() {
+        var workspace = new TaskRunWorkspace();
+        String stone = "minecraft:stone";
+        String sword = "minecraft:iron_sword#variant";
+        ContainerTarget cache = target(0);
+        ContainerTarget first = target(1);
+        ContainerTarget second = target(2);
+        workspace.setResolvedCategories(List.of(first), Map.of(first, Set.of(stone)),
+                List.of(cache));
+        workspace.markTargetUnavailable(first);
+        workspace.setResolvedCategories(List.of(second),
+                Map.of(second, Set.of(stone, ItemIdentity.exact(sword))), List.of(cache));
+
+        assertEquals(List.of(first, second), workspace.resolvedStorageTargets(stone));
+        assertEquals(List.of(second), workspace.resolvedStorageTargets(sword));
+        assertTrue(workspace.resolvedStorageTargets("minecraft:iron_sword#other").isEmpty());
+        assertTrue(workspace.resolvedStorageTargets("minecraft:dirt").isEmpty());
+    }
+
+    @Test
     void mixedOnlyCacheChestsAreKeptAndTheirContentsCanBeRefreshedAfterUnpacking() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         ContainerTarget first = target(0);

@@ -35,6 +35,7 @@ public final class TaskRunWorkspace {
     private final Map<ContainerTarget, Set<String>> acceptedItemsByContainer =
             new LinkedHashMap<>();
     private final List<ContainerTarget> targetContainers = new ArrayList<>();
+    private final Map<ContainerTarget, Set<String>> resolvedStorage = new LinkedHashMap<>();
     private List<ClassificationLayoutEntry> classificationLayout = List.of();
     private boolean unstackableClassification;
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
@@ -348,6 +349,19 @@ public final class TaskRunWorkspace {
         storageUsesCacheFallback = false;
         cacheHasMore = false;
         deferredCacheCategories.clear();
+        for (ContainerTarget target : targets) {
+            Set<String> categories = accepted.getOrDefault(target, Set.of());
+            if (!categories.isEmpty()) {
+                resolvedStorage.computeIfAbsent(target, ignored -> new LinkedHashSet<>())
+                        .addAll(categories);
+            }
+        }
+    }
+
+    public synchronized List<ContainerTarget> resolvedStorageTargets(String itemKey) {
+        return resolvedStorage.entrySet().stream()
+                .filter(entry -> ItemIdentity.matches(itemKey, entry.getValue()))
+                .map(Map.Entry::getKey).toList();
     }
 
     public synchronized void setUnstackableClassification(List<ContainerTarget> targets,

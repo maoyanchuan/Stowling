@@ -477,8 +477,7 @@ public final class TaskRunManager {
                 if (task != null) {
                     List<TaskStep> steps = new ArrayList<>(
                             dev.stowling.v2.model.TaskFlowTemplates.reconcileInventory(
-                                    definition.cacheRegionRef(), Map.of(),
-                                    definition.overflowEnabled()));
+                                    definition.cacheRegionRef(), Map.of()));
                     if (definition.classificationEnabled()) {
                         steps.add(TaskStep.createTask(UUID.randomUUID(), Map.of(
                                 "taskRef", "task:" + definition.classificationTaskId(),
@@ -769,10 +768,7 @@ public final class TaskRunManager {
                     List.of(TaskStep.action(UUID.randomUUID(), "GLOBAL_INVENTORY_CLEANUP",
                             Map.of("overflowEnabled", Boolean.toString(
                                             usesModule(active.prepared.steps,
-                                                    ConfigValidator.PACK_OVERFLOW)),
-                                    "robotWarehouseEnabled", Boolean.toString(
-                                            usesModule(active.prepared.steps,
-                                                    ConfigValidator.ROBOT_WAREHOUSE))))));
+                                                    ConfigValidator.PACK_OVERFLOW))))));
         }
         if (cleanup == null || !active.workspace.hasManagedItems()
                 && !registry.storageAutomation().hasTemporaryResources(

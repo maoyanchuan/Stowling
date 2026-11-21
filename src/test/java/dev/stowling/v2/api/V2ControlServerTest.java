@@ -1,6 +1,7 @@
 package dev.stowling.v2.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
@@ -444,6 +445,12 @@ class V2ControlServerTest {
                     false
             );
             assertEquals(200, tasksPage.statusCode());
+            assertTrue(tasksPage.body().contains("aria-controls=\"auto-eat-draft-body\""));
+            assertTrue(tasksPage.body().contains(
+                    "<div id=\"auto-eat-draft-body\" class=\"move-task-body\" hidden>"
+            ));
+            assertFalse(tasksPage.body().contains("id=\"auto-eat-dialog\""));
+            assertEquals(200, fixture.send("/auto-eat-ui.js", "GET", null, false).statusCode());
 
             HttpResponse<String> taskMonitorModel = fixture.send(
                     "/task-monitor-model.js",

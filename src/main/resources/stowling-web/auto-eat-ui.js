@@ -2,37 +2,79 @@
     "use strict";
 
     const S = window.Stowling;
+    const Settings = window.StowlingSettings;
     const endpoint = "/v1/auto-eat-tasks";
+    /** @param {string} id @returns {HTMLElement} */
     const $ = (id) => document.getElementById(id);
     const list = $("auto-eat-list");
     const status = $("auto-eat-status");
     const newTask = $("new-auto-eat");
-    const dialog = $("auto-eat-dialog");
+    const draft = $("auto-eat-draft");
+    const draftToggle = $("toggle-auto-eat-draft");
+    const draftBody = $("auto-eat-draft-body");
     const form = $("auto-eat-form");
     const fields = form.querySelector("fieldset");
-    const close = $("close-auto-eat");
     const remove = $("delete-auto-eat");
     const source = $("auto-eat-source");
     const coordinate = $("auto-eat-coordinate");
     const message = $("auto-eat-message");
+    const rows = new Map();
     let tasks = [];
     let coordinates = [];
     let revision = "";
-    let editRevision = "";
-    let taskId = null;
+    /** @type {{id: string | null, revision: string, expanded: boolean, dirty: boolean} | null} */
+    let editor = null;
     let loading = false;
     let busy = false;
 
+    /** @returns {boolean} */
+    function unavailable() {
+        return loading || busy || !revision || !S.isConnected();
+    }
+
+    /**
+     * @param {HTMLElement} button
+     * @param {HTMLElement} body
+     * @param {boolean} expanded
+     * @returns {void}
+     */
+    function disclose(button, body, expanded) {
+        button.setAttribute("aria-expanded", String(expanded));
+        body.inert = !expanded;
+        void Settings.reveal(body, expanded);
+    }
+
     /** @returns {void} */
     function updateControls() {
-        newTask.disabled = loading || busy || !revision || !S.isConnected();
-        fields.disabled = busy;
-        close.disabled = busy;
+        const disabled = unavailable();
+        const isDraft = editor?.id === null;
+        newTask.disabled = disabled;
+        fields.disabled = disabled;
+        draftToggle.disabled = disabled;
+        draft.hidden = !isDraft;
+        disclose(draftToggle, draftBody, isDraft && editor.expanded);
+        for (const [id, row] of rows) {
+            const selected = editor?.id === id;
+            row.button.disabled = disabled;
+            disclose(row.button, row.body, selected && editor.expanded);
+            row.status.textContent = selected && editor.dirty
+                ? "未保存修改"
+                : row.enabled ? "监听中" : "已暂停";
+        }
+    }
+
+    /** @returns {void} */
+    function notifyTaskCount() {
+        document.dispatchEvent(new CustomEvent("stowling:auto-eat-task-count", {
+            detail: {count: tasks.length, draftActive: editor?.id === null}
+        }));
     }
 
     /** @returns {void} */
     function renderTasks() {
+        draftBody.append(form);
         list.replaceChildren();
+        rows.clear();
         for (const task of tasks) {
             const settings = task.settings;
             const location = settings.coordinateId
@@ -42,20 +84,29 @@
             const row = S.element("article", "move-saved-task");
             const button = S.element("button", "move-task-summary");
             button.type = "button";
-            button.setAttribute("aria-haspopup", "dialog");
+            const body = S.element("div", "move-task-body");
+            body.id = `auto-eat-task-body-${task.id}`;
+            body.hidden = true;
+            button.setAttribute("aria-controls", body.id);
             const kind = S.element("span", "move-task-kind", "食");
             kind.setAttribute("aria-hidden", "true");
             const overview = S.element("span", "move-task-overview");
             overview.append(S.element("strong", "", settings.name), S.element("span", "",
                 `${location} · 饱食度 ≤ ${settings.foodLevelThreshold} · ${settings.foodItemId}`));
-            button.append(kind, overview, S.element("span", "move-task-state",
-                settings.enabled ? "监听中" : "已暂停"));
-            button.addEventListener("click", () => openEditor(task));
-            row.append(button);
+            const state = S.element("span", "move-task-state");
+            const chevron = S.element("span", "move-task-chevron", "⌄");
+            chevron.setAttribute("aria-hidden", "true");
+            button.append(kind, overview, state, chevron);
+            button.addEventListener("click", () => selectTask(task));
+            if (editor?.id === task.id) {
+                body.append(form);
+            }
+            row.append(button, body);
             list.append(row);
+            rows.set(task.id, {button, body, status: state, enabled: settings.enabled});
         }
-        document.dispatchEvent(new CustomEvent("stowling:auto-eat-task-count",
-            { detail: tasks.length }));
+        updateControls();
+        notifyTaskCount();
     }
 
     /** @returns {Promise<void>} */
@@ -71,6 +122,13 @@
             revision = response.revision;
             tasks = response.items;
             coordinates = points.coordinates;
+            const selected = tasks.find((task) => task.id === editor?.id);
+            if (editor?.id && !selected) {
+                editor = null;
+            } else if (editor && !editor.dirty) {
+                editor.revision = revision;
+                fillForm(selected?.settings);
+            }
             status.hidden = true;
             renderTasks();
         } catch (error) {
@@ -95,14 +153,10 @@
     }
 
     /**
-     * @param {object | null} [task]
+     * @param {object} [settings]
      * @returns {void}
      */
-    function openEditor(task = null) {
-        if (newTask.disabled) return;
-        const settings = task?.settings;
-        taskId = task?.id ?? null;
-        editRevision = revision;
+    function fillForm(settings) {
         let name = "自动进食";
         for (let suffix = 2; tasks.some((item) => item.settings.name === name); suffix++) {
             name = `自动进食 ${suffix}`;
@@ -120,9 +174,38 @@
         }
         coordinate.value = settings?.coordinateId ?? "";
         updateSource();
-        remove.hidden = taskId === null;
+        remove.hidden = editor.id === null;
         message.textContent = "";
-        dialog.showModal();
+    }
+
+    /**
+     * @param {object | null} [task]
+     * @returns {void}
+     */
+    function selectTask(task = null) {
+        if (unavailable()) return;
+        const id = task?.id ?? null;
+        const row = id ? rows.get(id) : {button: draftToggle, body: draftBody};
+        if (editor?.id === id) {
+            editor.expanded = id === null || !editor.expanded;
+        } else {
+            if (editor?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
+            editor = {id, revision, expanded: true, dirty: false};
+            fillForm(task?.settings);
+            row.body.append(form);
+        }
+        updateControls();
+        notifyTaskCount();
+        row.button.focus();
+    }
+
+    /** @returns {void} */
+    function cancelEditor() {
+        const button = editor.id ? rows.get(editor.id)?.button : newTask;
+        editor = null;
+        updateControls();
+        notifyTaskCount();
+        button?.focus();
     }
 
     /**
@@ -130,10 +213,11 @@
      * @returns {Promise<void>}
      */
     async function save(deleting) {
-        if (busy || !S.isConnected()) return;
-        const method = deleting ? "DELETE" : taskId ? "PUT" : "POST";
-        const path = taskId ? `${endpoint}/${encodeURIComponent(taskId)}` : endpoint;
-        const body = { revision: editRevision };
+        if (unavailable() || !editor?.expanded) return;
+        const id = editor.id;
+        const method = deleting ? "DELETE" : id ? "PUT" : "POST";
+        const path = id ? `${endpoint}/${encodeURIComponent(id)}` : endpoint;
+        const body = {revision: editor.revision};
         if (!deleting) {
             Object.assign(body, {
                 name: $("auto-eat-name").value.trim(),
@@ -147,6 +231,7 @@
         busy = true;
         updateControls();
         message.textContent = "";
+        let focusTarget;
         try {
             const response = await S.request(path, {
                 method,
@@ -155,26 +240,39 @@
             });
             revision = response.revision;
             tasks = response.items;
-            dialog.close();
+            const saved = tasks.find((task) => task.id === response.taskId);
+            editor = saved ? {id: saved.id, revision, expanded: true, dirty: false} : null;
+            if (saved) {
+                fillForm(saved.settings);
+                message.textContent = "已保存";
+            }
             renderTasks();
+            focusTarget = saved ? rows.get(saved.id)?.button : newTask;
             document.dispatchEvent(new Event("stowling:auto-eat-tasks-changed"));
             document.dispatchEvent(new Event("stowling:tasks-changed"));
             S.showToast(deleting ? "已删除自动进食任务" : "已保存自动进食任务");
         } catch (error) {
             message.textContent = error.status === 409 && error.code === "revision_conflict"
-                ? "配置已更新，请关闭窗口并刷新任务列表后再编辑。"
+                ? "配置已更新，请取消编辑并刷新任务列表后重试。"
                 : String(error.message || error);
             S.handleError(error, deleting ? "删除自动进食任务失败" : "保存自动进食任务失败");
         } finally {
             busy = false;
             updateControls();
+            focusTarget?.focus();
         }
     }
 
-    newTask.addEventListener("click", () => openEditor());
-    close.addEventListener("click", () => dialog.close());
-    dialog.addEventListener("cancel", (event) => {
-        if (busy) event.preventDefault();
+    newTask.addEventListener("click", () => selectTask());
+    draftToggle.addEventListener("click", () => {
+        editor.expanded = !editor.expanded;
+        updateControls();
+    });
+    $("cancel-auto-eat").addEventListener("click", cancelEditor);
+    form.addEventListener("input", () => {
+        editor.dirty = true;
+        message.textContent = "未保存修改";
+        updateControls();
     });
     source.addEventListener("change", updateSource);
     form.addEventListener("submit", (event) => {

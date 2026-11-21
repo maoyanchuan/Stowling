@@ -21,6 +21,7 @@
         autoTaskCount: 0,
         autoEatTaskCount: 0,
         autoDraftActive: false,
+        autoEatDraftActive: false,
         moveAllTasks: [],
         coordinates: [],
         regions: [],
@@ -213,7 +214,8 @@
         ));
         elements.moveForm.hidden = false;
         const savedCount = state.moveTasks.length + state.autoTaskCount + state.autoEatTaskCount;
-        elements.movePlaceholder.hidden = savedCount > 0 || newDraft || state.autoDraftActive;
+        elements.movePlaceholder.hidden = savedCount > 0 || newDraft || state.autoDraftActive
+            || state.autoEatDraftActive;
         elements.moveCount.textContent = String(savedCount);
         for (const [id, row] of moveRows) {
             const selected = state.moveDraft.id === id;
@@ -1009,7 +1011,8 @@
         syncMoveDisclosure();
     });
     document.addEventListener("stowling:auto-eat-task-count", (event) => {
-        state.autoEatTaskCount = Number(event.detail || 0);
+        state.autoEatTaskCount = Number(event.detail?.count || 0);
+        state.autoEatDraftActive = event.detail?.draftActive === true;
         syncMoveDisclosure();
     });
     document.addEventListener("stowling:auto-eat-tasks-changed", () => {

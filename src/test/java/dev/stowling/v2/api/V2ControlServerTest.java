@@ -1315,6 +1315,16 @@ class V2ControlServerTest {
                             .get("code")
                             .getAsString()
             );
+
+            String stopPath = "/v1/task-runs/" + runId + "/force-stop";
+            assertEquals(401, fixture.send(stopPath, "POST", null, false).statusCode());
+            assertEquals(405, fixture.send(stopPath, "GET", null, true).statusCode());
+            assertEquals(400, fixture.send(stopPath, "POST", "{}", true).statusCode());
+            var stop = fixture.send(stopPath, "POST", null, true);
+            assertEquals(202, stop.statusCode());
+            assertTrue(object(stop).get("accepted").getAsBoolean());
+            assertEquals(404, fixture.send("/v1/task-runs/" + UUID.randomUUID() + "/force-stop",
+                    "POST", null, true).statusCode());
         }
     }
 

@@ -264,7 +264,9 @@ public final class TaskRunManager {
         if (active == null) {
             return;
         }
-        if (!active.interruptionFailed) {
+        if (active.forceStopRequested) {
+            tickForceStopping();
+        } else if (!active.interruptionFailed) {
             if (active.stopRequested) {
                 tickInterrupting();
             } else {
@@ -278,6 +280,9 @@ public final class TaskRunManager {
 
     public synchronized void cancel(UUID runId) {
         if (active != null && active.snapshot.runId().equals(runId)) {
+            if (active.forceStopRequested) {
+                return;
+            }
             if (active.interruptionFailed) {
                 throw new IllegalStateException(
                         "中断收尾失败，请重试或显式跳过"
@@ -315,6 +320,25 @@ public final class TaskRunManager {
             return;
         }
         throw new TaskRunNotFoundException();
+    }
+
+    public synchronized void forceStop(UUID runId) {
+        if (active == null || !active.snapshot.runId().equals(runId)) {
+            throw new TaskRunNotFoundException();
+        }
+        if (active.forceStopRequested) {
+            return;
+        }
+        active.forceStopRequested = true;
+        active.userCancelRequested = true;
+        active.stopRequested = true;
+        active.navigationStopRequested = false;
+        active.interruptionRunning = false;
+        active.interruptionFailed = false;
+        active.terminalState = TaskRunState.CANCELLED;
+        active.terminalMessage = "任务已强制停止";
+        active.interruptionFailureMessage = "强制停止未完成";
+        update(TaskRunState.INTERRUPTING, "正在强制停止任务");
     }
 
     public synchronized void retryInterruption(UUID runId) {
@@ -616,6 +640,56 @@ public final class TaskRunManager {
         );
     }
 
+    private void tickForceStopping() {
+        // Module cancellation and navigation must run on the Minecraft client thread.
+        cancelForForceStop(active.flow);
+        cancelForForceStop(active.interruptionFlow);
+        active.flow = null;
+        active.interruptionFlow = null;
+
+        StopOutcome outcome = requestOrPollNavigationStop();
+        if (outcome == StopOutcome.PENDING) {
+            active.navigationStopRequested = true;
+            update(TaskRunState.INTERRUPTING, "正在强制停止任务，等待导航停止");
+            return;
+        }
+        active.navigationStopRequested = false;
+        active.navigationStopConfirmed = outcome == StopOutcome.CLEAN;
+        if (!active.navigationStopConfirmed) {
+            active.forceStopRequested = false;
+            markInterruptionFailed("强制停止未完成：导航停止状态未知", true);
+            return;
+        }
+
+        var account = active.workspace.inventoryAccount();
+        registry.storageAutomation().releaseTemporaryResources(account.ownerId());
+        if (active.workspace.hasManagedItems() && registry.inventory().observe().isPresent()) {
+            registry.inventory().reconcileMissingItems(account);
+        }
+        finishTerminated();
+    }
+
+    private void cancelForForceStop(TaskFlowExecutor executor) {
+        if (executor != null) {
+            try {
+                executor.cancel();
+            } catch (RuntimeException exception) {
+                active.stopWarning = "取消当前动作失败: " + safeMessage(exception);
+            }
+        }
+    }
+
+    private StopOutcome requestOrPollNavigationStop() {
+        try {
+            return active.navigationStopRequested
+                    ? navigation.pollStop()
+                    : navigation.requestStop();
+        } catch (RuntimeException exception) {
+            active.stopWarning = "停止导航失败: " + safeMessage(exception);
+            return StopOutcome.UNSAFE;
+        }
+    }
+
     private void tickInterrupting() {
         if (active.interruptionRecovery) {
             tickInterruptionRecovery();
@@ -645,15 +719,7 @@ public final class TaskRunManager {
             update(TaskRunState.INTERRUPTING, "等待在途操作确认");
             return;
         }
-        StopOutcome outcome;
-        try {
-            outcome = active.navigationStopRequested
-                    ? navigation.pollStop()
-                    : navigation.requestStop();
-        } catch (RuntimeException exception) {
-            active.stopWarning = "停止导航失败: " + safeMessage(exception);
-            outcome = StopOutcome.UNSAFE;
-        }
+        StopOutcome outcome = requestOrPollNavigationStop();
         if (outcome == StopOutcome.PENDING) {
             active.navigationStopRequested = true;
             update(TaskRunState.INTERRUPTING, "正在停止导航");
@@ -807,15 +873,7 @@ public final class TaskRunManager {
             update(TaskRunState.INTERRUPTING, "等待收尾动作确认");
             return;
         }
-        StopOutcome outcome;
-        try {
-            outcome = active.navigationStopRequested
-                    ? navigation.pollStop()
-                    : navigation.requestStop();
-        } catch (RuntimeException exception) {
-            active.stopWarning = "停止导航失败: " + safeMessage(exception);
-            outcome = StopOutcome.UNSAFE;
-        }
+        StopOutcome outcome = requestOrPollNavigationStop();
         if (outcome == StopOutcome.PENDING) {
             active.navigationStopRequested = true;
             update(TaskRunState.INTERRUPTING, "正在重新确认导航停止");
@@ -1466,6 +1524,7 @@ public final class TaskRunManager {
         private UUID preemptedByRunId;
         private boolean stopRequested;
         private boolean userCancelRequested;
+        private boolean forceStopRequested;
         private boolean interruptionRunning;
         private boolean interruptionRecovery;
         private boolean retryAfterRecovery;

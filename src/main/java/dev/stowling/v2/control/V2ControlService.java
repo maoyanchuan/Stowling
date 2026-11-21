@@ -167,6 +167,8 @@ public interface V2ControlService {
 
     void cancelRun(UUID runId);
 
+    void forceStopRun(UUID runId);
+
     void retryInterruption(UUID runId);
 
     void skipInterruption(UUID runId);

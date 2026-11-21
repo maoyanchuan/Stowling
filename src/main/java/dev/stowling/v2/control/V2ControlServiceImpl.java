@@ -1232,6 +1232,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public void forceStopRun(UUID runId) {
+        runs.forceStop(runId);
+    }
+
+    @Override
     public void retryInterruption(UUID runId) {
         runs.retryInterruption(runId);
     }

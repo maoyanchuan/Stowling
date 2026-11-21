@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -813,6 +815,109 @@ class TaskInterruptionLifecycleTest {
 
 
     @Test
+    void forceStopAbandonsInFlightCleanupAndResumesTheQueueAfterNavigationStops() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        navigation.stopOutcomes(StopOutcome.CLEAN, StopOutcome.PENDING, StopOutcome.CLEAN);
+        AtomicReference<Map<String, Integer>> backpack = new AtomicReference<>(Map.of());
+        var drops = new EmptyDroppedItems() {
+            @Override
+            public Optional<Map<String, Integer>> playerItemCounts() {
+                return Optional.of(backpack.get());
+            }
+        };
+        AtomicInteger cleanupStarts = new AtomicInteger();
+        AtomicInteger cleanupCancels = new AtomicInteger();
+        TaskModuleRuntimeFactory stuckCleanup = new TaskModuleRuntimeFactory() {
+            @Override
+            public String moduleId() {
+                return FLAKY_CLEANUP;
+            }
+
+            @Override
+            public TaskModuleExecutor create(TaskStep step, TaskExecutionContext context) {
+                return new TestAction(context) {
+                    @Override
+                    public TaskModuleResult start() {
+                        cleanupStarts.incrementAndGet();
+                        return TaskModuleResult.waiting("awaiting transfer");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        throw new AssertionError("force stop must not tick the cleanup action");
+                    }
+
+                    @Override
+                    public boolean safeToStop() {
+                        return false;
+                    }
+
+                    @Override
+                    public void cancel() {
+                        cleanupCancels.incrementAndGet();
+                    }
+                };
+            }
+        };
+        var registry = registryWithDrops(navigation, drops, stuckCleanup);
+        var manager = new TaskRunManager(navigation, registry);
+        var cleanup = task("Cleanup", TaskPriority.NORMAL, TaskInterruptionMode.NONE,
+                actionStep(FLAKY_CLEANUP));
+        var background = withCleanup(task("Background", TaskPriority.BACKGROUND,
+                TaskInterruptionMode.NONE, actionStep(ADD_MANAGED), actionStep(SLOW)),
+                cleanup, true);
+        var urgent = task("Urgent", TaskPriority.URGENT, TaskInterruptionMode.NONE,
+                actionStep(NOOP));
+        AppConfig config = config(List.of(), List.of(background, cleanup, urgent));
+        var run = manager.start(background, config, null);
+        manager.tick();
+        backpack.set(Map.of("minecraft:iron_ingot", 1));
+        var next = manager.start(urgent, config, null);
+        manager.tick();
+        manager.tick();
+        assertEquals(1, cleanupStarts.get());
+
+        backpack.set(Map.of());
+        manager.forceStop(run.runId());
+        assertEquals(0, cleanupCancels.get());
+        manager.tick();
+        assertEquals(1, cleanupCancels.get());
+        assertEquals(TaskRunState.INTERRUPTING, runState(manager, run.runId()));
+        assertEquals(TaskRunState.QUEUED, runState(manager, next.runId()));
+
+        manager.forceStop(run.runId());
+        manager.tick();
+        assertEquals(TaskRunState.CANCELLED, runState(manager, run.runId()));
+        assertEquals(TaskRunState.RUNNING, runState(manager, next.runId()));
+        assertEquals(1, cleanupCancels.get());
+        assertEquals(1, navigation.pollStopCount());
+        assertFalse(registry.inventory().hasAbandonedAccounts());
+        assertTrue(manager.queued().isEmpty());
+    }
+
+    @Test
+    void forceStopFromInterruptionFailureReconfirmsNavigationAndCancelsTheRun() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        navigation.stopOutcomes(StopOutcome.UNSAFE, StopOutcome.UNSAFE, StopOutcome.CLEAN);
+        var manager = new TaskRunManager(navigation, registry(navigation));
+        var task = task("Wait", TaskPriority.NORMAL, TaskInterruptionMode.NONE, actionStep(SLOW));
+        var run = manager.start(task, List.of());
+        manager.tick();
+        manager.cancel(run.runId());
+        manager.tick();
+        assertEquals(TaskRunState.INTERRUPTION_FAILED, runState(manager, run.runId()));
+
+        manager.forceStop(run.runId());
+        manager.tick();
+        assertEquals(TaskRunState.INTERRUPTION_FAILED, runState(manager, run.runId()));
+
+        manager.forceStop(run.runId());
+        manager.tick();
+        assertEquals(TaskRunState.CANCELLED, runState(manager, run.runId()));
+        assertEquals(3, navigation.requestStopCount());
+    }
+
+    @Test
     void retryDrainsInFlightCleanupBeforeStartingItAgain() {
         UUID urgentPoint = UUID.randomUUID();
         RecordingNavigation navigation = new RecordingNavigation();
@@ -1361,7 +1466,7 @@ class TaskInterruptionLifecycleTest {
         }
     }
 
-    private static final class EmptyDroppedItems
+    private static class EmptyDroppedItems
             implements DroppedItemObserverPort {
         @Override
         public List<DroppedItem> observe(BlockPosition center, int radius) {

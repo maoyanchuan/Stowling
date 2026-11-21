@@ -287,7 +287,7 @@ def test_task_queue_creation_priority_and_interruption_run_states() -> None:
     assert "未指定优先级时沿用目标任务配置" in editor
     assert "delete payload.parameters.priority" in model
     assert "delete step.parameters.priority" in editor
-    assert 'INTERRUPTING: "正在执行中断收尾"' in tasks
+    assert 'INTERRUPTING: "正在中断"' in tasks
     assert 'INTERRUPTION_FAILED: "中断收尾失败，队列暂停"' in tasks
     assert "function runStateMessage(" in tasks
     assert "正在执行中断收尾，队列暂停" in tasks

@@ -86,6 +86,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     @Override
+    public void releaseTemporaryResources(UUID owner) {
+        resources.remove(owner);
+    }
+
+    @Override
     public boolean isRecoveryDrop(DroppedItem item) {
         return resources.values().stream().anyMatch(resource -> resource.placed
                 && MinecraftShulkerAction.isRecoveryDrop(minecraft, resource, item));

@@ -583,7 +583,7 @@
             QUEUED: "排队中",
             RUNNING: "运行中",
             WAITING: "等待中",
-            INTERRUPTING: "正在执行中断收尾",
+            INTERRUPTING: "正在中断",
             INTERRUPTION_FAILED: "中断收尾失败，队列暂停",
             SUCCEEDED: "已完成",
             FAILED: "失败",
@@ -598,9 +598,6 @@
      * @returns {string}
      */
     function runStateMessage(run) {
-        if (run.state === "INTERRUPTING") {
-            return "正在执行中断收尾，队列暂停";
-        }
         const message = String(run.message || "")
             .replace("no marker container selected", "未选择标记容器（缺少前序选择结果）")
             .replace("no container selected", "未选择容器（缺少前序选择结果）")
@@ -609,9 +606,13 @@
                 const module = state.modules.find((item) => item.id === moduleId);
                 return module ? `第 ${path} 步（${module.name}）` : match;
             });
+        if (run.state === "INTERRUPTING") {
+            return message ? `${message}，队列暂停` : "正在执行中断收尾，队列暂停";
+        }
         return run.state === "INTERRUPTION_FAILED"
             ? (message || "中断收尾失败")
-                + "；队列暂停，请重试收尾，或确认导航停止并处理受管物品后跳过"
+                + "；队列暂停，请重试收尾，或确认导航停止并处理受管物品后跳过。"
+                + "人工接手后也可强制停止。"
             : message;
     }
 
@@ -728,6 +729,9 @@
             cancel.addEventListener("click", () => { void cancelRun(run.runId); });
             actions.append(cancel);
         }
+        if (isActiveRun(run)) {
+            actions.append(forceStopButton(run.runId));
+        }
         footer.append(actions);
         card.append(footer);
         return card;
@@ -772,6 +776,9 @@
                     () => void cancelRun(entry.run.runId)
                 ));
             }
+            if (entry.run && isActiveRun(entry.run)) {
+                actions.append(forceStopButton(entry.run.runId));
+            }
             if (actions.childElementCount > 0) {
                 card.append(actions);
             }
@@ -789,6 +796,16 @@
         const button = Stowling.element("button", "ghost compact", label);
         button.type = "button";
         button.addEventListener("click", action);
+        return button;
+    }
+
+    /**
+     * @param {string} runId
+     * @returns {HTMLButtonElement}
+     */
+    function forceStopButton(runId) {
+        const button = railAction("强制停止", () => void forceStopRun(runId));
+        button.classList.add("danger-action");
         return button;
     }
 
@@ -960,6 +977,28 @@
             await loadRuns();
         } catch (error) {
             Stowling.handleError(error, "取消任务失败");
+        }
+    }
+
+    /**
+     * @param {string} runId
+     * @returns {Promise<void>}
+     */
+    async function forceStopRun(runId) {
+        const confirmed = window.confirm(
+            "强制停止将结束本次运行并跳过剩余收尾。请确认已接手背包、"
+            + "光标上的物品和临时潜影盒。已发往服务器的操作仍可能生效。"
+        );
+        if (!confirmed) return;
+        try {
+            await Stowling.request(
+                `/v1/task-runs/${encodeURIComponent(runId)}/force-stop`,
+                { method: "POST" }
+            );
+            await loadRuns();
+            Stowling.showToast("已请求强制停止");
+        } catch (error) {
+            Stowling.handleError(error, "强制停止任务失败");
         }
     }
 

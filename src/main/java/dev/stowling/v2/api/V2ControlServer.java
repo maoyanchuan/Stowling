@@ -745,6 +745,17 @@ public final class V2ControlServer implements AutoCloseable {
             sendJson(exchange, 200, Map.of("cancelled", true));
             return;
         }
+        String runPrefix = "/v1/task-runs/";
+        String forceStopSuffix = "/force-stop";
+        if (path.startsWith(runPrefix) && path.substring(runPrefix.length())
+                .endsWith(forceStopSuffix)) {
+            requireMethod(method, "POST");
+            requireEmpty(body);
+            String runPath = path.substring(0, path.length() - forceStopSuffix.length());
+            service.forceStopRun(pathUuid(runPath, runPrefix));
+            sendJson(exchange, 202, Map.of("accepted", true));
+            return;
+        }
         if (path.startsWith("/v1/task-runs/")
                 && path.endsWith("/retry-interruption")) {
             requireMethod(method, "POST");

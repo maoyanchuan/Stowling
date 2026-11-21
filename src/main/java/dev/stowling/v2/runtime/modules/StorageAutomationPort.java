@@ -81,6 +81,10 @@ public interface StorageAutomationPort {
         return false;
     }
 
+    /** Releases tracking after the user takes responsibility for the temporary resources. */
+    default void releaseTemporaryResources(UUID owner) {
+    }
+
     default boolean isRecoveryDrop(DroppedItem item) {
         return false;
     }

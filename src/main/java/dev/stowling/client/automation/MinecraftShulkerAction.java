@@ -604,6 +604,8 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     public void cancel() {
         if (terminal != null) {
             restore();
+        } else if (!place && phase == 3 && minecraft.gameMode != null) {
+            minecraft.gameMode.stopDestroyBlock();
         }
     }
 }

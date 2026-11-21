@@ -116,6 +116,25 @@ def test_task_details_use_static_names_and_keep_interruption_recovery() -> None:
     assert "cancelRun(run.runId)" in runtime
 
 
+def test_force_stop_is_available_for_active_runs_in_both_monitor_views() -> None:
+    javascript = read("tasks.js")
+    runtime = between(javascript, "function runtimeCard(run)", "function renderQueue")
+    queue = between(javascript, "function renderQueue()", "function railAction")
+    button = between(javascript, "function forceStopButton(runId)", "function listeningStateLabel")
+    action = between(javascript, "async function forceStopRun(runId)", "document.addEventListener")
+
+    assert "if (isActiveRun(run)) {\n            actions.append(forceStopButton(run.runId))" in (
+        runtime
+    )
+    assert "if (entry.run && isActiveRun(entry.run))" in queue
+    assert "actions.append(forceStopButton(entry.run.runId))" in queue
+    assert 'railAction("强制停止", () => void forceStopRun(runId))' in button
+    assert action.index("if (!confirmed) return;") < action.index("Stowling.request(")
+    assert "/v1/task-runs/${encodeURIComponent(runId)}/force-stop" in action
+    assert '{ method: "POST" }' in action
+    assert "await loadRuns();" in action
+
+
 def test_layout_keeps_a_scrollable_monitor_rail_and_responsive_columns() -> None:
     css = read("styles.css")
     console = between(css, ".task-console {", "}")

@@ -115,7 +115,6 @@
                         <p id="auto-eat-status" class="field-message" role="status" hidden></p>
                         <div id="auto-eat-list" class="move-task-list"
                              aria-label="已保存的自动进食任务"></div>
-                        <p id="material-status" class="field-message" role="status" hidden></p>
                         <div id="material-task-list" class="move-task-list"
                              aria-label="已保存的自动收集材料任务"></div>
                         <article id="material-editor" class="move-saved-task is-draft" hidden>
@@ -171,6 +170,9 @@
                                             交付处已有的材料会抵扣需求。
                                         </p>
                                         <div class="move-form-actions">
+                                            <button id="delete-material-task"
+                                                    class="ghost danger-action task-delete-action"
+                                                    type="button" hidden>删除任务</button>
                                             <button id="material-cancel" class="secondary"
                                                     type="button">取消</button>
                                             <button id="material-save" class="primary"

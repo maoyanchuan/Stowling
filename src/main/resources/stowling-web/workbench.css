@@ -230,6 +230,12 @@ body[data-page] :is(.move-saved-task, .coordinate-point-editor) {
     white-space: nowrap;
 }
 
+.task-card-header > .material-task-run {
+    flex: 0 0 42px;
+    min-height: 28px;
+    padding: 0;
+}
+
 body[data-page] :is(.move-task-summary, .coordinate-point-summary) {
     min-height: 70px;
     gap: 12px;

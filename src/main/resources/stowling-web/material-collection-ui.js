@@ -15,12 +15,12 @@
     const destination = byId("material-destination");
     const boxedDelivery = Settings.switchControl(byId("material-boxed-delivery"));
     const boxedNote = byId("material-boxed-note");
-    const status = byId("material-status");
     const previewStatus = byId("material-preview-status");
     const preview = byId("material-preview");
     const items = byId("material-preview-items");
     const list = byId("material-task-list");
     const add = byId("new-material-task");
+    const remove = byId("delete-material-task");
     const taskRows = new Map();
     let rows = [];
     let locations = new Map();
@@ -48,22 +48,18 @@
         add.disabled = disabled || !revision;
         form.querySelector("fieldset").disabled = disabled;
         byId("material-save").disabled = disabled || !Object.keys(materials).length;
-        list.querySelectorAll("button").forEach((button) => {
-            button.disabled = disabled;
-        });
+        remove.hidden = !current?.id;
         const isDraft = current?.id === null;
         draft.hidden = !isDraft;
         draftToggle.disabled = disabled;
         disclose(draftToggle, draftBody, isDraft && current.expanded);
-        for (const [id, {button, body}] of taskRows) {
-            disclose(button, body, current?.id === id && current.expanded);
+        for (const [id, {button, body, state, run}] of taskRows) {
+            const selected = current?.id === id;
+            button.disabled = disabled;
+            run.disabled = disabled;
+            state.textContent = selected && current.dirty ? "未保存修改" : "已保存";
+            disclose(button, body, selected && current.expanded);
         }
-    }
-
-    /** @param {string} message @returns {void} */
-    function showStatus(message) {
-        status.textContent = message;
-        status.hidden = !message;
     }
 
     /** @returns {void} */
@@ -160,24 +156,24 @@
             overview.append(S.element("strong", "", task.name),
                 S.element("span", "", `${method} · ${target}`));
             const kind = S.element("span", "move-task-kind", "料");
+            const state = S.element("span", "move-task-state", "已保存");
             const chevron = S.element("span", "move-task-chevron", "⌄");
             kind.setAttribute("aria-hidden", "true");
             chevron.setAttribute("aria-hidden", "true");
-            summary.append(kind, overview, chevron);
+            summary.append(kind, overview, state, chevron);
             summary.addEventListener("click", () => selectTask(task));
-            const run = S.element("button", "secondary compact", "运行");
+            const run = S.element("button", "secondary move-task-run material-task-run", "运行");
             run.type = "button";
+            run.title = "加入队列";
+            run.setAttribute("aria-label", `运行：${task.name}`);
             run.addEventListener("click", () => void runTask(task.id));
-            const remove = S.element("button", "ghost compact danger-action", "删除");
-            remove.type = "button";
-            remove.addEventListener("click", () => void deleteTask(task));
-            head.append(summary, run, remove);
+            head.append(summary, run);
             card.append(head, body);
             if (current?.id === task.id) {
                 body.append(form);
             }
             list.append(card);
-            taskRows.set(task.id, {button: summary, body});
+            taskRows.set(task.id, {button: summary, body, state, run});
         }
         controls();
         notifyCount();
@@ -219,9 +215,8 @@
             }
             renderDestinations(destination.value);
             applyTasks(tasks);
-            showStatus("");
         } catch (error) {
-            showStatus(`读取材料任务失败：${error.message}`);
+            S.handleError(error, "读取材料任务失败");
         } finally {
             busy = false;
             controls();
@@ -295,7 +290,7 @@
             closeEditor();
             applyTasks(response);
             changed();
-            showStatus("材料收集任务已保存");
+            S.showToast("材料收集任务已保存");
         } catch (error) {
             previewStatus.textContent = error.message;
         } finally {
@@ -321,9 +316,10 @@
         }
     }
 
-    /** @param {object} task @returns {Promise<void>} */
-    async function deleteTask(task) {
-        if (busy || !window.confirm(`删除材料收集任务「${task.name}」？`)) return;
+    /** @returns {Promise<void>} */
+    async function deleteTask() {
+        const task = rows.find((item) => item.id === current?.id);
+        if (busy || !task || !window.confirm(`删除材料收集任务「${task.name}」？`)) return;
         busy = true;
         controls();
         try {
@@ -334,7 +330,7 @@
             });
             applyTasks(response);
             changed();
-            showStatus("材料收集任务已删除");
+            S.showToast("材料收集任务已删除");
         } catch (error) {
             S.handleError(error, "删除材料任务失败");
         } finally {
@@ -357,6 +353,7 @@
         }
     });
     draftToggle.addEventListener("click", () => selectTask(null));
+    remove.addEventListener("click", () => void deleteTask());
     byId("material-cancel").addEventListener("click", () => {
         const button = taskRows.get(current?.id)?.button || add;
         closeEditor();
@@ -368,7 +365,10 @@
         boxedNote.hidden = !boxedDelivery.checked;
     });
     form.addEventListener("input", (event) => {
-        if (current && event.target !== file) current.dirty = true;
+        if (current && event.target !== file && !current.dirty) {
+            current.dirty = true;
+            controls();
+        }
     });
     form.addEventListener("submit", (event) => void save(event));
     document.addEventListener("stowling:tasks-changed", () => void load());

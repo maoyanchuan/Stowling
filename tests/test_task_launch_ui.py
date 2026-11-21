@@ -104,6 +104,22 @@ def test_material_task_uses_inline_disclosure_and_shared_switch() -> None:
     assert 'Settings.switchControl(byId("material-boxed-delivery"))' in source
 
 
+def test_material_task_card_keeps_delete_in_editor_and_uses_transient_feedback() -> None:
+    html = read("tasks.html")
+    editor = between(html, 'id="material-task-form"', "</form>")
+    assert 'id="delete-material-task"' in editor
+    assert "task-delete-action" in editor
+    assert 'id="material-status"' not in html
+
+    source = read("material-collection-ui.js")
+    rows = between(source, "function renderRows()", "function applyTasks(")
+    assert "summary.append(kind, overview, state, chevron);" in rows
+    assert "head.append(summary, run);" in rows
+    assert '"secondary move-task-run material-task-run"' in rows
+    assert 'S.showToast("材料收集任务已保存")' in source
+    assert 'S.showToast("材料收集任务已删除")' in source
+
+
 def test_refresh_only_rereads_task_runs() -> None:
     javascript = read("tasks.js")
     refresh = between(

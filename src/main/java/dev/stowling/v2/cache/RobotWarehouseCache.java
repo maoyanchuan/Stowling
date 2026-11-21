@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** The robot's index of boxes it has deposited in warehouse containers. */
+/** The robot's index of observed boxes in its dedicated warehouse containers. */
 public final class RobotWarehouseCache {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -32,6 +32,11 @@ public final class RobotWarehouseCache {
     public synchronized Map<String, Box> boxes(Location location) {
         prepare();
         return Map.copyOf(contents.getOrDefault(location, Map.of()));
+    }
+
+    public synchronized void observed(Location location, Map<String, Box> observed) {
+        Map<String, Box> snapshot = Map.copyOf(observed);
+        if (!snapshot.equals(boxes(location))) update(location, snapshot);
     }
 
     public synchronized void stored(Location location, String fingerprint,

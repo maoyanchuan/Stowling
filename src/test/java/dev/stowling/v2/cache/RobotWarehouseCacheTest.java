@@ -53,4 +53,41 @@ class RobotWarehouseCacheTest {
         cache.withdrawn(location, "retained");
         assertEquals(Map.of(), new RobotWarehouseCache(path).boxes(location));
     }
+
+    @Test
+    void observingADedicatedWarehouseAdoptsExistingMixedBoxesAndTheirActualCounts() {
+        Path path = directory.resolve("warehouse.json");
+        Location location = new Location("world-a", new BlockPosition(8, 64, 0));
+        var cache = new RobotWarehouseCache(path);
+        cache.stored(location, "missing", Map.of("minecraft:stone", 64));
+        var mixed = new Box(Map.of("minecraft:dirt", 32, "minecraft:gold_ingot", 16), 2);
+        var observed = Map.of("preexisting-mixed", mixed, "empty", new Box(Map.of(), 1));
+
+        cache.observed(location, observed);
+        cache.observed(location, observed);
+
+        var reopened = new RobotWarehouseCache(path);
+        assertEquals(observed, reopened.boxes(location));
+        assertEquals(Map.of(), reopened.boxes(new Location("world-b", location.position())));
+        reopened.withdrawn(location, "preexisting-mixed");
+        assertEquals(new Box(mixed.items(), 1),
+                new RobotWarehouseCache(path).boxes(location).get("preexisting-mixed"));
+    }
+
+    @Test
+    void anEmptyObservationClearsOnlyThatWarehouseContainer() {
+        Path path = directory.resolve("warehouse.json");
+        Location first = new Location("world-a", new BlockPosition(8, 64, 0));
+        Location second = new Location("world-a", new BlockPosition(9, 64, 0));
+        var cache = new RobotWarehouseCache(path);
+        var mixed = new Box(Map.of("minecraft:stone", 64, "minecraft:dirt", 32), 1);
+        cache.observed(first, Map.of("mixed", mixed));
+        cache.observed(second, Map.of("mixed", mixed));
+
+        cache.observed(first, Map.of());
+
+        var reopened = new RobotWarehouseCache(path);
+        assertEquals(Map.of(), reopened.boxes(first));
+        assertEquals(Map.of("mixed", mixed), reopened.boxes(second));
+    }
 }

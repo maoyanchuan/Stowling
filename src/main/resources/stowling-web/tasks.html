@@ -148,6 +148,11 @@
                                                 type="button">添加位置</button>
                                         <div id="robot-warehouse-locations" class="card-list"
                                              aria-label="仓库位置"></div>
+                                        <p class="auto-config-note">
+                                            专供机器人存放储存区已满后的溢出物品，无需标识物。
+                                            物品混装入潜影盒，优先利用仓库已有盒子的空位。
+                                            请将这些容器留给机器人使用。
+                                        </p>
                                         <p id="robot-warehouse-message" class="field-message error"
                                            role="status" hidden></p>
                                         <div class="move-form-actions">
@@ -576,6 +581,9 @@
                                                 <option value="">请先启用机器人仓库</option>
                                             </select>
                                         </label>
+                                        <p class="auto-config-note">
+                                            确认对应储存区已满后，将溢出物品装盒存入所选机器人仓库。
+                                        </p>
                                         <div id="auto-cleanup-settings"></div>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>

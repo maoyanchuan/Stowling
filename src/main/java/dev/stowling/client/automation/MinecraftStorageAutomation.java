@@ -10,6 +10,7 @@ import dev.stowling.automation.ShulkerTransferPlanner;
 import dev.stowling.automation.TemporaryContainerResolver;
 import dev.stowling.automation.CachePackingBatchPlan;
 import dev.stowling.automation.PartialBoxSourcePlan;
+import dev.stowling.automation.RobotWarehousePackingPlan;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedStorageCapacity;
 import dev.stowling.inventory.WarehouseInventory;
@@ -3157,47 +3158,45 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void findReusableOverflowBox(int index) {
-            for (int next = index; next < destinations.size(); next++) {
-                ContainerTarget destination = destinations.get(next);
-                Location location = warehouseLocation(destination);
-                Set<String> indexed = robotWarehouse.boxes(location).keySet();
-                if (!indexed.isEmpty()) {
-                    int following = next + 1;
-                    read(destination, contents -> reuseIndexedBox(destination, location, indexed,
-                            contents, following), () -> findReusableOverflowBox(following));
-                    return;
-                }
+            if (index >= destinations.size()) {
+                useOwnedOrEmptyBox();
+                return;
             }
-            useOwnedOrEmptyBox();
+            ContainerTarget target = destinations.get(index);
+            read(target, contents -> reuseWarehouseBox(target, contents, index + 1),
+                    () -> findReusableOverflowBox(index + 1));
         }
 
-        private void reuseIndexedBox(ContainerTarget destination, Location location,
-                Set<String> indexed, List<ItemStack> contents, int following) {
-            Map<String, Integer> observed = new LinkedHashMap<>();
-            List<ItemStack> indexedBoxes = new ArrayList<>();
+        private void reuseWarehouseBox(ContainerTarget destination, List<ItemStack> contents,
+                int following) {
+            Location location = warehouseLocation(destination);
+            Map<String, RobotWarehouseCache.Box> observed = new LinkedHashMap<>();
+            List<ItemStack> warehouseBoxes = new ArrayList<>();
             for (ItemStack stack : contents) {
                 if (!MinecraftItemIdentity.isBox(stack)) continue;
                 String fingerprint = boxFingerprint(stack);
-                if (!indexed.contains(fingerprint)) continue;
-                observed.merge(fingerprint, stack.getCount(), Math::addExact);
-                indexedBoxes.add(stack);
+                RobotWarehouseCache.Box previous = observed.get(fingerprint);
+                int count = stack.getCount() + (previous == null ? 0 : previous.count());
+                observed.put(fingerprint, new RobotWarehouseCache.Box(
+                        warehouseBoxContents(stack), count));
+                warehouseBoxes.add(stack);
             }
-            robotWarehouse.reconcile(location, observed);
-            Map<String, Integer> items = rawOwned();
-            ItemStack reusable = indexedBoxes.stream()
-                    .filter(this::eligibleBox)
+            robotWarehouse.observed(location, observed);
+            var candidates = warehouseBoxes.stream()
                     .filter(stack -> !unusableBoxes.contains(destination.position() + ":"
                             + MinecraftItemIdentity.key(stack)))
-                    .filter(stack -> !fittingBoxItems(stack, items).isEmpty())
-                    .max(Comparator.<ItemStack>comparingInt(stack ->
-                            sum(fittingBoxItems(stack, items)))
-                            .thenComparingInt(MinecraftStorageAutomation::insideCount))
-                    .map(ItemStack::copy).orElse(ItemStack.EMPTY);
-            if (reusable.isEmpty()) {
+                    .map(stack -> new RobotWarehousePackingPlan.Box(MinecraftItemIdentity.key(stack),
+                            boxSlots(stack))).toList();
+            var selected = RobotWarehousePackingPlan.select(candidates, rawOwned(),
+                    inventoryStackSizes());
+            if (selected.isEmpty()) {
                 findReusableOverflowBox(following);
                 return;
             }
-            String key = MinecraftItemIdentity.key(reusable);
+            String key = selected.orElseThrow();
+            ItemStack reusable = warehouseBoxes.stream()
+                    .filter(stack -> key.equals(MinecraftItemIdentity.key(stack)))
+                    .findFirst().orElseThrow().copy();
             String fingerprint = boxFingerprint(reusable);
             int before = owned().getOrDefault(key, 0);
             var access = MinecraftStorageAccess.warehouseBox(minecraft, context, destination,
@@ -3221,6 +3220,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private String boxFingerprint(ItemStack stack) {
             return MinecraftItemIdentity.persistentKey(stack, minecraft.level.registryAccess());
+        }
+
+        private Map<String, Integer> warehouseBoxContents(ItemStack stack) {
+            Map<String, Integer> contents = new LinkedHashMap<>();
+            MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream().forEach(item ->
+                    contents.merge(MinecraftItemIdentity.base(item), item.getCount(),
+                            Math::addExact));
+            return contents;
         }
 
         private void useOwnedOrEmptyBox() {
@@ -3332,10 +3339,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             ContainerTarget destination = returns.get(index);
             Location location = warehouseLocation(destination);
             String fingerprint = boxFingerprint(box);
-            Map<String, Integer> contents = new LinkedHashMap<>();
-            MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream().forEach(stack ->
-                    contents.merge(MinecraftItemIdentity.base(stack), stack.getCount(),
-                            Math::addExact));
+            Map<String, Integer> contents = warehouseBoxContents(box);
             var access = MinecraftStorageAccess.warehouseBox(minecraft, context, destination,
                     key, false, () -> robotWarehouse.stored(location, fingerprint, contents));
             Runnable after = () -> {
@@ -3517,8 +3521,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         String completionMessage() {
             if (skipMessage != null) return skipMessage;
-            if (boxedOnly) return storedOrdinary ? "余料已装盒存入机器人仓库"
-                    : "没有待存入机器人仓库的余料";
+            if (boxedOnly) return storedOrdinary ? "储存区溢出物品已装盒存入机器人仓库"
+                    : "没有确认需要存入机器人仓库的储存区溢出物品";
             if (unstackableFull && storedUnstackable == 0) {
                 return "不可堆叠溢出区已满，剩余物品已打包送往普通溢出";
             }

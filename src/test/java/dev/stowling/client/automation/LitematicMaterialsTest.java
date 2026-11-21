@@ -54,6 +54,18 @@ class LitematicMaterialsTest {
     }
 
     @Test
+    void countsStillWaterAndLavaWithoutCountingFlowingOrFallingLiquid() throws IOException {
+        var fluids = region(4, 0xe4,
+                state("water", Map.of("level", "0")),
+                state("water", Map.of("level", "2")),
+                state("lava", Map.of("level", "0")),
+                state("lava", Map.of("level", "8")));
+
+        assertEquals(Map.of("minecraft:water_bucket", 1, "minecraft:lava_bucket", 1),
+                read(fluids).items());
+    }
+
+    @Test
     void decodesPaletteEntriesThatSpanTwoWords() {
         long[] words = {0xcL << 60, 0x2L};
         assertEquals(44, LitematicMaterials.paletteIndex(words, 6, 10));

@@ -309,6 +309,11 @@ body[data-page] :is(.move-field > span, .editor-field > label) {
     font-weight: 400;
 }
 
+body[data-page] .material-boxed-field {
+    display: flex;
+    justify-content: space-between;
+}
+
 body[data-page] :is(.auto-field-grid, .auto-area-fields) {
     display: block;
 }

@@ -85,6 +85,25 @@ def test_saved_task_summary_actions_are_separate_from_disclosure_and_save() -> N
     assert "${endpoint}/${encodeURIComponent(id)}/${operation}" in eat_switch
 
 
+def test_material_task_uses_inline_disclosure_and_shared_switch() -> None:
+    html = read("tasks.html")
+    draft = between(html, 'id="material-editor"', 'id="auto-eat-draft"')
+    assert 'id="toggle-material-draft"' in draft
+    assert 'aria-expanded="false"' in draft
+    assert 'aria-controls="material-draft-body"' in draft
+    assert 'id="material-draft-body" class="move-task-body" hidden' in draft
+    assert 'aria-describedby="material-boxed-note"' in draft
+
+    source = read("material-collection-ui.js")
+    select = between(source, "function selectTask(task)", "function closeEditor()")
+    toggle, switch_task = select.split("} else {", 1)
+    assert "current.expanded = !current.expanded;" in toggle
+    assert "fillForm(task)" not in toggle
+    assert "row.body.append(form)" in switch_task
+    assert "Settings.reveal(body, expanded)" in source
+    assert 'Settings.switchControl(byId("material-boxed-delivery"))' in source
+
+
 def test_refresh_only_rereads_task_runs() -> None:
     javascript = read("tasks.js")
     refresh = between(

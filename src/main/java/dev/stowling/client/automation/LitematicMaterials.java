@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoublePlantBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FlowerPotBlock;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.MultifaceSpreadeableBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
@@ -148,7 +149,7 @@ public final class LitematicMaterials {
         if ("minecraft".equals(id.getNamespace())) {
             switch (id.getPath()) {
                 case "water", "lava" -> {
-                    if (state.getValue(BlockStateProperties.LEVEL_FLOWING) == 0) {
+                    if (state.getValue(LiquidBlock.LEVEL) == 0) {
                         add(items, name + "_bucket", count);
                     }
                     return;

@@ -118,51 +118,67 @@
                         <p id="material-status" class="field-message" role="status" hidden></p>
                         <div id="material-task-list" class="move-task-list"
                              aria-label="已保存的自动收集材料任务"></div>
-                        <article id="material-editor" class="move-saved-task move-task-body"
-                                 hidden>
-                            <form id="material-task-form" class="move-task-form">
-                                <h3 id="material-editor-title">新建 · 自动收集材料</h3>
-                                <fieldset>
-                                    <label class="move-field" for="material-name">
-                                        <span>任务名称</span>
-                                        <input id="material-name" maxlength="80"
-                                               required autocomplete="off">
-                                    </label>
-                                    <label class="move-field" for="material-file">
-                                        <span>投影文件（.litematic）</span>
-                                        <input id="material-file" type="file" accept=".litematic">
-                                    </label>
-                                    <label class="move-field" for="material-destination">
-                                        <span>交付容器或区域</span>
-                                        <select id="material-destination" required></select>
-                                    </label>
-                                    <label class="move-field" for="material-boxed-delivery">
-                                        <span>按潜影盒交付</span>
-                                        <input id="material-boxed-delivery" type="checkbox"
-                                               aria-describedby="material-boxed-note">
-                                    </label>
-                                    <p id="material-boxed-note" class="move-target-note" hidden>
-                                        符合缺口的整盒可直接交付。散料使用公共设施的空潜影盒装箱，
-                                        清单所需的空潜影盒单独交付。
-                                    </p>
-                                    <p id="material-preview-status" class="field-message"
-                                       role="status">选择投影文件后自动解析材料</p>
-                                    <details id="material-preview" hidden>
-                                        <summary id="material-preview-title">材料清单</summary>
-                                        <ul id="material-preview-items"></ul>
-                                    </details>
-                                    <p class="move-target-note">
-                                        从 Chest Tracker 已记录的仓库取料，
-                                        交付处已有的材料会抵扣需求。
-                                    </p>
-                                    <div class="move-form-actions">
-                                        <button id="material-cancel" class="secondary"
-                                                type="button">取消</button>
-                                        <button id="material-save" class="primary"
-                                                type="submit" disabled>保存任务</button>
-                                    </div>
-                                </fieldset>
-                            </form>
+                        <article id="material-editor" class="move-saved-task is-draft" hidden>
+                            <button id="toggle-material-draft" class="move-task-summary"
+                                    type="button" aria-expanded="false"
+                                    aria-controls="material-draft-body">
+                                <span class="move-task-kind" aria-hidden="true">料</span>
+                                <span class="move-task-overview">
+                                    <strong>新建 · 自动收集材料</strong>
+                                    <span>上传投影并选择交付位置</span>
+                                </span>
+                                <span class="move-task-state">未保存</span>
+                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
+                            </button>
+                            <div id="material-draft-body" class="move-task-body" hidden>
+                                <form id="material-task-form" class="move-task-form">
+                                    <fieldset disabled>
+                                        <label class="move-field" for="material-name">
+                                            <span>任务名称</span>
+                                            <input id="material-name" maxlength="80"
+                                                   required autocomplete="off">
+                                        </label>
+                                        <label class="move-field" for="material-file">
+                                            <span>投影文件（.litematic）</span>
+                                            <input id="material-file" type="file"
+                                                   accept=".litematic">
+                                        </label>
+                                        <label class="move-field" for="material-destination">
+                                            <span>交付容器或区域</span>
+                                            <select id="material-destination" required></select>
+                                        </label>
+                                        <label class="move-field material-boxed-field"
+                                               for="material-boxed-delivery">
+                                            <span>按潜影盒交付</span>
+                                            <input id="material-boxed-delivery" type="checkbox"
+                                                   aria-describedby="material-boxed-note">
+                                        </label>
+                                        <p id="material-boxed-note" class="move-target-note"
+                                           hidden>
+                                            符合缺口的整盒可直接交付。散料使用公共设施的空潜影盒装箱，
+                                            清单所需的空潜影盒单独交付。
+                                        </p>
+                                        <p id="material-preview-status" class="field-message"
+                                           role="status">选择投影文件后自动解析材料</p>
+                                        <details id="material-preview" hidden>
+                                            <summary id="material-preview-title">
+                                                材料清单
+                                            </summary>
+                                            <ul id="material-preview-items"></ul>
+                                        </details>
+                                        <p class="move-target-note">
+                                            从 Chest Tracker 已记录的仓库取料，
+                                            交付处已有的材料会抵扣需求。
+                                        </p>
+                                        <div class="move-form-actions">
+                                            <button id="material-cancel" class="secondary"
+                                                    type="button">取消</button>
+                                            <button id="material-save" class="primary"
+                                                    type="submit" disabled>保存任务</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
                         </article>
                         <article id="auto-eat-draft" class="move-saved-task is-draft" hidden>
                             <button id="toggle-auto-eat-draft" class="move-task-summary"

@@ -2,15 +2,18 @@
     "use strict";
 
     const S = window.Stowling;
+    const Settings = window.StowlingSettings;
     const moduleId = "COLLECT_SCHEMATIC_MATERIALS";
     /** @param {string} id @returns {HTMLElement} */
     const byId = (id) => document.getElementById(id);
     const form = byId("material-task-form");
-    const editor = byId("material-editor");
+    const draft = byId("material-editor");
+    const draftToggle = byId("toggle-material-draft");
+    const draftBody = byId("material-draft-body");
     const name = byId("material-name");
     const file = byId("material-file");
     const destination = byId("material-destination");
-    const boxedDelivery = byId("material-boxed-delivery");
+    const boxedDelivery = Settings.switchControl(byId("material-boxed-delivery"));
     const boxedNote = byId("material-boxed-note");
     const status = byId("material-status");
     const previewStatus = byId("material-preview-status");
@@ -18,6 +21,7 @@
     const items = byId("material-preview-items");
     const list = byId("material-task-list");
     const add = byId("new-material-task");
+    const taskRows = new Map();
     let rows = [];
     let locations = new Map();
     let revision = "";
@@ -25,6 +29,18 @@
     let materials = {};
     let unsupported = {};
     let busy = false;
+
+    /**
+     * @param {HTMLElement} button
+     * @param {HTMLElement} body
+     * @param {boolean} expanded
+     * @returns {void}
+     */
+    function disclose(button, body, expanded) {
+        button.setAttribute("aria-expanded", String(expanded));
+        body.inert = !expanded;
+        void Settings.reveal(body, expanded);
+    }
 
     /** @returns {void} */
     function controls() {
@@ -35,6 +51,13 @@
         list.querySelectorAll("button").forEach((button) => {
             button.disabled = disabled;
         });
+        const isDraft = current?.id === null;
+        draft.hidden = !isDraft;
+        draftToggle.disabled = disabled;
+        disclose(draftToggle, draftBody, isDraft && current.expanded);
+        for (const [id, {button, body}] of taskRows) {
+            disclose(button, body, current?.id === id && current.expanded);
+        }
     }
 
     /** @param {string} message @returns {void} */
@@ -46,7 +69,7 @@
     /** @returns {void} */
     function notifyCount() {
         document.dispatchEvent(new CustomEvent("stowling:material-task-count", {
-            detail: {count: rows.length, draftActive: !editor.hidden && !current}
+            detail: {count: rows.length, draftActive: current?.id === null}
         }));
     }
 
@@ -75,8 +98,7 @@
     }
 
     /** @param {object|null} task @returns {void} */
-    function openEditor(task = null) {
-        current = task ? {id: task.id, revision: revision, step: task.steps[0].id} : null;
+    function fillForm(task) {
         const params = task?.steps[0].parameters;
         materials = params ? JSON.parse(params.materials) : {};
         unsupported = {};
@@ -87,24 +109,40 @@
         boxedNote.hidden = !boxedDelivery.checked;
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
-        byId("material-editor-title").textContent = task ? "编辑 · 自动收集材料"
-            : "新建 · 自动收集材料";
-        editor.hidden = false;
+        preview.open = false;
         renderPreview();
+    }
+
+    /** @param {object|null} task @returns {void} */
+    function selectTask(task) {
+        const id = task?.id ?? null;
+        const row = id ? taskRows.get(id) : {button: draftToggle, body: draftBody};
+        if (busy || !S.isConnected() || !row) return;
+        if (current?.id === id) {
+            current.expanded = !current.expanded;
+        } else {
+            if (current?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
+            current = {id, revision, step: task?.steps[0].id, expanded: true, dirty: false};
+            row.body.append(form);
+            fillForm(task);
+        }
+        controls();
         notifyCount();
-        name.focus();
+        row.button.focus();
     }
 
     /** @returns {void} */
     function closeEditor() {
-        editor.hidden = true;
         current = null;
+        controls();
         notifyCount();
     }
 
     /** @returns {void} */
     function renderRows() {
+        draftBody.append(form);
         list.replaceChildren();
+        taskRows.clear();
         for (const task of rows) {
             const parameters = task.steps[0].parameters;
             const target = locations.get(parameters.targetRef) || "交付位置";
@@ -114,11 +152,19 @@
             const head = S.element("div", "task-card-header");
             const summary = S.element("button", "move-task-summary");
             summary.type = "button";
+            const body = S.element("div", "move-task-body");
+            body.id = `material-task-body-${task.id}`;
+            body.hidden = true;
+            summary.setAttribute("aria-controls", body.id);
             const overview = S.element("span", "move-task-overview");
             overview.append(S.element("strong", "", task.name),
                 S.element("span", "", `${method} · ${target}`));
-            summary.append(S.element("span", "move-task-kind", "料"), overview);
-            summary.addEventListener("click", () => openEditor(task));
+            const kind = S.element("span", "move-task-kind", "料");
+            const chevron = S.element("span", "move-task-chevron", "⌄");
+            kind.setAttribute("aria-hidden", "true");
+            chevron.setAttribute("aria-hidden", "true");
+            summary.append(kind, overview, chevron);
+            summary.addEventListener("click", () => selectTask(task));
             const run = S.element("button", "secondary compact", "运行");
             run.type = "button";
             run.addEventListener("click", () => void runTask(task.id));
@@ -126,8 +172,12 @@
             remove.type = "button";
             remove.addEventListener("click", () => void deleteTask(task));
             head.append(summary, run, remove);
-            card.append(head);
+            card.append(head, body);
+            if (current?.id === task.id) {
+                body.append(form);
+            }
             list.append(card);
+            taskRows.set(task.id, {button: summary, body});
         }
         controls();
         notifyCount();
@@ -138,8 +188,15 @@
         revision = response.revision;
         rows = response.tasks.filter((task) => task.steps.length === 1
             && task.steps[0].moduleId === moduleId);
-        if (current && !rows.some((task) => task.id === current.id)) {
+        if (current?.id && !rows.some((task) => task.id === current.id)) {
             closeEditor();
+        } else if (current && !current.dirty) {
+            current.revision = revision;
+            if (current.id) {
+                const saved = rows.find((task) => task.id === current.id);
+                current.step = saved.steps[0].id;
+                fillForm(saved);
+            }
         }
         renderRows();
     }
@@ -174,13 +231,12 @@
     /** @returns {Promise<void>} */
     async function parseFile() {
         const selected = file.files[0];
-        if (!selected || busy) return;
-        materials = {};
-        unsupported = {};
+        if (!selected || busy || !current) return;
+        const retained = Object.keys(materials).length ? "。已保留原材料清单" : "";
         if (!selected.name.toLowerCase().endsWith(".litematic")
                 || selected.size > 8 * 1024 * 1024) {
-            previewStatus.textContent = "请选择 8 MiB 以内的 .litematic 文件";
-            renderPreview();
+            previewStatus.textContent = "请选择 8 MiB 以内的 .litematic 文件" + retained;
+            file.value = "";
             return;
         }
         busy = true;
@@ -194,13 +250,15 @@
             });
             materials = result.items;
             unsupported = result.unsupported;
+            current.dirty = true;
             const warnings = Object.keys(unsupported).length;
             previewStatus.textContent = Object.keys(materials).length
                 ? warnings ? `解析完成，${warnings} 种方块或实体需人工处理` : "解析完成"
                 : "投影没有可收集的材料";
             preview.open = true;
         } catch (error) {
-            previewStatus.textContent = error.message;
+            previewStatus.textContent = error.message + retained;
+            file.value = "";
         } finally {
             busy = false;
             renderPreview();
@@ -210,12 +268,13 @@
     /** @param {Event} event @returns {Promise<void>} */
     async function save(event) {
         event.preventDefault();
-        if (busy || !Object.keys(materials).length) return;
+        if (busy || !current || !Object.keys(materials).length) return;
+        const id = current.id;
         const targetRef = destination.value;
         const payload = {
             name: name.value.trim(),
             steps: [{
-                ...(current ? {id: current.step} : {}),
+                ...(id ? {id: current.step} : {}),
                 moduleId: moduleId,
                 parameters: {
                     targetRef,
@@ -228,10 +287,10 @@
         busy = true;
         controls();
         try {
-            const response = await S.request(current ? `/v1/tasks/${current.id}` : "/v1/tasks", {
-                method: current ? "PUT" : "POST",
+            const response = await S.request(id ? `/v1/tasks/${id}` : "/v1/tasks", {
+                method: id ? "PUT" : "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(current ? {...payload, revision: current.revision} : payload)
+                body: JSON.stringify(id ? {...payload, revision: current.revision} : payload)
             });
             closeEditor();
             applyTasks(response);
@@ -290,12 +349,26 @@
         document.dispatchEvent(new Event("stowling:tasks-changed"));
     }
 
-    add.addEventListener("click", () => openEditor());
-    byId("material-cancel").addEventListener("click", closeEditor);
+    add.addEventListener("click", () => {
+        if (current?.id === null && current.expanded) {
+            draftToggle.focus();
+        } else {
+            selectTask(null);
+        }
+    });
+    draftToggle.addEventListener("click", () => selectTask(null));
+    byId("material-cancel").addEventListener("click", () => {
+        const button = taskRows.get(current?.id)?.button || add;
+        closeEditor();
+        button.focus();
+    });
     byId("refresh-move-tasks").addEventListener("click", () => void load());
     file.addEventListener("change", () => void parseFile());
     boxedDelivery.addEventListener("change", () => {
         boxedNote.hidden = !boxedDelivery.checked;
+    });
+    form.addEventListener("input", (event) => {
+        if (current && event.target !== file) current.dirty = true;
     });
     form.addEventListener("submit", (event) => void save(event));
     document.addEventListener("stowling:tasks-changed", () => void load());

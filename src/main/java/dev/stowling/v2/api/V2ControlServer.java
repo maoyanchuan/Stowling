@@ -19,6 +19,7 @@ import dev.stowling.v2.control.AutoClassifyDetectionRequest;
 import dev.stowling.v2.control.AutoClassifyAreaRequest;
 import dev.stowling.v2.control.AutoClassifyTaskRequest;
 import dev.stowling.v2.control.AutoClassifyTaskUpdateRequest;
+import dev.stowling.v2.control.AutoEatTask;
 import dev.stowling.v2.control.CoordinateInUseException;
 import dev.stowling.v2.control.CategoryBindingRequest;
 import dev.stowling.v2.control.CategoryContainerOverrideRequest;
@@ -459,6 +460,32 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if ("/v1/auto-eat-tasks".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.autoEatTasks());
+            } else if ("POST".equals(method)) {
+                JsonObject json = object(body);
+                sendJson(exchange, 201, service.saveAutoEatTask(null, string(json, "revision"),
+                        autoEatSettings(json)));
+            } else {
+                throw methodNotAllowed("GET, POST");
+            }
+            return;
+        }
+        if (path.startsWith("/v1/auto-eat-tasks/")) {
+            UUID id = pathUuid(path, "/v1/auto-eat-tasks/");
+            if ("PUT".equals(method)) {
+                JsonObject json = object(body);
+                sendJson(exchange, 200, service.saveAutoEatTask(id, string(json, "revision"),
+                        autoEatSettings(json)));
+            } else if ("DELETE".equals(method)) {
+                sendJson(exchange, 200, service.deleteAutoEatTask(id, revision(body)));
+            } else {
+                throw methodNotAllowed("PUT, DELETE");
+            }
+            return;
+        }
         if ("/v1/auto-classify-tasks".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);
@@ -870,6 +897,16 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalUuid(json, "folderId"),
                 cleanupPolicy(json)
         );
+    }
+
+    private static AutoEatTask.Settings autoEatSettings(JsonObject json) {
+        Set<String> required = Set.of("revision", "name", "foodItemId", "foodLevelThreshold",
+                "intervalSeconds", "enabled");
+        requireFieldsAny(json, Set.of("revision", "name", "foodItemId", "coordinateId",
+                "foodLevelThreshold", "intervalSeconds", "enabled"), required);
+        return new AutoEatTask.Settings(string(json, "name"), string(json, "foodItemId"),
+                optionalUuid(json, "coordinateId"), integer(json, "foodLevelThreshold"),
+                integer(json, "intervalSeconds"), optionalBoolean(json, "enabled"));
     }
 
     private static AutoClassifyTaskRequest autoClassifyRequest(
@@ -1769,6 +1806,10 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/auto-classify-task-model.js",
                         read("stowling-web/auto-classify-task-model.js", js)
+                ),
+                Map.entry(
+                        "/auto-eat-ui.js",
+                        read("stowling-web/auto-eat-ui.js", js)
                 ),
                 Map.entry(
                         "/auto-classify-ui.js",

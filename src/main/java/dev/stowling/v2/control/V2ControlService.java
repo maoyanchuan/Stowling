@@ -117,6 +117,12 @@ public interface V2ControlService {
 
     TaskListResponse deleteTask(UUID id, RevisionRequest request);
 
+    AutoEatTaskListResponse autoEatTasks();
+
+    AutoEatTaskListResponse saveAutoEatTask(UUID id, String revision, AutoEatTask.Settings settings);
+
+    AutoEatTaskListResponse deleteAutoEatTask(UUID id, RevisionRequest request);
+
     AutoClassifyTaskListResponse autoClassifyTasks();
 
     AutoClassifyTaskResponse createAutoClassifyTask(

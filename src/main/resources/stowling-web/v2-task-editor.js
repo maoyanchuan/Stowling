@@ -449,6 +449,12 @@
                 )
             ));
         }
+        if (step.parameters.condition === "HAS_PROTECTED_FOOD") {
+            parameters.append(field("食物 ID *", textControl(step, {
+                key: "foodItemId",
+                required: true
+            }, context.changed)));
+        }
         parameters.append(field(
             "条件取反",
             negateControl(step, context.changed)
@@ -903,6 +909,11 @@
                 }
             } else {
                 delete step.parameters.foodLevelThreshold;
+            }
+            if (select.value === "HAS_PROTECTED_FOOD") {
+                step.parameters.foodItemId ||= "minecraft:bread";
+            } else {
+                delete step.parameters.foodItemId;
             }
             changed(true);
         });

@@ -33,6 +33,36 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
+    void savesAndReloadsPausedAutoEatWithChestAndUpdatesItToBackpackOnly() {
+        Path path = directory.resolve("auto-eat.json");
+        ConfigStore store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var chest = createPoint(service, "Food chest");
+        var paused = new AutoEatTask.Settings("Meal", "minecraft:bread", chest.id(), 18, 2, false);
+        var created = service.saveAutoEatTask(null, service.autoEatTasks().revision(), paused);
+
+        var reopened = new ConfigStore(path);
+        reopened.loadOrReset();
+        var restoredService = new V2ControlServiceImpl(reopened,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var restored = restoredService.autoEatTasks();
+        assertEquals(List.of(new AutoEatTask(created.taskId(), paused)), restored.items());
+        assertTrue(restoredService.taskRuns().triggers().isEmpty());
+
+        var carry = new AutoEatTask.Settings("Meal", "minecraft:bread", null, 18, 2, true);
+        var updated = restoredService.saveAutoEatTask(created.taskId(), restored.revision(), carry);
+        assertEquals(List.of(new AutoEatTask(created.taskId(), carry)), updated.items());
+        assertEquals("minecraft:bread",
+                restoredService.taskTriggers().triggers().getFirst().requiredProtectedFood());
+        var deleted = restoredService.deleteAutoEatTask(
+                created.taskId(), new RevisionRequest(updated.revision()));
+        assertTrue(deleted.items().isEmpty());
+        assertTrue(restoredService.taskTriggers().triggers().isEmpty());
+    }
+
+    @Test
     void cleanupDestinationSurvivesLegacyTaskEditsAndProtectsItsCoordinate() {
         V2ControlService service = service();
         CoordinatePoint source = createPoint(service, "Source");

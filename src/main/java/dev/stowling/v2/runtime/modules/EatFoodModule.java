@@ -2,12 +2,16 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.FoodConsumptionResult;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.v2.model.TaskStep;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 final class EatFoodModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final String foodItemId;
+    private final String itemSource;
     private boolean eatingActive;
     private boolean stopRequested;
 
@@ -17,14 +21,27 @@ final class EatFoodModule implements TaskModuleExecutor {
                 step,
                 TaskModuleIds.FOOD_ITEM_ID
         );
+        itemSource = step.parameters().get(TaskModuleIds.ITEM_SOURCE);
     }
 
     @Override
     public TaskModuleResult start() {
         eatingActive = true;
-        return handleResult(
-                context.foodConsumption().startEating(foodItemId)
-        );
+        if (itemSource == null) {
+            return handleResult(context.foodConsumption().startEating(foodItemId));
+        }
+        boolean protectedFood = "protected".equals(itemSource);
+        Set<String> allowed = protectedFood
+                ? context.inventory().availableProtectedFoodKeys(foodItemId)
+                : context.workspace().managedItems().keySet().stream()
+                        .filter(key -> foodItemId.equals(ItemIdentity.base(key)))
+                        .collect(Collectors.toUnmodifiableSet());
+        if (allowed.isEmpty()) {
+            eatingActive = false;
+            return TaskModuleResult.failed(protectedFood ? "背包没有锁定的指定食物: " + foodItemId
+                    : "本次任务没有从食物箱取到指定食物: " + foodItemId);
+        }
+        return handleResult(context.foodConsumption().startEating(foodItemId, allowed));
     }
 
     @Override
@@ -47,8 +64,9 @@ final class EatFoodModule implements TaskModuleExecutor {
 
     @Override
     public void cancel() {
-        if (!eatingActive) {
+        if (eatingActive) {
             context.foodConsumption().cancelEating();
+            eatingActive = false;
         }
     }
 
@@ -59,12 +77,13 @@ final class EatFoodModule implements TaskModuleExecutor {
         eatingActive = false;
         if (!result.items().isEmpty()) {
             for (Map.Entry<String, Integer> entry : result.items().entrySet()) {
-                context.workspace().consumeManaged(
-                        entry.getKey(),
-                        entry.getValue()
-                );
+                if ("protected".equals(itemSource)) {
+                    context.inventory().consumeProtectedFood(entry.getKey(), entry.getValue());
+                } else {
+                    context.workspace().consumeManaged(entry.getKey(), entry.getValue());
+                }
             }
-        } else if (result.state() == ContainerTransferState.SUCCEEDED) {
+        } else if (itemSource == null && result.state() == ContainerTransferState.SUCCEEDED) {
             context.workspace().consumeManaged(foodItemId, 1);
         }
         if (result.state() == ContainerTransferState.FAILED) {

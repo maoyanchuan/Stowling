@@ -317,6 +317,47 @@ public final class PlayerInventoryManager {
         return protectedInventory == null ? Set.of() : protectedInventory.itemCounts().keySet();
     }
 
+    public synchronized Set<String> availableProtectedFoodKeys(String itemId) {
+        if (!available || protectedInventory == null) {
+            return Set.of();
+        }
+        var actual = previous.orElseThrow();
+        var managed = managedCounts();
+        Set<String> keys = new LinkedHashSet<>();
+        for (String key : protectedInventory.itemCounts().keySet()) {
+            if (itemId.equals(ItemIdentity.base(key))
+                    && actual.count(key) > managed.getOrDefault(key, 0)) {
+                keys.add(key);
+            }
+        }
+        return Set.copyOf(keys);
+    }
+
+    synchronized void reserveAcquiredFood(Map<String, Integer> items) {
+        if (items.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
+        items.forEach((key, count) -> kept.merge(key, count, Math::addExact));
+        updateProtection(protectedSnapshot(kept, previous.orElseThrow()));
+        revision++;
+    }
+
+    synchronized void consumeProtectedFood(String key, int count) {
+        if (protectedInventory == null || protectedInventory.count(key) == 0 || count <= 0) {
+            return;
+        }
+        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
+        int remaining = protectedInventory.count(key) - count;
+        if (remaining > 0) {
+            kept.put(key, remaining);
+        } else {
+            kept.remove(key);
+        }
+        updateProtection(protectedSnapshot(kept, previous.orElseThrow()));
+        revision++;
+    }
+
     public synchronized Optional<PlayerInventorySnapshot> expectedInventory() {
         if (protectedInventory == null) {
             return Optional.empty();

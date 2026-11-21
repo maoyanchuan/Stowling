@@ -6,6 +6,7 @@ import java.util.Objects;
 public enum TaskCondition {
     ALWAYS,
     FOOD_BELOW_THRESHOLD,
+    HAS_PROTECTED_FOOD,
     HAS_CONTAINERS,
     HAS_CARRIED_ITEMS,
     HAS_MANAGED_ITEMS,

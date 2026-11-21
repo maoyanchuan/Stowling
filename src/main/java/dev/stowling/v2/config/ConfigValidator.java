@@ -96,6 +96,8 @@ public final class ConfigValidator {
     public static final String CATEGORY_ZONE_ID = "categoryZoneId";
     public static final String AREA_REFERENCE = "area";
     public static final String FOOD_ITEM_ID = "foodItemId";
+    public static final String RESERVE_FOOD = "reserveFood";
+    public static final String INTERACT_WITH_TARGET = "interactWithTarget";
     public static final String FOOD_LEVEL_THRESHOLD = "foodLevelThreshold";
     public static final String ITEM_FILTER = "itemFilter";
     public static final String TIMEOUT_SECONDS = "timeoutSeconds";
@@ -519,6 +521,7 @@ public final class ConfigValidator {
                         TaskFlowTemplates.CONDITION,
                         TaskFlowTemplates.NEGATE,
                         FOOD_LEVEL_THRESHOLD,
+                        FOOD_ITEM_ID,
                         TaskFlowTemplates.MAX_ITERATIONS,
                         ITEM_SOURCE
                 )
@@ -526,6 +529,7 @@ public final class ConfigValidator {
                         TaskFlowTemplates.CONDITION,
                         TaskFlowTemplates.NEGATE,
                         FOOD_LEVEL_THRESHOLD,
+                        FOOD_ITEM_ID,
                         ITEM_SOURCE
                 );
         requireParameters(step, allowed, Set.of(TaskFlowTemplates.CONDITION));
@@ -543,6 +547,11 @@ public final class ConfigValidator {
             throw new V2ValidationException(
                     FOOD_LEVEL_THRESHOLD + " only applies to food conditions"
             );
+        }
+        if (condition == TaskCondition.HAS_PROTECTED_FOOD) {
+            requireFoodItemId(step);
+        } else if (step.parameters().containsKey(FOOD_ITEM_ID)) {
+            throw new V2ValidationException(FOOD_ITEM_ID + " only applies to HAS_PROTECTED_FOOD");
         }
         if (condition == TaskCondition.HAS_MANAGED_ITEMS) {
             requireOptionalChoiceIn(
@@ -915,13 +924,17 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(TARGET_REF, COORDINATE_ID, X, Y, Z),
+                Set.of(TARGET_REF, COORDINATE_ID, X, Y, Z, INTERACT_WITH_TARGET),
                 Set.of()
         );
+        requireOptionalBoolean(step, INTERACT_WITH_TARGET);
         if (!Collections.disjoint(
                 step.parameters().keySet(),
                 MANUAL_COORDINATE_KEYS
         )) {
+            if (step.parameters().containsKey(INTERACT_WITH_TARGET)) {
+                throw new V2ValidationException("interactWithTarget requires a coordinate ref");
+            }
             requireManualMoveCoordinates(step);
             return;
         }
@@ -1128,20 +1141,25 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(TARGET_REF, COORDINATE_ID, FOOD_ITEM_ID),
+                Set.of(TARGET_REF, COORDINATE_ID, FOOD_ITEM_ID, RESERVE_FOOD),
                 Set.of(FOOD_ITEM_ID)
         );
         requireCoordinateReference(step, coordinates);
         requireFoodItemId(step);
+        requireOptionalBoolean(step, RESERVE_FOOD);
     }
 
     private static void requireEatFoodStep(TaskStep step) {
         requireParameters(
                 step,
-                Set.of(FOOD_ITEM_ID),
+                Set.of(FOOD_ITEM_ID, ITEM_SOURCE),
                 Set.of(FOOD_ITEM_ID)
         );
         requireFoodItemId(step);
+        String source = step.parameters().get(ITEM_SOURCE);
+        if (source != null && !Set.of("protected", "managed").contains(source)) {
+            throw new V2ValidationException("food itemSource must be protected or managed");
+        }
     }
 
     private static void requireMarkerZoneStep(
@@ -1238,8 +1256,8 @@ public final class ConfigValidator {
     }
 
     private static void requireFoodItemId(TaskStep step) {
-        String foodItemId = step.parameters().get(FOOD_ITEM_ID).trim();
-        if (!foodItemId.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) {
+        String foodItemId = step.parameters().get(FOOD_ITEM_ID);
+        if (foodItemId == null || !foodItemId.trim().matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) {
             throw new V2ValidationException(
                     FOOD_ITEM_ID + " must be a resource location"
             );

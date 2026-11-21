@@ -19,6 +19,7 @@
     <script src="/task-cleanup-settings.js" defer></script>
     <script src="/tasks.js" defer></script>
     <script src="/auto-classify-ui.js" defer></script>
+    <script src="/auto-eat-ui.js" defer></script>
 </head>
 <body data-page="tasks">
     <header class="topbar">
@@ -110,6 +111,9 @@
                            role="status" hidden></p>
                         <div id="auto-task-list" class="move-task-list"
                              aria-label="已保存的自动分类任务"></div>
+                        <p id="auto-eat-status" class="field-message" role="status" hidden></p>
+                        <div id="auto-eat-list" class="move-task-list"
+                             aria-label="已保存的自动进食任务"></div>
                         <div id="move-task-draft" class="move-saved-task is-draft" hidden>
                             <button id="toggle-move-draft" class="move-task-summary"
                                     type="button" aria-expanded="false"
@@ -406,10 +410,81 @@
                                 <strong>＋ 自动分类</strong>
                                 <span>检测掉落物入缓存，空闲时分类入库</span>
                             </button>
+                            <button id="new-auto-eat" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 自动进食</strong>
+                                <span>饱食度偏低时吃随身食物或到箱子取食</span>
+                            </button>
                         </div>
                     </section>
                 </div>
             </div>
+            <dialog id="auto-eat-dialog" class="task-run-dialog" aria-labelledby="auto-eat-title">
+                <div class="panel-heading">
+                    <h2 id="auto-eat-title">自动进食</h2>
+                    <button id="close-auto-eat" class="secondary compact"
+                            type="button">关闭</button>
+                </div>
+                <form id="auto-eat-form" class="move-task-form">
+                    <fieldset>
+                        <label class="move-field" for="auto-eat-name">
+                            <span>任务名称</span>
+                            <input id="auto-eat-name" maxlength="80" required>
+                        </label>
+                        <div class="auto-field-grid">
+                            <label class="move-field" for="auto-eat-threshold">
+                                <span>饱食度不高于</span>
+                                <input id="auto-eat-threshold" type="number" min="0" max="19"
+                                       step="1" required>
+                            </label>
+                            <label class="move-field" for="auto-eat-interval">
+                                <span>检查间隔（秒）</span>
+                                <input id="auto-eat-interval" type="number" min="1" max="60"
+                                       step="1" required>
+                            </label>
+                        </div>
+                        <label class="move-field" for="auto-eat-food">
+                            <span>食物 ID</span>
+                            <input id="auto-eat-food" placeholder="minecraft:bread" required
+                                   pattern="[a-z0-9_.\-]+:[a-z0-9_.\/\-]+"
+                                   spellcheck="false" autocomplete="off">
+                        </label>
+                        <label class="move-field" for="auto-eat-source">
+                            <span>补给方式</span>
+                            <select id="auto-eat-source">
+                                <option value="inventory">只吃背包锁定食物</option>
+                                <option value="chest">吃完后从指定食物箱补给</option>
+                            </select>
+                        </label>
+                        <p id="auto-eat-inventory-note" class="move-target-note">
+                            把食物放进背包，再到
+                            <a href="/backpack.html" class="text-link">背包管理</a>
+                            设为「保留自用」。
+                        </p>
+                        <p id="auto-eat-chest-note" class="move-target-note" hidden>
+                            优先吃背包锁定的食物。用完后取一组可放进背包的食物，
+                            取回的食物会自动设为「保留自用」。
+                        </p>
+                        <label id="auto-eat-coordinate-field" class="move-field"
+                               for="auto-eat-coordinate" hidden>
+                            <span>食物箱坐标</span>
+                            <select id="auto-eat-coordinate"></select>
+                            <a href="/coordinates.html#coordinate-points"
+                               class="text-link">管理坐标</a>
+                        </label>
+                        <label>
+                            <input id="auto-eat-enabled" type="checkbox">
+                            启用饱食度监听
+                        </label>
+                        <p id="auto-eat-message" class="field-message" role="status"></p>
+                        <div class="move-form-actions">
+                            <button id="delete-auto-eat" class="ghost danger-action"
+                                    type="button" hidden>删除任务</button>
+                            <button class="primary" type="submit">保存任务</button>
+                        </div>
+                    </fieldset>
+                </form>
+            </dialog>
             <dialog id="task-run-details" class="task-run-dialog"
                     aria-labelledby="runtime-title">
                 <div class="panel-heading">

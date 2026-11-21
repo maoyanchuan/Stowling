@@ -19,6 +19,7 @@ import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.model.TaskTriggerDefinition;
+import dev.stowling.v2.model.TaskTriggerType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -115,6 +116,25 @@ class TaskTriggerManagerTest {
 
         assertEquals(1, host.startCount);
         assertEquals(TaskPriority.NORMAL, host.priority);
+    }
+
+    @Test
+    void backpackMealListenerWaitsForProtectedFood() {
+        String food = "minecraft:bread";
+        TaskDefinition task = task(UUID.randomUUID());
+        var trigger = new TaskTriggerDefinition(UUID.randomUUID(), "Meal",
+                TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW, task.id(), TaskPriority.URGENT,
+                1, 0, null, null, 18, null, null, null, food);
+        FakeHost host = new FakeHost();
+        TaskTriggerManager manager = new TaskTriggerManager(new FakeDroppedItems(),
+                new FakeFood(18), new NoopNavigation(), host);
+        manager.refresh(config(task, trigger));
+        manager.tick();
+        assertEquals(0, host.startCount);
+
+        host.protectedFood = food;
+        manager.tick();
+        assertEquals(1, host.startCount);
     }
 
     @Test
@@ -323,6 +343,7 @@ class TaskTriggerManagerTest {
         private boolean pending;
         private UUID taskId;
         private TaskPriority priority;
+        private String protectedFood;
 
         @Override
         public TaskRunSnapshot start(
@@ -352,6 +373,11 @@ class TaskTriggerManagerTest {
         @Override
         public boolean taskPending(UUID ignoredTaskId) {
             return pending;
+        }
+
+        @Override
+        public boolean hasProtectedFood(String itemId) {
+            return itemId.equals(protectedFood);
         }
     }
 

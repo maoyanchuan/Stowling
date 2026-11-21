@@ -4,6 +4,7 @@ import dev.stowling.automation.ContainerApproach;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
@@ -131,6 +132,10 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
                     coordinate.z()
             );
             targetName = coordinate.name();
+            if (Boolean.parseBoolean(step.parameters().get(ConfigValidator.INTERACT_WITH_TARGET))) {
+                container = new ContainerTarget(position, targetName);
+                approach = new ContainerApproach(context.navigation(), null, container.entrances());
+            }
             return;
         }
         if (targetReference.type() != ResourceType.OUTPUT) {

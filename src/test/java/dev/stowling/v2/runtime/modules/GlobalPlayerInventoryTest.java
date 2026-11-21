@@ -9,6 +9,9 @@ import dev.stowling.automation.PlayerInventorySnapshot;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
+import dev.stowling.automation.FoodConsumptionPort;
+import dev.stowling.automation.FoodConsumptionResult;
+import dev.stowling.automation.FoodStatus;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
@@ -17,6 +20,7 @@ import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskFlowTemplates;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.model.AutoClassifyTaskFactory;
@@ -25,6 +29,7 @@ import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.runtime.TaskRunManager;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,6 +40,35 @@ import org.junit.jupiter.api.Test;
 class GlobalPlayerInventoryTest {
     private static final String IRON = "minecraft:iron_ingot";
     private static final String GOLD = "minecraft:gold_ingot";
+    private static final String BREAD = "minecraft:bread";
+
+    @Test
+    void scheduledMealUsesProtectedStockBeforeWithdrawingAndProtectsTheRefill() {
+        InventorySource source = new InventorySource(Map.of(BREAD, 1));
+        MealFoodPort food = new MealFoodPort(source);
+        TaskModuleRuntimeRegistry registry = registry(source, food);
+        TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
+        runs.tick();
+        var view = registry.inventory().view(false, true, Map.of());
+        registry.inventory().allocate(view.revision(), BREAD, 1);
+        var chest = new CoordinatePoint(UUID.randomUUID(), "Food chest", 0, 64, 0);
+        var task = new TaskDefinition(UUID.randomUUID(), "Meal", TaskPriority.URGENT, false,
+                TaskFlowTemplates.scheduledEating("coordinate:" + chest.id(), BREAD, 18));
+
+        runs.start(task, List.of(chest));
+        for (int tick = 0; tick < 20 && runs.busy(); tick++) {
+            runs.tick();
+        }
+        runs.tick();
+
+        assertFalse(runs.busy());
+        assertEquals(List.of("eat", "withdraw", "eat"), food.actions);
+        assertEquals(20, food.level);
+        var bread = registry.inventory().view(false, true, Map.of()).items().getFirst();
+        assertEquals(4, bread.count());
+        assertEquals(4, bread.protectedCount());
+        assertEquals(0, bread.taskCount());
+    }
 
     @Test
     void interruptedRecoveryIsConfirmedBeforeTheUnassignedBoxCanBecomePersonal() {
@@ -291,6 +325,11 @@ class GlobalPlayerInventoryTest {
     }
 
     private static TaskModuleRuntimeRegistry registry(InventorySource source) {
+        return registry(source, FoodConsumptionPort.UNAVAILABLE);
+    }
+
+    private static TaskModuleRuntimeRegistry registry(InventorySource source,
+            FoodConsumptionPort food) {
         NavigationPort navigation = new NavigationPort() {
             @Override
             public NavigationStatus start(BlockPosition target) {
@@ -299,6 +338,11 @@ class GlobalPlayerInventoryTest {
 
             @Override
             public NavigationStatus status(BlockPosition target) {
+                return NavigationStatus.ARRIVED;
+            }
+
+            @Override
+            public NavigationStatus startInteraction(BlockPosition target, AreaBounds area) {
                 return NavigationStatus.ARRIVED;
             }
 
@@ -330,8 +374,65 @@ class GlobalPlayerInventoryTest {
         };
         return new TaskModuleRuntimeRegistry(navigation, droppedItems, base.containerRegions(),
                 base.containerTransfers(), base.containerWithdrawals(), base.containerInspections(),
-                base.categoryMarkerCache(), base.foodConsumption(), base.categoryZones(),
+                base.categoryMarkerCache(), food, base.categoryZones(),
                 StandardTaskModuleFactories.create());
+    }
+
+    private static final class MealFoodPort implements FoodConsumptionPort {
+        private final InventorySource source;
+        private final List<String> actions = new ArrayList<>();
+        private int level = 12;
+
+        private MealFoodPort(InventorySource source) {
+            this.source = source;
+        }
+
+        @Override
+        public FoodStatus observe() {
+            return new FoodStatus(true, level, 0);
+        }
+
+        @Override
+        public FoodConsumptionResult startAcquiringFood(
+                ContainerTarget target, String itemId, boolean replenish
+        ) {
+            assertEquals(BREAD, itemId);
+            assertTrue(replenish);
+            assertEquals(0, source.current.count(BREAD));
+            actions.add("withdraw");
+            source.set(Map.of(BREAD, 5));
+            return FoodConsumptionResult.pending("withdrawing");
+        }
+
+        @Override
+        public FoodConsumptionResult pollAcquiringFood() {
+            return FoodConsumptionResult.succeeded("withdrawn", Map.of(BREAD, 5));
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId) {
+            throw new AssertionError("scheduled meals must use protected food");
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys) {
+            assertEquals(BREAD, itemId);
+            assertEquals(Set.of(BREAD), allowedKeys);
+            actions.add("eat");
+            int remaining = source.current.count(BREAD) - 1;
+            source.set(remaining == 0 ? Map.of() : Map.of(BREAD, remaining));
+            level += 4;
+            return FoodConsumptionResult.succeeded("eaten", Map.of(BREAD, 1));
+        }
+
+        @Override
+        public FoodConsumptionResult pollEating() {
+            throw new AssertionError("fake eats immediately");
+        }
+
+        @Override
+        public void cancelEating() {
+        }
     }
 
     private static final class InventorySource implements PlayerInventoryManager.Source {

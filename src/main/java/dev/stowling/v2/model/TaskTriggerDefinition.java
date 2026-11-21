@@ -15,7 +15,9 @@ public record TaskTriggerDefinition(
         String itemFilter,
         Integer foodLevelThreshold,
         UUID cacheRegionId,
-        Integer radius
+        Integer radius,
+        Boolean disabled,
+        String requiredProtectedFood
 ) {
     public static final int DEFAULT_INTERVAL_TICKS = 20;
     public static final int DEFAULT_COOLDOWN_TICKS = 100;
@@ -33,6 +35,10 @@ public record TaskTriggerDefinition(
         );
         priority = priority == null ? TaskPriority.NORMAL : priority;
         itemFilter = normalizeItemFilter(itemFilter);
+        if (requiredProtectedFood != null && (type != TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW
+                || !requiredProtectedFood.matches("[a-z0-9_.-]+:[a-z0-9_./-]+"))) {
+            throw new IllegalArgumentException("requiredProtectedFood must identify a food item");
+        }
         if (intervalTicks < 1 || intervalTicks > MAX_INTERVAL_TICKS) {
             throw new IllegalArgumentException(
                     "intervalTicks must be between 1 and "
@@ -77,6 +83,13 @@ public record TaskTriggerDefinition(
                 );
             }
         }
+    }
+
+    public TaskTriggerDefinition(UUID id, String name, TaskTriggerType type, UUID targetTaskId,
+            TaskPriority priority, int intervalTicks, int cooldownTicks, UUID coordinateId,
+            String itemFilter, Integer foodLevelThreshold, UUID cacheRegionId, Integer radius) {
+        this(id, name, type, targetTaskId, priority, intervalTicks, cooldownTicks, coordinateId,
+                itemFilter, foodLevelThreshold, cacheRegionId, radius, null, null);
     }
 
     public TaskTriggerDefinition(
@@ -199,6 +212,10 @@ public record TaskTriggerDefinition(
             }
         }
         return false;
+    }
+
+    public boolean enabled() {
+        return !Boolean.TRUE.equals(disabled);
     }
 
     private static String requireName(String value) {

@@ -404,6 +404,8 @@ class V2ControlServerTest {
                     false
             );
             assertEquals(401, unauthorizedAutoClassify.statusCode());
+            assertEquals(401, fixture.send("/v1/auto-eat-tasks", "POST", "{}", false).statusCode());
+            assertEquals(200, fixture.send("/v1/auto-eat-tasks", "GET", null, true).statusCode());
 
             HttpResponse<String> wrongMethod = fixture.send(
                     "/v1/coordinates",

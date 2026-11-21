@@ -9,13 +9,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -68,6 +69,15 @@ public final class MinecraftFoodConsumptionPort
 
     @Override
     public FoodConsumptionResult startEating(String itemId) {
+        return beginEating(itemId, null);
+    }
+
+    @Override
+    public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys) {
+        return beginEating(itemId, Set.copyOf(allowedKeys));
+    }
+
+    private FoodConsumptionResult beginEating(String itemId, Set<String> allowedKeys) {
         Objects.requireNonNull(itemId, "itemId");
         if (!scheduler.isClientThread()) {
             return FoodConsumptionResult.failed(
@@ -88,13 +98,23 @@ public final class MinecraftFoodConsumptionPort
         if (player == null || gameMode == null || player.isRemoved()) {
             return FoodConsumptionResult.failed("当前没有可进食的玩家");
         }
-        FoodSlot slot = findFoodSlot(player.getInventory(), itemId);
+        int previousSelected = player.getInventory().getSelectedSlot();
+        FoodSlot slot = findFoodSlot(player, itemId, allowedKeys);
         if (slot == null) {
             return FoodConsumptionResult.failed(
-                    "快捷栏或副手没有食物: " + itemId
+                    "背包中没有可用的指定食物: " + itemId
             );
         }
-        int previousSelected = player.getInventory().getSelectedSlot();
+        swapFoodSlot(player, slot);
+        ItemStack food = player.getInventory().getItem(slot.index());
+        if (!foodMatches(food, itemId, allowedKeys)) {
+            restoreFoodSlot(player, slot, previousSelected);
+            return FoodConsumptionResult.failed("无法将指定食物放入使用槽");
+        }
+        String itemKey = MinecraftItemIdentity.key(food);
+        int itemCountBefore = allowedKeys == null ? food.getCount() : playerItemCount(player,
+                itemKey, slot.hand() == InteractionHand.OFF_HAND);
+        int foodLevelBefore = player.getFoodData().getFoodLevel();
         if (slot.hotbar()) {
             player.getInventory().setSelectedSlot(slot.index());
             if (player.connection != null) {
@@ -112,20 +132,19 @@ public final class MinecraftFoodConsumptionPort
             if (!useKeyWasDown) {
                 minecraft.options.keyUse.setDown(false);
             }
-            restoreSelected(player, previousSelected, slot.hotbar());
+            restoreFoodSlot(player, slot, previousSelected);
             return FoodConsumptionResult.failed(
                     "无法使用指定食物: " + itemId
             );
         }
         active = new ActiveEating(
                 itemId,
-                slot.index(),
-                slot.hotbar(),
-                slot.hand(),
+                itemKey,
+                slot,
                 previousSelected,
-                player.getFoodData().getFoodLevel(),
-                itemCount(player, slot),
-                EATING_RETRY_INTERVAL_TICKS,
+                foodLevelBefore,
+                itemCountBefore,
+                allowedKeys != null,
                 !useKeyWasDown
         );
         return FoodConsumptionResult.pending("正在进食 " + itemId);
@@ -152,11 +171,7 @@ public final class MinecraftFoodConsumptionPort
             Map<String, Integer> consumed = consumedItems(player, active);
             player.stopUsingItem();
             releaseUseKey();
-            restoreSelected(
-                    player,
-                    active.previousSelected,
-                    active.hotbar
-            );
+            restoreFoodSlot(player, active.slot, active.previousSelected);
             active = null;
             return FoodConsumptionResult.failed("进食超时", consumed);
         }
@@ -169,17 +184,13 @@ public final class MinecraftFoodConsumptionPort
             );
         }
         int foodAfter = player.getFoodData().getFoodLevel();
-        int countAfter = itemCount(player, active);
-        boolean consumed = foodAfter > active.foodLevelBefore
-                || countAfter < active.itemCountBefore;
+        int countAfter = remainingFoodCount(player, active);
+        boolean consumed = countAfter < active.itemCountBefore
+                || !active.restricted && foodAfter > active.foodLevelBefore;
         if (consumed) {
             Map<String, Integer> consumedItems = consumedItems(player, active);
             releaseUseKey();
-            restoreSelected(
-                    player,
-                    active.previousSelected,
-                    active.hotbar
-            );
+            restoreFoodSlot(player, active.slot, active.previousSelected);
             active = null;
             return FoodConsumptionResult.succeeded(
                     "已完成一次进食",
@@ -188,25 +199,24 @@ public final class MinecraftFoodConsumptionPort
         }
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         if (canRetryEating(player, gameMode)) {
+            if (active.ticks < active.nextRetryTick) {
+                return FoodConsumptionResult.pending("等待重试进食 " + active.itemId);
+            }
             InteractionResult retry = gameMode.useItem(
                     player,
-                    active.hand
+                    active.slot.hand()
             );
             active.useAttempts++;
             active.nextRetryTick = active.ticks
                     + EATING_RETRY_INTERVAL_TICKS;
-            if (retry.consumesAction()) {
+            if (retry.consumesAction() || active.useAttempts < EATING_START_RETRIES) {
                 return FoodConsumptionResult.pending(
                         "重新开始进食 " + active.itemId
                 );
             }
         }
         releaseUseKey();
-        restoreSelected(
-                player,
-                active.previousSelected,
-                active.hotbar
-        );
+        restoreFoodSlot(player, active.slot, active.previousSelected);
         active = null;
         return FoodConsumptionResult.failed(
                 "食物没有成功消耗（饱食度 "
@@ -226,11 +236,7 @@ public final class MinecraftFoodConsumptionPort
             }
             releaseUseKey();
             if (player != null && active != null) {
-                restoreSelected(
-                        player,
-                        active.previousSelected,
-                        active.hotbar
-                );
+                restoreFoodSlot(player, active.slot, active.previousSelected);
             }
         }
         active = null;
@@ -240,6 +246,13 @@ public final class MinecraftFoodConsumptionPort
     public FoodConsumptionResult startAcquiringFood(
             ContainerTarget target,
             String itemId
+    ) {
+        return startAcquiringFood(target, itemId, false);
+    }
+
+    @Override
+    public FoodConsumptionResult startAcquiringFood(
+            ContainerTarget target, String itemId, boolean replenish
     ) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(itemId, "itemId");
@@ -258,7 +271,10 @@ public final class MinecraftFoodConsumptionPort
         if (acquiring != null) {
             return FoodConsumptionResult.failed("已有食物取出操作正在进行");
         }
-        acquiring = new ActiveAcquiringFood(target, checkedItemId);
+        if (minecraft.gui.screen() != null) {
+            return FoodConsumptionResult.failed("请先关闭当前界面");
+        }
+        acquiring = new ActiveAcquiringFood(target, checkedItemId, replenish);
         acquiring.deadline = Instant.now().plus(CONTAINER_TIMEOUT);
         return FoodConsumptionResult.pending("正在打开食物箱");
     }
@@ -279,7 +295,7 @@ public final class MinecraftFoodConsumptionPort
         return switch (acquiring.phase) {
             case OPENING -> pollOpeningFoodContainer();
             case WAITING_FOR_SOURCE -> pollSourcePickup();
-            case WAITING_FOR_ONE -> pollSingleItemPlacement();
+            case WAITING_FOR_PLACEMENT -> pollFoodPlacement();
             case RETURNING_REMAINDER -> pollRemainderReturn();
             case CONFIRMING -> pollAcquisitionConfirmation();
             case CLOSING -> pollFoodContainerClosing();
@@ -288,7 +304,7 @@ public final class MinecraftFoodConsumptionPort
 
     @Override
     public void cancelAcquiringFood() {
-        if (scheduler.isClientThread()) {
+        if (scheduler.isClientThread() && acquiring != null && requireContainerScreen() != null) {
             returnCarriedToSource();
             closeContainer();
         }
@@ -306,14 +322,17 @@ public final class MinecraftFoodConsumptionPort
             return FoodConsumptionResult.pending("等待食物箱界面");
         }
         if (!acquiring.openSent) {
-            closeContainer();
-            return FoodConsumptionResult.pending("正在关闭当前界面");
+            return failAcquiring("请先关闭当前界面");
         }
         AbstractContainerMenu menu = screen.getMenu();
         if (playerSlots(menu).isEmpty()
                 || containerSlots(menu).isEmpty()) {
             return FoodConsumptionResult.pending("等待食物箱槽位加载");
         }
+        if (!menu.getCarried().isEmpty()) {
+            return failAcquiring("请先清空手持槽");
+        }
+        acquiring.menu = menu;
         int sourceSlot = findFoodSource(menu, acquiring.itemId);
         if (sourceSlot < 0) {
             return failAcquiring("食物箱中没有指定食物: "
@@ -322,22 +341,27 @@ public final class MinecraftFoodConsumptionPort
         ItemStack source = menu.getSlot(sourceSlot).getItem();
         int destinationSlot = findFoodDestination(menu, source);
         if (destinationSlot < 0) {
-            return failAcquiring("快捷栏或副手没有空间存放食物");
+            return failAcquiring("背包没有空间存放食物");
         }
         acquiring.sourceSlot = sourceSlot;
         acquiring.destinationSlot = destinationSlot;
+        acquiring.itemKey = MinecraftItemIdentity.key(source);
+        Slot destination = menu.getSlot(destinationSlot);
+        int capacity = destination.getMaxStackSize(source) - destination.getItem().getCount();
+        acquiring.sourceCount = source.getCount();
+        acquiring.takeCount = acquiring.replenish ? Math.min(source.getCount(), capacity) : 1;
         acquiring.playerBefore = playerItemCount(
                 minecraft.player,
-                acquiring.itemId
+                acquiring.itemKey
         );
         acquiring.containerBefore = containerItemCount(
                 menu,
-                acquiring.itemId
+                acquiring.itemKey
         );
         click(menu, sourceSlot, 0, ContainerInput.PICKUP);
         acquiring.phase = AcquisitionPhase.WAITING_FOR_SOURCE;
         acquiring.deadline = Instant.now().plus(TAKING_TIMEOUT);
-        return FoodConsumptionResult.pending("正在从食物箱取出一个食物");
+        return FoodConsumptionResult.pending("正在从食物箱取出食物");
     }
 
     private FoodConsumptionResult pollSourcePickup() {
@@ -350,21 +374,22 @@ public final class MinecraftFoodConsumptionPort
         if (carried.isEmpty()) {
             return FoodConsumptionResult.pending("等待食物进入手持槽");
         }
-        if (!itemMatches(carried, acquiring.itemId)) {
+        if (!acquiring.itemKey.equals(MinecraftItemIdentity.key(carried))
+                || carried.getCount() != acquiring.sourceCount) {
             return failAcquiring("食物箱取出的物品与目标食物不匹配");
         }
-        acquiring.pickedCount = carried.getCount();
         click(
                 menu,
                 acquiring.destinationSlot,
-                1,
+                acquiring.replenish ? 0 : 1,
                 ContainerInput.PICKUP
         );
-        acquiring.phase = AcquisitionPhase.WAITING_FOR_ONE;
-        return FoodConsumptionResult.pending("正在放入一个食物");
+        acquiring.phase = AcquisitionPhase.WAITING_FOR_PLACEMENT;
+        acquiring.placementSent = true;
+        return FoodConsumptionResult.pending("正在将食物放入背包");
     }
 
-    private FoodConsumptionResult pollSingleItemPlacement() {
+    private FoodConsumptionResult pollFoodPlacement() {
         AbstractContainerScreen<?> screen = requireContainerScreen();
         if (screen == null) {
             return failAcquiring("食物箱在放入食物前关闭");
@@ -376,8 +401,11 @@ public final class MinecraftFoodConsumptionPort
             acquiring.confirmationPolls = 0;
             return FoodConsumptionResult.pending("等待服务器确认取食");
         }
-        if (carried.getCount() >= acquiring.pickedCount) {
-            return FoodConsumptionResult.pending("等待食物放入快捷栏");
+        if (!acquiring.itemKey.equals(MinecraftItemIdentity.key(carried))) {
+            return failAcquiring("手持槽物品已变化");
+        }
+        if (carried.getCount() != acquiring.sourceCount - acquiring.takeCount) {
+            return FoodConsumptionResult.pending("等待食物放入背包");
         }
         click(menu, acquiring.sourceSlot, 0, ContainerInput.PICKUP);
         acquiring.phase = AcquisitionPhase.RETURNING_REMAINDER;
@@ -406,15 +434,15 @@ public final class MinecraftFoodConsumptionPort
         acquiring.confirmationPolls++;
         int playerAfter = playerItemCount(
                 minecraft.player,
-                acquiring.itemId
+                acquiring.itemKey
         );
-        int containerAfter = containerItemCount(menu, acquiring.itemId);
-        boolean confirmed = playerAfter == acquiring.playerBefore + 1
-                && containerAfter == acquiring.containerBefore - 1;
+        int containerAfter = containerItemCount(menu, acquiring.itemKey);
+        boolean confirmed = playerAfter == acquiring.playerBefore + acquiring.takeCount
+                && containerAfter == acquiring.containerBefore - acquiring.takeCount;
         if (acquiring.confirmationPolls >= CONFIRM_POLLS
                 && confirmed
                 && menu.getCarried().isEmpty()) {
-            acquiring.acquiredCount = 1;
+            acquiring.acquiredCount = acquiring.takeCount;
             closeContainer();
             acquiring.phase = AcquisitionPhase.CLOSING;
             acquiring.deadline = Instant.now().plus(CLOSING_TIMEOUT);
@@ -424,35 +452,37 @@ public final class MinecraftFoodConsumptionPort
     }
 
     private FoodConsumptionResult pollFoodContainerClosing() {
-        if (currentContainerScreen() != null) {
+        if (requireContainerScreen() != null) {
             return FoodConsumptionResult.pending("等待食物箱关闭");
         }
-        String itemId = acquiring.itemId;
+        String itemKey = acquiring.itemKey;
         int acquired = acquiring.acquiredCount;
         acquiring = null;
         return FoodConsumptionResult.succeeded(
-                "已从食物箱取出一个食物",
-                acquired > 0 ? Map.of(itemId, acquired) : Map.of()
+                "已从食物箱取出 " + acquired + " 个食物",
+                acquired > 0 ? Map.of(itemKey, acquired) : Map.of()
         );
     }
 
     private FoodConsumptionResult failAcquiring(String message) {
-        String itemId = acquiring.itemId;
+        String itemKey = acquiring.itemKey;
         int acquired = acquiring.acquiredCount;
-        if (acquiring.sourceSlot >= 0) {
-            int current = playerItemCount(minecraft.player, itemId);
+        if (acquiring.placementSent) {
+            int current = playerItemCount(minecraft.player, itemKey);
             int observed = Math.max(
                     0,
                     current - acquiring.playerBefore
             );
-            acquired = Math.max(acquired, observed);
+            acquired = Math.max(acquired, Math.min(observed, acquiring.takeCount));
         }
         returnCarriedToSource();
-        closeContainer();
+        if (requireContainerScreen() != null) {
+            closeContainer();
+        }
         acquiring = null;
         return FoodConsumptionResult.failed(
                 message,
-                acquired > 0 ? Map.of(itemId, acquired) : Map.of()
+                acquired > 0 ? Map.of(itemKey, acquired) : Map.of()
         );
     }
 
@@ -460,8 +490,12 @@ public final class MinecraftFoodConsumptionPort
         if (acquiring == null || acquiring.sourceSlot < 0) {
             return;
         }
-        AbstractContainerScreen<?> screen = currentContainerScreen();
-        if (screen == null || screen.getMenu().getCarried().isEmpty()) {
+        AbstractContainerScreen<?> screen = requireContainerScreen();
+        if (screen == null) {
+            return;
+        }
+        ItemStack carried = screen.getMenu().getCarried();
+        if (carried.isEmpty() || !acquiring.itemKey.equals(MinecraftItemIdentity.key(carried))) {
             return;
         }
         click(
@@ -473,27 +507,28 @@ public final class MinecraftFoodConsumptionPort
     }
 
     private static FoodSlot findFoodSlot(
-            Inventory inventory,
-            String itemId
+            LocalPlayer player, String itemId, Set<String> allowedKeys
     ) {
+        Inventory inventory = player.getInventory();
         for (int slot = 0; slot < Inventory.getSelectionSize(); slot++) {
-            if (itemMatches(inventory.getItem(slot), itemId)) {
-                return new FoodSlot(
-                        slot,
-                        true,
-                        InteractionHand.MAIN_HAND
-                );
+            if (foodMatches(inventory.getItem(slot), itemId, allowedKeys)) {
+                return new FoodSlot(slot, true, InteractionHand.MAIN_HAND, -1);
             }
         }
-        if (itemMatches(
-                inventory.getItem(Inventory.SLOT_OFFHAND),
-                itemId
-        )) {
-            return new FoodSlot(
-                    Inventory.SLOT_OFFHAND,
-                    false,
-                    InteractionHand.OFF_HAND
-            );
+        if (foodMatches(inventory.getItem(Inventory.SLOT_OFFHAND), itemId, allowedKeys)) {
+            return new FoodSlot(Inventory.SLOT_OFFHAND, false, InteractionHand.OFF_HAND, -1);
+        }
+        if (player.containerMenu != player.inventoryMenu) {
+            return null;
+        }
+        for (int index : playerSlots(player.inventoryMenu)) {
+            Slot slot = player.inventoryMenu.getSlot(index);
+            int inventoryIndex = slot.getContainerSlot();
+            if (inventoryIndex >= Inventory.getSelectionSize() && inventoryIndex < 36
+                    && foodMatches(slot.getItem(), itemId, allowedKeys)) {
+                return new FoodSlot(inventory.getSelectedSlot(), true,
+                        InteractionHand.MAIN_HAND, index);
+            }
         }
         return null;
     }
@@ -504,7 +539,7 @@ public final class MinecraftFoodConsumptionPort
     ) {
         for (int slotIndex : containerSlots(menu)) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
-            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+            if (foodMatches(stack, itemId, null)) {
                 return slotIndex;
             }
         }
@@ -517,6 +552,7 @@ public final class MinecraftFoodConsumptionPort
     ) {
         int stackingSlot = -1;
         int emptySlot = -1;
+        int backpackSlot = -1;
         for (int slotIndex : playerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             if (!slot.mayPlace(food)) {
@@ -525,19 +561,24 @@ public final class MinecraftFoodConsumptionPort
             int containerSlot = slot.getContainerSlot();
             boolean quickAccess = containerSlot >= 0 && containerSlot < 9
                     || containerSlot == Inventory.SLOT_OFFHAND;
+            ItemStack current = slot.getItem();
+            boolean canStack = ItemStack.isSameItemSameComponents(current, food)
+                    && current.getCount() < slot.getMaxStackSize(food);
             if (!quickAccess) {
+                if (backpackSlot < 0 && containerSlot >= 9 && containerSlot < 36
+                        && (current.isEmpty() || canStack)) {
+                    backpackSlot = slotIndex;
+                }
                 continue;
             }
-            ItemStack current = slot.getItem();
             if (current.isEmpty() && emptySlot < 0) {
                 emptySlot = slotIndex;
-            } else if (ItemStack.isSameItemSameComponents(current, food)
-                    && current.getCount() < slot.getMaxStackSize(food)
-                    && stackingSlot < 0) {
+            } else if (canStack && stackingSlot < 0) {
                 stackingSlot = slotIndex;
             }
         }
-        return stackingSlot >= 0 ? stackingSlot : emptySlot;
+        if (stackingSlot >= 0) return stackingSlot;
+        return emptySlot >= 0 ? emptySlot : backpackSlot;
     }
 
     private static java.util.List<Integer> playerSlots(
@@ -558,13 +599,6 @@ public final class MinecraftFoodConsumptionPort
                 .toList();
     }
 
-    private static int playerItemCount(
-            AbstractContainerMenu menu,
-            String itemId
-    ) {
-        return itemCount(menu, playerSlots(menu), itemId);
-    }
-
     private static int containerItemCount(
             AbstractContainerMenu menu,
             String itemId
@@ -580,58 +614,67 @@ public final class MinecraftFoodConsumptionPort
         int count = 0;
         for (int slotIndex : slots) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
-            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+            if (!stack.isEmpty() && itemId.equals(MinecraftItemIdentity.key(stack))) {
                 count = Math.addExact(count, stack.getCount());
             }
         }
         return count;
     }
 
-    private static String itemId(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+    private static boolean foodMatches(ItemStack stack, String itemId, Set<String> allowedKeys) {
+        return !stack.isEmpty() && stack.get(DataComponents.FOOD) != null
+                && itemId.equals(MinecraftItemIdentity.base(stack))
+                && (allowedKeys == null || allowedKeys.contains(MinecraftItemIdentity.key(stack)));
     }
 
-    private static boolean itemMatches(ItemStack stack, String itemId) {
-        return !stack.isEmpty()
-                && itemId.equals(
-                        BuiltInRegistries.ITEM.getKey(stack.getItem())
-                                .toString()
-                );
-    }
-
-    private static int itemCount(LocalPlayer player, FoodSlot slot) {
-        return player.getInventory().getItem(slot.index()).getCount();
-    }
-
-    private static int itemCount(LocalPlayer player, ActiveEating eating) {
-        return player.getInventory().getItem(eating.slotIndex).getCount();
+    private static int remainingFoodCount(LocalPlayer player, ActiveEating eating) {
+        if (eating.restricted) {
+            return playerItemCount(player, eating.itemKey,
+                    eating.slot.hand() == InteractionHand.OFF_HAND);
+        }
+        ItemStack stack = player.getInventory().getItem(eating.slot.index());
+        return !stack.isEmpty() && eating.itemKey.equals(MinecraftItemIdentity.key(stack))
+                ? stack.getCount() : 0;
     }
 
     private static Map<String, Integer> consumedItems(
             LocalPlayer player,
             ActiveEating eating
     ) {
-        int countAfter = itemCount(player, eating);
+        int countAfter = remainingFoodCount(player, eating);
         int consumed = Math.max(0, eating.itemCountBefore - countAfter);
-        if (consumed == 0
+        if (eating.restricted) {
+            consumed = Math.min(consumed, 1);
+        }
+        if (!eating.restricted && consumed == 0
                 && player.getFoodData().getFoodLevel()
                         > eating.foodLevelBefore) {
             consumed = 1;
         }
         return consumed > 0
-                ? Map.of(eating.itemId, consumed)
+                ? Map.of(eating.itemKey, consumed)
                 : Map.of();
     }
 
     private static int playerItemCount(LocalPlayer player, String itemId) {
+        return playerItemCount(player, itemId, false);
+    }
+
+    private static int playerItemCount(LocalPlayer player, String itemId, boolean includeOffhand) {
         if (player == null) {
             return 0;
         }
         Inventory inventory = player.getInventory();
         int count = 0;
         for (ItemStack stack : inventory.getNonEquipmentItems()) {
-            if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
+            if (!stack.isEmpty() && itemId.equals(MinecraftItemIdentity.key(stack))) {
                 count = Math.addExact(count, stack.getCount());
+            }
+        }
+        if (includeOffhand) {
+            ItemStack offhand = inventory.getItem(Inventory.SLOT_OFFHAND);
+            if (!offhand.isEmpty() && itemId.equals(MinecraftItemIdentity.key(offhand))) {
+                count = Math.addExact(count, offhand.getCount());
             }
         }
         return count;
@@ -643,14 +686,11 @@ public final class MinecraftFoodConsumptionPort
     ) {
         if (gameMode == null
                 || minecraft.gui.screen() != null
-                || active.useAttempts >= EATING_START_RETRIES
-                || active.ticks < active.nextRetryTick) {
+                || active.useAttempts >= EATING_START_RETRIES) {
             return false;
         }
-        return itemMatches(
-                player.getInventory().getItem(active.slotIndex),
-                active.itemId
-        );
+        ItemStack held = player.getItemInHand(active.slot.hand());
+        return !held.isEmpty() && active.itemKey.equals(MinecraftItemIdentity.key(held));
     }
 
     private void releaseUseKey() {
@@ -660,12 +700,15 @@ public final class MinecraftFoodConsumptionPort
         }
     }
 
-    private static void restoreSelected(
-            LocalPlayer player,
-            int previousSelected,
-            boolean hotbar
-    ) {
-        if (!hotbar) {
+    private void swapFoodSlot(LocalPlayer player, FoodSlot slot) {
+        if (slot.swapIndex() >= 0 && player.containerMenu == player.inventoryMenu) {
+            click(player.inventoryMenu, slot.swapIndex(), slot.index(), ContainerInput.SWAP);
+        }
+    }
+
+    private void restoreFoodSlot(LocalPlayer player, FoodSlot slot, int previousSelected) {
+        swapFoodSlot(player, slot);
+        if (!slot.hotbar()) {
             return;
         }
         player.getInventory().setSelectedSlot(previousSelected);
@@ -729,48 +772,48 @@ public final class MinecraftFoodConsumptionPort
     }
 
     private AbstractContainerScreen<?> requireContainerScreen() {
-        return currentContainerScreen();
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        return screen != null && screen.getMenu() == acquiring.menu ? screen : null;
     }
 
     private record FoodSlot(
             int index,
             boolean hotbar,
-            InteractionHand hand
+            InteractionHand hand,
+            int swapIndex
     ) {
     }
 
     private static final class ActiveEating {
         private final String itemId;
-        private final int slotIndex;
-        private final boolean hotbar;
-        private final InteractionHand hand;
+        private final String itemKey;
+        private final FoodSlot slot;
         private final int previousSelected;
         private final int foodLevelBefore;
         private final int itemCountBefore;
-        private int nextRetryTick;
+        private final boolean restricted;
+        private int nextRetryTick = EATING_RETRY_INTERVAL_TICKS;
         private int useAttempts = 1;
         private boolean releaseUseKey;
         private int ticks;
 
         private ActiveEating(
                 String itemId,
-                int slotIndex,
-                boolean hotbar,
-                InteractionHand hand,
+                String itemKey,
+                FoodSlot slot,
                 int previousSelected,
                 int foodLevelBefore,
                 int itemCountBefore,
-                int nextRetryTick,
+                boolean restricted,
                 boolean releaseUseKey
         ) {
             this.itemId = itemId;
-            this.slotIndex = slotIndex;
-            this.hotbar = hotbar;
-            this.hand = hand;
+            this.itemKey = itemKey;
+            this.slot = slot;
             this.previousSelected = previousSelected;
             this.foodLevelBefore = foodLevelBefore;
             this.itemCountBefore = itemCountBefore;
-            this.nextRetryTick = nextRetryTick;
+            this.restricted = restricted;
             this.releaseUseKey = releaseUseKey;
         }
     }
@@ -778,7 +821,7 @@ public final class MinecraftFoodConsumptionPort
     private enum AcquisitionPhase {
         OPENING,
         WAITING_FOR_SOURCE,
-        WAITING_FOR_ONE,
+        WAITING_FOR_PLACEMENT,
         RETURNING_REMAINDER,
         CONFIRMING,
         CLOSING
@@ -787,6 +830,9 @@ public final class MinecraftFoodConsumptionPort
     private static final class ActiveAcquiringFood {
         private final ContainerTarget target;
         private final String itemId;
+        private final boolean replenish;
+        private AbstractContainerMenu menu;
+        private String itemKey;
         private AcquisitionPhase phase = AcquisitionPhase.OPENING;
         private Instant deadline;
         private boolean openSent;
@@ -794,16 +840,20 @@ public final class MinecraftFoodConsumptionPort
         private int destinationSlot = -1;
         private int playerBefore;
         private int containerBefore;
-        private int pickedCount;
+        private int sourceCount;
+        private int takeCount;
+        private boolean placementSent;
         private int acquiredCount;
         private int confirmationPolls;
 
         private ActiveAcquiringFood(
                 ContainerTarget target,
-                String itemId
+                String itemId,
+                boolean replenish
         ) {
             this.target = target;
             this.itemId = itemId;
+            this.replenish = replenish;
         }
     }
 }

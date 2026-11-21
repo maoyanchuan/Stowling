@@ -38,9 +38,11 @@ import dev.stowling.v2.runtime.TaskRunManager;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -663,6 +665,72 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public synchronized AutoEatTaskListResponse autoEatTasks() {
+        return autoEatResponse(configs.read(), null);
+    }
+
+    @Override
+    public synchronized AutoEatTaskListResponse saveAutoEatTask(
+            UUID id, String revision, AutoEatTask.Settings settings
+    ) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, revision);
+        AppConfig config = current.config();
+        if (id != null) {
+            requireAutoEat(current, id);
+        }
+        TaskDefinition task = settings.task(id == null ? UUID.randomUUID() : id);
+        TaskTriggerDefinition listener = settings.trigger(task);
+        List<TaskDefinition> tasks = new ArrayList<>(config.tasks());
+        tasks.removeIf(item -> item.id().equals(task.id()));
+        tasks.add(task);
+        List<TaskTriggerDefinition> triggers = new ArrayList<>(config.triggers());
+        triggers.removeIf(item -> item.id().equals(listener.id()));
+        triggers.add(listener);
+        AppConfig updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, config.coordinates(),
+                tasks, config.regions(), config.categoryZones(), triggers, config.taskFolders(),
+                config.autoClassifyTasks());
+        V2ConfigSnapshot saved = configs.save(current.revision(), updated);
+        runs.refreshTriggers(saved.config());
+        return autoEatResponse(saved, task.id());
+    }
+
+    @Override
+    public synchronized AutoEatTaskListResponse deleteAutoEatTask(UUID id, RevisionRequest request) {
+        V2ConfigSnapshot current = configs.read();
+        requireRevision(current, request.revision());
+        requireAutoEat(current, id);
+        if (runs.hasPendingTask(id)) {
+            throw new IllegalStateException("请先取消或等待本次进食任务结束");
+        }
+        deleteTask(id, request);
+        return autoEatResponse(configs.read(), null);
+    }
+
+    private static void requireAutoEat(V2ConfigSnapshot snapshot, UUID id) {
+        if (autoEatResponse(snapshot, null).items().stream()
+                .noneMatch(item -> item.id().equals(id))) {
+            throw new V2NotFoundException("自动进食任务不存在");
+        }
+    }
+
+    private static AutoEatTaskListResponse autoEatResponse(V2ConfigSnapshot snapshot, UUID id) {
+        Map<UUID, TaskTriggerDefinition> listeners = new LinkedHashMap<>();
+        snapshot.config().triggers().forEach(trigger -> listeners.put(trigger.id(), trigger));
+        List<AutoEatTask> items = new ArrayList<>();
+        for (TaskDefinition task : snapshot.config().tasks()) {
+            TaskTriggerDefinition listener = listeners.get(AutoEatTask.listenerId(task.id()));
+            if (listener != null && task.id().equals(listener.targetTaskId())) {
+                AutoEatTask item = AutoEatTask.from(task, listener);
+                if (item != null) {
+                    items.add(item);
+                }
+            }
+        }
+        return new AutoEatTaskListResponse(snapshot.revision(), id, items);
+    }
+
+    @Override
     public synchronized AutoClassifyTaskListResponse autoClassifyTasks() {
         V2ConfigSnapshot snapshot = configs.read();
         List<AutoClassifyTask> items = snapshot.config().autoClassifyTasks()
@@ -1132,7 +1200,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
     ) {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
-        requireTaskTrigger(current.config(), id);
+        TaskTriggerDefinition existing = requireTaskTrigger(current.config(), id);
         TaskTriggerDefinition replacement = new TaskTriggerDefinition(
                 id,
                 request.name(),
@@ -1144,7 +1212,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.coordinateId(),
                 request.itemFilter(),
                 request.foodLevelThreshold(),
-                request.cacheRegionId()
+                request.cacheRegionId(),
+                null,
+                existing.disabled(),
+                request.type() == existing.type() ? existing.requiredProtectedFood() : null
         );
         List<TaskTriggerDefinition> triggers = current.config().triggers()
                 .stream()

@@ -463,7 +463,9 @@ public final class ConfigStore {
                             "itemFilter",
                             "foodLevelThreshold",
                             "cacheRegionId",
-                            "radius"
+                            "radius",
+                            "disabled",
+                            "requiredProtectedFood"
                     ),
                     Set.of(
                             "id",

@@ -14,6 +14,7 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final ContainerTarget target;
     private final String foodItemId;
+    private final boolean reserveFood;
     private boolean started;
     private boolean inFlight;
 
@@ -41,6 +42,7 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
                 step,
                 TaskModuleIds.FOOD_ITEM_ID
         );
+        reserveFood = Boolean.parseBoolean(step.parameters().get(TaskModuleIds.RESERVE_FOOD));
     }
 
     @Override
@@ -52,7 +54,8 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
         inFlight = true;
         return handle(context.foodConsumption().startAcquiringFood(
                 target,
-                foodItemId
+                foodItemId,
+                reserveFood
         ));
     }
 
@@ -89,6 +92,12 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
             return TaskModuleResult.waiting(result.message());
         }
         inFlight = false;
+        if (reserveFood) {
+            context.inventory().reserveAcquiredFood(result.items());
+            return result.state() == ContainerTransferState.FAILED
+                    ? TaskModuleResult.failed(result.message())
+                    : TaskModuleResult.succeeded(result.message());
+        }
         for (Map.Entry<String, Integer> entry : result.items().entrySet()) {
             context.workspace().recordManagedAcquired(
                     entry.getKey(),

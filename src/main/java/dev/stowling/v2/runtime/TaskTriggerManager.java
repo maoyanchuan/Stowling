@@ -35,6 +35,10 @@ final class TaskTriggerManager {
 
         boolean taskPending(UUID taskId);
 
+        default boolean hasProtectedFood(String itemId) {
+            return false;
+        }
+
         default boolean hasCollectedInput(UUID taskId) {
             return false;
         }
@@ -90,6 +94,9 @@ final class TaskTriggerManager {
         }
         Map<UUID, TriggerConfiguration> next = new LinkedHashMap<>();
         for (TaskTriggerDefinition trigger : config.triggers()) {
+            if (!trigger.enabled()) {
+                continue;
+            }
             TaskDefinition target = tasks.get(trigger.targetTaskId());
             if (target == null) {
                 continue;
@@ -371,9 +378,14 @@ final class TaskTriggerManager {
         if (!food.connected()) {
             return ConditionResult.error("无法读取当前饱食度");
         }
-        return food.foodLevel() <= trigger.foodLevelThreshold()
-                ? ConditionResult.hit()
-                : ConditionResult.miss();
+        if (food.foodLevel() > trigger.foodLevelThreshold()) {
+            return ConditionResult.miss();
+        }
+        if (trigger.requiredProtectedFood() != null
+                && !host.hasProtectedFood(trigger.requiredProtectedFood())) {
+            return ConditionResult.error("等待背包保留食物 " + trigger.requiredProtectedFood());
+        }
+        return ConditionResult.hit();
     }
 
     private void startCooldown(TriggerRuntime runtime) {

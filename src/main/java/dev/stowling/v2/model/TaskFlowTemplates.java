@@ -60,6 +60,36 @@ public final class TaskFlowTemplates {
         ));
     }
 
+    public static List<TaskStep> scheduledEating(
+            String coordinateRef, String foodItemId, int triggerThreshold
+    ) {
+        List<TaskStep> meal = new ArrayList<>();
+        if (coordinateRef != null) {
+            TaskStep move = TaskStep.action(UUID.randomUUID(), ConfigValidator.MOVE_TO_COORDINATE,
+                    Map.of(ConfigValidator.TARGET_REF, coordinateRef,
+                            ConfigValidator.INTERACT_WITH_TARGET, "true"));
+            TaskStep withdraw = TaskStep.action(UUID.randomUUID(), ConfigValidator.WITHDRAW_FOOD,
+                    Map.of(ConfigValidator.TARGET_REF, coordinateRef,
+                            ConfigValidator.FOOD_ITEM_ID, foodItemId,
+                            ConfigValidator.RESERVE_FOOD, "true"));
+            meal.add(TaskStep.conditional(UUID.randomUUID(),
+                    conditionParameters(TaskCondition.HAS_PROTECTED_FOOD,
+                            Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId, NEGATE, "true")),
+                    List.of(move, withdraw), List.of()));
+        }
+        meal.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.EAT_FOOD,
+                Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId,
+                        ConfigValidator.ITEM_SOURCE, "protected")));
+        TaskStep eatUntilFull = TaskStep.repeat(UUID.randomUUID(), hungerBelow(20), meal);
+        return List.of(TaskStep.conditional(UUID.randomUUID(), hungerBelow(triggerThreshold + 1),
+                List.of(eatUntilFull), List.of()));
+    }
+
+    private static Map<String, String> hungerBelow(int threshold) {
+        return conditionParameters(TaskCondition.FOOD_BELOW_THRESHOLD,
+                Map.of(ConfigValidator.FOOD_LEVEL_THRESHOLD, Integer.toString(threshold)));
+    }
+
     public static List<TaskStep> sortByCategoryZone(
             String cacheRegionRef,
             String categoryZoneRef,

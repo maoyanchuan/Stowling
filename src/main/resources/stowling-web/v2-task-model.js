@@ -29,6 +29,7 @@
     const CONDITIONS = Object.freeze([
         "ALWAYS",
         "FOOD_BELOW_THRESHOLD",
+        "HAS_PROTECTED_FOOD",
         "HAS_CONTAINERS",
         "HAS_CARRIED_ITEMS",
         "HAS_MANAGED_ITEMS",
@@ -384,6 +385,7 @@
         const labels = {
             ALWAYS: "总是",
             FOOD_BELOW_THRESHOLD: "饱食度低于阈值",
+            HAS_PROTECTED_FOOD: "背包有指定的锁定食物",
             HAS_CONTAINERS: "还有待处理容器",
             HAS_CARRIED_ITEMS: "身上还有携带物品",
             HAS_MANAGED_ITEMS: "还有任务管理物品",

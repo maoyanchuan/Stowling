@@ -318,6 +318,8 @@ public final class TaskFlowExecutor {
         boolean result = switch (condition) {
             case ALWAYS -> true;
             case FOOD_BELOW_THRESHOLD -> foodBelowThreshold(step);
+            case HAS_PROTECTED_FOOD -> !context.inventory().availableProtectedFoodKeys(
+                    parameter(step, TaskModuleIds.FOOD_ITEM_ID)).isEmpty();
             case HAS_CONTAINERS -> context.workspace().hasContainers();
             case HAS_CARRIED_ITEMS -> context.workspace().hasCarriedItems();
             case HAS_MANAGED_ITEMS -> hasSourceItems(step, "managed");

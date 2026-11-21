@@ -94,6 +94,11 @@ public final class TaskRunManager {
                     }
 
                     @Override
+                    public boolean hasProtectedFood(String itemId) {
+                        return !registry.inventory().availableProtectedFoodKeys(itemId).isEmpty();
+                    }
+
+                    @Override
                     public boolean hasCollectedInput(UUID taskId) {
                         return registry.inventory().hasCollectedInput(taskId);
                     }

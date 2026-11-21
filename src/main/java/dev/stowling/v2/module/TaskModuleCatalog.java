@@ -309,7 +309,7 @@ public final class TaskModuleCatalog {
             action(
                     ConfigValidator.WITHDRAW_FOOD,
                     "取出食物",
-                    "从食物箱取出一个指定食物。",
+                    "从食物箱取出指定食物，可将补给加入背包的自用保留数量。",
                     List.of(
                             reference(
                                     ConfigValidator.TARGET_REF,
@@ -317,18 +317,19 @@ public final class TaskModuleCatalog {
                                     "coordinate-reference",
                                     true
                             ),
-                            text(ConfigValidator.FOOD_ITEM_ID, "食物 ID", true)
+                            text(ConfigValidator.FOOD_ITEM_ID, "食物 ID", true),
+                            booleanParameter(ConfigValidator.RESERVE_FOOD, "补给并保留自用", false)
                     )
             ),
             action(
                     ConfigValidator.EAT_FOOD,
                     "进食",
                     "食用物品栏中的指定食物。",
-                    List.of(text(
-                            ConfigValidator.FOOD_ITEM_ID,
-                            "食物 ID",
-                            true
-                    ))
+                    List.of(
+                            text(ConfigValidator.FOOD_ITEM_ID, "食物 ID", true),
+                            select(ConfigValidator.ITEM_SOURCE, "物品来源", false,
+                                    List.of("protected", "managed"))
+                    )
             ),
             action(
                     ConfigValidator.SCAN_CATEGORY_MARKERS,

@@ -2,6 +2,7 @@
     "use strict";
 
     const TOKEN_KEY = "stowling.control.token";
+    const THEME_KEY = "stowling.theme";
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "坐标" },
@@ -434,12 +435,65 @@
         return connected && !configurationUnavailable;
     }
 
+    /** @returns {void} */
+    function mountTheme() {
+        const connection = document.querySelector(".connection-state");
+        if (!connection || document.querySelector("#theme-toggle")) {
+            return;
+        }
+        const controls = element("div", "header-controls");
+        const button = element("button", "secondary compact theme-toggle");
+        button.id = "theme-toggle";
+        button.type = "button";
+        connection.before(controls);
+        controls.append(button, connection);
+
+        /** @param {string | null} value @returns {void} */
+        function applyTheme(value) {
+            const theme = value === "gray" ? "gray" : "green";
+            const green = theme === "green";
+            document.documentElement.dataset.theme = theme;
+            button.textContent = green ? "主题：浅绿" : "主题：深灰";
+            button.setAttribute("aria-pressed", String(green));
+            button.setAttribute("aria-label", "浅绿色主题");
+            button.title = green ? "切换为深灰主题" : "切换为浅绿主题";
+        }
+
+        try {
+            applyTheme(window.localStorage.getItem(THEME_KEY));
+        } catch {
+            applyTheme("green");
+        }
+
+        /** @returns {void} */
+        function toggleTheme() {
+            const theme = document.documentElement.dataset.theme === "green" ? "gray" : "green";
+            applyTheme(theme);
+            try {
+                window.localStorage.setItem(THEME_KEY, theme);
+            } catch {
+                // Keep switching available when the browser blocks local storage.
+            }
+        }
+
+        /** @param {StorageEvent} event @returns {void} */
+        function syncTheme(event) {
+            if (event.key === THEME_KEY || event.key === null) {
+                applyTheme(event.newValue);
+            }
+        }
+
+        button.addEventListener("click", toggleTheme);
+        window.addEventListener("storage", syncTheme);
+    }
+
     /**
      * @param {string} page
      * @returns {void}
      */
     function mountPage(page) {
         document.body.dataset.page = page;
+        mountTheme();
         mountNavigation();
         window.addEventListener("hashchange", mountNavigation);
         mountAuthPanel();

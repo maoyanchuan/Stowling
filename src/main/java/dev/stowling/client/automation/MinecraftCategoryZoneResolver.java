@@ -208,6 +208,10 @@ public final class MinecraftCategoryZoneResolver
             layout.addAll(resolved.layout());
         }
         if (categories.isEmpty()) {
+            if (zone.bindings().stream().allMatch(binding ->
+                    UnstackableCategoryRule.ID.equals(binding.ruleId()))) {
+                return CategoryZoneResult.success(categories, layout);
+            }
             if (markerSources == null) {
                 return CategoryZoneResult.failure(
                         "分类区 " + zone.name() + " 没有识别出分类"

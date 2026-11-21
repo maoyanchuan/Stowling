@@ -15,7 +15,7 @@ public final class UnstackableCategoryRule implements CategoryRule {
     @Override
     public CategoryRuleDefinition definition() {
         return new CategoryRuleDefinition(ID, "不可堆叠物品（排除潜影盒）",
-                "读取分类物识别区的展示框，按样品类型收纳不可堆叠物品，排除潜影盒。");
+                "读取展示框样品，按原版红石分类分组收纳不可堆叠物品，排除潜影盒。");
     }
 
     @Override
@@ -25,15 +25,19 @@ public final class UnstackableCategoryRule implements CategoryRule {
             return CategoryRuleResult.failure("储存区没有可用容器");
         }
         Map<String, List<ContainerTarget>> categories = new LinkedHashMap<>();
+        boolean hasAttachedSample = false;
         for (ContainerTarget target : storageContainers) {
-            markers.stream().filter(this::accepts)
+            List<CategoryMarker> attached = markers.stream().filter(this::accepts)
                     .filter(marker -> target.entrances().contains(marker.position()))
-                    .map(CategoryMarker::itemId).distinct()
-                    .forEach(id -> categories.computeIfAbsent(familyCategory(id),
+                    .toList();
+            hasAttachedSample |= !attached.isEmpty();
+            attached.stream().map(marker -> familyCategory(marker.itemId()))
+                    .filter(family -> !CATEGORY.equals(family)).distinct()
+                    .forEach(family -> categories.computeIfAbsent(family,
                             ignored -> new ArrayList<>()).add(target));
         }
-        return CategoryRuleResult.success(categories.isEmpty()
-                ? Map.of(CATEGORY, storageContainers) : categories);
+        return CategoryRuleResult.success(hasAttachedSample
+                ? categories : Map.of(CATEGORY, storageContainers));
     }
 
     public static CategoryRuleResult resolveMarkerArea(List<CategoryMarker> markers,
@@ -42,6 +46,7 @@ public final class UnstackableCategoryRule implements CategoryRule {
                 .filter(marker -> marker.source() == CategoryMarkerSource.ITEM_FRAME)
                 .map(marker -> new CategoryMarker(marker.position(), familyCategory(marker.itemId()),
                         marker.source(), marker.slotIndex()))
+                .filter(marker -> !CATEGORY.equals(marker.itemId()))
                 .toList();
         if (families.isEmpty()) {
             // An unused slice must not claim inventory intended for its neighbors.
@@ -62,7 +67,35 @@ public final class UnstackableCategoryRule implements CategoryRule {
     }
 
     public static String familyCategory(String inventoryKey) {
-        return CATEGORY + "/" + ItemIdentity.base(inventoryKey);
+        String id = ItemIdentity.base(inventoryKey);
+        if (!id.startsWith("minecraft:")) {
+            return CATEGORY;
+        }
+        String path = id.substring("minecraft:".length());
+        String group = switch (path) {
+            case "potion", "splash_potion", "lingering_potion" -> "potions";
+            case "bamboo_raft", "bamboo_chest_raft" -> "boats";
+            case "minecart" -> "minecarts";
+            case "enchanted_book", "shears", "flint_and_steel", "powder_snow_bucket",
+                    "lava_bucket", "water_bucket", "sulfur_cube_bucket" -> path;
+            default -> {
+                if (path.endsWith("_boat")) {
+                    yield "boats";
+                }
+                if (path.endsWith("_minecart")) {
+                    yield "minecarts";
+                }
+                if (path.startsWith("music_disc_")) {
+                    yield "music_discs";
+                }
+                if (path.endsWith("_helmet") || path.endsWith("_chestplate")
+                        || path.endsWith("_leggings") || path.endsWith("_boots")) {
+                    yield "armor";
+                }
+                yield "";
+            }
+        };
+        return group.isEmpty() ? CATEGORY : CATEGORY + "/" + group;
     }
 
     @Override

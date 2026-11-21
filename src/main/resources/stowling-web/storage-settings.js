@@ -10,15 +10,20 @@
     const temporary = document.createElement("select");
     const empty = document.createElement("select");
     const overflow = document.createElement("select");
+    const warehouseEnabled = document.createElement("input");
+    warehouseEnabled.type = "checkbox";
+    warehouseEnabled.className = "settings-switch";
     const unstackableOverflow = document.createElement("select");
     temporary.multiple = empty.multiple = overflow.multiple = true;
     temporary.size = empty.size = overflow.size = 6;
     const fallback = document.createElement("select");
     let revision = "";
+    let storedSettings = {};
+    let overflowOrder = [];
     let robotWarehouseEnabled;
     let dirty = false;
     let busy = false;
-    let activeSection = 1;
+    let activeSection = 4;
     let pendingSection = null;
     const message = S.element("p", "field-message", "等待连接");
     const save = S.element("button", "secondary", "保存公共设施");
@@ -47,6 +52,11 @@
             if (dirty || busy) return;
             revision = response.revision;
             const value = response.settings;
+            storedSettings = value;
+            overflowOrder = [
+                ...(value.overflowCoordinateIds || []).map(id => "coordinate:" + id),
+                ...(value.overflowRegionIds || []).map(id => "region:" + id)
+            ];
             robotWarehouseEnabled = value.robotWarehouseEnabled;
             enabled.checked = value.cleanupEnabled;
             unstackableOverflow.replaceChildren(new Option("未配置", ""));
@@ -78,8 +88,10 @@
                 }
             }
             unstackableOverflow.value = value.unstackableOverflowRegionId || "";
+            warehouseEnabled.checked = robotWarehouseEnabled !== false
+                && selected(overflow).length > 0;
             save.disabled = false;
-            message.textContent = "任务的中断存放位置请在任务内选择。这里的暂存仅兼容旧任务；溢出支持点位或区域。";
+            message.textContent = "";
         } catch (error) {
             message.textContent = "读取公共设施失败，请点击重新读取。";
             S.handleError(error, "读取公共设施失败");
@@ -94,40 +106,57 @@
     add.type = "button";
     add.id = "add-facility-coordinate";
     add.addEventListener("click", () => {
-        pendingSection = activeSection === 0 ? 1 : activeSection;
+        pendingSection = activeSection;
         document.dispatchEvent(new CustomEvent("stowling:request-coordinate-create", {
-            detail: {returnPanel: "facilities", name: ["", "暂存箱", "空盒供应箱",
-                "后备打包位置", "溢出箱"][pendingSection]}
+            detail: {
+                returnPanel: pendingSection === 4 ? "robot-warehouse" : "facilities",
+                name: ["", "暂存箱", "空盒供应箱", "后备打包位置", "溢出箱"][pendingSection]
+            }
         }));
     });
     heading.append(S.element("h2", "", "公共设施"), link, regionLink, add);
-    const sections = [["旧任务收尾（兼容）", enabled], ["旧任务暂存（兼容）", temporary],
-        ["空潜影盒供应箱", empty], ["后备打包位置", fallback], ["溢出箱", overflow],
-        ["不可堆叠溢出区域", unstackableOverflow]];
-    const fields = sections.map(([name, control]) => field(name, control));
-    fields[4].append(S.element("small", "muted",
-        "机器人仓库在此存放分类目标装不下的物品。请预留独立容器。"));
-    fields.at(-1).append(S.element("small", "muted",
-        "旧版打包溢出物品模块使用。机器人仓库会将不可堆叠余料一同装盒。"));
+    const fields = [
+        field("旧任务收尾", enabled),
+        field("旧任务暂存", temporary),
+        field("空潜影盒供应箱", empty),
+        field("后备打包位置", fallback),
+        field("可用的存放点位和区域", overflow),
+        field("不可堆叠溢出区域", unstackableOverflow)
+    ];
+    const warehouse = S.element("div", "facility-warehouse");
+    warehouse.append(field("启用机器人仓库", warehouseEnabled), fields[4],
+        S.element("p", "muted compact-help", "自动分类任务可从这里已配置的位置中选择。"));
+    const legacy = S.element("details", "facility-legacy");
+    legacy.append(S.element("summary", "", "兼容设置"), fields[0], fields[1], fields[5]);
+    const sections = [
+        {index: 4, name: "机器人仓库", content: warehouse},
+        {index: 2, name: "空潜影盒供应箱", content: fields[2]},
+        {index: 3, name: "后备打包位置", content: fields[3]},
+        {index: 1, name: "兼容设置", content: legacy}
+    ];
     const navigation = S.element("nav", "resource-browser-list");
     navigation.setAttribute("aria-label", "选择公共设施用途");
-    const buttons = sections.map(([name], index) => {
+    const buttons = sections.map(({index, name}) => {
         const button = S.element("button", "resource-browser-item", name);
         button.type = "button";
-        button.addEventListener("click", () => {
-            activeSection = index;
-            add.hidden = sections[index][1] === unstackableOverflow;
-            fields.forEach((row, number) => {row.hidden = number !== index;});
-            buttons.forEach((item, number) => {
-                item.setAttribute("aria-current", String(number === index));
-            });
-        });
+        if (index === 4) button.id = "robot-warehouse";
+        button.addEventListener("click", () => selectSection(index));
         return button;
     });
-    fields.forEach((row, index) => {row.hidden = index !== 1;});
-    buttons[1].setAttribute("aria-current", "true");
+
+    /** @param {number} index @returns {void} */
+    function selectSection(index) {
+        activeSection = index;
+        if (index === 1) legacy.open = true;
+        sections.forEach((section, position) => {
+            section.content.hidden = section.index !== index;
+            buttons[position].setAttribute("aria-current", String(section.index === index));
+        });
+    }
+
+    selectSection(activeSection);
     navigation.append(...buttons);
-    form.append(heading, ...fields, message);
+    form.append(heading, ...sections.map(({content}) => content), message);
     const actions = S.element("div", "move-form-actions");
     actions.append(refresh, save);
     form.append(actions);
@@ -145,12 +174,19 @@
             select.append(option);
         }
         dirty = true;
+        if (robotWarehouseEnabled == null) warehouseEnabled.checked = selected(overflow).length > 0;
         const select = [null, temporary, empty, fallback, overflow][pendingSection];
         pendingSection = null;
         select.focus();
         message.textContent = "坐标点已创建并选中，请保存公共设施以应用引用。";
     });
     document.addEventListener("stowling:coordinate-create-cancelled", () => {pendingSection = null;});
+    warehouseEnabled.addEventListener("input", () => {
+        robotWarehouseEnabled = warehouseEnabled.checked;
+    });
+    overflow.addEventListener("input", () => {
+        if (robotWarehouseEnabled == null) warehouseEnabled.checked = selected(overflow).length > 0;
+    });
     form.addEventListener("input", () => {dirty = true;});
     refresh.addEventListener("click", () => {
         if (dirty && !window.confirm("重新读取会丢弃未保存的公共设施配置，是否继续？")) return;
@@ -160,13 +196,23 @@
     form.addEventListener("submit", async event => {
         event.preventDefault();
         if (busy) return;
+        const chosen = new Set(selected(overflow));
+        const overflowLocations = Array.from(new Set([...overflowOrder, ...chosen]))
+            .filter(ref => chosen.has(ref));
+        if (robotWarehouseEnabled === true && overflowLocations.length === 0) {
+            message.textContent = "启用机器人仓库前请添加至少一个存放位置。";
+            selectSection(4);
+            overflow.focus();
+            return;
+        }
         busy = true;
         save.disabled = true;
         try {
             const response = await S.request("/v1/storage-settings", {
                 method: "PUT", headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({revision, settings: {
-                    cleanupEnabled: enabled.checked, temporaryContainers: [], emptyBoxContainers: [],
+                    ...storedSettings,
+                    cleanupEnabled: enabled.checked,
                     temporaryCoordinateIds: selected(temporary)
                         .filter(value => value.startsWith("coordinate:"))
                         .map(value => value.slice("coordinate:".length)),
@@ -174,10 +220,10 @@
                         .filter(value => value.startsWith("region:"))
                         .map(value => value.slice("region:".length)),
                     emptyBoxCoordinateIds: selected(empty),
-                    overflowCoordinateIds: selected(overflow)
+                    overflowCoordinateIds: overflowLocations
                         .filter(value => value.startsWith("coordinate:"))
                         .map(value => value.slice("coordinate:".length)),
-                    overflowRegionIds: selected(overflow)
+                    overflowRegionIds: overflowLocations
                         .filter(value => value.startsWith("region:"))
                         .map(value => value.slice("region:".length)),
                     robotWarehouseEnabled,
@@ -185,6 +231,7 @@
                     fallbackCoordinateId: fallback.value || null
                 }})});
             revision = response.revision;
+            overflowOrder = overflowLocations;
             dirty = false;
             message.textContent = "公共设施已保存";
             S.showToast(message.textContent);
@@ -198,7 +245,9 @@
         }
     });
     document.addEventListener("stowling:resource-tab-change", event => {
-        if (event.detail.panelId === "facilities") void load();
+        if (event.detail.panelId !== "facilities") return;
+        if (window.location.hash === "#robot-warehouse") selectSection(4);
+        void load();
     });
     S.onConnected(() => void load());
 })();

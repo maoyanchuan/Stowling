@@ -120,7 +120,7 @@ def test_facilities_mount_and_new_point_is_selected_without_losing_other_referen
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_overflow_facility_keeps_regions_when_adding_a_coordinate() -> None:
-    runner = RUNNER.replace("'空潜影盒供应箱'", "'溢出箱'").replace(
+    runner = RUNNER.replace("'空潜影盒供应箱'", "'机器人仓库'").replace(
         "temporaryRegionIds: ['area']}};",
         "temporaryRegionIds: ['area'], overflowRegionIds: ['area'], "
         "unstackableOverflowRegionId: 'unstackable'}};",
@@ -130,7 +130,7 @@ def test_overflow_facility_keeps_regions_when_adding_a_coordinate() -> None:
         check=True, capture_output=True, encoding="utf-8",
     )
     value = json.loads(result.stdout)
-    assert value["request"]["detail"] == {"returnPanel": "facilities", "name": "溢出箱"}
+    assert value["request"]["detail"] == {"returnPanel": "robot-warehouse", "name": "溢出箱"}
     settings = value["saved"]["settings"]
     assert settings["overflowCoordinateIds"] == ["new"]
     assert settings["overflowRegionIds"] == ["area"]

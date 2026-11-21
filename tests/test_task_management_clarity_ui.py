@@ -35,48 +35,25 @@ def test_reference_select_explains_required_producer_without_changing_targets() 
         assert f'"output:{reference}"' in editor
 
 
-def test_display_area_and_selection_panel_keep_the_fixed_move_workbench() -> None:
+
+def test_task_list_and_detail_use_fixed_editor_side_by_side() -> None:
     html = read("tasks.html")
-    styles = read("styles.css")
     display = between(html, 'id="task-display-area"', "</section>")
-    selection = between(
-        html,
-        'class="panel task-selection-panel"',
-        "</section>",
-    )
+    editor = between(html, 'class="task-editor-panel"', "</section>")
 
     assert 'id="task-display-title">已保存任务</h2>' in display
-    assert 'id="task-list-title">任务选择</h2>' in selection
-    for retained in (
-        'id="move-task-form"',
-        'id="move-task-name"',
-        'id="move-saved-coordinate"',
-        'id="save-move-task"',
-        'id="move-task-list"',
-        'id="refresh-move-tasks"',
-    ):
-        assert retained in display
-    assert 'id="new-move-task"' in selection
-    for moved in ('id="move-task-list"', 'id="refresh-move-tasks"'):
-        assert moved not in selection
+    assert 'id="new-move-task"' in display
+    assert 'id="move-task-list"' in display
+    assert 'id="move-task-form"' in editor
+    assert 'id="move-saved-coordinate"' in editor
+    assert 'id="save-move-task"' in editor
     assert 'id="task-list"' not in display
-    assert 'id="task-list"' not in selection
-    assert 'id="task-form"' not in display
-    assert ".move-task-form" in styles
-    assert ".move-task-option" in styles
-    assert "min-height: 10rem;" in between(styles, ".task-selection-panel {", "}")
-    assert "margin-bottom: 0;" in between(
-        styles,
-        ".task-display-placeholder .panel-heading,",
-        "}",
-    )
-
+    assert 'id="task-form"' not in editor
 
 def test_task_page_removes_editor_draft_and_task_list_state() -> None:
     javascript = read("tasks.js")
     html = read("tasks.html")
 
-    assert 'id="task-editor-title"' not in html
     assert 'id="task-draft-status"' not in html
     assert "编辑配置 · 不影响已在运行的任务" not in html
     for removed in (
@@ -85,7 +62,6 @@ def test_task_page_removes_editor_draft_and_task_list_state() -> None:
         "state.selectedId",
         "renderTaskList",
         "taskListSummary",
-        "有未保存修改",
     ):
         assert removed not in javascript
 
@@ -114,9 +90,9 @@ def test_failure_card_keeps_reason_progress_and_recovery_without_selection() -> 
     assert 'Stowling.element("strong", "", run.taskName)' in card
     assert "selectTask" not in card
     assert '"选择任务"' not in card
-    assert "retryInterruption(run.runId)" in card
-    assert "skipInterruption(run.runId)" in card
-    assert "cancelRun(run.runId)" in card
+    assert "retryInterruption(run.runId)" not in card
+    assert "skipInterruption(run.runId)" not in card
+    assert "cancelRun(run.runId)" not in card
     styles = read("styles.css")
     assert ".task-run-card.is-failed" in styles
     assert ".task-reference-hint[hidden]" in styles

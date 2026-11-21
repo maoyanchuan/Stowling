@@ -781,6 +781,7 @@
      */
     function normalizeTabId(value) {
         const candidate = String(value || "").replace(/^#/, "");
+        if (candidate === "robot-warehouse") return "facilities";
         return TAB_IDS.has(candidate) ? candidate : "category-zones";
     }
 

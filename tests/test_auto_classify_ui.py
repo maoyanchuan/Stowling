@@ -24,8 +24,9 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
     display = between(
         html,
         'id="task-display-area"',
-        '<section class="panel task-selection-panel"',
+        '<section class="task-editor-panel"',
     )
+    editor = between(html, 'id="task-editor-classify"', 'id="task-editor-eat"')
 
     assert display.index('id="auto-task-list"') < display.index(
         'id="auto-task-draft"'
@@ -54,13 +55,12 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "save-auto-task",
         "delete-auto-task",
     ):
-        assert f'id="{element_id}"' in display
-    assert 'id="new-auto-task"' not in display
-    assert 'id="new-auto-task"' in html
+        assert f'id="{element_id}"' in display or f'id="{element_id}"' in editor
+    assert 'id="new-auto-task"' in display
     assert "自动分类" in display
-    assert '<input id="auto-task-name" maxlength="80"' in display
-    assert 'id="auto-pickup-radius" type="number"' in display
-    assert 'min="1" max="64" step="1" value="8"' in display
+    assert '<input id="auto-task-name" maxlength="80"' in editor
+    assert 'id="auto-pickup-radius" type="number"' in editor
+    assert 'min="1" max="64" step="1" value="8"' in editor
 
 
 def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
@@ -123,24 +123,18 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
 
-def test_robot_warehouse_edits_locations_and_classification_selects_a_saved_destination() -> None:
+
+def test_classifier_selects_a_saved_destination_and_links_to_facilities() -> None:
     html = read("tasks.html")
     form = between(html, 'id="auto-task-form"', "</form>")
     assert 'id="auto-overflow-destination"' in form
-    assert "溢出存入位置" in form
-    warehouse = between(html, 'id="robot-warehouse-draft"', "</article>")
-    assert 'id="robot-warehouse-enabled"' in warehouse
-    assert 'id="robot-warehouse-location"' in warehouse
-    assert 'id="add-robot-warehouse-location"' in warehouse
-    assert 'id="robot-warehouse-locations"' in warehouse
+    assert 'href="/coordinates.html#robot-warehouse"' in form
+    assert 'id="robot-warehouse-form"' not in html
 
     javascript = read("auto-classify-ui.js")
-    assert "解除关联" not in javascript
     assert "saved.locations.includes(option.id)" in javascript
     assert "!Auto.warehouseDraft(state.warehouseSnapshot?.settings).enabled" in javascript
-    assert "Auto.warehouseSettingsPayload(settings, state.warehouseDraft)" in javascript
-    assert 'Stowling.request("/v1/storage-settings", {' in javascript
-
+    assert 'Stowling.request("/v1/storage-settings", {' not in javascript
 
 def test_recognition_is_configured_only_in_the_storage_layout() -> None:
     javascript = read("auto-classify-ui.js")
@@ -294,8 +288,7 @@ def test_auto_draft_hides_the_empty_task_placeholder() -> None:
     assert "state.autoDraftActive = event.detail?.draftActive === true;" in listener
     assert "syncMoveDisclosure();" in listener
     assert "savedCount > 0 || newDraft || state.autoDraftActive" in placeholder
-    assert "|| state.robotWarehouseDraftActive" in placeholder
-    assert "+ state.robotWarehouseCount" in disclosure
+    assert "|| state.autoEatDraftActive || state.materialDraftActive" in placeholder
 
 
 def test_dirty_auto_task_switch_is_disabled_and_deletion_warns() -> None:

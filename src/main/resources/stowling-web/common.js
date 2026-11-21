@@ -2,6 +2,7 @@
     "use strict";
 
     const TOKEN_KEY = "stowling.control.token";
+    const THEME_KEY = "stowling.theme";
     const NAV_ITEMS = Object.freeze([
         { page: "dashboard", href: "/index.html", label: "状态概览" },
         { page: "coordinates", href: "/coordinates.html", label: "坐标" },
@@ -434,12 +435,50 @@
         return connected && !configurationUnavailable;
     }
 
+    /** @returns {void} */
+    function mountTheme() {
+        const connection = document.querySelector(".connection-state");
+        if (!connection) return;
+        const controls = element("div", "header-controls");
+        const label = element("label", "theme-picker");
+        const select = element("select");
+        select.append(new Option("绿色", "green"), new Option("灰色", "gray"));
+        label.append(element("span", "", "主题"), select);
+        connection.before(controls);
+        controls.append(label, connection);
+
+        /** @param {string|null} value @returns {void} */
+        function applyTheme(value) {
+            const theme = value === "gray" ? "gray" : "green";
+            document.documentElement.dataset.theme = theme;
+            select.value = theme;
+        }
+
+        try {
+            applyTheme(window.localStorage.getItem(THEME_KEY));
+        } catch {
+            applyTheme("green");
+        }
+        select.addEventListener("change", () => {
+            applyTheme(select.value);
+            try {
+                window.localStorage.setItem(THEME_KEY, select.value);
+            } catch {
+                // Keep the selected theme active when the browser blocks storage.
+            }
+        });
+        window.addEventListener("storage", (event) => {
+            if (event.key === THEME_KEY) applyTheme(event.newValue);
+        });
+    }
+
     /**
      * @param {string} page
      * @returns {void}
      */
     function mountPage(page) {
         document.body.dataset.page = page;
+        mountTheme();
         mountNavigation();
         window.addEventListener("hashchange", mountNavigation);
         mountAuthPanel();

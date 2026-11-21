@@ -44,11 +44,6 @@ import net.minecraft.world.phys.AABB;
 
 public final class MinecraftCategoryZoneResolver
         implements CategoryZonePort {
-    private static final Set<String> MARKER_CONTAINER_TYPES = Set.of(
-            "minecraft:chest",
-            "minecraft:trapped_chest",
-            "minecraft:barrel"
-    );
     private static final Set<CategoryMarkerSource> ALL_MARKER_SOURCES =
             Set.copyOf(EnumSet.allOf(CategoryMarkerSource.class));
     private static final Set<CategoryMarkerSource> SMART_MARKER_SOURCES =
@@ -376,7 +371,7 @@ public final class MinecraftCategoryZoneResolver
                 appendContainerContents(markerPosition, contents, result);
                 return;
             }
-            if (MARKER_CONTAINER_TYPES.contains(blockId)) {
+            if (ContainerContentsCategoryRule.CONTAINER_TYPES.contains(blockId)) {
                 return;
             }
         }

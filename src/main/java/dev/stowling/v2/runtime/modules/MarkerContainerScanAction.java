@@ -18,12 +18,6 @@ import java.util.Set;
 import java.util.UUID;
 
 final class MarkerContainerScanAction {
-    private static final Set<String> MARKER_CONTAINER_TYPES = Set.of(
-            "minecraft:chest",
-            "minecraft:trapped_chest",
-            "minecraft:barrel"
-    );
-
     private MarkerContainerScanAction() {
     }
 
@@ -61,7 +55,7 @@ final class MarkerContainerScanAction {
             cache.put(binding.id(), new LinkedHashMap<>());
             ContainerScanResult scan = context.containerRegions().scan(
                     markerRegion(binding),
-                    MARKER_CONTAINER_TYPES,
+                    ContainerContentsCategoryRule.CONTAINER_TYPES,
                     maxVolume
             );
             if (!scan.succeeded()) {

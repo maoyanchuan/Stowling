@@ -4,8 +4,11 @@ import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedContainerCapacity;
 import dev.stowling.inventory.WarehouseInventory;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -40,8 +43,16 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
 
     @Override
     public WarehouseInventory get() {
+        return get(false);
+    }
+
+    public WarehouseInventory getForDisplay() {
+        return get(true);
+    }
+
+    private WarehouseInventory get(boolean excludeMarkers) {
         try {
-            return scheduler.submit(this::read).get(8, TimeUnit.SECONDS);
+            return scheduler.submit(() -> read(excludeMarkers)).get(8, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("库存读取已中断", exception);
@@ -52,12 +63,12 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         }
     }
 
-    private WarehouseInventory read() {
+    private WarehouseInventory read(boolean excludeMarkers) {
         if (minecraft.level == null || minecraft.player == null) {
             cached.clear();
             activeBank = null;
             return snapshot("DISCONNECTED", "请先进入世界，库存仅读取当前连接的记忆库。", "",
-                    List.of());
+                    List.of(), excludeMarkers);
         }
         String dimension = minecraft.level.dimension().identifier().toString();
         var loaded = MemoryBankAccess.INSTANCE.getLoaded();
@@ -65,7 +76,7 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
             cached.clear();
             activeBank = null;
             return snapshot("NO_MEMORY_BANK", "Chest Tracker 尚未加载记忆库，请先打开一个箱子。",
-                    dimension, List.of());
+                    dimension, List.of(), excludeMarkers);
         }
         List<WarehouseInventory.Container> containers = new ArrayList<>();
         if (activeBank != loaded.orElseThrow()) {
@@ -96,8 +107,10 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                 CachedContainer existing = cached.get(id);
                 if (existing == null || existing.memory() != memory
                         || !java.util.Objects.equals(existing.timestamp(), memory.realTimestamp())) {
-                    existing = new CachedContainer(memory, memory.realTimestamp(),
-                            container(dimensionId, positions, memory));
+                    String blockId = memory.container().map(block ->
+                            BuiltInRegistries.BLOCK.getKey(block).toString()).orElse("");
+                    existing = new CachedContainer(memory, memory.realTimestamp(), blockId,
+                            container(dimensionId, positions, memory, blockId));
                     cached.put(id, existing);
                 }
                 containers.add(existing.container());
@@ -108,12 +121,18 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                 .collect(java.util.stream.Collectors.toSet());
         cached.keySet().retainAll(retained);
         return snapshot("READY", "Chest Tracker 最近记录；未打开的容器与外部改动需重新核对。",
-                dimension, containers);
+                dimension, containers, excludeMarkers);
     }
 
     private WarehouseInventory snapshot(String state, String message, String dimension,
-            List<WarehouseInventory.Container> containers) {
+            List<WarehouseInventory.Container> containers, boolean excludeMarkers) {
         var config = configs.read().config();
+        List<AreaBounds> markerAreas = excludeMarkers
+                ? markerAreas(config.categoryZones()) : List.of();
+        if (!markerAreas.isEmpty()) {
+            containers = containers.stream().filter(stock -> !isMarkerContainer(
+                    stock, cached.get(stock.id()).blockId(), dimension, markerAreas)).toList();
+        }
         List<WarehouseInventory.Area> areas = new ArrayList<>();
         for (var region : config.regions()) {
             areas.add(new WarehouseInventory.Area("region:" + region.id(), "区域 · " + region.name(),
@@ -128,8 +147,23 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         return new WarehouseInventory(state, message, dimension, Instant.now(), containers, areas);
     }
 
+    static List<AreaBounds> markerAreas(List<CategoryZoneDefinition> zones) {
+        return zones.stream().flatMap(zone -> zone.bindings().stream())
+                .filter(binding -> ContainerContentsCategoryRule.ID.equals(binding.ruleId()))
+                .map(CategoryBindingDefinition::markerArea)
+                .toList();
+    }
+
+    static boolean isMarkerContainer(WarehouseInventory.Container stock, String blockId,
+            String dimension, List<AreaBounds> markerAreas) {
+        return dimension.equals(stock.dimension())
+                && ContainerContentsCategoryRule.CONTAINER_TYPES.contains(blockId)
+                && stock.positions().stream().anyMatch(position ->
+                        markerAreas.stream().anyMatch(area -> area.contains(position)));
+    }
+
     private static WarehouseInventory.Container container(String dimension,
-            List<BlockPosition> positions, Memory memory) {
+            List<BlockPosition> positions, Memory memory, String blockId) {
         Map<String, WarehouseInventory.Entry> items = new LinkedHashMap<>();
         List<WarehouseInventory.Box> boxes = new ArrayList<>();
         int full = 0;
@@ -165,8 +199,6 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         }
         var name = memory.renderName();
         Instant recorded = memory.realTimestamp();
-        String blockId = memory.container().map(block ->
-                BuiltInRegistries.BLOCK.getKey(block).toString()).orElse("");
         int slots = RecordedContainerCapacity.slots(blockId, positions.size());
         return new WarehouseInventory.Container(dimension + ":" + positions.getFirst(),
                 name == null ? "已记录容器" : name.getString(), dimension, positions,
@@ -192,7 +224,7 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         return new BlockPosition(position.getX(), position.getY(), position.getZ());
     }
 
-    private record CachedContainer(Memory memory, Instant timestamp,
+    private record CachedContainer(Memory memory, Instant timestamp, String blockId,
             WarehouseInventory.Container container) {
     }
 }

@@ -132,7 +132,7 @@ public final class StowlingRuntime implements AutoCloseable {
                 taskRuns,
                 () -> inventory(inventories),
                 storageSettings,
-                warehouse
+                warehouse::getForDisplay
         );
 
         V2ControlServer server = V2ControlServer.loopbackWithTokenFile(service, tokenFile, port);

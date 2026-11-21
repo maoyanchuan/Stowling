@@ -3,9 +3,15 @@ package dev.stowling.v2.category;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import java.util.List;
+import java.util.Set;
 
 public final class ContainerContentsCategoryRule implements CategoryRule {
     public static final String ID = "MARKER_CONTAINER_CONTENTS";
+    public static final Set<String> CONTAINER_TYPES = Set.of(
+            "minecraft:chest",
+            "minecraft:trapped_chest",
+            "minecraft:barrel"
+    );
 
     @Override
     public CategoryRuleDefinition definition() {

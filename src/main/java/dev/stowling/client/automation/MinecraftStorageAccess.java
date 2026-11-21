@@ -287,7 +287,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
 
     private Move findMove(AbstractContainerMenu menu, Map<String, Integer> planned) {
         var destinations = slots(menu, withdraw);
-        boolean quick = quickWithdrawal && (menu instanceof ChestMenu
+        boolean quick = (!withdraw || quickWithdrawal) && (menu instanceof ChestMenu
                 || menu instanceof ShulkerBoxMenu || menu instanceof HopperMenu);
         for (int source : slots(menu, !withdraw)) {
             Slot from = menu.getSlot(source);
@@ -301,8 +301,9 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             }
             wanted -= planned.getOrDefault(key, 0);
             if (wanted <= 0) continue;
-            if (quick && wanted >= stack.getCount() && destinations.stream().map(menu::getSlot)
-                    .mapToInt(slot -> capacity(slot, stack)).sum() >= stack.getCount()) {
+            if (quick && DepositTransferPlan.canQuickMove(wanted, stack.getCount(),
+                    destinations.stream().map(menu::getSlot)
+                            .mapToInt(slot -> capacity(slot, stack)).sum())) {
                 return new Move(source, -1, key, stack.getCount(), 1);
             }
             for (int destination : destinations) {

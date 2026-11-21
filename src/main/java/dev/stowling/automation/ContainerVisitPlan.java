@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 public final class ContainerVisitPlan {
     private final Map<BlockPosition, ContainerTarget> pending = new LinkedHashMap<>();
@@ -17,8 +18,13 @@ public final class ContainerVisitPlan {
     }
 
     public Optional<ContainerTarget> next(BlockPosition playerPosition) {
-        Optional<ContainerTarget> target = pending.values().stream().min(
-                Comparator.comparingDouble(entry -> distanceSquared(playerPosition, entry)));
+        return next(playerPosition, target -> true);
+    }
+
+    public Optional<ContainerTarget> next(BlockPosition playerPosition,
+            Predicate<ContainerTarget> eligible) {
+        Optional<ContainerTarget> target = pending.values().stream().filter(eligible)
+                .min(Comparator.comparingDouble(entry -> distanceSquared(playerPosition, entry)));
         target.ifPresent(entry -> pending.remove(entry.position()));
         return target;
     }

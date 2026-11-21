@@ -52,7 +52,7 @@ final class DepositTransferPlan {
                 break;
             }
         }
-        boolean quickMove = allocated == sourceCount;
+        boolean quickMove = canQuickMove(requestedCount, sourceCount, allocated);
         return new DepositTransferPlan(
                 requestedCount,
                 sourceCount,
@@ -95,6 +95,10 @@ final class DepositTransferPlan {
 
     boolean usesQuickMove() {
         return quickMove;
+    }
+
+    static boolean canQuickMove(int requestedCount, int sourceCount, int capacity) {
+        return sourceCount > 0 && requestedCount >= sourceCount && capacity >= sourceCount;
     }
 
     List<Placement> placements() {

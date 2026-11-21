@@ -4,10 +4,42 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.ContainerInteractionBatch;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class DepositTransferPlanTest {
+    @Test
+    void aFullInventoryOfWholeStacksFitsIntoOneQuickMoveWave() {
+        String key = "minecraft:oak_slab";
+        var wave = new ContainerInteractionBatch(key, true);
+        var plan = DepositTransferPlan.create(36 * 64, 64,
+                List.of(new DepositTransferPlan.Destination(0, 16),
+                        new DepositTransferPlan.Destination(1, 48)));
+
+        assertTrue(plan.usesQuickMove());
+        assertEquals(64, plan.moveCount());
+        for (int stack = 0; stack < 36; stack++) {
+            assertTrue(wave.accepts(key, 1));
+            wave.record(plan.moveCount(), 1);
+        }
+        assertEquals(36 * 64, wave.count());
+        assertFalse(wave.accepts(key, 1));
+    }
+
+    @Test
+    void protectedItemsAndInsufficientCapacityKeepExactTransfers() {
+        var protectedStack = DepositTransferPlan.create(14, 64,
+                List.of(new DepositTransferPlan.Destination(0, 64)));
+        var nearlyFullCache = DepositTransferPlan.create(64, 64,
+                List.of(new DepositTransferPlan.Destination(0, 63)));
+
+        assertFalse(protectedStack.usesQuickMove());
+        assertEquals(50, protectedStack.sourceRemainderAfterMove());
+        assertFalse(nearlyFullCache.usesQuickMove());
+        assertEquals(1, nearlyFullCache.remainingAfterConfirmed());
+    }
+
     @Test
     void continuedDiscPickupsDoNotEraseTheOutgoingReceipt() {
         int outgoing = DepositTransferPlan.outgoingCount(36, 36, 100, 108);

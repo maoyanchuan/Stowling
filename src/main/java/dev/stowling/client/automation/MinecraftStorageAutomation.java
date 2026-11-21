@@ -416,10 +416,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         return first.entrances().stream().anyMatch(second.entrances()::contains);
     }
 
-    private record CacheSnapshot(Map<String, Integer> counts, List<ItemStack> stacks,
+    private record CacheSnapshot(int slots, Map<String, Integer> counts, List<ItemStack> stacks,
             Map<String, Integer> stackSizes, Set<String> fullBoxKeys) {
         private static final CacheSnapshot EMPTY = new CacheSnapshot(
-                Map.of(), List.of(), Map.of(), Set.of());
+                0, Map.of(), List.of(), Map.of(), Set.of());
     }
 
     private CacheSnapshot recordCacheContents(TaskExecutionContext context, ContainerTarget target,
@@ -438,7 +438,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
         }
         CacheSnapshot snapshot = new CacheSnapshot(
-                Map.copyOf(counts), occupied, Map.copyOf(stackSizes), Set.copyOf(fullBoxKeys));
+                stacks.size(), Map.copyOf(counts), occupied, Map.copyOf(stackSizes),
+                Set.copyOf(fullBoxKeys));
         context.workspace().recordCacheContents(target, snapshot.counts());
         cacheSnapshotsByRun.computeIfAbsent(context.workspace(), ignored -> new LinkedHashMap<>())
                 .put(target.position(), snapshot);
@@ -959,6 +960,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final class CacheIntake extends Session {
         private final List<ContainerTarget> caches;
         private final boolean pack;
+        private ContainerVisitPlan deposits;
         private int compressionCursor;
         private boolean exchanging;
         private boolean stopAfterExchange;
@@ -977,7 +979,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 throw new IllegalStateException("缓存装盒前请先完成上次潜影盒收尾");
             }
             if (pack) packNext();
-            else deposit(0);
+            else beginDeposit();
         }
 
         private Map<String, Integer> rawOwned() {
@@ -990,7 +992,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void packNext() {
             if (rawOwned().isEmpty()) {
-                deposit(0);
+                beginDeposit();
                 return;
             }
             site = chooseSite(context, caches.getFirst(), null, configuration);
@@ -1046,16 +1048,34 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     })));
         }
 
-        private void deposit(int index) {
+        private void beginDeposit() {
+            deposits = new ContainerVisitPlan(caches);
+            depositNext();
+        }
+
+        private void depositNext() {
             if (owned().isEmpty()) return;
-            if (index >= caches.size()) {
+            BlockPos feet = minecraft.player.blockPosition();
+            Map<String, Integer> incoming = owned();
+            Map<String, Integer> sizes = inventoryStackSizes();
+            ContainerTarget cache = deposits.next(new BlockPosition(feet.getX(), feet.getY(),
+                    feet.getZ()), candidate -> intakeSnapshot(candidate)
+                            .map(snapshot -> !ShulkerTransferPlanner.fittingInventory(
+                                    transferSlots(snapshot.stacks()), snapshot.slots(),
+                                    incoming, sizes).isEmpty()).orElse(true)).orElse(null);
+            if (cache == null) {
                 if (pack && compressionCursor < caches.size()) loadCacheRaw();
                 return;
             }
-            ContainerTarget cache = caches.get(index);
-            var access = new MinecraftStorageAccess(minecraft, context, cache, owned(), false, false);
-            Runnable next = () -> deposit(index + 1);
-            steps.add(new Step(access, next, next));
+            var access = new MinecraftStorageAccess(minecraft, context, cache, incoming,
+                    false, false);
+            steps.add(new Step(access, this::depositNext, this::depositNext));
+        }
+
+        private Optional<CacheSnapshot> intakeSnapshot(ContainerTarget cache) {
+            // Classification invalidates capacity before returning to the intake workspace.
+            return context.workspace().hasCacheCapacity(cache)
+                    ? confirmedCacheSnapshot(context, cache) : Optional.empty();
         }
 
         private void loadCacheRaw() {
@@ -1064,7 +1084,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             ContainerTarget cache = caches.get(compressionCursor++);
-            readCache(cache, contents -> {
+            Consumer<List<ItemStack>> compress = contents -> {
                 Set<String> raw = contents.stream().filter(stack -> !stack.isEmpty()
                         && !MinecraftItemIdentity.isBox(stack))
                         .map(MinecraftItemIdentity::key).map(ItemIdentity::exact)
@@ -1076,7 +1096,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             compressionSlots());
                     steps.add(new Step(withdrawal, this::loadCacheRaw));
                 }
-            });
+            };
+            intakeSnapshot(cache).map(CacheSnapshot::stacks).ifPresentOrElse(compress,
+                    () -> readCache(cache, compress));
         }
 
         private int compressionSlots() {

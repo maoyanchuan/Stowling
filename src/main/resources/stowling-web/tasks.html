@@ -146,7 +146,7 @@
                                             <span>交付容器或区域</span>
                                             <select id="material-destination" required></select>
                                         </label>
-                                        <label class="move-field material-boxed-field"
+                                        <label class="move-field material-switch-field"
                                                for="material-boxed-delivery">
                                             <span>按潜影盒交付</span>
                                             <input id="material-boxed-delivery" type="checkbox"
@@ -157,6 +157,12 @@
                                             符合缺口的整盒可直接交付。散料使用公共设施的空潜影盒装箱，
                                             清单所需的空潜影盒单独交付。
                                         </p>
+                                        <label class="move-field material-switch-field"
+                                               for="material-ice-instead-of-water">
+                                            <span>用普通冰代替水桶，跳过岩浆</span>
+                                            <input id="material-ice-instead-of-water"
+                                                   type="checkbox">
+                                        </label>
                                         <p id="material-preview-status" class="field-message"
                                            role="status">选择投影文件后自动解析材料</p>
                                         <details id="material-preview" hidden>

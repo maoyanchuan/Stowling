@@ -9,11 +9,30 @@ public final class MaterialRequirements {
     public static final String MODULE = "COLLECT_SCHEMATIC_MATERIALS";
     public static final String PARAMETER = "materials";
     public static final String BOXED_DELIVERY = "boxedDelivery";
+    public static final String ICE_INSTEAD_OF_WATER = "iceInsteadOfWater";
     public static final String WATER_BOTTLE = "minecraft:potion[water]";
     private static final Pattern ITEM_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_./-]+");
     private static final int MAX_LENGTH = 56_000;
 
     private MaterialRequirements() {
+    }
+
+    public static Map<String, Integer> forCollection(Map<String, String> parameters) {
+        Map<String, Integer> original = parse(parameters.get(PARAMETER));
+        if (!Boolean.parseBoolean(parameters.get(ICE_INSTEAD_OF_WATER))) {
+            return original;
+        }
+        Map<String, Integer> requested = new LinkedHashMap<>(original);
+        Integer waterBuckets = requested.remove("minecraft:water_bucket");
+        requested.remove("minecraft:lava_bucket");
+        if (waterBuckets != null) {
+            try {
+                requested.merge("minecraft:ice", waterBuckets, Math::addExact);
+            } catch (ArithmeticException exception) {
+                throw new IllegalArgumentException("替换后的普通冰数量过大", exception);
+            }
+        }
+        return java.util.Collections.unmodifiableMap(requested);
     }
 
     public static int reserveBoxes(Map<String, Integer> remaining, Map<String, Integer> contents,

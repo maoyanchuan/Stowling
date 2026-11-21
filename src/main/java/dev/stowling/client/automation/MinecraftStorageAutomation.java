@@ -125,7 +125,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     public TaskModuleExecutor collectMaterials(TaskExecutionContext context, TaskStep step) {
         return new MaterialCollection(context,
                 ResourceReference.parse(step.parameters().get("targetRef")),
-                MaterialRequirements.parse(step.parameters().get(MaterialRequirements.PARAMETER)),
+                MaterialRequirements.forCollection(step.parameters()),
                 Boolean.parseBoolean(step.parameters().get(MaterialRequirements.BOXED_DELIVERY)));
     }
 
@@ -845,6 +845,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
+            if (needed.isEmpty()) {
+                return;
+            }
             if (minecraft.level == null || minecraft.player == null) {
                 throw new IllegalStateException("请先进入仓库所在世界");
             }

@@ -315,7 +315,7 @@ body[data-page] :is(.move-field > span, .editor-field > label) {
     font-weight: 400;
 }
 
-body[data-page] .material-boxed-field {
+body[data-page] .material-switch-field {
     display: flex;
     justify-content: space-between;
 }

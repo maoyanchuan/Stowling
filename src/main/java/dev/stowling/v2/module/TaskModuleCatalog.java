@@ -317,7 +317,10 @@ public final class TaskModuleCatalog {
                                     "材料清单", true),
                             booleanParameter(
                                     dev.stowling.v2.model.MaterialRequirements.BOXED_DELIVERY,
-                                    "按潜影盒交付", false)
+                                    "按潜影盒交付", false),
+                            booleanParameter(
+                                    dev.stowling.v2.model.MaterialRequirements.ICE_INSTEAD_OF_WATER,
+                                    "用普通冰代替水桶，跳过岩浆", false)
                     )
             ),
             action(

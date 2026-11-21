@@ -658,18 +658,18 @@ public final class ConfigValidator {
             );
             case MOVE_TO_COORDINATE -> requireMoveStep(step, coordinates);
             case dev.stowling.v2.model.MaterialRequirements.MODULE -> {
-                var required = Set.of(TARGET_REF,
-                        dev.stowling.v2.model.MaterialRequirements.PARAMETER);
+                var materials = dev.stowling.v2.model.MaterialRequirements.PARAMETER;
                 var boxedDelivery = dev.stowling.v2.model.MaterialRequirements.BOXED_DELIVERY;
-                requireParameters(step, Set.of(TARGET_REF,
-                        dev.stowling.v2.model.MaterialRequirements.PARAMETER, boxedDelivery),
-                        required);
+                var iceInsteadOfWater =
+                        dev.stowling.v2.model.MaterialRequirements.ICE_INSTEAD_OF_WATER;
+                requireParameters(step, Set.of(TARGET_REF, materials, boxedDelivery,
+                        iceInsteadOfWater), Set.of(TARGET_REF, materials));
                 requireOptionalBoolean(step, boxedDelivery);
+                requireOptionalBoolean(step, iceInsteadOfWater);
                 String destination = step.parameters().get(TARGET_REF);
                 new dev.stowling.v2.model.TaskCleanupPolicy(destination, null);
                 requireInteractionResource(destination, coordinates, regions, categoryZones);
-                dev.stowling.v2.model.MaterialRequirements.parse(
-                        step.parameters().get(dev.stowling.v2.model.MaterialRequirements.PARAMETER));
+                dev.stowling.v2.model.MaterialRequirements.forCollection(step.parameters());
             }
             case COLLECT_DROPPED_ITEMS -> requireCollectStep(
                     step,

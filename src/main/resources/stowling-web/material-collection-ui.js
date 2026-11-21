@@ -14,6 +14,7 @@
     const file = byId("material-file");
     const destination = byId("material-destination");
     const boxedDelivery = Settings.switchControl(byId("material-boxed-delivery"));
+    const iceInsteadOfWater = Settings.switchControl(byId("material-ice-instead-of-water"));
     const boxedNote = byId("material-boxed-note");
     const previewStatus = byId("material-preview-status");
     const preview = byId("material-preview");
@@ -78,12 +79,29 @@
         destination.value = selected;
     }
 
+    /** @returns {Record<string, number>} */
+    function requestedMaterials() {
+        if (!iceInsteadOfWater.checked) return materials;
+        const requested = {...materials};
+        const waterBuckets = requested["minecraft:water_bucket"];
+        if (waterBuckets) {
+            requested["minecraft:ice"] = (requested["minecraft:ice"] || 0) + waterBuckets;
+        }
+        delete requested["minecraft:water_bucket"];
+        delete requested["minecraft:lava_bucket"];
+        return requested;
+    }
+
     /** @returns {void} */
     function renderPreview() {
-        const counts = Object.entries(materials);
-        preview.hidden = counts.length === 0 && !Object.keys(unsupported).length;
+        const counts = Object.entries(requestedMaterials());
+        const hasMaterials = Object.keys(materials).length > 0;
+        preview.hidden = !hasMaterials && !Object.keys(unsupported).length;
         byId("material-preview-title").textContent = `材料清单 · ${counts.length} 种`;
         items.replaceChildren();
+        if (hasMaterials && counts.length === 0) {
+            items.append(S.element("li", "muted", "按当前设置无需收集材料"));
+        }
         for (const [id, count] of counts) {
             items.append(S.element("li", "", `${id} × ${count}`));
         }
@@ -102,6 +120,7 @@
         file.value = "";
         renderDestinations(params?.targetRef || "");
         boxedDelivery.checked = params?.boxedDelivery?.toLowerCase() === "true";
+        iceInsteadOfWater.checked = params?.iceInsteadOfWater?.toLowerCase() === "true";
         boxedNote.hidden = !boxedDelivery.checked;
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
@@ -274,7 +293,8 @@
                 parameters: {
                     targetRef,
                     materials: JSON.stringify(materials),
-                    boxedDelivery: String(boxedDelivery.checked)
+                    boxedDelivery: String(boxedDelivery.checked),
+                    iceInsteadOfWater: String(iceInsteadOfWater.checked)
                 }
             }],
             cleanupPolicy: {destinationRef: targetRef, resumeMode: "CONTINUE"}
@@ -364,6 +384,7 @@
     boxedDelivery.addEventListener("change", () => {
         boxedNote.hidden = !boxedDelivery.checked;
     });
+    iceInsteadOfWater.addEventListener("change", renderPreview);
     form.addEventListener("input", (event) => {
         if (current && event.target !== file && !current.dirty) {
             current.dirty = true;

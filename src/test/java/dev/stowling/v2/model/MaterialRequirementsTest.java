@@ -8,6 +8,40 @@ import org.junit.jupiter.api.Test;
 
 class MaterialRequirementsTest {
     @Test
+    void convertsWaterBucketsToOrdinaryIceAndSkipsLavaBuckets() {
+        var parameters = Map.of(
+                MaterialRequirements.ICE_INSTEAD_OF_WATER, "true",
+                MaterialRequirements.PARAMETER, """
+                        {"minecraft:ice":2,"minecraft:water_bucket":5,"minecraft:lava_bucket":3,
+                        "minecraft:packed_ice":4,"minecraft:potion[water]":1}
+                        """);
+        var requested = MaterialRequirements.forCollection(parameters);
+
+        assertEquals(Map.of("minecraft:ice", 7, "minecraft:packed_ice", 4,
+                "minecraft:potion[water]", 1), requested);
+        assertEquals(0, MaterialRequirements.reserveBoxes(new LinkedHashMap<>(requested),
+                Map.of("minecraft:ice", 2, "minecraft:water_bucket", 1), 1));
+    }
+
+    @Test
+    void keepsLegacyMaterialsUntilTheOptionIsEnabled() {
+        var requested = MaterialRequirements.forCollection(Map.of(
+                MaterialRequirements.PARAMETER,
+                "{\"minecraft:water_bucket\":2,\"minecraft:lava_bucket\":1}"));
+
+        assertEquals(Map.of("minecraft:water_bucket", 2, "minecraft:lava_bucket", 1), requested);
+    }
+
+    @Test
+    void acceptsAnEmptyCollectionAfterSkippingLava() {
+        var requested = MaterialRequirements.forCollection(Map.of(
+                MaterialRequirements.PARAMETER, "{\"minecraft:lava_bucket\":1}",
+                MaterialRequirements.ICE_INSTEAD_OF_WATER, "true"));
+
+        assertEquals(Map.of(), requested);
+    }
+
+    @Test
     void reservesSeveralMatchingBoxesWithoutExceedingAnyMaterialCount() {
         var remaining = new LinkedHashMap<>(Map.of("minecraft:stone", 140, "minecraft:glass", 10));
         var contents = Map.of("minecraft:stone", 64, "minecraft:glass", 3);

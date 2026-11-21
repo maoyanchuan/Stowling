@@ -22,9 +22,10 @@ final class DroppedItemCollectionEngine {
     }
 
     private static final int INVENTORY_SETTLE_TICKS = 20;
-    private static final int PICKUP_ARRIVAL_RADIUS = 1;
+    private static final int PICKUP_ARRIVAL_RADIUS = 0;
     private static final int NAVIGATION_RETRIES = 2;
     private static final Duration NAVIGATION_RETRY_DELAY = Duration.ofMillis(500);
+    private static final Duration BATCH_IDLE_DELAY = Duration.ofSeconds(5);
 
     private final TaskExecutionContext context;
     private final Source source;
@@ -123,6 +124,14 @@ final class DroppedItemCollectionEngine {
             return TaskModuleResult.failed("背包空间不足，没有可先存入缓存的任务物品，请腾出空间");
         }
         fullTicks = 0;
+        if (!drops.isEmpty() && arrivedAtCurrent
+                && !context.workspace().collectedItems().isEmpty()
+                && (Duration.between(lastProgressAt, clock.instant())
+                        .compareTo(BATCH_IDLE_DELAY) >= 0 || timedOut())) {
+            context.navigation().cancel();
+            current = null;
+            return TaskModuleResult.succeeded("拾取暂时停滞，先将本批物品存入缓存后继续拾取");
+        }
         if (timedOut()) {
             return TaskModuleResult.failed("拾取掉落物超时");
         }
@@ -258,7 +267,6 @@ final class DroppedItemCollectionEngine {
         }
         observedDrops = observed;
         resetStableConfirmation();
-        lastProgressAt = clock.instant();
     }
 
     private void recordInventoryObservation(
@@ -268,18 +276,21 @@ final class DroppedItemCollectionEngine {
         PlayerInventoryAccount account = context.workspace().inventoryAccount();
         if (currentInventory == null) {
             context.workspace().captureInitialInventory(snapshot.itemCounts());
-            inventory.claimUnexpected(account, itemFilter);
+            if (inventory.claimUnexpected(account, itemFilter) > 0) {
+                lastProgressAt = clock.instant();
+            }
             currentInventory = snapshot;
             return;
         }
-        inventory.claimCollectionItems(account, itemFilter);
+        if (inventory.claimCollectionItems(account, itemFilter) > 0) {
+            lastProgressAt = clock.instant();
+        }
         if (snapshot.equals(currentInventory)) {
             return;
         }
         currentInventory = snapshot;
         pickupConfirmed = true;
         resetStableConfirmation();
-        lastProgressAt = clock.instant();
     }
 
     private TaskModuleResult confirmEmpty() {

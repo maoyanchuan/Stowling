@@ -236,6 +236,86 @@ class DroppedItemCollectionEngineTest {
     }
 
     @Test
+    void keepsNavigatingWhenADropIsStillOneBlockAway() {
+        MutableDrops drops = new MutableDrops();
+        entries(drops, item(10, GOLD, 1));
+        RecordingNavigation navigation = new RecordingNavigation();
+        navigation.adjacent = true;
+        var engine = engine(drops, new MutableInventory(), new TaskRunWorkspace(),
+                new MutableClock(), 120, navigation);
+
+        engine.start();
+        assertEquals("正在前往掉落物", engine.tick().message());
+
+        navigation.adjacent = false;
+        navigation.status = NavigationStatus.ARRIVED;
+        assertEquals("等待拾取 " + GOLD, engine.tick().message());
+    }
+
+    @Test
+    void incomingDropsCannotKeepAnIdlePartialBatchFromBeingDeposited() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        MutableClock clock = new MutableClock();
+        entries(drops, item(1, GOLD, 64));
+        var engine = engine(drops, inventory, workspace, clock);
+        engine.start();
+        inventory.set(Map.of(GOLD, 2173));
+        engine.tick();
+
+        for (int second = 1; second < 5; second++) {
+            clock.advance(Duration.ofSeconds(1));
+            entries(drops, item(1, GOLD, 64), item(100 + second, GOLD, 64));
+            assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        }
+        clock.advance(Duration.ofSeconds(1));
+        entries(drops, item(1, GOLD, 64), item(105, GOLD, 64));
+        TaskModuleResult result = engine.tick();
+
+        assertEquals(TaskModuleState.SUCCEEDED, result.state());
+        assertTrue(result.message().contains("先将本批物品存入缓存"));
+        assertEquals(Map.of(GOLD, 2173), workspace.collectedItems());
+    }
+
+    @Test
+    void confirmedPickupsKeepAContinuousBatchActive() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        MutableClock clock = new MutableClock();
+        entries(drops, item(1, GOLD, 64));
+        var engine = engine(drops, inventory, workspace, clock);
+        engine.start();
+
+        for (int count = 1; count <= 4; count++) {
+            clock.advance(Duration.ofSeconds(4));
+            inventory.set(Map.of(GOLD, count));
+            assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+        }
+        assertEquals(Map.of(GOLD, 4), workspace.collectedItems());
+    }
+
+    @Test
+    void incomingDropsWithoutPickupsStillTimeOutInsteadOfYieldingEmptyBatches() {
+        MutableDrops drops = new MutableDrops();
+        MutableClock clock = new MutableClock();
+        TaskRunWorkspace workspace = new TaskRunWorkspace();
+        entries(drops, item(1, GOLD, 64));
+        var engine = engine(drops, new MutableInventory(), workspace, clock, 2);
+        engine.start();
+
+        clock.advance(Duration.ofSeconds(1));
+        entries(drops, item(1, GOLD, 64), item(2, GOLD, 64));
+        assertEquals(TaskModuleState.RUNNING, engine.tick().state());
+
+        clock.advance(Duration.ofSeconds(1));
+        entries(drops, item(1, GOLD, 64), item(3, GOLD, 64));
+        assertEquals(TaskModuleState.FAILED, engine.tick().state());
+        assertTrue(workspace.collectedItems().isEmpty());
+    }
+
+    @Test
     void fullPersonalInventoryFailsClearlyWithoutRepeatedEmptyBatches() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();
@@ -600,6 +680,7 @@ class DroppedItemCollectionEngineTest {
         private final List<BlockPosition> targets = new ArrayList<>();
         private NavigationStatus status = NavigationStatus.NAVIGATING;
         private int cancellations;
+        private boolean adjacent;
 
         @Override
         public NavigationStatus start(BlockPosition target) {
@@ -611,6 +692,14 @@ class DroppedItemCollectionEngineTest {
         public NavigationStatus status(BlockPosition target) {
             assertEquals(targets.getLast(), target);
             return status;
+        }
+
+        @Override
+        public NavigationStatus status(BlockPosition target, Integer radius) {
+            if (adjacent && radius != null && radius >= 1) {
+                return NavigationStatus.ARRIVED;
+            }
+            return status(target);
         }
 
         @Override

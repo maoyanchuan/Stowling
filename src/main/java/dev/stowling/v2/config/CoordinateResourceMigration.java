@@ -49,12 +49,14 @@ public final class CoordinateResourceMigration {
                                                         .map(CategoryBindingDefinition::storagePolicy)
                                                         .findFirst().orElse(StoragePolicy.DEFAULT)))
                         .toList(), definition.collectionPriority(),
-                        definition.overflowEnabled(), definition.cleanupPolicy())).toList();
+                        definition.overflowEnabled(), definition.cleanupPolicy(),
+                        definition.unstackableRegionRef(),
+                        definition.overflowDestinationRef())).toList();
         var migrated = new StorageAutomationSettings(settings.cleanupEnabled(), List.of(),
                 List.of(), null, temporary.stream().distinct().toList(),
                 empty.stream().distinct().toList(), fallback, settings.temporaryRegionIds(),
                 settings.overflowCoordinateIds(), settings.overflowRegionIds(),
-                settings.unstackableOverflowRegionId());
+                settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled());
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,

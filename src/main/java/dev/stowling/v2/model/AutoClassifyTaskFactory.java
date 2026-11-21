@@ -79,7 +79,8 @@ public final class AutoClassifyTaskFactory {
             );
         }
         if (definition.overflowEnabled()) {
-            classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheRegionRef()));
+            classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheRegionRef(),
+                    definition.overflowDestinationRef()));
         }
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
                 definition.cacheRegionRef(), Map.of()

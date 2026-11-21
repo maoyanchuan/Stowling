@@ -372,6 +372,7 @@ class BasicModuleSemanticsTest {
                 0, 64, 0, 2, 64, 2);
         List<RegionDefinition> requests = new ArrayList<>();
         List<RegionDefinition> warehouseRequests = new ArrayList<>();
+        List<ResourceReference> destinations = new ArrayList<>();
         StorageAutomationPort storage = new StorageAutomationPort() {
             @Override
             public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
@@ -407,8 +408,9 @@ class BasicModuleSemanticsTest {
 
             @Override
             public TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
-                    RegionDefinition cacheRegion) {
+                    RegionDefinition cacheRegion, ResourceReference destination) {
                 warehouseRequests.add(cacheRegion);
+                destinations.add(destination);
                 return overflow(context, cacheRegion);
             }
         };
@@ -433,13 +435,17 @@ class BasicModuleSemanticsTest {
         var factory = StandardTaskModuleFactories.create().stream()
                 .filter(value -> ConfigValidator.ROBOT_WAREHOUSE.equals(value.moduleId()))
                 .findFirst().orElseThrow();
+        var destination = ResourceReference.parse("coordinate:" + UUID.randomUUID());
         factory.create(TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
-                Map.of(ConfigValidator.REGION_REF, "region:" + region.id())), context);
+                Map.of(ConfigValidator.REGION_REF, "region:" + region.id(),
+                        ConfigValidator.TARGET_REF, destination.encode())), context);
         factory.create(TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
                 Map.of()), context);
         assertEquals(2, warehouseRequests.size());
         assertEquals(region, warehouseRequests.getFirst());
         assertNull(warehouseRequests.getLast());
+        assertEquals(destination, destinations.getFirst());
+        assertNull(destinations.getLast());
     }
 
     @Test

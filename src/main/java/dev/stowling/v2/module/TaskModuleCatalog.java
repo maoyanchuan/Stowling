@@ -71,7 +71,8 @@ public final class TaskModuleCatalog {
             action(ConfigValidator.ROBOT_WAREHOUSE, "机器人仓库",
                     "分类目标均无空间时，将对应物品装盒入库，并由机器人缓存记录位置。",
                     List.of(reference(ConfigValidator.REGION_REF, "缓存区域", "region-reference",
-                            false))),
+                            false), reference(ConfigValidator.TARGET_REF, "溢出存入位置",
+                                    "resource-reference", false))),
             action(
                     ConfigValidator.CONTAINER_INTERACTION,
                     "容器交互",

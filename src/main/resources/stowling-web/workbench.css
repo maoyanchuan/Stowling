@@ -457,6 +457,15 @@ body[data-page] .move-form-actions {
     margin-right: auto;
 }
 
+#add-robot-warehouse-location,
+.robot-warehouse-position > button {
+    justify-self: end;
+}
+
+#add-robot-warehouse-location {
+    margin-block: 10px;
+}
+
 body[data-page] .task-selection-panel {
     padding: 16px 0;
     border: 0;

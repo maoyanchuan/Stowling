@@ -123,22 +123,23 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
 
-def test_robot_warehouse_has_its_own_editor_and_uses_saved_classification_links() -> None:
+def test_robot_warehouse_edits_locations_and_classification_selects_a_saved_destination() -> None:
     html = read("tasks.html")
     form = between(html, 'id="auto-task-form"', "</form>")
-    assert "机器人仓库" not in form
+    assert 'id="auto-overflow-destination"' in form
+    assert "溢出存入位置" in form
     warehouse = between(html, 'id="robot-warehouse-draft"', "</article>")
-    assert 'id="robot-warehouse-source"' in warehouse
-    assert 'href="/coordinates.html#facilities"' in warehouse
-    assert "把分类目标装不下的物品装盒入库" in warehouse
-    assert 'id="robot-warehouse-list"' in html
+    assert 'id="robot-warehouse-enabled"' in warehouse
+    assert 'id="robot-warehouse-location"' in warehouse
+    assert 'id="add-robot-warehouse-location"' in warehouse
+    assert 'id="robot-warehouse-locations"' in warehouse
 
     javascript = read("auto-classify-ui.js")
-    assert "state.items.filter((task) => task.overflowEnabled)" in javascript
-    assert "state.items.filter((task) => !task.overflowEnabled)" in javascript
-    assert "setWarehouseLink(elements.warehouseSource.value, true)" in javascript
-    assert "setWarehouseLink(item.id, false)" in javascript
-    assert "delete payload.overflowEnabled;" in javascript
+    assert "解除关联" not in javascript
+    assert "saved.locations.includes(option.id)" in javascript
+    assert "!Auto.warehouseDraft(state.warehouseSnapshot?.settings).enabled" in javascript
+    assert "Auto.warehouseSettingsPayload(settings, state.warehouseDraft)" in javascript
+    assert 'Stowling.request("/v1/storage-settings", {' in javascript
 
 
 def test_recognition_is_configured_only_in_the_storage_layout() -> None:

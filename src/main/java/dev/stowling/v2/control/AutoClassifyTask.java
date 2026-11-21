@@ -23,7 +23,8 @@ public record AutoClassifyTask(
         String interruptionTaskRef,
         List<UUID> triggerIds,
         boolean overflowEnabled,
-        TaskCleanupPolicy cleanupPolicy
+        TaskCleanupPolicy cleanupPolicy,
+        String overflowDestinationRef
 ) {
     public AutoClassifyTask(
             UUID id,
@@ -45,7 +46,7 @@ public record AutoClassifyTask(
         this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
                 cacheRegionRef, classificationAreas, collectionPriority,
                 classificationPriority, collectionTaskRef, classificationTaskRef,
-                interruptionTaskRef, triggerIds, overflowEnabled, null);
+                interruptionTaskRef, triggerIds, overflowEnabled, null, null);
     }
 
     public AutoClassifyTask(

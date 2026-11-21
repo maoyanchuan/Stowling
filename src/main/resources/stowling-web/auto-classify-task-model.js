@@ -120,6 +120,7 @@
             collectionPriority: "NORMAL",
             enabled: false,
             overflowEnabled: false,
+            overflowDestinationRef: "",
             cleanupDestinationRef: "",
             collectionEnabled: true,
             classificationEnabled: true
@@ -155,6 +156,7 @@
             collectionPriority: String(item?.collectionPriority ?? ""),
             enabled: item?.enabled === true,
             overflowEnabled: item?.overflowEnabled === true,
+            overflowDestinationRef: String(item?.overflowDestinationRef || ""),
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheRegionRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
             collectionEnabled: item?.collectionEnabled === true,
@@ -241,6 +243,9 @@
                     && resourceExists(resources, "regions", cleanup.slice(7)))) {
             errors.push("中断存放位置不存在，请重新选择");
         }
+        if (draft?.overflowEnabled && draft.overflowDestinationRef === `region:${cacheRegionId}`) {
+            errors.push("溢出存入位置需要与缓存区域分开");
+        }
         validateAreas(draft, resources, errors);
 
         if (!COLLECTION_PRIORITIES.includes(draft?.collectionPriority)) {
@@ -274,6 +279,7 @@
             name: String(draft.name).trim(),
             enabled: draft.enabled,
             overflowEnabled: draft.overflowEnabled === true,
+            overflowDestinationRef: draft.overflowEnabled ? draft.overflowDestinationRef || "" : "",
             cleanupPolicy: {destinationRef: draft.cleanupDestinationRef
                 || reference("region", draft.cacheRegionId), resumeMode: "RESTART"},
             collectionEnabled: draft.collectionEnabled,
@@ -298,22 +304,48 @@
     }
 
     /**
-     * @param {object} item
-     * @param {string} revision
-     * @param {boolean} linked
+     * @param {object} resources
+     * @returns {Array<{id: string, name: string}>}
+     */
+    function warehouseLocationOptions(resources) {
+        return [
+            ...resourceList(resources, "coordinates").map((point) => ({
+                id: `coordinate:${point.id}`,
+                name: `坐标 · ${point.name} (${point.x}, ${point.y}, ${point.z})`
+            })),
+            ...resourceList(resources, "regions").map((region) => ({
+                id: `region:${region.id}`,
+                name: `区域 · ${region.name}`
+            }))
+        ];
+    }
+
+    /**
+     * @param {object} settings
+     * @returns {{enabled: boolean, locations: Array<string>}}
+     */
+    function warehouseDraft(settings) {
+        const locations = [
+            ...(settings?.overflowCoordinateIds || []).map((id) => `coordinate:${id}`),
+            ...(settings?.overflowRegionIds || []).map((id) => `region:${id}`)
+        ];
+        return {enabled: locations.length > 0 && settings?.robotWarehouseEnabled !== false,
+            locations};
+    }
+
+    /**
+     * @param {object} settings
+     * @param {{enabled: boolean, locations: Array<string>}} draft
      * @returns {object}
      */
-    function warehouseLinkPayload(item, revision, linked) {
-        const {name, detection, cacheRegionRef, collectionPriority} = item;
+    function warehouseSettingsPayload(settings, draft) {
         return {
-            revision,
-            name,
-            detection,
-            cacheRegionRef,
-            collectionPriority,
-            classificationAreas: item.classificationAreas.map(({categoryZoneRef, storagePolicy}) =>
-                storagePolicy ? {categoryZoneRef, storagePolicy} : {categoryZoneRef}),
-            overflowEnabled: linked
+            ...settings,
+            robotWarehouseEnabled: draft.enabled,
+            overflowCoordinateIds: draft.locations.filter((ref) => ref.startsWith("coordinate:"))
+                .map((ref) => referencedId(ref, "coordinate")),
+            overflowRegionIds: draft.locations.filter((ref) => ref.startsWith("region:"))
+                .map((ref) => referencedId(ref, "region"))
         };
     }
 
@@ -351,7 +383,9 @@
         newDraft,
         payload,
         validateDraft,
-        warehouseLinkPayload
+        warehouseDraft,
+        warehouseLocationOptions,
+        warehouseSettingsPayload
     });
 })();
 

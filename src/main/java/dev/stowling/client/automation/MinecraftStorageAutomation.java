@@ -241,13 +241,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public TaskModuleExecutor overflow(TaskExecutionContext context, RegionDefinition cacheRegion) {
-        return new Overflow(context, cacheRegion, false);
+        return new Overflow(context, cacheRegion, false, null);
     }
 
     @Override
     public TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
             RegionDefinition cacheRegion) {
-        return new Overflow(context, cacheRegion, true);
+        return robotWarehouse(context, cacheRegion, null);
+    }
+
+    @Override
+    public TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
+            RegionDefinition cacheRegion, ResourceReference destination) {
+        return new Overflow(context, cacheRegion, true, destination);
     }
 
     private String robotWarehouseScope() {
@@ -278,10 +284,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 settings.resolved().emptyBoxContainers());
     }
 
-    private List<ContainerTarget> overflowContainers() {
+    private List<ContainerTarget> overflowContainers(ResourceReference destination) {
         String dimension = minecraft.level.dimension().identifier().toString();
-        return TemporaryContainerResolver.resolve(settings.overflowPositions(dimension),
-                settings.overflowRegions(), containerRegions,
+        List<BlockPosition> points = destination == null ? settings.overflowPositions(dimension)
+                : destination.type() == ResourceType.COORDINATE
+                        ? settings.overflowPositions(dimension, destination.uuid()) : List.of();
+        List<RegionDefinition> regions = destination == null ? settings.overflowRegions()
+                : destination.type() == ResourceType.REGION
+                        ? settings.overflowRegions(destination.uuid()) : List.of();
+        return TemporaryContainerResolver.resolve(points, regions, containerRegions,
                 Set.copyOf(settings.resolved().emptyBoxContainers()), "溢出");
     }
 
@@ -2947,6 +2958,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private boolean initialized;
         private final RegionDefinition cacheRegion;
         private final boolean boxedOnly;
+        private final ResourceReference destination;
+        private String skipMessage;
         private boolean warehouseReady;
         private String warehouseScope;
         private List<ContainerTarget> cacheSources = List.of();
@@ -2969,18 +2982,32 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 new LinkedHashMap<>();
         private Set<String> eligibleItems = Set.of();
 
-        Overflow(TaskExecutionContext context, RegionDefinition cacheRegion, boolean boxedOnly) {
+        Overflow(TaskExecutionContext context, RegionDefinition cacheRegion, boolean boxedOnly,
+                ResourceReference destination) {
             super(context);
             this.cacheRegion = cacheRegion;
             this.boxedOnly = boxedOnly;
+            this.destination = destination;
         }
 
         @Override
         void initialize() {
             initialized = true;
+            if (boxedOnly && !configuration.warehouseEnabled()) {
+                skipMessage = "机器人仓库已停用，溢出物品留在缓存";
+                return;
+            }
+            if (destination != null && !configuration.hasWarehouseLocation(destination)) {
+                skipMessage = "所选位置已移出机器人仓库，溢出物品留在缓存";
+                return;
+            }
             if (cacheRegion == null && owned().isEmpty()) return;
             warehouseScope = robotWarehouseScope();
-            destinations = overflowContainers();
+            destinations = overflowContainers(destination);
+            if (destination != null && destinations.isEmpty()) {
+                skipMessage = "所选仓库位置在当前维度无可用容器，溢出物品留在缓存";
+                return;
+            }
             unstackableRegion = boxedOnly ? null : settings.unstackableOverflowRegion();
             if (unstackableRegion != null) {
                 reservedPositions.addAll(configuration.emptyBoxContainers());
@@ -3489,6 +3516,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         String completionMessage() {
+            if (skipMessage != null) return skipMessage;
             if (boxedOnly) return storedOrdinary ? "余料已装盒存入机器人仓库"
                     : "没有待存入机器人仓库的余料";
             if (unstackableFull && storedUnstackable == 0) {
@@ -3566,7 +3594,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (index >= targets.size()) {
                 if (overflowEnabled && !overflowAttempted) {
                     overflowAttempted = true;
-                    steps.add(new Step(new Overflow(context, null, false),
+                    steps.add(new Step(new Overflow(context, null, false, null),
                             () -> depositAll(index)));
                     return;
                 }

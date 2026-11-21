@@ -1,13 +1,16 @@
 package dev.stowling.v2.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.StorageAutomationSettings;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
 import java.util.UUID;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -47,10 +50,25 @@ class StorageSettingsStoreTest {
         assertEquals(reopened.overflowPositions(), reopened.overflowPositions("minecraft:overworld"));
         assertEquals(List.of(), reopened.overflowPositions("minecraft:the_nether"));
         assertEquals(List.of(region), reopened.overflowRegions());
+        assertEquals(List.of(region), reopened.overflowRegions(regionId));
+        assertEquals(List.of(), reopened.overflowRegions(unstackableId));
+        assertEquals(reopened.overflowPositions(), reopened.overflowPositions(null, pointId));
+        assertEquals(List.of(), reopened.overflowPositions(null, regionId));
         assertEquals(unstackable, reopened.unstackableOverflowRegion());
         assertEquals(unstackableId, reopened.resolved().unstackableOverflowRegionId());
         assertEquals(List.of(pointId), reopened.resolved().overflowCoordinateIds());
         assertEquals(settings, CoordinateResourceMigration.migrate(config, settings));
+        assertTrue(reopened.resolved().warehouseEnabled());
+
+        var disabled = new StorageAutomationSettings(false, List.of(), List.of(), null,
+                List.of(), List.of(), null, List.of(), List.of(pointId), List.of(regionId),
+                unstackableId, false);
+        reopened.save(reopened.read().revision(), disabled);
+        var disabledAfterRestart = new StorageSettingsStore(file);
+        disabledAfterRestart.bindCoordinates(config);
+        assertFalse(disabledAfterRestart.resolved().warehouseEnabled());
+        assertTrue(disabledAfterRestart.resolved()
+                .hasWarehouseLocation(ResourceReference.parse("coordinate:" + pointId)));
     }
 
     @Test

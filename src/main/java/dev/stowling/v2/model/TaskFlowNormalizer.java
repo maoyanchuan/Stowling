@@ -61,7 +61,7 @@ public final class TaskFlowNormalizer {
                     definition.classificationEnabled(), definition.detectionCoordinateRef(),
                     definition.pickupRadius(), definition.cacheRegionRef(), areas,
                     definition.collectionPriority(), definition.overflowEnabled(),
-                    definition.cleanupPolicy());
+                    definition.cleanupPolicy(), null, definition.overflowDestinationRef());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -278,7 +278,8 @@ public final class TaskFlowNormalizer {
         if (definition.overflowEnabled() && steps.stream().noneMatch(step ->
                 ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId()))) {
             steps.addAll(remapStepIds(List.of(TaskFlowTemplates.overflow(
-                    definition.cacheRegionRef())), definition.derivedId("overflow")));
+                    definition.cacheRegionRef(), definition.overflowDestinationRef())),
+                    definition.derivedId("overflow")));
         }
         steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
                 definition.cacheRegionRef(), Map.of()

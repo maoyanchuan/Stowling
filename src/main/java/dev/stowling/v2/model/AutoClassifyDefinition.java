@@ -18,8 +18,19 @@ public record AutoClassifyDefinition(
         TaskPriority collectionPriority,
         boolean overflowEnabled,
         TaskCleanupPolicy cleanupPolicy,
-        String unstackableRegionRef // Read legacy settings before converting them to layout refs.
+        String unstackableRegionRef, // Read legacy settings before converting them to layout refs.
+        String overflowDestinationRef
 ) {
+    public AutoClassifyDefinition(UUID id, String name, boolean enabled,
+            boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
+            int pickupRadius, String cacheRegionRef, List<AutoClassifyAreaDefinition> areas,
+            TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
+                pickupRadius, cacheRegionRef, areas, priority, overflowEnabled, cleanupPolicy,
+                unstackableRegionRef, null);
+    }
+
     public AutoClassifyDefinition(
             UUID id,
             String name,
@@ -103,6 +114,19 @@ public record AutoClassifyDefinition(
                 ResourceType.REGION,
                 "cacheRegionRef"
         );
+        if (!overflowEnabled || overflowDestinationRef == null || overflowDestinationRef.isBlank()) {
+            overflowDestinationRef = null;
+        } else {
+            ResourceReference destination = ResourceReference.parse(overflowDestinationRef);
+            if (destination.type() != ResourceType.COORDINATE
+                    && destination.type() != ResourceType.REGION) {
+                throw new IllegalArgumentException("溢出存入位置必须是坐标或区域");
+            }
+            overflowDestinationRef = destination.encode();
+            if (cacheRegionRef.equals(overflowDestinationRef)) {
+                throw new IllegalArgumentException("溢出存入位置需要与缓存区域分开");
+            }
+        }
         unstackableRegionRef = unstackableRegionRef == null || unstackableRegionRef.isBlank()
                 ? null : requireReference(unstackableRegionRef, ResourceType.REGION,
                         "unstackableRegionRef");

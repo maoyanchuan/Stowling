@@ -2,6 +2,7 @@ package dev.stowling.v2.model;
 
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
+import java.util.UUID;
 
 public record StorageAutomationSettings(
         boolean cleanupEnabled,
@@ -14,8 +15,31 @@ public record StorageAutomationSettings(
         List<java.util.UUID> temporaryRegionIds,
         List<java.util.UUID> overflowCoordinateIds,
         List<java.util.UUID> overflowRegionIds,
-        java.util.UUID unstackableOverflowRegionId
+        java.util.UUID unstackableOverflowRegionId,
+        Boolean robotWarehouseEnabled
 ) {
+    public StorageAutomationSettings(boolean cleanupEnabled, List<BlockPosition> temporary,
+            List<BlockPosition> empty, BlockPosition fallback, List<UUID> temporaryCoordinateIds,
+            List<UUID> emptyBoxCoordinateIds, UUID fallbackCoordinateId,
+            List<UUID> temporaryRegionIds, List<UUID> overflowCoordinateIds,
+            List<UUID> overflowRegionIds, UUID unstackableOverflowRegionId) {
+        this(cleanupEnabled, temporary, empty, fallback, temporaryCoordinateIds,
+                emptyBoxCoordinateIds, fallbackCoordinateId, temporaryRegionIds,
+                overflowCoordinateIds, overflowRegionIds, unstackableOverflowRegionId, null);
+    }
+
+    public boolean warehouseEnabled() {
+        return !Boolean.FALSE.equals(robotWarehouseEnabled)
+                && (!overflowCoordinateIds.isEmpty() || !overflowRegionIds.isEmpty());
+    }
+
+    public boolean hasWarehouseLocation(ResourceReference ref) {
+        return switch (ref.type()) {
+            case COORDINATE -> overflowCoordinateIds.contains(ref.uuid());
+            case REGION -> overflowRegionIds.contains(ref.uuid());
+            default -> false;
+        };
+    }
     public StorageAutomationSettings(
             boolean cleanupEnabled,
             List<BlockPosition> temporaryContainers,

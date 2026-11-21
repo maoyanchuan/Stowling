@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 /** Global settings are separate from task definitions and retain their own revision. */
 public final class StorageSettingsStore {
@@ -43,7 +44,7 @@ public final class StorageSettingsStore {
                         : resolve.apply(settings.fallbackCoordinateId()),
                 java.util.List.of(), java.util.List.of(), null, settings.temporaryRegionIds(),
                 settings.overflowCoordinateIds(), settings.overflowRegionIds(),
-                settings.unstackableOverflowRegionId());
+                settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled());
     }
 
     public synchronized RegionDefinition unstackableOverflowRegion() {
@@ -63,10 +64,16 @@ public final class StorageSettingsStore {
 
     public synchronized java.util.List<dev.stowling.domain.BlockPosition> overflowPositions(
             String dimension) {
+        return overflowPositions(dimension, null);
+    }
+
+    public synchronized java.util.List<dev.stowling.domain.BlockPosition> overflowPositions(
+            String dimension, UUID selected) {
         if (settings.overflowCoordinateIds().isEmpty()) return java.util.List.of();
         if (coordinates == null) throw new IllegalStateException("溢出坐标未绑定公共设施");
         var points = coordinates.read().config().coordinates();
-        return settings.overflowCoordinateIds().stream().map(id -> points.stream()
+        return settings.overflowCoordinateIds().stream()
+                .filter(id -> selected == null || selected.equals(id)).map(id -> points.stream()
                 .filter(point -> point.id().equals(id)).findFirst().orElseThrow(() ->
                         new IllegalStateException("溢出设施引用的坐标不存在")))
                 .filter(point -> dimension == null || point.dimension() == null
@@ -76,10 +83,15 @@ public final class StorageSettingsStore {
     }
 
     public synchronized java.util.List<dev.stowling.v2.model.RegionDefinition> overflowRegions() {
+        return overflowRegions(null);
+    }
+
+    public synchronized java.util.List<RegionDefinition> overflowRegions(UUID selected) {
         if (settings.overflowRegionIds().isEmpty()) return java.util.List.of();
         if (coordinates == null) throw new IllegalStateException("溢出区域未绑定公共设施");
         var regions = coordinates.read().config().regions();
-        return settings.overflowRegionIds().stream().map(id -> regions.stream()
+        return settings.overflowRegionIds().stream()
+                .filter(id -> selected == null || selected.equals(id)).map(id -> regions.stream()
                 .filter(region -> region.id().equals(id)).findFirst().orElseThrow(() ->
                         new IllegalStateException("溢出设施引用的区域不存在"))).toList();
     }

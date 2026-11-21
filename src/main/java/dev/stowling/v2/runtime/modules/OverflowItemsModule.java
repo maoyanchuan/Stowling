@@ -14,8 +14,10 @@ final class OverflowItemsModule {
                 ResourceType.REGION);
         RegionDefinition region = reference == null ? null
                 : ResourceReferenceSupport.region(context, reference);
+        var destination = ResourceReferenceSupport.optionalReference(step, TaskModuleIds.TARGET_REF,
+                ResourceType.COORDINATE);
         return ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId())
-                ? context.storageAutomation().robotWarehouse(context, region)
+                ? context.storageAutomation().robotWarehouse(context, region, destination)
                 : context.storageAutomation().overflow(context, region);
     }
 }

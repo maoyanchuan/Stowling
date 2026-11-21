@@ -254,6 +254,7 @@ public final class ConfigValidator {
                 .collect(java.util.stream.Collectors.toSet());
         for (AutoClassifyDefinition definition : definitions) {
             requireCleanupDestination(definition.cleanupPolicy(), coordinates, regions);
+            requireWarehouseDestination(definition.overflowDestinationRef(), coordinates, regions);
             if (!ids.add(definition.id())) {
                 throw new V2ValidationException(
                         "duplicate auto classify task id"
@@ -358,6 +359,18 @@ public final class ConfigValidator {
                 || ref.type() == ResourceType.REGION && !regions.containsKey(ref.uuid())) {
             throw new V2ValidationException("未满盒储存位置引用的坐标或区域不存在");
         }
+    }
+
+    private static void requireWarehouseDestination(String destination,
+            Map<UUID, CoordinatePoint> coordinates, Map<UUID, RegionDefinition> regions) {
+        if (destination == null) return;
+        var ref = ResourceReference.parse(destination);
+        boolean exists = switch (ref.type()) {
+            case COORDINATE -> coordinates.containsKey(ref.uuid());
+            case REGION -> regions.containsKey(ref.uuid());
+            default -> false;
+        };
+        if (!exists) throw new V2ValidationException("溢出存入位置引用的坐标或区域不存在");
     }
 
     private static void requireAutoTask(
@@ -646,10 +659,12 @@ public final class ConfigValidator {
         }
         switch (step.moduleId()) {
             case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {
-                requireParameters(step, Set.of(REGION_REF), Set.of());
+                requireParameters(step, ROBOT_WAREHOUSE.equals(step.moduleId())
+                        ? Set.of(REGION_REF, TARGET_REF) : Set.of(REGION_REF), Set.of());
                 if (step.parameters().containsKey(REGION_REF)) {
                     requireRegionReference(step, regions, REGION_REF);
                 }
+                requireWarehouseDestination(step.parameters().get(TARGET_REF), coordinates, regions);
             }
             case CONTAINER_INTERACTION -> requireInteractionStep(
                     step,

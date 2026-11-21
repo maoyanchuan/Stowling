@@ -40,45 +40,37 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_robot_warehouse_link_keeps_saved_classification_settings() -> None:
+def test_robot_warehouse_location_settings_keep_other_facilities() -> None:
     result = _run(
         """
         (() => {
             const model = window.StowlingAutoClassifyTaskModel;
-            const saved = {
-                name: "全物品",
-                enabled: true,
-                classificationEnabled: true,
-                detection: {coordinateRef: "coordinate:pickup", pickupRadius: 8},
-                cacheRegionRef: "region:cache",
-                collectionPriority: "URGENT",
-                cleanupPolicy: {destinationRef: "region:cleanup", resumeMode: "RESTART"},
-                classificationAreas: [
-                    {categoryZoneRef: "category-zone:all", storagePolicy: null},
-                    {categoryZoneRef: "category-zone:tools",
-                        storagePolicy: {mode: "BOX_ONLY", allowPartialBoxes: true}},
-                ],
-            };
-            return [model.warehouseLinkPayload(saved, "4", true),
-                model.warehouseLinkPayload(saved, "5", false)];
+            const oldSettings = {overflowCoordinateIds: ["old"], emptyBoxCoordinateIds: ["box"]};
+            const saved = model.warehouseSettingsPayload(oldSettings, {
+                enabled: false, locations: ["coordinate:point", "region:area"],
+            });
+            const options = model.warehouseLocationOptions({
+                coordinates: [{id: "point", name: "溢出箱", x: 1, y: 64, z: 2}],
+                regions: [{id: "area", name: "仓库"}],
+            });
+            return {saved, options, reopened: model.warehouseDraft(saved),
+                migrated: model.warehouseDraft(oldSettings)};
         })()
         """
     )
 
-    assert result[0] == {
-        "revision": "4",
-        "name": "全物品",
-        "detection": {"coordinateRef": "coordinate:pickup", "pickupRadius": 8},
-        "cacheRegionRef": "region:cache",
-        "collectionPriority": "URGENT",
-        "classificationAreas": [
-            {"categoryZoneRef": "category-zone:all"},
-            {"categoryZoneRef": "category-zone:tools",
-             "storagePolicy": {"mode": "BOX_ONLY", "allowPartialBoxes": True}},
-        ],
-        "overflowEnabled": True,
+    assert result["saved"] == {
+        "overflowCoordinateIds": ["point"],
+        "overflowRegionIds": ["area"],
+        "emptyBoxCoordinateIds": ["box"],
+        "robotWarehouseEnabled": False,
     }
-    assert result[1] == {**result[0], "revision": "5", "overflowEnabled": False}
+    assert result["options"] == [
+        {"id": "coordinate:point", "name": "坐标 · 溢出箱 (1, 64, 2)"},
+        {"id": "region:area", "name": "区域 · 仓库"},
+    ]
+    assert result["reopened"] == {"enabled": False, "locations": ["coordinate:point", "region:area"]}
+    assert result["migrated"] == {"enabled": True, "locations": ["coordinate:old"]}
 
 
 def test_task_configures_unstackable_sorting_through_a_layout() -> None:
@@ -153,6 +145,7 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "collectionEnabled": True,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
     }
     assert result["gap"] == "自动分类 2"
@@ -213,6 +206,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "collectionEnabled": False,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
     }
 
@@ -259,6 +253,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "collectionEnabled": True,
         "classificationEnabled": False,
         "overflowEnabled": False,
+        "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
     }
 
@@ -307,7 +302,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
             };
             const body = model.payload(draft, resources, items);
             const enabledDraft = { ...draft, name: "自动收集 2", enabled: true,
-                overflowEnabled: true, cleanupDestinationRef: "coordinate:coordinate-1" };
+                overflowEnabled: true, overflowDestinationRef: "coordinate:overflow",
+                cleanupDestinationRef: "coordinate:coordinate-1" };
             const enabledBody = model.payload(enabledDraft, resources, items);
             const item = {
                 id: "auto-1",
@@ -324,6 +320,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 detectionKeys: Object.keys(body.detection),
                 enabled: enabledBody.enabled,
                 overflow: model.draftFromTask({id: "auto-2", ...enabledBody}).overflowEnabled,
+                destination: model.draftFromTask(enabledBody).overflowDestinationRef,
                 cleanup: model.draftFromTask({id: "auto-2", ...enabledBody}).cleanupDestinationRef,
                 roundTrip: model.draftFromTask(item),
             };
@@ -338,6 +335,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "collectionEnabled": False,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "overflowDestinationRef": "",
         "cleanupPolicy": {"destinationRef": "region:region-1", "resumeMode": "RESTART"},
         "detection": {
             "coordinateRef": "coordinate:coordinate-1",
@@ -357,6 +355,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "name",
         "enabled",
         "overflowEnabled",
+        "overflowDestinationRef",
         "cleanupPolicy",
         "collectionEnabled",
         "classificationEnabled",
@@ -368,6 +367,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert result["detectionKeys"] == ["coordinateRef", "pickupRadius"]
     assert result["enabled"] is True
     assert result["overflow"] is True
+    assert result["destination"] == "coordinate:overflow"
     assert result["cleanup"] == "coordinate:coordinate-1"
     assert result["roundTrip"] == {
         "id": "auto-1",
@@ -387,6 +387,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "collectionEnabled": False,
         "classificationEnabled": True,
         "overflowEnabled": False,
+        "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
     }
 

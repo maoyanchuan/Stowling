@@ -80,10 +80,12 @@ class AutoClassifyTaskFactoryTest {
     void overflowIsOptInAndRunsAfterEveryClassificationAreaButBeforeReconciliation() {
         AutoClassifyDefinition original = definition(true);
         assertFalse(original.overflowEnabled());
+        String destination = "coordinate:" + UUID.randomUUID();
         var enabled = new AutoClassifyDefinition(original.id(), original.name(), original.enabled(),
                 original.collectionEnabled(), original.classificationEnabled(),
                 original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
-                original.classificationAreas(), original.collectionPriority(), true);
+                original.classificationAreas(), original.collectionPriority(), true,
+                original.cleanupPolicy(), null, destination);
         List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
         List<TaskStep> collect = tasks.getFirst().steps();
         List<TaskStep> batch = collect.get(1).steps();
@@ -97,6 +99,7 @@ class AutoClassifyTaskFactoryTest {
         assertEquals(ConfigValidator.ROBOT_WAREHOUSE, classify.get(index).moduleId());
         assertEquals(original.cacheRegionRef(), classify.get(index).parameters()
                 .get(ConfigValidator.REGION_REF));
+        assertEquals(destination, classify.get(index).parameters().get(ConfigValidator.TARGET_REF));
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, classify.get(index + 1).moduleId());
         assertTrue(AutoClassifyTaskFactory.tasks(original, List.of()).stream()
                 .flatMap(task -> task.steps().stream())

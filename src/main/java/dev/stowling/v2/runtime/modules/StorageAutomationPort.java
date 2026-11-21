@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,12 @@ public interface StorageAutomationPort {
     default TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
             RegionDefinition cacheRegion) {
         throw new IllegalStateException("当前环境不支持机器人仓库");
+    }
+
+    default TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
+            RegionDefinition cacheRegion, ResourceReference destination) {
+        if (destination != null) throw new IllegalStateException("当前环境不支持指定仓库位置");
+        return robotWarehouse(context, cacheRegion);
     }
 
     default TaskModuleExecutor scanCacheContents(TaskExecutionContext context,

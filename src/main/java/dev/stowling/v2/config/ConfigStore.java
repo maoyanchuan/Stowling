@@ -508,6 +508,7 @@ public final class ConfigStore {
         );
         Set<String> allowed = new java.util.HashSet<>(fields);
         allowed.add("overflowEnabled");
+        allowed.add("overflowDestinationRef");
         allowed.add("cleanupPolicy");
         allowed.add("unstackableRegionRef");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");

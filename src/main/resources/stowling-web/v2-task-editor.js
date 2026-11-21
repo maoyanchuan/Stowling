@@ -1067,6 +1067,9 @@
         if (moduleId === "DEPOSIT_ITEMS_TO_CONTAINERS") {
             return ["coordinate", "region", ...outputTypesFor(moduleId)];
         }
+        if (moduleId === "ROBOT_WAREHOUSE") {
+            return ["coordinate", "region"];
+        }
         const outputs = outputTypesFor(moduleId);
         return outputs.length > 0 ? outputs : ["coordinate"];
     }

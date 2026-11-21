@@ -781,9 +781,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cacheRegionRef(),
                 request.classificationAreas(),
                 request.collectionPriority(),
-                Boolean.TRUE.equals(request.overflowEnabled()),
-                request.cleanupPolicy()
+                overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
+                        false),
+                request.cleanupPolicy(), request.overflowDestinationRef()
         );
+        requireWarehouseLocation(definition.overflowDestinationRef());
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
                 definition,
@@ -860,10 +862,15 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cacheRegionRef(),
                 request.classificationAreas(),
                 request.collectionPriority(),
-                request.overflowEnabled() == null ? existing.overflowEnabled()
-                        : request.overflowEnabled(),
-                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy()
+                overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
+                        existing.overflowEnabled()),
+                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy(),
+                request.overflowDestinationRef() == null ? existing.overflowDestinationRef()
+                        : request.overflowDestinationRef()
         );
+        if (!Objects.equals(existing.overflowDestinationRef(), replacement.overflowDestinationRef())) {
+            requireWarehouseLocation(replacement.overflowDestinationRef());
+        }
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
         );
@@ -1361,7 +1368,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             List<AutoClassifyAreaRequest> requestedAreas,
             TaskPriority collectionPriority,
             boolean overflowEnabled,
-            dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy
+            dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy,
+            String overflowDestinationRef
     ) {
         if (detection == null) {
             throw new V2ValidationException("detection is required");
@@ -1395,7 +1403,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ? TaskPriority.NORMAL
                         : collectionPriority,
                 overflowEnabled,
-                cleanupPolicy
+                cleanupPolicy, null, overflowDestinationRef
         );
     }
 
@@ -1415,7 +1423,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.classificationAreas(),
                 definition.collectionPriority(),
                 definition.overflowEnabled(),
-                definition.cleanupPolicy()
+                definition.cleanupPolicy(), null, definition.overflowDestinationRef()
         );
     }
 
@@ -1455,8 +1463,25 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 ).encode(),
                 triggerIds,
                 definition.overflowEnabled(),
-                definition.cleanupPolicy()
+                definition.cleanupPolicy(), definition.overflowDestinationRef()
         );
+    }
+
+    private void requireWarehouseLocation(String destination) {
+        if (destination == null) return;
+        if (storageSettings == null) {
+            throw new V2ValidationException("请先配置机器人仓库位置");
+        }
+        var storage = storageSettings.read().settings();
+        if (!storage.warehouseEnabled()
+                || !storage.hasWarehouseLocation(ResourceReference.parse(destination))) {
+            throw new V2ValidationException("请选择已启用的机器人仓库位置");
+        }
+    }
+
+    private static boolean overflowEnabled(Boolean enabled, String destination, boolean previous) {
+        return enabled == null ? previous || destination != null && !destination.isBlank()
+                : enabled;
     }
 
     private static String uniqueAutoName(

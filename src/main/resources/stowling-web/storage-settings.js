@@ -15,6 +15,7 @@
     temporary.size = empty.size = overflow.size = 6;
     const fallback = document.createElement("select");
     let revision = "";
+    let robotWarehouseEnabled;
     let dirty = false;
     let busy = false;
     let activeSection = 1;
@@ -46,6 +47,7 @@
             if (dirty || busy) return;
             revision = response.revision;
             const value = response.settings;
+            robotWarehouseEnabled = value.robotWarehouseEnabled;
             enabled.checked = value.cleanupEnabled;
             unstackableOverflow.replaceChildren(new Option("未配置", ""));
             for (const [select, ids] of [[temporary, value.temporaryCoordinateIds || []],
@@ -178,6 +180,7 @@
                     overflowRegionIds: selected(overflow)
                         .filter(value => value.startsWith("region:"))
                         .map(value => value.slice("region:".length)),
+                    robotWarehouseEnabled,
                     unstackableOverflowRegionId: unstackableOverflow.value || null,
                     fallbackCoordinateId: fallback.value || null
                 }})});

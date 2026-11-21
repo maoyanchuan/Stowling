@@ -216,9 +216,14 @@ public final class TaskFlowTemplates {
     }
 
     public static TaskStep overflow(String cacheRegionRef) {
-        return TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
-                cacheRegionRef == null ? Map.of() : Map.of(ConfigValidator.REGION_REF,
-                        cacheRegionRef));
+        return overflow(cacheRegionRef, null);
+    }
+
+    public static TaskStep overflow(String cacheRegionRef, String destinationRef) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        if (cacheRegionRef != null) parameters.put(ConfigValidator.REGION_REF, cacheRegionRef);
+        if (destinationRef != null) parameters.put(ConfigValidator.TARGET_REF, destinationRef);
+        return TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE, parameters);
     }
 
     public static List<TaskStep> reconcileInventory(

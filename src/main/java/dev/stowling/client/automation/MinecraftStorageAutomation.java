@@ -3779,34 +3779,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         @Override
         void initialize() {
-            recover(() -> steps.add(new Step(new TaskModuleExecutor() {
-                private dev.stowling.automation.PlayerInventorySnapshot previous;
-                private int stable;
-
-                @Override
-                public TaskModuleResult start() {
-                    return tick();
-                }
-
-                @Override
-                public TaskModuleResult tick() {
-                    var observed = context.inventory().observe();
-                    if (observed.isEmpty()) {
-                        return TaskModuleResult.failed("无法读取真实背包，收尾核对已停止");
-                    }
-                    var current = observed.orElseThrow().snapshot();
-                    stable = current.equals(previous) ? stable + 1 : 0;
-                    previous = current;
-                    if (stable < 4) return TaskModuleResult.waiting("等待背包稳定，核对实际收尾物品");
-                    context.inventory().reconcileMissingItems(
-                            context.workspace().inventoryAccount());
-                    return TaskModuleResult.succeeded("已核对实际收尾物品");
-                }
-
-                @Override
-                public void cancel() {
-                }
-            }, this::resolveDestinations)));
+            recover(() -> steps.add(new Step(new CleanupInventorySettlement(context.inventory(),
+                    context.workspace().inventoryAccount()), this::resolveDestinations)));
         }
 
         private void resolveDestinations() {
@@ -3821,8 +3795,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void depositAll(int index) {
-            context.inventory().observe();
-            context.inventory().claimForCleanup(context.workspace().inventoryAccount());
             if (owned().isEmpty()) {
                 return;
             }

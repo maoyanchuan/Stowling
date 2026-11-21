@@ -278,7 +278,7 @@ public final class TaskFlowNormalizer {
         if (definition.overflowEnabled() && steps.stream().noneMatch(step ->
                 ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId()))) {
             steps.addAll(remapStepIds(List.of(TaskFlowTemplates.overflow(
-                    definition.cacheRegionRef(), definition.overflowDestinationRef())),
+                    definition.cacheRegionRef())),
                     definition.derivedId("overflow")));
         }
         steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
@@ -385,6 +385,10 @@ public final class TaskFlowNormalizer {
                 step.kind(),
                 step.parameters()
         );
+        if (autoClassify && overflow) {
+            parameters = new LinkedHashMap<>(parameters);
+            parameters.remove(ConfigValidator.TARGET_REF);
+        }
         if (step.kind() != TaskStepKind.ACTION) {
             return List.of(new TaskStep(
                     step.id(),

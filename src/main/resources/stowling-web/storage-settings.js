@@ -10,12 +10,12 @@
     const temporary = document.createElement("select");
     const empty = document.createElement("select");
     const overflow = document.createElement("select");
+    const warehouse = document.createElement("select");
     const unstackableOverflow = document.createElement("select");
-    temporary.multiple = empty.multiple = overflow.multiple = true;
-    temporary.size = empty.size = overflow.size = 6;
+    temporary.multiple = empty.multiple = overflow.multiple = warehouse.multiple = true;
+    temporary.size = empty.size = overflow.size = warehouse.size = 6;
     const fallback = document.createElement("select");
     let revision = "";
-    let robotWarehouseEnabled;
     let dirty = false;
     let busy = false;
     let activeSection = 1;
@@ -47,17 +47,18 @@
             if (dirty || busy) return;
             revision = response.revision;
             const value = response.settings;
-            robotWarehouseEnabled = value.robotWarehouseEnabled;
             enabled.checked = value.cleanupEnabled;
             unstackableOverflow.replaceChildren(new Option("未配置", ""));
             for (const [select, ids] of [[temporary, value.temporaryCoordinateIds || []],
                     [overflow, value.overflowCoordinateIds || []],
+                    [warehouse, value.robotWarehouseCoordinateIds || []],
                     [empty, value.emptyBoxCoordinateIds || []],
                     [fallback, [value.fallbackCoordinateId]]]) {
                 select.replaceChildren();
                 if (select === fallback) select.append(new Option("不使用后备位置", ""));
                 for (const point of points.coordinates) {
-                    const regionCapable = select === temporary || select === overflow;
+                    const regionCapable = select === temporary || select === overflow
+                        || select === warehouse;
                     const option = new Option(`${regionCapable ? "[点位] " : ""}`
                         + `${point.name} · ${point.x}, ${point.y}, ${point.z}`,
                         regionCapable ? `coordinate:${point.id}` : point.id);
@@ -68,7 +69,8 @@
             for (const region of regions.regions) {
                 unstackableOverflow.append(new Option(region.name, region.id));
                 for (const [select, ids] of [[temporary, value.temporaryRegionIds || []],
-                        [overflow, value.overflowRegionIds || []]]) {
+                        [overflow, value.overflowRegionIds || []],
+                        [warehouse, value.robotWarehouseRegionIds || []]]) {
                     const option = new Option(`[区域] ${region.name} · `
                         + `${region.firstX}, ${region.firstY}, ${region.firstZ} → `
                         + `${region.secondX}, ${region.secondY}, ${region.secondZ}`,
@@ -79,7 +81,7 @@
             }
             unstackableOverflow.value = value.unstackableOverflowRegionId || "";
             save.disabled = false;
-            message.textContent = "任务的中断存放位置请在任务内选择。这里的暂存仅兼容旧任务；溢出支持点位或区域。";
+            message.textContent = "中断存放位置和机器人仓库开关在任务内设置；仓库位置在此统一配置。";
         } catch (error) {
             message.textContent = "读取公共设施失败，请点击重新读取。";
             S.handleError(error, "读取公共设施失败");
@@ -97,18 +99,21 @@
         pendingSection = activeSection === 0 ? 1 : activeSection;
         document.dispatchEvent(new CustomEvent("stowling:request-coordinate-create", {
             detail: {returnPanel: "facilities", name: ["", "暂存箱", "空盒供应箱",
-                "后备打包位置", "溢出箱"][pendingSection]}
+                "后备打包位置", "溢出箱", "", "机器人仓库"][pendingSection]}
         }));
     });
     heading.append(S.element("h2", "", "公共设施"), link, regionLink, add);
     const sections = [["旧任务收尾（兼容）", enabled], ["旧任务暂存（兼容）", temporary],
         ["空潜影盒供应箱", empty], ["后备打包位置", fallback], ["溢出箱", overflow],
-        ["不可堆叠溢出区域", unstackableOverflow]];
+        ["不可堆叠溢出区域", unstackableOverflow], ["机器人仓库", warehouse]];
     const fields = sections.map(([name, control]) => field(name, control));
     fields[4].append(S.element("small", "muted",
-        "机器人仓库在此存放分类目标装不下的物品。请预留独立容器。"));
-    fields.at(-1).append(S.element("small", "muted",
+        "用于溢出箱配置，与机器人仓库分别管理。"));
+    fields[5].append(S.element("small", "muted",
         "旧版打包溢出物品模块使用。机器人仓库会将不可堆叠余料一同装盒。"));
+    fields[6].append(S.element("small", "muted",
+        "机器人专用的乱序仓库，无需标识物。物品混装入潜影盒，优先补满已有盒子。"
+            + "请独立选择坐标或区域；选中后保存公共设施。"));
     const navigation = S.element("nav", "resource-browser-list");
     navigation.setAttribute("aria-label", "选择公共设施用途");
     const buttons = sections.map(([name], index) => {
@@ -136,8 +141,9 @@
     document.addEventListener("stowling:coordinate-created", event => {
         if (pendingSection === null) return;
         const point = event.detail.coordinate;
-        for (const [index, select] of [[1, temporary], [2, empty], [3, fallback], [4, overflow]]) {
-            const regionCapable = index === 1 || index === 4;
+        for (const [index, select] of [[1, temporary], [2, empty], [3, fallback], [4, overflow],
+                [6, warehouse]]) {
+            const regionCapable = index === 1 || index === 4 || index === 6;
             const option = new Option(`${regionCapable ? "[点位] " : ""}${point.name} · `
                 + `${point.x}, ${point.y}, ${point.z}`,
                 regionCapable ? `coordinate:${point.id}` : point.id);
@@ -145,7 +151,7 @@
             select.append(option);
         }
         dirty = true;
-        const select = [null, temporary, empty, fallback, overflow][pendingSection];
+        const select = [null, temporary, empty, fallback, overflow, null, warehouse][pendingSection];
         pendingSection = null;
         select.focus();
         message.textContent = "坐标点已创建并选中，请保存公共设施以应用引用。";
@@ -180,7 +186,13 @@
                     overflowRegionIds: selected(overflow)
                         .filter(value => value.startsWith("region:"))
                         .map(value => value.slice("region:".length)),
-                    robotWarehouseEnabled,
+                    robotWarehouseEnabled: selected(warehouse).length > 0,
+                    robotWarehouseCoordinateIds: selected(warehouse)
+                        .filter(value => value.startsWith("coordinate:"))
+                        .map(value => value.slice("coordinate:".length)),
+                    robotWarehouseRegionIds: selected(warehouse)
+                        .filter(value => value.startsWith("region:"))
+                        .map(value => value.slice("region:".length)),
                     unstackableOverflowRegionId: unstackableOverflow.value || null,
                     fallbackCoordinateId: fallback.value || null
                 }})});

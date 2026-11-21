@@ -16,8 +16,22 @@ public record StorageAutomationSettings(
         List<java.util.UUID> overflowCoordinateIds,
         List<java.util.UUID> overflowRegionIds,
         java.util.UUID unstackableOverflowRegionId,
-        Boolean robotWarehouseEnabled
+        Boolean robotWarehouseEnabled,
+        List<UUID> robotWarehouseCoordinateIds,
+        List<UUID> robotWarehouseRegionIds
 ) {
+    public StorageAutomationSettings(boolean cleanupEnabled, List<BlockPosition> temporary,
+            List<BlockPosition> empty, BlockPosition fallback, List<UUID> temporaryCoordinateIds,
+            List<UUID> emptyBoxCoordinateIds, UUID fallbackCoordinateId,
+            List<UUID> temporaryRegionIds, List<UUID> overflowCoordinateIds,
+            List<UUID> overflowRegionIds, UUID unstackableOverflowRegionId,
+            Boolean robotWarehouseEnabled) {
+        this(cleanupEnabled, temporary, empty, fallback, temporaryCoordinateIds,
+                emptyBoxCoordinateIds, fallbackCoordinateId, temporaryRegionIds,
+                overflowCoordinateIds, overflowRegionIds, unstackableOverflowRegionId,
+                robotWarehouseEnabled, List.of(), List.of());
+    }
+
     public StorageAutomationSettings(boolean cleanupEnabled, List<BlockPosition> temporary,
             List<BlockPosition> empty, BlockPosition fallback, List<UUID> temporaryCoordinateIds,
             List<UUID> emptyBoxCoordinateIds, UUID fallbackCoordinateId,
@@ -29,14 +43,13 @@ public record StorageAutomationSettings(
     }
 
     public boolean warehouseEnabled() {
-        return !Boolean.FALSE.equals(robotWarehouseEnabled)
-                && (!overflowCoordinateIds.isEmpty() || !overflowRegionIds.isEmpty());
+        return !robotWarehouseCoordinateIds.isEmpty() || !robotWarehouseRegionIds.isEmpty();
     }
 
     public boolean hasWarehouseLocation(ResourceReference ref) {
         return switch (ref.type()) {
-            case COORDINATE -> overflowCoordinateIds.contains(ref.uuid());
-            case REGION -> overflowRegionIds.contains(ref.uuid());
+            case COORDINATE -> robotWarehouseCoordinateIds.contains(ref.uuid());
+            case REGION -> robotWarehouseRegionIds.contains(ref.uuid());
             default -> false;
         };
     }
@@ -76,6 +89,10 @@ public record StorageAutomationSettings(
             false, List.of(), List.of(), null);
 
     public StorageAutomationSettings {
+        robotWarehouseCoordinateIds = robotWarehouseCoordinateIds == null ? List.of()
+                : List.copyOf(robotWarehouseCoordinateIds);
+        robotWarehouseRegionIds = robotWarehouseRegionIds == null ? List.of()
+                : List.copyOf(robotWarehouseRegionIds);
         overflowCoordinateIds = overflowCoordinateIds == null ? List.of()
                 : List.copyOf(overflowCoordinateIds);
         overflowRegionIds = overflowRegionIds == null ? List.of() : List.copyOf(overflowRegionIds);
@@ -96,6 +113,18 @@ public record StorageAutomationSettings(
                 : List.copyOf(temporaryCoordinateIds);
         emptyBoxCoordinateIds = emptyBoxCoordinateIds == null ? List.of()
                 : List.copyOf(emptyBoxCoordinateIds);
+        if (robotWarehouseCoordinateIds.size() + robotWarehouseRegionIds.size() > 64) {
+            throw new IllegalArgumentException("机器人仓库最多引用 64 个点位或区域");
+        }
+        if (robotWarehouseCoordinateIds.stream().anyMatch(overflowCoordinateIds::contains)
+                || robotWarehouseRegionIds.stream().anyMatch(overflowRegionIds::contains)
+                || unstackableOverflowRegionId != null
+                        && robotWarehouseRegionIds.contains(unstackableOverflowRegionId)) {
+            throw new IllegalArgumentException("机器人仓库与溢出设施必须分开配置");
+        }
+        if (robotWarehouseCoordinateIds.stream().anyMatch(emptyBoxCoordinateIds::contains)) {
+            throw new IllegalArgumentException("机器人仓库与空盒供应箱必须分开配置");
+        }
         temporaryContainers = temporaryContainers == null ? List.of()
                 : List.copyOf(temporaryContainers);
         emptyBoxContainers = emptyBoxContainers == null ? List.of()

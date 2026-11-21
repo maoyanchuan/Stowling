@@ -297,6 +297,20 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 Set.copyOf(settings.resolved().emptyBoxContainers()), "溢出");
     }
 
+    private List<ContainerTarget> robotWarehouseContainers(ResourceReference destination) {
+        String dimension = minecraft.level.dimension().identifier().toString();
+        List<BlockPosition> points = destination == null
+                || destination.type() == ResourceType.COORDINATE
+                ? settings.robotWarehousePositions(dimension,
+                        destination == null ? null : destination.uuid()) : List.of();
+        List<RegionDefinition> regions = destination == null
+                || destination.type() == ResourceType.REGION
+                ? settings.robotWarehouseRegions(destination == null ? null : destination.uuid())
+                : List.of();
+        return TemporaryContainerResolver.resolve(points, regions, containerRegions,
+                Set.copyOf(settings.resolved().emptyBoxContainers()), "机器人仓库");
+    }
+
     @Override
     public TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
             List<ContainerTarget> containers) {
@@ -2995,7 +3009,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         void initialize() {
             initialized = true;
             if (boxedOnly && !configuration.warehouseEnabled()) {
-                skipMessage = "机器人仓库已停用，溢出物品留在缓存";
+                skipMessage = "请在坐标→公共设施配置机器人仓库，溢出物品留在缓存";
                 return;
             }
             if (destination != null && !configuration.hasWarehouseLocation(destination)) {
@@ -3004,7 +3018,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             if (cacheRegion == null && owned().isEmpty()) return;
             warehouseScope = robotWarehouseScope();
-            destinations = overflowContainers(destination);
+            destinations = boxedOnly ? robotWarehouseContainers(destination)
+                    : overflowContainers(destination);
             if (destination != null && destinations.isEmpty()) {
                 skipMessage = "所选仓库位置在当前维度无可用容器，溢出物品留在缓存";
                 return;
@@ -3053,7 +3068,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 throw new IllegalStateException("溢出打包前请配置任务中断存放位置");
             }
             if (destinations.isEmpty()) {
-                throw new IllegalStateException("请先在公共设施配置溢出箱或溢出区域");
+                throw new IllegalStateException(boxedOnly ? "请先在公共设施配置机器人仓库"
+                        : "请先在公共设施配置溢出箱或溢出区域");
             }
             robotWarehouse.prepare();
             warehouseReady = true;

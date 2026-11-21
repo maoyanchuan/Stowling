@@ -56,7 +56,8 @@ public final class CoordinateResourceMigration {
                 List.of(), null, temporary.stream().distinct().toList(),
                 empty.stream().distinct().toList(), fallback, settings.temporaryRegionIds(),
                 settings.overflowCoordinateIds(), settings.overflowRegionIds(),
-                settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled());
+                settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled(),
+                settings.robotWarehouseCoordinateIds(), settings.robotWarehouseRegionIds());
         if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
                 || !automatic.equals(config.autoClassifyTasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,

@@ -304,49 +304,15 @@
     }
 
     /**
-     * @param {object} resources
-     * @returns {Array<{id: string, name: string}>}
-     */
-    function warehouseLocationOptions(resources) {
-        return [
-            ...resourceList(resources, "coordinates").map((point) => ({
-                id: `coordinate:${point.id}`,
-                name: `坐标 · ${point.name} (${point.x}, ${point.y}, ${point.z})`
-            })),
-            ...resourceList(resources, "regions").map((region) => ({
-                id: `region:${region.id}`,
-                name: `区域 · ${region.name}`
-            }))
-        ];
-    }
-
-    /**
      * @param {object} settings
      * @returns {{enabled: boolean, locations: Array<string>}}
      */
     function warehouseDraft(settings) {
         const locations = [
-            ...(settings?.overflowCoordinateIds || []).map((id) => `coordinate:${id}`),
-            ...(settings?.overflowRegionIds || []).map((id) => `region:${id}`)
+            ...(settings?.robotWarehouseCoordinateIds || []).map((id) => `coordinate:${id}`),
+            ...(settings?.robotWarehouseRegionIds || []).map((id) => `region:${id}`)
         ];
-        return {enabled: locations.length > 0 && settings?.robotWarehouseEnabled !== false,
-            locations};
-    }
-
-    /**
-     * @param {object} settings
-     * @param {{enabled: boolean, locations: Array<string>}} draft
-     * @returns {object}
-     */
-    function warehouseSettingsPayload(settings, draft) {
-        return {
-            ...settings,
-            robotWarehouseEnabled: draft.enabled,
-            overflowCoordinateIds: draft.locations.filter((ref) => ref.startsWith("coordinate:"))
-                .map((ref) => referencedId(ref, "coordinate")),
-            overflowRegionIds: draft.locations.filter((ref) => ref.startsWith("region:"))
-                .map((ref) => referencedId(ref, "region"))
-        };
+        return {enabled: locations.length > 0, locations};
     }
 
     /**
@@ -383,9 +349,7 @@
         newDraft,
         payload,
         validateDraft,
-        warehouseDraft,
-        warehouseLocationOptions,
-        warehouseSettingsPayload
+        warehouseDraft
     });
 })();
 

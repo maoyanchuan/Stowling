@@ -523,13 +523,11 @@
                                                 </p>
                                             </div>
                                         </section>
-                                        <section class="auto-config-section"
+                                        <section id="robot-warehouse-settings"
+                                                 class="auto-config-section"
                                                  aria-labelledby="robot-warehouse-title">
                                             <div class="auto-phase-header">
-                                                <button id="toggle-robot-warehouse"
-                                                        class="auto-phase-toggle" type="button"
-                                                        aria-expanded="false"
-                                                        aria-controls="robot-warehouse-body">
+                                                <div class="auto-phase-toggle">
                                                     <span class="auto-phase-title">
                                                         <span class="auto-phase-index"
                                                               aria-hidden="true">3</span>
@@ -537,12 +535,12 @@
                                                             <strong id="robot-warehouse-title">
                                                                 机器人仓库
                                                             </strong>
-                                                            <small>储存区已满后，装盒存放溢出物品</small>
+                                                            <small>
+                                                                储存区满后装盒，位置在坐标→公共设施设置
+                                                            </small>
                                                         </span>
                                                     </span>
-                                                    <span class="move-task-chevron"
-                                                          aria-hidden="true">⌄</span>
-                                                </button>
+                                                </div>
                                                 <label class="auto-phase-switch"
                                                        for="robot-warehouse-enabled">
                                                     <span class="visually-hidden">
@@ -553,42 +551,6 @@
                                                     <span class="auto-switch-track"
                                                           aria-hidden="true"></span>
                                                 </label>
-                                            </div>
-                                            <div id="robot-warehouse-body"
-                                                 class="auto-phase-body" hidden>
-                                                <fieldset id="robot-warehouse-fields" disabled>
-                                                    <label class="move-field"
-                                                           for="auto-overflow-destination">
-                                                        <span>溢出存入位置</span>
-                                                        <select id="auto-overflow-destination">
-                                                            <option value="auto">
-                                                                自动选择仓库位置
-                                                            </option>
-                                                        </select>
-                                                    </label>
-                                                    <label class="move-field"
-                                                           for="robot-warehouse-location">
-                                                        <span>添加存放坐标或区域</span>
-                                                        <select id="robot-warehouse-location">
-                                                        </select>
-                                                    </label>
-                                                    <button id="add-robot-warehouse-location"
-                                                            class="secondary" type="button">
-                                                        添加位置
-                                                    </button>
-                                                    <div id="robot-warehouse-locations"
-                                                         class="card-list"
-                                                         aria-label="仓库位置"></div>
-                                                    <p class="auto-config-note">
-                                                        无需标识物，物品混装入潜影盒，优先补满已有盒子。
-                                                        请将这些容器留给机器人使用。
-                                                        仓库位置共用，开关只控制当前任务；随任务一起保存。
-                                                    </p>
-                                                    <a class="text-link"
-                                                       href="/coordinates.html#coordinate-points">
-                                                        管理坐标和区域
-                                                    </a>
-                                                </fieldset>
                                             </div>
                                         </section>
                                         <div id="auto-cleanup-settings"></div>

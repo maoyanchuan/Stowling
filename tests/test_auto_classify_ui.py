@@ -123,28 +123,20 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
 
-def test_robot_warehouse_is_a_switched_submenu_inside_the_classification_task() -> None:
+def test_robot_warehouse_keeps_only_a_switch_inside_the_classification_task() -> None:
     html = read("tasks.html")
     form = between(html, 'id="auto-task-form"', "</form>")
-    assert 'id="auto-overflow-destination"' in form
-    assert "溢出存入位置" in form
-    header = between(form, 'id="toggle-robot-warehouse"', 'id="robot-warehouse-body"')
-    assert 'aria-controls="robot-warehouse-body"' in header
-    assert 'aria-expanded="false"' in header
-    assert 'id="robot-warehouse-enabled"' in header
-    assert 'role="switch"' in header
-    warehouse = between(form, 'id="robot-warehouse-body"', "</section>")
-    assert "hidden" in warehouse
-    assert 'id="robot-warehouse-location"' in warehouse
-    assert 'id="add-robot-warehouse-location"' in warehouse
-    assert 'id="robot-warehouse-locations"' in warehouse
-    assert 'id="auto-overflow-destination"' in warehouse
-    assert '<form id="robot-warehouse-form"' not in html
-    assert 'id="save-robot-warehouse"' not in html
-    assert form.index('id="auto-sort-body"') < form.index('id="toggle-robot-warehouse"')
+    warehouse = between(form, 'id="robot-warehouse-settings"', "</section>")
+    assert 'id="robot-warehouse-enabled"' in warehouse
+    assert 'role="switch"' in warehouse
+    assert "<select" not in warehouse
+    assert "<button" not in warehouse
+    assert 'id="robot-warehouse-body"' not in html
+    assert 'id="auto-overflow-destination"' not in html
+    assert 'id="add-robot-warehouse-location"' not in html
+    assert form.index('id="auto-sort-body"') < form.index('id="robot-warehouse-settings"')
 
     javascript = read("auto-classify-ui.js")
-    assert 'togglePhase("warehouse")' in javascript
     assert "overflowEnabled: elements.warehouseEnabled.checked" in javascript
 
 

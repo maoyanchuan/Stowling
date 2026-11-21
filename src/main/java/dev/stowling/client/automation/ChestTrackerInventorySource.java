@@ -87,7 +87,9 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
             activeBank = loaded.orElseThrow();
         }
         Set<String> seen = new HashSet<>();
-        List<AreaBounds> warehouseAreas = storageSettings.overflowRegions().stream()
+        List<AreaBounds> warehouseAreas = java.util.stream.Stream.concat(
+                storageSettings.overflowRegions().stream(),
+                storageSettings.robotWarehouseRegions(null).stream())
                 .map(region -> new AreaBounds(region.firstX(), region.firstY(), region.firstZ(),
                         region.secondX(), region.secondY(), region.secondZ())).toList();
         for (var bankEntry : loaded.orElseThrow().getAllMemories().entrySet()) {
@@ -96,7 +98,8 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                 continue;
             }
             String dimensionId = key.toString();
-            var warehousePoints = Set.copyOf(storageSettings.overflowPositions(dimensionId));
+            var warehousePoints = new HashSet<>(storageSettings.overflowPositions(dimensionId));
+            warehousePoints.addAll(storageSettings.robotWarehousePositions(dimensionId, null));
             for (var entry : bankEntry.getValue().getMemories().entrySet()) {
                 Memory memory = entry.getValue();
                 if (memory.entityUuid() != null) {

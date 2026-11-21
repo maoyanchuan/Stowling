@@ -137,3 +137,26 @@ def test_overflow_facility_keeps_regions_when_adding_a_coordinate() -> None:
     assert settings["unstackableOverflowRegionId"] == "unstackable"
     assert settings["temporaryCoordinateIds"] == ["old"]
     assert settings["temporaryRegionIds"] == ["area"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_robot_warehouse_facility_saves_its_own_locations_without_changing_overflow() -> None:
+    runner = RUNNER.replace("'空潜影盒供应箱'", "'机器人仓库'").replace(
+        "temporaryRegionIds: ['area']}};",
+        "temporaryRegionIds: ['area'], overflowCoordinateIds: ['old'], "
+        "robotWarehouseRegionIds: ['area']}};",
+    )
+    result = subprocess.run(
+        [str(NODE), "-e", runner, str(WEB / "storage-settings.js")],
+        check=True, capture_output=True, encoding="utf-8",
+    )
+    value = json.loads(result.stdout)
+    assert value["request"]["detail"] == {"returnPanel": "facilities", "name": "机器人仓库"}
+    settings = value["saved"]["settings"]
+    assert settings["robotWarehouseCoordinateIds"] == ["new"]
+    assert settings["robotWarehouseRegionIds"] == ["area"]
+    assert settings["overflowCoordinateIds"] == ["old"]
+    assert settings["overflowRegionIds"] == []
+    assert settings["emptyBoxCoordinateIds"] == []
+    assert settings["temporaryCoordinateIds"] == ["old"]
+    assert settings["temporaryRegionIds"] == ["area"]

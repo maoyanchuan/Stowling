@@ -99,7 +99,7 @@ class AutoClassifyTaskFactoryTest {
         assertEquals(ConfigValidator.ROBOT_WAREHOUSE, classify.get(index).moduleId());
         assertEquals(original.cacheRegionRef(), classify.get(index).parameters()
                 .get(ConfigValidator.REGION_REF));
-        assertEquals(destination, classify.get(index).parameters().get(ConfigValidator.TARGET_REF));
+        assertFalse(classify.get(index).parameters().containsKey(ConfigValidator.TARGET_REF));
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, classify.get(index + 1).moduleId());
         assertTrue(AutoClassifyTaskFactory.tasks(original, List.of()).stream()
                 .flatMap(task -> task.steps().stream())
@@ -108,6 +108,28 @@ class AutoClassifyTaskFactoryTest {
                 List.of(), List.of(), List.of(), List.of(), List.of(enabled));
         AppConfig normalized = TaskFlowNormalizer.normalize(config);
         assertEquals(tasks, normalized.tasks());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+    }
+
+    @Test
+    void automaticWarehouseUsesSharedFacilitiesWhileStandaloneTasksKeepTheirDestination() {
+        AutoClassifyDefinition definition = definition(true);
+        var parameters = Map.of(ConfigValidator.REGION_REF, definition.cacheRegionRef(),
+                ConfigValidator.TARGET_REF, "coordinate:" + UUID.randomUUID());
+        TaskStep warehouse = TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
+                parameters);
+        var automatic = new TaskDefinition(definition.classificationTaskId(), "Auto",
+                List.of(warehouse));
+        var standalone = new TaskDefinition(UUID.randomUUID(), "Custom", List.of(warehouse));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                List.of(automatic, standalone), List.of(), List.of(), List.of(), List.of(),
+                List.of(definition));
+
+        var normalized = TaskFlowNormalizer.normalize(config);
+
+        var automaticWarehouse = normalized.tasks().getFirst().steps().getFirst();
+        assertFalse(automaticWarehouse.parameters().containsKey(ConfigValidator.TARGET_REF));
+        assertEquals(warehouse, normalized.tasks().getLast().steps().getFirst());
         assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
     }
 

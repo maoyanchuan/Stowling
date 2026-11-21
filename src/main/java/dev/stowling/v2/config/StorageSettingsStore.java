@@ -44,7 +44,8 @@ public final class StorageSettingsStore {
                         : resolve.apply(settings.fallbackCoordinateId()),
                 java.util.List.of(), java.util.List.of(), null, settings.temporaryRegionIds(),
                 settings.overflowCoordinateIds(), settings.overflowRegionIds(),
-                settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled());
+                settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled(),
+                settings.robotWarehouseCoordinateIds(), settings.robotWarehouseRegionIds());
     }
 
     public synchronized RegionDefinition unstackableOverflowRegion() {
@@ -94,6 +95,31 @@ public final class StorageSettingsStore {
                 .filter(id -> selected == null || selected.equals(id)).map(id -> regions.stream()
                 .filter(region -> region.id().equals(id)).findFirst().orElseThrow(() ->
                         new IllegalStateException("溢出设施引用的区域不存在"))).toList();
+    }
+
+    public synchronized java.util.List<dev.stowling.domain.BlockPosition> robotWarehousePositions(
+            String dimension, UUID selected) {
+        if (settings.robotWarehouseCoordinateIds().isEmpty()) return java.util.List.of();
+        if (coordinates == null) throw new IllegalStateException("机器人仓库未绑定公共设施");
+        var points = coordinates.read().config().coordinates();
+        return settings.robotWarehouseCoordinateIds().stream()
+                .filter(id -> selected == null || selected.equals(id)).map(id -> points.stream()
+                .filter(point -> point.id().equals(id)).findFirst().orElseThrow(() ->
+                        new IllegalStateException("机器人仓库引用的坐标不存在")))
+                .filter(point -> dimension == null || point.dimension() == null
+                        || point.dimension().equals(dimension))
+                .map(point -> new dev.stowling.domain.BlockPosition(point.x(), point.y(), point.z()))
+                .toList();
+    }
+
+    public synchronized java.util.List<RegionDefinition> robotWarehouseRegions(UUID selected) {
+        if (settings.robotWarehouseRegionIds().isEmpty()) return java.util.List.of();
+        if (coordinates == null) throw new IllegalStateException("机器人仓库未绑定公共设施");
+        var regions = coordinates.read().config().regions();
+        return settings.robotWarehouseRegionIds().stream()
+                .filter(id -> selected == null || selected.equals(id)).map(id -> regions.stream()
+                .filter(region -> region.id().equals(id)).findFirst().orElseThrow(() ->
+                        new IllegalStateException("机器人仓库引用的区域不存在"))).toList();
     }
 
     public synchronized java.util.List<dev.stowling.v2.model.RegionDefinition> temporaryRegions() {

@@ -58,7 +58,7 @@ class StorageSettingsStoreTest {
         assertEquals(unstackableId, reopened.resolved().unstackableOverflowRegionId());
         assertEquals(List.of(pointId), reopened.resolved().overflowCoordinateIds());
         assertEquals(settings, CoordinateResourceMigration.migrate(config, settings));
-        assertTrue(reopened.resolved().warehouseEnabled());
+        assertFalse(reopened.resolved().warehouseEnabled());
 
         var disabled = new StorageAutomationSettings(false, List.of(), List.of(), null,
                 List.of(), List.of(), null, List.of(), List.of(pointId), List.of(regionId),
@@ -67,7 +67,7 @@ class StorageSettingsStoreTest {
         var disabledAfterRestart = new StorageSettingsStore(file);
         disabledAfterRestart.bindCoordinates(config);
         assertFalse(disabledAfterRestart.resolved().warehouseEnabled());
-        assertTrue(disabledAfterRestart.resolved()
+        assertFalse(disabledAfterRestart.resolved()
                 .hasWarehouseLocation(ResourceReference.parse("coordinate:" + pointId)));
     }
 
@@ -77,6 +77,76 @@ class StorageSettingsStoreTest {
         assertThrows(IllegalArgumentException.class, () -> new StorageAutomationSettings(false,
                 List.of(), List.of(), null, List.of(), List.of(), null, List.of(),
                 List.of(), List.of(id), id));
+    }
+
+    @Test
+    void robotWarehouseKeepsSeparatePointsAndRegionsAcrossMigrationAndRestart() throws IOException {
+        ConfigStore config = new ConfigStore(directory.resolve("config.json"));
+        var initial = config.loadOrReset();
+        var overflow = new CoordinatePoint(UUID.randomUUID(), "Overflow", 1, 64, 0);
+        var warehouse = new CoordinatePoint(UUID.randomUUID(), "Robot", 10, 64, 0,
+                "minecraft:overworld", null);
+        var overflowArea = new RegionDefinition(UUID.randomUUID(), "Overflow area",
+                2, 64, 0, 3, 64, 1);
+        var warehouseArea = new RegionDefinition(UUID.randomUUID(), "Robot area",
+                11, 64, 0, 12, 64, 1);
+        config.save(initial.revision(), new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(overflow, warehouse), List.of(), List.of(overflowArea, warehouseArea),
+                List.of(), List.of()));
+        var settings = new StorageAutomationSettings(false, List.of(), List.of(), null,
+                List.of(), List.of(), null, List.of(), List.of(overflow.id()),
+                List.of(overflowArea.id()), null, false, List.of(warehouse.id()),
+                List.of(warehouseArea.id()));
+        Path file = directory.resolve("storage.json");
+        var store = new StorageSettingsStore(file);
+        store.bindCoordinates(config);
+        store.save(store.read().revision(), settings);
+
+        var reopened = new StorageSettingsStore(file);
+        reopened.bindCoordinates(config);
+
+        assertEquals(settings, reopened.read().settings());
+        assertEquals(settings, CoordinateResourceMigration.migrate(config, settings));
+        assertEquals(List.of(new BlockPosition(1, 64, 0)), reopened.overflowPositions());
+        assertEquals(List.of(overflowArea), reopened.overflowRegions());
+        assertEquals(List.of(new BlockPosition(10, 64, 0)),
+                reopened.robotWarehousePositions("minecraft:overworld", null));
+        assertEquals(List.of(), reopened.robotWarehousePositions("minecraft:the_nether", null));
+        assertEquals(List.of(), reopened.robotWarehousePositions(null, overflow.id()));
+        assertEquals(List.of(warehouseArea), reopened.robotWarehouseRegions(null));
+        assertEquals(List.of(), reopened.robotWarehouseRegions(overflowArea.id()));
+        assertEquals(List.of(warehouse.id()), reopened.resolved().robotWarehouseCoordinateIds());
+        assertTrue(reopened.resolved().warehouseEnabled());
+        assertTrue(reopened.resolved().hasWarehouseLocation(
+                ResourceReference.parse("coordinate:" + warehouse.id())));
+        assertFalse(reopened.resolved().hasWarehouseLocation(
+                ResourceReference.parse("coordinate:" + overflow.id())));
+    }
+
+    @Test
+    void legacyOverflowSettingsAreNotAdoptedAsARobotWarehouse() throws IOException {
+        Path file = directory.resolve("legacy-storage.json");
+        UUID id = UUID.randomUUID();
+        java.nio.file.Files.writeString(file,
+                "{\"overflowCoordinateIds\":[\"" + id + "\"],\"robotWarehouseEnabled\":true}");
+
+        var settings = new StorageSettingsStore(file).read().settings();
+
+        assertEquals(List.of(id), settings.overflowCoordinateIds());
+        assertEquals(List.of(), settings.robotWarehouseCoordinateIds());
+        assertEquals(List.of(), settings.robotWarehouseRegionIds());
+        assertFalse(settings.warehouseEnabled());
+    }
+
+    @Test
+    void robotWarehouseCannotReuseTheSameOverflowFacilityReference() {
+        UUID id = UUID.randomUUID();
+        assertThrows(IllegalArgumentException.class, () -> new StorageAutomationSettings(false,
+                List.of(), List.of(), null, List.of(), List.of(), null, List.of(),
+                List.of(id), List.of(), null, true, List.of(id), List.of()));
+        assertThrows(IllegalArgumentException.class, () -> new StorageAutomationSettings(false,
+                List.of(), List.of(), null, List.of(), List.of(), null, List.of(),
+                List.of(), List.of(id), null, true, List.of(), List.of(id)));
     }
 
     @Test

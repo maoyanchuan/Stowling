@@ -124,6 +124,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         List<UUID> referenced = new ArrayList<>(settings.temporaryCoordinateIds());
         referenced.addAll(settings.emptyBoxCoordinateIds());
         referenced.addAll(settings.overflowCoordinateIds());
+        referenced.addAll(settings.robotWarehouseCoordinateIds());
         if (settings.fallbackCoordinateId() != null) {
             referenced.add(settings.fallbackCoordinateId());
         }
@@ -134,6 +135,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .map(RegionDefinition::id).collect(java.util.stream.Collectors.toSet());
         if (!regions.containsAll(settings.temporaryRegionIds())
                 || !regions.containsAll(settings.overflowRegionIds())
+                || !regions.containsAll(settings.robotWarehouseRegionIds())
                 || (settings.unstackableOverflowRegionId() != null
                         && !regions.contains(settings.unstackableOverflowRegionId()))) {
             throw new IllegalArgumentException("公共设施引用的区域不存在，请刷新后重新选择");
@@ -287,6 +289,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
             if (facilities.temporaryCoordinateIds().contains(id)) references.add("公共设施·暂存箱");
             if (facilities.emptyBoxCoordinateIds().contains(id)) references.add("公共设施·空盒供应");
             if (facilities.overflowCoordinateIds().contains(id)) references.add("公共设施·溢出箱");
+            if (facilities.robotWarehouseCoordinateIds().contains(id)) {
+                references.add("公共设施·机器人仓库");
+            }
             if (id.equals(facilities.fallbackCoordinateId())) references.add("公共设施·后备工位");
         }
         if (!references.isEmpty()) {
@@ -410,6 +415,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
             var facilities = storageSettings.read().settings();
             if (facilities.temporaryRegionIds().contains(id)) references.add("公共设施·暂存区域");
             if (facilities.overflowRegionIds().contains(id)) references.add("公共设施·溢出区域");
+            if (facilities.robotWarehouseRegionIds().contains(id)) {
+                references.add("公共设施·机器人仓库");
+            }
             if (id.equals(facilities.unstackableOverflowRegionId())) {
                 references.add("公共设施·不可堆叠溢出区域");
             }

@@ -265,6 +265,8 @@
     }
     #stowling-settings-standard .sample-body {
         min-width: 0;
+    }
+    #stowling-settings-standard .sample-body-inner {
         padding: 4px var(--sample-padding) 14px;
     }
     #stowling-settings-standard .sample-row {
@@ -390,6 +392,8 @@
     }
     #stowling-settings-standard .sample-select-menu {
         position: absolute;
+        display: grid;
+        gap: 6px;
         z-index: 10;
         top: calc(100% + 6px);
         left: auto;
@@ -450,8 +454,12 @@
         outline-offset: -2px;
     }
     @media (hover: hover) {
-        #stowling-settings-standard .sample-select-option:hover {
-            background: var(--theme-hover, #34363c);
+        #stowling-settings-standard .sample-select-option:hover:not([aria-selected="true"]) {
+            background: color-mix(
+                in srgb,
+                var(--theme-hover, #34363c) 45%,
+                var(--theme-surface, #161719)
+            );
         }
     }
     #stowling-settings-standard .sample-section-title {
@@ -2929,6 +2937,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         </header>
 
         <div id="sample-module-body" class="sample-body" aria-label="任务模块配色">
+            <div class="sample-body-inner">
             <div class="sample-row">
                 <label class="sample-row-label" for="sample-valley">四号谷地</label>
                 <div class="sample-actions">
@@ -3089,6 +3098,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 <input id="sample-maximum" class="sample-number"
                     type="number" min="1" max="99999" step="1" value="320">
             </div>
+            </div>
         </div>
     </section>
 </div>
@@ -3183,7 +3193,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         collapse.setAttribute("aria-expanded", String(ui.expanded));
         const moduleAction = ui.expanded ? "收起" : "展开";
         collapse.setAttribute("aria-label", `${moduleAction}售卖弹性物资设置`);
-        body.hidden = !ui.expanded;
+        reveal(body, ui.expanded, animate);
         for (const [key, label] of [["valley", "四号谷地"], ["wuling", "武陵"]]) {
             const enabled = ui[key];
             const expanded = enabled && ui[`${key}Expanded`];
@@ -3298,7 +3308,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     collapse.addEventListener("click", () => {
         setMenuOpen(false, false, false);
         ui.expanded = !ui.expanded;
-        renderUI();
+        renderUI(true);
         remember();
     });
     for (const key of ["valley", "wuling"]) {

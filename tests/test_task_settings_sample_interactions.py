@@ -207,3 +207,26 @@ def test_reduced_motion_switches_submenus_without_spatial_animation() -> None:
         return {opened, closed: node('wuling-detail').hidden, count: animations.length};
     })()""")
     assert result == {"opened": True, "closed": True, "count": 0}
+
+
+def test_main_menu_animates_both_directions_without_changing_task_or_settings() -> None:
+    result = run_sample("""(async () => {
+        load();
+        node('maximum').value = '180';
+        node('maximum').emit('input');
+        node('collapse').emit('click');
+        const beforeFinish = node('module-body').hidden;
+        animations.at(-1).finish();
+        await Promise.resolve();
+        const closed = node('module-body').hidden;
+        node('collapse').emit('click');
+        animations.at(-1).finish();
+        await Promise.resolve();
+        return {beforeFinish, closed, opened: !node('module-body').hidden,
+            timings: animations.map(animation => animation.options.duration),
+            value: node('maximum').value, running: node('enabled').checked};
+    })()""")
+    assert result == {
+        "beforeFinish": False, "closed": True, "opened": True,
+        "timings": [150, 200], "value": "180", "running": False,
+    }

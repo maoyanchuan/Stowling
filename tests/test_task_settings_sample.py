@@ -17,9 +17,15 @@ class SampleMarkup(HTMLParser):
         self.references: list[str] = []
         self.external_sources: list[str] = []
         self.themes: set[str] = set()
+        self.in_module_header = False
+        self.module_header_controls: list[tuple[str, dict[str, str | None]]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
+        if tag == "header" and "sample-header" in (values.get("class") or "").split():
+            self.in_module_header = True
+        if self.in_module_header and tag in {"input", "button"}:
+            self.module_header_controls.append((tag, values))
         if identity := values.get("id"):
             self.ids.append(identity)
         for key in ("for", "aria-controls", "aria-labelledby"):
@@ -32,6 +38,10 @@ class SampleMarkup(HTMLParser):
             self.external_sources.append(values["href"] or "")
         if theme := values.get("data-theme-choice"):
             self.themes.add(theme)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "header":
+            self.in_module_header = False
 
 
 def read_sample() -> str:
@@ -68,3 +78,17 @@ def test_sample_is_independent_of_host_controls_and_game_services() -> None:
     assert "fetch(" not in source
     assert "XMLHttpRequest" not in source
     assert "WebSocket" not in source
+
+
+def test_module_header_keeps_task_switch_after_independent_disclosure() -> None:
+    parser = SampleMarkup()
+    parser.feed(read_sample())
+    controls = parser.module_header_controls
+    assert [(tag, attrs.get("id")) for tag, attrs in controls] == [
+        ("button", "sample-collapse"),
+        ("input", "sample-enabled"),
+    ]
+    assert controls[0][1]["aria-controls"] == "sample-module-body"
+    assert controls[1][1]["role"] == "switch"
+    assert controls[1][1]["aria-label"] == "启用售卖弹性物资"
+    assert "sample-grip" not in read_sample()

@@ -213,37 +213,6 @@
         padding: 10px var(--sample-padding);
         background: var(--sample-header);
     }
-    #stowling-settings-standard .sample-grip {
-        display: inline-flex;
-        flex: 0 0 auto;
-        color: var(--muted);
-    }
-    #stowling-settings-standard .sample-master {
-        appearance: none;
-        flex: 0 0 auto;
-        width: 22px;
-        height: 22px;
-        margin: 0;
-        border: 1px solid var(--sample-label);
-        border-radius: 5px;
-        background: transparent;
-        position: relative;
-    }
-    #stowling-settings-standard .sample-master:checked {
-        border-color: var(--sample-toggle-on);
-        background: var(--sample-toggle-on);
-    }
-    #stowling-settings-standard .sample-master:checked::after {
-        content: "";
-        position: absolute;
-        left: 7px;
-        top: 3px;
-        width: 6px;
-        height: 11px;
-        border: solid var(--sample-text);
-        border-width: 0 2px 2px 0;
-        transform: rotate(45deg);
-    }
     #stowling-settings-standard .sample-title {
         display: flex;
         align-items: center;
@@ -296,11 +265,29 @@
         padding: 4px var(--sample-padding) 14px;
     }
     #stowling-settings-standard .sample-row {
+        position: relative;
+        isolation: isolate;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
         min-height: var(--sample-row-height);
+    }
+    #stowling-settings-standard .sample-row::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        inset: 4px -12px;
+        border-radius: 10px;
+        background: var(--theme-hover, #34363c);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease-out;
+    }
+    @media (hover: hover) {
+        #stowling-settings-standard .sample-row:hover::before {
+            opacity: 1;
+        }
     }
     #stowling-settings-standard .sample-row-label,
     #stowling-settings-standard .sample-section-title {
@@ -2786,16 +2773,6 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 <div id="stowling-settings-standard" aria-label="任务模块布局">
     <section class="sample-module" aria-labelledby="sample-module-title">
         <header class="sample-header">
-            <span class="sample-grip" aria-hidden="true">
-                <svg 
-    width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-    stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/>
-<circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/>
-<circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-            </span>
-            <input id="sample-enabled" class="sample-master cursor-interaction"
-                type="checkbox" aria-label="启用售卖弹性物资" checked>
             <h2 id="sample-module-title" class="sample-title">
                 <span class="sample-title-icon" aria-hidden="true">
                     <svg 
@@ -2815,6 +2792,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
     stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
+            <input id="sample-enabled" class="sample-switch cursor-interaction"
+                type="checkbox" role="switch" aria-label="启用售卖弹性物资" checked>
         </header>
 
         <div id="sample-module-body" class="sample-body" aria-label="任务模块配色">

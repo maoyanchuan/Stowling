@@ -215,6 +215,7 @@
         const link = document.createElement("a");
         link.className = "workspace-nav-link";
         link.href = item.href;
+        link.dataset.page = item.page;
         link.textContent = item.label;
         if (navigationItemActive(item, activePage)) {
             link.classList.add("active");

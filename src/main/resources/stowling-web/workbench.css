@@ -199,6 +199,10 @@ body[data-page] .connection-state {
     backdrop-filter: var(--theme-backdrop, none);
 }
 
+@view-transition {
+    navigation: auto;
+}
+
 body[data-page] .workspace-nav {
     position: static;
     display: flex;
@@ -214,15 +218,80 @@ body[data-page] .workspace-nav {
 }
 
 body[data-page] .workspace-nav a {
+    position: relative;
+    isolation: isolate;
     padding: 9px 18px;
     border-radius: 7px;
     color: var(--muted);
     font-size: 13px;
+    background: transparent;
+    transition: color 140ms ease;
+}
+
+body[data-page] .workspace-nav a::before {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    content: "";
+    opacity: 0;
+    background: var(--theme-hover, #34363c);
+    transform: scale(0.86);
+    transition:
+        opacity 140ms ease,
+        transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (hover: hover) {
+    body[data-page] .workspace-nav a:hover::before {
+        opacity: 0.52;
+        transform: scale(1);
+    }
 }
 
 body[data-page] .workspace-nav a[aria-current="page"] {
     color: var(--theme-selected-text, #f1f1f3);
+    background: transparent;
+    view-transition-name: workspace-active-tab;
+}
+
+body[data-page] .workspace-nav a[aria-current="page"]::before {
+    opacity: 1;
     background: var(--theme-selected, #34363c);
+    transform: scale(1);
+    animation: workspace-tab-arrive 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes workspace-tab-arrive {
+    from {
+        opacity: 0.32;
+        transform: scale(0.84) translateY(2px);
+    }
+}
+
+::view-transition-old(root) {
+    animation: workspace-page-out 140ms ease-out both;
+}
+
+::view-transition-new(root) {
+    animation: workspace-page-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+::view-transition-group(workspace-active-tab) {
+    animation-duration: 280ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes workspace-page-out {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes workspace-page-in {
+    from {
+        opacity: 0;
+    }
 }
 
 body[data-page] :is(.panel-heading, .resource-section-heading) {
@@ -1394,6 +1463,17 @@ body[data-page] .storage-slot[aria-pressed="true"] {
 @media (prefers-reduced-motion: reduce) {
     body[data-page] :is(.move-task-chevron, .settings-chevron) {
         transition: none;
+    }
+
+    body[data-page] .workspace-nav a::before {
+        animation: none;
+        transition: none;
+    }
+
+    ::view-transition-old(root),
+    ::view-transition-new(root),
+    ::view-transition-group(workspace-active-tab) {
+        animation-duration: 1ms !important;
     }
 }
 

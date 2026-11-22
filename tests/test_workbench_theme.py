@@ -165,3 +165,22 @@ def test_light_palette_keeps_original_colors_and_page_gradients() -> None:
     assert "--theme-grid: block;" in light
     assert "background: var(--theme-page, var(--bg));" in workbench
     assert "background: var(--theme-hero, #24272a);" in workbench
+
+
+def test_navigation_switch_uses_shared_motion_with_reduced_motion_fallback() -> None:
+    workbench = (WEB / "workbench.css").read_text(encoding="utf-8")
+    common = (WEB / "common.js").read_text(encoding="utf-8")
+
+    assert "link.dataset.page = item.page;" in common
+    assert "@view-transition {\n    navigation: auto;\n}" in workbench
+    assert "view-transition-name: workspace-active-tab;" in workbench
+    assert "@keyframes workspace-tab-arrive" in workbench
+    assert "::view-transition-group(workspace-active-tab)" in workbench
+    assert (
+        "body[data-page] .workspace-nav a::before {\n"
+        "        animation: none;"
+    ) in workbench
+    assert (
+        "::view-transition-group(workspace-active-tab) {\n"
+        "        animation-duration: 1ms !important;"
+    ) in workbench

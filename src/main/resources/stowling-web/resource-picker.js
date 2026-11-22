@@ -32,50 +32,20 @@
         if (!select?.parentElement) return;
         let state = states.get(select);
         if (!state) {
-            const search = document.createElement("input");
-            search.type = "search";
-            search.placeholder = "搜索资源或文件夹";
-            search.setAttribute("aria-label", "搜索此字段的资源");
-            search.autocomplete = "off";
-            search.hidden = true;
             const controls = S.element("span", "resource-picker-controls");
-            const button = S.element("button", "ghost compact", "搜索资源");
-            button.type = "button";
-            button.setAttribute("aria-expanded", "false");
             const link = S.element("a", "text-link", "去坐标页添加");
             link.target = "_blank";
             link.rel = "noopener";
-            controls.append(button, link);
+            controls.append(link);
             const anchor = select.closest("label") || select;
-            anchor.after(controls, search);
-            state = {search, button, link, options: [], catalog: {}};
+            anchor.after(controls);
+            state = {controls, link, options: [], catalog: {}};
             states.set(select, state);
-            search.addEventListener("input", event => {
-                event.stopPropagation();
-                render(select, state);
-            });
-            search.addEventListener("change", event => event.stopPropagation());
-            button.addEventListener("click", () => {
-                search.hidden = !search.hidden;
-                button.setAttribute("aria-expanded", String(!search.hidden));
-                if (!search.hidden) search.focus();
-                else {
-                    search.value = "";
-                    render(select, state);
-                }
-            });
-            select.addEventListener("change", () => {
-                if (!search.value) return;
-                search.value = "";
-                render(select, state);
-            });
         }
         state.options = Array.from(select.options, option => option.cloneNode(true));
         state.type = type;
         state.link.href = "/coordinates.html#" + panel;
-        state.link.hidden = state.options.some(option => option.value && !option.disabled);
-        state.button.hidden = !state.link.hidden;
-        if (state.button.hidden) state.search.hidden = true;
+        state.controls.hidden = state.options.some(option => option.value && !option.disabled);
         const captured = state.options;
         load().then(response => {
             if (state.options !== captured || !select.isConnected) return;
@@ -88,7 +58,6 @@
     function render(select, state) {
         const selection = select.multiple ? Array.from(select.selectedOptions, item => item.value)
             : [select.value];
-        const query = state.search.value.trim().toLocaleLowerCase();
         const groups = new Map();
         const options = [];
         for (const option of state.options) {
@@ -99,10 +68,6 @@
             }
             const ref = state.type ? state.type + ":" + value : value;
             const name = folderLabel(state.catalog, ref);
-            if (!selection.includes(value) && query
-                    && !(option.textContent + " " + name).toLocaleLowerCase().includes(query)) {
-                continue;
-            }
             if (!groups.has(name)) {
                 const group = document.createElement("optgroup");
                 group.label = name;

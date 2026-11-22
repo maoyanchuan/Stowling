@@ -719,3 +719,34 @@ def test_packing_switch_rejects_non_boolean_values(enabled: Any) -> None:
         """
     )
     assert "打包缓存开关需为布尔值" in result
+
+
+def test_independent_tasks_use_separate_settings_and_keep_the_selected_follow_up() -> None:
+    output = _run("""
+        (() => {
+            const model = window.StowlingAutoClassifyTaskModel;
+            const resources = {
+                coordinates: [{id: "pickup", name: "拾取点"}],
+                regions: [{id: "cache", name: "缓存"}],
+                categoryZones: [{id: "sorting", name: "分类区"}],
+            };
+            const pickup = model.payload({
+                ...model.newDraft("PICKUP"), coordinateId: "pickup",
+                cacheLocationRef: "region:cache", followUpTaskRef: "task:chosen"
+            }, resources);
+            const sort = model.payload({
+                ...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+                classificationAreas: [{categoryZoneId: "sorting"}]
+            }, resources);
+            return {pickup, sort, loaded: model.draftFromTask(pickup)};
+        })()
+    """)
+
+    assert output["pickup"]["classificationAreas"] == []
+    assert output["pickup"]["detection"]["coordinateRef"] == "coordinate:pickup"
+    assert output["pickup"]["followUpTaskRef"] == "task:chosen"
+    assert output["loaded"]["followUpTaskRef"] == "task:chosen"
+    assert output["sort"]["kind"] == "CLASSIFICATION"
+    assert "detection" not in output["sort"]
+    assert "followUpTaskRef" not in output["sort"]
+    assert output["sort"]["classificationAreas"][0]["categoryZoneRef"] == "category-zone:sorting"

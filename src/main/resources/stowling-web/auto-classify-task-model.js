@@ -44,25 +44,25 @@
         return type === expectedType ? text.slice(separator + 1).trim() : "";
     }
 
-    /**
-     * @returns {object}
-     */
-    function newDraft() {
+    /** @param {string} [kind] @returns {object} */
+    function newDraft(kind = "COMBINED") {
         return {
             id: "",
             coordinateId: "",
             pickupRadius: "",
             cacheLocationRef: "",
             cachePolicy: {...DEFAULT_CACHE_POLICY},
-            classificationAreas: [newArea()],
+            classificationAreas: kind === "PICKUP" ? [] : [newArea()],
             collectionPriority: "NORMAL",
             enabled: false,
             overflowEnabled: false,
             overflowDestinationRef: "",
             cleanupDestinationRef: "",
             facilities: {},
-            collectionEnabled: true,
-            classificationEnabled: true
+            collectionEnabled: kind !== "CLASSIFICATION",
+            classificationEnabled: kind !== "PICKUP",
+            ...(kind !== "COMBINED" ? {kind} : {}),
+            ...(kind === "PICKUP" ? {followUpTaskRef: ""} : {})
         };
     }
 
@@ -100,7 +100,9 @@
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
             facilities: item?.cleanupPolicy || {},
             collectionEnabled: item?.collectionEnabled === true,
-            classificationEnabled: item?.classificationEnabled === true
+            classificationEnabled: item?.classificationEnabled === true,
+            ...(item?.kind && item.kind !== "COMBINED" ? {kind: item.kind} : {}),
+            ...(item?.kind === "PICKUP" ? {followUpTaskRef: item.followUpTaskRef || ""} : {})
         };
     }
 
@@ -159,16 +161,18 @@
             || policy.thresholdPercent < 1 || policy.thresholdPercent > 100) {
             errors.push("缓存容量阈值必须为 1 到 100 的整数百分比");
         }
-        const coordinateId = String(draft?.coordinateId ?? "").trim();
-        if (coordinateId === "") {
-            errors.push("请选择掉落物检测点");
-        } else if (!resourceExists(resources, "coordinates", coordinateId)) {
-            errors.push("所选掉落物检测点不存在，请刷新后重试");
-        }
+        if (draft?.kind !== "CLASSIFICATION") {
+            const coordinateId = String(draft?.coordinateId ?? "").trim();
+            if (coordinateId === "") {
+                errors.push("请选择掉落物检测点");
+            } else if (!resourceExists(resources, "coordinates", coordinateId)) {
+                errors.push("所选掉落物检测点不存在，请刷新后重试");
+            }
 
-        const radius = String(draft?.pickupRadius ?? "").trim();
-        if (radius && parsedRadius(radius) === null) {
-            errors.push("任务覆盖半径需为 1 到 64 格");
+            const radius = String(draft?.pickupRadius ?? "").trim();
+            if (radius && parsedRadius(radius) === null) {
+                errors.push("任务覆盖半径需为 1 到 64 格");
+            }
         }
 
         const cache = String(draft?.cacheLocationRef || "");
@@ -219,13 +223,10 @@
                 resumeMode: "RESTART"},
             collectionEnabled: draft.collectionEnabled,
             classificationEnabled: draft.classificationEnabled,
-            detection: {
-                coordinateRef: reference(
-                    "coordinate",
-                    draft.coordinateId
-                ),
+            ...(draft.kind !== "CLASSIFICATION" ? {detection: {
+                coordinateRef: reference("coordinate", draft.coordinateId),
                 pickupRadius: parsedRadius(draft.pickupRadius)
-            },
+            }} : {}),
             cacheLocationRef: draft.cacheLocationRef,
             cachePolicy: {...DEFAULT_CACHE_POLICY, ...draft.cachePolicy},
             classificationAreas: draft.classificationAreas.filter(area => area.categoryZoneId)
@@ -236,7 +237,9 @@
                 ),
                 storagePolicy: area.storagePolicy || null
             })),
-            collectionPriority: draft.collectionPriority
+            collectionPriority: draft.collectionPriority,
+            ...(draft.kind ? {kind: draft.kind} : {}),
+            ...(draft.kind === "PICKUP" ? {followUpTaskRef: draft.followUpTaskRef || ""} : {})
         };
     }
 

@@ -9,6 +9,7 @@ import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
+import dev.stowling.v2.model.AutoClassifyDefinition.Kind;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
@@ -40,6 +41,7 @@ public final class ConfigValidator {
     public static final String CONTAINER_INTERACTION = "CONTAINER_INTERACTION";
     public static final String MOVE_TO_COORDINATE = "MOVE_TO_COORDINATE";
     public static final String COLLECT_DROPPED_ITEMS = "COLLECT_DROPPED_ITEMS";
+    public static final String CREATE_AFTER_SUCCESS = "afterSuccess";
     public static final String SCAN_CONTAINERS_IN_REGION =
             "SCAN_CONTAINERS_IN_REGION";
     public static final String RESOLVE_CONTAINER_CATEGORIES =
@@ -255,6 +257,11 @@ public final class ConfigValidator {
         Set<UUID> triggerIds = triggers.stream()
                 .map(TaskTriggerDefinition::id)
                 .collect(java.util.stream.Collectors.toSet());
+        Set<UUID> hidden = new HashSet<>();
+        for (var definition : definitions) {
+            hidden.add(definition.interruptionTaskId());
+            if (definition.kind() == Kind.COMBINED) hidden.add(definition.classificationTaskId());
+        }
         for (AutoClassifyDefinition definition : definitions) {
             requireCleanupDestination(definition.cleanupPolicy(), coordinates, regions);
             requireWarehouseDestination(definition.overflowDestinationRef(), coordinates, regions);
@@ -263,13 +270,18 @@ public final class ConfigValidator {
                         "duplicate auto classify task id"
                 );
             }
-            ResourceReference coordinate = ResourceReference.parse(
-                    definition.detectionCoordinateRef()
-            );
-            if (!coordinates.containsKey(coordinate.uuid())) {
-                throw new V2ValidationException(
-                        "auto classify coordinate does not exist"
-                );
+            if (definition.detectionCoordinateRef() != null) {
+                var coordinate = ResourceReference.parse(definition.detectionCoordinateRef());
+                if (!coordinates.containsKey(coordinate.uuid())) {
+                    throw new V2ValidationException("掉落物检测点不存在");
+                }
+            }
+            if (definition.followUpTaskRef() != null) {
+                UUID target = ResourceReference.parse(definition.followUpTaskRef()).uuid();
+                if (hidden.contains(target) || !tasks.containsKey(target)) {
+                    throw new V2ValidationException("请选择一个已保存的任务作为结束后的任务");
+                }
+                requireAcyclicFollowUp(definition.id(), target, tasks);
             }
             requireSpatialReference(definition.cacheLocationRef(), coordinates, regions);
             if (definition.unstackableRegionRef() != null && !regions.containsKey(
@@ -302,11 +314,9 @@ public final class ConfigValidator {
                     definition.id(),
                     TaskInterruptionMode.CUSTOM
             );
-            requireAutoTask(
-                    tasks,
-                    definition.classificationTaskId(),
-                    TaskInterruptionMode.CUSTOM
-            );
+            if (definition.kind() == Kind.COMBINED) {
+                requireAutoTask(tasks, definition.classificationTaskId(), TaskInterruptionMode.CUSTOM);
+            }
             requireAutoTask(
                     tasks,
                     definition.interruptionTaskId(),
@@ -318,7 +328,7 @@ public final class ConfigValidator {
             boolean classificationTrigger = triggerIds.contains(
                     definition.classificationTriggerId()
             );
-            if (definition.classificationEnabled()
+            if (definition.kind() == Kind.COMBINED && definition.classificationEnabled()
                     && !definition.collectionEnabled()) {
                 throw new V2ValidationException(
                         "classification requires collection phase"
@@ -333,6 +343,32 @@ public final class ConfigValidator {
                         "auto classify task triggers do not match enabled phases"
                 );
             }
+        }
+    }
+
+    private static void requireAcyclicFollowUp(UUID source, UUID target,
+            Map<UUID, TaskDefinition> tasks) {
+        var pending = new java.util.ArrayDeque<UUID>();
+        var seen = new HashSet<UUID>();
+        pending.add(target);
+        while (!pending.isEmpty()) {
+            UUID next = pending.remove();
+            if (next.equals(source)) {
+                throw new V2ValidationException("结束后创建任务不能形成循环");
+            }
+            TaskDefinition task = tasks.get(next);
+            if (task != null && seen.add(next)) enqueueCreatedTasks(task.steps(), pending);
+        }
+    }
+
+    private static void enqueueCreatedTasks(List<TaskStep> steps,
+            java.util.ArrayDeque<UUID> pending) {
+        for (TaskStep step : steps) {
+            if (step.kind() == TaskStepKind.CREATE_TASK) {
+                pending.add(ResourceReference.parse(step.parameters().get(TASK_REF)).uuid());
+            }
+            enqueueCreatedTasks(step.steps(), pending);
+            enqueueCreatedTasks(step.otherwise(), pending);
         }
     }
 
@@ -700,9 +736,10 @@ public final class ConfigValidator {
         }
         requireParameters(
                 step,
-                Set.of(TASK_REF, PRIORITY),
+                Set.of(TASK_REF, PRIORITY, CREATE_AFTER_SUCCESS),
                 Set.of(TASK_REF)
         );
+        requireOptionalBoolean(step, CREATE_AFTER_SUCCESS);
         ResourceReference reference = requireReference(
                 step,
                 TASK_REF,

@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.v2.model.AutoClassifyDefinition.Kind;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -57,14 +58,15 @@ public final class AutoClassifyTaskFactory {
             collectionParameters.put("classificationTaskRef",
                     definition.classificationEnabled() ? classificationRef : "");
         }
-        List<TaskStep> collectionSteps = new ArrayList<>(
+        List<TaskStep> collectionSteps = definition.kind() == Kind.CLASSIFICATION
+                ? new ArrayList<>() : new ArrayList<>(
                 TaskFlowTemplates.collect(
                         definition.detectionCoordinateRef(),
                         definition.cacheLocationRef(),
                         collectionParameters
                 )
         );
-        if (definition.classificationEnabled()) {
+        if (definition.kind() == Kind.COMBINED && definition.classificationEnabled()) {
             collectionSteps.add(TaskStep.createTask(
                     UUID.randomUUID(),
                     Map.of(
@@ -74,6 +76,11 @@ public final class AutoClassifyTaskFactory {
                             TaskPriority.BACKGROUND.name()
                     )
             ));
+        }
+        if (definition.followUpTaskRef() != null) {
+            collectionSteps.add(TaskStep.createTask(UUID.randomUUID(),
+                    Map.of(ConfigValidator.TASK_REF, definition.followUpTaskRef(),
+                            ConfigValidator.CREATE_AFTER_SUCCESS, "true")));
         }
         List<TaskStep> classificationSteps = new ArrayList<>();
         for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
@@ -97,49 +104,25 @@ public final class AutoClassifyTaskFactory {
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
                 definition.cacheLocationRef(), Map.of()
         ));
-        return List.of(
-                new TaskDefinition(
-                        definition.id(),
-                        definition.name(),
-                        definition.collectionPriority(),
-                        false,
-                        collectionSteps,
-                        TaskInterruptionMode.CUSTOM,
-                        interruptionRef,
-                        false,
-                        false,
-                        null,
-                        definition.cleanupPolicy()
-                ),
-                new TaskDefinition(
-                        definition.classificationTaskId(),
-                        classificationName,
-                        TaskPriority.BACKGROUND,
-                        false,
-                        classificationSteps,
-                        TaskInterruptionMode.CUSTOM,
-                        interruptionRef,
-                        false,
-                        true,
-                        null,
-                        definition.cleanupPolicy()
-                ),
-                new TaskDefinition(
-                        definition.interruptionTaskId(),
-                        interruptionName,
-                        TaskPriority.NORMAL,
-                        false,
-                        TaskFlowTemplates.interruption(
-                                definition.cacheLocationRef()
-                        ),
-                        TaskInterruptionMode.NONE,
-                        null,
-                        false,
-                        false,
-                        null,
-                        definition.cleanupPolicy()
-                )
-        );
+        List<TaskDefinition> result = new ArrayList<>();
+        if (definition.kind() != Kind.CLASSIFICATION) {
+            result.add(new TaskDefinition(definition.id(), definition.name(),
+                    definition.collectionPriority(), false, collectionSteps,
+                    TaskInterruptionMode.CUSTOM, interruptionRef, false, false, null,
+                    definition.cleanupPolicy()));
+        }
+        if (definition.kind() != Kind.PICKUP) {
+            boolean combined = definition.kind() == Kind.COMBINED;
+            result.add(new TaskDefinition(definition.classificationTaskId(),
+                    combined ? classificationName : definition.name(), TaskPriority.BACKGROUND,
+                    false, classificationSteps, TaskInterruptionMode.CUSTOM, interruptionRef,
+                    false, combined, null, definition.cleanupPolicy()));
+        }
+        result.add(new TaskDefinition(definition.interruptionTaskId(), interruptionName,
+                TaskPriority.NORMAL, false, TaskFlowTemplates.interruption(
+                        definition.cacheLocationRef()), TaskInterruptionMode.NONE, null,
+                false, false, null, definition.cleanupPolicy()));
+        return List.copyOf(result);
     }
 
     public static List<TaskTriggerDefinition> triggers(
@@ -185,7 +168,7 @@ public final class AutoClassifyTaskFactory {
         Set<UUID> ids = new LinkedHashSet<>();
         for (AutoClassifyDefinition definition : definitions) {
             ids.add(definition.id());
-            ids.add(definition.classificationTaskId());
+            if (definition.kind() == Kind.COMBINED) ids.add(definition.classificationTaskId());
             ids.add(definition.interruptionTaskId());
         }
         return Set.copyOf(ids);

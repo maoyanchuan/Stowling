@@ -115,8 +115,10 @@ public final class TaskFlowNormalizer {
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
-            autoCollections.put(definition.id(), definition);
-            autoClassifications.put(definition.classificationTaskId(), definition);
+            if (definition.kind() == AutoClassifyDefinition.Kind.COMBINED) {
+                autoCollections.put(definition.id(), definition);
+                autoClassifications.put(definition.classificationTaskId(), definition);
+            }
         }
         Map<UUID, TaskDefinition> originalTasks = new LinkedHashMap<>();
         for (TaskDefinition task : config.tasks()) {

@@ -59,7 +59,7 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         assert f'id="{element_id}"' in display
     assert 'id="new-auto-task"' not in display
     assert 'id="new-auto-task"' in html
-    assert "自动分类" in display
+    assert "掉落物拾取" in display
     assert "任务名称" not in display
     assert 'id="auto-pickup-radius" type="number"' in display
     assert 'min="1" max="64" step="1" value="8"' in display
@@ -134,7 +134,7 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
 
     assert "掉落物拾取" in pickup
     assert 'id="auto-collect-enabled"' in pickup
-    assert 'id="auto-cache-location"' in collect
+    assert 'id="auto-cache-location"' in html
     assert 'id="auto-cache-location"' not in packing
     for field in ("auto-detection-point", "auto-pickup-radius"):
         assert f'id="{field}"' in pickup

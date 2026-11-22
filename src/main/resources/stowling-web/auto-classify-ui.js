@@ -14,6 +14,7 @@
         draftRevision: "",
         original: null,
         items: [],
+        regularTasks: [],
         resources: {
             coordinates: [],
             regions: [],
@@ -59,6 +60,12 @@
         message: document.querySelector("#auto-task-message"),
         resourceMessage: document.querySelector("#auto-resources-message"),
         newTask: document.querySelector("#new-auto-task"),
+        newClassification: document.querySelector("#new-classification-task"),
+        draftTitle: document.querySelector("#auto-draft-title"),
+        combinedPreview: document.querySelector("#combined-task-preview"),
+        cacheLabel: document.querySelector("#auto-cache-label"),
+        followUp: document.querySelector("#auto-follow-up-task"),
+        followUpField: document.querySelector("#auto-follow-up-field"),
         refresh: document.querySelector("#refresh-move-tasks"),
         remove: document.querySelector("#delete-auto-task"),
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
@@ -93,9 +100,10 @@
         state.loading = true;
         updateControls();
         try {
-            const [tasks, resources] = await Promise.all([
-                Stowling.request(endpoint), Picker.load()
+            const [tasks, resources, taskDirectory] = await Promise.all([
+                Stowling.request(endpoint), Picker.load(), Stowling.request("/v1/tasks")
             ]);
+            state.regularTasks = taskDirectory.tasks || [];
             state.revision = String(tasks.revision || "");
             state.items = Array.isArray(tasks.items) ? tasks.items : [];
             state.resources = {...resources, warehouses: resources.catalog?.warehouses || []};
@@ -195,7 +203,8 @@
         const storage = window.StowlingStoragePolicyEditor.create(policy, state.resources);
         const fields = Stowling.element("div", "auto-area-fields");
         fields.append(
-            labeledControl("分类范围", range),
+            labeledControl(state.draft.kind === "CLASSIFICATION" ? "分类储存区" : "分类范围",
+                range),
             Stowling.element("p", "muted compact-help",
                 "识别方式使用仓储布局中各分类物的设置。"),
             storage.root
@@ -289,6 +298,10 @@
             ...item, id: "warehouse:" + item.id
         })), draft.overflowDestinationRef, "请选择溢出仓库");
         Picker.group(elements.warehouse, undefined, "warehouses");
+        const available = [...state.regularTasks, ...state.items]
+            .filter(task => task.id !== draft.id)
+            .map(task => ({id: "task:" + task.id, name: task.name}));
+        populateSelect(elements.followUp, available, draft.followUpTaskRef || "", "不创建任务");
         syncRadiusHint();
         elements.collectEnabled.checked = draft.collectionEnabled;
         elements.classifyEnabled.checked = draft.classificationEnabled;
@@ -308,7 +321,8 @@
 
     /** @returns {void} */
     function readForm() {
-        if (!elements.collectEnabled.checked) {
+        const kind = state.draft.kind;
+        if (!kind && !elements.collectEnabled.checked) {
             elements.classifyEnabled.checked = false;
             elements.cacheEnabled.checked = false;
         }
@@ -317,13 +331,18 @@
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
             cacheLocationRef: elements.cache.value,
-            cachePolicy: {enabled: elements.cacheEnabled.checked, mode: elements.cacheMode.value,
-                thresholdPercent: Number(elements.cacheThreshold.value)},
+            cachePolicy: {
+                enabled: kind !== "CLASSIFICATION" && elements.cacheEnabled.checked,
+                mode: kind === "PICKUP" ? "PACK_FIRST" : elements.cacheMode.value,
+                thresholdPercent: Number(elements.cacheThreshold.value)
+            },
             classificationAreas: areaReaders.map((reader) => reader.read()),
             collectionPriority: elements.priority.value,
-            collectionEnabled: elements.collectEnabled.checked,
-            classificationEnabled: elements.classifyEnabled.checked,
-            overflowEnabled: elements.warehouseEnabled.checked,
+            collectionEnabled: kind ? kind === "PICKUP" : elements.collectEnabled.checked,
+            classificationEnabled: kind ? kind === "CLASSIFICATION"
+                : elements.classifyEnabled.checked,
+            ...(kind === "PICKUP" ? {followUpTaskRef: elements.followUp.value} : {}),
+            overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             facilities: cleanup.read(),
             cleanupDestinationRef: cleanup.read().destinationRef || ""
@@ -354,17 +373,22 @@
                     .categoryZones.find((zone) => zone.id === area.categoryZoneId)
                     ?.name || "分类区已删除")
             )];
-            overview.append(Stowling.element("span", "",
-                `${cache?.name || "缓存位置已删除"} · `
-                + `${draft.classificationAreas.length} 个分类选区`
-                + (zoneNames.length > 0 ? `（${zoneNames.join("、")}）` : "")));
+            const source = cache?.name || "缓存位置已删除";
+            let description = source;
+            if (item.kind === "PICKUP") {
+                description = "缓存 · " + source;
+            } else if (zoneNames.length > 0) {
+                description = source + " → " + zoneNames.join("、");
+            }
+            overview.append(Stowling.element("span", "", description));
             const priority = window.StowlingTaskModel.priorityLabel(item.collectionPriority);
             const status = Stowling.element("span", "move-task-state",
                 item.enabled ? "监听中" : "已保存");
             const chevron = Stowling.element("span", "move-task-chevron", "⌄");
             chevron.setAttribute("aria-hidden", "true");
             button.append(icon, overview, Stowling.element("span", "move-task-priority",
-                `${priority} / 后台`), status, chevron);
+                item.kind === "CLASSIFICATION" ? "后台"
+                    : item.kind === "PICKUP" ? priority : priority + " / 后台"), status, chevron);
             button.addEventListener("click", () => {
                 selectTask(state.items.find((task) => task.id === item.id));
             });
@@ -372,16 +396,25 @@
                 body.append(elements.form);
             }
             const header = Stowling.element("div", "task-card-header");
-            const listening = window.StowlingSettings.switchControl(
-                document.createElement("input"), `监听任务：${item.name}`
-            );
-            listening.addEventListener("change", () => {
-                void setListening(item.id, listening.checked);
-            });
-            header.append(button, listening);
+            const row = {button, body, status};
+            header.append(button);
+            if (item.kind === "CLASSIFICATION") {
+                row.run = Stowling.element("button", "secondary compact", "运行一次");
+                row.run.type = "button";
+                row.run.addEventListener("click", () => void runClassification(item.id));
+                header.append(row.run);
+            } else {
+                row.listening = window.StowlingSettings.switchControl(
+                    document.createElement("input"), "监听任务：" + item.name
+                );
+                row.listening.addEventListener("change", () => {
+                    void setListening(item.id, row.listening.checked);
+                });
+                header.append(row.listening);
+            }
             card.append(header, body);
             elements.list.append(card);
-            rows.set(item.id, { button, body, status, listening });
+            rows.set(item.id, row);
         }
         document.dispatchEvent(new CustomEvent("stowling:auto-task-count", {
             detail: {
@@ -397,6 +430,27 @@
         const disabled = unavailable();
         elements.fields.disabled = disabled;
         elements.newTask.disabled = disabled;
+        elements.newClassification.disabled = disabled;
+        const kind = state.draft.kind;
+        const pickup = kind === "PICKUP";
+        const classification = kind === "CLASSIFICATION";
+        elements.draftTitle.textContent = classification ? "新建 · 分类" : "新建 · 掉落物拾取";
+        elements.combinedPreview.hidden = Boolean(kind);
+        elements.cacheLabel.textContent = classification ? "来源缓存" : "缓存位置";
+        elements.followUpField.hidden = !pickup;
+        elements.collectHeader.closest(".auto-config-section").hidden = classification;
+        elements.classifyHeader.closest(".auto-config-section").hidden = pickup;
+        elements.warehouseEnabled.closest(".auto-config-section").hidden = pickup;
+        elements.cacheMode.closest("label").hidden = pickup;
+        for (const header of [elements.collectHeader, elements.pickupHeader,
+            elements.classifyHeader]) {
+            header.closest(".auto-phase-header").hidden = Boolean(kind);
+        }
+        for (const id of ["combined-packing-help", "combined-packing-mode-help",
+            "combined-classification-help"]) {
+            document.querySelector("#" + id).hidden = Boolean(kind);
+        }
+        document.querySelector("#pickup-packing-help").hidden = !pickup;
         elements.draftToggle.disabled = disabled;
         const isNew = state.active && !state.draft.id;
         elements.draft.hidden = !isNew;
@@ -411,9 +465,14 @@
             const item = state.items.find((value) => value.id === id);
             const pending = state.pendingSwitch?.id === id;
             row.button.disabled = disabled;
-            row.listening.checked = pending ? state.pendingSwitch.enabled : Boolean(item?.enabled);
-            row.listening.disabled = disabled || (selected && state.dirty);
-            row.listening.title = selected && state.dirty ? "修改保存后可切换监听" : "启用监听";
+            if (row.listening) {
+                row.listening.checked = pending ? state.pendingSwitch.enabled
+                    : Boolean(item?.enabled);
+                row.listening.disabled = disabled || (selected && state.dirty);
+                row.listening.title = selected && state.dirty ? "修改保存后可切换监听" : "启用监听";
+            } else {
+                row.run.disabled = disabled || (selected && state.dirty);
+            }
             row.button.setAttribute("aria-expanded", String(expanded));
             void window.StowlingSettings.reveal(row.body, expanded);
             row.status.textContent = selected && state.dirty ? "未保存修改"
@@ -432,8 +491,11 @@
             const enabled = phaseEnabled(phase);
             header.disabled = disabled || !enabled;
             header.title = enabled ? "展开或收起子任务设置" : "";
-            header.setAttribute("aria-expanded", String(enabled && state.phase[phase]));
-            void window.StowlingSettings.reveal(body, enabled && state.phase[phase]);
+            const alwaysOpen = pickup && (phase === "collection" || phase === "pickup")
+                || classification && phase === "classification";
+            const expanded = enabled && (alwaysOpen || state.phase[phase]);
+            header.setAttribute("aria-expanded", String(expanded));
+            void window.StowlingSettings.reveal(body, expanded);
             header.closest(".auto-config-section").dataset.enabled = String(enabled);
             if (phase === "collection") continue;
             for (const control of body.querySelectorAll("input, select, textarea, button")) {
@@ -450,9 +512,10 @@
 
     /**
      * @param {object | null} [item]
+     * @param {string} [kind]
      * @returns {void}
      */
-    function selectTask(item = null) {
+    function selectTask(item = null, kind = "PICKUP") {
         if (unavailable()) {
             return;
         }
@@ -468,7 +531,7 @@
         state.original = item;
         state.draftRevision = state.revision;
         state.draft = item ? Auto.draftFromTask(item)
-            : Auto.newDraft();
+            : Auto.newDraft(kind);
         state.active = !item;
         state.expanded = true;
         state.dirty = false;
@@ -507,6 +570,25 @@
         }
         state.phase[phase] = !state.phase[phase];
         updateControls();
+    }
+
+    /** @param {string} id @returns {Promise<void>} */
+    async function runClassification(id) {
+        if (unavailable()) return;
+        state.busy = true;
+        updateControls();
+        try {
+            await Stowling.request("/v1/tasks/" + encodeURIComponent(id) + "/runs", {
+                method: "POST"
+            });
+            Stowling.showToast("分类任务已提交");
+            document.dispatchEvent(new Event("stowling:monitor-refresh"));
+        } catch (error) {
+            Stowling.handleError(error, "启动分类任务失败");
+        } finally {
+            state.busy = false;
+            updateControls();
+        }
     }
 
     /**
@@ -667,7 +749,8 @@
         }
     }
 
-    elements.newTask.addEventListener("click", () => selectTask());
+    elements.newTask.addEventListener("click", () => selectTask(null, "PICKUP"));
+    elements.newClassification.addEventListener("click", () => selectTask(null, "CLASSIFICATION"));
     elements.draftToggle.addEventListener("click", () => {
         if (!unavailable()) {
             state.expanded = !state.expanded;
@@ -692,14 +775,14 @@
     elements.refresh.addEventListener("click", () => void loadResources());
     elements.form.addEventListener("input", (event) => {
         if (event.target === elements.point) syncRadiusHint();
-        if (event.target === elements.classifyEnabled) {
+        if (!state.draft.kind && event.target === elements.classifyEnabled) {
             state.phase.classification = elements.classifyEnabled.checked;
             if (elements.classifyEnabled.checked) {
                 areaReaders.forEach(reader => reader.collapse());
                 elements.collectEnabled.checked = true;
             }
         }
-        if (event.target === elements.collectEnabled) {
+        if (!state.draft.kind && event.target === elements.collectEnabled) {
             state.phase.pickup = elements.collectEnabled.checked;
             if (!elements.collectEnabled.checked) {
                 elements.classifyEnabled.checked = false;

@@ -14,6 +14,7 @@ import dev.stowling.v2.model.CoordinateCatalog;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
+import dev.stowling.v2.model.AutoClassifyDefinition.Kind;
 import dev.stowling.v2.model.AutoClassifyTaskFactory;
 import dev.stowling.v2.model.TaskSchedule;
 import dev.stowling.v2.model.ContainerCacheRefresh;
@@ -877,7 +878,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
     ) {
         V2ConfigSnapshot current = configs.read();
         String name = uniqueAutoName(
-                request.name(),
+                autoTaskName(request.name(), request.kind()),
                 current.config(),
                 null
         );
@@ -893,7 +894,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.collectionPriority(),
                 overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
                         false),
-                request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy()
+                request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
+                request.kind(), request.followUpTaskRef()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -941,6 +943,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config(),
                 id
         );
+        if (request.kind() != null && request.kind() != existing.kind()) {
+            throw new V2ValidationException("已保存的任务类型不能更改");
+        }
         Set<UUID> pendingIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
         );
@@ -974,7 +979,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy(),
                 request.overflowDestinationRef() == null ? existing.overflowDestinationRef()
                         : request.overflowDestinationRef(),
-                request.cachePolicy() == null ? existing.cachePolicy() : request.cachePolicy()
+                request.cachePolicy() == null ? existing.cachePolicy() : request.cachePolicy(),
+                existing.kind(), request.followUpTaskRef() == null ? existing.followUpTaskRef()
+                        : request.followUpTaskRef()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1033,6 +1040,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config(),
                 id
         );
+        if (existing.kind() == Kind.CLASSIFICATION) {
+            runs.startOnce(requireTask(current.config(), id), current.config());
+            return new AutoClassifyTaskResponse(current.revision(),
+                    autoView(existing, current.config()));
+        }
         AutoClassifyDefinition enabled = withEnabled(existing, true);
         List<TaskTriggerDefinition> triggers = new ArrayList<>(
                 current.config().triggers().stream()
@@ -1060,11 +1072,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
-        TaskDefinition classification = requireTask(
-                saved.config(),
-                enabled.classificationTaskId()
-        );
-        runs.start(classification, saved.config(), TaskPriority.BACKGROUND);
+        if (enabled.kind() == Kind.COMBINED) {
+            TaskDefinition classification = requireTask(saved.config(), enabled.classificationTaskId());
+            runs.start(classification, saved.config(), TaskPriority.BACKGROUND);
+        }
         return new AutoClassifyTaskResponse(
                 saved.revision(),
                 autoView(enabled, saved.config())
@@ -1082,6 +1093,11 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config(),
                 id
         );
+        if (existing.kind() == Kind.CLASSIFICATION) {
+            runs.cancelTask(id);
+            return new AutoClassifyTaskResponse(current.revision(),
+                    autoView(existing, current.config()));
+        }
         AutoClassifyDefinition disabled = withEnabled(existing, false);
         Set<UUID> triggerIds = AutoClassifyTaskFactory.ownedTriggerIds(
                 List.of(existing)
@@ -1561,18 +1577,16 @@ public final class V2ControlServiceImpl implements V2ControlService {
             boolean overflowEnabled,
             dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy,
             String overflowDestinationRef,
-            dev.stowling.v2.model.CacheIntakePolicy cachePolicy
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef
     ) {
-        if (detection == null) {
-            throw new V2ValidationException("detection is required");
+        if (kind != Kind.CLASSIFICATION && (detection == null
+                || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
+            throw new V2ValidationException("请选择掉落物检测点");
         }
-        String coordinateRef = detection.coordinateRef();
-        if (coordinateRef == null || coordinateRef.isBlank()) {
-            throw new V2ValidationException(
-                    "detection.coordinateRef is required"
-            );
-        }
-        Integer pickupRadius = detection.pickupRadius();
+        String coordinateRef = detection == null ? null : detection.coordinateRef();
+        Integer pickupRadius = detection == null ? null : detection.pickupRadius();
         List<AutoClassifyAreaDefinition> areas = requestedAreas.stream()
                 .map(area -> new AutoClassifyAreaDefinition(
                         area.categoryZoneRef(),
@@ -1593,7 +1607,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ? TaskPriority.NORMAL
                         : collectionPriority,
                 overflowEnabled,
-                cleanupPolicy, null, overflowDestinationRef, cachePolicy
+                cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef
         );
     }
 
@@ -1614,7 +1628,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.collectionPriority(),
                 definition.overflowEnabled(),
                 definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
-                definition.cachePolicy()
+                definition.cachePolicy(), definition.kind(), definition.followUpTaskRef()
         );
     }
 
@@ -1634,28 +1648,33 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.enabled(),
                 definition.collectionEnabled(),
                 definition.classificationEnabled(),
-                new AutoClassifyDetection(
-                        definition.detectionCoordinateRef(),
-                        definition.pickupRadius()
-                ),
+                definition.detectionCoordinateRef() == null ? null
+                        : new AutoClassifyDetection(definition.detectionCoordinateRef(),
+                                definition.pickupRadius()),
                 definition.cacheLocationRef(),
                 definition.classificationAreas(),
                 definition.collectionPriority(),
                 TaskPriority.BACKGROUND,
-                ResourceReference.of(ResourceType.TASK, definition.id())
-                        .encode(),
-                ResourceReference.of(
-                        ResourceType.TASK,
-                        definition.classificationTaskId()
-                ).encode(),
+                definition.kind() == Kind.CLASSIFICATION ? null
+                        : ResourceReference.of(ResourceType.TASK, definition.id()).encode(),
+                definition.kind() == Kind.PICKUP ? null : ResourceReference.of(ResourceType.TASK,
+                        definition.classificationTaskId()).encode(),
                 ResourceReference.of(
                         ResourceType.TASK,
                         definition.interruptionTaskId()
                 ).encode(),
                 triggerIds,
                 definition.overflowEnabled(),
-                definition.cleanupPolicy(), definition.overflowDestinationRef(), definition.cachePolicy()
+                definition.cleanupPolicy(), definition.overflowDestinationRef(),
+                definition.cachePolicy(), definition.kind(), definition.followUpTaskRef()
         );
+    }
+
+    private static String autoTaskName(String name, Kind kind) {
+        if (name != null && !name.isBlank()) return name;
+        if (kind == Kind.PICKUP) return "掉落物拾取";
+        if (kind == Kind.CLASSIFICATION) return "分类";
+        return "自动分类";
     }
 
     private static boolean overflowEnabled(Boolean enabled, String destination, boolean previous) {

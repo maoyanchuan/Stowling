@@ -9,6 +9,7 @@ import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
@@ -22,6 +23,32 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class TaskRunManagerTest {
+    @Test
+    void createsTheSelectedUrgentTaskOnlyAfterTheSourceSucceeds() {
+        for (NavigationStatus status : List.of(NavigationStatus.ARRIVED, NavigationStatus.FAILED)) {
+            UUID point = UUID.randomUUID();
+            TaskDefinition next = task("Next task", TaskPriority.URGENT, false, step(point));
+            TaskDefinition pickup = task("Pickup", TaskPriority.NORMAL, false, step(point),
+                    TaskStep.createTask(UUID.randomUUID(), Map.of(
+                            ConfigValidator.TASK_REF, "task:" + next.id(),
+                            ConfigValidator.CREATE_AFTER_SUCCESS, "true")));
+            AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, coordinates(point),
+                    List.of(pickup, next));
+            var manager = new TaskRunManager(new RecordingNavigation(status, NavigationStatus.ARRIVED));
+            var run = manager.start(pickup, config, null);
+
+            for (int tick = 0; tick < 8; tick++) manager.tick();
+
+            var completed = manager.runs().stream().filter(item -> item.runId().equals(run.runId()))
+                    .findFirst().orElseThrow();
+            boolean succeeded = status == NavigationStatus.ARRIVED;
+            assertEquals(succeeded ? TaskRunState.SUCCEEDED : TaskRunState.FAILED,
+                    completed.state());
+            assertEquals(succeeded, manager.runs().stream()
+                    .anyMatch(item -> item.taskId().equals(next.id())));
+        }
+    }
+
     @Test
     void runsLinearMovementStepsInOrderAndCoalescesDuplicateRequests() {
         UUID firstId = UUID.randomUUID();

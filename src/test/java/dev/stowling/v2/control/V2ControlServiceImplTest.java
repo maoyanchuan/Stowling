@@ -36,6 +36,45 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
+    void savesIndependentPickupAndClassificationAndPersistsTheChosenSuccessor() {
+        var path = directory.resolve("independent-storage-tasks.json");
+        var store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var point = createPoint(service, "Pickup");
+        String pointRef = "coordinate:" + point.id();
+        var zone = service.createCategoryZone(new CategoryZoneRequest("Sorted storage",
+                List.of(new CategoryBindingRequest(10, 64, 0, 10, 64, 0,
+                        11, 64, 0, 11, 64, 0, "DIRECT_BLOCK_ID", List.of(), List.of()))))
+                .categoryZones().getFirst();
+        var kind = dev.stowling.v2.model.AutoClassifyDefinition.Kind.CLASSIFICATION;
+        var classification = service.createAutoClassifyTask(new AutoClassifyTaskRequest(
+                "Sort", false, null, null, null, pointRef,
+                List.of(new AutoClassifyAreaRequest("category-zone:" + zone.id())),
+                TaskPriority.NORMAL, null, null, null, null, kind, null));
+        assertNull(classification.item().detection());
+        assertTrue(classification.item().triggerIds().isEmpty());
+        String next = "task:" + classification.item().id();
+        var pickup = service.createAutoClassifyTask(new AutoClassifyTaskRequest(
+                "Pickup", false, null, null, new AutoClassifyDetectionRequest(pointRef, null),
+                pointRef, List.of(), TaskPriority.NORMAL, null, null, null, null,
+                dev.stowling.v2.model.AutoClassifyDefinition.Kind.PICKUP, next));
+        assertEquals(next, pickup.item().followUpTaskRef());
+        assertTrue(pickup.item().classificationAreas().isEmpty());
+
+        var listening = service.startAutoClassifyTask(pickup.item().id(),
+                new RevisionRequest(pickup.revision()));
+        assertEquals(1, listening.item().triggerIds().size());
+        assertTrue(service.taskRuns().queue().isEmpty());
+        var reopened = new ConfigStore(path).loadOrReset().config();
+        var followUp = reopened.tasks().stream().filter(task -> task.id().equals(pickup.item().id()))
+                .findFirst().orElseThrow().steps().getLast();
+        assertEquals(TaskStepKind.CREATE_TASK, followUp.kind());
+        assertEquals(next, followUp.parameters().get(ConfigValidator.TASK_REF));
+    }
+
+    @Test
     void persistsMixedRootOrderAndMovesCoordinatesBetweenFolders() {
         var path = directory.resolve("bookmarks.json");
         var store = new ConfigStore(path);

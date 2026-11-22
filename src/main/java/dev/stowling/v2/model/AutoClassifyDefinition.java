@@ -20,8 +20,27 @@ public record AutoClassifyDefinition(
         TaskCleanupPolicy cleanupPolicy,
         String unstackableRegionRef, // Read legacy settings before converting them to layout refs.
         String overflowDestinationRef,
-        CacheIntakePolicy cachePolicy
+        CacheIntakePolicy cachePolicy,
+        Kind kind,
+        String followUpTaskRef
 ) {
+    public enum Kind {
+        COMBINED,
+        PICKUP,
+        CLASSIFICATION
+    }
+
+    public AutoClassifyDefinition(UUID id, String name, boolean enabled,
+            boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
+            Integer pickupRadius, String cacheLocationRef, List<AutoClassifyAreaDefinition> areas,
+            TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef, String overflowDestinationRef,
+            CacheIntakePolicy cachePolicy) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
+                pickupRadius, cacheLocationRef, areas, priority, overflowEnabled, cleanupPolicy,
+                unstackableRegionRef, overflowDestinationRef, cachePolicy, Kind.COMBINED, null);
+    }
+
     public AutoClassifyDefinition(UUID id, String name, boolean enabled,
             boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
             Integer pickupRadius, String cacheLocationRef, List<AutoClassifyAreaDefinition> areas,
@@ -101,7 +120,37 @@ public record AutoClassifyDefinition(
     public static final int MAX_PICKUP_RADIUS = 64;
 
     public AutoClassifyDefinition {
+        kind = kind == null ? Kind.COMBINED : kind;
+        if (kind != Kind.COMBINED) {
+            collectionEnabled = kind == Kind.PICKUP;
+            classificationEnabled = kind == Kind.CLASSIFICATION;
+            unstackableRegionRef = null;
+        }
+        if (kind == Kind.PICKUP) {
+            classificationAreas = List.of();
+            overflowEnabled = false;
+            if (followUpTaskRef != null && !followUpTaskRef.isBlank()) {
+                followUpTaskRef = requireReference(followUpTaskRef, ResourceType.TASK,
+                        "followUpTaskRef");
+                if (ResourceReference.parse(followUpTaskRef).uuid().equals(id)) {
+                    throw new IllegalArgumentException("掉落物拾取结束后不能创建自身");
+                }
+            } else {
+                followUpTaskRef = null;
+            }
+        } else {
+            followUpTaskRef = null;
+        }
+        if (kind == Kind.CLASSIFICATION) {
+            enabled = false;
+            pickupRadius = null;
+            cachePolicy = CacheIntakePolicy.DEFAULT;
+        }
         cachePolicy = cachePolicy == null ? CacheIntakePolicy.DEFAULT : cachePolicy;
+        if (kind == Kind.PICKUP && cachePolicy.enabled()
+                && cachePolicy.mode() == CacheIntakePolicy.Mode.CLASSIFY_FIRST) {
+            throw new IllegalArgumentException("独立拾取任务的打包缓存只支持打包优先");
+        }
         cleanupPolicy = cleanupPolicy == null || cleanupPolicy.destinationRef() == null
                 ? (cleanupPolicy == null ? TaskCleanupPolicy.DEFAULT : cleanupPolicy)
                         .withDestination(cacheLocationRef) : cleanupPolicy;
@@ -110,7 +159,7 @@ public record AutoClassifyDefinition(
         }
         id = Objects.requireNonNull(id, "id");
         name = requireName(name);
-        detectionCoordinateRef = requireReference(
+        detectionCoordinateRef = kind == Kind.CLASSIFICATION ? null : requireReference(
                 detectionCoordinateRef,
                 ResourceType.COORDINATE,
                 "detectionCoordinateRef"
@@ -169,7 +218,7 @@ public record AutoClassifyDefinition(
     }
 
     public UUID classificationTaskId() {
-        return derivedId("classification");
+        return kind == Kind.CLASSIFICATION ? id : derivedId("classification");
     }
 
     public UUID interruptionTaskId() {

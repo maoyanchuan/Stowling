@@ -1000,7 +1000,13 @@ public final class TaskRunManager {
         );
         replaceRetained(finished);
         registry.inventory().closeAccount(active.workspace.inventoryAccount());
+        ActiveRun finishedRun = active;
         active = null;
+        if (state == TaskRunState.SUCCEEDED && !hadManagedItems) {
+            for (CompletionTask followUp : finishedRun.completionTasks) {
+                createIndependentTask(finishedRun, followUp.ref(), followUp.priority());
+            }
+        }
         if (state == TaskRunState.SUCCEEDED
                 && completed.repeating
                 && !hadManagedItems) {
@@ -1059,6 +1065,11 @@ public final class TaskRunManager {
                             TaskPriority priority
                     ) {
                         createIndependentTask(run, taskRef, priority);
+                    }
+
+                    @Override
+                    public void createAfterSuccess(String taskRef, TaskPriority priority) {
+                        run.completionTasks.add(new CompletionTask(taskRef, priority));
                     }
                 },
                 allowTaskCreation,
@@ -1229,7 +1240,8 @@ public final class TaskRunManager {
                                 || definition.id().equals(taskId))));
         if (inventoryConfig != null) {
             inventoryConfig.autoClassifyTasks().stream().filter(definition ->
-                    definition.classificationTaskId().equals(taskId)).findFirst().ifPresent(
+                    definition.kind() == AutoClassifyDefinition.Kind.COMBINED
+                            && definition.classificationTaskId().equals(taskId)).findFirst().ifPresent(
                             definition -> workspace.inventoryAccount()
                                     .setRecoveryInputTask(definition.id()));
         }
@@ -1594,6 +1606,7 @@ public final class TaskRunManager {
         private boolean navigationStopRequested;
         private boolean navigationStopConfirmed;
         private int completedSteps;
+        private final Set<CompletionTask> completionTasks = new LinkedHashSet<>();
 
         private ActiveRun(
                 TaskRunSnapshot snapshot,
@@ -1606,6 +1619,9 @@ public final class TaskRunManager {
             this.workspace = workspace;
             this.context = context;
         }
+    }
+
+    private record CompletionTask(String ref, TaskPriority priority) {
     }
 
     private record Continuation(TaskRunWorkspace workspace, int startStep) {

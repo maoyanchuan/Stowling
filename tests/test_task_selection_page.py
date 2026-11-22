@@ -103,7 +103,9 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     assert 'id="robot-warehouse-draft"' not in html
     assert "机器人仓库" not in selection
     assert "移动到坐标" in selection
-    assert "自动分类" in selection
+    assert 'id="new-classification-task"' in selection
+    assert "掉落物拾取" in selection
+    assert "＋ 分类" in selection
     for moved in (
         'id="move-task-list"',
         'id="refresh-move-tasks"',

@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime;
 
 import dev.stowling.automation.FoodStatus;
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.TaskCondition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
@@ -25,6 +26,10 @@ public final class TaskFlowExecutor {
         TaskModuleExecutor createAction(TaskStep step);
 
         void createTask(String taskRef, TaskPriority priority);
+
+        default void createAfterSuccess(String taskRef, TaskPriority priority) {
+            throw new IllegalStateException("当前流程不支持在成功结束后创建任务");
+        }
     }
 
     private final TaskExecutionContext context;
@@ -294,7 +299,11 @@ public final class TaskFlowExecutor {
         if (priorityValue != null) {
             priority = TaskPriority.valueOf(priorityValue.toUpperCase());
         }
-        host.createTask(taskRef, priority);
+        if (Boolean.parseBoolean(parameterOptional(step, ConfigValidator.CREATE_AFTER_SUCCESS))) {
+            host.createAfterSuccess(taskRef, priority);
+        } else {
+            host.createTask(taskRef, priority);
+        }
         completeStep(frame);
         return null;
     }

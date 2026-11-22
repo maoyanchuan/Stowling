@@ -1,5 +1,6 @@
 package dev.stowling.v2.control;
 
+import dev.stowling.v2.model.AutoClassifyDefinition.Kind;
 import dev.stowling.v2.model.TaskCleanupPolicy;
 
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
@@ -25,7 +26,9 @@ public record AutoClassifyTask(
         boolean overflowEnabled,
         TaskCleanupPolicy cleanupPolicy,
         String overflowDestinationRef,
-        dev.stowling.v2.model.CacheIntakePolicy cachePolicy
+        dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+        Kind kind,
+        String followUpTaskRef
 ) {
     public AutoClassifyTask(
             UUID id,
@@ -47,7 +50,7 @@ public record AutoClassifyTask(
         this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
                 cacheLocationRef, classificationAreas, collectionPriority,
                 classificationPriority, collectionTaskRef, classificationTaskRef,
-                interruptionTaskRef, triggerIds, overflowEnabled, null, null, null);
+                interruptionTaskRef, triggerIds, overflowEnabled, null, null, null, Kind.COMBINED, null);
     }
 
     public AutoClassifyTask(

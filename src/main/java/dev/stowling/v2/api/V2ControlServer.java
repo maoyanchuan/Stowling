@@ -963,7 +963,9 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "overflowEnabled"),
                 cleanupPolicy(json),
                 optionalString(json, "overflowDestinationRef"),
-                cachePolicy(json)
+                cachePolicy(json),
+                autoClassifyKind(json),
+                optionalString(json, "followUpTaskRef")
         );
     }
 
@@ -984,7 +986,9 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "overflowEnabled"),
                 cleanupPolicy(json),
                 optionalString(json, "overflowDestinationRef"),
-                cachePolicy(json)
+                cachePolicy(json),
+                autoClassifyKind(json),
+                optionalString(json, "followUpTaskRef")
         );
     }
 
@@ -1022,6 +1026,7 @@ public final class V2ControlServer implements AutoCloseable {
     private static AutoClassifyDetectionRequest autoClassifyDetection(
             JsonObject json
     ) {
+        if (!json.has("detection") || json.get("detection").isJsonNull()) return null;
         JsonObject detection = jsonObject(
                 json.get("detection"),
                 "detection"
@@ -1037,6 +1042,12 @@ public final class V2ControlServer implements AutoCloseable {
         );
     }
 
+    private static dev.stowling.v2.model.AutoClassifyDefinition.Kind autoClassifyKind(
+            JsonObject json) {
+        String kind = optionalString(json, "kind");
+        return kind == null ? null : dev.stowling.v2.model.AutoClassifyDefinition.Kind.valueOf(kind);
+    }
+
     private static Set<String> autoClassifyFields(boolean revision) {
         Set<String> fields = new java.util.HashSet<>(Set.of(
                 "name",
@@ -1047,6 +1058,8 @@ public final class V2ControlServer implements AutoCloseable {
                 "overflowDestinationRef",
                 "cleanupPolicy",
                 "cachePolicy",
+                "kind",
+                "followUpTaskRef",
                 "detection",
                 "cacheLocationRef",
                 "classificationAreas",
@@ -1060,7 +1073,6 @@ public final class V2ControlServer implements AutoCloseable {
 
     private static Set<String> autoClassifyRequiredFields(boolean revision) {
         Set<String> fields = new java.util.HashSet<>(Set.of(
-                "detection",
                 "cacheLocationRef",
                 "classificationAreas"
         ));

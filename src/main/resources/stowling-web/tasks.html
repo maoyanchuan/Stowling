@@ -567,8 +567,7 @@
                                     aria-controls="auto-draft-body">
                                 <span class="move-task-kind" aria-hidden="true">⇄</span>
                                 <span class="move-task-overview">
-                                    <strong>新建 · 自动分类</strong>
-                                    <span>启用缓存，空闲时分类</span>
+                                    <strong id="auto-draft-title">新建 · 掉落物拾取</strong>
                                 </span>
                                 <span class="move-task-state">未保存</span>
                                 <span class="move-task-chevron" aria-hidden="true">⌄</span>
@@ -576,10 +575,17 @@
                             <div id="auto-draft-body" class="move-task-body" hidden>
                                 <form id="auto-task-form" class="auto-task-form" hidden novalidate>
                                     <fieldset id="auto-task-fields" disabled>
-                                        <ol class="auto-phase-preview" aria-label="任务的两段流程">
+                                        <ol id="combined-task-preview" class="auto-phase-preview"
+                                            aria-label="任务的两段流程" hidden>
                                             <li><b>启用缓存</b><span>检测 → 拾取 → 存入缓存</span></li>
                                             <li><b>后台分类</b><span>扫描缓存 → 识别分类 → 分批入库</span></li>
                                         </ol>
+                                        <label class="move-field" for="auto-cache-location">
+                                            <span id="auto-cache-label">缓存位置</span>
+                                            <select id="auto-cache-location" required>
+                                                <option value="">选择缓存位置</option>
+                                            </select>
+                                        </label>
                                         <section class="auto-config-section"
                                                  aria-labelledby="auto-collect-title">
                                             <div class="auto-phase-header">
@@ -603,12 +609,6 @@
                                             </div>
                                             <div id="auto-collect-body"
                                                  class="auto-phase-body" hidden>
-                                                <label class="move-field" for="auto-cache-location">
-                                                    <span>缓存位置</span>
-                                                    <select id="auto-cache-location" required>
-                                                        <option value="">选择缓存位置</option>
-                                                    </select>
-                                                </label>
                                                 <section class="auto-config-section
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-pickup-title">
@@ -691,10 +691,14 @@
                                                     </div>
                                                     <div id="auto-packing-body"
                                                          class="auto-phase-body" hidden>
-                                                        <p class="auto-config-note">
+                                                        <p id="combined-packing-help" class="auto-config-note">
                                                             实验性功能，默认关闭。开启后，在拾取过程中
                                                             处理缓存容量不足，尝试装盒或分类腾出空间。
                                                             关闭后只执行普通拾取和存入缓存。
+                                                        </p>
+                                                        <p id="pickup-packing-help"
+                                                           class="auto-config-note" hidden>
+                                                            达到阈值后尝试装盒回存。
                                                         </p>
                                                         <div class="move-fields">
                                                             <label class="move-field"
@@ -718,7 +722,7 @@
                                                                        step="1" value="80" required>
                                                             </label>
                                                         </div>
-                                                        <p class="auto-config-note">
+                                                        <p id="combined-packing-mode-help" class="auto-config-note">
                                                             按所有缓存箱已占用的槽位计算，默认 80%。
                                                             打包优先会将投料装盒回存，盒子也放不下时再分类；
                                                             分类优先会先腾出缓存空间。装盒需要空潜影盒供应。
@@ -776,7 +780,7 @@
                                                         type="button">
                                                     ＋ 添加分类选区
                                                 </button>
-                                                <p class="auto-config-note">
+                                                <p id="combined-classification-help" class="auto-config-note">
                                                     在「坐标 → 区域 → 分类区」设置分类方式与储存范围。
                                                     拾取物存入缓存后才创建后台分类任务。
                                                 </p>
@@ -817,6 +821,12 @@
                                                 <select id="robot-warehouse-location"></select>
                                             </label>
                                         </section>
+                                        <label id="auto-follow-up-field" class="move-field" hidden>
+                                            <span>任务结束后创建任务</span>
+                                            <select id="auto-follow-up-task">
+                                                <option value="">不创建任务</option>
+                                            </select>
+                                        </label>
                                         <div id="auto-cleanup-settings"></div>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
@@ -843,8 +853,13 @@
                             </button>
                             <button id="new-auto-task" class="move-task-option is-new"
                                     type="button" disabled>
-                                <strong>＋ 自动分类</strong>
-                                <span>检测掉落物入缓存，空闲时分类入库</span>
+                                <strong>＋ 掉落物拾取</strong>
+                                <span>监听掉落物，拾取后存入缓存</span>
+                            </button>
+                            <button id="new-classification-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 分类</strong>
+                                <span>从缓存取料，按分类区规则入库</span>
                             </button>
                             <button id="new-auto-eat" class="move-task-option is-new"
                                     type="button" disabled>

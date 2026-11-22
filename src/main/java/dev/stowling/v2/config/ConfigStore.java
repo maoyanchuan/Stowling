@@ -253,13 +253,15 @@ public final class ConfigStore {
                 "enabled",
                 "collectionEnabled",
                 "classificationEnabled",
-                "detectionCoordinateRef",
                 "cacheLocationRef",
                 "classificationAreas",
                 "collectionPriority"
         );
         Set<String> allowed = new java.util.HashSet<>(fields);
         allowed.add("pickupRadius");
+        allowed.add("detectionCoordinateRef");
+        allowed.add("kind");
+        allowed.add("followUpTaskRef");
         allowed.add("overflowEnabled");
         allowed.add("overflowDestinationRef");
         allowed.add("cleanupPolicy");

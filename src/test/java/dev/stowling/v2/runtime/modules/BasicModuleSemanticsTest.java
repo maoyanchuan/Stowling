@@ -43,6 +43,7 @@ import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CoordinateCatalog;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.StorageMode;
@@ -59,6 +60,41 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class BasicModuleSemanticsTest {
+    @Test
+    void resolvesWarehouseMembersAndVisitsADoubleChestOnlyOnce() {
+        var point = new CoordinatePoint(UUID.randomUUID(), "Left side", 10, 64, 0);
+        var region = new RegionDefinition(UUID.randomUUID(), "Right side", 11, 64, 0, 13, 64, 0);
+        var left = new BlockPosition(10, 64, 0);
+        var right = new BlockPosition(11, 64, 0);
+        var chest = new ContainerTarget(left, "minecraft:chest", null, null, right);
+        var reverse = new ContainerTarget(right, "minecraft:chest", null, null, left);
+        var barrel = target(13, 64, 0, "minecraft:barrel");
+        var warehouse = new CoordinateCatalog.Warehouse(UUID.randomUUID(), "Storage",
+                List.of("coordinate:" + point.id(), "region:" + region.id()));
+        var workspace = new TaskRunWorkspace();
+        var original = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), FoodConsumptionPort.UNAVAILABLE, workspace);
+        ContainerRegionPort scans = (bounds, types, volume) -> {
+            if (bounds.id().equals(point.id())) {
+                assertEquals(point.x(), bounds.firstX());
+                assertEquals(bounds.firstX(), bounds.secondX());
+                return ContainerScanResult.success(List.of(chest));
+            }
+            return ContainerScanResult.success(List.of(reverse, barrel));
+        };
+        var context = new TaskExecutionContext(original.navigation(), original.droppedItems(),
+                scans, original.containerTransfers(), original.containerWithdrawals(),
+                original.containerInspections(), original.categoryMarkerCache(),
+                original.foodConsumption(), original.categoryZonesPort(),
+                Map.of(point.id(), point), Map.of(region.id(), region), Map.of(), workspace,
+                original.inventory(), original.storageAutomation(), Map.of(warehouse.id(), warehouse));
+
+        var result = CacheLocations.scan(context, ResourceReference.parse("warehouse:" + warehouse.id()),
+                Set.of(), 100, true);
+        assertTrue(result.succeeded());
+        assertEquals(List.of(chest, barrel), result.containers());
+    }
+
     @Test
     void separateSampleAboveTheStorageRowsSelectsItsFamilyAcrossTheSlice() {
         var sample = new CategoryMarker(new BlockPosition(0, -34, 56), "minecraft:splash_potion",

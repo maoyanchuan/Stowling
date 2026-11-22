@@ -26,6 +26,11 @@
     const skipLava = Settings.switchControl(byId("material-skip-lava"));
     const skipShulkerBoxes = Settings.switchControl(byId("material-skip-shulker-boxes"));
     const skipMinecarts = Settings.switchControl(byId("material-skip-minecarts"));
+    const sourceZone = byId("material-source-zone");
+    const Picker = window.StowlingResourcePicker;
+    const facilities = window.StowlingTaskCleanupSettings.create(
+        byId("material-storage-settings"),
+        {facilities: true, fixedResumeMode: "CONTINUE", defaultLabel: "使用本任务交付位置"});
     const sourceSettings = Settings.bindDisclosure(byId("material-source-settings"),
         byId("material-source-summary"), byId("material-source-options"));
     const deliverySettings = Settings.bindDisclosure(byId("material-delivery-settings"),
@@ -42,6 +47,7 @@
     const taskRows = new Map();
     let rows = [];
     let locations = new Map();
+    let categoryZones = [];
     let revision = "";
     let current = null;
     let materials = {};
@@ -94,6 +100,17 @@
             destination.add(new Option(label, value));
         }
         destination.value = selected;
+        Picker.group(destination);
+    }
+
+    /** @param {string} selected @returns {void} */
+    function renderSources(selected) {
+        sourceZone.replaceChildren(new Option("全部可用库存", ""));
+        for (const zone of categoryZones) {
+            sourceZone.append(new Option("分类区 · " + zone.name, "category-zone:" + zone.id));
+        }
+        sourceZone.value = selected;
+        Picker.group(sourceZone, undefined, "category-zones");
     }
 
     /** @returns {Record<string, number>} */
@@ -179,6 +196,10 @@
         unsupported = {};
         file.value = "";
         renderDestinations(params?.targetRef || "");
+        renderSources(params?.sourceZoneRef || "");
+        const policy = task?.cleanupPolicy || {};
+        facilities.set({...policy, destinationRef: policy.destinationRef === params?.targetRef
+            ? null : policy.destinationRef});
         boxedDelivery.checked = params?.boxedDelivery?.toLowerCase() === "true";
         pureBoxes.checked = params?.singleMaterialBoxes?.toLowerCase() === "true";
         mixedBoxes.checked = !pureBoxes.checked;
@@ -293,17 +314,19 @@
         busy = true;
         controls();
         try {
-            const [tasks, coordinates, regions] = await Promise.all([
-                S.request(endpoint), S.request("/v1/coordinates"), S.request("/v1/regions")
-            ]);
+            const [tasks, resources] = await Promise.all([S.request(endpoint), Picker.load()]);
+            const {coordinates, regions} = resources;
+            categoryZones = resources.categoryZones;
             locations = new Map();
-            for (const point of coordinates.coordinates) {
+            for (const point of coordinates) {
                 locations.set(`coordinate:${point.id}`, `容器坐标 · ${point.name}`);
             }
-            for (const region of regions.regions) {
+            for (const region of regions) {
                 locations.set(`region:${region.id}`, `区域 · ${region.name}`);
             }
+            facilities.resources(coordinates, regions);
             renderDestinations(destination.value);
+            renderSources(sourceZone.value);
             applyTasks(tasks);
             renderSummaries();
         } catch (error) {
@@ -374,12 +397,14 @@
         }
         const id = current.id;
         const targetRef = destination.value;
+        const cleanup = facilities.read();
         const payload = {
             steps: [{
                 ...(id ? {id: current.task.steps[0].id} : {}),
                 moduleId: moduleId,
                 parameters: {
                     targetRef,
+                    ...(sourceZone.value ? {sourceZoneRef: sourceZone.value} : {}),
                     materials: JSON.stringify(materials),
                     boxedDelivery: String(boxedDelivery.checked),
                     singleMaterialBoxes: String(pureBoxes.checked),
@@ -390,7 +415,7 @@
                     collectMinecarts: String(!skipMinecarts.checked)
                 }
             }],
-            cleanupPolicy: {destinationRef: targetRef, resumeMode: "CONTINUE"}
+            cleanupPolicy: {...cleanup, destinationRef: cleanup.destinationRef || targetRef}
         };
         busy = true;
         controls();

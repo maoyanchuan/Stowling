@@ -59,7 +59,7 @@ public final class TaskFlowNormalizer {
             var updated = new AutoClassifyDefinition(definition.id(), definition.name(),
                     definition.enabled(), definition.collectionEnabled(),
                     definition.classificationEnabled(), definition.detectionCoordinateRef(),
-                    definition.pickupRadius(), definition.cacheRegionRef(), areas,
+                    definition.pickupRadius(), definition.cacheLocationRef(), areas,
                     definition.collectionPriority(), definition.overflowEnabled(),
                     definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
                     definition.cachePolicy());
@@ -72,7 +72,8 @@ public final class TaskFlowNormalizer {
                     : rebuildAutoClassification(task, definition, "unstackable-layout");
         }).toList();
         return new AppConfig(config.schemaVersion(), config.coordinates(), tasks, config.regions(),
-                zones, config.triggers(), config.taskFolders(), definitions);
+                zones, config.triggers(), config.taskFolders(), definitions,
+                config.coordinateCatalog());
     }
 
     private static String unstackableLayoutReference(RegionDefinition region, String regionRef,
@@ -215,7 +216,7 @@ public final class TaskFlowNormalizer {
                     config.categoryZones(),
                     config.triggers(),
                     config.taskFolders(),
-                    config.autoClassifyTasks()
+                    config.autoClassifyTasks(), config.coordinateCatalog()
             );
         }
         List<TaskDefinition> replaced = tasks.stream()
@@ -231,7 +232,7 @@ public final class TaskFlowNormalizer {
                 config.categoryZones(),
                 config.triggers(),
                 config.taskFolders(),
-                config.autoClassifyTasks()
+                config.autoClassifyTasks(), config.coordinateCatalog()
         );
     }
 
@@ -279,11 +280,11 @@ public final class TaskFlowNormalizer {
         if (definition.overflowEnabled() && steps.stream().noneMatch(step ->
                 ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId()))) {
             steps.addAll(remapStepIds(List.of(TaskFlowTemplates.overflow(
-                    definition.cacheRegionRef())),
+                    definition.cacheLocationRef(), definition.overflowDestinationRef())),
                     definition.derivedId("overflow")));
         }
         steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
-                definition.cacheRegionRef(), Map.of()
+                definition.cacheLocationRef(), Map.of()
         ), seed));
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps, task.interruptionMode(), task.interruptionTaskRef(),
@@ -334,7 +335,7 @@ public final class TaskFlowNormalizer {
                 Map<String, String> parameters = new LinkedHashMap<>(steps.getFirst().parameters());
                 parameters.putAll(second.parameters());
                 upgraded.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(
-                        definition.cacheRegionRef(), parameters), steps.get(3).id()));
+                        definition.cacheLocationRef(), parameters), steps.get(3).id()));
             }
             upgraded.addAll(steps.subList(legacyTail ? 4 : 3, steps.size()));
         } else {
@@ -1078,7 +1079,9 @@ public final class TaskFlowNormalizer {
             TaskDefinition task,
             ResourceReference reference
     ) {
-        if (reference.encode().equals(task.cleanupPolicy().destinationRef())) return true;
+        if (reference.encode().equals(task.cleanupPolicy().destinationRef())
+                || reference.encode().equals(task.cleanupPolicy().packingPositionRef())
+                || task.cleanupPolicy().emptyBoxRefs().contains(reference.encode())) return true;
         if (reference.type() == ResourceType.TASK
                 && reference.encode().equals(task.interruptionTaskRef())) {
             return true;
@@ -1120,6 +1123,7 @@ public final class TaskFlowNormalizer {
         try {
             return switch (key) {
                 case ConfigValidator.TARGET_REF, ConfigValidator.AREA_REF,
+                        ConfigValidator.CACHE_LOCATION_REF, MaterialRequirements.SOURCE_ZONE_REF,
                         ConfigValidator.AREA_REFERENCE ->
                         ResourceReference.parse(value).equals(reference);
                 case ConfigValidator.REGION_REF, ConfigValidator.REGION_ID,

@@ -47,6 +47,26 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void protectsTheCoordinateDirectoryAndFolderWritesWithBearerAuthentication() throws Exception {
+        try (var fixture = fixture()) {
+            String path = "/v1/coordinate-resources";
+            assertEquals(401, fixture.send(path, "GET", null, false).statusCode());
+            String revision = object(fixture.send(path, "GET", null, true))
+                    .get("revision").getAsString();
+            String body = """
+                    {"revision":"%s","name":"Collection"}
+                    """.formatted(revision);
+            String folders = "/v1/coordinate-folders";
+            assertEquals(401, fixture.send(folders, "POST", body, false).statusCode());
+            var created = fixture.send(folders, "POST", body, true);
+            assertEquals(201, created.statusCode());
+            assertEquals("Collection", object(created).getAsJsonObject("catalog")
+                    .getAsJsonArray("folders").get(0).getAsJsonObject().get("name").getAsString());
+            assertEquals(409, fixture.send(folders, "POST", body, true).statusCode());
+        }
+    }
+
+    @Test
     void validatesSchematicUploadsAfterAuthentication() throws Exception {
         var store = new ConfigStore(directory.resolve("material-collection.json"));
         store.loadOrReset();
@@ -201,7 +221,7 @@ class V2ControlServerTest {
         String body = """
                 {"name":"Automatic","collectionEnabled":true,
                 "classificationEnabled":true,"detection":{"coordinateRef":"coordinate:%s",
-                "pickupRadius":8},"cacheRegionRef":"region:%s",
+                "pickupRadius":8},"cacheLocationRef":"region:%s",
                 "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
                 "collectionPriority":"NORMAL",
                 "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65}}

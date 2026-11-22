@@ -10,6 +10,7 @@ import dev.stowling.v2.config.V2RevisionConflictException;
 import dev.stowling.v2.config.V2ValidationException;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.CoordinateCatalog;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
@@ -186,6 +187,71 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
+    public synchronized CoordinateDirectory coordinateDirectory() {
+        return coordinateDirectory(configs.read());
+    }
+
+    @Override
+    public synchronized CoordinateDirectory editCoordinateDirectory(String revision,
+            java.util.function.UnaryOperator<CoordinateCatalog> edit) {
+        var snapshot = configs.read();
+        requireRevision(snapshot, revision);
+        var previous = snapshot.config().coordinateCatalog();
+        var catalog = edit.apply(previous);
+        previous.warehouses().stream().filter(warehouse -> catalog.warehouses().stream()
+                .noneMatch(value -> value.id().equals(warehouse.id()))).forEach(warehouse -> {
+                    var ref = ResourceReference.of(ResourceType.WAREHOUSE, warehouse.id());
+                    var names = snapshot.config().tasks().stream()
+                            .filter(task -> TaskFlowNormalizer.references(task, ref))
+                            .map(TaskDefinition::name).toList();
+                    if (!names.isEmpty()) {
+                        throw new V2ValidationException("仓库正在被引用：" + String.join("、", names));
+                    }
+                });
+        return coordinateDirectory(saveSpatialConfig(revision,
+                snapshot.config().withCoordinateCatalog(catalog)));
+    }
+
+    private static CoordinateDirectory coordinateDirectory(V2ConfigSnapshot snapshot) {
+        AppConfig config = snapshot.config();
+        var references = new java.util.LinkedHashMap<String, List<String>>();
+        config.coordinates().forEach(point -> addReferences(references, config,
+                ResourceType.COORDINATE, point.id()));
+        config.regions().forEach(region -> addReferences(references, config,
+                ResourceType.REGION, region.id()));
+        config.categoryZones().forEach(zone -> addReferences(references, config,
+                ResourceType.CATEGORY_ZONE, zone.id()));
+        var catalog = config.coordinateCatalog();
+        catalog.warehouses().forEach(warehouse -> addReferences(references, config,
+                ResourceType.WAREHOUSE, warehouse.id()));
+        return new CoordinateDirectory(snapshot.revision(), config.coordinates(), config.regions(),
+                config.categoryZones(), catalog, references);
+    }
+
+    private static void addReferences(java.util.Map<String, List<String>> values, AppConfig config,
+            ResourceType type, UUID id) {
+        var ref = ResourceReference.of(type, id);
+        List<String> names = new ArrayList<>();
+        config.tasks().stream().filter(task -> TaskFlowNormalizer.references(task, ref))
+                .map(TaskDefinition::name).forEach(names::add);
+        config.triggers().stream().filter(trigger -> type == ResourceType.COORDINATE
+                && id.equals(trigger.coordinateId()) || type == ResourceType.REGION
+                && id.equals(trigger.cacheRegionId()))
+                .map(TaskTriggerDefinition::name).forEach(names::add);
+        if (type == ResourceType.COORDINATE || type == ResourceType.REGION) {
+            names.addAll(partialBoxReferences(config, ref.encode()));
+        }
+        names.addAll(warehouseReferences(config, ref));
+        if (!names.isEmpty()) values.put(ref.encode(), names.stream().distinct().toList());
+    }
+
+    private static List<String> warehouseReferences(AppConfig config, ResourceReference ref) {
+        return config.coordinateCatalog().warehouses().stream()
+                .filter(warehouse -> warehouse.members().contains(ref.encode()))
+                .map(CoordinateCatalog.Warehouse::name).toList();
+    }
+
+    @Override
     public synchronized CoordinateListResponse coordinates() {
         return coordinateResponse(configs.read());
     }
@@ -219,7 +285,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -254,7 +321,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -298,6 +366,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             }
             if (id.equals(facilities.fallbackCoordinateId())) references.add("公共设施·后备工位");
         }
+        references.addAll(warehouseReferences(current.config(), reference));
         if (!references.isEmpty()) {
             throw new CoordinateInUseException(references);
         }
@@ -311,7 +380,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog().move(reference.encode(), null)
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -351,7 +421,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         )));
     }
 
@@ -385,7 +456,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         )));
     }
 
@@ -426,6 +498,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 references.add("公共设施·不可堆叠溢出区域");
             }
         }
+        references.addAll(warehouseReferences(current.config(), reference));
         if (!references.isEmpty()) {
             throw new V2ValidationException(
                     "region is used by: " + String.join(", ", references)
@@ -441,7 +514,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog().move(reference.encode(), null)
         )));
     }
 
@@ -502,7 +576,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         zones,
                         current.config().triggers(),
                         current.config().taskFolders(),
-                        current.config().autoClassifyTasks()
+                        current.config().autoClassifyTasks(),
+                        current.config().coordinateCatalog()
                 )
         ));
     }
@@ -540,7 +615,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         zones,
                         current.config().triggers(),
                         current.config().taskFolders(),
-                        current.config().autoClassifyTasks()
+                        current.config().autoClassifyTasks(),
+                        current.config().coordinateCatalog()
                 )
         ));
     }
@@ -579,7 +655,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                                 .toList(),
                         current.config().triggers(),
                         current.config().taskFolders(),
-                        current.config().autoClassifyTasks()
+                        current.config().autoClassifyTasks(),
+                        current.config().coordinateCatalog().move(reference.encode(), null)
                 )
         ));
     }
@@ -609,7 +686,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 folders,
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         return taskFolderResponse(configs.save(current.revision(), updated));
     }
@@ -638,7 +716,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 current.config().triggers(),
                 folders,
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         return taskFolderResponse(configs.save(current.revision(), updated));
     }
@@ -666,7 +745,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().taskFolders().stream()
                         .filter(folder -> !folder.id().equals(id))
                         .toList(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         return taskFolderResponse(configs.save(current.revision(), updated));
     }
@@ -706,7 +786,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         triggers.add(listener);
         AppConfig updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, config.coordinates(),
                 tasks, config.regions(), config.categoryZones(), triggers, config.taskFolders(),
-                config.autoClassifyTasks());
+                config.autoClassifyTasks(), config.coordinateCatalog());
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
         return autoEatResponse(saved, task.id());
@@ -729,7 +809,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .toList();
         AppConfig updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, config.coordinates(),
                 config.tasks(), config.regions(), config.categoryZones(), triggers,
-                config.taskFolders(), config.autoClassifyTasks());
+                config.taskFolders(), config.autoClassifyTasks(), config.coordinateCatalog());
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
         return autoEatResponse(saved, id);
@@ -797,14 +877,13 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.collectionEnabled() == null || request.collectionEnabled(),
                 request.classificationEnabled() == null || request.classificationEnabled(),
                 request.detection(),
-                request.cacheRegionRef(),
+                request.cacheLocationRef(),
                 request.classificationAreas(),
                 request.collectionPriority(),
                 overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
                         false),
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy()
         );
-        requireWarehouseLocation(definition.overflowDestinationRef());
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
                 definition,
@@ -829,7 +908,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 triggers,
                 current.config().taskFolders(),
-                definitions
+                definitions,
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -875,7 +955,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ? existing.classificationEnabled()
                         : request.classificationEnabled(),
                 request.detection(),
-                request.cacheRegionRef(),
+                request.cacheLocationRef(),
                 request.classificationAreas(),
                 request.collectionPriority(),
                 overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
@@ -885,9 +965,6 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.overflowDestinationRef(),
                 request.cachePolicy() == null ? existing.cachePolicy() : request.cachePolicy()
         );
-        if (!Objects.equals(existing.overflowDestinationRef(), replacement.overflowDestinationRef())) {
-            requireWarehouseLocation(replacement.overflowDestinationRef());
-        }
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
         );
@@ -923,7 +1000,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 updatedTriggers,
                 current.config().taskFolders(),
-                definitions
+                definitions,
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -966,7 +1044,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks().stream()
                         .map(item -> item.id().equals(id) ? enabled : item)
-                        .toList()
+                        .toList(),
+                        current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1008,7 +1087,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks().stream()
                         .map(item -> item.id().equals(id) ? disabled : item)
-                        .toList()
+                        .toList(),
+                        current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1056,7 +1136,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks().stream()
                         .filter(item -> !item.id().equals(id))
-                        .toList()
+                        .toList(),
+                        current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1101,7 +1182,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 updateSchedule(current.config(), task, request.schedule()),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1147,7 +1229,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 updateSchedule(current.config(), updatedTask, request.schedule()),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1204,7 +1287,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     .map(entry -> entry.id().equals(trigger.id()) ? replacement : entry).toList();
             AppConfig updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
                     config.coordinates(), config.tasks(), config.regions(), config.categoryZones(),
-                    triggers, config.taskFolders(), config.autoClassifyTasks());
+                    triggers, config.taskFolders(), config.autoClassifyTasks(),
+                    config.coordinateCatalog());
             snapshot = configs.save(snapshot.revision(), updated);
             runs.refreshTriggers(snapshot.config());
         }
@@ -1256,7 +1340,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .filter(trigger -> !trigger.targetTaskId().equals(id))
                         .toList(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1303,7 +1388,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 triggers,
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1351,7 +1437,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().categoryZones(),
                 triggers,
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1376,7 +1463,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .filter(trigger -> !trigger.id().equals(id))
                         .toList(),
                 current.config().taskFolders(),
-                current.config().autoClassifyTasks()
+                current.config().autoClassifyTasks(),
+                current.config().coordinateCatalog()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -1456,7 +1544,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             Boolean collectionEnabled,
             Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection,
-            String cacheRegionRef,
+            String cacheLocationRef,
             List<AutoClassifyAreaRequest> requestedAreas,
             TaskPriority collectionPriority,
             boolean overflowEnabled,
@@ -1473,9 +1561,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     "detection.coordinateRef is required"
             );
         }
-        int pickupRadius = detection.pickupRadius() == null
-                ? AutoClassifyDefinition.DEFAULT_PICKUP_RADIUS
-                : detection.pickupRadius();
+        Integer pickupRadius = detection.pickupRadius();
         List<AutoClassifyAreaDefinition> areas = requestedAreas.stream()
                 .map(area -> new AutoClassifyAreaDefinition(
                         area.categoryZoneRef(),
@@ -1490,7 +1576,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 Boolean.TRUE.equals(classificationEnabled),
                 coordinateRef,
                 pickupRadius,
-                cacheRegionRef,
+                cacheLocationRef,
                 areas,
                 collectionPriority == null
                         ? TaskPriority.NORMAL
@@ -1512,7 +1598,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.classificationEnabled(),
                 definition.detectionCoordinateRef(),
                 definition.pickupRadius(),
-                definition.cacheRegionRef(),
+                definition.cacheLocationRef(),
                 definition.classificationAreas(),
                 definition.collectionPriority(),
                 definition.overflowEnabled(),
@@ -1541,7 +1627,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         definition.detectionCoordinateRef(),
                         definition.pickupRadius()
                 ),
-                definition.cacheRegionRef(),
+                definition.cacheLocationRef(),
                 definition.classificationAreas(),
                 definition.collectionPriority(),
                 TaskPriority.BACKGROUND,
@@ -1559,18 +1645,6 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.overflowEnabled(),
                 definition.cleanupPolicy(), definition.overflowDestinationRef(), definition.cachePolicy()
         );
-    }
-
-    private void requireWarehouseLocation(String destination) {
-        if (destination == null) return;
-        if (storageSettings == null) {
-            throw new V2ValidationException("请先配置机器人仓库位置");
-        }
-        var storage = storageSettings.read().settings();
-        if (!storage.warehouseEnabled()
-                || !storage.hasWarehouseLocation(ResourceReference.parse(destination))) {
-            throw new V2ValidationException("请选择已启用的机器人仓库位置");
-        }
     }
 
     private static boolean overflowEnabled(Boolean enabled, String destination, boolean previous) {

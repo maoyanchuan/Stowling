@@ -43,7 +43,7 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-task-fields",
         "auto-detection-point",
         "auto-pickup-radius",
-        "auto-cache-region",
+        "auto-cache-location",
         "auto-collect-priority",
         "auto-classification-areas",
         "add-auto-classification-area",
@@ -134,7 +134,9 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
 
     assert "掉落物拾取" in pickup
     assert 'id="auto-collect-enabled"' in pickup
-    for field in ("auto-detection-point", "auto-pickup-radius", "auto-cache-region"):
+    assert 'id="auto-cache-location"' in collect
+    assert 'id="auto-cache-location"' not in packing
+    for field in ("auto-detection-point", "auto-pickup-radius"):
         assert f'id="{field}"' in pickup
         assert f'id="{field}"' not in packing
     assert "打包缓存" in packing
@@ -149,13 +151,13 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
     assert "enabled: elements.cacheEnabled.checked" in javascript
 
 
-def test_robot_warehouse_keeps_only_a_switch_inside_the_classification_task() -> None:
+def test_robot_warehouse_has_a_switch_and_location_inside_the_classification_task() -> None:
     html = read("tasks.html")
     form = between(html, 'id="auto-task-form"', "</form>")
     warehouse = between(form, 'id="robot-warehouse-settings"', "</section>")
     assert 'id="robot-warehouse-enabled"' in warehouse
     assert 'role="switch"' in warehouse
-    assert "<select" not in warehouse
+    assert 'id="robot-warehouse-location"' in warehouse
     assert "<button" not in warehouse
     assert 'id="robot-warehouse-body"' not in html
     assert 'id="auto-overflow-destination"' not in html
@@ -413,6 +415,10 @@ globalThis.window = {
         switchControl: (control) => control,
         disclosure: () => ({root: new Element(), summary: new Element()})
     },
+    StowlingResourcePicker: {
+        load: async () => ({coordinates: [], regions: [], categoryZones: [], catalog: {}}),
+        group: () => {}
+    },
     StowlingTaskModel: {priorityLabel: () => "普通"},
     StowlingTaskCleanupSettings: {create: () => ({resources() {}, set() {}})},
     StowlingStoragePolicyEditor: {create: () => ({root: new Element()})},
@@ -490,7 +496,7 @@ def test_task_page_loads_model_before_ui_and_ui_after_shared_styles() -> None:
 
 def test_unstackable_rule_is_configured_in_the_warehouse_layout() -> None:
     html = read("tasks.html")
-    assert "坐标 → 仓储布局" in html
+    assert "坐标 → 区域 → 分类区" in html
     assert 'id="auto-unstackable-region"' not in html
     assert "关闭不可堆叠分类" not in read("auto-classify-ui.js")
     editor = read("category-zones.js")

@@ -171,9 +171,12 @@ final class TaskTriggerManager {
         return owner == null ? null : owner.target.id();
     }
 
-    private static int pickupRadius(TriggerConfiguration config) {
+    private int pickupRadius(TriggerConfiguration config) {
         if (config.trigger.radius() != null) return config.trigger.radius();
-        return config.coordinate.radius() == null ? DEFAULT_RADIUS : config.coordinate.radius();
+        if (config.coordinate.radius() != null) return config.coordinate.radius();
+        return collectionTriggers.containsKey(config.trigger.id())
+                ? dev.stowling.v2.model.AutoClassifyDefinition.DEFAULT_PICKUP_RADIUS
+                : DEFAULT_RADIUS;
     }
 
     void tick() {

@@ -122,7 +122,7 @@ final class ManageCacheIntakeModule implements TaskModuleExecutor {
                 context.containerWithdrawals(), context.containerInspections(),
                 context.categoryMarkerCache(), context.foodConsumption(), context.categoryZonesPort(),
                 context.coordinates(), context.regions(), context.categoryZones(), sortingWorkspace,
-                context.inventory(), context.storageAutomation());
+                context.inventory(), context.storageAutomation(), context.warehouses());
         classification = new TaskFlowExecutor(task.steps(), sorting, new TaskFlowExecutor.Host() {
             @Override
             public TaskModuleExecutor createAction(TaskStep step) {

@@ -10,6 +10,7 @@ import dev.stowling.automation.DroppedItemObserverPort;
 import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.NavigationPort;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CoordinateCatalog;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.runtime.TaskTracePorts;
@@ -32,7 +33,8 @@ public record TaskExecutionContext(
         Map<UUID, CategoryZoneDefinition> categoryZones,
         TaskRunWorkspace workspace,
         PlayerInventoryManager inventory,
-        StorageAutomationPort storageAutomation
+        StorageAutomationPort storageAutomation,
+        Map<UUID, CoordinateCatalog.Warehouse> warehouses
 ) {
     public TaskExecutionContext {
         navigation = Objects.requireNonNull(navigation, "navigation");
@@ -73,6 +75,7 @@ public record TaskExecutionContext(
         workspace = Objects.requireNonNull(workspace, "workspace");
         inventory = Objects.requireNonNull(inventory, "inventory");
         storageAutomation = Objects.requireNonNull(storageAutomation);
+        warehouses = Map.copyOf(warehouses);
         inventory.register(workspace.inventoryAccount());
         if (workspace.diagnostics() != null) {
             navigation = TaskTracePorts.wrap(NavigationPort.class, navigation);
@@ -95,6 +98,21 @@ public record TaskExecutionContext(
             storageAutomation = TaskTracePorts.wrap(
                     StorageAutomationPort.class, storageAutomation);
         }
+    }
+
+    public TaskExecutionContext(
+            NavigationPort navigation, DroppedItemObserverPort droppedItems,
+            ContainerRegionPort containerRegions, ContainerTransferPort containerTransfers,
+            ContainerWithdrawalPort containerWithdrawals,
+            ContainerInspectionPort containerInspections, CategoryMarkerCachePort categoryMarkerCache,
+            FoodConsumptionPort foodConsumption, CategoryZonePort categoryZonesPort,
+            Map<UUID, CoordinatePoint> coordinates, Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> categoryZones, TaskRunWorkspace workspace,
+            PlayerInventoryManager inventory, StorageAutomationPort storageAutomation) {
+        this(navigation, droppedItems, containerRegions, containerTransfers, containerWithdrawals,
+                containerInspections, categoryMarkerCache, foodConsumption, categoryZonesPort,
+                coordinates, regions, categoryZones, workspace, inventory, storageAutomation,
+                Map.of());
     }
 
     public TaskExecutionContext(

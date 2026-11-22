@@ -2,7 +2,6 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.v2.config.ConfigValidator;
-import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskStep;
@@ -10,7 +9,7 @@ import java.util.Set;
 
 final class ScanContainersInRegionModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
-    private final RegionDefinition region;
+    private final ResourceReference reference;
     private final Set<String> containerTypes;
     private final int maxVolume;
     private final boolean scanContents;
@@ -18,13 +17,14 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
 
     ScanContainersInRegionModule(TaskExecutionContext context, TaskStep step) {
         this.context = context;
-        ResourceReference reference = ResourceReferenceSupport.reference(
+        String location = step.parameters().get(ConfigValidator.CACHE_LOCATION_REF);
+        this.reference = location != null ? ResourceReference.parse(location)
+                : ResourceReferenceSupport.reference(
                 step,
                 TaskModuleIds.REGION_REF,
                 ResourceType.REGION,
                 TaskModuleIds.REGION_ID
         );
-        this.region = ResourceReferenceSupport.region(context, reference);
         this.containerTypes = TaskModuleSupport.containerTypes(step);
         this.maxVolume = TaskModuleSupport.integerParameter(
                 step,
@@ -37,10 +37,9 @@ final class ScanContainersInRegionModule implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult start() {
-        ContainerScanResult scan = scanContents
-                ? context.containerRegions().scanComplete(region, containerTypes, maxVolume)
-                : context.containerRegions().scan(region, containerTypes, maxVolume);
-        context.workspace().refreshContainerScan(region.id(), scan);
+        ContainerScanResult scan = CacheLocations.scan(
+                context, reference, containerTypes, maxVolume, scanContents);
+        context.workspace().refreshContainerScan(reference.uuid(), scan);
         if (!scan.succeeded()) {
             return TaskModuleResult.failed(scan.message());
         }

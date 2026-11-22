@@ -31,6 +31,7 @@ import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.runtime.modules.ContainerBatchWithdrawal;
 import dev.stowling.v2.runtime.modules.StorageAutomationPort;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
+import dev.stowling.v2.runtime.modules.CacheLocations;
 import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
@@ -44,6 +45,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
@@ -152,6 +154,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         var parameters = step.parameters();
         return new MaterialCollection(context,
                 ResourceReference.parse(parameters.get("targetRef")),
+                parameters.get(MaterialRequirements.SOURCE_ZONE_REF),
                 MaterialRequirements.forCollection(parameters),
                 Boolean.parseBoolean(parameters.get(MaterialRequirements.BOXED_DELIVERY)),
                 Boolean.parseBoolean(parameters.get(MaterialRequirements.SINGLE_MATERIAL_BOXES)));
@@ -264,7 +267,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public TaskModuleExecutor overflow(TaskExecutionContext context, RegionDefinition cacheRegion) {
-        return new Overflow(context, cacheRegion, false, null);
+        return new Overflow(context, cacheRegion == null ? null
+                : ResourceReference.of(ResourceType.REGION, cacheRegion.id()), false, null);
     }
 
     @Override
@@ -276,7 +280,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor robotWarehouse(TaskExecutionContext context,
             RegionDefinition cacheRegion, ResourceReference destination) {
-        return new Overflow(context, cacheRegion, true, destination);
+        return robotWarehouseForCache(context, cacheRegion == null ? null
+                : ResourceReference.of(ResourceType.REGION, cacheRegion.id()), destination);
+    }
+
+    @Override
+    public TaskModuleExecutor robotWarehouseForCache(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination) {
+        return new Overflow(context, cache, true, destination);
     }
 
     private String robotWarehouseScope() {
@@ -296,7 +307,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         caches.addAll(context.workspace().cacheContainers());
         return EmptyBoxSupplyPlan.sources(caches,
                 context.workspace().selectedContainer().orElse(null),
-                settings.resolved().emptyBoxContainers());
+                taskStorage(context).emptyBoxContainers());
     }
 
     private List<ContainerTarget> overflowContainers(ResourceReference destination) {
@@ -311,18 +322,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 Set.copyOf(settings.resolved().emptyBoxContainers()), "溢出");
     }
 
-    private List<ContainerTarget> robotWarehouseContainers(ResourceReference destination) {
-        String dimension = minecraft.level.dimension().identifier().toString();
-        List<BlockPosition> points = destination == null
-                || destination.type() == ResourceType.COORDINATE
-                ? settings.robotWarehousePositions(dimension,
-                        destination == null ? null : destination.uuid()) : List.of();
-        List<RegionDefinition> regions = destination == null
-                || destination.type() == ResourceType.REGION
-                ? settings.robotWarehouseRegions(destination == null ? null : destination.uuid())
-                : List.of();
-        return TemporaryContainerResolver.resolve(points, regions, containerRegions,
-                Set.copyOf(settings.resolved().emptyBoxContainers()), "机器人仓库");
+    private List<ContainerTarget> robotWarehouseContainers(TaskExecutionContext context,
+            ResourceReference destination) {
+        var scan = CacheLocations.scan(context, destination, TemporaryContainerResolver.TYPES,
+                1_000_000, true);
+        if (!scan.succeeded()) throw new IllegalStateException(scan.message());
+        var reserved = taskStorage(context).emptyBoxContainers();
+        return scan.containers().stream().filter(target ->
+                target.entrances().stream().noneMatch(reserved::contains)).toList();
     }
 
     @Override
@@ -362,33 +369,36 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public List<ContainerTarget> recoveryContainers(TaskExecutionContext context) {
-        return taskCleanupContainers(context, settings.resolved());
+        return taskCleanupContainers(context, taskStorage(context));
+    }
+
+    private StorageAutomationSettings taskStorage(TaskExecutionContext context) {
+        var policy = context.workspace().cleanupPolicy();
+        var empty = policy.emptyBoxRefs().stream().map(ref -> taskPoint(context, ref))
+                .filter(Objects::nonNull).toList();
+        var fallback = policy.packingPositionRef() == null ? null
+                : taskPoint(context, policy.packingPositionRef());
+        return new StorageAutomationSettings(false, List.of(), empty, fallback);
+    }
+
+    private BlockPosition taskPoint(TaskExecutionContext context, String ref) {
+        var point = context.coordinates().get(ResourceReference.parse(ref).uuid());
+        if (point.dimension() != null && !context.navigation().isInDimension(point.dimension())) {
+            return null;
+        }
+        return new BlockPosition(point.x(), point.y(), point.z());
     }
 
     private List<ContainerTarget> taskCleanupContainers(TaskExecutionContext context,
             StorageAutomationSettings configuration) {
         var ref = context.workspace().cleanupPolicy().destinationRef();
-        List<ContainerTarget> destinations;
-        if (ref == null) {
-            destinations = temporaryContainers();
-        } else {
-            var destination = dev.stowling.v2.model.ResourceReference.parse(ref);
-            List<BlockPosition> points = List.of();
-            List<dev.stowling.v2.model.RegionDefinition> regions = List.of();
-            if (destination.type() == dev.stowling.v2.model.ResourceType.COORDINATE) {
-                var point = context.coordinates().get(destination.uuid());
-                if (point == null) throw new IllegalStateException("中断存放坐标不存在");
-                points = List.of(new BlockPosition(point.x(), point.y(), point.z()));
-            } else {
-                var region = context.regions().get(destination.uuid());
-                if (region == null) throw new IllegalStateException("中断存放区域不存在");
-                regions = List.of(region);
-            }
-            destinations = dev.stowling.automation.TemporaryContainerResolver.resolve(points,
-                    regions, containerRegions, Set.copyOf(configuration.emptyBoxContainers()),
-                    "任务中断存放");
-        }
-        return destinations;
+        if (ref == null) return List.of();
+        var scan = CacheLocations.scan(context, ResourceReference.parse(ref),
+                TemporaryContainerResolver.TYPES, 1_000_000, true);
+        if (!scan.succeeded()) throw new IllegalStateException(scan.message());
+        var reserved = configuration.emptyBoxContainers();
+        return scan.containers().stream()
+                .filter(target -> target.entrances().stream().noneMatch(reserved::contains)).toList();
     }
 
     private List<ContainerTarget> partialBoxContainers(TaskExecutionContext context,
@@ -469,7 +479,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             StoragePolicy policy = target.storagePolicy();
             if (policy.mode() != StorageMode.NORMAL && policy.partialBoxDestinationRef() != null
                     && visited.add(policy.partialBoxDestinationRef())) {
-                sources.addAll(partialBoxContainers(context, policy, settings.resolved()));
+                sources.addAll(partialBoxContainers(context, policy, taskStorage(context)));
             }
         }
         return EmptyBoxSupplyPlan.sources(sources, null, List.of());
@@ -477,7 +487,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private abstract class Session implements TaskModuleExecutor {
         final TaskExecutionContext context;
-        final StorageAutomationSettings configuration = settings.resolved();
+        final StorageAutomationSettings configuration;
         final Deque<Step> steps = new ArrayDeque<>();
         Step current;
         boolean stopping;
@@ -491,6 +501,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         Session(TaskExecutionContext context, Map<BlockPosition, CacheSnapshot> cacheSnapshots) {
             this.context = context;
+            this.configuration = taskStorage(context);
             this.cacheSnapshots = cacheSnapshots;
         }
 
@@ -1127,6 +1138,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class MaterialCollection extends Session {
         private final ResourceReference destination;
+        private final String sourceZoneRef;
         private final boolean boxedDelivery;
         private final boolean singleMaterialBoxes;
         private final Map<String, Integer> needed;
@@ -1151,10 +1163,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private boolean stopAfterBox;
 
         MaterialCollection(TaskExecutionContext context, ResourceReference destination,
-                Map<String, Integer> required, boolean boxedDelivery,
+                String sourceZoneRef, Map<String, Integer> required, boolean boxedDelivery,
                 boolean singleMaterialBoxes) {
             super(context);
             this.destination = destination;
+            this.sourceZoneRef = sourceZoneRef;
             this.boxedDelivery = boxedDelivery;
             this.singleMaterialBoxes = boxedDelivery && singleMaterialBoxes;
             needed = new LinkedHashMap<>(required);
@@ -1229,8 +1242,14 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 finishShort();
                 return;
             }
+            var sourceAreas = sourceZoneRef == null ? List.<AreaBounds>of()
+                    : context.categoryZones().get(ResourceReference.parse(sourceZoneRef).uuid())
+                            .bindings().stream().map(binding -> binding.storageArea()).toList();
             warehouseSources = stock.containers().stream()
                     .filter(container -> dimension.equals(container.dimension()))
+                    .filter(container -> sourceZoneRef == null
+                            || ChestTrackerInventorySource.inAreas(
+                                    container.positions(), sourceAreas))
                     .filter(container -> container.positions().stream().noneMatch(
                             configuration.emptyBoxContainers()::contains))
                     .filter(container -> destinationBounds == null
@@ -1383,7 +1402,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (canTakeLoose || ItemIdentity.isBox(key)) {
                     wanted.put(key, count);
                 } else if (!canPackLoose) {
-                    warehouseProblem = "盒装散料需要在公共设施配置空潜影盒供应";
+                    warehouseProblem = "盒装散料需要在任务中选择空潜影盒供应箱";
                 }
             });
             int reserve = boxedDelivery && canTakeLoose && partialBoxKey == null
@@ -3218,7 +3237,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class Overflow extends Session {
         private boolean initialized;
-        private final RegionDefinition cacheRegion;
+        private final ResourceReference cacheLocation;
         private final boolean boxedOnly;
         private final ResourceReference destination;
         private String skipMessage;
@@ -3244,10 +3263,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 new LinkedHashMap<>();
         private Set<String> eligibleItems = Set.of();
 
-        Overflow(TaskExecutionContext context, RegionDefinition cacheRegion, boolean boxedOnly,
+        Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
                 ResourceReference destination) {
             super(context);
-            this.cacheRegion = cacheRegion;
+            this.cacheLocation = cacheLocation;
             this.boxedOnly = boxedOnly;
             this.destination = destination;
         }
@@ -3255,17 +3274,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         void initialize() {
             initialized = true;
-            if (boxedOnly && !configuration.warehouseEnabled()) {
-                skipMessage = "请在坐标→公共设施配置机器人仓库，溢出物品留在缓存";
+            if (boxedOnly && destination == null) {
+                skipMessage = "请选择任务的溢出仓库，物品留在缓存";
                 return;
             }
-            if (destination != null && !configuration.hasWarehouseLocation(destination)) {
-                skipMessage = "所选位置已移出机器人仓库，溢出物品留在缓存";
-                return;
-            }
-            if (cacheRegion == null && owned().isEmpty()) return;
+            if (cacheLocation == null && owned().isEmpty()) return;
             warehouseScope = robotWarehouseScope();
-            destinations = boxedOnly ? robotWarehouseContainers(destination)
+            destinations = boxedOnly ? robotWarehouseContainers(context, destination)
                     : overflowContainers(destination);
             if (destination != null && destinations.isEmpty()) {
                 skipMessage = "所选仓库位置在当前维度无可用容器，溢出物品留在缓存";
@@ -3283,9 +3298,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 throw new IllegalStateException("尚有未回收潜影盒，请先执行全局收尾");
             }
             List<ContainerTarget> caches = List.of();
-            if (cacheRegion != null) {
-                var scan = containerRegions.scanComplete(cacheRegion, Set.of(), 1_000_000);
+            if (cacheLocation != null) {
+                var scan = CacheLocations.scan(context, cacheLocation, Set.of(), 1_000_000, true);
                 if (!scan.succeeded()) throw new IllegalStateException(scan.message());
+                destinations = destinations.stream().filter(target -> scan.containers().stream()
+                        .noneMatch(cache -> sameContainer(target, cache))).toList();
+                if (boxedOnly && destinations.isEmpty()) {
+                    skipMessage = "溢出仓库没有独立于缓存的容器，物品留在缓存";
+                    return;
+                }
                 if (unstackableRegion != null) {
                     scan.containers().forEach(target ->
                             reservedPositions.addAll(target.entrances()));
@@ -3315,7 +3336,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 throw new IllegalStateException("溢出打包前请配置任务中断存放位置");
             }
             if (destinations.isEmpty()) {
-                throw new IllegalStateException(boxedOnly ? "请先在公共设施配置机器人仓库"
+                throw new IllegalStateException(boxedOnly ? "请选择任务的机器人仓库"
                         : "请先在公共设施配置溢出箱或溢出区域");
             }
             robotWarehouse.prepare();

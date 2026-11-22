@@ -19,7 +19,7 @@ def test_task_policy_round_trip_preserves_per_task_storage_choice() -> None:
         const policy = {mode: 'BOX_ONLY', loosePercent: 25, allowPartialBoxes: true,
             refillLoose: true};
         const draft = model.draftFromTask({detection: {coordinateRef: 'coordinate:point'},
-            cacheRegionRef: 'region:cache', classificationAreas: [{
+            cacheLocationRef: 'region:cache', classificationAreas: [{
                 categoryZoneRef: 'category-zone:zone', ruleId: 'DIRECT_BLOCK_ID',
                 markerSources: ['BLOCK'], storagePolicy: policy}]});
         process.stdout.write(JSON.stringify(draft.classificationAreas[0].storagePolicy));

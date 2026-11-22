@@ -297,25 +297,6 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
-        if ("/v1/storage-settings".equals(path)) {
-            if ("GET".equals(method)) {
-                requireEmpty(body);
-                sendJson(exchange, 200, service.storageSettings());
-            } else if ("PUT".equals(method)) {
-                JsonObject json = object(body);
-                requireFields(json, Set.of("revision", "settings"));
-                var settings = V2Json.gson().fromJson(json.get("settings"),
-                        dev.stowling.v2.model.StorageAutomationSettings.class);
-                if (settings == null) {
-                    throw invalid("settings must be an object");
-                }
-                sendJson(exchange, 200, service.saveStorageSettings(
-                        string(json, "revision"), settings));
-            } else {
-                throw methodNotAllowed("GET, PUT");
-            }
-            return;
-        }
         if ("/v1/status".equals(path)) {
             requireMethod(method, "GET");
             requireEmpty(body);
@@ -410,6 +391,26 @@ public final class V2ControlServer implements AutoCloseable {
             } else {
                 throw methodNotAllowed("GET, POST");
             }
+            return;
+        }
+        if ("/v1/coordinate-resources".equals(path)) {
+            if ("GET".equals(method)) {
+                requireEmpty(body);
+                sendJson(exchange, 200, service.coordinateDirectory());
+            } else {
+                requireMethod(method, "PUT");
+                JsonObject json = object(body);
+                requireFieldsAny(json, Set.of("revision", "resourceRef", "folderId"),
+                        Set.of("revision", "resourceRef"));
+                var ref = dev.stowling.v2.model.ResourceReference.parse(
+                        string(json, "resourceRef"));
+                sendJson(exchange, 200, service.editCoordinateDirectory(string(json, "revision"),
+                        catalog -> catalog.move(ref.encode(), optionalUuid(json, "folderId"))));
+            }
+            return;
+        }
+        if (coordinateCatalogRoute(exchange, method, path, body, "/v1/coordinate-folders", true)
+                || coordinateCatalogRoute(exchange, method, path, body, "/v1/warehouses", false)) {
             return;
         }
         if ("/v1/coordinates".equals(path)) {
@@ -895,12 +896,15 @@ public final class V2ControlServer implements AutoCloseable {
     private static dev.stowling.v2.model.TaskCleanupPolicy cleanupPolicy(JsonObject json) {
         if (!json.has("cleanupPolicy") || json.get("cleanupPolicy").isJsonNull()) return null;
         JsonObject policy = jsonObject(json.get("cleanupPolicy"), "cleanupPolicy");
-        requireFieldsAny(policy, Set.of("destinationRef", "resumeMode"), Set.of());
+        requireFieldsAny(policy, Set.of("destinationRef", "resumeMode", "emptyBoxRefs",
+                "packingPositionRef"), Set.of());
         String mode = optionalString(policy, "resumeMode");
         try {
             return new dev.stowling.v2.model.TaskCleanupPolicy(
                     optionalString(policy, "destinationRef"), mode == null || mode.isBlank() ? null
-                            : dev.stowling.v2.model.TaskResumeMode.valueOf(mode));
+                            : dev.stowling.v2.model.TaskResumeMode.valueOf(mode),
+                    policy.has("emptyBoxRefs") ? stringArray(policy, "emptyBoxRefs") : List.of(),
+                    optionalString(policy, "packingPositionRef"));
         } catch (IllegalArgumentException exception) {
             throw invalid("cleanupPolicy: " + exception.getMessage());
         }
@@ -954,7 +958,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "collectionEnabled"),
                 optionalBooleanValue(json, "classificationEnabled"),
                 detection,
-                string(json, "cacheRegionRef"),
+                string(json, "cacheLocationRef"),
                 autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority"),
                 optionalBooleanValue(json, "overflowEnabled"),
@@ -975,7 +979,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "collectionEnabled"),
                 optionalBooleanValue(json, "classificationEnabled"),
                 detection,
-                string(json, "cacheRegionRef"),
+                string(json, "cacheLocationRef"),
                 autoClassifyAreas(json),
                 optionalPriority(json, "collectionPriority"),
                 optionalBooleanValue(json, "overflowEnabled"),
@@ -1045,7 +1049,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "cleanupPolicy",
                 "cachePolicy",
                 "detection",
-                "cacheRegionRef",
+                "cacheLocationRef",
                 "classificationAreas",
                 "collectionPriority"
         ));
@@ -1058,7 +1062,7 @@ public final class V2ControlServer implements AutoCloseable {
     private static Set<String> autoClassifyRequiredFields(boolean revision) {
         Set<String> fields = new java.util.HashSet<>(Set.of(
                 "detection",
-                "cacheRegionRef",
+                "cacheLocationRef",
                 "classificationAreas"
         ));
         if (revision) {
@@ -1618,6 +1622,29 @@ public final class V2ControlServer implements AutoCloseable {
         }
     }
 
+    private boolean coordinateCatalogRoute(HttpExchange exchange, String method, String path,
+            String body, String route, boolean folder) throws IOException {
+        if (!path.equals(route) && !path.startsWith(route + "/")) return false;
+        boolean create = path.equals(route);
+        boolean delete = "DELETE".equals(method) && !create;
+        if (!delete) requireMethod(method, create ? "POST" : "PUT");
+        JsonObject json = object(body);
+        UUID id = create ? UUID.randomUUID() : pathUuid(path, route + "/");
+        Set<String> fields = delete ? Set.of("revision")
+                : folder ? Set.of("revision", "name") : Set.of("revision", "name", "members");
+        requireFields(json, fields);
+        String name = delete ? null : string(json, "name");
+        var members = delete || folder ? List.<String>of() : stringArray(json, "members");
+        var result = service.editCoordinateDirectory(string(json, "revision"), catalog -> {
+            boolean present = folder ? catalog.folders().stream().anyMatch(item -> id.equals(item.id()))
+                    : catalog.warehouses().stream().anyMatch(item -> id.equals(item.id()));
+            if (!create && !present) throw new V2NotFoundException("坐标资源不存在");
+            return folder ? catalog.editFolder(id, name) : catalog.editWarehouse(id, name, members);
+        });
+        sendJson(exchange, create ? 201 : 200, result);
+        return true;
+    }
+
     private static UUID pathUuid(String path, String prefix) {
         String value = path.substring(prefix.length());
         if (value.contains("/")) {
@@ -1837,10 +1864,7 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/", read("stowling-web/index.html", html)),
                 Map.entry("/index.html", read("stowling-web/index.html", html)),
                 Map.entry("/coordinates.html", read("stowling-web/coordinates.html", html)),
-                Map.entry(
-                        "/category-zones.html",
-                        read("stowling-web/category-zones.html", html)
-                ),
+                Map.entry("/category-zones.html", read("stowling-web/category-zones.html", html)),
                 Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
                 Map.entry("/theme.js", read("stowling-web/theme.js", js)),
                 Map.entry("/common.js", read("stowling-web/common.js", js)),
@@ -1870,7 +1894,7 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/tasks.js", read("stowling-web/tasks.js", js)),
                 Map.entry("/task-autosave.js", read("stowling-web/task-autosave.js", js)),
                 Map.entry("/warehouse-model.js", read("stowling-web/warehouse-model.js", js)),
-                Map.entry("/storage-settings.js", read("stowling-web/storage-settings.js", js)),
+                Map.entry("/resource-picker.js", read("stowling-web/resource-picker.js", js)),
                 Map.entry("/task-cleanup-settings.js",
                         read("stowling-web/task-cleanup-settings.js", js)),
                 Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),

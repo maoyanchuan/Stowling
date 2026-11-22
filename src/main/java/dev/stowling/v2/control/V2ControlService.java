@@ -8,7 +8,10 @@ import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.runtime.TaskRunSnapshot;
+import dev.stowling.v2.model.CoordinateCatalog;
 import java.util.List;
+import java.util.Map;
+import java.util.function.UnaryOperator;
 import java.util.UUID;
 
 public interface V2ControlService {
@@ -54,6 +57,20 @@ public interface V2ControlService {
     }
 
     ModuleListResponse modules();
+
+    default CoordinateDirectory coordinateDirectory() {
+        throw new UnsupportedOperationException("coordinate directory unavailable");
+    }
+
+    default CoordinateDirectory editCoordinateDirectory(
+            String revision, UnaryOperator<CoordinateCatalog> edit) {
+        throw new UnsupportedOperationException("coordinate directory unavailable");
+    }
+
+    record CoordinateDirectory(String revision, List<CoordinatePoint> coordinates,
+            List<RegionDefinition> regions, List<CategoryZoneDefinition> categoryZones,
+            CoordinateCatalog catalog, Map<String, List<String>> references) {
+    }
 
     CoordinateListResponse coordinates();
 

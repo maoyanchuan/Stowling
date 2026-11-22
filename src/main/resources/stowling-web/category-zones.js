@@ -1163,6 +1163,7 @@
             applyResponse(response, true);
             clearErrors();
             Stowling.showToast("分类区已保存");
+            announceDirectoryChange(response);
         } catch (error) {
             showError(error, "保存分类区失败");
         }
@@ -1191,6 +1192,7 @@
             applyResponse(response, true);
             clearErrors();
             Stowling.showToast("分类区已删除");
+            announceDirectoryChange(response);
         } catch (error) {
             showError(error, "删除分类区失败");
         }
@@ -1204,6 +1206,7 @@
             if (!newZoneEditor) {
                 throw new Error("分类区编辑器尚未准备完成");
             }
+            const knownIds = new Set(state.categoryZones.map(zone => zone.id));
             const response = await Stowling.request("/v1/category-zones", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1218,6 +1221,8 @@
             elements.form.hidden = true;
             clearErrors();
             Stowling.showToast("分类区已添加");
+            const created = response.categoryZones.find(zone => !knownIds.has(zone.id));
+            announceDirectoryChange(response, created ? "category-zone:" + created.id : undefined);
         } catch (error) {
             showError(error, "添加分类区失败");
         }
@@ -1309,6 +1314,15 @@
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
         void createZone();
+    });
+    /** @param {object} response @param {string} [created] @returns {void} */
+    function announceDirectoryChange(response, created) {
+        document.dispatchEvent(new CustomEvent("stowling:coordinate-directory-change",
+            {detail: {revision: response.revision, created}}));
+    }
+
+    document.addEventListener("stowling:coordinate-directory-saved", event => {
+        state.revision = event.detail.revision;
     });
     const embedded = document.body.dataset.page === "coordinates";
     Stowling.onConnected(() => loadAll());

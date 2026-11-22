@@ -252,9 +252,10 @@
 
     /** @param {string} selected @returns {void} */
     function renderOptions(selected) {
-        target.replaceChildren(new Option("选择基础区域或仓储布局", ""));
+        target.replaceChildren(new Option("选择普通区域", ""));
         for (const [value, label] of locations) target.append(new Option(label, value));
         target.value = locations.has(selected) ? selected : "";
+        window.StowlingResourcePicker?.group(target, undefined, "regions");
     }
 
     /** @param {object|null} task @returns {void} */
@@ -330,17 +331,13 @@
 
     /** @returns {Promise<void>} */
     async function loadResources() {
-        const [response, regions, zones] = await Promise.all([
+        const [response, resources] = await Promise.all([
             S.request(endpoint),
-            S.request("/v1/regions"),
-            S.request("/v1/category-zones")
+            window.StowlingResourcePicker.load()
         ]);
         locations = new Map();
-        for (const region of regions.regions) {
-            locations.set("region:" + region.id, "基础区域 · " + region.name);
-        }
-        for (const zone of zones.categoryZones) {
-            locations.set("category-zone:" + zone.id, "仓储布局 · " + zone.name);
+        for (const region of resources.regions) {
+            locations.set("region:" + region.id, "区域 · " + region.name);
         }
         if (current) renderOptions(target.value);
         ready = true;

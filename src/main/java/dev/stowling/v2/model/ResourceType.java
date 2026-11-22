@@ -3,6 +3,7 @@ package dev.stowling.v2.model;
 public enum ResourceType {
     COORDINATE("coordinate"),
     REGION("region"),
+    WAREHOUSE("warehouse"),
     CATEGORY_ZONE("category-zone"),
     TASK("task"),
     OUTPUT("output");

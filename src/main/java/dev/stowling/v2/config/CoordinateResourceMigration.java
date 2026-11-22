@@ -39,7 +39,7 @@ public final class CoordinateResourceMigration {
                 new AutoClassifyDefinition(definition.id(), definition.name(), definition.enabled(),
                         definition.collectionEnabled(), definition.classificationEnabled(),
                         definition.detectionCoordinateRef(), definition.pickupRadius(),
-                        definition.cacheRegionRef(), definition.classificationAreas().stream()
+                        definition.cacheLocationRef(), definition.classificationAreas().stream()
                                 .map(area -> new AutoClassifyAreaDefinition(area.categoryZoneRef(),
                                         area.storagePolicy() != null ? area.storagePolicy()
                                                 : config.categoryZones().stream().filter(zone ->

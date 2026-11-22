@@ -58,14 +58,14 @@
             destination.append(missing);
         }
         destination.value = ref;
-        const destinationRow = field("未满盒储存位置", destination);
+        const destinationRow = S.element("div", "");
+        destinationRow.append(field("未满盒储存位置", destination));
         const refill = Settings.switchControl(document.createElement("input"));
         refill.checked = Boolean(policy.refillLoose);
         const refillRow = field("散货不足设定槽位时拆盒补足", refill);
-        const link = S.element("a", "text-link", "管理仓储布局与公共设施 →");
-        link.href = "/coordinates.html#category-zones";
         content.append(field("储存模式", mode), slotRow, grid, partialRow,
-            destinationRow, refillRow, link);
+            destinationRow, refillRow);
+        window.StowlingResourcePicker?.group(destination);
         const disclosure = Settings.disclosure("储存模式", "", content);
         disclosure.root.classList.add("auto-storage-policy");
 

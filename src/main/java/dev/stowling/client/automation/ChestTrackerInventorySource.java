@@ -211,11 +211,14 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         if (isMarkerContainer(stock, blockId, dimension, sampleAreas)) {
             return false;
         }
-        boolean marker = stock.positions().stream().anyMatch(position ->
-                markerAreas.stream().anyMatch(area -> area.contains(position)));
-        boolean storage = stock.positions().stream().anyMatch(position ->
-                storageAreas.stream().anyMatch(area -> area.contains(position)));
+        boolean marker = inAreas(stock.positions(), markerAreas);
+        boolean storage = inAreas(stock.positions(), storageAreas);
         return !marker || storage || stock.positions().stream().anyMatch(allowedMarkers::contains);
+    }
+
+    static boolean inAreas(List<BlockPosition> positions, List<AreaBounds> areas) {
+        return positions.stream().anyMatch(position ->
+                areas.stream().anyMatch(area -> area.contains(position)));
     }
 
     private enum View { RAW, DISPLAY, MATERIAL }

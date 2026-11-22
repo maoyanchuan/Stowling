@@ -186,6 +186,7 @@
                 `${point.name} · ${point.x}, ${point.y}, ${point.z}`, point.id));
         }
         coordinate.value = settings?.coordinateId ?? "";
+        window.StowlingResourcePicker?.group(coordinate, "coordinate");
         updateSource();
         remove.hidden = editor.id === null;
         showMessage("");

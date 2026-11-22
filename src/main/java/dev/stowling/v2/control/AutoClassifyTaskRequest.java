@@ -11,7 +11,7 @@ public record AutoClassifyTaskRequest(
         Boolean collectionEnabled,
         Boolean classificationEnabled,
         AutoClassifyDetectionRequest detection,
-        String cacheRegionRef,
+        String cacheLocationRef,
         List<AutoClassifyAreaRequest> classificationAreas,
         TaskPriority collectionPriority,
         Boolean overflowEnabled,
@@ -21,12 +21,12 @@ public record AutoClassifyTaskRequest(
 ) {
     public AutoClassifyTaskRequest(String name, Boolean enabled,
             Boolean collectionEnabled, Boolean classificationEnabled,
-            AutoClassifyDetectionRequest detection, String cacheRegionRef,
+            AutoClassifyDetectionRequest detection, String cacheLocationRef,
             List<AutoClassifyAreaRequest> classificationAreas, TaskPriority collectionPriority,
             Boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
             String overflowDestinationRef) {
         this(name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority, overflowEnabled,
+                cacheLocationRef, classificationAreas, collectionPriority, overflowEnabled,
                 cleanupPolicy, overflowDestinationRef, null);
     }
 
@@ -36,14 +36,14 @@ public record AutoClassifyTaskRequest(
             Boolean collectionEnabled,
             Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection,
-            String cacheRegionRef,
+            String cacheLocationRef,
             List<AutoClassifyAreaRequest> classificationAreas,
             TaskPriority collectionPriority,
             Boolean overflowEnabled,
             TaskCleanupPolicy cleanupPolicy
     ) {
         this(name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority, overflowEnabled,
+                cacheLocationRef, classificationAreas, collectionPriority, overflowEnabled,
                 cleanupPolicy, null);
     }
 
@@ -53,13 +53,13 @@ public record AutoClassifyTaskRequest(
             Boolean collectionEnabled,
             Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection,
-            String cacheRegionRef,
+            String cacheLocationRef,
             List<AutoClassifyAreaRequest> classificationAreas,
             TaskPriority collectionPriority,
             Boolean overflowEnabled
     ) {
         this(name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority, overflowEnabled, null);
+                cacheLocationRef, classificationAreas, collectionPriority, overflowEnabled, null);
     }
 
     public AutoClassifyTaskRequest(
@@ -68,12 +68,12 @@ public record AutoClassifyTaskRequest(
             Boolean collectionEnabled,
             Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection,
-            String cacheRegionRef,
+            String cacheLocationRef,
             List<AutoClassifyAreaRequest> classificationAreas,
             TaskPriority collectionPriority
     ) {
         this(name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority, null);
+                cacheLocationRef, classificationAreas, collectionPriority, null);
     }
 
     public AutoClassifyTaskRequest {

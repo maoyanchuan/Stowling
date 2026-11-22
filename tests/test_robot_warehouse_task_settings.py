@@ -20,24 +20,21 @@ const requests = [];
 const messages = [];
 let failure = false;
 let connected = true;
-const settings = {robotWarehouseEnabled: false, overflowCoordinateIds: ["overflow"],
-    overflowRegionIds: [], robotWarehouseCoordinateIds: ["warehouse"],
-    robotWarehouseRegionIds: [], emptyBoxCoordinateIds: ["supply"]};
 const state = {
-    revision: "task-revision", items: [], allTasks: [], ready: true, loading: false,
+    revision: "task-revision", draftRevision: "task-revision", items: [], allTasks: [], ready: true, loading: false,
     busy: false, dirty: true, expanded: true, active: false,
     resources: {coordinates: [{id: "pickup"}], regions: [{id: "cache"}],
-        categoryZones: [{id: "all-items-zone"}]},
+        categoryZones: [{id: "all-items-zone"}], warehouses: [{id: "warehouse"}]},
     draft: {...Auto.newDraft(), id: "all-items", name: "全物品",
-        overflowDestinationRef: "coordinate:legacy"},
-    warehouseSnapshot: {revision: "warehouse-revision", settings}
+        overflowDestinationRef: "warehouse:warehouse"}
 };
 const elements = {
     name: {value: "全物品"}, point: {value: "pickup"}, radius: {value: "8"},
-    cache: {value: "cache"}, priority: {value: "NORMAL"},
+    cache: {value: "region:cache"}, priority: {value: "NORMAL"},
     cacheMode: {value: "PACK_FIRST"}, cacheThreshold: {value: "80"},
     collectEnabled: {checked: true}, classifyEnabled: {checked: true},
-    warehouseEnabled: {checked: true}
+    warehouseEnabled: {checked: true}, warehouse: {value: "warehouse:warehouse"},
+    cacheEnabled: {checked: false}
 };
 const cleanup = {
     /** @returns {object} */
@@ -61,6 +58,12 @@ const Stowling = {
     showToast() {},
     /** @returns {void} */
     handleError() {}
+};
+const endpoint = "/v1/auto-classify-tasks";
+const Autosave = {
+    write(path, method, body) {
+        return Stowling.request(path, {method, body: JSON.stringify(body)});
+    }
 };
 globalThis.document = {
     /** @returns {void} */
@@ -99,7 +102,7 @@ def run_settings(expression: str) -> Any:
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_task_switch_saves_only_the_task_and_uses_shared_warehouse_locations(enabled: bool) -> None:
+def test_task_switch_saves_only_the_task_and_uses_its_selected_warehouse(enabled: bool) -> None:
     result = run_settings(
         """(async () => {
             elements.warehouseEnabled.checked = ENABLED;
@@ -112,23 +115,15 @@ def test_task_switch_saves_only_the_task_and_uses_shared_warehouse_locations(ena
     task = result["requests"][0]
     assert task["url"] == "/v1/auto-classify-tasks/all-items"
     assert task["body"]["overflowEnabled"] is enabled
-    assert task["body"]["overflowDestinationRef"] == ""
+    assert task["body"]["overflowDestinationRef"] == ("warehouse:warehouse" if enabled else "")
     assert "enabled" not in task["body"]
-    assert result["state"]["warehouseSnapshot"]["settings"] == {
-        "robotWarehouseEnabled": False,
-        "overflowCoordinateIds": ["overflow"],
-        "overflowRegionIds": [],
-        "robotWarehouseCoordinateIds": ["warehouse"],
-        "robotWarehouseRegionIds": [],
-        "emptyBoxCoordinateIds": ["supply"],
-    }
     assert result["state"]["dirty"] is False
 
 
 def test_overflow_boxes_are_not_used_when_the_robot_warehouse_is_unconfigured() -> None:
     result = run_settings(
         """(async () => {
-            settings.robotWarehouseCoordinateIds = [];
+            elements.warehouse.value = "";
             await saveTask();
             return {requests, messages, dirty: state.dirty};
         })()"""
@@ -137,13 +132,13 @@ def test_overflow_boxes_are_not_used_when_the_robot_warehouse_is_unconfigured() 
     assert result["requests"] == []
     assert result["dirty"] is True
     assert result["messages"][-1]["error"] is True
-    assert "坐标 → 公共设施 → 机器人仓库" in result["messages"][-1]["text"]
+    assert "请选择溢出仓库" in result["messages"][-1]["text"]
 
 
 def test_disabling_a_task_does_not_require_a_configured_warehouse() -> None:
     result = run_settings(
         """(async () => {
-            settings.robotWarehouseCoordinateIds = [];
+            elements.warehouse.value = "";
             elements.warehouseEnabled.checked = false;
             await saveTask();
             return requests;

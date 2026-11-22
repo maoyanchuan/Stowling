@@ -19,6 +19,7 @@ import dev.stowling.v2.model.TaskPriority;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,7 +36,7 @@ class ConfigStoreTest {
                 true, dev.stowling.v2.model.CacheIntakePolicy.Mode.CLASSIFY_FIRST, 65);
         var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
                 true, true, original.detectionCoordinateRef(), original.pickupRadius(),
-                original.cacheRegionRef(), original.classificationAreas(),
+                original.cacheLocationRef(), original.classificationAreas(),
                 original.collectionPriority(), original.overflowEnabled(), original.cleanupPolicy(),
                 null, original.overflowDestinationRef(), policy);
         var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
@@ -102,7 +103,7 @@ class ConfigStoreTest {
                 dev.stowling.v2.model.StorageMode.MIXED, 35, true, null, true, 19,
                 original.detectionCoordinateRef());
         var automatic = new AutoClassifyDefinition(original.id(), original.name(), false,
-                true, true, original.detectionCoordinateRef(), 8, original.cacheRegionRef(),
+                true, true, original.detectionCoordinateRef(), 8, original.cacheLocationRef(),
                 List.of(new AutoClassifyAreaDefinition(originalArea.categoryZoneRef(), policy)),
                 TaskPriority.NORMAL);
         var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
@@ -133,7 +134,7 @@ class ConfigStoreTest {
                 dev.stowling.v2.model.TaskResumeMode.RESTART);
         var automatic = new AutoClassifyDefinition(original.id(), original.name(), original.enabled(),
                 original.collectionEnabled(), original.classificationEnabled(),
-                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
+                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheLocationRef(),
                 original.classificationAreas(), original.collectionPriority(), false, policy);
         AppConfig config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
                 AutoClassifyTaskFactory.tasks(automatic, List.of()), initial.regions(),
@@ -149,9 +150,9 @@ class ConfigStoreTest {
         legacy.getAsJsonArray("tasks").forEach(task -> task.getAsJsonObject().remove("cleanupPolicy"));
         Files.writeString(path, legacy.toString());
         var reopened = new ConfigStore(path).loadOrReset().config();
-        assertEquals(original.cacheRegionRef(), reopened.autoClassifyTasks().getFirst()
+        assertEquals(original.cacheLocationRef(), reopened.autoClassifyTasks().getFirst()
                 .cleanupPolicy().destinationRef());
-        assertTrue(reopened.tasks().stream().allMatch(task -> original.cacheRegionRef()
+        assertTrue(reopened.tasks().stream().allMatch(task -> original.cacheLocationRef()
                 .equals(task.cleanupPolicy().destinationRef())));
     }
 
@@ -167,51 +168,6 @@ class ConfigStoreTest {
             assertEquals(config, new ConfigStore(path).loadOrReset().config());
             assertEquals(content, Files.readString(path));
         }
-    }
-
-    @Test
-    void migratesTaskRecognitionToLayoutWithoutChangingBindingsOrStoragePolicy() throws Exception {
-        AppConfig original = automaticConfiguration(false);
-        Path path = directory.resolve("legacy-recognition.json");
-        var store = new ConfigStore(path);
-        store.save(store.loadOrReset().revision(), original);
-        var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
-        json.addProperty("schemaVersion", 14);
-        var area = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
-                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
-        area.addProperty("ruleId", "MARKER_CONTAINER_CONTENTS");
-        var sources = new com.google.gson.JsonArray();
-        sources.add("CONTAINER_CONTENTS");
-        area.add("markerSources", sources);
-        var binding = json.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
-                .getAsJsonArray("bindings").get(0).getAsJsonObject();
-        area.add("storagePolicy", binding.get("storagePolicy").deepCopy());
-        var branch = json.getAsJsonArray("tasks").get(1).getAsJsonObject()
-                .getAsJsonArray("steps").get(1).getAsJsonObject().getAsJsonArray("steps");
-        for (int index = 0; index < 3; index++) branch.remove(0);
-        var parameters = branch.get(0).getAsJsonObject().getAsJsonObject("parameters");
-        parameters.addProperty("categoryRuleId", "MARKER_CONTAINER_CONTENTS");
-        parameters.addProperty("markerSources", "CONTAINER_CONTENTS");
-        Files.writeString(path, json.toString());
-
-        var loaded = new ConfigStore(path).loadOrReset();
-        assertEquals(original.categoryZones(), loaded.config().categoryZones());
-        assertEquals(original.categoryZones().getFirst().bindings().getFirst().storagePolicy(),
-                loaded.config().autoClassifyTasks().getFirst().classificationAreas()
-                        .getFirst().storagePolicy());
-        assertEquals(original.tasks().getFirst(), loaded.config().tasks().getFirst());
-        var steps = loaded.config().tasks().get(1).steps().get(1).steps();
-        assertEquals("SCAN_CATEGORY_MARKERS", steps.getFirst().moduleId());
-        assertTrue(steps.stream().allMatch(step ->
-                !step.parameters().containsKey("categoryRuleId")
-                        && !step.parameters().containsKey("markerSources")));
-        assertEquals(loaded.config(), dev.stowling.v2.model.TaskFlowNormalizer
-                .normalize(loaded.config()));
-        store.save(loaded.revision(), loaded.config());
-        var savedArea = JsonParser.parseString(Files.readString(path)).getAsJsonObject()
-                .getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
-                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
-        assertEquals(java.util.Set.of("categoryZoneRef", "storagePolicy"), savedArea.keySet());
     }
 
     @Test
@@ -249,19 +205,24 @@ class ConfigStoreTest {
                 new AreaBounds(10, 64, 0, 12, 64, 0),
                 new AreaBounds(10, 64, 2, 12, 64, 2), "DIRECT_BLOCK_ID");
         var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Storage", List.of(binding));
+        var warehouse = new dev.stowling.v2.model.CoordinateCatalog.Warehouse(
+                UUID.randomUUID(), "Overflow", List.of("coordinate:" + point.id()));
+        var catalog = new dev.stowling.v2.model.CoordinateCatalog(
+                List.of(), List.of(warehouse), Map.of());
         var definition = new AutoClassifyDefinition(UUID.randomUUID(), "Automatic",
                 false, true, true, "coordinate:" + point.id(), 8, "region:" + region.id(),
                 List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id())),
-                TaskPriority.NORMAL, overflowEnabled);
+                TaskPriority.NORMAL, overflowEnabled, null, null,
+                overflowEnabled ? "warehouse:" + warehouse.id() : null);
         return new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
                 AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(region),
-                List.of(zone), List.of(), List.of(), List.of(definition));
+                List.of(zone), List.of(), List.of(), List.of(definition), catalog);
     }
 
     @Test
     void rejectsOldSchemaWithoutOverwritingTheFile() throws Exception {
         Path path = directory.resolve("stowling.json");
-        String content = "{\"schemaVersion\":6,\"pickupRegions\":[]}";
+        String content = "{\"schemaVersion\":15,\"coordinates\":[],\"tasks\":[]}";
         Files.writeString(path, content);
         ConfigStore store = new ConfigStore(path);
 
@@ -299,7 +260,7 @@ class ConfigStoreTest {
     }
 
     @Test
-    void keepsACurrentSchemaSevenConfiguration() throws Exception {
+    void keepsACurrentConfiguration() throws Exception {
         Path path = directory.resolve("stowling.json");
         ConfigStore store = new ConfigStore(path);
         V2ConfigSnapshot initial = store.loadOrReset();
@@ -317,7 +278,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [{
                         "id": "00000000-0000-0000-0000-000000000001",
                         "name": "Home",
@@ -343,7 +304,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [{
                         "id": "00000000-0000-0000-0000-000000000001",
                         "name": "Home",
@@ -382,7 +343,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [],
                     "tasks": [{
                         "id": "00000000-0000-0000-0000-000000000010",
@@ -449,7 +410,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [{
                         "id": "00000000-0000-0000-0000-000000000001",
                         "name": "Drops",
@@ -504,7 +465,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("stowling.json");
         Files.writeString(path, """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [],
                     "tasks": [],
                     "categoryZones": [{
@@ -537,96 +498,11 @@ class ConfigStoreTest {
     }
 
     @Test
-    void upgradesSchemaTwelveCategoryZonesAsManualBindings() throws Exception {
-        Path path = directory.resolve("stowling.json");
-        Files.writeString(path, """
-                {
-                    "schemaVersion": 12,
-                    "coordinates": [],
-                    "tasks": [],
-                    "categoryZones": [{
-                        "id": "00000000-0000-0000-0000-000000000002",
-                        "name": "Existing",
-                        "bindings": [{
-                            "id": "00000000-0000-0000-0000-000000000003",
-                            "markerArea": {
-                                "firstX": 7, "firstY": 64, "firstZ": 7,
-                                "secondX": 18, "secondY": 64, "secondZ": 7
-                            },
-                            "storageArea": {
-                                "firstX": 7, "firstY": 64, "firstZ": 5,
-                                "secondX": 18, "secondY": 64, "secondZ": 6
-                            },
-                            "ruleId": "DIRECT_BLOCK_ID"
-                        }]
-                    }]
-                }
-                """);
-        ConfigStore store = new ConfigStore(path);
-
-        var snapshot = store.loadOrReset();
-
-        assertEquals(
-                AppConfig.CURRENT_SCHEMA_VERSION,
-                snapshot.config().schemaVersion()
-        );
-        assertEquals(null, snapshot.config().categoryZones()
-                .getFirst().expansion());
-        assertTrue(!Files.exists(directory.resolve("stowling.json.bak")));
-    }
-
-    @Test
-    void upgradesSchemaThirteenSingleTemplateExpansion() throws Exception {
-        Path path = directory.resolve("stowling.json");
-        Files.writeString(path, """
-                {
-                    "schemaVersion": 13,
-                    "coordinates": [],
-                    "tasks": [],
-                    "categoryZones": [{
-                        "id": "00000000-0000-0000-0000-000000000002",
-                        "name": "Existing auto",
-                        "bindings": [{
-                            "id": "00000000-0000-0000-0000-000000000003",
-                            "markerArea": {
-                                "firstX": 0, "firstY": 64, "firstZ": 20,
-                                "secondX": 4, "secondY": 64, "secondZ": 20
-                            },
-                            "storageArea": {
-                                "firstX": 0, "firstY": 64, "firstZ": 18,
-                                "secondX": 4, "secondY": 64, "secondZ": 18
-                            },
-                            "ruleId": "DIRECT_BLOCK_ID"
-                        }],
-                        "expansion": {
-                            "area": {
-                                "firstX": 0, "firstY": 63, "firstZ": 17,
-                                "secondX": 4, "secondY": 65, "secondZ": 21
-                            },
-                            "direction": "X_POSITIVE",
-                            "step": 5
-                        }
-                    }]
-                }
-                """);
-        ConfigStore store = new ConfigStore(path);
-
-        var snapshot = store.loadOrReset();
-
-        assertEquals(
-                AppConfig.CURRENT_SCHEMA_VERSION,
-                snapshot.config().schemaVersion()
-        );
-        assertEquals(1, snapshot.config().categoryZones()
-                .getFirst().expansion().templateCount());
-    }
-
-    @Test
     void rejectsInvalidCurrentSchemaWithoutOverwritingTheFile() throws Exception {
         Path path = directory.resolve("stowling.json");
         String content = """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [],
                     "tasks": [],
                     "radius": 8
@@ -646,7 +522,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("stowling.json");
         String content = """
                 {
-                    "schemaVersion": 7,
+                    "schemaVersion": 16,
                     "coordinates": [{
                         "id": "00000000-0000-0000-0000-000000000001",
                         "name": "Home",

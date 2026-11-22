@@ -40,24 +40,6 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_robot_warehouse_locations_are_independent_of_overflow_facilities() -> None:
-    result = _run(
-        """
-        (() => {
-            const model = window.StowlingAutoClassifyTaskModel;
-            const oldSettings = {overflowCoordinateIds: ["old"], emptyBoxCoordinateIds: ["box"]};
-            const saved = {...oldSettings, robotWarehouseEnabled: false,
-                robotWarehouseCoordinateIds: ["point"], robotWarehouseRegionIds: ["area"]};
-            return {reopened: model.warehouseDraft(saved),
-                migrated: model.warehouseDraft(oldSettings)};
-        })()
-        """
-    )
-
-    assert result["reopened"] == {"enabled": True, "locations": ["coordinate:point", "region:area"]}
-    assert result["migrated"] == {"enabled": False, "locations": []}
-
-
 def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     result = _run(
         """
@@ -66,7 +48,7 @@ def test_task_configures_unstackable_sorting_through_a_layout() -> None:
             const draft = {
                 ...model.newDraft(),
                 coordinateId: "pickup",
-                cacheRegionId: "cache",
+                cacheLocationRef: "region:cache",
                 classificationAreas: [{ categoryZoneId: "tools" }],
             };
             const resources = {
@@ -99,8 +81,8 @@ def test_new_draft_has_contract_defaults_without_a_name() -> None:
     assert result == {
         "id": "",
         "coordinateId": "",
-        "pickupRadius": "8",
-        "cacheRegionId": "",
+        "pickupRadius": "",
+        "cacheLocationRef": "",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
@@ -112,6 +94,7 @@ def test_new_draft_has_contract_defaults_without_a_name() -> None:
         "overflowEnabled": False,
         "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
+        "facilities": {},
     }
 
 
@@ -130,7 +113,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
                     coordinateRef: "coordinate:coordinate-1",
                     pickupRadius: 12,
                 },
-                cacheRegionRef: "region:cache-1",
+                cacheLocationRef: "region:cache-1",
                 classificationAreas: [{
                     categoryZoneRef: "category-zone:ore-zone",
                     ruleId: "DIRECT_BLOCK_ID",
@@ -155,7 +138,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "id": "auto-1",
         "coordinateId": "coordinate-1",
         "pickupRadius": "12",
-        "cacheRegionId": "cache-1",
+        "cacheLocationRef": "region:cache-1",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
@@ -171,6 +154,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "overflowEnabled": False,
         "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
+        "facilities": {},
     }
 
 
@@ -189,7 +173,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
                     coordinateRef: "coordinate-1",
                     pickupRadius: 8,
                 },
-                cacheRegionRef: "coordinate:region-1",
+                cacheLocationRef: "",
                 classificationAreas: [{
                     categoryZoneRef: "category-zone:",
                     ruleId: "DIRECT_BLOCK_ID",
@@ -205,7 +189,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "id": "auto-2",
         "coordinateId": "",
         "pickupRadius": "8",
-        "cacheRegionId": "",
+        "cacheLocationRef": "",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
@@ -218,6 +202,7 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "overflowEnabled": False,
         "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
+        "facilities": {},
     }
 
 
@@ -230,6 +215,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
             const resources = {
                 coordinates: [{ id: "coordinate-1" }],
                 regions: [{ id: "region-1" }],
+                warehouses: [{id: "overflow"}],
                 categoryZones: [{
                     id: "zone-1",
                     bindings: [{ id: "binding-1", ruleId: "DIRECT_BLOCK_ID" }],
@@ -248,7 +234,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
                 name: "自动收集",
                 coordinateId: "coordinate-1",
                 pickupRadius: " 8 ",
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
                     ruleId: "DIRECT_BLOCK_ID",
@@ -265,7 +251,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
             };
             const body = model.payload(draft, resources, items);
             const enabledDraft = { ...draft, name: "自动收集 2", enabled: true,
-                overflowEnabled: true, overflowDestinationRef: "coordinate:overflow",
+                overflowEnabled: true, overflowDestinationRef: "warehouse:overflow",
                 cleanupDestinationRef: "coordinate:coordinate-1" };
             const enabledBody = model.payload(enabledDraft, resources, items);
             const item = {
@@ -298,12 +284,12 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "classificationEnabled": True,
         "overflowEnabled": False,
         "overflowDestinationRef": "",
-        "cleanupPolicy": {"destinationRef": "region:region-1", "resumeMode": "RESTART"},
+        "cleanupPolicy": {"destinationRef": None, "resumeMode": "RESTART"},
         "detection": {
             "coordinateRef": "coordinate:coordinate-1",
             "pickupRadius": 8,
         },
-        "cacheRegionRef": "region:region-1",
+        "cacheLocationRef": "region:region-1",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
@@ -322,7 +308,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "collectionEnabled",
         "classificationEnabled",
         "detection",
-        "cacheRegionRef",
+        "cacheLocationRef",
         "cachePolicy",
         "classificationAreas",
         "collectionPriority",
@@ -330,13 +316,13 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert result["detectionKeys"] == ["coordinateRef", "pickupRadius"]
     assert result["enabled"] is True
     assert result["overflow"] is True
-    assert result["destination"] == "coordinate:overflow"
+    assert result["destination"] == "warehouse:overflow"
     assert result["cleanup"] == "coordinate:coordinate-1"
     assert result["roundTrip"] == {
         "id": "auto-1",
         "coordinateId": "coordinate-1",
         "pickupRadius": "8",
-        "cacheRegionId": "region-1",
+        "cacheLocationRef": "region:region-1",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
@@ -352,6 +338,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "overflowEnabled": False,
         "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
+        "facilities": {"destinationRef": None, "resumeMode": "RESTART"},
     }
 
 
@@ -369,7 +356,7 @@ def test_legacy_recognition_is_discarded_without_requiring_category_rules() -> N
             const draft = {
                 ...model.newDraft([]),
                 coordinateId: "coordinate-1",
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
                     ruleId: "UNKNOWN_LEGACY_RULE",
@@ -430,7 +417,7 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
                 name: "自动分类",
                 coordinateId: "coordinate-1",
                 pickupRadius: "8",
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [area],
                 collectionPriority: "NORMAL",
                 enabled: false,
@@ -440,7 +427,7 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
             return model.validateDraft({
                 ...base,
                 coordinateId: "deleted-coordinate",
-                cacheRegionId: "deleted-region",
+                cacheLocationRef: "region:deleted-region",
                 classificationAreas: [{
                     ...area,
                     categoryZoneId: "deleted-zone",
@@ -452,7 +439,7 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
 
     assert result == [
         "所选掉落物检测点不存在，请刷新后重试",
-        "所选缓存区域不存在，请刷新后重试",
+        "所选缓存位置不存在，请重新选择",
         "分类选区引用的分类区不存在，请刷新后重试",
     ]
 
@@ -468,7 +455,7 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
         ("-1", False),
         ("1.5", False),
         ("1e1", False),
-        ("", False),
+        ("", True),
     ],
 )
 def test_pickup_radius_accepts_only_integer_range(
@@ -498,7 +485,7 @@ def test_pickup_radius_accepts_only_integer_range(
                 name: "自动分类",
                 coordinateId: "coordinate-1",
                 pickupRadius: {json.dumps(radius)},
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [{{
                     categoryZoneId: "zone-1",
                     ruleId: "DIRECT_BLOCK_ID",
@@ -517,7 +504,7 @@ def test_pickup_radius_accepts_only_integer_range(
     if valid:
         assert result == []
     else:
-        assert result == ["拾取半径需为1～64的整数"]
+        assert result == ["任务覆盖半径需为 1 到 64 格"]
 
 
 def test_collection_priority_and_enabled_are_strictly_validated() -> None:
@@ -545,7 +532,7 @@ def test_collection_priority_and_enabled_are_strictly_validated() -> None:
                 name: "自动分类",
                 coordinateId: "coordinate-1",
                 pickupRadius: "8",
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
                     ruleId: "DIRECT_BLOCK_ID",
@@ -592,7 +579,7 @@ def test_phase_enable_flags_are_strict_and_round_trip() -> None:
                 name: "按阶段启用",
                 coordinateId: "coordinate-1",
                 pickupRadius: "8",
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [{
                     categoryZoneId: "zone-1",
                     ruleId: "DIRECT_BLOCK_ID",
@@ -642,7 +629,7 @@ def test_classification_areas_reject_duplicate_zones() -> None:
             return model.validateDraft({
                 ...model.newDraft([]),
                 coordinateId: "coordinate-1",
-                cacheRegionId: "region-1",
+                cacheLocationRef: "region:region-1",
                 classificationAreas: [
                     { categoryZoneId: "zone-1" },
                     { categoryZoneId: "zone-1" },
@@ -660,7 +647,7 @@ def test_cache_policy_defaults_and_selected_settings_survive_payload_round_trip(
         """
         (() => {
             const model = window.StowlingAutoClassifyTaskModel;
-            const draft = {...model.newDraft(), coordinateId: "pickup", cacheRegionId: "cache",
+            const draft = {...model.newDraft(), coordinateId: "pickup", cacheLocationRef: "region:cache",
                 classificationAreas: [{categoryZoneId: "zone"}],
                 cachePolicy: {enabled: true, mode: "CLASSIFY_FIRST", thresholdPercent: 65}};
             const resources = {coordinates: [{id: "pickup"}], regions: [{id: "cache"}],
@@ -700,7 +687,7 @@ def test_packing_switch_survives_save_without_losing_its_settings(enabled: bool)
         f"""
         (() => {{
             const model = window.StowlingAutoClassifyTaskModel;
-            const draft = {{...model.newDraft(), coordinateId: "pickup", cacheRegionId: "cache",
+            const draft = {{...model.newDraft(), coordinateId: "pickup", cacheLocationRef: "region:cache",
                 classificationAreas: [{{categoryZoneId: "zone"}}],
                 cachePolicy: {{enabled: {json.dumps(enabled)},
                     mode: "CLASSIFY_FIRST", thresholdPercent: 65}}}};

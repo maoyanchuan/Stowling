@@ -119,6 +119,10 @@ globalThis.window = {
     setTimeout(callback) { pendingAutosave = callback; return 1; },
     /** @returns {void} */
     clearTimeout() { pendingAutosave = undefined; },
+    StowlingResourcePicker: {
+        load: async () => ({regions: [{id: "stock", name: "Stock"}]}),
+        group: () => {}
+    },
     StowlingSettings: {
         /** @param {Element} input @returns {Element} */
         switchControl(input) { return input; },

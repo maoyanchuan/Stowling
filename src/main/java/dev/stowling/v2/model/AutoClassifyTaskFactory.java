@@ -43,8 +43,13 @@ public final class AutoClassifyTaskFactory {
                 definition.interruptionTaskId()
         ).encode();
         Map<String, String> collectionParameters = new LinkedHashMap<>();
-        collectionParameters.put(ConfigValidator.PICKUP_RADIUS,
-                Integer.toString(definition.pickupRadius()));
+        if (definition.pickupRadius() == null) {
+            collectionParameters.put(ConfigValidator.DEFAULT_PICKUP_RADIUS,
+                    Integer.toString(AutoClassifyDefinition.DEFAULT_PICKUP_RADIUS));
+        } else {
+            collectionParameters.put(ConfigValidator.PICKUP_RADIUS,
+                    Integer.toString(definition.pickupRadius()));
+        }
         if (definition.cachePolicy().enabled()) {
             collectionParameters.put("cacheIntakeMode", definition.cachePolicy().mode().name());
             collectionParameters.put("cacheThresholdPercent",
@@ -55,7 +60,7 @@ public final class AutoClassifyTaskFactory {
         List<TaskStep> collectionSteps = new ArrayList<>(
                 TaskFlowTemplates.collect(
                         definition.detectionCoordinateRef(),
-                        definition.cacheRegionRef(),
+                        definition.cacheLocationRef(),
                         collectionParameters
                 )
         );
@@ -78,7 +83,7 @@ public final class AutoClassifyTaskFactory {
                     UUID.randomUUID(), area.categoryZoneRef()));
             classificationSteps.addAll(
                     TaskFlowTemplates.sortByCategoryZone(
-                            definition.cacheRegionRef(),
+                            definition.cacheLocationRef(),
                             area.categoryZoneRef(),
                             scan,
                             preResolveSteps
@@ -86,10 +91,11 @@ public final class AutoClassifyTaskFactory {
             );
         }
         if (definition.overflowEnabled()) {
-            classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheRegionRef()));
+            classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheLocationRef(),
+                    definition.overflowDestinationRef()));
         }
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
-                definition.cacheRegionRef(), Map.of()
+                definition.cacheLocationRef(), Map.of()
         ));
         return List.of(
                 new TaskDefinition(
@@ -124,7 +130,7 @@ public final class AutoClassifyTaskFactory {
                         TaskPriority.NORMAL,
                         false,
                         TaskFlowTemplates.interruption(
-                                definition.cacheRegionRef()
+                                definition.cacheLocationRef()
                         ),
                         TaskInterruptionMode.NONE,
                         null,

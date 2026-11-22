@@ -157,6 +157,7 @@
             elements.moveCoordinate.append(missing);
         }
         elements.moveCoordinate.value = selectedId;
+        window.StowlingResourcePicker?.group(elements.moveCoordinate, "coordinate");
     }
 
     /**

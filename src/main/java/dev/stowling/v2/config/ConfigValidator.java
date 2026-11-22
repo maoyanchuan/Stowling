@@ -111,6 +111,8 @@ public final class ConfigValidator {
             "allowEmptyContainerScan";
     public static final String MARKER_SOURCES = "markerSources";
     public static final String PICKUP_RADIUS = "pickupRadius";
+    public static final String DEFAULT_PICKUP_RADIUS = "defaultPickupRadius";
+    public static final String CACHE_LOCATION_REF = "cacheLocationRef";
     public static final String RETRY_ON_FAILURE = "retryOnFailure";
     public static final String SCAN_CONTENTS = "scanContents";
     public static final String ALLOW_CACHE_FALLBACK =
@@ -230,6 +232,7 @@ public final class ConfigValidator {
             );
         }
         validateTriggers(config.triggers(), coordinates, regions, tasks);
+        validateCoordinateCatalog(config, coordinates, regions, categoryZones);
         validateAutoClassifyTasks(
                 config.autoClassifyTasks(),
                 config.triggers(),
@@ -268,14 +271,7 @@ public final class ConfigValidator {
                         "auto classify coordinate does not exist"
                 );
             }
-            ResourceReference region = ResourceReference.parse(
-                    definition.cacheRegionRef()
-            );
-            if (!regions.containsKey(region.uuid())) {
-                throw new V2ValidationException(
-                        "auto classify cache region does not exist"
-                );
-            }
+            requireSpatialReference(definition.cacheLocationRef(), coordinates, regions);
             if (definition.unstackableRegionRef() != null && !regions.containsKey(
                     ResourceReference.parse(definition.unstackableRegionRef()).uuid())) {
                 throw new V2ValidationException("不可堆叠储存区不存在");
@@ -343,11 +339,74 @@ public final class ConfigValidator {
     private static void requireCleanupDestination(
             dev.stowling.v2.model.TaskCleanupPolicy policy,
             Map<UUID, CoordinatePoint> coordinates, Map<UUID, RegionDefinition> regions) {
-        if (policy.destinationRef() == null) return;
-        ResourceReference ref = ResourceReference.parse(policy.destinationRef());
-        if (ref.type() == ResourceType.COORDINATE && !coordinates.containsKey(ref.uuid())
-                || ref.type() == ResourceType.REGION && !regions.containsKey(ref.uuid())) {
-            throw new V2ValidationException("中断存放位置引用的坐标或区域不存在");
+        requireSpatialReference(policy.destinationRef(), coordinates, regions);
+        requireSpatialReference(policy.packingPositionRef(), coordinates, regions);
+        policy.emptyBoxRefs().forEach(ref -> requireSpatialReference(ref, coordinates, regions));
+    }
+
+    private static void requireSpatialReference(String value, Map<UUID, CoordinatePoint> points,
+            Map<UUID, RegionDefinition> regions) {
+        if (value == null) return;
+        var ref = ResourceReference.parse(value);
+        boolean exists = switch (ref.type()) {
+            case COORDINATE -> points.containsKey(ref.uuid());
+            case REGION -> regions.containsKey(ref.uuid());
+            case WAREHOUSE -> true; // Checked against the directory after step validation.
+            default -> false;
+        };
+        if (!exists) throw new V2ValidationException("坐标资源不存在或类型不符：" + value);
+    }
+
+    private static void validateCoordinateCatalog(AppConfig config,
+            Map<UUID, CoordinatePoint> coordinates, Map<UUID, RegionDefinition> regions,
+            Map<UUID, CategoryZoneDefinition> zones) {
+        var catalog = config.coordinateCatalog();
+        requireUniqueNames(catalog.folders().stream().map(TaskFolderDefinition::name).toList(),
+                "坐标文件夹");
+        requireUniqueNames(catalog.warehouses().stream().map(value -> value.name()).toList(), "仓库");
+        var folders = new HashSet<UUID>();
+        for (var folder : catalog.folders()) {
+            if (!folders.add(folder.id())) throw new V2ValidationException("重复的坐标文件夹 ID");
+        }
+        var warehouses = new HashSet<UUID>();
+        for (var warehouse : catalog.warehouses()) {
+            if (!warehouses.add(warehouse.id())) throw new V2ValidationException("重复的仓库 ID");
+            warehouse.members().forEach(ref -> requireSpatialReference(ref, coordinates, regions));
+        }
+        catalog.placements().forEach((value, folder) -> {
+            if (!folders.contains(folder)) throw new V2ValidationException("坐标文件夹不存在");
+            var ref = ResourceReference.parse(value);
+            if (ref.type() == ResourceType.CATEGORY_ZONE) {
+                if (!zones.containsKey(ref.uuid())) throw new V2ValidationException("分类区不存在");
+            } else {
+                requireSpatialReference(value, coordinates, regions);
+                requireWarehouseReference(value, warehouses);
+            }
+        });
+        for (var task : config.tasks()) {
+            requireWarehouseReference(task.cleanupPolicy().destinationRef(), warehouses);
+            requireStepWarehouses(task.steps(), warehouses);
+        }
+        for (var task : config.autoClassifyTasks()) {
+            requireWarehouseReference(task.cacheLocationRef(), warehouses);
+            requireWarehouseReference(task.overflowDestinationRef(), warehouses);
+            requireWarehouseReference(task.cleanupPolicy().destinationRef(), warehouses);
+        }
+    }
+
+    private static void requireStepWarehouses(List<TaskStep> steps, Set<UUID> warehouses) {
+        for (TaskStep step : steps) {
+            requireWarehouseReference(step.parameters().get(CACHE_LOCATION_REF), warehouses);
+            requireWarehouseReference(step.parameters().get(TARGET_REF), warehouses);
+            requireStepWarehouses(step.steps(), warehouses);
+            requireStepWarehouses(step.otherwise(), warehouses);
+        }
+    }
+
+    private static void requireWarehouseReference(String value, Set<UUID> warehouses) {
+        if (value != null && value.startsWith("warehouse:")
+                && !warehouses.contains(ResourceReference.parse(value).uuid())) {
+            throw new V2ValidationException("任务或文件夹引用的仓库不存在");
         }
     }
 
@@ -368,6 +427,7 @@ public final class ConfigValidator {
         boolean exists = switch (ref.type()) {
             case COORDINATE -> coordinates.containsKey(ref.uuid());
             case REGION -> regions.containsKey(ref.uuid());
+            case WAREHOUSE -> true;
             default -> false;
         };
         if (!exists) throw new V2ValidationException("溢出存入位置引用的坐标或区域不存在");
@@ -681,10 +741,12 @@ public final class ConfigValidator {
             }
             case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {
                 requireParameters(step, ROBOT_WAREHOUSE.equals(step.moduleId())
-                        ? Set.of(REGION_REF, TARGET_REF) : Set.of(REGION_REF), Set.of());
+                        ? Set.of(REGION_REF, CACHE_LOCATION_REF, TARGET_REF) : Set.of(REGION_REF), Set.of());
                 if (step.parameters().containsKey(REGION_REF)) {
                     requireRegionReference(step, regions, REGION_REF);
                 }
+                requireSpatialReference(step.parameters().get(CACHE_LOCATION_REF),
+                        coordinates, regions);
                 requireWarehouseDestination(step.parameters().get(TARGET_REF), coordinates, regions);
             }
             case CONTAINER_INTERACTION -> requireInteractionStep(
@@ -700,6 +762,9 @@ public final class ConfigValidator {
                 fields.add(TARGET_REF);
                 requireParameters(step, fields, Set.of(TARGET_REF));
                 var refresh = dev.stowling.v2.model.ContainerCacheRefresh.from(step.parameters());
+                if (refresh.target().type() == ResourceType.CATEGORY_ZONE && !refresh.markerOnly()) {
+                    throw new V2ValidationException("刷新缓存任务请选择普通区域");
+                }
                 requireInteractionResource(refresh.target().encode(), coordinates, regions,
                         categoryZones);
             }
@@ -716,7 +781,8 @@ public final class ConfigValidator {
                         dev.stowling.v2.model.MaterialRequirements.COLLECT_SHULKER_BOXES;
                 var collectMinecarts =
                         dev.stowling.v2.model.MaterialRequirements.COLLECT_MINECARTS;
-                requireParameters(step, Set.of(TARGET_REF, materials, boxedDelivery,
+                var sourceZone = dev.stowling.v2.model.MaterialRequirements.SOURCE_ZONE_REF;
+                requireParameters(step, Set.of(TARGET_REF, sourceZone, materials, boxedDelivery,
                         singleMaterialBoxes, iceInsteadOfWater, skipWater, skipLava,
                         collectShulkerBoxes, collectMinecarts),
                         Set.of(TARGET_REF, materials));
@@ -728,7 +794,16 @@ public final class ConfigValidator {
                 requireOptionalBoolean(step, collectShulkerBoxes);
                 requireOptionalBoolean(step, collectMinecarts);
                 String destination = step.parameters().get(TARGET_REF);
-                new dev.stowling.v2.model.TaskCleanupPolicy(destination, null);
+                var delivery = ResourceReference.parse(destination);
+                if (delivery.type() != ResourceType.COORDINATE && delivery.type() != ResourceType.REGION) {
+                    throw new V2ValidationException("材料交付位置必须是点位或普通区域");
+                }
+                if (step.parameters().containsKey(sourceZone)) {
+                    var ref = requireReference(step, sourceZone, ResourceType.CATEGORY_ZONE);
+                    if (!categoryZones.containsKey(ref.uuid())) {
+                        throw new V2ValidationException("材料取料分类区不存在");
+                    }
+                }
                 requireInteractionResource(destination, coordinates, regions, categoryZones);
                 dev.stowling.v2.model.MaterialRequirements.forCollection(step.parameters());
             }
@@ -737,10 +812,7 @@ public final class ConfigValidator {
                     coordinates,
                     regions
             );
-            case SCAN_CONTAINERS_IN_REGION -> requireScanStep(
-                    step,
-                    regions
-            );
+            case SCAN_CONTAINERS_IN_REGION -> requireScanStep(step, coordinates, regions);
             case RESOLVE_CONTAINER_CATEGORIES ->
                     requireResolveCategoryStep(step, categoryZones);
             case RESOLVE_UNSTACKABLE_STORAGE -> {
@@ -903,6 +975,7 @@ public final class ConfigValidator {
                     );
                 }
             }
+            case WAREHOUSE -> throw new V2ValidationException("此设置无法使用仓库");
             case OUTPUT, TASK -> {
             }
         }
@@ -1087,12 +1160,14 @@ public final class ConfigValidator {
                         REGION_ID,
                         ITEM_FILTER,
                         TIMEOUT_SECONDS,
-                        PICKUP_RADIUS
+                        PICKUP_RADIUS, DEFAULT_PICKUP_RADIUS
                 ),
                 Set.of()
         );
         ResourceReference area = areaReference(step);
         requireAreaExists(area, coordinates, regions);
+        requireOptionalInteger(step, DEFAULT_PICKUP_RADIUS, 1,
+                AutoClassifyDefinition.MAX_PICKUP_RADIUS);
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);
         requireOptionalInteger(
                 step,
@@ -1104,21 +1179,21 @@ public final class ConfigValidator {
 
     private static void requireScanStep(
             TaskStep step,
+            Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions
     ) {
         requireParameters(
                 step,
-                Set.of(REGION_REF, REGION_ID, CACHE_REGION_ID,
+                Set.of(REGION_REF, REGION_ID, CACHE_REGION_ID, CACHE_LOCATION_REF,
                         CONTAINER_TYPES, MAX_VOLUME, SCAN_CONTENTS),
                 Set.of()
         );
-        requireRegionReference(
-                step,
-                regions,
-                REGION_REF,
-                REGION_ID,
-                CACHE_REGION_ID
-        );
+        String cache = step.parameters().get(CACHE_LOCATION_REF);
+        if (cache != null) {
+            requireSpatialReference(cache, coordinates, regions);
+        } else {
+            requireRegionReference(step, regions, REGION_REF, REGION_ID, CACHE_REGION_ID);
+        }
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
         requireOptionalBoolean(step, SCAN_CONTENTS);
     }

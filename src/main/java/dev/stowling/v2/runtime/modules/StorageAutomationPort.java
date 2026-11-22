@@ -60,6 +60,12 @@ public interface StorageAutomationPort {
         return robotWarehouse(context, cacheRegion);
     }
 
+    default TaskModuleExecutor robotWarehouseForCache(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination) {
+        var region = cache == null ? null : ResourceReferenceSupport.region(context, cache);
+        return robotWarehouse(context, region, destination);
+    }
+
     default TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
             List<ContainerTarget> containers) {
         throw new IllegalStateException("当前环境不支持缓存库存盘点");

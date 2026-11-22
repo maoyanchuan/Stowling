@@ -3,6 +3,7 @@ package dev.stowling.v2.runtime.modules;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
@@ -45,7 +46,10 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                         ResourceReferenceSupport.coordinate(context, reference),
                         timeoutSeconds,
                         itemFilter,
-                        pickupRadius
+                        pickupRadius,
+                        TaskModuleSupport.integerParameter(step,
+                                ConfigValidator.DEFAULT_PICKUP_RADIUS,
+                                TaskModuleSupport.DEFAULT_DROP_RADIUS)
                 );
     }
 
@@ -79,7 +83,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
             CoordinatePoint coordinate,
             int timeoutSeconds,
             Set<String> itemFilter,
-            int pickupRadius
+            int pickupRadius,
+            int defaultRadius
     ) {
         BlockPosition center = new BlockPosition(
                 coordinate.x(),
@@ -88,7 +93,7 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
         );
         int radius = pickupRadius > 0
                 ? pickupRadius
-                : TaskModuleSupport.dropRadius(coordinate);
+                : coordinate.radius() == null ? defaultRadius : coordinate.radius();
         return new DroppedItemCollectionEngine(
                 context,
                 new DroppedItemCollectionEngine.Source() {

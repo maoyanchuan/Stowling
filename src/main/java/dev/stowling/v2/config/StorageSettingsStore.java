@@ -132,6 +132,11 @@ public final class StorageSettingsStore {
                         new IllegalStateException("暂存设施引用的区域不存在"))).toList();
     }
 
+    public StorageSettingsStore() {
+        this.path = null;
+        settings = StorageAutomationSettings.DEFAULT;
+    }
+
     public StorageSettingsStore(Path path) throws IOException {
         this.path = path.toAbsolutePath().normalize();
         settings = Files.exists(path)

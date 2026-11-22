@@ -28,7 +28,7 @@ class AutoClassifyTaskFactoryTest {
         TaskDefinition classification = oldTasks.get(1);
         oldTasks.set(1, new TaskDefinition(classification.id(), classification.name(),
                 classification.priority(), false,
-                TaskFlowTemplates.sortUnstackable(legacy.cacheRegionRef(), storageRef),
+                TaskFlowTemplates.sortUnstackable(legacy.cacheLocationRef(), storageRef),
                 classification.interruptionMode(), classification.interruptionTaskRef(),
                 false, true));
         var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point), oldTasks,
@@ -80,10 +80,10 @@ class AutoClassifyTaskFactoryTest {
     void overflowIsOptInAndRunsAfterEveryClassificationAreaButBeforeReconciliation() {
         AutoClassifyDefinition original = definition(true);
         assertFalse(original.overflowEnabled());
-        String destination = "coordinate:" + UUID.randomUUID();
+        String destination = "warehouse:" + UUID.randomUUID();
         var enabled = new AutoClassifyDefinition(original.id(), original.name(), original.enabled(),
                 original.collectionEnabled(), original.classificationEnabled(),
-                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheRegionRef(),
+                original.detectionCoordinateRef(), original.pickupRadius(), original.cacheLocationRef(),
                 original.classificationAreas(), original.collectionPriority(), true,
                 original.cleanupPolicy(), null, destination);
         List<TaskDefinition> tasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
@@ -97,9 +97,9 @@ class AutoClassifyTaskFactoryTest {
         List<TaskStep> classify = tasks.get(1).steps();
         int index = original.classificationAreas().size() * 2;
         assertEquals(ConfigValidator.ROBOT_WAREHOUSE, classify.get(index).moduleId());
-        assertEquals(original.cacheRegionRef(), classify.get(index).parameters()
+        assertEquals(original.cacheLocationRef(), classify.get(index).parameters()
                 .get(ConfigValidator.REGION_REF));
-        assertFalse(classify.get(index).parameters().containsKey(ConfigValidator.TARGET_REF));
+        assertEquals(destination, classify.get(index).parameters().get(ConfigValidator.TARGET_REF));
         assertEquals(ConfigValidator.SYNC_PLAYER_INVENTORY, classify.get(index + 1).moduleId());
         assertTrue(AutoClassifyTaskFactory.tasks(original, List.of()).stream()
                 .flatMap(task -> task.steps().stream())
@@ -114,7 +114,7 @@ class AutoClassifyTaskFactoryTest {
     @Test
     void automaticWarehouseUsesSharedFacilitiesWhileStandaloneTasksKeepTheirDestination() {
         AutoClassifyDefinition definition = definition(true);
-        var parameters = Map.of(ConfigValidator.REGION_REF, definition.cacheRegionRef(),
+        var parameters = Map.of(ConfigValidator.REGION_REF, definition.cacheLocationRef(),
                 ConfigValidator.TARGET_REF, "coordinate:" + UUID.randomUUID());
         TaskStep warehouse = TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE,
                 parameters);
@@ -137,7 +137,7 @@ class AutoClassifyTaskFactoryTest {
     void removesOldWarehouseStepsThatRanBeforeClassification() {
         AutoClassifyDefinition definition = definition(true);
         TaskStep scan = TaskStep.action(UUID.randomUUID(), ConfigValidator.SCAN_CONTAINERS_IN_REGION,
-                Map.of(ConfigValidator.REGION_REF, definition.cacheRegionRef()));
+                Map.of(ConfigValidator.REGION_REF, definition.cacheLocationRef()));
         TaskStep earlyWarehouse = TaskFlowTemplates.overflow(null);
         TaskStep loop = TaskStep.repeat(UUID.randomUUID(),
                 Map.of(TaskFlowTemplates.CONDITION, TaskCondition.HAS_MANAGED_ITEMS.name()),
@@ -156,7 +156,7 @@ class AutoClassifyTaskFactoryTest {
     void upgradesNestedAutomaticOverflowAndPreservesStandaloneOverflow() {
         AutoClassifyDefinition definition = definition(true);
         TaskStep oldOverflow = TaskStep.action(UUID.randomUUID(), ConfigValidator.PACK_OVERFLOW,
-                Map.of(ConfigValidator.REGION_REF, definition.cacheRegionRef()));
+                Map.of(ConfigValidator.REGION_REF, definition.cacheLocationRef()));
         TaskStep loop = TaskStep.repeat(UUID.randomUUID(), Map.of(), List.of(oldOverflow));
         var automatic = new TaskDefinition(definition.id(), "Auto", List.of(loop));
         var standalone = new TaskDefinition(UUID.randomUUID(), "Custom", List.of(oldOverflow));
@@ -423,7 +423,7 @@ class AutoClassifyTaskFactoryTest {
                 cacheScan.moduleId()
         );
         assertEquals(
-                definition.cacheRegionRef(),
+                definition.cacheLocationRef(),
                 cacheScan.parameters().get(ConfigValidator.REGION_REF)
         );
         assertEquals("true", cacheScan.parameters().get(ConfigValidator.SCAN_CONTENTS));

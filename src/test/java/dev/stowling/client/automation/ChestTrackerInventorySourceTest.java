@@ -24,6 +24,17 @@ class ChestTrackerInventorySourceTest {
     private static final BlockPosition PLACED_MARKER = new BlockPosition(11, 65, 20);
 
     @Test
+    void selectedStorageScopeIncludesEitherChestHalfAndExcludesOtherStorage() {
+        var inside = stock(OVERWORLD, List.of(MARKER, STORAGE), 2);
+        var outside = stock(OVERWORLD, List.of(PLACED_MARKER), 4);
+        var scope = List.of(at(STORAGE));
+        assertTrue(ChestTrackerInventorySource.inAreas(inside.positions(), scope));
+        assertFalse(ChestTrackerInventorySource.inAreas(outside.positions(), scope));
+        assertFalse(ChestTrackerInventorySource.visible(inside, "minecraft:chest", OVERWORLD,
+                List.of(at(MARKER)), scope, markerAreas(), Set.of(MARKER), Set.of()));
+    }
+
+    @Test
     void excludesTheMarkerBarrelFromTheDripleafTotal() {
         var marker = stock(OVERWORLD, List.of(MARKER), 1);
         var storage = stock(OVERWORLD, List.of(STORAGE), 276);

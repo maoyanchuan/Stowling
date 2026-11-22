@@ -43,6 +43,7 @@ public record ResourceReference(ResourceType type, String key) {
         String key = trimmed.substring(separator + 1);
         ResourceType type = switch (prefix) {
             case "coordinate" -> ResourceType.COORDINATE;
+            case "warehouse" -> ResourceType.WAREHOUSE;
             case "region" -> ResourceType.REGION;
             case "category-zone" -> ResourceType.CATEGORY_ZONE;
             case "task" -> ResourceType.TASK;

@@ -11,9 +11,10 @@ public record AppConfig(
         List<CategoryZoneDefinition> categoryZones,
         List<TaskTriggerDefinition> triggers,
         List<TaskFolderDefinition> taskFolders,
-        List<AutoClassifyDefinition> autoClassifyTasks
+        List<AutoClassifyDefinition> autoClassifyTasks,
+        CoordinateCatalog coordinateCatalog
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 15;
+    public static final int CURRENT_SCHEMA_VERSION = 16;
 
     public AppConfig {
         if (schemaVersion != CURRENT_SCHEMA_VERSION) {
@@ -21,6 +22,7 @@ public record AppConfig(
                     "unsupported schemaVersion: " + schemaVersion
             );
         }
+        coordinateCatalog = coordinateCatalog == null ? CoordinateCatalog.EMPTY : coordinateCatalog;
         coordinates = List.copyOf(Objects.requireNonNull(coordinates, "coordinates"));
         tasks = List.copyOf(Objects.requireNonNull(tasks, "tasks"));
         regions = regions == null ? List.of() : List.copyOf(regions);
@@ -34,6 +36,19 @@ public record AppConfig(
         autoClassifyTasks = autoClassifyTasks == null
                 ? List.of()
                 : List.copyOf(autoClassifyTasks);
+    }
+
+    public AppConfig(int schemaVersion, List<CoordinatePoint> coordinates,
+            List<TaskDefinition> tasks, List<RegionDefinition> regions,
+            List<CategoryZoneDefinition> categoryZones, List<TaskTriggerDefinition> triggers,
+            List<TaskFolderDefinition> taskFolders, List<AutoClassifyDefinition> autoClassifyTasks) {
+        this(schemaVersion, coordinates, tasks, regions, categoryZones, triggers, taskFolders,
+                autoClassifyTasks, CoordinateCatalog.EMPTY);
+    }
+
+    public AppConfig withCoordinateCatalog(CoordinateCatalog catalog) {
+        return new AppConfig(schemaVersion, coordinates, tasks, regions, categoryZones, triggers,
+                taskFolders, autoClassifyTasks, catalog);
     }
 
     public AppConfig(

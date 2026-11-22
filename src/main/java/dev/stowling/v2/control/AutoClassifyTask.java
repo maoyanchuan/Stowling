@@ -14,7 +14,7 @@ public record AutoClassifyTask(
         boolean collectionEnabled,
         boolean classificationEnabled,
         AutoClassifyDetection detection,
-        String cacheRegionRef,
+        String cacheLocationRef,
         List<AutoClassifyAreaDefinition> classificationAreas,
         TaskPriority collectionPriority,
         TaskPriority classificationPriority,
@@ -34,7 +34,7 @@ public record AutoClassifyTask(
             boolean collectionEnabled,
             boolean classificationEnabled,
             AutoClassifyDetection detection,
-            String cacheRegionRef,
+            String cacheLocationRef,
             List<AutoClassifyAreaDefinition> classificationAreas,
             TaskPriority collectionPriority,
             TaskPriority classificationPriority,
@@ -45,7 +45,7 @@ public record AutoClassifyTask(
             boolean overflowEnabled
     ) {
         this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority,
+                cacheLocationRef, classificationAreas, collectionPriority,
                 classificationPriority, collectionTaskRef, classificationTaskRef,
                 interruptionTaskRef, triggerIds, overflowEnabled, null, null, null);
     }
@@ -57,7 +57,7 @@ public record AutoClassifyTask(
             boolean collectionEnabled,
             boolean classificationEnabled,
             AutoClassifyDetection detection,
-            String cacheRegionRef,
+            String cacheLocationRef,
             List<AutoClassifyAreaDefinition> classificationAreas,
             TaskPriority collectionPriority,
             TaskPriority classificationPriority,
@@ -67,7 +67,7 @@ public record AutoClassifyTask(
             List<UUID> triggerIds
     ) {
         this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
-                cacheRegionRef, classificationAreas, collectionPriority,
+                cacheLocationRef, classificationAreas, collectionPriority,
                 classificationPriority, collectionTaskRef, classificationTaskRef,
                 interruptionTaskRef, triggerIds, false);
     }

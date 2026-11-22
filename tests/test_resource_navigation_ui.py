@@ -28,15 +28,16 @@ def test_top_navigation_has_single_coordinate_entry() -> None:
 
 def test_coordinate_page_embeds_three_resource_tabs() -> None:
     html = read("coordinates.html")
-    tab_class = 'class="page-subnav-tab"'
+    tab_class = "data-panel="
     panel_class = 'class="resource-tab-panel resource-list-section"'
 
     assert 'class="page-subnav"' in html
     assert html.count(tab_class) == 3
-    assert html.count(panel_class) == 3
+    assert html.count(panel_class) == 4
     assert 'id="coordinate-points"' in html
     assert 'id="regions"' in html
     assert 'id="category-zones"' in html
+    assert 'id="warehouses"' in html
     assert 'href="#coordinate-points"' in html
     assert 'href="#regions"' in html
     assert 'href="#category-zones"' in html

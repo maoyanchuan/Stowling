@@ -36,6 +36,42 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
+    void keepsWarehouseAndTaskReferencesWhenRemovingTheirFolder() {
+        var service = service();
+        var point = createPoint(service, "Cache chest");
+        var pointRef = "coordinate:" + point.id();
+        var folderId = UUID.randomUUID();
+        var warehouseId = UUID.randomUUID();
+        var warehouseRef = "warehouse:" + warehouseId;
+        var directory = service.editCoordinateDirectory(service.coordinateDirectory().revision(),
+                catalog -> catalog.editFolder(folderId, "Collection")
+                        .editWarehouse(warehouseId, "Buffer", List.of(pointRef))
+                        .move(pointRef, folderId).move(warehouseRef, folderId));
+
+        var request = new AutoClassifyTaskRequest("Collect", true, true, false,
+                new AutoClassifyDetectionRequest(pointRef, null), warehouseRef,
+                List.of(), TaskPriority.NORMAL);
+        var created = service.createAutoClassifyTask(request);
+        assertNull(created.item().detection().pickupRadius());
+        assertEquals(warehouseRef, created.item().cleanupPolicy().destinationRef());
+        assertThrows(V2RevisionConflictException.class,
+                () -> service.editCoordinateDirectory(directory.revision(),
+                        catalog -> catalog.editFolder(folderId, null)));
+
+        var updated = service.editCoordinateDirectory(created.revision(),
+                catalog -> catalog.editFolder(folderId, null));
+        assertTrue(updated.catalog().placements().isEmpty());
+        assertEquals(List.of(pointRef), updated.catalog().warehouses().getFirst().members());
+        assertTrue(updated.references().get(pointRef).contains("Buffer"));
+        assertTrue(updated.references().get(warehouseRef).contains("Collect"));
+        assertThrows(V2ValidationException.class,
+                () -> service.editCoordinateDirectory(updated.revision(),
+                        catalog -> catalog.editWarehouse(warehouseId, null, List.of())));
+        assertThrows(CoordinateInUseException.class, () -> service.deleteCoordinate(point.id(),
+                new RevisionRequest(updated.revision())));
+    }
+
+    @Test
     void startsTheRefreshScheduleOnlyAfterEnablingAndPreservesItsAnchorOnEdits() {
         Path path = directory.resolve("refresh-schedule.json");
         ConfigStore store = new ConfigStore(path);
@@ -422,6 +458,9 @@ class V2ControlServiceImplTest {
                 )
         ).categoryZones().getFirst();
 
+        var overflowId = UUID.randomUUID();
+        service.editCoordinateDirectory(service.coordinateDirectory().revision(), catalog ->
+                catalog.editWarehouse(overflowId, "Overflow", List.of("coordinate:" + point.id())));
         AutoClassifyTaskResponse created = service.createAutoClassifyTask(
                 new AutoClassifyTaskRequest(
                         "自动分类",
@@ -438,7 +477,7 @@ class V2ControlServiceImplTest {
                                 new AutoClassifyAreaRequest("category-zone:" + containerZone.id())
                         ),
                         TaskPriority.NORMAL,
-                        true
+                        true, null, "warehouse:" + overflowId
                 )
         );
 

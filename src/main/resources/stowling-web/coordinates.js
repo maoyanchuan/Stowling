@@ -5,7 +5,7 @@
     const Model = window.StowlingCoordinateModel;
     const RegionModel = window.StowlingRegionModel;
     const TAB_EVENT = "stowling:resource-tab-change";
-    const TAB_IDS = new Set(["coordinate-points", "regions", "category-zones", "facilities"]);
+    const TAB_IDS = new Set(["coordinate-points", "regions", "category-zones", "warehouses"]);
     const state = {
         revision: "",
         coordinates: [],
@@ -15,10 +15,9 @@
     };
     let coordinateRequest = 0;
     let regionRequest = 0;
-    let coordinateReturnPanel = null;
 
     const elements = {
-        tabs: Array.from(document.querySelectorAll(".page-subnav-tab")),
+        tabs: Array.from(document.querySelectorAll(".page-subnav-tab[data-panel]")),
         panels: Array.from(document.querySelectorAll(".resource-tab-panel")),
         add: document.querySelector("#add-coordinate-button"),
         addRegion: document.querySelector("#add-region-button"),
@@ -458,6 +457,7 @@
             applyResponse(response);
             clearErrors();
             Stowling.showToast("坐标已保存");
+            announceDirectoryChange(response);
         } catch (error) {
             showError(error, "保存坐标失败");
         }
@@ -491,6 +491,7 @@
             applyRegionResponse(response);
             clearErrors(elements.regionErrors);
             Stowling.showToast("区域已保存");
+            announceDirectoryChange(response);
         } catch (error) {
             showError(error, "保存区域失败", elements.regionErrors);
         }
@@ -516,6 +517,7 @@
             applyResponse(response);
             clearErrors();
             Stowling.showToast("坐标已删除");
+            announceDirectoryChange(response);
         } catch (error) {
             showError(error, "删除坐标失败");
         }
@@ -542,6 +544,7 @@
             applyRegionResponse(response);
             clearErrors(elements.regionErrors);
             Stowling.showToast("区域已删除");
+            announceDirectoryChange(response);
         } catch (error) {
             showError(error, "删除区域失败", elements.regionErrors);
         }
@@ -580,20 +583,12 @@
             syncOptionalField(elements.useDimension, elements.dimension);
             syncOptionalField(elements.useRadius, elements.radius);
             elements.form.hidden = true;
-            elements.add.focus();
+            document.querySelector("#new-coordinate-resource")?.focus();
             clearErrors();
             Stowling.showToast("坐标已添加");
             const created = response.coordinates.find(point => !knownIds.has(point.id)
                 && point.name === requestedName);
-            if (coordinateReturnPanel && created) {
-                const panel = coordinateReturnPanel;
-                coordinateReturnPanel = null;
-                document.dispatchEvent(new CustomEvent("stowling:coordinate-created", {
-                    detail: {coordinate: created}
-                }));
-                window.location.hash = panel;
-                activateTab(panel);
-            }
+            if (created) announceDirectoryChange(response, "coordinate:" + created.id);
         } catch (error) {
             showError(error, "添加坐标失败");
         }
@@ -604,6 +599,7 @@
      */
     async function createRegion() {
         try {
+            const knownIds = new Set(state.regions.map(region => region.id));
             const response = await Stowling.request("/v1/regions", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -626,9 +622,11 @@
             elements.regionSecondY.value = "64";
             elements.regionSecondZ.value = "0";
             elements.regionForm.hidden = true;
-            elements.addRegion.focus();
+            document.querySelector("#new-coordinate-resource")?.focus();
             clearErrors(elements.regionErrors);
             Stowling.showToast("区域已添加");
+            const created = response.regions.find(region => !knownIds.has(region.id));
+            if (created) announceDirectoryChange(response, "region:" + created.id);
         } catch (error) {
             showError(error, "添加区域失败", elements.regionErrors);
         }
@@ -662,13 +660,6 @@
         elements.regionForm.hidden = true;
         clearErrors(elements.errors);
         clearErrors(elements.regionErrors);
-        if (coordinateReturnPanel) {
-            const panel = coordinateReturnPanel;
-            coordinateReturnPanel = null;
-            document.dispatchEvent(new Event("stowling:coordinate-create-cancelled"));
-            window.location.hash = panel;
-            activateTab(panel);
-        }
     }
 
     /**
@@ -781,7 +772,7 @@
      */
     function normalizeTabId(value) {
         const candidate = String(value || "").replace(/^#/, "");
-        return TAB_IDS.has(candidate) ? candidate : "category-zones";
+        return TAB_IDS.has(candidate) ? candidate : "coordinate-points";
     }
 
     /**
@@ -793,9 +784,17 @@
         const activeId = normalizeTabId(panelId);
         document.body.dataset.coordinateTab = activeId;
         for (const tab of elements.tabs) {
-            const selected = tab.dataset.panel === activeId;
+            const selected = tab.dataset.panel
+                === (activeId === "category-zones" ? "regions" : activeId);
             tab.setAttribute("aria-selected", String(selected));
             tab.tabIndex = selected ? 0 : -1;
+        }
+        const areas = document.querySelector("#coordinate-area-types");
+        if (areas) {
+            areas.hidden = activeId !== "regions" && activeId !== "category-zones";
+            for (const link of areas.querySelectorAll("a")) {
+                link.setAttribute("aria-current", String(link.dataset.area === activeId));
+            }
         }
         for (const panel of elements.panels) {
             const selected = panel.id === activeId;
@@ -880,6 +879,15 @@
         }
     }
 
+    /** @param {object} response @param {string} [created] @returns {void} */
+    function announceDirectoryChange(response, created) {
+        document.dispatchEvent(new CustomEvent("stowling:coordinate-directory-change",
+            {detail: {revision: response.revision, created}}));
+    }
+
+    document.addEventListener("stowling:coordinate-directory-saved", event => {
+        updateRevision(event.detail.revision);
+    });
     elements.search.addEventListener("input", () => {
         state.query = elements.search.value.trim().toLocaleLowerCase();
         filterResourceList(elements.list);
@@ -898,19 +906,6 @@
     document.addEventListener(TAB_EVENT, refreshResourcePanel);
     window.addEventListener("hashchange", activateHashTab);
     activateHashTab();
-    document.addEventListener("stowling:request-coordinate-create", event => {
-        coordinateReturnPanel = event.detail.returnPanel;
-        window.location.hash = "coordinate-points";
-        activateTab("coordinate-points");
-        showCoordinateForm();
-        const base = event.detail.name || "坐标点";
-        const names = new Set(state.coordinates.map(point => point.name));
-        let candidate = base;
-        for (let suffix = 2; names.has(candidate); suffix++) {
-            candidate = `${base} ${suffix}`;
-        }
-        elements.name.value = candidate;
-    });
     elements.add.addEventListener("click", showCoordinateForm);
     elements.addRegion.addEventListener("click", showRegionForm);
     elements.cancel.addEventListener("click", hideCreateForms);

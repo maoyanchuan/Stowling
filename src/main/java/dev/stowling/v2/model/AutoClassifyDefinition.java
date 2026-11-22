@@ -12,8 +12,8 @@ public record AutoClassifyDefinition(
         boolean collectionEnabled,
         boolean classificationEnabled,
         String detectionCoordinateRef,
-        int pickupRadius,
-        String cacheRegionRef,
+        Integer pickupRadius,
+        String cacheLocationRef,
         List<AutoClassifyAreaDefinition> classificationAreas,
         TaskPriority collectionPriority,
         boolean overflowEnabled,
@@ -24,21 +24,21 @@ public record AutoClassifyDefinition(
 ) {
     public AutoClassifyDefinition(UUID id, String name, boolean enabled,
             boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
-            int pickupRadius, String cacheRegionRef, List<AutoClassifyAreaDefinition> areas,
+            Integer pickupRadius, String cacheLocationRef, List<AutoClassifyAreaDefinition> areas,
             TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
             String unstackableRegionRef, String overflowDestinationRef) {
         this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
-                pickupRadius, cacheRegionRef, areas, priority, overflowEnabled, cleanupPolicy,
+                pickupRadius, cacheLocationRef, areas, priority, overflowEnabled, cleanupPolicy,
                 unstackableRegionRef, overflowDestinationRef, null);
     }
 
     public AutoClassifyDefinition(UUID id, String name, boolean enabled,
             boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
-            int pickupRadius, String cacheRegionRef, List<AutoClassifyAreaDefinition> areas,
+            Integer pickupRadius, String cacheLocationRef, List<AutoClassifyAreaDefinition> areas,
             TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
             String unstackableRegionRef) {
         this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
-                pickupRadius, cacheRegionRef, areas, priority, overflowEnabled, cleanupPolicy,
+                pickupRadius, cacheLocationRef, areas, priority, overflowEnabled, cleanupPolicy,
                 unstackableRegionRef, null);
     }
 
@@ -49,15 +49,15 @@ public record AutoClassifyDefinition(
             boolean collectionEnabled,
             boolean classificationEnabled,
             String detectionCoordinateRef,
-            int pickupRadius,
-            String cacheRegionRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
             List<AutoClassifyAreaDefinition> classificationAreas,
             TaskPriority collectionPriority,
             boolean overflowEnabled,
             TaskCleanupPolicy cleanupPolicy
     ) {
         this(id, name, enabled, collectionEnabled, classificationEnabled,
-                detectionCoordinateRef, pickupRadius, cacheRegionRef, classificationAreas,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
                 collectionPriority, overflowEnabled, cleanupPolicy, null);
     }
 
@@ -68,14 +68,14 @@ public record AutoClassifyDefinition(
             boolean collectionEnabled,
             boolean classificationEnabled,
             String detectionCoordinateRef,
-            int pickupRadius,
-            String cacheRegionRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
             List<AutoClassifyAreaDefinition> classificationAreas,
             TaskPriority collectionPriority,
             boolean overflowEnabled
     ) {
         this(id, name, enabled, collectionEnabled, classificationEnabled,
-                detectionCoordinateRef, pickupRadius, cacheRegionRef, classificationAreas,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
                 collectionPriority, overflowEnabled, null);
     }
 
@@ -86,13 +86,13 @@ public record AutoClassifyDefinition(
             boolean collectionEnabled,
             boolean classificationEnabled,
             String detectionCoordinateRef,
-            int pickupRadius,
-            String cacheRegionRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
             List<AutoClassifyAreaDefinition> classificationAreas,
             TaskPriority collectionPriority
     ) {
         this(id, name, enabled, collectionEnabled, classificationEnabled,
-                detectionCoordinateRef, pickupRadius, cacheRegionRef, classificationAreas,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
                 collectionPriority, false);
     }
 
@@ -103,7 +103,8 @@ public record AutoClassifyDefinition(
     public AutoClassifyDefinition {
         cachePolicy = cachePolicy == null ? CacheIntakePolicy.DEFAULT : cachePolicy;
         cleanupPolicy = cleanupPolicy == null || cleanupPolicy.destinationRef() == null
-                ? new TaskCleanupPolicy(cacheRegionRef, TaskResumeMode.RESTART) : cleanupPolicy;
+                ? (cleanupPolicy == null ? TaskCleanupPolicy.DEFAULT : cleanupPolicy)
+                        .withDestination(cacheLocationRef) : cleanupPolicy;
         if (cleanupPolicy.resumeMode() != TaskResumeMode.RESTART) {
             throw new IllegalArgumentException("自动分类中断后需要重新扫描分类");
         }
@@ -114,35 +115,27 @@ public record AutoClassifyDefinition(
                 ResourceType.COORDINATE,
                 "detectionCoordinateRef"
         );
-        if (pickupRadius < MIN_PICKUP_RADIUS
-                || pickupRadius > MAX_PICKUP_RADIUS) {
+        if (pickupRadius != null && (pickupRadius < MIN_PICKUP_RADIUS
+                || pickupRadius > MAX_PICKUP_RADIUS)) {
             throw new IllegalArgumentException(
                     "pickupRadius must be between "
                             + MIN_PICKUP_RADIUS + " and " + MAX_PICKUP_RADIUS
             );
         }
-        cacheRegionRef = requireReference(
-                cacheRegionRef,
-                ResourceType.REGION,
-                "cacheRegionRef"
-        );
-        if (!overflowEnabled || overflowDestinationRef == null || overflowDestinationRef.isBlank()) {
+        cacheLocationRef = ResourceReference.parse(cacheLocationRef).encode();
+        if (!overflowEnabled) {
             overflowDestinationRef = null;
         } else {
-            ResourceReference destination = ResourceReference.parse(overflowDestinationRef);
-            if (destination.type() != ResourceType.COORDINATE
-                    && destination.type() != ResourceType.REGION) {
-                throw new IllegalArgumentException("溢出存入位置必须是坐标或区域");
-            }
-            overflowDestinationRef = destination.encode();
-            if (cacheRegionRef.equals(overflowDestinationRef)) {
-                throw new IllegalArgumentException("溢出存入位置需要与缓存区域分开");
+            overflowDestinationRef = requireReference(overflowDestinationRef, ResourceType.WAREHOUSE,
+                    "overflowDestinationRef");
+            if (cacheLocationRef.equals(overflowDestinationRef)) {
+                throw new IllegalArgumentException("缓存和溢出存放需要使用不同的仓库");
             }
         }
         unstackableRegionRef = unstackableRegionRef == null || unstackableRegionRef.isBlank()
                 ? null : requireReference(unstackableRegionRef, ResourceType.REGION,
                         "unstackableRegionRef");
-        if (cacheRegionRef.equals(unstackableRegionRef)) {
+        if (cacheLocationRef.equals(unstackableRegionRef)) {
             throw new IllegalArgumentException("不可堆叠储存区需要使用独立区域");
         }
         classificationAreas = List.copyOf(
@@ -151,7 +144,7 @@ public record AutoClassifyDefinition(
                         "classificationAreas"
                 )
         );
-        if (classificationAreas.isEmpty() && unstackableRegionRef == null) {
+        if (classificationEnabled && classificationAreas.isEmpty() && unstackableRegionRef == null) {
             throw new IllegalArgumentException("请至少添加一个分类选区");
         }
         long uniqueZones = classificationAreas.stream()

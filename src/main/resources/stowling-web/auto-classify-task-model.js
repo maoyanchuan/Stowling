@@ -1,7 +1,6 @@
 (() => {
     "use strict";
 
-    const DEFAULT_PICKUP_RADIUS = "8";
     const DEFAULT_CACHE_POLICY = Object.freeze({
         enabled: false, mode: "PACK_FIRST", thresholdPercent: 80
     });
@@ -52,8 +51,8 @@
         return {
             id: "",
             coordinateId: "",
-            pickupRadius: DEFAULT_PICKUP_RADIUS,
-            cacheRegionId: "",
+            pickupRadius: "",
+            cacheLocationRef: "",
             cachePolicy: {...DEFAULT_CACHE_POLICY},
             classificationAreas: [newArea()],
             collectionPriority: "NORMAL",
@@ -61,6 +60,7 @@
             overflowEnabled: false,
             overflowDestinationRef: "",
             cleanupDestinationRef: "",
+            facilities: {},
             collectionEnabled: true,
             classificationEnabled: true
         };
@@ -81,7 +81,7 @@
                 || detection.pickupRadius === null
                 ? ""
                 : String(detection.pickupRadius),
-            cacheRegionId: referencedId(item?.cacheRegionRef, "region"),
+            cacheLocationRef: String(item?.cacheLocationRef || ""),
             cachePolicy: {...DEFAULT_CACHE_POLICY, ...item?.cachePolicy},
             classificationAreas: Array.isArray(item?.classificationAreas)
                 ? item.classificationAreas.map((area) => ({
@@ -96,8 +96,9 @@
             enabled: item?.enabled === true,
             overflowEnabled: item?.overflowEnabled === true,
             overflowDestinationRef: String(item?.overflowDestinationRef || ""),
-            cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheRegionRef
+            cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
+            facilities: item?.cleanupPolicy || {},
             collectionEnabled: item?.collectionEnabled === true,
             classificationEnabled: item?.classificationEnabled === true
         };
@@ -165,26 +166,23 @@
             errors.push("所选掉落物检测点不存在，请刷新后重试");
         }
 
-        if (parsedRadius(draft?.pickupRadius) === null) {
-            errors.push("拾取半径需为1～64的整数");
+        const radius = String(draft?.pickupRadius ?? "").trim();
+        if (radius && parsedRadius(radius) === null) {
+            errors.push("任务覆盖半径需为 1 到 64 格");
         }
 
-        const cacheRegionId = String(draft?.cacheRegionId ?? "").trim();
-        if (cacheRegionId === "") {
-            errors.push("请选择缓存区域");
-        } else if (!resourceExists(resources, "regions", cacheRegionId)) {
-            errors.push("所选缓存区域不存在，请刷新后重试");
+        const cache = String(draft?.cacheLocationRef || "");
+        if (!cache) {
+            errors.push("请选择缓存位置");
+        } else if (!cacheLocations(resources).some(item => item.id === cache)) {
+            errors.push("所选缓存位置不存在，请重新选择");
         }
-
-        const cleanup = String(draft?.cleanupDestinationRef || "");
-        if (cleanup && !(cleanup.startsWith("coordinate:")
-                && resourceExists(resources, "coordinates", cleanup.slice(11)))
-                && !(cleanup.startsWith("region:")
-                    && resourceExists(resources, "regions", cleanup.slice(7)))) {
-            errors.push("中断存放位置不存在，请重新选择");
+        if (draft?.overflowEnabled && !resourceExists(resources, "warehouses",
+                referencedId(draft.overflowDestinationRef, "warehouse"))) {
+            errors.push("请选择溢出仓库");
         }
-        if (draft?.overflowEnabled && draft.overflowDestinationRef === `region:${cacheRegionId}`) {
-            errors.push("溢出存入位置需要与缓存区域分开");
+        if (draft?.overflowEnabled && draft.overflowDestinationRef === cache) {
+            errors.push("缓存和溢出存放需要使用不同的仓库");
         }
         validateAreas(draft, resources, errors);
 
@@ -217,8 +215,8 @@
             enabled: draft.enabled,
             overflowEnabled: draft.overflowEnabled === true,
             overflowDestinationRef: draft.overflowEnabled ? draft.overflowDestinationRef || "" : "",
-            cleanupPolicy: {destinationRef: draft.cleanupDestinationRef
-                || reference("region", draft.cacheRegionId), resumeMode: "RESTART"},
+            cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
+                resumeMode: "RESTART"},
             collectionEnabled: draft.collectionEnabled,
             classificationEnabled: draft.classificationEnabled,
             detection: {
@@ -228,9 +226,10 @@
                 ),
                 pickupRadius: parsedRadius(draft.pickupRadius)
             },
-            cacheRegionRef: reference("region", draft.cacheRegionId),
+            cacheLocationRef: draft.cacheLocationRef,
             cachePolicy: {...DEFAULT_CACHE_POLICY, ...draft.cachePolicy},
-            classificationAreas: draft.classificationAreas.map((area) => ({
+            classificationAreas: draft.classificationAreas.filter(area => area.categoryZoneId)
+                .map((area) => ({
                 categoryZoneRef: reference(
                     "category-zone",
                     area.categoryZoneId
@@ -241,16 +240,15 @@
         };
     }
 
-    /**
-     * @param {object} settings
-     * @returns {{enabled: boolean, locations: Array<string>}}
-     */
-    function warehouseDraft(settings) {
-        const locations = [
-            ...(settings?.robotWarehouseCoordinateIds || []).map((id) => `coordinate:${id}`),
-            ...(settings?.robotWarehouseRegionIds || []).map((id) => `region:${id}`)
-        ];
-        return {enabled: locations.length > 0, locations};
+    /** @param {object} resources @returns {Array<{id: string, name: string}>} */
+    function cacheLocations(resources) {
+        return [
+            ["coordinates", "coordinate", "点位"],
+            ["regions", "region", "区域"],
+            ["warehouses", "warehouse", "仓库"]
+        ].flatMap(([key, type, name]) => resourceList(resources, key).map(item => ({
+            id: reference(type, item.id), name: name + " · " + item.name
+        })));
     }
 
     /**
@@ -260,6 +258,7 @@
      * @returns {void}
      */
     function validateAreas(draft, resources, errors) {
+        if (!draft?.classificationEnabled) return;
         const areas = draft?.classificationAreas;
         if (!Array.isArray(areas) || areas.length === 0) {
             errors.push("请至少添加一个分类选区");
@@ -287,7 +286,7 @@
         newDraft,
         payload,
         validateDraft,
-        warehouseDraft
+        cacheLocations
     });
 })();
 

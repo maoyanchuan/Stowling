@@ -8,6 +8,7 @@ import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.CoordinateCatalog;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
@@ -159,6 +160,7 @@ public final class TaskRunManager {
                 coordinates,
                 regions,
                 categoryZones,
+                Map.of(),
                 knownTasks,
                 knownTriggers,
                 priorityOverride,
@@ -191,6 +193,9 @@ public final class TaskRunManager {
                 config.coordinates(),
                 config.regions(),
                 taskCategoryZones(task, config),
+                config.coordinateCatalog().warehouses().stream().collect(
+                        java.util.stream.Collectors.toUnmodifiableMap(
+                                CoordinateCatalog.Warehouse::id, warehouse -> warehouse)),
                 indexTasks(config.tasks()),
                 config.triggers(),
                 priorityOverride,
@@ -229,6 +234,7 @@ public final class TaskRunManager {
             List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
+            Map<UUID, CoordinateCatalog.Warehouse> warehouses,
             Map<UUID, TaskDefinition> tasks,
             List<TaskTriggerDefinition> triggerDefinitions,
             TaskPriority priorityOverride,
@@ -240,6 +246,7 @@ public final class TaskRunManager {
                 coordinates,
                 regions,
                 categoryZones,
+                warehouses,
                 tasks,
                 triggerDefinitions,
                 priorityOverride,
@@ -512,7 +519,7 @@ public final class TaskRunManager {
                 if (task != null) {
                     List<TaskStep> steps = new ArrayList<>(
                             dev.stowling.v2.model.TaskFlowTemplates.reconcileInventory(
-                                    definition.cacheRegionRef(), Map.of()));
+                                    definition.cacheLocationRef(), Map.of()));
                     if (definition.classificationEnabled()) {
                         steps.add(TaskStep.createTask(UUID.randomUUID(), Map.of(
                                 "taskRef", "task:" + definition.classificationTaskId(),
@@ -1083,6 +1090,7 @@ public final class TaskRunManager {
                 List.copyOf(run.prepared.regions.values()),
                 inventoryConfig == null ? List.copyOf(run.prepared.categoryZones.values())
                         : taskCategoryZones(task, inventoryConfig),
+                run.prepared.warehouses,
                 run.prepared.tasks,
                 run.prepared.triggers,
                 priority,
@@ -1117,6 +1125,7 @@ public final class TaskRunManager {
             List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions,
             List<CategoryZoneDefinition> categoryZones,
+            Map<UUID, CoordinateCatalog.Warehouse> warehouses,
             Map<UUID, TaskDefinition> tasks,
             List<TaskTriggerDefinition> triggerDefinitions,
             TaskPriority priorityOverride,
@@ -1154,6 +1163,7 @@ public final class TaskRunManager {
                 frozenCoordinates,
                 frozenRegions,
                 frozenCategoryZones,
+                warehouses,
                 frozenTasks,
                 frozenTriggers,
                 priority,
@@ -1326,7 +1336,8 @@ public final class TaskRunManager {
                 prepared.categoryZones,
                 workspace,
                 registry.inventory(),
-                registry.storageAutomation()
+                registry.storageAutomation(),
+                prepared.warehouses
         );
     }
 
@@ -1371,7 +1382,7 @@ public final class TaskRunManager {
             if (inventoryConfig != null) {
                 for (AutoClassifyDefinition definition : inventoryConfig.autoClassifyTasks()) {
                     if (definition.enabled() && definition.classificationEnabled()
-                            && definition.cacheRegionRef().equals("region:" + update.getKey())) {
+                            && ResourceReference.parse(definition.cacheLocationRef()).uuid().equals(update.getKey())) {
                         pendingInventoryClassification.add(definition.classificationTaskId());
                     }
                 }
@@ -1514,6 +1525,7 @@ public final class TaskRunManager {
             Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions,
             Map<UUID, CategoryZoneDefinition> categoryZones,
+            Map<UUID, CoordinateCatalog.Warehouse> warehouses,
             Map<UUID, TaskDefinition> tasks,
             List<TaskTriggerDefinition> triggers,
             TaskPriority priority,

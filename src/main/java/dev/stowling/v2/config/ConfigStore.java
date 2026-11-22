@@ -83,7 +83,7 @@ public final class ConfigStore {
                 throw new V2ValidationException("configuration must be an object");
             }
             JsonObject root = parsed.getAsJsonObject();
-            upgradeSchema(root);
+            requireSchema(root);
             requireFields(
                     root,
                     "$",
@@ -95,7 +95,7 @@ public final class ConfigStore {
                             "categoryZones",
                             "triggers",
                             "taskFolders",
-                            "autoClassifyTasks"
+                            "autoClassifyTasks", "coordinateCatalog"
                     ),
                     Set.of("schemaVersion", "coordinates", "tasks")
             );
@@ -148,13 +148,13 @@ public final class ConfigStore {
         }
     }
 
-    private static void upgradeSchema(JsonObject root) {
+    private static void requireSchema(JsonObject root) {
         JsonElement value = root.get("schemaVersion");
         if (value == null || !value.isJsonPrimitive()) {
             throw new V2ValidationException("schemaVersion 必须是整数。");
         }
         if (!value.getAsJsonPrimitive().isNumber()) {
-            return;
+            throw new V2ValidationException("schemaVersion 必须是整数。");
         }
         int version;
         try {
@@ -162,259 +162,11 @@ public final class ConfigStore {
         } catch (ArithmeticException | NumberFormatException exception) {
             throw new V2ValidationException("schemaVersion 必须是整数。", exception);
         }
-        if (version < 7 || version > AppConfig.CURRENT_SCHEMA_VERSION) {
+        if (version != AppConfig.CURRENT_SCHEMA_VERSION) {
             throw new V2ValidationException("不支持 schemaVersion " + version
-                    + "。当前版本支持 7 至 " + AppConfig.CURRENT_SCHEMA_VERSION + "。");
+                    + "。请用版本 " + AppConfig.CURRENT_SCHEMA_VERSION
+                    + " 重新创建配置。原配置文件已保留。");
         }
-        if (version <= 14) {
-            if (version <= 11) {
-                if (!root.has("autoClassifyTasks")) {
-                    root.add("autoClassifyTasks", new JsonArray());
-                }
-                ensureAutoClassifyPhaseFlags(root);
-                migrateAutoClassifyAreas(root);
-                removeAutoClassifyClassificationTriggers(root);
-            }
-            migrateCategoryZoneExpansionTemplates(root);
-            removeAutoClassifyRecognition(root);
-            root.addProperty("schemaVersion", AppConfig.CURRENT_SCHEMA_VERSION);
-        }
-    }
-
-    private static void removeAutoClassifyRecognition(JsonObject root) {
-        JsonElement tasks = root.get("autoClassifyTasks");
-        if (tasks == null || !tasks.isJsonArray()) {
-            return;
-        }
-        for (JsonElement task : tasks.getAsJsonArray()) {
-            JsonElement areas = task.getAsJsonObject().get("classificationAreas");
-            if (areas == null || !areas.isJsonArray()) {
-                continue;
-            }
-            for (JsonElement area : areas.getAsJsonArray()) {
-                area.getAsJsonObject().remove("ruleId");
-                area.getAsJsonObject().remove("markerSources");
-            }
-        }
-    }
-
-    private static void migrateCategoryZoneExpansionTemplates(JsonObject root) {
-        JsonElement zonesValue = root.get("categoryZones");
-        if (zonesValue == null || !zonesValue.isJsonArray()) {
-            return;
-        }
-        for (JsonElement zoneValue : zonesValue.getAsJsonArray()) {
-            if (zoneValue == null || !zoneValue.isJsonObject()) {
-                continue;
-            }
-            JsonObject zone = zoneValue.getAsJsonObject();
-            JsonElement expansionValue = zone.get("expansion");
-            if (expansionValue == null || !expansionValue.isJsonObject()) {
-                continue;
-            }
-            JsonObject expansion = expansionValue.getAsJsonObject();
-            if (expansion.has("templateCount")) {
-                continue;
-            }
-            expansion.addProperty("templateCount", 1);
-        }
-    }
-
-    private static void removeAutoClassifyClassificationTriggers(
-            JsonObject root
-    ) {
-        JsonElement tasksValue = root.get("autoClassifyTasks");
-        JsonElement triggersValue = root.get("triggers");
-        if (tasksValue == null || !tasksValue.isJsonArray()
-                || triggersValue == null || !triggersValue.isJsonArray()) {
-            return;
-        }
-        Set<String> ownedTriggerIds = new java.util.HashSet<>();
-        Set<String> classificationTaskIds = new java.util.HashSet<>();
-        for (JsonElement item : tasksValue.getAsJsonArray()) {
-            if (item == null || !item.isJsonObject()) {
-                continue;
-            }
-            String taskId = stringValue(item.getAsJsonObject().get("id"));
-            if (taskId.isBlank()) {
-                continue;
-            }
-            ownedTriggerIds.add(derivedId(taskId, "classification-trigger"));
-            classificationTaskIds.add(derivedId(taskId, "classification"));
-        }
-        JsonArray filtered = new JsonArray();
-        for (JsonElement item : triggersValue.getAsJsonArray()) {
-            if (item == null || !item.isJsonObject()) {
-                continue;
-            }
-            JsonObject trigger = item.getAsJsonObject();
-            String triggerId = stringValue(trigger.get("id"));
-            String targetId = stringValue(trigger.get("targetTaskId"));
-            String type = stringValue(trigger.get("type"));
-            boolean classificationTrigger = ownedTriggerIds.contains(triggerId)
-                    || "CACHE_UPDATED".equals(type)
-                    && classificationTaskIds.contains(targetId);
-            if (!classificationTrigger) {
-                filtered.add(trigger);
-            }
-        }
-        root.add("triggers", filtered);
-    }
-
-    private static String derivedId(String taskId, String role) {
-        return UUID.nameUUIDFromBytes(
-                (taskId + ":" + role).getBytes(StandardCharsets.UTF_8)
-        ).toString();
-    }
-
-    private static void ensureAutoClassifyPhaseFlags(JsonObject root) {
-        JsonElement value = root.get("autoClassifyTasks");
-        if (value == null || !value.isJsonArray()) {
-            return;
-        }
-        for (JsonElement item : value.getAsJsonArray()) {
-            if (item == null || !item.isJsonObject()) {
-                continue;
-            }
-            JsonObject definition = item.getAsJsonObject();
-            if (!definition.has("collectionEnabled")) {
-                definition.addProperty("collectionEnabled", true);
-            }
-            if (!definition.has("classificationEnabled")) {
-                definition.addProperty("classificationEnabled", true);
-            }
-        }
-    }
-
-    private static void migrateAutoClassifyAreas(JsonObject root) {
-        JsonElement tasksValue = root.get("autoClassifyTasks");
-        if (tasksValue == null || !tasksValue.isJsonArray()) {
-            return;
-        }
-        JsonElement zonesValue = root.get("categoryZones");
-        JsonArray zones = zonesValue != null && zonesValue.isJsonArray()
-                ? zonesValue.getAsJsonArray()
-                : new JsonArray();
-        for (JsonElement item : tasksValue.getAsJsonArray()) {
-            if (item == null || !item.isJsonObject()) {
-                continue;
-            }
-            JsonObject definition = item.getAsJsonObject();
-            if (definition.has("classificationAreas")) {
-                consolidateClassificationAreas(definition);
-                definition.remove("categoryZoneRef");
-                definition.remove("markerSources");
-                continue;
-            }
-            String categoryZoneRef = stringValue(
-                    definition.get("categoryZoneRef")
-            );
-            String zoneId = categoryZoneRef.contains(":")
-                    ? categoryZoneRef.substring(categoryZoneRef.indexOf(':') + 1)
-                    : "";
-            JsonArray areas = new JsonArray();
-            for (JsonElement zoneItem : zones) {
-                if (zoneItem == null || !zoneItem.isJsonObject()) {
-                    continue;
-                }
-                JsonObject zone = zoneItem.getAsJsonObject();
-                if (!zoneId.equals(stringValue(zone.get("id")))) {
-                    continue;
-                }
-                JsonElement bindings = zone.get("bindings");
-                if (bindings == null || !bindings.isJsonArray()) {
-                    continue;
-                }
-                String ruleId = firstRuleId(bindings.getAsJsonArray());
-                areas.add(classificationArea(
-                        categoryZoneRef,
-                        ruleId
-                ));
-            }
-            definition.add("classificationAreas", areas);
-            definition.remove("categoryZoneRef");
-            definition.remove("markerSources");
-        }
-    }
-
-    private static void consolidateClassificationAreas(
-            JsonObject definition
-    ) {
-        JsonElement value = definition.get("classificationAreas");
-        if (value == null || !value.isJsonArray()) {
-            return;
-        }
-        Map<String, JsonObject> byZone = new LinkedHashMap<>();
-        for (JsonElement item : value.getAsJsonArray()) {
-            if (item == null || !item.isJsonObject()) {
-                continue;
-            }
-            JsonObject existing = item.getAsJsonObject();
-            String zoneRef = stringValue(existing.get("categoryZoneRef"));
-            if (zoneRef.isBlank() || byZone.containsKey(zoneRef)) {
-                continue;
-            }
-            byZone.put(zoneRef, classificationArea(
-                    zoneRef,
-                    stringValue(existing.get("ruleId"))
-            ));
-        }
-        JsonArray consolidated = new JsonArray();
-        byZone.values().forEach(consolidated::add);
-        definition.add("classificationAreas", consolidated);
-    }
-
-    private static JsonObject classificationArea(
-            String categoryZoneRef,
-            String ruleId
-    ) {
-        JsonObject area = new JsonObject();
-        area.addProperty("categoryZoneRef", categoryZoneRef);
-        String normalizedRuleId = normalizeCategoryRuleId(ruleId);
-        area.addProperty("ruleId", normalizedRuleId);
-        area.add(
-                "markerSources",
-                compatibleMarkerSources(normalizedRuleId)
-        );
-        return area;
-    }
-
-    private static String normalizeCategoryRuleId(String ruleId) {
-        return "CONTAINER_CONTENTS".equals(ruleId)
-                ? "MARKER_CONTAINER_CONTENTS"
-                : ruleId;
-    }
-
-    private static String firstRuleId(JsonArray bindings) {
-        for (JsonElement item : bindings) {
-            if (item != null && item.isJsonObject()) {
-                String ruleId = stringValue(
-                        item.getAsJsonObject().get("ruleId")
-                );
-                if (!ruleId.isBlank()) {
-                    return ruleId;
-                }
-            }
-        }
-        return "DIRECT_BLOCK_ID";
-    }
-
-    private static String stringValue(JsonElement value) {
-        return value == null || value.isJsonNull() ? "" : value.getAsString();
-    }
-
-    private static JsonArray compatibleMarkerSources(String ruleId) {
-        JsonArray result = new JsonArray();
-        if ("CONTAINER_CONTENTS".equals(ruleId)
-                || "MARKER_CONTAINER_CONTENTS".equals(ruleId)) {
-            result.add("CONTAINER_CONTENTS");
-            return result;
-        }
-        for (CategoryMarkerSource source
-                : CategoryMarkerSource.SMART_SOURCES) {
-            result.add(source.name());
-        }
-        return result;
     }
 
     private static void requireStepObjects(JsonElement value, String path) {
@@ -485,7 +237,7 @@ public final class ConfigStore {
         if (value == null || value.isJsonNull()) return;
         JsonObject policy = requireObject(value, "cleanupPolicy");
         requireFields(policy, "cleanupPolicy",
-                Set.of("destinationRef", "resumeMode"), Set.of());
+                Set.of("destinationRef", "resumeMode", "emptyBoxRefs", "packingPositionRef"), Set.of());
         JsonElement mode = policy.get("resumeMode");
         if (mode != null && !mode.isJsonNull() && (!mode.isJsonPrimitive()
                 || !mode.getAsJsonPrimitive().isString()
@@ -502,12 +254,12 @@ public final class ConfigStore {
                 "collectionEnabled",
                 "classificationEnabled",
                 "detectionCoordinateRef",
-                "pickupRadius",
-                "cacheRegionRef",
+                "cacheLocationRef",
                 "classificationAreas",
                 "collectionPriority"
         );
         Set<String> allowed = new java.util.HashSet<>(fields);
+        allowed.add("pickupRadius");
         allowed.add("overflowEnabled");
         allowed.add("overflowDestinationRef");
         allowed.add("cleanupPolicy");

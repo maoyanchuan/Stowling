@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 
 public final class MaterialRequirements {
     public static final String MODULE = "COLLECT_SCHEMATIC_MATERIALS";
+    public static final String SOURCE_ZONE_REF = "sourceZoneRef";
     public static final String PARAMETER = "materials";
     public static final String BOXED_DELIVERY = "boxedDelivery";
     public static final String SINGLE_MATERIAL_BOXES = "singleMaterialBoxes";

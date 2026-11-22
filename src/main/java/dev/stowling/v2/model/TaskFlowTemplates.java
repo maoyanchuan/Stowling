@@ -114,7 +114,7 @@ public final class TaskFlowTemplates {
         scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
         scan.remove(ConfigValidator.CATEGORY_BINDING_ID);
         scan.remove(ConfigValidator.CATEGORY_RULE_ID);
-        scan.put(ConfigValidator.REGION_REF, cacheRegionRef);
+        scan.put(cacheLocationKey(cacheRegionRef), cacheRegionRef);
         scan.put(ConfigValidator.SCAN_CONTENTS, "true");
         TaskStep scanStep = TaskStep.action(
                 UUID.randomUUID(),
@@ -161,7 +161,7 @@ public final class TaskFlowTemplates {
                 collect
         );
         Map<String, String> scan = new LinkedHashMap<>();
-        scan.put(ConfigValidator.REGION_REF, regionRef);
+        scan.put(cacheLocationKey(regionRef), regionRef);
         copyIfPresent(
                 collectParameters,
                 scan,
@@ -216,13 +216,20 @@ public final class TaskFlowTemplates {
                 batch);
     }
 
+    private static String cacheLocationKey(String ref) {
+        return ResourceReference.parse(ref).type() == ResourceType.REGION
+                ? ConfigValidator.REGION_REF : ConfigValidator.CACHE_LOCATION_REF;
+    }
+
     public static TaskStep overflow(String cacheRegionRef) {
         return overflow(cacheRegionRef, null);
     }
 
     public static TaskStep overflow(String cacheRegionRef, String destinationRef) {
         Map<String, String> parameters = new LinkedHashMap<>();
-        if (cacheRegionRef != null) parameters.put(ConfigValidator.REGION_REF, cacheRegionRef);
+        if (cacheRegionRef != null) {
+            parameters.put(cacheLocationKey(cacheRegionRef), cacheRegionRef);
+        }
         if (destinationRef != null) parameters.put(ConfigValidator.TARGET_REF, destinationRef);
         return TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE, parameters);
     }
@@ -232,7 +239,7 @@ public final class TaskFlowTemplates {
             Map<String, String> collectParameters
     ) {
         Map<String, String> scan = new LinkedHashMap<>();
-        scan.put(ConfigValidator.REGION_REF, regionRef);
+        scan.put(cacheLocationKey(regionRef), regionRef);
         copyIfPresent(collectParameters, scan, ConfigValidator.CONTAINER_TYPES);
         copyIfPresent(collectParameters, scan, ConfigValidator.MAX_VOLUME);
         Map<String, String> syncParameters = new LinkedHashMap<>();
@@ -440,7 +447,7 @@ public final class TaskFlowTemplates {
         TaskStep scan = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.SCAN_CONTAINERS_IN_REGION,
-                Map.of(ConfigValidator.REGION_REF, regionRef)
+                Map.of(cacheLocationKey(regionRef), regionRef)
         );
         TaskStep select = TaskStep.action(
                 UUID.randomUUID(),

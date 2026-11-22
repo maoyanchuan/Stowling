@@ -107,6 +107,14 @@ globalThis.window = {
     setTimeout(callback) { pendingAutosave = callback; return 1; },
     /** @returns {void} */
     clearTimeout() { pendingAutosave = undefined; },
+    StowlingResourcePicker: {
+        load: async () => ({coordinates: [], regions: [{id: "delivery", name: "Delivery"}],
+            categoryZones: [{id: "source", name: "Source storage"}]}),
+        group: () => {}
+    },
+    StowlingTaskCleanupSettings: {create: () => ({
+        set: () => {}, resources: () => {}, read: () => ({resumeMode: "CONTINUE"})
+    })},
     Stowling: {
         /** @returns {boolean} */ isConnected: () => true,
         /** @param {Function} callback @returns {void} */
@@ -314,3 +322,15 @@ def test_all_exclusion_switches_use_the_same_direction_and_keep_water_options_ex
     assert result["saved"]["skipWaterBuckets"] == "false"
     assert result["saved"]["collectShulkerBoxes"] == "false"
     assert result["saved"]["collectMinecarts"] == "false"
+
+
+def test_material_source_scope_saves_the_selected_classification_zone() -> None:
+    result = run_ui("""(async () => {
+        const source = element('material-source-zone');
+        source.value = 'category-zone:source';
+        element('material-task-form').emit('input');
+        await waitForAutosave();
+        return posts.at(-1).steps[0].parameters;
+    })()""")
+    assert result["sourceZoneRef"] == "category-zone:source"
+    assert result["targetRef"] == "region:delivery"

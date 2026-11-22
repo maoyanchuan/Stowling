@@ -568,7 +568,9 @@ class V2ControlServerTest {
         try (Fixture fixture = fixture()) {
             for (String path : List.of(
                     "/storage.html",
-                    "/storage.js"
+                    "/storage.js",
+                    "/task-select-ui.js",
+                    "/pickup-task-settings.css"
             )) {
                 HttpResponse<String> response = fixture.send(
                         path,

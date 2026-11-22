@@ -113,6 +113,67 @@ def run_ui(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_reveal_uses_template_timing_and_cancels_stale_closing_animation() -> None:
+    result = run_ui("""(async () => {
+        const animations = [];
+        window.getComputedStyle = () => ({opacity:'0.4'});
+        const body = new Element('div');
+        body.style = {};
+        body.scrollHeight = 200;
+        body.getBoundingClientRect = () => ({height:80});
+        body.animate = (frames, options) => {
+            let finish;
+            let cancel;
+            const finished = new Promise((resolve, reject) => {finish=resolve; cancel=reject;});
+            const animation = {frames, options, finished, finish, cancel};
+            animations.push(animation);
+            return animation;
+        };
+        await settings.reveal(body, true);
+        const initial = animations.length;
+        const closing = settings.reveal(body, false);
+        const closingInert = body.inert;
+        const opening = settings.reveal(body, true);
+        await closing;
+        const beforeFinish = {hidden:body.hidden, inert:body.inert};
+        animations[1].finish();
+        await opening;
+        return {initial, closingInert, beforeFinish, hidden:body.hidden,
+            overflow:body.style.overflow, durations:animations.map(a=>a.options.duration),
+            easing:animations[1].options.easing, opacity:animations[1].frames[0].opacity};
+    })()""")
+
+    assert result == {
+        "initial": 0,
+        "closingInert": True,
+        "beforeFinish": {"hidden": False, "inert": False},
+        "hidden": False,
+        "overflow": "",
+        "durations": [150, 200],
+        "easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "opacity": "0.4",
+    }
+
+
+def test_reveal_respects_reduced_motion_and_makes_closed_content_inert() -> None:
+    result = run_ui("""(async () => {
+        window.matchMedia = () => ({matches:true});
+        const body = new Element('div');
+        body.style = {};
+        body.animate = () => {throw new Error('Animation must be skipped');};
+        await settings.reveal(body, true);
+        await settings.reveal(body, false);
+        const closed = {hidden:body.hidden, inert:body.inert};
+        await settings.reveal(body, true);
+        return {closed, open:{hidden:body.hidden, inert:body.inert}};
+    })()""")
+
+    assert result == {
+        "closed": {"hidden": True, "inert": True},
+        "open": {"hidden": False, "inert": False},
+    }
+
+
 def test_optional_settings_preserve_values_and_preexisting_disabled_controls() -> None:
     result = run_ui(
         """(() => {

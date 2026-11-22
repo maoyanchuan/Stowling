@@ -1913,6 +1913,11 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/task-autosave.js", read("stowling-web/task-autosave.js", js)),
                 Map.entry("/warehouse-model.js", read("stowling-web/warehouse-model.js", js)),
                 Map.entry("/resource-picker.js", read("stowling-web/resource-picker.js", js)),
+                Map.entry("/task-select-ui.js", read("stowling-web/task-select-ui.js", js)),
+                Map.entry(
+                        "/pickup-task-settings.css",
+                        read("stowling-web/pickup-task-settings.css", "text/css; charset=utf-8")
+                ),
                 Map.entry("/task-cleanup-settings.js",
                         read("stowling-web/task-cleanup-settings.js", js)),
                 Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),

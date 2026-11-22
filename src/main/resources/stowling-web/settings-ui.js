@@ -11,10 +11,13 @@
         if (previous?.expanded === expanded) return previous.done;
         const animated = previous && content.animate
             && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-        const height = animated ? content.getBoundingClientRect().height : 0;
+        const height = animated && !content.hidden ? content.getBoundingClientRect().height : 0;
+        const opacity = previous?.animation
+            ? window.getComputedStyle(content).opacity : (expanded ? 0 : 1);
         previous?.animation?.cancel();
         const current = {expanded, animation: null, done: Promise.resolve()};
         reveals.set(content, current);
+        content.inert = !expanded;
         if (!animated) {
             content.hidden = !expanded;
             if (content.style) content.style.overflow = "";
@@ -24,14 +27,15 @@
         content.style.overflow = "hidden";
         const end = expanded ? content.scrollHeight : 0;
         const animation = content.animate([
-            {height: `${height}px`, opacity: expanded ? 0 : 1},
+            {height: `${height}px`, opacity},
             {height: `${end}px`, opacity: expanded ? 1 : 0}
-        ], {duration: 180, easing: "ease-out"});
+        ], {duration: expanded ? 200 : 150, easing: "cubic-bezier(0.16, 1, 0.3, 1)"});
         current.animation = animation;
         current.done = animation.finished.catch(() => {}).then(() => {
             if (reveals.get(content) !== current) return;
             content.hidden = !expanded;
             content.style.overflow = "";
+            current.animation = null;
         });
         return current.done;
     }

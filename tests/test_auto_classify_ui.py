@@ -153,10 +153,10 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
     assert 'kind !== "CLASSIFICATION" && elements.cacheEnabled.checked' in javascript
 
 
-def test_pickup_settings_group_detection_and_follow_up_and_keep_packing_as_a_switch() -> None:
+def test_pickup_settings_group_detection_and_allow_packing_details() -> None:
     html = read("tasks.html")
     javascript = read("auto-classify-ui.js")
-    pickup = between(html, 'id="auto-pickup-body"', 'id="pickup-packing-title"')
+    pickup = between(html, 'id="auto-pickup-body"', 'id="auto-packing-toggle"')
     follow_up = between(html, 'id="auto-follow-up-field"', 'id="auto-cleanup-settings"')
 
     for field in ("auto-detection-point", "auto-pickup-radius", "auto-detection-interval"):
@@ -167,11 +167,11 @@ def test_pickup_settings_group_detection_and_follow_up_and_keep_packing_as_a_swi
     assert 'value="30"' in follow_up
     assert 'id="auto-follow-up-task"' in follow_up
     assert 'aria-controls="auto-follow-up-body"' in follow_up
-    assert 'elements.packingHeader.hidden = pickup' in javascript
-    assert '!(pickup && phase === "packing")' in javascript
+    assert 'elements.packingHeader.hidden = false' in javascript
+    assert '!(pickup && phase === "packing")' not in javascript
     assert 'const alwaysOpen = pickup && phase === "collection"' in javascript
     assert 'phase === "collection" || phase === "pickup"' not in javascript
-    assert html.index('id="auto-pickup-toggle"') < html.index('id="pickup-packing-title"')
+    assert html.index('id="auto-pickup-toggle"') < html.index('id="auto-packing-toggle"')
     assert html.index('id="auto-collect-priority"') < html.index('id="auto-follow-up-field"')
 
 
@@ -356,7 +356,8 @@ def test_dirty_auto_task_switch_is_disabled_and_deletion_warns() -> None:
     assert delete.index(warning) < delete.index(confirmation) < delete.index("Stowling.request(")
 
 
-def test_switching_auto_classification_keeps_the_open_card_and_rolls_back_on_error() -> None:
+@pytest.mark.parametrize("kind", ["COMBINED", "PICKUP"])
+def test_switching_auto_task_keeps_the_open_card_and_rolls_back_on_error(kind: str) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is needed to exercise the task card")
@@ -373,6 +374,10 @@ class Element extends EventTarget {
     };
     /** @param {...Element} nodes @returns {void} */
     append(...nodes) { this.children.push(...nodes); }
+    /** @param {...Element} nodes @returns {void} */
+    prepend(...nodes) { this.children.unshift(...nodes); }
+    /** @returns {Element} */
+    get firstElementChild() { return this.children[0]; }
     /** @param {...Element} nodes @returns {void} */
     replaceChildren(...nodes) { this.children = nodes; }
     /** @param {string} key @param {string} value @returns {void} */
@@ -396,7 +401,9 @@ function element(selector) {
 globalThis.document = Object.assign(new EventTarget(), {
     querySelector: element,
     /** @returns {Element} */
-    createElement() { return new Element(); }
+    createElement() { return new Element(); },
+    /** @returns {Element} */
+    createElementNS() { return new Element(); }
 });
 globalThis.Option = Element;
 globalThis.CustomEvent = class extends Event {
@@ -407,7 +414,9 @@ globalThis.CustomEvent = class extends Event {
     }
 };
 
-const item = {id: "sorter", name: "自动分类", enabled: false, classificationAreas: []};
+const kind = process.argv[3];
+const item = {id: "sorter", name: "自动分类", ...(kind === "PICKUP" ? {kind} : {}), enabled: false,
+    collectionEnabled: true, classificationAreas: []};
 const requests = [];
 const errors = [];
 const changes = [];
@@ -457,12 +466,16 @@ document.addEventListener("stowling:auto-tasks-changed", () => changes.push("rel
     require(process.argv[2]);
     await connect();
     const list = element("#auto-task-list");
-    list.children[0].children[0].children[0].dispatchEvent(new Event("click"));
+    const initialHeader = list.children[0].children[0];
+    initialHeader.children[kind === "PICKUP" ? 1 : 0].dispatchEvent(new Event("click"));
     const card = list.children[0];
     const [header, body] = card.children;
-    const [summary, toggle] = header.children;
-    const status = summary.children[3];
+    const summary = header.children[kind === "PICKUP" ? 1 : 0];
+    const toggle = header.children[kind === "PICKUP" ? 2 : 1];
+    const status = kind === "PICKUP" ? card.children[2] : summary.children[3];
     const form = element("#auto-task-form");
+    const radius = element("#auto-pickup-radius");
+    radius.value = "24";
     assert.equal(body.hidden, false);
     assert.ok(body.children.includes(form));
     requests.length = 0;
@@ -478,6 +491,8 @@ document.addEventListener("stowling:auto-tasks-changed", () => changes.push("rel
     assert.ok(body.children.includes(form));
     assert.equal(status.textContent, "监听中");
     assert.equal(toggle.disabled, false);
+    assert.equal(radius.value, "24");
+    assert.equal(element("#auto-task-fields").disabled, false);
 
     toggle.checked = false;
     toggle.dispatchEvent(new Event("change"));
@@ -500,7 +515,7 @@ document.addEventListener("stowling:auto-tasks-changed", () => changes.push("rel
 """
     subprocess.run(
         [node, "-e", script, str(WEB / "auto-classify-task-model.js"),
-         str(WEB / "auto-classify-ui.js")],
+         str(WEB / "auto-classify-ui.js"), kind],
         check=True,
     )
 
@@ -637,6 +652,29 @@ function input(target) {
     assert.equal(delay.value, "45");
     assert.equal(delay.disabled, false);
     assert.equal(scheduled, 4);
+
+    const packing = element("#auto-cache-packing-enabled");
+    const packingHeader = element("#auto-packing-toggle");
+    const packingBody = element("#auto-packing-body");
+    const threshold = element("#auto-cache-threshold");
+    packingBody.controls = [threshold];
+    threshold.value = "65";
+    packing.checked = true;
+    input(packing);
+    assert.equal(packingHeader.hidden, false);
+    assert.equal(packingBody.hidden, false);
+    assert.equal(threshold.disabled, false);
+    packingHeader.dispatchEvent(new Event("click"));
+    assert.equal(packingBody.hidden, true);
+    assert.equal(threshold.value, "65");
+    packing.checked = false;
+    input(packing);
+    assert.equal(packingBody.hidden, true);
+    assert.equal(threshold.value, "65");
+    packing.checked = true;
+    input(packing);
+    assert.equal(packingBody.hidden, false);
+    assert.equal(threshold.value, "65");
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

@@ -8,9 +8,11 @@
     <link rel="icon" type="image/png" href="/icon.png">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/workbench.css">
+    <link rel="stylesheet" href="/pickup-task-settings.css">
     <script src="/common.js" defer></script>
     <script src="/resource-picker.js" defer></script>
     <script src="/settings-ui.js" defer></script>
+    <script src="/task-select-ui.js" defer></script>
     <script src="/storage-policy-editor.js" defer></script>
     <script src="/v2-task-model.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
@@ -562,16 +564,25 @@
                             </div>
                         </div>
                         <article id="auto-task-draft" class="move-saved-task is-draft" hidden>
-                            <button id="toggle-auto-draft" class="move-task-summary"
-                                    type="button" aria-expanded="false"
-                                    aria-controls="auto-draft-body">
-                                <span class="move-task-kind" aria-hidden="true">⇄</span>
-                                <span class="move-task-overview">
+                            <div class="pickup-task-header">
+                                <h3 class="pickup-task-title">
+                                    <svg aria-hidden="true" viewBox="0 0 24 24" width="20"
+                                         height="20" fill="none" stroke="currentColor"
+                                         stroke-width="1.8" stroke-linejoin="round">
+                                        <path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z
+                                                 M3 7.5l9 4.5 9-4.5M12 12v9"/>
+                                    </svg>
                                     <strong id="auto-draft-title">新建 · 掉落物拾取</strong>
-                                </span>
-                                <span class="move-task-state">未保存</span>
-                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                            </button>
+                                </h3>
+                                <button id="toggle-auto-draft" class="pickup-task-expand"
+                                        type="button" aria-expanded="false"
+                                        aria-label="展开掉落物拾取设置"
+                                        aria-controls="auto-draft-body">
+                                    <svg aria-hidden="true" viewBox="0 0 24 24" width="20"
+                                         height="20" fill="none" stroke="currentColor"
+                                         stroke-width="1.8"><path d="m9 5 7 7-7 7"/></svg>
+                                </button>
+                            </div>
                             <div id="auto-draft-body" class="move-task-body" hidden>
                                 <form id="auto-task-form" class="auto-task-form" hidden novalidate>
                                     <fieldset id="auto-task-fields" disabled>
@@ -673,13 +684,6 @@
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-packing-title">
                                                     <div class="auto-phase-header">
-                                                        <div id="pickup-packing-title"
-                                                             class="auto-phase-toggle" hidden>
-                                                            <strong>打包缓存</strong>
-                                                            <span class="auto-experimental-tag">
-                                                                实验性
-                                                            </span>
-                                                        </div>
                                                         <button id="auto-packing-toggle"
                                                                 class="auto-phase-toggle"
                                                                 type="button"
@@ -714,7 +718,8 @@
                                                         </p>
                                                         <p id="pickup-packing-help"
                                                            class="auto-config-note" hidden>
-                                                            达到阈值后尝试装盒回存。
+                                                            按缓存箱已占用的槽位计算；达到阈值后尝试
+                                                            装盒回存，需要空潜影盒供应。
                                                         </p>
                                                         <div class="move-fields">
                                                             <label class="move-field"
@@ -749,8 +754,14 @@
                                                        for="auto-collect-priority">
                                                     <span>任务优先级</span>
                                                     <select id="auto-collect-priority">
-                                                        <option value="NORMAL">普通</option>
-                                                        <option value="URGENT">紧急</option>
+                                                        <option value="NORMAL"
+                                                                data-description="加入普通任务队列">
+                                                            普通
+                                                        </option>
+                                                        <option value="URGENT"
+                                                                data-description="优先于普通任务执行">
+                                                            紧急
+                                                        </option>
                                                     </select>
                                                 </label>
                                             </div>

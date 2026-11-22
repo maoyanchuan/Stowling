@@ -316,6 +316,25 @@ body[data-page] .task-display-placeholder {
     background: transparent;
 }
 
+.task-display-placeholder > :is(.panel-heading, .field-message, .move-placeholder) {
+    margin-inline: 19px;
+}
+
+body[data-page="tasks"] .task-display-placeholder > .panel-heading {
+    align-items: center;
+    margin-bottom: 0;
+    padding-top: 8px;
+}
+
+.task-display-placeholder > .move-placeholder {
+    margin-block: 12px 0;
+}
+
+.task-display-placeholder > :is(.field-message, .move-task-list):empty {
+    min-height: 0;
+    margin-top: 0;
+}
+
 body[data-page] :is(.move-task-list, .editor-list) {
     display: grid;
     gap: 12px;

@@ -278,3 +278,74 @@ def test_hover_has_one_rounded_layer_without_clipping(page: Any, theme: str, sel
     assert result["clipping"] == []
     if selector == "#follow-up-row":
         assert result["buttonBackground"] == "rgba(0, 0, 0, 0)"
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width", [360, 900, 1800])
+def test_cleanup_controls_stay_inside_their_own_hover_rows(
+    page: Any, theme: str, width: int
+) -> None:
+    page.set_viewport_size({"width": width, "height": 1200})
+    for name in ("settings-ui.js", "task-cleanup-settings.js"):
+        page.add_script_tag(content=(WEB / name).read_text(encoding="utf-8"))
+    page.evaluate("""theme => {
+        document.documentElement.dataset.theme = theme;
+        document.querySelector('article').style.maxWidth = 'none';
+        const host = document.createElement('div');
+        host.id = 'auto-cleanup-settings';
+        document.querySelector('.task-cleanup-section').replaceWith(host);
+        window.cleanup = StowlingTaskCleanupSettings.create(host, {
+            allowContinue:false, facilities:true, defaultLabel:'使用本任务缓存位置'
+        });
+        cleanup.resources([{id:'pickup', name:'掉落物拾取点'}], []);
+        cleanup.set({emptyBoxRefs:['coordinate:pickup']});
+        const content = host.querySelector('.settings-detail');
+        const inner = document.createElement('div');
+        inner.className = 'task-settings-inner';
+        inner.append(...content.childNodes);
+        content.append(inner);
+        view.refresh(true);
+    }""", theme)
+    page.locator("#auto-cleanup-settings summary").click()
+    page.wait_for_function("""() => {
+        const content = document.querySelector('#auto-cleanup-settings .settings-detail');
+        return !content.hidden && content.style.overflow !== 'hidden';
+    }""")
+
+    rows = page.locator("#auto-cleanup-settings .move-field")
+    measurements = []
+    for index in (0, 1):
+        row = rows.nth(index)
+        row.hover()
+        measurements.append(row.evaluate("""row => {
+            const bounds = row.getBoundingClientRect();
+            const highlight = getComputedStyle(row, '::before');
+            return {
+                row:bounds.toJSON(),
+                highlight:{top:bounds.top + parseFloat(highlight.top),
+                    bottom:bounds.bottom - parseFloat(highlight.bottom)},
+                label:row.firstElementChild.getBoundingClientRect().toJSON(),
+                control:row.querySelector('.task-select-trigger')
+                    .getBoundingClientRect().toJSON(),
+                note:row.querySelector('small')?.getBoundingClientRect().toJSON()
+            };
+        }"""))
+
+    for measurement in measurements:
+        highlight = measurement["highlight"]
+        control = measurement["control"]
+        assert control["top"] >= highlight["top"] + 8
+        assert control["bottom"] <= highlight["bottom"] - 8
+        assert measurement["label"]["top"] >= highlight["top"]
+        if note := measurement.get("note"):
+            assert note["bottom"] <= highlight["bottom"] - 8
+        if width > 600:
+            assert abs(control["top"] + control["bottom"]
+                       - highlight["top"] - highlight["bottom"]) <= 2
+
+    assert measurements[0]["highlight"]["bottom"] <= measurements[1]["highlight"]["top"]
+    if width > 600:
+        assert abs(measurements[0]["row"]["height"] - measurements[1]["row"]["height"]) <= 1
+        assert abs(measurements[0]["control"]["right"]
+                   - measurements[1]["control"]["right"]) <= 1
+    assert page.evaluate("cleanup.read().emptyBoxRefs") == ["coordinate:pickup"]

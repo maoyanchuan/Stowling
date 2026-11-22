@@ -178,14 +178,6 @@ public final class TaskFlowTemplates {
                 ConfigValidator.SELECT_CONTAINER,
                 Map.of(RESET_CACHE_HAS_MORE, "true")
         );
-        TaskStep move = TaskStep.action(
-                UUID.randomUUID(),
-                ConfigValidator.MOVE_TO_COORDINATE,
-                Map.of(
-                        ConfigValidator.TARGET_REF,
-                        ResourceReference.output("container").encode()
-                )
-        );
         TaskStep deposit = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
@@ -199,7 +191,7 @@ public final class TaskFlowTemplates {
         TaskStep depositCollected = TaskStep.repeat(
                 UUID.randomUUID(),
                 conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
-                List.of(selectContainer, move, deposit)
+                List.of(selectContainer, deposit)
         );
         if (collectParameters.containsKey("cacheIntakeMode")) {
             depositCollected = TaskStep.action(UUID.randomUUID(), "MANAGE_CACHE_INTAKE", Map.of(
@@ -264,14 +256,6 @@ public final class TaskFlowTemplates {
                 ConfigValidator.SELECT_CONTAINER,
                 Map.of(RESET_CACHE_HAS_MORE, "true")
         );
-        TaskStep reconcileMove = TaskStep.action(
-                UUID.randomUUID(),
-                ConfigValidator.MOVE_TO_COORDINATE,
-                Map.of(
-                        ConfigValidator.TARGET_REF,
-                        ResourceReference.output("container").encode()
-                )
-        );
         TaskStep reconcileDeposit = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS,
@@ -285,11 +269,7 @@ public final class TaskFlowTemplates {
         TaskStep reconcileDeposits = TaskStep.repeat(
                 UUID.randomUUID(),
                 conditionParameters(TaskCondition.HAS_CONTAINERS, Map.of()),
-                List.of(
-                        reconcileSelect,
-                        reconcileMove,
-                        reconcileDeposit
-                )
+                List.of(reconcileSelect, reconcileDeposit)
         );
         TaskStep reconcileSync = TaskStep.action(
                 UUID.randomUUID(),

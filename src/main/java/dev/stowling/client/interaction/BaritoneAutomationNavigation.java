@@ -33,6 +33,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private int retryDelayTicks;
     private boolean stopRequested;
     private AreaBounds standingArea;
+    private boolean avoidPickups = true;
 
     public BaritoneAutomationNavigation(
             NavigationService navigationService,
@@ -93,14 +94,22 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (radius < 0) {
             throw new IllegalArgumentException("radius must not be negative");
         }
+        avoidPickups = true;
         return beginNear(target, radius, null);
     }
 
     @Override
     public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea) {
-        if (isWithinInteractionRange(target, standingArea)) {
+        return startInteraction(target, standingArea, true);
+    }
+
+    @Override
+    public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea,
+            boolean avoidPickups) {
+        if (isWithinInteractionRange(target, standingArea, avoidPickups)) {
             return arrive();
         }
+        this.avoidPickups = avoidPickups;
         return beginNear(target, null, standingArea);
     }
 
@@ -120,7 +129,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         if (nearRadius == null) {
             navigationService.interactionFeet().ifPresent(rejectedStances::add);
             if (!navigationService.navigateToInteractionRange(target, standingArea,
-                    rejectedStances)) {
+                    rejectedStances, avoidPickups)) {
                 return failNavigation();
             }
         } else {
@@ -149,7 +158,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         if (nearNavigation
-                && isWithinInteractionRange(target, standingArea)) {
+                && isWithinInteractionRange(target, standingArea, avoidPickups)) {
             return arrive();
         }
         BlockPosition current = world.playerPosition().orElseThrow();
@@ -209,11 +218,17 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     @Override
     public boolean isWithinInteractionRange(BlockPosition target, AreaBounds area) {
+        return isWithinInteractionRange(target, area, true);
+    }
+
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target, AreaBounds area,
+            boolean avoidPickups) {
         if (area != null && worldObserver.observeWorld().playerPosition()
                 .filter(area::contains).isEmpty()) {
             return false;
         }
-        return isWithinInteractionRange(target);
+        return navigationService.isWithinInteractionRange(target, avoidPickups);
     }
 
     private static double arrivalDistanceSquared(int radius) {

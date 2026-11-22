@@ -348,6 +348,25 @@ class BaritoneAutomationNavigationTest {
         assertEquals(NavigationStatus.FAILED, navigation.status(target, 4));
     }
 
+    @Test
+    void onlyProtectedContainerVisitsTreatNearbyDropsAsUnsafe() {
+        BlockPosition target = new BlockPosition(7, 64, 1);
+        var player = new AtomicReference<>(new BlockPosition(7, 64, 2));
+        var area = new AreaBounds(7, 64, 2, 7, 64, 2);
+        var service = new RecordingNavigationService();
+        service.pickupHazard = true;
+        var navigation = navigationAt(service, player);
+
+        assertEquals(NavigationStatus.NAVIGATING,
+                navigation.startInteraction(target, area, false));
+        assertEquals(false, service.avoidsPickups);
+        service.withinInteractionRange = true;
+        assertEquals(NavigationStatus.ARRIVED, navigation.status(target));
+
+        assertEquals(NavigationStatus.NAVIGATING, navigation.startInteraction(target, area));
+        assertEquals(true, service.avoidsPickups);
+    }
+
     private static BaritoneAutomationNavigation navigationAt(
             RecordingNavigationService service,
             AtomicReference<BlockPosition> player
@@ -374,6 +393,8 @@ class BaritoneAutomationNavigationTest {
         private int interactionChecks;
         private int cancellations;
         private boolean withinInteractionRange;
+        private boolean pickupHazard;
+        private boolean avoidsPickups;
         private boolean navigating;
         private AreaBounds standingArea;
         private int interactionCalls;
@@ -387,6 +408,13 @@ class BaritoneAutomationNavigationTest {
             interactionCalls++;
             rejectedStances = Set.copyOf(excluded);
             return true;
+        }
+
+        @Override
+        public boolean navigateToInteractionRange(BlockPosition target, AreaBounds area,
+                Set<BlockPosition> excluded, boolean avoidPickups) {
+            avoidsPickups = avoidPickups;
+            return navigateToInteractionRange(target, area, excluded);
         }
 
         @Override
@@ -416,6 +444,11 @@ class BaritoneAutomationNavigationTest {
         public boolean isWithinInteractionRange(BlockPosition target) {
             interactionChecks++;
             return withinInteractionRange;
+        }
+
+        @Override
+        public boolean isWithinInteractionRange(BlockPosition target, boolean avoidPickups) {
+            return isWithinInteractionRange(target) && (!avoidPickups || !pickupHazard);
         }
 
         @Override

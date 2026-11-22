@@ -58,6 +58,17 @@ public final class MinecraftContainerTransferPort
             ContainerTarget target,
             Map<String, Integer> items
     ) {
+        return startDeposit(target, items, true);
+    }
+
+    @Override
+    public ContainerTransferResult startCollectedCacheDeposit(ContainerTarget target,
+            Map<String, Integer> items) {
+        return startDeposit(target, items, false);
+    }
+
+    private ContainerTransferResult startDeposit(ContainerTarget target, Map<String, Integer> items,
+            boolean avoidPickups) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(items, "items");
         Map<String, Integer> remaining = checkedItems(items);
@@ -76,8 +87,8 @@ public final class MinecraftContainerTransferPort
                     remaining
             );
         }
-        active = new ActiveDeposit(target, remaining);
-        active.visit = new MinecraftContainerVisit(minecraft, navigation, target);
+        active = new ActiveDeposit(target, remaining, avoidPickups);
+        active.visit = new MinecraftContainerVisit(minecraft, navigation, target, avoidPickups);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerTransferResult.pending("正在打开容器", remaining);
     }
@@ -420,7 +431,8 @@ public final class MinecraftContainerTransferPort
         active.phase = Phase.RESYNCHRONIZING;
         active.rollbackMessage = message;
         active.batch.resetUnsettled();
-        active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target);
+        active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target,
+                active.avoidPickups);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerTransferResult.pending("正在重新读取原缓存，核对实际存入", remaining());
     }
@@ -726,6 +738,7 @@ public final class MinecraftContainerTransferPort
         private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private final Map<String, Integer> remaining;
+        private final boolean avoidPickups;
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;
@@ -736,10 +749,12 @@ public final class MinecraftContainerTransferPort
 
         private ActiveDeposit(
                 ContainerTarget target,
-                Map<String, Integer> remaining
+                Map<String, Integer> remaining,
+                boolean avoidPickups
         ) {
             this.target = target;
             this.remaining = remaining;
+            this.avoidPickups = avoidPickups;
         }
     }
 }

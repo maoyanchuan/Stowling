@@ -66,9 +66,24 @@ public final class ClientThreadNavigationPort implements NavigationPort {
     }
 
     @Override
+    public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea,
+            boolean avoidPickups) {
+        return scheduler.isClientThread()
+                ? delegate.startInteraction(target, standingArea, avoidPickups)
+                : NavigationStatus.FAILED;
+    }
+
+    @Override
     public boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea) {
         return scheduler.isClientThread()
                 && delegate.isWithinInteractionRange(target, standingArea);
+    }
+
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea,
+            boolean avoidPickups) {
+        return scheduler.isClientThread()
+                && delegate.isWithinInteractionRange(target, standingArea, avoidPickups);
     }
 
     @Override

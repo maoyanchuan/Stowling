@@ -8,6 +8,11 @@ public interface ContainerTransferPort {
             Map<String, Integer> items
     );
 
+    default ContainerTransferResult startCollectedCacheDeposit(
+            ContainerTarget target, Map<String, Integer> items) {
+        return startDeposit(target, items);
+    }
+
     ContainerTransferResult pollDeposit();
 
     void cancelDeposit();

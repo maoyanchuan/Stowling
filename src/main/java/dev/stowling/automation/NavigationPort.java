@@ -32,8 +32,18 @@ public interface NavigationPort {
         return NavigationStatus.FAILED;
     }
 
+    default NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea,
+            boolean avoidPickups) {
+        return startInteraction(target, standingArea);
+    }
+
     default boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea) {
         return standingArea == null && isWithinInteractionRange(target);
+    }
+
+    default boolean isWithinInteractionRange(BlockPosition target, AreaBounds standingArea,
+            boolean avoidPickups) {
+        return isWithinInteractionRange(target, standingArea);
     }
 
     NavigationStatus status(BlockPosition target);

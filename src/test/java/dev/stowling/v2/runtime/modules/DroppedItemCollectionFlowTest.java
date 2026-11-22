@@ -39,6 +39,7 @@ class DroppedItemCollectionFlowTest {
 
         assertEquals(TaskModuleState.SUCCEEDED, result.state(), result.message());
         assertEquals(List.of(4, 4, 3), scenario.deposits);
+        assertEquals(0, scenario.separateContainerMoves);
         assertEquals(0, scenario.remaining);
         assertEquals(Map.of(DISC, 2, TOOL, 1), scenario.playerItemCounts().orElseThrow());
         assertTrue(workspace.managedItems().isEmpty());
@@ -62,9 +63,11 @@ class DroppedItemCollectionFlowTest {
         var point = new CoordinatePoint(UUID.randomUUID(), "Pickup", 0, 64, 0);
         var region = new RegionDefinition(UUID.randomUUID(), "Cache", 10, 64, 0, 10, 64, 0);
         var cache = new ContainerTarget(new BlockPosition(10, 64, 0), "minecraft:chest");
+        var spare = new ContainerTarget(new BlockPosition(11, 64, 0), "minecraft:chest");
         var registry = TaskModuleRuntimeRegistry.unavailablePorts(scenario);
         var context = new TaskExecutionContext(scenario, scenario,
-                (area, types, volume) -> ContainerScanResult.success(List.of(cache)), scenario,
+                (area, types, volume) -> ContainerScanResult.success(List.of(cache, spare)),
+                scenario,
                 registry.containerWithdrawals(), registry.categoryZones(),
                 Map.of(point.id(), point), Map.of(region.id(), region), Map.of(), workspace);
         var flow = new TaskFlowExecutor(TaskFlowTemplates.collect("coordinate:" + point.id(),
@@ -95,6 +98,7 @@ class DroppedItemCollectionFlowTest {
         private final List<Integer> deposits = new ArrayList<>();
         private int remaining = 11;
         private int carried = 2;
+        private int separateContainerMoves;
         private boolean atPickup;
         private boolean latePickup;
 
@@ -123,6 +127,7 @@ class DroppedItemCollectionFlowTest {
         @Override
         public NavigationStatus startInteraction(BlockPosition target,
                 dev.stowling.v2.model.AreaBounds standingArea) {
+            separateContainerMoves++;
             return start(target);
         }
 
@@ -155,6 +160,13 @@ class DroppedItemCollectionFlowTest {
         @Override
         public ContainerTransferResult startDeposit(ContainerTarget target,
                 Map<String, Integer> items) {
+            throw new AssertionError("collected cache deposits use their own approach policy");
+        }
+
+        @Override
+        public ContainerTransferResult startCollectedCacheDeposit(ContainerTarget target,
+                Map<String, Integer> items) {
+            atPickup = false;
             if (!acceptsDeposits) return ContainerTransferResult.failed("cache full", items);
             int count = items.getOrDefault(DISC, 0);
             carried -= count;

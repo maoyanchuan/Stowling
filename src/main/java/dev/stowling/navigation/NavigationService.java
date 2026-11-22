@@ -20,6 +20,11 @@ public interface NavigationService {
         return false;
     }
 
+    default boolean navigateToInteractionRange(BlockPosition target, AreaBounds standingArea,
+            Set<BlockPosition> rejectedStances, boolean avoidPickups) {
+        return navigateToInteractionRange(target, standingArea, rejectedStances);
+    }
+
     default Optional<BlockPosition> interactionFeet() {
         return Optional.empty();
     }
@@ -34,6 +39,10 @@ public interface NavigationService {
 
     default boolean isWithinInteractionRange(BlockPosition target) {
         return false;
+    }
+
+    default boolean isWithinInteractionRange(BlockPosition target, boolean avoidPickups) {
+        return isWithinInteractionRange(target);
     }
 
     default int nearGoalRadius(int requestedRadius) {

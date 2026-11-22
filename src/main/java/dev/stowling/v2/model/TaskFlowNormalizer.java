@@ -433,6 +433,9 @@ public final class TaskFlowNormalizer {
             parameters = new LinkedHashMap<>(parameters);
             parameters.remove(ConfigValidator.TARGET_REF);
         }
+        if (autoClassify && isGeneratedCollectedDepositLoop(step, nested)) {
+            nested = List.of(nested.getFirst(), nested.getLast());
+        }
         if (step.kind() != TaskStepKind.ACTION) {
             return List.of(new TaskStep(
                     step.id(),
@@ -529,6 +532,22 @@ public final class TaskFlowNormalizer {
                 ),
                 step.id()
         );
+    }
+
+    private static boolean isGeneratedCollectedDepositLoop(TaskStep step, List<TaskStep> body) {
+        if (step.kind() != TaskStepKind.REPEAT || !TaskCondition.HAS_CONTAINERS.name()
+                .equals(step.parameters().get(TaskFlowTemplates.CONDITION))
+                || !body.stream().map(TaskStep::moduleId).toList().equals(List.of(
+                        ConfigValidator.SELECT_CONTAINER, ConfigValidator.MOVE_TO_COORDINATE,
+                        ConfigValidator.DEPOSIT_ITEMS_TO_CONTAINERS))) {
+            return false;
+        }
+        String container = ResourceReference.output("container").encode();
+        var deposit = body.getLast().parameters();
+        return container.equals(body.get(1).parameters().get(ConfigValidator.TARGET_REF))
+                && container.equals(deposit.get(ConfigValidator.TARGET_REF))
+                && "collected".equals(deposit.get(ConfigValidator.ITEM_SOURCE))
+                && "true".equals(deposit.get(ConfigValidator.RETRY_ON_FAILURE));
     }
 
     private static List<TaskStep> normalizeDeposit(

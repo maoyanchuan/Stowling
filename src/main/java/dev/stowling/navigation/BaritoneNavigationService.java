@@ -62,27 +62,44 @@ public final class BaritoneNavigationService implements NavigationService {
 
     @Override
     public boolean isWithinInteractionRange(BlockPosition target) {
+        return isWithinInteractionRange(target, true);
+    }
+
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target, boolean avoidPickups) {
         Objects.requireNonNull(target, "target");
         LocalPlayer player = primaryBaritone().getPlayerContext().player();
         return player != null && player.isWithinBlockInteractionRange(
                 new BlockPos(target.x(), target.y(), target.z()),
                 0.0D
-        ) && MinecraftPickupSafety.safe(player.getBoundingBox(),
-                MinecraftPickupSafety.hazards(player, target));
+        ) && (!avoidPickups || MinecraftPickupSafety.safe(player.getBoundingBox(),
+                MinecraftPickupSafety.hazards(player, target)));
     }
 
     @Override
     public boolean navigateToInteractionRange(BlockPosition target, AreaBounds standingArea,
             Set<BlockPosition> rejectedStances) {
+        return navigateToInteractionRange(target, standingArea, rejectedStances, true);
+    }
+
+    @Override
+    public boolean navigateToInteractionRange(BlockPosition target, AreaBounds standingArea,
+            Set<BlockPosition> rejectedStances, boolean avoidPickups) {
         IBaritone baritone = primaryBaritone();
         LocalPlayer player = baritone.getPlayerContext().player();
         if (player == null) {
             return false;
         }
-        var hazards = MinecraftPickupSafety.hazards(player, target);
-        Optional<Goal> goal = interactionGoal(target, standingArea, player.blockInteractionRange(),
-                player.getEyeHeight(), rejectedStances, feet -> MinecraftPickupSafety.safe(
-                        MinecraftPickupSafety.bodyAt(player, feet), hazards));
+        Optional<Goal> goal;
+        if (avoidPickups) {
+            var hazards = MinecraftPickupSafety.hazards(player, target);
+            goal = interactionGoal(target, standingArea, player.blockInteractionRange(),
+                    player.getEyeHeight(), rejectedStances, feet -> MinecraftPickupSafety.safe(
+                            MinecraftPickupSafety.bodyAt(player, feet), hazards));
+        } else {
+            goal = interactionGoal(target, standingArea, player.blockInteractionRange(),
+                    player.getEyeHeight(), rejectedStances);
+        }
         goal.ifPresent(baritone.getCustomGoalProcess()::setGoalAndPath);
         return goal.isPresent();
     }

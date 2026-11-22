@@ -79,10 +79,9 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             return handlePacking(packing.start());
         }
         inFlight = true;
-        return handle(context.containerTransfers().startDeposit(
-                target,
-                requested
-        ));
+        return handle(isCollectedCacheDeposit()
+                ? context.containerTransfers().startCollectedCacheDeposit(target, requested)
+                : context.containerTransfers().startDeposit(target, requested));
     }
 
     @Override
@@ -225,9 +224,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
     }
 
     private void recordCacheUpdate(Map<String, Integer> remaining) {
-        if (!"collected".equals(itemSource)
-                || targetReference.type() != ResourceType.OUTPUT
-                || !"container".equals(targetReference.key())) {
+        if (!isCollectedCacheDeposit()) {
             return;
         }
         int deposited = 0;
@@ -244,6 +241,12 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                     )
             );
         }
+    }
+
+    private boolean isCollectedCacheDeposit() {
+        return "collected".equals(itemSource)
+                && targetReference.type() == ResourceType.OUTPUT
+                && "container".equals(targetReference.key());
     }
 
     private static Map<String, Integer> itemsForSource(

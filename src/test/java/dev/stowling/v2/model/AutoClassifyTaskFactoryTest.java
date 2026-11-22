@@ -296,6 +296,33 @@ class AutoClassifyTaskFactoryTest {
     }
 
     @Test
+    void removesTheSeparateCacheApproachFromAnAlreadyBatchedCollection() {
+        AutoClassifyDefinition definition = definition(true);
+        List<TaskDefinition> tasks = new ArrayList<>(
+                AutoClassifyTaskFactory.tasks(definition, List.of()));
+        TaskDefinition collection = tasks.getFirst();
+        List<TaskStep> steps = new ArrayList<>(collection.steps());
+        TaskStep batches = steps.get(1);
+        List<TaskStep> batch = new ArrayList<>(batches.steps());
+        TaskStep deposit = batch.get(1);
+        TaskStep move = TaskStep.action(UUID.randomUUID(), ConfigValidator.MOVE_TO_COORDINATE,
+                Map.of(ConfigValidator.TARGET_REF, ResourceReference.output("container").encode()));
+        batch.set(1, TaskStep.repeat(deposit.id(), deposit.parameters(),
+                List.of(deposit.steps().getFirst(), move, deposit.steps().getLast())));
+        steps.set(1, TaskStep.repeat(batches.id(), batches.parameters(), batch));
+        tasks.set(0, new TaskDefinition(collection.id(), collection.name(), collection.priority(),
+                false, steps, collection.interruptionMode(), collection.interruptionTaskRef(),
+                false, false, collection.folderId(), collection.cleanupPolicy()));
+        AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks,
+                List.of(), List.of(), List.of(), List.of(), List.of(definition));
+
+        AppConfig normalized = TaskFlowNormalizer.normalize(config);
+
+        assertEquals(collection.steps(), normalized.tasks().getFirst().steps());
+        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+    }
+
+    @Test
     void buildsTwoIndependentStagesAndSharedInterruptionCleanup() {
         AutoClassifyDefinition definition = definition(false);
 

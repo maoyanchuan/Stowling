@@ -11,22 +11,29 @@ public final class ContainerApproach {
     private final AreaBounds standingArea;
     private final Deque<BlockPosition> entrances;
     private final boolean multipleEntrances;
+    private final boolean avoidPickups;
     private BlockPosition navigating;
     private BlockPosition reached;
 
     public ContainerApproach(NavigationPort navigation, AreaBounds standingArea,
             Collection<BlockPosition> entrances) {
+        this(navigation, standingArea, entrances, true);
+    }
+
+    public ContainerApproach(NavigationPort navigation, AreaBounds standingArea,
+            Collection<BlockPosition> entrances, boolean avoidPickups) {
         this.navigation = navigation;
         this.standingArea = standingArea;
         this.entrances = new ArrayDeque<>(entrances);
         multipleEntrances = entrances.size() > 1;
+        this.avoidPickups = avoidPickups;
     }
 
     public NavigationStatus tick() {
         reached = null;
         if (multipleEntrances) {
             for (BlockPosition entrance : entrances) {
-                if (navigation.isWithinInteractionRange(entrance, standingArea)) {
+                if (navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups)) {
                     cancel();
                     reached = entrance;
                     return NavigationStatus.ARRIVED;
@@ -36,7 +43,7 @@ public final class ContainerApproach {
         while (!entrances.isEmpty()) {
             BlockPosition entrance = entrances.getFirst();
             NavigationStatus status = navigating == null
-                    ? navigation.startInteraction(entrance, standingArea)
+                    ? navigation.startInteraction(entrance, standingArea, avoidPickups)
                     : navigation.status(entrance, null);
             if (status == NavigationStatus.NAVIGATING) {
                 navigating = entrance;
@@ -44,7 +51,7 @@ public final class ContainerApproach {
             }
             navigating = null;
             if (status == NavigationStatus.ARRIVED && (standingArea == null && !multipleEntrances
-                    || navigation.isWithinInteractionRange(entrance, standingArea))) {
+                    || navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups))) {
                 reached = entrance;
                 return status;
             }

@@ -24,6 +24,7 @@ final class MinecraftContainerVisit {
     private final ContainerTarget target;
     private final NavigationPort navigation;
     private final List<BlockPosition> entrances;
+    private final boolean avoidPickups;
     private ContainerApproach approach;
     private BlockPosition openRequested;
     private int openTicks;
@@ -31,13 +32,20 @@ final class MinecraftContainerVisit {
     private final MinecraftContainerOpenHand hand;
 
     MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target) {
+        this(minecraft, navigation, target, true);
+    }
+
+    MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target,
+            boolean avoidPickups) {
         this.minecraft = minecraft;
         this.navigation = dev.stowling.v2.runtime.TaskTracePorts.wrap(NavigationPort.class,
                 navigation);
         this.target = target;
+        this.avoidPickups = avoidPickups;
         hand = new MinecraftContainerOpenHand(minecraft);
         entrances = new ArrayList<>(target.entrances());
-        approach = new ContainerApproach(this.navigation, target.standingArea(), entrances);
+        approach = new ContainerApproach(this.navigation, target.standingArea(), entrances,
+                avoidPickups);
     }
 
     TaskModuleResult tick() {
@@ -63,7 +71,8 @@ final class MinecraftContainerVisit {
                 return TaskModuleResult.failed("已到操作位置，但容器未打开 " + target.position());
             }
             openTicks = 0;
-            approach = new ContainerApproach(navigation, target.standingArea(), entrances);
+            approach = new ContainerApproach(navigation, target.standingArea(), entrances,
+                    avoidPickups);
             openRequested = null;
         }
         if (minecraft.gui.screen() != null) {

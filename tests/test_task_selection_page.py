@@ -80,12 +80,11 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
         "move-target-z",
         "move-saved-coordinate",
         "move-priority",
-        "save-move-task",
     ):
         assert f'id="{field_id}"' in display
     assert "data-move-source=\"manual\"" in display
     assert "data-move-source=\"saved\"" in display
-    assert "保存任务" in display
+    assert 'type="submit"' not in display
     assert "保存并加入队列" not in display
     assert "hidden" in opening_tag(display, "move-task-form")
     assert "hidden" in opening_tag(display, "move-task-draft")
@@ -186,6 +185,7 @@ def test_task_page_loads_model_monitor_and_fixed_move_stack() -> None:
         "/move-task-model.js",
         "/auto-classify-task-model.js",
         "/task-monitor-model.js",
+        "/task-autosave.js",
         "/tasks.js",
         "/auto-classify-ui.js",
     )
@@ -295,8 +295,8 @@ def test_move_save_and_queue_routes_use_explicit_task_ids() -> None:
     assert "任务名称已存在，请使用其他名称" in save
     assert "state.moveAllTasks" in save
     assert "applyMoveSave(response, task.id);" in save
-    assert "method: task.id ? \"PUT\" : \"POST\"" in save
-    assert "{ ...payload, revision: state.moveRevision }" in save
+    assert '"PUT",' in save and '"POST", payload' in save
+    assert "{...payload, revision: state.moveDraftRevision}" in save
     assert "/runs" not in save
     assert "`/v1/tasks/${encodeURIComponent(id)}/runs`" in queue
     assert "body: JSON.stringify({})" in queue
@@ -422,6 +422,7 @@ const [
     coordinateModelPath,
     moveModelPath,
     monitorPath,
+    autosavePath,
 ] = process.argv.slice(1);
 const html = fs.readFileSync(htmlPath, "utf8");
 const requests = [];
@@ -437,6 +438,7 @@ let failNextTaskWriteWithDuplicateName = false;
 let confirmResult = true;
 let revision = "rev-1";
 let tasksState = [];
+let pendingAutosave;
 
 class FakeElement {
     constructor(tagName = "div", id = "") {
@@ -826,7 +828,9 @@ global.window = {
         read() { return {}; },
     })},
     setInterval: () => 1,
-    setTimeout: () => 1,
+    addEventListener: () => {},
+    setTimeout: (callback) => { pendingAutosave = callback; return 1; },
+    clearTimeout: () => { pendingAutosave = undefined; },
     confirm: (message) => {
         confirmRequests.push(message);
         return confirmResult;
@@ -838,6 +842,7 @@ for (const path of [
     coordinateModelPath,
     moveModelPath,
     monitorPath,
+    autosavePath,
     tasksPath,
 ]) {
     vm.runInThisContext(fs.readFileSync(path, "utf8"), { filename: path });
@@ -1011,7 +1016,7 @@ const moveButton = savedSummary;
     };
     const newDraftToggleConfirmDelta = confirmRequests.length - confirmBeforeDraftToggle;
     const requestsBeforeFirstSave = requests.length;
-    node("move-task-form").dispatchEvent("submit");
+    pendingAutosave();
     await settle();
     const createdWrite = requests.find(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
@@ -1300,6 +1305,7 @@ def _run_page_scenario() -> dict[str, Any]:
             str(COORDINATE_MODEL),
             str(MOVE_MODEL),
             str(MONITOR_MODEL),
+            str(WEB / "task-autosave.js"),
         ],
         check=True,
         capture_output=True,

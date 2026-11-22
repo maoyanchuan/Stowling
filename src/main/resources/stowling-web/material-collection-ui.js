@@ -3,6 +3,8 @@
 
     const S = window.Stowling;
     const Settings = window.StowlingSettings;
+    const Autosave = window.StowlingTaskAutosave;
+    const endpoint = "/v1/tasks";
     const moduleId = "COLLECT_SCHEMATIC_MATERIALS";
     /** @param {string} id @returns {HTMLElement} */
     const byId = (id) => document.getElementById(id);
@@ -32,6 +34,7 @@
     const unstackableSettings = Settings.bindDisclosure(byId("material-unstackable-settings"),
         byId("material-unstackable-summary"), byId("material-unstackable-options"));
     const previewStatus = byId("material-preview-status");
+    const saveStatus = byId("material-save-status");
     const preview = byId("material-preview");
     const items = byId("material-preview-items");
     const list = byId("material-task-list");
@@ -45,6 +48,7 @@
     let materials = {};
     let unsupported = {};
     let busy = false;
+    const autosave = Autosave.create(form, save, () => busy);
 
     /**
      * @param {HTMLElement} button
@@ -63,7 +67,6 @@
         const disabled = busy || !S.isConnected();
         add.disabled = disabled || !revision;
         form.querySelector("fieldset").disabled = disabled;
-        byId("material-save").disabled = disabled || !Object.keys(materials).length;
         remove.hidden = !current?.id;
         const isDraft = current?.id === null;
         draft.hidden = !isDraft;
@@ -72,7 +75,7 @@
         for (const [id, {button, body, state, run}] of taskRows) {
             const selected = current?.id === id;
             button.disabled = disabled;
-            run.disabled = disabled;
+            run.disabled = disabled || (selected && current.dirty);
             state.textContent = selected && current.dirty ? "未保存修改" : "已保存";
             disclose(button, body, selected && current.expanded);
         }
@@ -190,6 +193,7 @@
         boxedSettings.refresh();
         previewStatus.textContent = task ? "可上传新投影替换材料清单"
             : "选择投影文件后自动解析材料";
+        showStatus(task ? "" : "选择投影和交付位置后自动保存");
         renderPreview();
     }
 
@@ -202,7 +206,8 @@
             current.expanded = !current.expanded;
         } else {
             if (current?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
-            current = {id, revision, step: task?.steps[0].id, expanded: true, dirty: false};
+            autosave.cancel();
+            current = {id, revision, task, expanded: true, dirty: false};
             row.body.append(form);
             sourceSettings.setExpanded(false);
             deliverySettings.setExpanded(false);
@@ -216,6 +221,7 @@
 
     /** @returns {void} */
     function closeEditor() {
+        autosave.cancel();
         current = null;
         controls();
         notifyCount();
@@ -266,8 +272,8 @@
         notifyCount();
     }
 
-    /** @param {object} response @returns {void} */
-    function applyTasks(response) {
+    /** @param {object} response @param {boolean} [refill] @returns {void} */
+    function applyTasks(response, refill = true) {
         revision = response.revision;
         rows = response.tasks.filter((task) => task.steps.length === 1
             && task.steps[0].moduleId === moduleId);
@@ -276,9 +282,8 @@
         } else if (current && !current.dirty) {
             current.revision = revision;
             if (current.id) {
-                const saved = rows.find((task) => task.id === current.id);
-                current.step = saved.steps[0].id;
-                fillForm(saved);
+                current.task = rows.find((task) => task.id === current.id);
+                if (refill) fillForm(current.task);
             }
         }
         renderRows();
@@ -291,7 +296,7 @@
         controls();
         try {
             const [tasks, coordinates, regions] = await Promise.all([
-                S.request("/v1/tasks"), S.request("/v1/coordinates"), S.request("/v1/regions")
+                S.request(endpoint), S.request("/v1/coordinates"), S.request("/v1/regions")
             ]);
             locations = new Map();
             for (const point of coordinates.coordinates) {
@@ -333,7 +338,7 @@
             });
             materials = result.items;
             unsupported = result.unsupported;
-            current.dirty = true;
+            markDirty();
             const warnings = Object.keys(unsupported).length;
             previewStatus.textContent = Object.keys(materials).length
                 ? warnings ? `解析完成，${warnings} 种方块或实体需人工处理` : "解析完成"
@@ -348,16 +353,33 @@
         }
     }
 
-    /** @param {Event} event @returns {Promise<void>} */
-    async function save(event) {
-        event.preventDefault();
-        if (busy || !current || !Object.keys(materials).length) return;
+    /** @param {string} text @param {boolean} [error] @returns {void} */
+    function showStatus(text, error = false) {
+        saveStatus.textContent = text;
+        saveStatus.classList.toggle("error", error);
+    }
+
+    /** @returns {void} */
+    function markDirty() {
+        current.dirty = true;
+        showStatus("未保存修改");
+        controls();
+        autosave.schedule();
+    }
+
+    /** @returns {Promise<void>} */
+    async function save() {
+        if (busy || !current?.dirty || !S.isConnected()) return;
+        if (!name.value.trim() || !destination.value || !Object.keys(materials).length) {
+            showStatus("请填写任务名称、上传投影并选择交付位置", true);
+            return;
+        }
         const id = current.id;
         const targetRef = destination.value;
         const payload = {
             name: name.value.trim(),
             steps: [{
-                ...(id ? {id: current.step} : {}),
+                ...(id ? {id: current.task.steps[0].id} : {}),
                 moduleId: moduleId,
                 parameters: {
                     targetRef,
@@ -375,19 +397,21 @@
         };
         busy = true;
         controls();
+        showStatus("正在自动保存…");
         try {
-            const response = await S.request(id ? `/v1/tasks/${id}` : "/v1/tasks", {
-                method: id ? "PUT" : "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(id ? {...payload, revision: current.revision} : payload)
-            });
-            closeEditor();
-            applyTasks(response);
+            const response = id
+                ? await Autosave.write(`${endpoint}/${id}`, "PUT",
+                    {...payload, revision: current.revision},
+                    () => Autosave.latestRevision(endpoint, current.task,
+                        (latest) => latest.tasks.find((task) => task.id === id)))
+                : await Autosave.write(endpoint, "POST", payload);
+            current.id = response.taskId || id;
+            current.dirty = false;
+            applyTasks(response, false);
             changed();
-            S.showToast("材料收集任务已保存");
+            showStatus("已自动保存");
         } catch (error) {
-            previewStatus.textContent = error.message;
-            sourceSettings.setExpanded(true);
+            showStatus(error.message, true);
         } finally {
             busy = false;
             controls();
@@ -396,7 +420,7 @@
 
     /** @param {string} id @returns {Promise<void>} */
     async function runTask(id) {
-        if (busy) return;
+        if (busy || taskRows.get(id)?.run.disabled) return;
         busy = true;
         controls();
         try {
@@ -449,7 +473,9 @@
     });
     draftToggle.addEventListener("click", () => selectTask(null));
     remove.addEventListener("click", () => void deleteTask());
-    byId("material-cancel").addEventListener("click", () => {
+    byId("material-cancel").addEventListener("click", async () => {
+        if (current?.dirty) await autosave.flush();
+        if (current?.dirty && !window.confirm("关闭并放弃未保存的修改？")) return;
         const button = taskRows.get(current?.id)?.button || add;
         closeEditor();
         button.focus();
@@ -472,12 +498,12 @@
     skipMinecarts.addEventListener("change", renderPreview);
     form.addEventListener("input", (event) => {
         renderSummaries();
-        if (current && event.target !== file && !current.dirty) {
-            current.dirty = true;
-            controls();
-        }
+        if (current && event.target !== file) markDirty();
     });
-    form.addEventListener("submit", (event) => void save(event));
+    form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void autosave.flush();
+    });
     document.addEventListener("stowling:tasks-changed", () => void load());
     S.onConnected(load);
 })();

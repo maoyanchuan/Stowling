@@ -35,7 +35,6 @@ def test_task_page_has_only_the_fixed_move_launch_flow() -> None:
         assert removed_text not in html
     for retained in (
         'id="move-task-form"',
-        'id="save-move-task"',
         'id="new-move-task"',
     ):
         assert retained in html
@@ -59,7 +58,7 @@ def test_fixed_move_launcher_does_not_restore_generic_task_selection() -> None:
     for retained in (
         "function selectMoveTask(",
         "async function saveMoveTask(",
-        "method: task.id ? \"PUT\" : \"POST\"",
+        'Autosave.write(endpoint, "POST", payload)',
         "`/v1/tasks/${encodeURIComponent(id)}/runs`",
     ):
         assert retained in javascript
@@ -104,7 +103,7 @@ def test_material_task_uses_inline_disclosure_and_shared_switch() -> None:
     assert 'Settings.switchControl(byId("material-boxed-delivery"))' in source
 
 
-def test_material_task_card_keeps_delete_in_editor_and_uses_transient_feedback() -> None:
+def test_material_task_card_keeps_delete_in_editor_and_reports_autosave() -> None:
     html = read("tasks.html")
     editor = between(html, 'id="material-task-form"', "</form>")
     assert 'id="delete-material-task"' in editor
@@ -116,7 +115,7 @@ def test_material_task_card_keeps_delete_in_editor_and_uses_transient_feedback()
     assert "summary.append(kind, overview, state, chevron);" in rows
     assert "head.append(summary, run);" in rows
     assert '"secondary move-task-run material-task-run"' in rows
-    assert 'S.showToast("材料收集任务已保存")' in source
+    assert 'showStatus("已自动保存")' in source
     assert 'S.showToast("材料收集任务已删除")' in source
 
 
@@ -155,7 +154,7 @@ def test_material_editor_groups_source_delivery_and_unstackable_settings() -> No
         assert f'id="material-{key}-description"' in section
         for field in fields:
             assert f'id="{field}"' in section
-    assert editor.index('id="material-save"') > editor.rindex("</details>")
+    assert editor.index('id="material-save-status"') > editor.rindex("</details>")
 
 
 def test_material_boxed_delivery_has_a_switchable_submenu_and_two_radio_choices() -> None:

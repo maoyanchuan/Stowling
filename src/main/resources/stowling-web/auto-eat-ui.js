@@ -3,6 +3,7 @@
 
     const S = window.Stowling;
     const Settings = window.StowlingSettings;
+    const Autosave = window.StowlingTaskAutosave;
     const endpoint = "/v1/auto-eat-tasks";
     /** @param {string} id @returns {HTMLElement} */
     const $ = (id) => document.getElementById(id);
@@ -22,10 +23,12 @@
     let tasks = [];
     let coordinates = [];
     let revision = "";
-    /** @type {{id: string | null, revision: string, expanded: boolean, dirty: boolean} | null} */
+    /** @type {{id: string|null, revision: string, expanded: boolean, dirty: boolean,
+     * original: object|null} | null} */
     let editor = null;
     let loading = false;
     let busy = false;
+    const autosave = Autosave.create(form, () => save(false), () => loading || busy);
 
     /** @returns {boolean} */
     function unavailable() {
@@ -59,7 +62,7 @@
             row.listening.disabled = disabled || (selected && editor.dirty);
             row.listening.checked = row.enabled;
             row.listening.title = selected && editor.dirty
-                ? "先保存当前修改，再切换监听" : "饱食度监听";
+                ? "修改保存后可切换监听" : "饱食度监听";
             disclose(row.button, row.body, selected && editor.expanded);
             row.status.textContent = selected && editor.dirty
                 ? "未保存修改"
@@ -139,6 +142,7 @@
                 editor = null;
             } else if (editor && !editor.dirty) {
                 editor.revision = revision;
+                editor.original = selected || null;
                 fillForm(selected?.settings);
             }
             status.hidden = true;
@@ -186,7 +190,7 @@
         coordinate.value = settings?.coordinateId ?? "";
         updateSource();
         remove.hidden = editor.id === null;
-        message.textContent = "";
+        showMessage("");
     }
 
     /**
@@ -201,17 +205,26 @@
             editor.expanded = id === null || !editor.expanded;
         } else {
             if (editor?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
-            editor = {id, revision, expanded: true, dirty: false};
+            autosave.cancel();
+            editor = {id, revision, expanded: true, dirty: !task, original: task};
             fillForm(task?.settings);
             row.body.append(form);
+            if (!task) {
+                message.textContent = "等待自动保存…";
+                autosave.schedule();
+            }
         }
         updateControls();
         notifyTaskCount();
         row.button.focus();
     }
 
-    /** @returns {void} */
-    function cancelEditor() {
+    /** @returns {Promise<void>} */
+    async function cancelEditor() {
+        if (!editor) return;
+        if (editor.dirty) await autosave.flush();
+        if (!editor || (editor.dirty && !window.confirm("关闭并放弃未保存的修改？"))) return;
+        autosave.cancel();
         const button = editor.id ? rows.get(editor.id)?.button : newTask;
         editor = null;
         updateControls();
@@ -247,6 +260,7 @@
             if (editor?.revision === previousRevision) {
                 editor.revision = revision;
             }
+            if (editor?.id === id) editor.original = updated;
             document.dispatchEvent(new Event("stowling:auto-eat-tasks-changed"));
             document.dispatchEvent(new Event("stowling:tasks-changed"));
             S.showToast(row.enabled ? "已开始饱食度监听" : "已停止饱食度监听");
@@ -263,7 +277,7 @@
      * @returns {Promise<void>}
      */
     async function save(deleting) {
-        if (unavailable() || !editor?.expanded) return;
+        if (unavailable() || !editor || (!deleting && !editor.dirty)) return;
         const id = editor.id;
         const method = deleting ? "DELETE" : id ? "PUT" : "POST";
         const path = id ? `${endpoint}/${encodeURIComponent(id)}` : endpoint;
@@ -276,40 +290,47 @@
                 foodLevelThreshold: $("auto-eat-threshold").valueAsNumber,
                 intervalSeconds: $("auto-eat-interval").valueAsNumber
             });
+            if (!body.name || !body.foodItemId || !form.checkValidity()) {
+                showMessage("请填写有效的任务名称、食物和进食设置", true);
+                return;
+            }
         }
         busy = true;
         updateControls();
-        message.textContent = "";
+        showMessage(deleting ? "" : "正在自动保存…");
         let focusTarget;
         try {
-            const response = await S.request(path, {
-                method,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
+            const response = await Autosave.write(path, method, body, deleting ? undefined
+                : () => Autosave.latestRevision(endpoint, editor.original,
+                    id ? (latest) => latest.items.find((task) => task.id === id) : undefined));
             revision = response.revision;
             tasks = response.items;
             const saved = tasks.find((task) => task.id === response.taskId);
-            editor = saved ? {id: saved.id, revision, expanded: true, dirty: false} : null;
+            editor = saved ? {id: saved.id, revision, expanded: editor.expanded, dirty: false,
+                original: saved} : null;
             if (saved) {
-                fillForm(saved.settings);
-                message.textContent = "已保存";
+                remove.hidden = false;
+                showMessage("已自动保存");
             }
             renderTasks();
-            focusTarget = saved ? rows.get(saved.id)?.button : newTask;
+            if (deleting) focusTarget = newTask;
             document.dispatchEvent(new Event("stowling:auto-eat-tasks-changed"));
             document.dispatchEvent(new Event("stowling:tasks-changed"));
-            S.showToast(deleting ? "已删除自动进食任务" : "已保存自动进食任务");
+            if (deleting) S.showToast("已删除自动进食任务");
         } catch (error) {
-            message.textContent = error.status === 409 && error.code === "revision_conflict"
-                ? "配置已更新，请取消编辑并刷新任务列表后重试。"
-                : String(error.message || error);
+            showMessage(String(error.message || error), true);
             S.handleError(error, deleting ? "删除自动进食任务失败" : "保存自动进食任务失败");
         } finally {
             busy = false;
             updateControls();
             focusTarget?.focus();
         }
+    }
+
+    /** @param {string} text @param {boolean} [error] @returns {void} */
+    function showMessage(text, error = false) {
+        message.textContent = text;
+        message.classList.toggle("error", error);
     }
 
     newTask.addEventListener("click", () => selectTask());
@@ -319,14 +340,16 @@
     });
     $("cancel-auto-eat").addEventListener("click", cancelEditor);
     form.addEventListener("input", () => {
+        if (!editor) return;
         editor.dirty = true;
-        message.textContent = "未保存修改";
+        showMessage("未保存修改");
         updateControls();
+        autosave.schedule();
     });
     source.addEventListener("change", updateSource);
     form.addEventListener("submit", (event) => {
         event.preventDefault();
-        void save(false);
+        void autosave.flush();
     });
     remove.addEventListener("click", () => {
         if (window.confirm("删除这个自动进食任务？")) void save(true);

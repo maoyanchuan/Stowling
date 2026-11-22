@@ -90,6 +90,8 @@
 
     const S = window.Stowling;
     const Settings = window.StowlingSettings;
+    const Autosave = window.StowlingTaskAutosave;
+    const endpoint = "/v1/tasks";
     /** @param {string} value @returns {HTMLElement} */
     const id = (value) => document.getElementById(value);
     const add = id("new-refresh-cache-task");
@@ -127,6 +129,7 @@
     let current = null;
     let ready = false;
     let busy = false;
+    const autosave = Autosave.create(form, save, () => busy);
 
     /** @param {HTMLElement} button @param {HTMLElement} body
      * @param {boolean} expanded @returns {void} */
@@ -166,7 +169,7 @@
             button.disabled = disabled;
             toggle.checked = pendingSwitch?.id === taskId ? pendingSwitch.enabled : state.checked;
             toggle.disabled = disabled || dirty || (state.stopping && !state.checked);
-            toggle.title = dirty ? "先保存当前修改，再切换任务"
+            toggle.title = dirty ? "修改保存后可切换任务"
                 : state.checked ? "停止任务" : "启动任务";
             status.textContent = dirty ? "未保存修改" : state.label;
             disclose(button, body, selected && current.expanded);
@@ -281,7 +284,7 @@
         interval.value = String(minutes / Number(unit.value));
         id("refresh-zone").textContent = current.zone;
         remove.hidden = !task;
-        showMessage("");
+        showMessage(task ? "" : "选择选区后自动保存");
     }
 
     /** @param {object|null} task @returns {void} */
@@ -292,7 +295,9 @@
             current.expanded = !current.expanded;
         } else {
             if (current?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
-            current = {task, revision, expanded: true, dirty: false, zone: browserZone};
+            autosave.cancel();
+            current = {task, revision, expanded: true, dirty: false, zone: browserZone,
+                schedule: task ? schedules[task.id] : undefined};
             row.body.append(form);
             kindDisclosure.setExpanded(false);
             fillForm(task);
@@ -304,14 +309,15 @@
 
     /** @returns {void} */
     function close() {
+        autosave.cancel();
         current = null;
         draftBody.append(form);
         controls();
         syncCount();
     }
 
-    /** @param {object} response @returns {void} */
-    function apply(response) {
+    /** @param {object} response @param {boolean} [refill] @returns {void} */
+    function apply(response, refill = true) {
         revision = response.revision;
         tasks = response.tasks || [];
         schedules = response.schedules || {};
@@ -325,7 +331,8 @@
                 current.revision = revision;
                 if (saved) {
                     current.task = saved;
-                    fillForm(saved);
+                    current.schedule = schedules[taskId];
+                    if (refill) fillForm(saved);
                 }
             }
         }
@@ -335,7 +342,7 @@
     /** @returns {Promise<void>} */
     async function loadResources() {
         const [response, regions, zones] = await Promise.all([
-            S.request("/v1/tasks"),
+            S.request(endpoint),
             S.request("/v1/regions"),
             S.request("/v1/category-zones")
         ]);
@@ -372,21 +379,24 @@
         document.dispatchEvent(new Event("stowling:tasks-changed"));
     }
 
-    /** @param {string} value @returns {void} */
-    function showMessage(value) {
+    /** @param {string} value @param {boolean} [error] @returns {void} */
+    function showMessage(value, error = false) {
         message.hidden = !value;
         message.textContent = value;
-        message.classList.toggle("error", Boolean(value));
+        message.classList.toggle("error", error);
     }
 
-    /** @param {Event} event @returns {Promise<void>} */
-    async function save(event) {
-        event.preventDefault();
-        if (!current || busy) return;
-        showMessage("");
-        let savedId;
+    /** @returns {Promise<void>} */
+    async function save() {
+        if (!current?.dirty || busy || !S.isConnected()) return;
         try {
             const taskId = current.task?.id;
+            if (!name.value.trim()) throw new Error("请输入任务名称");
+            if (!target.value) throw new Error("请选择刷新选区");
+            if (mode.value === "DAILY" && !time.value) throw new Error("请输入每天触发时间");
+            if (mode.value === "INTERVAL" && interval.validity?.valid === false) {
+                throw new Error("请输入有效的正整数时间间隔");
+            }
             const payload = {
                 name: name.value.trim(),
                 schedule: schedulePayload({
@@ -417,23 +427,26 @@
             }
             busy = true;
             controls();
-            const response = await S.request(taskId ? "/v1/tasks/" + taskId : "/v1/tasks", {
-                method: taskId ? "PUT" : "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(payload)
-            });
-            close();
-            apply(response);
-            savedId = response.taskId || taskId;
+            showMessage("正在自动保存…");
+            const response = taskId
+                ? await Autosave.write(`${endpoint}/${taskId}`, "PUT", payload,
+                    () => Autosave.latestRevision(endpoint,
+                        {task: current.task, schedule: current.schedule},
+                        (latest) => ({task: latest.tasks.find((task) => task.id === taskId),
+                            schedule: latest.schedules[taskId]})))
+                : await Autosave.write(endpoint, "POST", payload);
+            const savedId = response.taskId || taskId;
+            current.task = response.tasks.find((task) => task.id === savedId);
+            current.dirty = false;
+            remove.hidden = false;
+            apply(response, false);
             changed();
-            S.showToast("刷新缓存任务已保存");
+            showMessage("已自动保存");
         } catch (error) {
-            showMessage(error.message);
-            if (!kinds.some((input) => input.checked)) kindDisclosure.setExpanded(true);
+            showMessage(error.message, true);
         } finally {
             busy = false;
             controls();
-            if (savedId) savedCards.get(savedId)?.button.focus();
         }
     }
 
@@ -518,17 +531,25 @@
         }
     });
     draftToggle.addEventListener("click", () => open());
-    id("cancel-refresh-edit").addEventListener("click", () => {
+    id("cancel-refresh-edit").addEventListener("click", async () => {
+        if (current?.dirty) await autosave.flush();
+        if (current?.dirty && !window.confirm("关闭并放弃未保存的修改？")) return;
         const button = savedCards.get(current?.task?.id)?.button || add;
         close();
         button.focus();
     });
     remove.addEventListener("click", () => void deleteTask());
     form.addEventListener("input", () => {
-        if (current) current.dirty = true;
+        if (!current) return;
+        current.dirty = true;
+        showMessage("未保存修改");
         controls();
+        autosave.schedule();
     });
-    form.addEventListener("submit", (event) => void save(event));
+    form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void autosave.flush();
+    });
     id("refresh-move-tasks").addEventListener("click", () => void load());
     document.addEventListener("stowling:tasks-changed", () => void load());
     document.addEventListener("stowling:refresh-task-status", (event) => {

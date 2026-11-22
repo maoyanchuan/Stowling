@@ -73,7 +73,11 @@ class Element extends EventTarget {
     /** @returns {Element} */
     querySelector() { return new Element(); }
     /** @returns {Element[]} */
-    querySelectorAll() { return []; }
+    querySelectorAll() {
+        return [Object.assign(new Element(), {
+            dataset: {refreshKind: "chests"}, labels: [{textContent: "箱子"}]
+        })];
+    }
     /** @returns {void} */
     setAttribute() {}
     /** @returns {void} */
@@ -101,7 +105,14 @@ const requests = [];
 const errors = [];
 let connect;
 let revision = "old";
+let pendingAutosave;
 globalThis.window = {
+    /** @returns {void} */
+    addEventListener() {},
+    /** @param {Function} callback @returns {number} */
+    setTimeout(callback) { pendingAutosave = callback; return 1; },
+    /** @returns {void} */
+    clearTimeout() { pendingAutosave = undefined; },
     StowlingSettings: {
         /** @param {Element} input @returns {Element} */
         switchControl(input) { return input; },
@@ -129,6 +140,13 @@ globalThis.window = {
                 requests.push(["GET", revision]);
                 return {revision, tasks: [task], schedules, enabledSchedules: ["refresh"]};
             }
+            if (options.method === "PUT") {
+                assert.equal(path, "/v1/tasks/refresh");
+                const body = JSON.parse(options.body);
+                requests.push(["PUT", body.revision, body.name]);
+                task = {...task, name: body.name, steps: body.steps};
+                return {revision: "edited", tasks: [task], schedules};
+            }
             assert.equal(path, "/v1/tasks/refresh/stop");
             assert.equal(options.method, "POST");
             const submitted = JSON.parse(options.body).revision;
@@ -147,6 +165,7 @@ function taskHeader() {
 }
 
 (async () => {
+    require(process.argv[2]);
     require(process.argv[1]);
     await connect();
     const [summary, toggle] = taskHeader().children;
@@ -164,9 +183,20 @@ function taskHeader() {
     assert.equal(taskHeader().children[1].checked, false);
     assert.equal(taskHeader().children[0].children[2].textContent, "已暂停");
     assert.equal(element("refresh-cache-name").value, "Renamed externally");
+    element("refresh-cache-name").value = "Intermediate name";
+    element("refresh-cache-form").dispatchEvent(new Event("input"));
+    element("refresh-cache-name").value = "Final name";
+    element("refresh-cache-form").dispatchEvent(new Event("input"));
+    pendingAutosave();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(requests.slice(4), [["PUT", "paused", "Final name"]]);
+    assert.equal(element("refresh-cache-message").textContent, "已自动保存");
 })().catch(error => {
     console.error(error);
     process.exitCode = 1;
 });
 '''
-    subprocess.run([node, "-e", script, str(WEB / "refresh-cache-ui.js")], check=True)
+    subprocess.run(
+        [node, "-e", script, str(WEB / "refresh-cache-ui.js"), str(WEB / "task-autosave.js")],
+        check=True,
+    )

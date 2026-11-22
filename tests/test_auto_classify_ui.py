@@ -51,7 +51,6 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-sort-body",
         "auto-classify-enabled",
         "auto-task-message",
-        "save-auto-task",
         "delete-auto-task",
     ):
         assert f'id="{element_id}"' in display
@@ -193,7 +192,7 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
     )
 
     for route in (
-        '"/v1/auto-classify-tasks"',
+        "Stowling.request(endpoint)",
         '"/v1/coordinates"',
         '"/v1/regions"',
         '"/v1/category-zones"',
@@ -259,11 +258,10 @@ def test_auto_ui_saves_settings_without_changing_listening() -> None:
 
     assert "payload = Auto.payload(" in save
     assert "state.draft, state.resources, state.items, state.allTasks" in save
-    assert "? `/v1/auto-classify-tasks/${encodeURIComponent(id)}`" in save
-    assert ': "/v1/auto-classify-tasks"' in save
-    assert 'method: id ? "PUT" : "POST"' in save
-    assert "...payload, revision: state.revision" in save
-    assert "? { ...payload, revision: state.revision } : payload" in save
+    assert 'const endpoint = "/v1/auto-classify-tasks";' in javascript
+    assert 'Autosave.write(`${endpoint}/${encodeURIComponent(id)}`, "PUT",' in save
+    assert 'Autosave.write(endpoint, "POST", payload)' in save
+    assert "...payload, revision: state.draftRevision" in save
     assert "delete payload.enabled;" in save
     assert "/start" not in save
     assert "/stop" not in save

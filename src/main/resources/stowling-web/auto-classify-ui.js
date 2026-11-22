@@ -3,11 +3,15 @@
 
     const Stowling = window.Stowling;
     const Auto = window.StowlingAutoClassifyTaskModel;
+    const Autosave = window.StowlingTaskAutosave;
+    const endpoint = "/v1/auto-classify-tasks";
     const cleanup = window.StowlingTaskCleanupSettings.create(
         document.querySelector("#auto-cleanup-settings"),
         {allowContinue: false, defaultLabel: "使用本任务缓存区域"});
     const state = {
         revision: "",
+        draftRevision: "",
+        original: null,
         items: [],
         allTasks: [],
         resources: {
@@ -62,6 +66,7 @@
     const rows = new Map();
     const phaseDisabledControls = new Map();
     let areaReaders = [];
+    const autosave = Autosave.create(elements.form, saveTask, () => state.busy || state.loading);
 
     /** @returns {boolean} */
     function unavailable() {
@@ -94,7 +99,7 @@
                 allTasks,
                 warehouse
             ] = await Promise.all([
-                Stowling.request("/v1/auto-classify-tasks"),
+                Stowling.request(endpoint),
                 Stowling.request("/v1/coordinates"),
                 Stowling.request("/v1/regions"),
                 Stowling.request("/v1/category-zones"),
@@ -117,6 +122,8 @@
                 const item = state.items.find((task) => task.id === state.draft.id);
                 if (item) {
                     state.draft = Auto.draftFromTask(item);
+                    state.original = item;
+                    state.draftRevision = state.revision;
                 } else {
                     state.draft = Auto.newDraft(state.items, state.allTasks);
                     state.active = false;
@@ -261,6 +268,7 @@
         showMessage("未保存修改");
         renderClassificationAreas();
         updateControls();
+        autosave.schedule();
     }
 
     /**
@@ -277,6 +285,7 @@
         showMessage("未保存修改");
         renderClassificationAreas();
         updateControls();
+        autosave.schedule();
     }
 
     /** @returns {void} */
@@ -404,7 +413,7 @@
             const expanded = selected && state.expanded;
             row.button.disabled = disabled;
             row.listening.disabled = disabled || (selected && state.dirty);
-            row.listening.title = selected && state.dirty ? "先保存当前修改，再切换监听" : "启用监听";
+            row.listening.title = selected && state.dirty ? "修改保存后可切换监听" : "启用监听";
             row.button.setAttribute("aria-expanded", String(expanded));
             void window.StowlingSettings.reveal(row.body, expanded);
             const item = state.items.find((value) => value.id === id);
@@ -456,6 +465,9 @@
         if (state.dirty && !window.confirm("当前修改尚未保存，切换任务会丢弃修改。继续？")) {
             return;
         }
+        autosave.cancel();
+        state.original = item;
+        state.draftRevision = state.revision;
         state.draft = item ? Auto.draftFromTask(item)
             : Auto.newDraft(state.items, state.allTasks);
         state.active = !item;
@@ -467,9 +479,7 @@
         state.phase.classification = false;
         syncForm();
         renderList();
-        showMessage(item
-            ? "已保存；可分别设置掉落物拾取和实验性打包缓存。"
-            : "配置检测点、缓存区域与分类选区后保存任务。");
+        showMessage(item ? "已保存" : "配置完整后自动保存");
     }
 
     /**
@@ -528,6 +538,8 @@
             state.items = state.items.map((task) => task.id === item.id ? response.item : task);
             if (state.draft.id === item.id) {
                 state.draft.enabled = response.item.enabled;
+                state.original = response.item;
+                state.draftRevision = state.revision;
             }
             Stowling.showToast(enabled ? "已开始监听" : "已停止监听，已排队任务会继续执行");
         } catch (error) {
@@ -549,6 +561,8 @@
             throw new Error("保存响应缺少任务内容，请刷新后重试");
         }
         state.revision = String(response.revision || "");
+        state.draftRevision = state.revision;
+        state.original = item;
         const index = state.items.findIndex((value) => value.id === item.id);
         if (index < 0) {
             state.items.push(item);
@@ -558,13 +572,12 @@
         state.draft = Auto.draftFromTask(item);
         state.dirty = false;
         state.active = false;
-        syncForm();
         renderList();
     }
 
     /** @returns {Promise<void>} */
     async function saveTask() {
-        if (unavailable() || !state.expanded) {
+        if (unavailable() || !state.dirty) {
             return;
         }
         readForm();
@@ -583,26 +596,24 @@
         state.busy = true;
         updateControls();
         try {
-            if (!state.draft.id || state.dirty) {
-                const id = state.draft.id;
-                const response = await Stowling.request(id
-                    ? `/v1/auto-classify-tasks/${encodeURIComponent(id)}`
-                    : "/v1/auto-classify-tasks", {
-                    method: id ? "PUT" : "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(id ? { ...payload, revision: state.revision } : payload)
-                });
-                applySave(response);
-            }
-            showMessage("自动分类已保存");
-            Stowling.showToast("自动分类已保存");
+            showMessage("正在自动保存…");
+            const id = state.draft.id;
+            const response = id
+                ? await Autosave.write(`${endpoint}/${encodeURIComponent(id)}`, "PUT",
+                    {...payload, revision: state.draftRevision},
+                    () => Autosave.latestRevision(endpoint, state.original,
+                        (current) => current.items.find((item) => item.id === id)))
+                : await Autosave.write(endpoint, "POST", payload);
+            applySave(response);
+            showMessage("已自动保存");
+            document.dispatchEvent(new Event("stowling:auto-tasks-changed"));
+            document.dispatchEvent(new Event("stowling:tasks-changed"));
         } catch (error) {
             showMessage(String(error.message || "保存失败，请刷新重试。"), true);
             Stowling.handleError(error, "保存自动分类失败");
         } finally {
             state.busy = false;
             updateControls();
-            document.dispatchEvent(new Event("stowling:auto-tasks-changed"));
         }
     }
 
@@ -692,10 +703,11 @@
         state.dirty = true;
         showMessage("未保存修改");
         updateControls();
+        autosave.schedule();
     });
     elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
-        void saveTask();
+        void autosave.flush();
     });
     elements.remove.addEventListener("click", () => void deleteTask());
     document.addEventListener("stowling:tasks-changed", () => void loadResources());

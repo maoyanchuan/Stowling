@@ -357,7 +357,7 @@ def test_task_page_supports_monitor_actions_and_fixed_move_launch() -> None:
     assert "运行任务" not in html
     assert "运行任务" not in tasks
     assert "`/v1/tasks/${encodeURIComponent(state.moveDraft.id)}/runs`" in tasks
-    assert "method: task.id ? \"PUT\" : \"POST\"" in tasks
+    assert 'Autosave.write(endpoint, "POST", payload)' in tasks
     assert "/v1/task-runs" in tasks
     assert "/v1/task-runs/${encodeURIComponent(runId)}/cancel" in tasks
     assert '"RUNNING",\n            "WAITING",' in tasks

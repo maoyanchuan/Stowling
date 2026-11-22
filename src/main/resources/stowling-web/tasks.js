@@ -6,6 +6,7 @@
     const Monitor = window.StowlingTaskMonitorModel;
     const Move = window.StowlingMoveTaskModel;
     const Coordinates = window.StowlingCoordinateModel;
+    const Autosave = window.StowlingTaskAutosave;
     const cleanup = window.StowlingTaskCleanupSettings.create(
         document.querySelector("#move-cleanup-settings"));
     const taskLogs = Monitor.createLogBuffer(300);
@@ -17,6 +18,8 @@
         runRequestId: 0,
         lastRunResponseId: 0,
         moveRevision: "",
+        moveDraftRevision: "",
+        moveOriginal: null,
         moveTasks: [],
         autoTaskCount: 0,
         autoEatTaskCount: 0,
@@ -77,6 +80,8 @@
     };
 
     const moveRows = new Map();
+    const moveSave = Autosave.create(elements.moveForm, saveMoveTask,
+        () => state.moveBusy || state.moveLoading);
 
     /**
      * @returns {Promise<void>}
@@ -110,6 +115,8 @@
                 );
                 if (refreshed) {
                     state.moveDraft = Move.draftFromTask(refreshed);
+                    state.moveOriginal = refreshed;
+                    state.moveDraftRevision = state.moveRevision;
                 } else {
                     state.moveDraft = Move.newDraft(state.moveAllTasks);
                     state.moveDraftActive = false;
@@ -252,12 +259,15 @@
         if (state.moveDirty && !window.confirm("当前修改尚未保存，切换任务会丢弃修改。继续？")) {
             return;
         }
+        moveSave.cancel();
+        state.moveOriginal = task;
+        state.moveDraftRevision = state.moveRevision;
         state.moveDraft = task
             ? Move.draftFromTask(task) : Move.newDraft(state.moveAllTasks);
         state.moveDirty = false;
         state.moveDraftActive = !task;
         state.moveFormOpen = true;
-        showMoveMessage(task ? "已保存，可直接加入队列" : "新任务，配置目标后保存或运行");
+        showMoveMessage(task ? "已保存" : "选择目标后自动保存");
         syncMoveForm();
         renderMoveTaskList();
         if (task) {
@@ -355,7 +365,7 @@
             const unsaved = state.moveDraft.id === id && state.moveDirty;
             row.button.disabled = disabled;
             row.run.disabled = disabled || unsaved;
-            row.run.title = unsaved ? "先保存当前修改，再加入队列" : "加入运行队列";
+            row.run.title = unsaved ? "修改保存后可加入队列" : "加入运行队列";
         }
         elements.moveCoordinate.disabled = state.moveDraft.source !== "saved"
             || state.coordinates.length === 0;
@@ -401,6 +411,8 @@
             throw new Error("保存响应缺少任务编号或内容，请刷新任务列表");
         }
         state.moveRevision = String(response.revision || "");
+        state.moveDraftRevision = state.moveRevision;
+        state.moveOriginal = saved;
         state.moveAllTasks = allTasks;
         state.moveTasks = tasks;
         state.moveDraft = Move.draftFromTask(saved);
@@ -413,7 +425,7 @@
     /** @returns {Promise<void>} */
     async function saveMoveTask() {
         if (state.moveBusy || state.moveLoading || !state.moveResourcesReady
-                || !Stowling.isConnected() || !state.moveFormOpen) {
+                || !Stowling.isConnected() || !state.moveDirty) {
             return;
         }
         readMoveForm();
@@ -438,26 +450,24 @@
         state.moveBusy = true;
         updateMoveControls();
         try {
-            if (!task.id || state.moveDirty) {
-                showMoveMessage("正在保存任务…");
-                const payload = Model.payloadTask(task);
-                const response = await Stowling.request(task.id
-                    ? `/v1/tasks/${encodeURIComponent(task.id)}` : "/v1/tasks", {
-                    method: task.id ? "PUT" : "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(task.id
-                        ? { ...payload, revision: state.moveRevision } : payload)
-                });
-                applyMoveSave(response, task.id);
-                document.dispatchEvent(new Event("stowling:tasks-changed"));
-            }
-            showMoveMessage("任务已保存");
-            Stowling.showToast("移动任务已保存");
+            showMoveMessage("正在自动保存…");
+            const payload = Model.payloadTask(task);
+            const endpoint = "/v1/tasks";
+            const response = task.id
+                ? await Autosave.write(`${endpoint}/${encodeURIComponent(task.id)}`, "PUT",
+                    {...payload, revision: state.moveDraftRevision},
+                    () => Autosave.latestRevision(endpoint, state.moveOriginal,
+                        (current) => current.tasks.map(Model.normalizeTask)
+                            .find((item) => item.id === task.id)))
+                : await Autosave.write(endpoint, "POST", payload);
+            applyMoveSave(response, task.id);
+            document.dispatchEvent(new Event("stowling:tasks-changed"));
+            showMoveMessage("已自动保存");
         } catch (error) {
             if (isTaskNameConflict(error)) {
                 showMoveMessage("任务名称已存在，请使用其他名称", true);
             } else {
-                showMoveMessage("保存失败，请检查输入或刷新重试", true);
+                showMoveMessage(String(error.message || "自动保存失败，请刷新重试"), true);
                 Stowling.handleError(error, "保存移动任务失败");
             }
         } finally {
@@ -1067,6 +1077,7 @@
         showMoveMessage("未保存修改");
         updateMoveTarget();
         updateMoveControls();
+        moveSave.schedule();
     });
     for (const button of elements.moveSources) {
         button.addEventListener("click", () => {
@@ -1079,12 +1090,13 @@
             showMoveMessage("未保存修改");
             updateMoveTarget();
             updateMoveControls();
+            moveSave.schedule();
         });
     }
     elements.removeMove.addEventListener("click", () => void deleteMoveTask());
     elements.moveForm.addEventListener("submit", (event) => {
         event.preventDefault();
-        void saveMoveTask();
+        void moveSave.flush();
     });
     elements.refreshRuns.addEventListener("click", () => void loadRuns());
     elements.exportLogs.addEventListener("click", exportMonitorLogs);

@@ -17,6 +17,7 @@
     <script src="/auto-classify-task-model.js" defer></script>
     <script src="/task-monitor-model.js" defer></script>
     <script src="/task-cleanup-settings.js" defer></script>
+    <script src="/task-autosave.js" defer></script>
     <script src="/tasks.js" defer></script>
     <script src="/auto-classify-ui.js" defer></script>
     <script src="/auto-eat-ui.js" defer></script>
@@ -228,8 +229,7 @@
                                                     class="ghost danger-action task-delete-action"
                                                     hidden>删除任务</button>
                                             <button id="cancel-refresh-edit" type="button"
-                                                    class="secondary">取消</button>
-                                            <button type="submit" class="primary">保存任务</button>
+                                                    class="secondary">关闭</button>
                                         </div>
                                     </fieldset>
                                 </form>
@@ -406,14 +406,14 @@
                                                 </p>
                                             </div>
                                         </details>
+                                        <p id="material-save-status" class="field-message"
+                                           role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">
                                             <button id="delete-material-task"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
                                             <button id="material-cancel" class="secondary"
-                                                    type="button">取消</button>
-                                            <button id="material-save" class="primary"
-                                                    type="submit" disabled>保存任务</button>
+                                                    type="button">关闭</button>
                                         </div>
                                     </fieldset>
                                 </form>
@@ -487,8 +487,7 @@
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
                                             <button id="cancel-auto-eat" class="secondary"
-                                                    type="button">取消</button>
-                                            <button class="primary" type="submit">保存任务</button>
+                                                    type="button">关闭</button>
                                         </div>
                                     </fieldset>
                                 </form>
@@ -501,7 +500,7 @@
                                 <span class="move-task-kind" aria-hidden="true">↗</span>
                                 <span class="move-task-overview">
                                     <strong>新建 · 移动到坐标</strong>
-                                    <span>配置目标后保存为任务</span>
+                                    <span>选择目标后自动保存</span>
                                 </span>
                                 <span class="move-task-state">未保存</span>
                                 <span class="move-task-chevron" aria-hidden="true">⌄</span>
@@ -572,8 +571,6 @@
                                             <button id="delete-move-task"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
-                                            <button id="save-move-task" class="primary"
-                                                    type="submit">保存任务</button>
                                         </div>
                                     </fieldset>
                                 </form>
@@ -848,8 +845,6 @@
                                             <button id="delete-auto-task"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
-                                            <button id="save-auto-task" class="primary"
-                                                    type="submit">保存任务</button>
                                         </div>
                                     </fieldset>
                                 </form>

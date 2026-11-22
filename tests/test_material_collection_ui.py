@@ -30,8 +30,12 @@ class Element {
         this.children = []; this.listeners = {}; this.attributes = {};
         this.value = ''; this.checked = false; this.disabled = false;
         this.dataset = {}; this.style = {}; this.className = '';
-        this.classList = {/** @param {...string} names @returns {void} */
-            add: (...names) => {this.className += ' ' + names.join(' ');}};
+        this.classList = {
+            /** @param {...string} names @returns {void} */
+            add: (...names) => {this.className += ' ' + names.join(' ');},
+            /** @returns {void} */
+            toggle() {}
+        };
     }
     /** @param {...Element} children @returns {void} */
     append(...children) {
@@ -95,8 +99,14 @@ let saved = {id: 'saved', name: '自动收集材料',
     steps: [{id: 'step', moduleId: 'COLLECT_SCHEMATIC_MATERIALS', parameters}]};
 const posts = [];
 let connected;
+let pendingAutosave;
 globalThis.window = {
     /** @returns {boolean} */ confirm: () => true,
+    /** @returns {void} */ addEventListener() {},
+    /** @param {Function} callback @returns {number} */
+    setTimeout(callback) { pendingAutosave = callback; return 1; },
+    /** @returns {void} */
+    clearTimeout() { pendingAutosave = undefined; },
     Stowling: {
         /** @returns {boolean} */ isConnected: () => true,
         /** @param {Function} callback @returns {void} */
@@ -127,14 +137,19 @@ function boxedHeader() {
 /** @returns {Array<string>} */
 function preview() {return element('material-preview-items').children.map(row => row.textContent);}
 /** @param {string} id @param {boolean} checked @returns {void} */
-function toggle(id, checked) {element(id).checked = checked; element(id).emit('change');}
+function toggle(id, checked) {
+    element(id).checked = checked;
+    element(id).emit('change');
+    element('material-task-form').emit('input');
+}
 /** @returns {Promise<void>} */
-async function save() {
-    element('material-task-form').emit('submit');
+async function waitForAutosave() {
+    pendingAutosave();
     await new Promise(resolve => setImmediate(resolve));
 }
 (async () => {
     vm.runInThisContext(fs.readFileSync(process.argv[4], 'utf8'));
+    vm.runInThisContext(fs.readFileSync(process.argv[5], 'utf8'));
     vm.runInThisContext(fs.readFileSync(process.argv[1], 'utf8'));
     await connected();
     element('material-task-list').children[0].children[0].children[0].emit('click');
@@ -151,7 +166,8 @@ def run_ui(expression: str, parameters: dict[str, str] | None = None) -> Any:
     payload = {"materials": json.dumps(MATERIALS), **(parameters or {})}
     completed = subprocess.run(
         [NODE, "-e", RUNNER, str(WEB / "material-collection-ui.js"),
-         expression, json.dumps(payload), str(WEB / "settings-ui.js")],
+         expression, json.dumps(payload), str(WEB / "settings-ui.js"),
+         str(WEB / "task-autosave.js")],
         check=True, capture_output=True, encoding="utf-8",
     )
     return json.loads(completed.stdout)
@@ -184,7 +200,7 @@ def test_switches_filter_every_variant_and_preserve_original_materials_on_save(
         toggle('material-skip-minecarts', {str(skip_carts).lower()});
         const rows = preview();
         const count = element('material-source-description').textContent;
-        await save();
+        await waitForAutosave();
         return {{rows, count, saved: posts[0].steps[0].parameters}};
     }})()""")
     excluded = (BOXES if skip_boxes else set()) | (CARTS if skip_carts else set())
@@ -234,7 +250,7 @@ def test_boxed_submenu_folds_without_changing_the_selected_delivery_mode() -> No
         header.emit('click');
         const folded = {hidden: element('material-boxed-options').hidden,
             enabled: element('material-boxed-delivery').checked};
-        await save();
+        await waitForAutosave();
         return {initial, expanded, pure, mixed, folded, saved: posts[0].steps[0].parameters};
     })()""")
     assert result["initial"] is True
@@ -260,7 +276,7 @@ def test_boxed_switch_preserves_saved_mode_and_disables_both_choices_when_off(si
         const on = {hidden: element('material-boxed-options').hidden,
             mixedDisabled: element('material-mixed-boxes').disabled,
             pureDisabled: element('material-pure-boxes').disabled};
-        await save();
+        await waitForAutosave();
         return {restored, off, on, saved: posts[0].steps[0].parameters};
     })()""", {"singleMaterialBoxes": str(single).lower()})
     assert result["restored"] == {"mixed": not single, "pure": single}
@@ -286,7 +302,7 @@ def test_all_exclusion_switches_use_the_same_direction_and_keep_water_options_ex
             summary: element('material-unstackable-description').textContent};
         toggle('material-ice-instead-of-water', true);
         const ice = {rows: preview(), skipWater: element('material-skip-water').checked};
-        await save();
+        await waitForAutosave();
         return {excluded, ice, saved: posts[0].steps[0].parameters};
     })()""", {"materials": json.dumps(materials)})
     assert result["excluded"] == {

@@ -13,16 +13,16 @@ NODE = shutil.which("node")
 def test_folder_and_resource_actions_share_the_coordinate_page() -> None:
     html = (WEB / "coordinates.html").read_text(encoding="utf-8")
     for control in (
-        "coordinate-folder-filter",
+        "coordinate-bookmarks",
         "new-coordinate-folder",
-        "rename-coordinate-folder",
+        "coordinate-folder-editor-title",
         "delete-coordinate-folder",
         "coordinate-library-search",
         "coordinate-resource-kind",
         "new-warehouse-members",
     ):
         assert f'id="{control}"' in html
-    assert 'id="coordinate-area-types"' in html
+    assert 'id="coordinate-area-kind"' in html
     assert 'id="facilities"' not in html
 
 
@@ -65,3 +65,36 @@ def test_cache_resource_types_keep_their_folder_and_radius_setting() -> None:
     assert state["saved"]["detection"]["pickupRadius"] is None
     assert state["override"]["detection"]["pickupRadius"] == 5
     assert "所选缓存位置不存在，请重新选择" in state["invalid"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_drag_uses_the_middle_of_a_folder_to_move_and_edges_to_sort() -> None:
+    script = r"""
+        const fs = require("node:fs");
+        const vm = require("node:vm");
+        const source = fs.readFileSync(process.argv[1], "utf8");
+        const start = source.indexOf("function dropLocation(event)");
+        const end = source.indexOf("\n    }", start) + 6;
+        const context = {dragged: "coordinate:dragged",
+            siblings: () => [{ref: "folder:group"}, {ref: "coordinate:next"}]};
+        vm.createContext(context);
+        vm.runInContext(source.slice(start, end), context);
+        const row = {dataset: {ref: "folder:group", folderId: ""},
+            getBoundingClientRect: () => ({top: 0, height: 40})};
+        const target = {closest: () => row};
+        const positions = [4, 20, 36].map(clientY => context.dropLocation({target, clientY}));
+        context.dragged = "folder:dragged";
+        positions.push(context.dropLocation({target, clientY: 20}));
+        process.stdout.write(JSON.stringify(positions.map(({position, folderId, beforeRef}) =>
+            ({position, folderId, beforeRef}))));
+    """
+    completed = subprocess.run(
+        [str(NODE), "-e", script, str(WEB / "resource-browser.js")],
+        check=True, capture_output=True, encoding="utf-8",
+    )
+    assert json.loads(completed.stdout) == [
+        {"position": "before", "folderId": "", "beforeRef": "folder:group"},
+        {"position": "inside", "folderId": "group", "beforeRef": None},
+        {"position": "after", "folderId": "", "beforeRef": "coordinate:next"},
+        {"position": "after", "folderId": "", "beforeRef": "coordinate:next"},
+    ]

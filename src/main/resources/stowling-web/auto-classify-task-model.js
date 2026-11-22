@@ -245,7 +245,7 @@
         return [
             ["coordinates", "coordinate", "点位"],
             ["regions", "region", "区域"],
-            ["warehouses", "warehouse", "仓库"]
+            ["warehouses", "warehouse", "储存区"]
         ].flatMap(([key, type, name]) => resourceList(resources, key).map(item => ({
             id: reference(type, item.id), name: name + " · " + item.name
         })));

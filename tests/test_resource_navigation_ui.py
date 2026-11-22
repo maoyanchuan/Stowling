@@ -26,60 +26,35 @@ def test_top_navigation_has_single_coordinate_entry() -> None:
     assert "children" not in nav_items
 
 
-def test_coordinate_page_embeds_three_resource_tabs() -> None:
+def test_coordinate_page_uses_one_sidebar_and_three_creation_types() -> None:
     html = read("coordinates.html")
-    tab_class = "data-panel="
-    panel_class = 'class="resource-tab-panel resource-list-section"'
-
-    assert 'class="page-subnav"' in html
-    assert html.count(tab_class) == 3
-    assert html.count(panel_class) == 4
-    assert 'id="coordinate-points"' in html
-    assert 'id="regions"' in html
-    assert 'id="category-zones"' in html
-    assert 'id="warehouses"' in html
-    assert 'href="#coordinate-points"' in html
-    assert 'href="#regions"' in html
-    assert 'href="#category-zones"' in html
-    assert 'src="/category-zone-model.js"' in html
-    assert 'src="/category-zones.js"' in html
+    assert html.count('id="coordinate-bookmarks"') == 1
+    assert 'aria-label="坐标和文件夹"' in html
+    assert 'id="coordinate-folder-filter"' not in html
+    assert 'role="tablist"' not in html
+    create = html.split('id="coordinate-resource-kind"', 1)[1].split("</select>", 1)[0]
+    assert '>坐标点</option>' in create
+    assert '>区域</option>' in create
+    assert '>储存区</option>' in create
+    assert '>分类区</option>' not in create
+    assert 'id="coordinate-area-kind"' in html
+    assert '<option value="category-zones">分类区</option>' in html
 
 
 def test_inactive_resource_panels_use_hidden_attribute() -> None:
     html = read("coordinates.html")
-
-    assert re.search(r'id="coordinate-points"[^>]*>', html)
-    assert re.search(r'id="regions"[^>]*\bhidden\b', html)
-    assert re.search(r'id="category-zones"[^>]*\bhidden\b', html)
-    assert 'aria-selected="true"' in html
-    assert 'aria-selected="false"' in html
+    for panel in ("coordinate-points", "regions", "category-zones", "warehouses"):
+        assert re.search(rf'id="{panel}"[^>]*\bhidden\b', html)
 
 
-def test_each_resource_panel_owns_actions_and_search() -> None:
-    html = read("coordinates.html")
-    points = html.split('id="coordinate-points"', 1)[1]
-    points = points.split('id="regions"', 1)[0]
-    regions = html.split('id="regions"', 1)[1]
-    regions = regions.split('id="category-zones"', 1)[0]
-    categories = html.split('id="category-zones"', 1)[1]
-
-    assert 'id="add-coordinate-button"' in points
-    assert 'id="resource-search"' in points
-    assert 'id="add-region-button"' in regions
-    assert 'id="region-resource-search"' in regions
-    assert 'id="add-category-zone-button"' in categories
-    assert 'id="category-zone-search"' in categories
-    assert 'id="add-region-button"' not in points
-    assert 'id="add-category-zone-button"' not in regions
-
-
-def test_tabs_toggle_hidden_and_aria_selected_from_hash() -> None:
-    javascript = read("coordinates.js")
-
-    assert 'window.addEventListener("hashchange", activateHashTab)' in javascript
-    assert 'tab.setAttribute("aria-selected", String(selected))' in javascript
-    assert "panel.hidden = !selected" in javascript
-    assert "scrollIntoView" not in javascript
+def test_selecting_a_bookmark_opens_its_editor_and_old_links_keep_their_type() -> None:
+    browser = read("resource-browser.js")
+    editor = read("coordinates.js")
+    assert 'new CustomEvent("stowling:coordinate-panel-open"' in browser
+    assert 'document.addEventListener("stowling:coordinate-panel-open"' in editor
+    assert "panel.hidden = panel.id !== panelId" in editor
+    assert 'window.addEventListener("hashchange"' in browser
+    assert "window.location.hash.slice(1)" in browser
 
 
 def test_tab_refresh_preserves_dirty_editor_dom() -> None:

@@ -36,6 +36,46 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
+    void persistsMixedRootOrderAndMovesCoordinatesBetweenFolders() {
+        var path = directory.resolve("bookmarks.json");
+        var store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var point = createPoint(service, "Pickup");
+        var region = service.createRegion(new RegionRequest("Cache", 0, 64, 0, 2, 64, 2))
+                .regions().getFirst();
+        var folderId = UUID.randomUUID();
+        String pointRef = "coordinate:" + point.id();
+        String regionRef = "region:" + region.id();
+        String folderRef = "folder:" + folderId;
+        var initial = service.editCoordinateDirectory(service.coordinateDirectory().revision(),
+                catalog -> catalog.editFolder(folderId, "Collection"));
+
+        var sorted = service.placeCoordinateBookmark(initial.revision(), folderRef, null, pointRef);
+        assertEquals(List.of(folderRef, pointRef, regionRef), sorted.catalog().order());
+
+        var moved = service.placeCoordinateBookmark(sorted.revision(), regionRef, folderId, null);
+        var grouped = service.placeCoordinateBookmark(
+                moved.revision(), pointRef, folderId, regionRef);
+        assertEquals(Map.of(pointRef, folderId, regionRef, folderId), grouped.catalog().placements());
+        assertEquals(List.of(folderRef, pointRef, regionRef), grouped.catalog().order());
+        assertThrows(IllegalArgumentException.class, () -> service.placeCoordinateBookmark(
+                grouped.revision(), folderRef, folderId, regionRef));
+        assertThrows(IllegalArgumentException.class, () -> service.placeCoordinateBookmark(
+                grouped.revision(), regionRef, null, pointRef));
+
+        var restored = service.placeCoordinateBookmark(grouped.revision(), regionRef, null,
+                folderRef);
+        var saved = new ConfigStore(path).loadOrReset().config().coordinateCatalog();
+        assertEquals(List.of(regionRef, folderRef, pointRef), saved.order());
+        assertEquals(Map.of(pointRef, folderId), saved.placements());
+        var deleted = service.deleteRegion(region.id(), new RevisionRequest(restored.revision()));
+        assertEquals(deleted.revision(), service.coordinateDirectory().revision());
+        assertEquals(List.of(folderRef, pointRef), service.coordinateDirectory().catalog().order());
+    }
+
+    @Test
     void keepsWarehouseAndTaskReferencesWhenRemovingTheirFolder() {
         var service = service();
         var point = createPoint(service, "Cache chest");

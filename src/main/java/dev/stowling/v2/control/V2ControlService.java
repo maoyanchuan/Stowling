@@ -67,6 +67,11 @@ public interface V2ControlService {
         throw new UnsupportedOperationException("coordinate directory unavailable");
     }
 
+    default CoordinateDirectory placeCoordinateBookmark(String revision, String ref,
+            UUID folderId, String beforeRef) {
+        throw new UnsupportedOperationException("coordinate directory unavailable");
+    }
+
     record CoordinateDirectory(String revision, List<CoordinatePoint> coordinates,
             List<RegionDefinition> regions, List<CategoryZoneDefinition> categoryZones,
             CoordinateCatalog catalog, Map<String, List<String>> references) {

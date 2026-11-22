@@ -937,37 +937,188 @@ body[data-page] [hidden] {
     display: none !important;
 }
 
-.resource-browser {
+body[data-page="coordinates"] .coordinate-workbench {
     display: grid;
-    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+    gap: 1rem 1.5rem;
     align-items: start;
-    gap: 20px;
+}
+
+.coordinate-workbench > .panel-heading {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+body[data-page="coordinates"] .coordinate-workbench
+    > :is(.coordinate-workspace-pane, .resource-tab-panel) {
+    grid-area: 2 / 2;
+    min-width: 0;
+    margin-block-start: 0;
+}
+
+.coordinate-workbench > .coordinate-workspace-pane {
+    width: min(100%, 42rem);
+    padding: 0.5rem 0;
+}
+
+body[data-page="coordinates"] .coordinate-workbench > .resource-tab-panel {
+    padding: 0;
 }
 
 .coordinate-library {
+    grid-area: 2 / 1;
     display: grid;
     gap: 0.75rem;
-    margin-block: 1rem;
-}
-
-.coordinate-library-tools {
-    display: grid;
-    grid-template-columns: minmax(10rem, 1fr) auto minmax(12rem, 1fr);
-    gap: 0.75rem;
-    align-items: end;
+    min-width: 0;
+    padding: 0.75rem;
+    background: var(--theme-subtle, var(--panel-solid));
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
 }
 
 .coordinate-library-actions,
-.coordinate-library form,
+.coordinate-order-actions,
 .resource-picker-controls {
     display: flex;
     flex-wrap: wrap;
-    align-items: end;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.coordinate-search input {
+    width: 100%;
+}
+
+#coordinate-bookmarks {
+    min-height: 9rem;
+    max-height: min(65vh, 36rem);
+    overflow: auto;
+    scrollbar-gutter: stable;
+}
+
+.coordinate-bookmark-list {
+    display: grid;
+    gap: 0.2rem;
+    list-style: none;
+    padding: 0.15rem;
+    margin: 0;
+}
+
+.coordinate-bookmark-children {
+    padding-inline-start: 0.9rem;
+}
+
+.coordinate-bookmark-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    border-radius: 0.4rem;
+}
+
+body[data-page="coordinates"] .coordinate-bookmark {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+    min-height: 2.3rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    box-shadow: none;
+}
+
+.coordinate-bookmark-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.coordinate-bookmark-type {
+    color: var(--muted);
+    flex: none;
+}
+
+body[data-page="coordinates"] .coordinate-bookmark[aria-current="true"],
+body[data-page="coordinates"] .coordinate-bookmark:hover {
+    background: var(--theme-selected, var(--accent-soft));
+    color: var(--theme-selected-text, var(--text));
+}
+
+.coordinate-bookmark-folder .coordinate-bookmark {
+    justify-content: flex-start;
+    font-weight: 650;
+}
+
+.coordinate-bookmark-folder .coordinate-bookmark::before {
+    content: "";
+    flex: none;
+    width: 0.38rem;
+    height: 0.38rem;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(-45deg);
+}
+
+.coordinate-bookmark-folder .coordinate-bookmark[aria-expanded="true"]::before {
+    transform: rotate(45deg);
+}
+
+body[data-page="coordinates"] .coordinate-bookmark-folder > .ghost {
+    flex: none;
+    padding-inline: 0.3rem;
+}
+
+.coordinate-bookmark-empty,
+.coordinate-root-drop {
+    margin: 0;
+    padding: 0.45rem 0.5rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+}
+
+.coordinate-root-drop {
+    display: none;
+    margin-top: 0.5rem;
+    border: 1px dashed var(--line);
+    border-radius: 0.4rem;
+    text-align: center;
+}
+
+.is-dragging .coordinate-root-drop {
+    display: block;
+}
+
+[data-drop-position="inside"] {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.coordinate-bookmark-row:is([data-drop-position="before"], [data-drop-position="after"])::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.25rem;
+    height: 2px;
+    background: var(--accent);
+    pointer-events: none;
+}
+
+.coordinate-bookmark-row[data-drop-position="before"]::after {
+    inset-block-start: -1px;
+}
+
+.coordinate-bookmark-row[data-drop-position="after"]::after {
+    inset-block-end: -1px;
 }
 
 .coordinate-library .field-message:empty,
-.coordinate-resource-metadata p:empty {
+.coordinate-resource-metadata p:empty,
+#coordinate-create-destination:empty {
     display: none;
 }
 
@@ -984,47 +1135,19 @@ body[data-page] [hidden] {
     min-height: 2.25rem;
 }
 
-#coordinate-area-types [aria-current="true"] {
-    font-weight: 700;
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
-}
-
-@media (max-width: 700px) {
-    .coordinate-library-tools {
-        grid-template-columns: 1fr;
+@media (max-width: 720px) {
+    body[data-page="coordinates"] .coordinate-workbench {
+        grid-template-columns: minmax(0, 1fr);
     }
-}
 
-.resource-browser-list {
-    display: grid;
-    gap: 6px;
-    position: sticky;
-    top: 16px;
-    max-height: 75vh;
-    overflow: auto;
-}
+    body[data-page="coordinates"] .coordinate-workbench
+        > :is(.coordinate-workspace-pane, .resource-tab-panel) {
+        grid-area: 3 / 1;
+    }
 
-body[data-page] .resource-browser-item {
-    display: grid;
-    gap: 6px;
-    width: 100%;
-    padding: 14px;
-    color: var(--text);
-    background: var(--theme-subtle, #202124);
-    border: 1px solid var(--line);
-    text-align: left;
-}
-
-.resource-browser-item small {
-    color: var(--muted);
-    font-size: 11px;
-    line-height: 1.6;
-}
-
-body[data-page] .resource-browser-item[aria-current="true"] {
-    border-color: var(--accent);
-    background: var(--theme-selected, #303b36);
+    #coordinate-bookmarks {
+        max-height: 40vh;
+    }
 }
 
 .resource-not-selected {
@@ -1161,17 +1284,6 @@ body[data-page] .resource-browser-item[aria-current="true"] {
 
     .warehouse-item-heading {
         grid-column: 1 / -1;
-    }
-}
-
-@media (max-width: 780px) {
-    .resource-browser {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .resource-browser-list {
-        position: static;
-        max-height: 220px;
     }
 }
 

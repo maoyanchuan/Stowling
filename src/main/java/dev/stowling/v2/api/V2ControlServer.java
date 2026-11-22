@@ -400,12 +400,11 @@ public final class V2ControlServer implements AutoCloseable {
             } else {
                 requireMethod(method, "PUT");
                 JsonObject json = object(body);
-                requireFieldsAny(json, Set.of("revision", "resourceRef", "folderId"),
+                requireFieldsAny(json, Set.of("revision", "resourceRef", "folderId", "beforeRef"),
                         Set.of("revision", "resourceRef"));
-                var ref = dev.stowling.v2.model.ResourceReference.parse(
-                        string(json, "resourceRef"));
-                sendJson(exchange, 200, service.editCoordinateDirectory(string(json, "revision"),
-                        catalog -> catalog.move(ref.encode(), optionalUuid(json, "folderId"))));
+                sendJson(exchange, 200, service.placeCoordinateBookmark(string(json, "revision"),
+                        string(json, "resourceRef"), optionalUuid(json, "folderId"),
+                        optionalString(json, "beforeRef")));
             }
             return;
         }

@@ -5,7 +5,6 @@
     const Model = window.StowlingCoordinateModel;
     const RegionModel = window.StowlingRegionModel;
     const TAB_EVENT = "stowling:resource-tab-change";
-    const TAB_IDS = new Set(["coordinate-points", "regions", "category-zones", "warehouses"]);
     const state = {
         revision: "",
         coordinates: [],
@@ -17,7 +16,6 @@
     let regionRequest = 0;
 
     const elements = {
-        tabs: Array.from(document.querySelectorAll(".page-subnav-tab[data-panel]")),
         panels: Array.from(document.querySelectorAll(".resource-tab-panel")),
         add: document.querySelector("#add-coordinate-button"),
         addRegion: document.querySelector("#add-region-button"),
@@ -766,87 +764,16 @@
         host.replaceChildren();
     }
 
-    /**
-     * @param {string} value
-     * @returns {string}
-     */
-    function normalizeTabId(value) {
-        const candidate = String(value || "").replace(/^#/, "");
-        return TAB_IDS.has(candidate) ? candidate : "coordinate-points";
-    }
-
-    /**
-     * @param {string} panelId
-     * @param {boolean} [refresh]
-     * @returns {void}
-     */
-    function activateTab(panelId, refresh = true) {
-        const activeId = normalizeTabId(panelId);
-        document.body.dataset.coordinateTab = activeId;
-        for (const tab of elements.tabs) {
-            const selected = tab.dataset.panel
-                === (activeId === "category-zones" ? "regions" : activeId);
-            tab.setAttribute("aria-selected", String(selected));
-            tab.tabIndex = selected ? 0 : -1;
-        }
-        const areas = document.querySelector("#coordinate-area-types");
-        if (areas) {
-            areas.hidden = activeId !== "regions" && activeId !== "category-zones";
-            for (const link of areas.querySelectorAll("a")) {
-                link.setAttribute("aria-current", String(link.dataset.area === activeId));
-            }
-        }
+    /** @param {string} panelId @returns {void} */
+    function activatePanel(panelId) {
+        const changed = document.body.dataset.coordinateTab !== panelId;
+        document.body.dataset.coordinateTab = panelId;
         for (const panel of elements.panels) {
-            const selected = panel.id === activeId;
-            panel.hidden = !selected;
-            panel.setAttribute("aria-hidden", String(!selected));
+            panel.hidden = panel.id !== panelId;
         }
-        if (refresh && Stowling.isConnected()) {
-            document.dispatchEvent(new CustomEvent(TAB_EVENT, {
-                detail: { panelId: activeId }
-            }));
+        if (changed && panelId && Stowling.isConnected()) {
+            document.dispatchEvent(new CustomEvent(TAB_EVENT, {detail: {panelId}}));
         }
-    }
-
-    /**
-     * @returns {void}
-     */
-    function activateHashTab() {
-        activateTab(normalizeTabId(window.location.hash));
-    }
-
-    /**
-     * @param {KeyboardEvent} event
-     * @returns {void}
-     */
-    function handleTabKeydown(event) {
-        if (!(event.target instanceof Element)) {
-            return;
-        }
-        const tab = event.target.closest(".page-subnav-tab");
-        if (!tab) {
-            return;
-        }
-        const current = elements.tabs.indexOf(tab);
-        if (current < 0) {
-            return;
-        }
-        let next = current;
-        if (event.key === "ArrowRight") {
-            next = (current + 1) % elements.tabs.length;
-        } else if (event.key === "ArrowLeft") {
-            next = (current - 1 + elements.tabs.length) % elements.tabs.length;
-        } else if (event.key === "Home") {
-            next = 0;
-        } else if (event.key === "End") {
-            next = elements.tabs.length - 1;
-        } else {
-            return;
-        }
-        event.preventDefault();
-        const target = elements.tabs[next];
-        window.location.hash = String(target.dataset.panel);
-        target.focus();
     }
 
     /**
@@ -900,12 +827,10 @@
     elements.list.addEventListener("change", markDirtyEditor);
     elements.regionList.addEventListener("input", markDirtyEditor);
     elements.regionList.addEventListener("change", markDirtyEditor);
-    elements.tabs.forEach((tab) => {
-        tab.addEventListener("keydown", handleTabKeydown);
-    });
     document.addEventListener(TAB_EVENT, refreshResourcePanel);
-    window.addEventListener("hashchange", activateHashTab);
-    activateHashTab();
+    document.addEventListener("stowling:coordinate-panel-open", event => {
+        activatePanel(event.detail.panelId);
+    });
     elements.add.addEventListener("click", showCoordinateForm);
     elements.addRegion.addEventListener("click", showRegionForm);
     elements.cancel.addEventListener("click", hideCreateForms);

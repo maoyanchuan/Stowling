@@ -373,6 +373,13 @@ public final class ConfigValidator {
             if (!warehouses.add(warehouse.id())) throw new V2ValidationException("重复的仓库 ID");
             warehouse.members().forEach(ref -> requireSpatialReference(ref, coordinates, regions));
         }
+        var validBookmarks = new HashSet<>(config.coordinateBookmarkIds());
+        var ordered = new HashSet<String>();
+        for (String ref : catalog.order()) {
+            if (!validBookmarks.contains(ref) || !ordered.add(ref)) {
+                throw new V2ValidationException("坐标排序包含重复或不存在的条目");
+            }
+        }
         catalog.placements().forEach((value, folder) -> {
             if (!folders.contains(folder)) throw new V2ValidationException("坐标文件夹不存在");
             var ref = ResourceReference.parse(value);

@@ -212,6 +212,17 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 snapshot.config().withCoordinateCatalog(catalog)));
     }
 
+    @Override
+    public synchronized CoordinateDirectory placeCoordinateBookmark(String revision, String ref,
+            UUID folderId, String beforeRef) {
+        var snapshot = configs.read();
+        requireRevision(snapshot, revision);
+        var config = snapshot.config();
+        var updated = config.coordinateCatalog().place(
+                ref, folderId, beforeRef, config.coordinateBookmarkIds());
+        return coordinateDirectory(saveSpatialConfig(revision, config.withCoordinateCatalog(updated)));
+    }
+
     private static CoordinateDirectory coordinateDirectory(V2ConfigSnapshot snapshot) {
         AppConfig config = snapshot.config();
         var references = new java.util.LinkedHashMap<String, List<String>>();
@@ -381,7 +392,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().triggers(),
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks(),
-                current.config().coordinateCatalog().move(reference.encode(), null)
+                current.config().coordinateCatalog().remove(reference.encode())
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
@@ -515,7 +526,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 current.config().triggers(),
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks(),
-                current.config().coordinateCatalog().move(reference.encode(), null)
+                current.config().coordinateCatalog().remove(reference.encode())
         )));
     }
 
@@ -656,7 +667,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         current.config().triggers(),
                         current.config().taskFolders(),
                         current.config().autoClassifyTasks(),
-                        current.config().coordinateCatalog().move(reference.encode(), null)
+                        current.config().coordinateCatalog().remove(reference.encode())
                 )
         ));
     }

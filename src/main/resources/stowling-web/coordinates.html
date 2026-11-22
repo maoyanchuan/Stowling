@@ -24,7 +24,7 @@
             <img class="brand-mark" src="/icon.png" width="36" height="36" alt="">
             <div>
                 <h1>Stowling 控制台</h1>
-                <p>坐标管理 · 点位、区域和仓库</p>
+                <p>坐标管理 · 点位、区域和储存区</p>
             </div>
         </div>
         <div class="connection-state">
@@ -40,112 +40,97 @@
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
-            <section class="panel wide" aria-labelledby="coordinate-title">
+            <section class="panel wide coordinate-workbench" aria-labelledby="coordinate-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">共享资源</p>
                         <h2 id="coordinate-title">坐标资源</h2>
-                        <p class="muted section-help">
-                            先建立位置与仓储布局，再由任务引用；修改前可查看正在使用它的任务。
-                        </p>
                     </div>
                 </div>
 
-                <nav class="page-subnav" role="tablist" aria-label="坐标资源类型">
-                    <a id="coordinate-points-tab"
-                       class="page-subnav-tab"
-                       href="#coordinate-points"
-                       role="tab"
-                       aria-controls="coordinate-points"
-                       aria-selected="true"
-                       data-panel="coordinate-points">坐标点</a>
-                    <a id="regions-tab"
-                       class="page-subnav-tab"
-                       href="#regions"
-                       role="tab"
-                       aria-controls="regions"
-                       aria-selected="false"
-                       tabindex="-1"
-                       data-panel="regions">区域</a>
-                    <a id="warehouse-tab" class="page-subnav-tab" href="#warehouses"
-                       role="tab" aria-controls="warehouses" aria-selected="false"
-                       data-panel="warehouses">仓库</a>
-                </nav>
-
-                <div id="coordinate-library" class="coordinate-library">
-                    <div class="coordinate-library-tools">
-                        <label class="move-field">
-                            <span>文件夹</span>
-                            <select id="coordinate-folder-filter">
-                                <option value="">全部文件夹</option>
-                            </select>
-                        </label>
-                        <div class="coordinate-library-actions">
-                            <button id="new-coordinate-folder" type="button" class="secondary">
-                                新建文件夹
-                            </button>
-                            <button id="rename-coordinate-folder" type="button"
-                                    class="ghost" hidden>改名</button>
-                            <button id="delete-coordinate-folder" type="button"
-                                    class="ghost danger-action" hidden>删除文件夹</button>
-                        </div>
-                        <label class="move-field">
-                            <span>搜索资源</span>
-                            <input id="coordinate-library-search" type="search"
-                                   placeholder="搜索名称或坐标" autocomplete="off">
-                        </label>
-                    </div>
-                    <form id="coordinate-folder-form" hidden>
-                        <label class="move-field">
-                            <span>文件夹名称</span>
-                            <input id="coordinate-folder-name" type="text" maxlength="80" required>
-                        </label>
-                        <button type="submit" class="secondary">保存文件夹</button>
-                        <button id="cancel-coordinate-folder" type="button" class="ghost">取消</button>
-                    </form>
+                <aside id="coordinate-library" class="coordinate-library" aria-label="坐标目录">
                     <div class="coordinate-library-actions">
-                        <button id="new-coordinate-resource" type="button" class="primary">
-                            添加资源
+                        <button id="new-coordinate-resource" type="button" class="primary compact">
+                            添加坐标
                         </button>
-                        <form id="coordinate-kind-form" hidden>
-                            <label>
-                                <span>资源类型</span>
-                                <select id="coordinate-resource-kind" required>
-                                    <option value="">请选择</option>
-                                    <option value="coordinate-points">坐标点</option>
-                                    <option value="regions">区域</option>
-                                    <option value="category-zones">区域 · 分类区</option>
-                                    <option value="warehouses">仓库</option>
-                                </select>
-                            </label>
-                            <button type="submit" class="secondary">继续</button>
-                            <button id="cancel-coordinate-kind" type="button"
-                                    class="ghost">取消</button>
-                        </form>
+                        <button id="new-coordinate-folder" type="button" class="secondary compact">
+                            新建文件夹
+                        </button>
                     </div>
+                    <label class="coordinate-search">
+                        <span class="visually-hidden">搜索坐标或文件夹</span>
+                        <input id="coordinate-library-search" type="search"
+                               placeholder="搜索坐标或文件夹" autocomplete="off">
+                    </label>
+                    <nav id="coordinate-bookmarks" aria-label="坐标和文件夹"></nav>
                     <p id="coordinate-library-status" class="field-message" role="status"></p>
+                </aside>
+
+                <div id="coordinate-editor-empty" class="coordinate-workspace-pane">
+                    <p class="muted">选择左侧的坐标查看或编辑。</p>
                 </div>
 
-                <nav id="coordinate-area-types" class="page-subnav" aria-label="区域类型" hidden>
-                    <a href="#regions" class="page-subnav-tab" data-area="regions">普通区域</a>
-                    <a href="#category-zones" class="page-subnav-tab"
-                       data-area="category-zones">分类区</a>
-                </nav>
+                <form id="coordinate-folder-form" class="coordinate-workspace-pane" hidden>
+                    <h3 id="coordinate-folder-editor-title">新建文件夹</h3>
+                    <label class="move-field">
+                        <span>文件夹名称</span>
+                        <input id="coordinate-folder-name" type="text" maxlength="80" required>
+                    </label>
+                    <div class="move-form-actions">
+                        <button type="submit" class="primary">保存文件夹</button>
+                        <button id="cancel-coordinate-folder" type="button" class="ghost">
+                            取消
+                        </button>
+                        <button id="delete-coordinate-folder" type="button"
+                                class="ghost danger-action" hidden>删除文件夹</button>
+                    </div>
+                    <div id="coordinate-folder-order" class="coordinate-order-actions" hidden>
+                        <button id="move-coordinate-folder-up" type="button" class="ghost compact">
+                            上移
+                        </button>
+                        <button id="move-coordinate-folder-down" type="button"
+                                class="ghost compact">下移</button>
+                    </div>
+                </form>
+
+                <form id="coordinate-kind-form" class="coordinate-workspace-pane" hidden>
+                    <h3>添加坐标</h3>
+                    <p id="coordinate-create-destination" class="muted compact-help"></p>
+                    <label class="move-field">
+                        <span>坐标类型</span>
+                        <select id="coordinate-resource-kind" required>
+                            <option value="">请选择</option>
+                            <option value="coordinate-points">坐标点</option>
+                            <option value="regions">区域</option>
+                            <option value="warehouses">储存区</option>
+                        </select>
+                    </label>
+                    <label id="coordinate-area-kind-field" class="move-field" hidden>
+                        <span>区域类型</span>
+                        <select id="coordinate-area-kind">
+                            <option value="regions">普通区域</option>
+                            <option value="category-zones">分类区</option>
+                        </select>
+                    </label>
+                    <div class="move-form-actions">
+                        <button type="submit" class="primary">继续</button>
+                        <button id="cancel-coordinate-kind" type="button" class="ghost">取消</button>
+                    </div>
+                </form>
 
                 <section id="warehouses" class="resource-tab-panel resource-list-section"
-                         role="tabpanel" aria-labelledby="warehouse-tab" hidden>
+                         aria-label="储存区" hidden>
                     <div class="resource-section-heading">
-                        <h3>仓库</h3>
+                        <h3>储存区</h3>
                     </div>
                     <form id="new-warehouse-form" class="resource-editor-body" hidden>
-                        <h3>添加仓库</h3>
+                        <h3>添加储存区</h3>
                         <label class="move-field">
-                            <span>仓库名称</span>
+                            <span>储存区名称</span>
                             <input id="new-warehouse-name" type="text" maxlength="80" required>
                         </label>
                         <fieldset id="new-warehouse-members"></fieldset>
                         <div class="move-form-actions">
-                            <button type="submit" class="primary">保存仓库</button>
+                            <button type="submit" class="primary">保存储存区</button>
                             <button id="cancel-new-warehouse" type="button"
                                     class="ghost">取消</button>
                         </div>
@@ -154,10 +139,7 @@
                 </section>
 
                 <section id="coordinate-points"
-                         class="resource-tab-panel resource-list-section"
-                         role="tabpanel"
-                         aria-labelledby="coordinate-points-tab"
-                         tabindex="0">
+                         class="resource-tab-panel resource-list-section" hidden>
                     <div class="resource-section-heading">
                         <div>
                             <h3 id="coordinate-list-title">坐标点
@@ -264,9 +246,6 @@
 
                 <section id="regions"
                          class="resource-tab-panel resource-list-section"
-                         role="tabpanel"
-                         aria-labelledby="regions-tab"
-                         tabindex="0"
                          hidden>
                     <div class="resource-section-heading">
                         <div>
@@ -382,9 +361,6 @@
 
                 <section id="category-zones"
                          class="resource-tab-panel resource-list-section"
-                         role="tabpanel"
-                         aria-labelledby="regions-tab"
-                         tabindex="0"
                          hidden>
                     <div class="resource-section-heading">
                         <div>

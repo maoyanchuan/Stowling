@@ -128,6 +128,16 @@ public record AppConfig(
         this(schemaVersion, coordinates, tasks, List.of(), List.of());
     }
 
+    public List<String> coordinateBookmarkIds() {
+        var refs = new java.util.ArrayList<String>();
+        coordinates.forEach(point -> refs.add("coordinate:" + point.id()));
+        regions.forEach(region -> refs.add("region:" + region.id()));
+        categoryZones.forEach(zone -> refs.add("category-zone:" + zone.id()));
+        coordinateCatalog.warehouses().forEach(warehouse -> refs.add("warehouse:" + warehouse.id()));
+        coordinateCatalog.folders().forEach(folder -> refs.add("folder:" + folder.id()));
+        return List.copyOf(refs);
+    }
+
     public static AppConfig empty() {
         return new AppConfig(
                 CURRENT_SCHEMA_VERSION,

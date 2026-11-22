@@ -73,7 +73,6 @@
         function refresh() {
             const mixed = mode.value === "MIXED";
             const boxesOnly = mode.value === "BOX_ONLY";
-            const boxed = mode.value !== "NORMAL";
             slotRow.hidden = grid.hidden = !mixed;
             slots.disabled = !mixed;
             partialRow.hidden = !mixed;
@@ -82,7 +81,6 @@
             destination.disabled = destinationRow.hidden;
             refillRow.hidden = !mixed;
             refill.disabled = !mixed;
-            link.hidden = !boxed;
             disclosure.description.textContent = mode.selectedOptions[0]?.textContent || "";
             Array.from(grid.children).forEach((button, index) => {
                 button.setAttribute("aria-pressed", String(index < Number(slots.value)));

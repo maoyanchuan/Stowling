@@ -71,19 +71,20 @@ const editor = window.StowlingStoragePolicyEditor.create(
     {coordinates:[{id:'box', name:'Partial boxes'}],
         regions:[{id:'partials', name:'Partial region'}]});
 const content = editor.root.children[0];
-const [modeRow, slotsRow, grid, partialRow, destinationRow, refillRow, link] = content.children;
+const [modeRow, slotsRow, grid, partialRow, destinationRow, refillRow] = content.children;
 const mode = modeRow.children[1];
 const slots = slotsRow.children[1].children[0];
-const destination = destinationRow.children[1];
+const destination = destinationRow.children[0].children[1];
 /** @param {Element} control @param {string} value @returns {void} */
 function input(control, value) {
     control.value = value; control.dispatchEvent(new Event('input', {bubbles:true}));
 }
 /** @returns {Array<boolean>} */
 function hidden() {
-    return [slotsRow, grid, partialRow, destinationRow, refillRow, link].map(row => row.hidden);
+    return [slotsRow, grid, partialRow, destinationRow, refillRow].map(row => row.hidden);
 }
 const initial = {open:editor.root.open, slots:slots.value, hidden:hidden()};
+const empty = window.StowlingStoragePolicyEditor.create();
 grid.children[18].dispatchEvent(new Event('click'));
 input(destination, 'coordinate:box');
 const mixed = editor.read();
@@ -100,20 +101,22 @@ const legacy = window.StowlingStoragePolicyEditor.create(
     {regions:[{id:'partials', name:'Partial region'}]});
 const pureInitial = {policy:legacy.read(),
     destinationVisible:!legacy.root.children[0].children[4].hidden};
-process.stdout.write(JSON.stringify({initial, mixed, boxed, partialOff, normal, pureInitial}));
+process.stdout.write(JSON.stringify({initial, mixed, boxed, partialOff, normal, pureInitial,
+    emptyMode:empty.read().mode}));
 """
     result = subprocess.run(
         [str(NODE), "-e", script, str(WEB / "storage-policy-editor.js")],
         check=True, capture_output=True, encoding="utf-8",
     )
     value = json.loads(result.stdout)
+    assert value["emptyMode"] == "NORMAL"
     assert value["initial"] == {
-        "open": False, "slots": "27", "hidden": [False] * 6,
+        "open": False, "slots": "27", "hidden": [False] * 5,
     }
     assert value["mixed"]["looseSlots"] == 19
     assert value["mixed"]["partialBoxDestinationRef"] == "coordinate:box"
     assert value["mixed"]["refillLoose"] is True
-    assert value["boxed"]["hidden"] == [True, True, True, False, True, False]
+    assert value["boxed"]["hidden"] == [True, True, True, False, True]
     assert value["boxed"]["policy"]["allowPartialBoxes"] is True
     assert value["boxed"]["policy"]["partialBoxDestinationRef"] == "region:partials"
     assert value["boxed"]["policy"]["looseSlots"] is None
@@ -124,7 +127,7 @@ process.stdout.write(JSON.stringify({initial, mixed, boxed, partialOff, normal, 
     assert value["pureInitial"]["destinationVisible"] is True
     assert value["pureInitial"]["policy"]["allowPartialBoxes"] is True
     assert value["pureInitial"]["policy"]["partialBoxDestinationRef"] == "region:partials"
-    assert value["normal"]["hidden"] == [True] * 6
+    assert value["normal"]["hidden"] == [True] * 5
     assert value["normal"]["policy"]["allowPartialBoxes"] is False
 
 

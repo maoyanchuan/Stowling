@@ -28,7 +28,7 @@ class SampleMarkup(HTMLParser):
             self.module_header_controls.append((tag, values))
         if identity := values.get("id"):
             self.ids.append(identity)
-        for key in ("for", "aria-controls", "aria-labelledby"):
+        for key in ("for", "aria-controls", "aria-labelledby", "aria-describedby"):
             if reference := values.get(key):
                 self.references.extend(reference.split())
         if source := values.get("src"):
@@ -90,5 +90,5 @@ def test_module_header_keeps_task_switch_after_independent_disclosure() -> None:
     ]
     assert controls[0][1]["aria-controls"] == "sample-module-body"
     assert controls[1][1]["role"] == "switch"
-    assert controls[1][1]["aria-label"] == "启用售卖弹性物资"
+    assert controls[1][1]["aria-label"] == "运行售卖弹性物资任务"
     assert "sample-grip" not in read_sample()

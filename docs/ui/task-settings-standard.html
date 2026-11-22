@@ -199,7 +199,7 @@
         display: none !important;
     }
     #stowling-settings-standard .sample-module {
-        overflow: hidden;
+        overflow: visible;
         border: 1px solid var(--line);
         border-left: 6px solid var(--sample-rail);
         border-radius: var(--sample-radius);
@@ -211,6 +211,9 @@
         gap: 13px;
         min-height: var(--sample-header-height);
         padding: 10px var(--sample-padding);
+        border-radius: calc(var(--sample-radius) - 1px);
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
         background: var(--sample-header);
     }
     #stowling-settings-standard .sample-title {
@@ -344,6 +347,9 @@
         flex: 1;
         min-width: 0;
     }
+    #stowling-settings-standard .sample-strategy-row {
+        z-index: 2;
+    }
     #stowling-settings-standard .sample-select,
     #stowling-settings-standard .sample-number {
         width: 100%;
@@ -359,17 +365,94 @@
         caret-color: var(--sample-text);
     }
     #stowling-settings-standard .sample-select {
-        appearance: none;
-        padding-right: 40px;
-        text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: left;
     }
-    #stowling-settings-standard .sample-select-wrap > .sample-select-chevron {
-        position: absolute;
-        right: 14px;
-        top: 50%;
-        transform: translateY(-50%);
+    #stowling-settings-standard .sample-select-current {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    #stowling-settings-standard .sample-select-chevron {
+        flex: 0 0 auto;
         color: var(--sample-label);
-        pointer-events: none;
+        transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #stowling-settings-standard .sample-select[aria-expanded="true"] {
+        background: var(--theme-hover, #34363c);
+    }
+    #stowling-settings-standard .sample-select[aria-expanded="true"] svg {
+        transform: rotate(180deg);
+    }
+    #stowling-settings-standard .sample-select-menu {
+        position: absolute;
+        z-index: 10;
+        top: calc(100% + 6px);
+        left: auto;
+        right: 0;
+        width: max(100%, min(280px, calc(100vw - 64px)));
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--theme-surface, #161719);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+        transform-origin: top center;
+    }
+    #stowling-settings-standard .sample-select-menu[data-placement="above"] {
+        top: auto;
+        bottom: calc(100% + 6px);
+        transform-origin: bottom center;
+    }
+    #stowling-settings-standard .sample-select-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        min-height: 54px;
+        padding: 10px 12px;
+        border: 0;
+        border-radius: 7px;
+        color: var(--sample-text);
+        background: transparent;
+        font: inherit;
+        text-align: left;
+    }
+    #stowling-settings-standard .sample-select-option > span {
+        min-width: 0;
+    }
+    #stowling-settings-standard .sample-select-option small {
+        display: block;
+        margin-top: 3px;
+        color: var(--sample-label);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    #stowling-settings-standard .sample-select-option > svg {
+        flex: 0 0 auto;
+        opacity: 0;
+    }
+    #stowling-settings-standard .sample-select-option[aria-selected="true"] {
+        color: var(--theme-selected-text, #f1f1f3);
+        background: var(--theme-selected, #3b3d44);
+    }
+    #stowling-settings-standard .sample-select-option[aria-selected="true"] > svg {
+        opacity: 1;
+    }
+    #stowling-settings-standard .sample-select-option[aria-selected="true"] small {
+        color: inherit;
+    }
+    #stowling-settings-standard .sample-select-option:focus-visible {
+        outline-offset: -2px;
+    }
+    @media (hover: hover) {
+        #stowling-settings-standard .sample-select-option:hover {
+            background: var(--theme-hover, #34363c);
+        }
     }
     #stowling-settings-standard .sample-section-title {
         display: flex;
@@ -386,16 +469,52 @@
         flex: 0 0 var(--sample-input-width);
     }
     #stowling-settings-standard .sample-detail {
-        padding: 0 0 12px 20px;
+        min-width: 0;
     }
-    #stowling-settings-standard .sample-detail > .sample-row {
-        min-height: 62px;
+    #stowling-settings-standard .sample-detail-inner {
+        padding: 2px 0 18px 20px;
     }
-    #stowling-settings-standard .sample-detail .sample-number {
+    #stowling-settings-standard .sample-detail-row {
+        min-height: 80px;
+        gap: 24px;
+    }
+    #stowling-settings-standard .sample-setting-copy {
+        flex: 1;
+        min-width: 0;
+    }
+    #stowling-settings-standard .sample-setting-copy label {
+        display: block;
+        color: var(--sample-text);
+    }
+    #stowling-settings-standard .sample-description {
+        margin: 5px 0 0;
+        color: var(--sample-label);
+        font-size: 14px;
+        line-height: 1.6;
+    }
+    #stowling-settings-standard .sample-number-field {
+        position: relative;
         flex: 0 0 var(--sample-input-width);
+        min-width: 0;
     }
-    #stowling-settings-standard .sample-body[data-disabled="true"] {
-        opacity: 0.5;
+    #stowling-settings-standard .sample-number-field input {
+        padding-right: 40px;
+    }
+    #stowling-settings-standard .sample-number-unit {
+        position: absolute;
+        top: 50%;
+        right: 14px;
+        transform: translateY(-50%);
+        color: var(--sample-label);
+        pointer-events: none;
+    }
+    #stowling-settings-standard .sample-run-status {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
     }
     #stowling-settings-standard :is(button, input, select):focus-visible {
         outline: 2px solid var(--theme-focus, #a6bbb0);
@@ -424,8 +543,17 @@
             flex-basis: 100%;
             min-width: 0;
         }
-        #stowling-settings-standard .sample-detail {
+        #stowling-settings-standard .sample-detail-inner {
             padding-left: 10px;
+        }
+        #stowling-settings-standard .sample-detail-row {
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 12px 0;
+        }
+        #stowling-settings-standard .sample-setting-copy,
+        #stowling-settings-standard .sample-number-field {
+            flex-basis: 100%;
         }
     }
     @media (pointer: coarse) {
@@ -2793,7 +2921,11 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <input id="sample-enabled" class="sample-switch cursor-interaction"
-                type="checkbox" role="switch" aria-label="启用售卖弹性物资" checked>
+                type="checkbox" role="switch" aria-label="运行售卖弹性物资任务"
+                aria-describedby="sample-run-status" title="开始任务">
+            <span id="sample-run-status" class="sample-run-status" role="status">
+                任务未启动
+            </span>
         </header>
 
         <div id="sample-module-body" class="sample-body" aria-label="任务模块配色">
@@ -2814,10 +2946,21 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 </div>
             </div>
             <div id="sample-valley-detail" class="sample-detail" hidden>
-                <div class="sample-row">
-                    <label class="sample-row-label" for="sample-valley-reserve">保留数量</label>
-                    <input id="sample-valley-reserve" class="sample-number"
-                        type="number" min="0" max="99999" step="1" value="64" disabled>
+                <div class="sample-detail-inner">
+                    <div class="sample-row sample-detail-row">
+                        <div class="sample-setting-copy">
+                            <label for="sample-valley-reserve">保留数量</label>
+                            <p id="sample-valley-note" class="sample-description">
+                                仅售卖超出保留数量的物资。
+                            </p>
+                        </div>
+                        <div class="sample-number-field">
+                            <input id="sample-valley-reserve" class="sample-number"
+                                type="number" min="0" max="99999" step="1" value="64"
+                                aria-describedby="sample-valley-note" disabled>
+                            <span class="sample-number-unit" aria-hidden="true">件</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2838,15 +2981,27 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 </div>
             </div>
             <div id="sample-wuling-detail" class="sample-detail" hidden>
-                <div class="sample-row">
-                    <label class="sample-row-label" for="sample-wuling-reserve">保留数量</label>
-                    <input id="sample-wuling-reserve" class="sample-number"
-                        type="number" min="0" max="99999" step="1" value="64">
+                <div class="sample-detail-inner">
+                    <div class="sample-row sample-detail-row">
+                        <div class="sample-setting-copy">
+                            <label for="sample-wuling-reserve">保留数量</label>
+                            <p id="sample-wuling-note" class="sample-description">
+                                仅售卖超出保留数量的物资。
+                            </p>
+                        </div>
+                        <div class="sample-number-field">
+                            <input id="sample-wuling-reserve" class="sample-number"
+                                type="number" min="0" max="99999" step="1" value="64"
+                                aria-describedby="sample-wuling-note">
+                            <span class="sample-number-unit" aria-hidden="true">件</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="sample-row sample-strategy-row">
-                <label class="sample-row-label" for="sample-strategy">售卖策略</label>
+                <label id="sample-strategy-label" class="sample-row-label"
+                    for="sample-strategy-trigger">售卖策略</label>
                 <div class="sample-actions sample-select-actions">
                     <button id="sample-strategy-expand" type="button"
                         class="sample-icon-button sample-expand cursor-interaction"
@@ -2858,25 +3013,73 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
                     </button>
                     <div class="sample-select-wrap">
-                        <select id="sample-strategy" class="sample-select cursor-interaction">
+                        <select id="sample-strategy" hidden aria-hidden="true">
                             <option value="price">按价格波动设置</option>
                             <option value="stock">按库存数量设置</option>
                             <option value="all">直接售卖</option>
                         </select>
-                        <svg class="sample-select-chevron"
-                            aria-hidden="true"
-    width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-    stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        <button id="sample-strategy-trigger" type="button"
+                            class="sample-select" role="combobox" aria-haspopup="listbox"
+                            aria-expanded="false" aria-controls="sample-strategy-menu"
+                            aria-labelledby="sample-strategy-label sample-strategy-current">
+                            <span id="sample-strategy-current" class="sample-select-current">
+                                按价格波动设置
+                            </span>
+                            <svg class="sample-select-chevron" aria-hidden="true"
+                                width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="1.8">
+                                <path d="m6 9 6 6 6-6"/>
+                            </svg>
+                        </button>
+                        <div id="sample-strategy-menu" class="sample-select-menu"
+                            role="listbox" aria-labelledby="sample-strategy-label" hidden>
+                            <button id="sample-strategy-price" class="sample-select-option"
+                                type="button" role="option" data-strategy="price"
+                                aria-selected="true" tabindex="-1">
+                                <span>按价格波动设置<small>达到设定涨幅后售卖</small></span>
+                                <svg aria-hidden="true" width="18" height="18"
+                                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+                            </button>
+                            <button id="sample-strategy-stock" class="sample-select-option"
+                                type="button" role="option" data-strategy="stock"
+                                aria-selected="false" tabindex="-1">
+                                <span>按库存数量设置<small>仅售卖超出保留量的物资</small></span>
+                                <svg aria-hidden="true" width="18" height="18"
+                                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+                            </button>
+                            <button id="sample-strategy-all" class="sample-select-option"
+                                type="button" role="option" data-strategy="all"
+                                aria-selected="false" tabindex="-1">
+                                <span>直接售卖<small>按最大售卖数量直接执行</small></span>
+                                <svg aria-hidden="true" width="18" height="18"
+                                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
             <div id="sample-strategy-detail" class="sample-detail" hidden>
-                <div class="sample-row">
-                    <label id="sample-threshold-label" class="sample-row-label"
-                        for="sample-threshold">最低价格涨幅（%）</label>
-                    <input id="sample-threshold" class="sample-number"
-                        type="number" min="0" max="1000" step="1" value="10">
+                <div class="sample-detail-inner">
+                    <div class="sample-row sample-detail-row">
+                        <div class="sample-setting-copy">
+                            <label id="sample-threshold-label" for="sample-threshold">
+                                最低价格涨幅
+                            </label>
+                            <p id="sample-threshold-note" class="sample-description">
+                                价格涨幅达到该值时售卖。
+                            </p>
+                        </div>
+                        <div class="sample-number-field">
+                            <input id="sample-threshold" class="sample-number"
+                                type="number" min="0" max="1000" step="1" value="10"
+                                aria-describedby="sample-threshold-note">
+                            <span id="sample-threshold-unit" class="sample-number-unit"
+                                aria-hidden="true">%</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2889,7 +3092,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         </div>
     </section>
 </div>
-        <p class="page-note">本页用于调整界面，示例选项不会执行游戏任务。</p>
+        <p class="page-note">本页仅模拟任务开始／关闭与设置交互，不执行游戏任务。</p>
     </main>
     <script>
 (() => {
@@ -2897,29 +3100,90 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 
     const root = document.getElementById("stowling-settings-standard");
     const body = root.querySelector("#sample-module-body");
-    const master = root.querySelector("#sample-enabled");
+    const runSwitch = root.querySelector("#sample-enabled");
     const collapse = root.querySelector("#sample-collapse");
     const strategy = root.querySelector("#sample-strategy");
+    const strategyTrigger = root.querySelector("#sample-strategy-trigger");
+    const strategyMenu = root.querySelector("#sample-strategy-menu");
+    const strategyWrap = root.querySelector(".sample-select-wrap");
+    const choices = Array.from(strategyMenu.querySelectorAll("[data-strategy]"));
+    const choiceLabels = {
+        price: "按价格波动设置", stock: "按库存数量设置", all: "直接售卖"
+    };
+    const reveals = new WeakMap();
+    let menuOpen = false;
     const stateKey = "stowling.task-settings-sample.state";
     const themeKey = "stowling.task-settings-sample.theme";
     const ui = {
-        enabled: true, expanded: true, valley: false, wuling: true,
+        running: false, expanded: true, valley: false, wuling: true,
         valleyExpanded: false, wulingExpanded: false, strategyExpanded: false,
         strategy: "price", maximum: "320", valleyReserve: "64", wulingReserve: "64",
         priceThreshold: "10", stockThreshold: "640"
     };
 
+    /**
+     * @param {HTMLElement} content
+     * @param {boolean} expanded
+     * @param {boolean} animate
+     * @param {string} [kind]
+     * @returns {void}
+     */
+    function reveal(content, expanded, animate, kind = "panel") {
+        const previous = reveals.get(content);
+        if (previous?.expanded === expanded) return;
+        const height = content.hidden ? 0 : content.getBoundingClientRect().height;
+        const computed = previous?.animation ? window.getComputedStyle(content) : null;
+        const opacity = computed?.opacity ?? (expanded ? 0 : 1);
+        const offset = content.dataset.placement === "above"
+            ? "translateY(4px)" : "translateY(-4px)";
+        const transform = computed?.transform ?? (expanded ? offset : "none");
+        previous?.animation?.cancel();
+        const current = {expanded, animation: null};
+        reveals.set(content, current);
+        content.inert = !expanded;
+        content.hidden = false;
+        const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+        if (!previous || !animate || reduced || !content.animate) {
+            content.hidden = !expanded;
+            content.style.overflow = "";
+            return;
+        }
+        const frames = kind === "menu" ? [
+            {opacity, transform},
+            {opacity: expanded ? 1 : 0, transform: expanded ? "none" : offset}
+        ] : [
+            {height: `${height}px`, opacity},
+            {height: `${expanded ? content.scrollHeight : 0}px`, opacity: expanded ? 1 : 0}
+        ];
+        if (kind === "panel") content.style.overflow = "hidden";
+        const animation = content.animate(frames, {
+            duration: expanded ? 200 : 150,
+            easing: "cubic-bezier(0.16, 1, 0.3, 1)"
+        });
+        current.animation = animation;
+        animation.finished.then(() => {
+            if (reveals.get(content) !== current) return;
+            content.hidden = !expanded;
+            content.style.overflow = "";
+            current.animation = null;
+        }).catch(() => {});
+    }
+
     /** @returns {void} */
-    function renderUI() {
-        master.checked = ui.enabled;
+    function renderRunState() {
+        runSwitch.checked = ui.running;
+        runSwitch.title = ui.running ? "关闭任务" : "开始任务";
+        root.querySelector("#sample-run-status").textContent = ui.running
+            ? "任务运行中" : "任务未启动";
+    }
+
+    /** @param {boolean} [animate] @returns {void} */
+    function renderUI(animate = false) {
+        renderRunState();
         collapse.setAttribute("aria-expanded", String(ui.expanded));
         const moduleAction = ui.expanded ? "收起" : "展开";
         collapse.setAttribute("aria-label", `${moduleAction}售卖弹性物资设置`);
         body.hidden = !ui.expanded;
-        body.dataset.disabled = String(!ui.enabled);
-        for (const control of body.querySelectorAll("input, select, button")) {
-            control.disabled = !ui.enabled;
-        }
         for (const [key, label] of [["valley", "四号谷地"], ["wuling", "武陵"]]) {
             const enabled = ui[key];
             const expanded = enabled && ui[`${key}Expanded`];
@@ -2930,12 +3194,16 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             button.hidden = !enabled;
             button.setAttribute("aria-expanded", String(expanded));
             button.setAttribute("aria-label", `${expanded ? "收起" : "展开"}${label}设置`);
-            content.hidden = !expanded;
+            reveal(content, expanded, animate);
             const reserve = root.querySelector(`#sample-${key}-reserve`);
             reserve.value = ui[`${key}Reserve`];
-            reserve.disabled = !ui.enabled || !enabled;
+            reserve.disabled = !enabled;
         }
         strategy.value = ui.strategy;
+        root.querySelector("#sample-strategy-current").textContent = choiceLabels[ui.strategy];
+        for (const choice of choices) {
+            choice.setAttribute("aria-selected", String(choice.dataset.strategy === ui.strategy));
+        }
         const hasThreshold = ui.strategy !== "all";
         const expanded = hasThreshold && ui.strategyExpanded;
         const strategyButton = root.querySelector("#sample-strategy-expand");
@@ -2943,20 +3211,24 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         strategyButton.setAttribute("aria-expanded", String(expanded));
         const action = expanded ? "收起" : "展开";
         strategyButton.setAttribute("aria-label", `${action}售卖策略设置`);
-        root.querySelector("#sample-strategy-detail").hidden = !expanded;
+        reveal(root.querySelector("#sample-strategy-detail"), expanded, animate);
         root.querySelector("#sample-threshold-label").textContent = ui.strategy === "stock"
-            ? "库存保留数量" : "最低价格涨幅（%）";
+            ? "库存保留数量" : "最低价格涨幅";
+        root.querySelector("#sample-threshold-note").textContent = ui.strategy === "stock"
+            ? "仅售卖超出该数量的物资。" : "价格涨幅达到该值时售卖。";
+        root.querySelector("#sample-threshold-unit").textContent = ui.strategy === "stock"
+            ? "件" : "%";
         const threshold = root.querySelector("#sample-threshold");
         threshold.value = ui.strategy === "stock" ? ui.stockThreshold : ui.priceThreshold;
         threshold.max = ui.strategy === "stock" ? "99999" : "1000";
-        threshold.disabled = !ui.enabled || !hasThreshold;
+        threshold.disabled = !hasThreshold;
         root.querySelector("#sample-maximum").value = ui.maximum;
     }
 
     /** @returns {void} */
     function remember() {
         try {
-            window.localStorage.setItem(stateKey, JSON.stringify({version: 1, ui}));
+            window.localStorage.setItem(stateKey, JSON.stringify({version: 2, ui}));
         } catch {
             // The sample remains usable when file storage is unavailable.
         }
@@ -2979,7 +3251,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 
     try {
         const stored = JSON.parse(window.localStorage.getItem(stateKey) || "null");
-        if (stored?.version === 1 && stored.ui && typeof stored.ui === "object") {
+        if ([1, 2].includes(stored?.version) && stored.ui && typeof stored.ui === "object") {
             for (const key of Object.keys(ui)) {
                 if (typeof stored.ui[key] === typeof ui[key]) ui[key] = stored.ui[key];
             }
@@ -2989,12 +3261,42 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         // Missing or malformed sample data falls back to the visible initial state.
     }
 
-    master.addEventListener("change", () => {
-        ui.enabled = master.checked;
-        renderUI();
+    /** @param {boolean} open @param {boolean} [focus] @param {boolean} [animate] @returns {void} */
+    function setMenuOpen(open, focus = false, animate = true) {
+        menuOpen = open;
+        if (open) {
+            strategyMenu.hidden = false;
+            const bounds = strategyTrigger.getBoundingClientRect();
+            const height = strategyMenu.scrollHeight;
+            const below = window.innerHeight - bounds.bottom - 12;
+            strategyMenu.dataset.placement = below < height && bounds.top > height + 12
+                ? "above" : "below";
+        }
+        strategyTrigger.setAttribute("aria-expanded", String(open));
+        reveal(strategyMenu, open, animate, "menu");
+        if (!focus) return;
+        if (open) {
+            choices.find(choice => choice.dataset.strategy === ui.strategy)?.focus();
+        } else {
+            strategyTrigger.focus();
+        }
+    }
+
+    /** @param {string} value @returns {void} */
+    function selectStrategy(value) {
+        ui.strategy = value;
+        renderUI(true);
+        setMenuOpen(false, true);
+        remember();
+    }
+
+    runSwitch.addEventListener("change", () => {
+        ui.running = runSwitch.checked;
+        renderRunState();
         remember();
     });
     collapse.addEventListener("click", () => {
+        setMenuOpen(false, false, false);
         ui.expanded = !ui.expanded;
         renderUI();
         remember();
@@ -3002,12 +3304,12 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     for (const key of ["valley", "wuling"]) {
         root.querySelector(`#sample-${key}`).addEventListener("change", event => {
             ui[key] = event.target.checked;
-            renderUI();
+            renderUI(true);
             remember();
         });
         root.querySelector(`#sample-${key}-expand`).addEventListener("click", () => {
             ui[`${key}Expanded`] = !ui[`${key}Expanded`];
-            renderUI();
+            renderUI(true);
             remember();
         });
         root.querySelector(`#sample-${key}-reserve`).addEventListener("input", event => {
@@ -3015,14 +3317,47 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             remember();
         });
     }
-    strategy.addEventListener("change", () => {
-        ui.strategy = strategy.value;
-        renderUI();
-        remember();
+    strategy.addEventListener("change", () => selectStrategy(strategy.value));
+    strategyTrigger.addEventListener("click", () => setMenuOpen(!menuOpen));
+    strategyTrigger.addEventListener("keydown", event => {
+        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+        event.preventDefault();
+        setMenuOpen(true, true);
+    });
+    for (const choice of choices) {
+        choice.addEventListener("click", () => selectStrategy(choice.dataset.strategy));
+    }
+    strategyMenu.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            setMenuOpen(false, true);
+            return;
+        }
+        if (event.key === "Tab") {
+            setMenuOpen(false, true, false);
+            return;
+        }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        let index = choices.indexOf(document.activeElement);
+        if (event.key === "Home") index = 0;
+        if (event.key === "End") index = choices.length - 1;
+        if (event.key === "ArrowDown") index = (index + 1) % choices.length;
+        if (event.key === "ArrowUp") index = (index - 1 + choices.length) % choices.length;
+        choices[index].focus();
+    });
+    document.addEventListener("pointerdown", event => {
+        if (menuOpen && !strategyWrap.contains(event.target)) setMenuOpen(false);
+    });
+    document.addEventListener("keydown", event => {
+        if (menuOpen && event.key === "Escape") {
+            event.preventDefault();
+            setMenuOpen(false, true);
+        }
     });
     root.querySelector("#sample-strategy-expand").addEventListener("click", () => {
         ui.strategyExpanded = !ui.strategyExpanded;
-        renderUI();
+        renderUI(true);
         remember();
     });
     root.querySelector("#sample-threshold").addEventListener("input", event => {
@@ -3037,6 +3372,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         button.addEventListener("click", () => setTheme(button.dataset.themeChoice, true));
     }
     renderUI();
+    setMenuOpen(false, false, false);
     setTheme(document.documentElement.dataset.theme);
 })();
 

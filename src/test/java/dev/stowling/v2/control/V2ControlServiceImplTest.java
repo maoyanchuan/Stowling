@@ -26,6 +26,7 @@ import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.model.TaskTriggerType;
 import dev.stowling.v2.runtime.TaskRunManager;
+import dev.stowling.v2.runtime.TaskRunState;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
-    void savesRefreshScheduleWithTaskAndPreservesItsAnchorOnEdits() {
+    void startsTheRefreshScheduleOnlyAfterEnablingAndPreservesItsAnchorOnEdits() {
         Path path = directory.resolve("refresh-schedule.json");
         ConfigStore store = new ConfigStore(path);
         store.loadOrReset();
@@ -49,7 +50,16 @@ class V2ControlServiceImplTest {
         var created = service.createTask(new TaskRequest("Refresh", TaskPriority.NORMAL,
                 false, steps, null, null, false, false, null, null, hourly));
         UUID id = created.taskId();
-        TaskSchedule persisted = created.schedules().get(id);
+        assertNull(created.schedules().get(id).anchorEpochSecond());
+        assertTrue(created.enabledSchedules().isEmpty());
+        assertTrue(service.taskRuns().triggers().isEmpty());
+
+        var started = service.setRefreshTaskRunning(id, new RevisionRequest(created.revision()),
+                true);
+        assertTrue(started.scheduleEnabled());
+        assertNull(started.runState());
+        assertNotNull(started.nextAt());
+        TaskSchedule persisted = service.tasks().schedules().get(id);
         assertNotNull(persisted.anchorEpochSecond());
 
         var reopened = new ConfigStore(path);
@@ -60,13 +70,45 @@ class V2ControlServiceImplTest {
         var renamed = restarted.updateTask(id, new TaskUpdateRequest(
                 restarted.tasks().revision(), "Renamed", steps));
         assertEquals(persisted, renamed.schedules().get(id));
+        assertTrue(renamed.enabledSchedules().contains(id));
+
+        var paused = restarted.setRefreshTaskRunning(id, new RevisionRequest(renamed.revision()),
+                false);
+        assertFalse(paused.scheduleEnabled());
+        assertNull(paused.nextAt());
+        assertTrue(restarted.taskRuns().triggers().isEmpty());
+        assertEquals(persisted, restarted.tasks().schedules().get(id));
 
         var manual = new TaskSchedule(TaskSchedule.Mode.MANUAL, null, null, null, null);
-        var updated = restarted.updateTask(id, new TaskUpdateRequest(renamed.revision(),
+        var updated = restarted.updateTask(id, new TaskUpdateRequest(paused.revision(),
                 "Renamed", TaskPriority.NORMAL, false, steps, null, null, false, false,
                 null, null, manual));
         assertTrue(updated.schedules().isEmpty());
         assertTrue(restarted.taskRuns().triggers().isEmpty());
+    }
+
+    @Test
+    void startsManualRefreshOnceAndRequestsSafeStop() {
+        var service = service();
+        var region = service.createRegion(new RegionRequest("Stock", 0, 64, 0, 3, 64, 3))
+                .regions().getFirst();
+        var steps = List.of(new TaskStepRequest(null, "REFRESH_CONTAINER_CACHE",
+                Map.of("targetRef", "region:" + region.id())));
+        var created = service.createTask(new TaskRequest("Manual refresh", steps));
+        UUID id = created.taskId();
+        var request = new RevisionRequest(created.revision());
+
+        var started = service.setRefreshTaskRunning(id, request, true);
+        assertEquals(TaskRunState.RUNNING, started.runState());
+        assertFalse(started.scheduleEnabled());
+        assertNull(started.nextAt());
+        service.setRefreshTaskRunning(id, request, true);
+        assertEquals(1, service.taskRuns().runs().stream()
+                .filter(run -> run.taskId().equals(id)).count());
+
+        var stopped = service.setRefreshTaskRunning(id, request, false);
+        assertEquals(TaskRunState.INTERRUPTING, stopped.runState());
+        assertTrue(service.taskRuns().queue().isEmpty());
     }
 
     @Test

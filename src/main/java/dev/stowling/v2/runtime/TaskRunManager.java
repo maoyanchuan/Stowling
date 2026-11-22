@@ -175,6 +175,10 @@ public final class TaskRunManager {
         return startFromConfig(task, config, priorityOverride, true);
     }
 
+    public synchronized TaskRunSnapshot startOnce(TaskDefinition task, AppConfig config) {
+        return startFromConfig(task, config, null, false);
+    }
+
     private TaskRunSnapshot startFromConfig(
             TaskDefinition task,
             AppConfig config,
@@ -339,6 +343,18 @@ public final class TaskRunManager {
         throw new TaskRunNotFoundException();
     }
 
+    public synchronized void cancelTask(UUID taskId) {
+        if (active != null && active.prepared.task.id().equals(taskId)
+                && !active.interruptionFailed) {
+            cancel(active.snapshot.runId());
+        }
+        for (QueuedRun queued : List.copyOf(queue)) {
+            if (queued.prepared.task.id().equals(taskId)) {
+                cancel(queued.snapshot.runId());
+            }
+        }
+    }
+
     public synchronized void forceStop(UUID runId) {
         if (active == null || !active.snapshot.runId().equals(runId)) {
             throw new TaskRunNotFoundException();
@@ -448,6 +464,14 @@ public final class TaskRunManager {
                         run.snapshot.updatedAt()
                 ))
                 .toList();
+    }
+
+    public synchronized Optional<TaskRunSnapshot> pendingTask(UUID taskId) {
+        if (active != null && active.prepared.task.id().equals(taskId)) {
+            return Optional.of(active.snapshot);
+        }
+        return queue.stream().filter(run -> run.prepared.task.id().equals(taskId))
+                .map(run -> run.snapshot).findFirst();
     }
 
     public synchronized boolean hasPendingTask(UUID taskId) {

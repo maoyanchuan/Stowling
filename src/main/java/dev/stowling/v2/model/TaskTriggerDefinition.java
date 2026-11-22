@@ -55,7 +55,7 @@ public record TaskTriggerDefinition(
         if (type == TaskTriggerType.SCHEDULED) {
             if (schedule == null || schedule.mode() == TaskSchedule.Mode.MANUAL
                     || schedule.mode() == TaskSchedule.Mode.INTERVAL
-                            && schedule.anchorEpochSecond() == null
+                            && schedule.anchorEpochSecond() == null && enabled(disabled)
                     || coordinateId != null || itemFilter != null || foodLevelThreshold != null
                     || cacheRegionId != null || radius != null) {
                 throw new IllegalArgumentException("定时触发器必须包含有效的时间规则");
@@ -108,9 +108,14 @@ public record TaskTriggerDefinition(
 
     public static TaskTriggerDefinition scheduled(UUID id, String name, UUID taskId,
             TaskSchedule schedule) {
+        return scheduled(id, name, taskId, schedule, true);
+    }
+
+    public static TaskTriggerDefinition scheduled(UUID id, String name, UUID taskId,
+            TaskSchedule schedule, boolean enabled) {
         return new TaskTriggerDefinition(id, name, TaskTriggerType.SCHEDULED, taskId,
                 TaskPriority.BACKGROUND, DEFAULT_INTERVAL_TICKS, 0, null, null, null, null,
-                null, null, null, schedule);
+                null, enabled ? null : true, null, schedule);
     }
 
     public TaskTriggerDefinition(UUID id, String name, TaskTriggerType type, UUID targetTaskId,
@@ -243,6 +248,10 @@ public record TaskTriggerDefinition(
     }
 
     public boolean enabled() {
+        return enabled(disabled);
+    }
+
+    private static boolean enabled(Boolean disabled) {
         return !Boolean.TRUE.equals(disabled);
     }
 

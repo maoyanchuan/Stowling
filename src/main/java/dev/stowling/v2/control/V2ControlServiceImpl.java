@@ -1101,7 +1101,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 response.revision(),
                 task.id(),
                 response.tasks(),
-                response.schedules()
+                response.schedules(),
+                response.enabledSchedules()
         );
     }
 
@@ -1153,18 +1154,61 @@ public final class V2ControlServiceImpl implements V2ControlService {
             throw new V2ValidationException("只可为刷新缓存任务配置定时");
         }
         List<TaskTriggerDefinition> triggers = new ArrayList<>(config.triggers());
-        var previous = triggers.stream().filter(trigger -> trigger.schedule() != null
-                && trigger.targetTaskId().equals(task.id())).findFirst().orElse(null);
+        TaskTriggerDefinition previous = refreshSchedule(config, task.id());
         if (previous != null) {
             triggers.remove(previous);
         }
         if (request.mode() != TaskSchedule.Mode.MANUAL) {
             UUID id = previous == null ? UUID.randomUUID() : previous.id();
-            TaskSchedule active = request.activate(previous == null ? null : previous.schedule(),
-                    Instant.now());
-            triggers.add(TaskTriggerDefinition.scheduled(id, "刷新缓存 " + id, task.id(), active));
+            boolean enabled = previous != null && previous.enabled();
+            TaskSchedule schedule = enabled ? request.activate(previous.schedule(), Instant.now())
+                    : request;
+            triggers.add(TaskTriggerDefinition.scheduled(id, "刷新缓存 " + id, task.id(),
+                    schedule, enabled));
         }
         return List.copyOf(triggers);
+    }
+
+    private static TaskTriggerDefinition refreshSchedule(AppConfig config, UUID taskId) {
+        return config.triggers().stream().filter(trigger -> trigger.schedule() != null
+                && trigger.targetTaskId().equals(taskId)).findFirst().orElse(null);
+    }
+
+    @Override
+    public synchronized RefreshTaskRunResponse setRefreshTaskRunning(UUID id,
+            RevisionRequest request, boolean enabled) {
+        V2ConfigSnapshot snapshot = configs.read();
+        requireRevision(snapshot, request.revision());
+        AppConfig config = snapshot.config();
+        TaskDefinition task = requireTask(config, id);
+        if (!ContainerCacheRefresh.isManualTask(task)) {
+            throw new V2NotFoundException("刷新缓存任务不存在");
+        }
+
+        TaskTriggerDefinition trigger = refreshSchedule(config, id);
+        if (trigger != null && trigger.enabled() != enabled) {
+            TaskSchedule schedule = enabled ? trigger.schedule().activate(null, Instant.now())
+                    : trigger.schedule();
+            var replacement = TaskTriggerDefinition.scheduled(trigger.id(), trigger.name(), id,
+                    schedule, enabled);
+            List<TaskTriggerDefinition> triggers = config.triggers().stream()
+                    .map(entry -> entry.id().equals(trigger.id()) ? replacement : entry).toList();
+            AppConfig updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                    config.coordinates(), config.tasks(), config.regions(), config.categoryZones(),
+                    triggers, config.taskFolders(), config.autoClassifyTasks());
+            snapshot = configs.save(snapshot.revision(), updated);
+            runs.refreshTriggers(snapshot.config());
+        }
+        if (!enabled) {
+            runs.cancelTask(id);
+        } else if (trigger == null) {
+            runs.startOnce(task, config);
+        }
+        return new RefreshTaskRunResponse(snapshot.revision(), trigger != null && enabled,
+                runs.pendingTask(id).map(TaskRunSnapshot::state).orElse(null),
+                runs.triggerStatuses().stream().filter(status -> status.targetTaskId().equals(id))
+                        .map(status -> status.nextAt()).filter(Objects::nonNull)
+                        .findFirst().orElse(null));
     }
 
     @Override
@@ -1570,9 +1614,13 @@ public final class V2ControlServiceImpl implements V2ControlService {
 
     private static TaskListResponse taskResponse(V2ConfigSnapshot snapshot) {
         Map<UUID, TaskSchedule> schedules = new LinkedHashMap<>();
+        Set<UUID> enabledSchedules = new LinkedHashSet<>();
         for (var trigger : snapshot.config().triggers()) {
-            if (trigger.enabled() && trigger.schedule() != null) {
+            if (trigger.schedule() != null) {
                 schedules.put(trigger.targetTaskId(), trigger.schedule());
+                if (trigger.enabled()) {
+                    enabledSchedules.add(trigger.targetTaskId());
+                }
             }
         }
         Set<UUID> derivedIds = AutoClassifyTaskFactory.ownedTaskIds(
@@ -1584,7 +1632,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 snapshot.config().tasks().stream()
                         .filter(task -> !derivedIds.contains(task.id()))
                         .toList(),
-                schedules
+                schedules,
+                enabledSchedules
         );
     }
 

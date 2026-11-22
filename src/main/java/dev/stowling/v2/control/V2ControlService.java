@@ -109,6 +109,8 @@ public interface V2ControlService {
 
     TaskListResponse tasks();
 
+    RefreshTaskRunResponse setRefreshTaskRunning(UUID id, RevisionRequest request, boolean enabled);
+
     TaskDefinition task(UUID id);
 
     TaskListResponse createTask(TaskRequest request);

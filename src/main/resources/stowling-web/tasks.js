@@ -754,8 +754,11 @@
      * @returns {void}
      */
     function renderQueue() {
-        document.dispatchEvent(new CustomEvent("stowling:refresh-schedule-status", {
-            detail: state.triggerStatuses
+        document.dispatchEvent(new CustomEvent("stowling:refresh-task-status", {
+            detail: {
+                pending: [...state.runs.filter(isActiveRun), ...state.queue],
+                triggers: state.triggerStatuses
+            }
         }));
         const scrollTop = elements.queueList.scrollTop;
         elements.queueList.replaceChildren();

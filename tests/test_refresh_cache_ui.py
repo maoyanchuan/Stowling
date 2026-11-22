@@ -45,5 +45,11 @@ assert.deepEqual(model.schedulePayload({mode: "INTERVAL", intervalMinutes: 60}),
     {mode: "INTERVAL", intervalMinutes: 60});
 assert.throws(() => model.schedulePayload({mode: "INTERVAL", intervalMinutes: 0}));
 assert.deepEqual(model.schedulePayload({mode: "MANUAL"}), {mode: "MANUAL"});
+assert.deepEqual(model.taskSwitch(false, false, "QUEUED"),
+    {checked: true, stopping: false, label: "排队中"});
+assert.equal(model.taskSwitch(false, false, "SUCCEEDED").checked, false);
+assert.equal(model.taskSwitch(false, false, "INTERRUPTING").checked, false);
+assert.equal(model.taskSwitch(true, false, null).checked, false);
+assert.equal(model.taskSwitch(true, true, null).checked, true);
 '''
     subprocess.run([node, "-e", script, str(WEB / "refresh-cache-ui.js")], check=True)

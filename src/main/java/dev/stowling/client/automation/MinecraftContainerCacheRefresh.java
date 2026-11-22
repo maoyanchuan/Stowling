@@ -69,6 +69,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     private boolean missingChunks;
     private String firstFailure;
     private TaskModuleResult terminal;
+    private boolean stopRequested;
 
     MinecraftContainerCacheRefresh(Minecraft minecraft, MinecraftContainerRegionScanner scanner,
             TaskExecutionContext context, ContainerCacheRefresh options) {
@@ -144,6 +145,9 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult tick() {
+        if (stopRequested && terminal == null) {
+            cancel();
+        }
         if (terminal != null) {
             return terminal;
         }
@@ -349,6 +353,16 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
                 : TaskModuleResult.failed(summary + "，" + failures + " 处失败。"
                         + "首个失败位置 " + firstFailure);
         return terminal;
+    }
+
+    @Override
+    public void requestStop() {
+        stopRequested = true;
+    }
+
+    @Override
+    public boolean safeToStop() {
+        return !stopRequested || terminal != null;
     }
 
     @Override

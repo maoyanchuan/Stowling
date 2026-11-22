@@ -1,6 +1,7 @@
 package dev.stowling.client.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.CategoryMarkerCachePort;
@@ -61,9 +62,12 @@ class MinecraftContainerCacheRefreshTest {
         refresh.start();
         refresh.tick();
         refresh.tick();
-        refresh.cancel();
+        refresh.requestStop();
+        assertFalse(refresh.safeToStop());
+        assertEquals(0, inspection.canceled);
 
         assertEquals(TaskModuleState.SUCCEEDED, refresh.tick().state());
+        assertTrue(refresh.safeToStop());
         assertEquals(1, inspection.canceled);
         assertEquals(List.of(FIRST), inspection.opened);
     }

@@ -717,6 +717,13 @@ public final class V2ControlServer implements AutoCloseable {
         }
         if (path.startsWith("/v1/tasks/")) {
             String suffix = path.substring("/v1/tasks/".length());
+            if (suffix.endsWith("/start") || suffix.endsWith("/stop")) {
+                requireMethod(method, "POST");
+                UUID id = uuid(suffix.substring(0, suffix.lastIndexOf('/')));
+                sendJson(exchange, 200, service.setRefreshTaskRunning(
+                        id, revision(body), suffix.endsWith("/start")));
+                return;
+            }
             if (suffix.endsWith("/runs")) {
                 requireMethod(method, "POST");
                 UUID id = uuid(suffix.substring(0, suffix.length() - 5));

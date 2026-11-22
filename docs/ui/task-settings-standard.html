@@ -183,6 +183,7 @@
         --sample-toggle-off: var(--theme-switch-off, #51515c);
         --sample-toggle-on: var(--theme-switch-on, #91989c);
         --sample-rail: var(--theme-switch-on, #91989c);
+        --sample-rail-width: 5px;
         width: 100%;
         color: var(--sample-text);
         font-family: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
@@ -199,18 +200,34 @@
         display: none !important;
     }
     #stowling-settings-standard .sample-module {
+        position: relative;
         overflow: visible;
+        padding-left: var(--sample-rail-width);
         border: 1px solid var(--line);
-        border-left: 6px solid var(--sample-rail);
         border-radius: var(--sample-radius);
         background: var(--sample-body);
+    }
+    #stowling-settings-standard .sample-module::before {
+        content: "";
+        position: absolute;
+        z-index: 1;
+        inset: 0;
+        border-radius: calc(var(--sample-radius) - 1px);
+        background: linear-gradient(
+            90deg,
+            var(--sample-rail) 0 var(--sample-rail-width),
+            transparent var(--sample-rail-width)
+        );
+        pointer-events: none;
     }
     #stowling-settings-standard .sample-header {
         display: flex;
         align-items: center;
         gap: 13px;
         min-height: var(--sample-header-height);
+        margin-left: calc(-1 * var(--sample-rail-width));
         padding: 10px var(--sample-padding);
+        padding-left: calc(var(--sample-padding) + var(--sample-rail-width));
         border-radius: calc(var(--sample-radius) - 1px);
         border-bottom-left-radius: 0;
         border-bottom-right-radius: 0;

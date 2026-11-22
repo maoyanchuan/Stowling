@@ -1819,6 +1819,7 @@ public final class V2ControlServer implements AutoCloseable {
                         read("stowling-web/category-zones.html", html)
                 ),
                 Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
+                Map.entry("/theme.js", read("stowling-web/theme.js", js)),
                 Map.entry("/common.js", read("stowling-web/common.js", js)),
                 Map.entry("/storage.html", read("stowling-web/storage.html", html)),
                 Map.entry("/storage.js", read("stowling-web/storage.js", js)),

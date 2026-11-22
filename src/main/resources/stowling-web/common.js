@@ -457,11 +457,7 @@
             button.title = green ? "切换为深灰主题" : "切换为浅绿主题";
         }
 
-        try {
-            applyTheme(window.localStorage.getItem(THEME_KEY));
-        } catch {
-            applyTheme("green");
-        }
+        applyTheme(document.documentElement.dataset.theme);
 
         /** @returns {void} */
         function toggleTheme() {

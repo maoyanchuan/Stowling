@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="green">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light dark">
+    <script src="/theme.js" blocking="render"></script>
     <title>状态概览 · Stowling</title>
     <link rel="icon" type="image/png" href="/icon.png">
     <link rel="stylesheet" href="/styles.css">
@@ -34,15 +34,15 @@
         <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
 
-            <section class="hero dashboard-overview panel wide"
+            <section class="dashboard-overview panel wide"
                      aria-labelledby="status-title" aria-busy="false">
                 <div class="dashboard-overview-heading">
                     <div class="dashboard-overview-copy">
                         <h2 id="status-title">运行概览</h2>
-                        <p id="dashboard-summary" class="hero-copy"
+                        <p id="dashboard-summary" class="dashboard-summary"
                            role="status">正在读取运行状态…</p>
                     </div>
-                    <div class="hero-actions dashboard-actions">
+                    <div class="dashboard-actions">
                         <a class="button-link primary" href="/tasks.html">打开任务</a>
                         <a class="button-link secondary"
                            href="/coordinates.html">管理坐标</a>

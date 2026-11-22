@@ -12,11 +12,12 @@ RUNNER = r"""
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const source = fs.readFileSync(process.argv[1], "utf8");
+const themeSource = fs.readFileSync(process.argv[1], "utf8");
+const commonSource = fs.readFileSync(process.argv[2], "utf8");
 const saved = new Map();
 /** @param {string} page @param {boolean} blocked @param {boolean} header @returns {object} */
 function openPage(page, blocked = false, header = true) {
-    const root = {dataset: {}};
+    const root = {dataset: {theme: "green"}};
     const nodes = new Map();
     const events = {};
     /** @param {string} tag @returns {object} */
@@ -70,11 +71,14 @@ function openPage(page, blocked = false, header = true) {
         /** @returns {null} */
         getItem() { return null; },
     };
-    vm.runInNewContext(source, {window, document, sessionStorage});
+    const context = vm.createContext({window, document, sessionStorage});
+    vm.runInContext(themeSource, context);
+    const firstPaintTheme = root.dataset.theme;
+    vm.runInContext(commonSource, context);
     window.Stowling.mountPage(page);
-    return {root, button: nodes.get("#theme-toggle"), events, connection};
+    return {root, firstPaintTheme, button: nodes.get("#theme-toggle"), events, connection};
 }
-eval(process.argv[2]);
+eval(process.argv[3]);
 """
 
 
@@ -82,7 +86,7 @@ def run_theme(expression: str) -> None:
     if NODE is None:
         pytest.skip("Node.js is required")
     subprocess.run(
-        [str(NODE), "-e", RUNNER, str(WEB / "common.js"), expression],
+        [str(NODE), "-e", RUNNER, str(WEB / "theme.js"), str(WEB / "common.js"), expression],
         check=True,
         capture_output=True,
         encoding="utf-8",
@@ -92,6 +96,7 @@ def run_theme(expression: str) -> None:
 def test_theme_button_switches_without_auth_and_remembers_across_pages() -> None:
     run_theme("""
         const tasks = openPage("tasks");
+        assert.equal(tasks.firstPaintTheme, "green");
         assert.equal(tasks.root.dataset.theme, "green");
         assert.equal(tasks.button.textContent, "主题：浅绿");
         assert.equal(tasks.button.type, "button");
@@ -104,6 +109,7 @@ def test_theme_button_switches_without_auth_and_remembers_across_pages() -> None
         assert.equal(tasks.button.attributes["aria-pressed"], "false");
         assert.equal(saved.get("stowling.theme"), "gray");
         const storage = openPage("storage");
+        assert.equal(storage.firstPaintTheme, "gray");
         assert.equal(storage.root.dataset.theme, "gray");
         storage.button.listeners.click();
         for (const page of ["dashboard", "coordinates", "category-zones", "backpack"]) {
@@ -131,8 +137,9 @@ def test_theme_follows_changes_and_removal_in_other_tabs() -> None:
 def test_invalid_saved_theme_and_blocked_storage_allow_switching() -> None:
     run_theme("""
         saved.set("stowling.theme", "invalid");
-        assert.equal(openPage("tasks").root.dataset.theme, "green");
+        assert.equal(openPage("tasks").firstPaintTheme, "green");
         const page = openPage("coordinates", true);
+        assert.equal(page.firstPaintTheme, "green");
         assert.equal(page.root.dataset.theme, "green");
         page.button.listeners.click();
         assert.equal(page.root.dataset.theme, "gray");
@@ -157,14 +164,13 @@ def test_light_palette_keeps_original_colors_and_page_gradients() -> None:
         "radial-gradient(circle at 8% 5%, rgba(108, 158, 122, 0.24), transparent 31rem)",
         "radial-gradient(circle at 92% 4%, rgba(220, 189, 113, 0.19), transparent 27rem)",
         "linear-gradient(145deg, var(--bg), var(--bg-accent))",
-        "linear-gradient(135deg, #194a32, #2f7a52 62%, #275e43)",
     ):
         assert gradient in light
         assert gradient in legacy
     assert "color-scheme: light;" in light
     assert "--theme-grid: block;" in light
     assert "background: var(--theme-page, var(--bg));" in workbench
-    assert "background: var(--theme-hero, #24272a);" in workbench
+    assert "background-color: var(--bg);" in workbench
 
 
 def test_navigation_motion_avoids_cross_document_snapshots() -> None:
@@ -175,19 +181,15 @@ def test_navigation_motion_avoids_cross_document_snapshots() -> None:
     assert "@view-transition" not in workbench
     assert "view-transition-name" not in workbench
     assert "@keyframes workspace-tab-arrive" in workbench
-    assert "@keyframes workspace-arrive" in workbench
+    assert "@keyframes workspace-arrive" not in workbench
     assert 'body[data-page] .workspace-nav a:active::before' in workbench
     assert (
         "body[data-page] .workspace-nav a::before {\n"
         "        animation: none;"
     ) in workbench
-    assert (
-        'body[data-page] .workspace:not([aria-hidden="true"]) {\n'
-        "        animation: none;"
-    ) in workbench
 
 
-def test_pages_show_a_static_loading_state_before_scripts_run() -> None:
+def test_pages_restore_theme_before_styles_and_show_static_loading_state() -> None:
     pages = (
         "index.html",
         "coordinates.html",
@@ -199,4 +201,8 @@ def test_pages_show_a_static_loading_state_before_scripts_run() -> None:
 
     for page in pages:
         html = (WEB / page).read_text(encoding="utf-8")
+        assert '<html lang="zh-CN" data-theme="green">' in html
+        theme = html.index('<script src="/theme.js" blocking="render"></script>')
+        assert theme < html.index('<link rel="stylesheet"')
+        assert theme < html.index('<script src="/common.js" defer>')
         assert 'class="route-loading" role="status"' in html

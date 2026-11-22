@@ -96,7 +96,13 @@ globalThis.document = Object.assign(new EventTarget(), {
     createElement() { return new Element(); }
 });
 globalThis.Option = Element;
-globalThis.CustomEvent = Event;
+globalThis.CustomEvent = class extends Event {
+    /** @param {string} type @param {object} options */
+    constructor(type, options) {
+        super(type, options);
+        this.detail = options.detail;
+    }
+};
 
 let task = {id: "refresh", name: "Refresh", steps: [{id: "step",
     moduleId: "REFRESH_CONTAINER_CACHE", parameters: {targetRef: "region:stock"}}]};
@@ -143,8 +149,9 @@ globalThis.window = {
             if (options.method === "PUT") {
                 assert.equal(path, "/v1/tasks/refresh");
                 const body = JSON.parse(options.body);
-                requests.push(["PUT", body.revision, body.name]);
-                task = {...task, name: body.name, steps: body.steps};
+                assert.equal("name" in body, false);
+                requests.push(["PUT", body.revision, body.schedule.time]);
+                task = {...task, steps: body.steps};
                 return {revision: "edited", tasks: [task], schedules};
             }
             assert.equal(path, "/v1/tasks/refresh/stop");
@@ -182,14 +189,15 @@ function taskHeader() {
     assert.deepEqual(errors, []);
     assert.equal(taskHeader().children[1].checked, false);
     assert.equal(taskHeader().children[0].children[2].textContent, "已暂停");
-    assert.equal(element("refresh-cache-name").value, "Renamed externally");
-    element("refresh-cache-name").value = "Intermediate name";
+    assert.equal(taskHeader().children[0].children[1].children[0].textContent,
+        "Renamed externally");
+    element("refresh-daily-time").value = "05:00";
     element("refresh-cache-form").dispatchEvent(new Event("input"));
-    element("refresh-cache-name").value = "Final name";
+    element("refresh-daily-time").value = "06:00";
     element("refresh-cache-form").dispatchEvent(new Event("input"));
     pendingAutosave();
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(requests.slice(4), [["PUT", "paused", "Final name"]]);
+    assert.deepEqual(requests.slice(4), [["PUT", "paused", "06:00"]]);
     assert.equal(element("refresh-cache-message").textContent, "已自动保存");
 })().catch(error => {
     console.error(error);

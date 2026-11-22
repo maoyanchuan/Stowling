@@ -74,7 +74,6 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     assert 'id="new-move-task"' not in display
     assert 'id="move-task-fields"' in display
     for field_id in (
-        "move-task-name",
         "move-target-x",
         "move-target-y",
         "move-target-z",
@@ -219,7 +218,6 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
         "queue: []",
         "moveRevision: \"\"",
         "moveTasks: []",
-        "moveAllTasks: []",
         "coordinates: []",
         "moveDraft: Move.newDraft()",
         "moveDraftActive: false",
@@ -250,15 +248,13 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
     assert '"/v1/tasks"' in load_move
     assert '"/v1/coordinates"' in load_move
     assert load_move.count("Stowling.request(") == 2
-    assert "const allTasks = Array.isArray(tasks?.tasks)" in load_move
+    assert "const definitions = Array.isArray(tasks?.tasks)" in load_move
     assert "? tasks.tasks.map(Model.normalizeTask) : [];" in load_move
-    assert "state.moveAllTasks = allTasks;" in load_move
-    assert "state.moveTasks = allTasks.filter(Move.isMoveTask);" in load_move
+    assert "state.moveTasks = definitions.filter(Move.isMoveTask);" in load_move
     assert "Coordinates.normalizeCoordinates(coordinates).coordinates" in load_move
     assert "if (state.moveDraft.id && !state.moveDirty)" in load_move
     assert "state.moveTasks.find(" in load_move
     assert "state.moveDraft = Move.draftFromTask(refreshed);" in load_move
-    assert "state.moveDraft = Move.newDraft(state.moveAllTasks);" in load_move
     assert "state.moveDraftActive = false;" in load_move
     assert "state.moveFormOpen = false;" in load_move
     assert "syncMoveForm();" in load_move
@@ -268,7 +264,7 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
         "function selectMoveTask(",
         "function toggleMoveDraft()",
     )
-    assert "Move.newDraft(state.moveAllTasks)" in select_move
+    assert "Move.newDraft()" in select_move
     assert 'Stowling.onConnected(async () => {\n' in javascript
     assert "await Promise.all([loadAll(), loadMoveResources()]);" in javascript
 
@@ -288,12 +284,7 @@ def test_move_save_and_queue_routes_use_explicit_task_ids() -> None:
     assert "response.tasks.map(Model.normalizeTask)" in apply_save
     assert "const tasks = allTasks.filter(Move.isMoveTask);" in apply_save
     assert "tasks.find((task) => task.id === id)" in apply_save
-    assert "state.moveAllTasks = allTasks;" in apply_save
     assert "state.moveTasks = tasks;" in apply_save
-    assert "function isTaskNameConflict(error)" in javascript
-    assert "return /^task name must be unique:\\s+.+$/.test(message);" in javascript
-    assert "任务名称已存在，请使用其他名称" in save
-    assert "state.moveAllTasks" in save
     assert "applyMoveSave(response, task.id);" in save
     assert '"PUT",' in save and '"POST", payload' in save
     assert "{...payload, revision: state.moveDraftRevision}" in save
@@ -434,7 +425,6 @@ const confirmRequests = [];
 let runReads = 0;
 let taskSequence = 0;
 let failNextRun = false;
-let failNextTaskWriteWithDuplicateName = false;
 let confirmResult = true;
 let revision = "rev-1";
 let tasksState = [];
@@ -787,21 +777,17 @@ const Stowling = {
             throw new Error(`unexpected ${method} request ${path}`);
         }
         if (method === "POST" && path === "/v1/tasks") {
-            if (failNextTaskWriteWithDuplicateName) {
-                failNextTaskWriteWithDuplicateName = false;
-                throw new Error("task name must be unique: 并发冲突移动");
-            }
             taskSequence += 1;
             const taskId = `server-created-id-${taskSequence}`;
             revision = `rev-${revision.slice(4) ? Number(revision.slice(4)) + 1 : 2}`;
-            tasksState = [...tasksState, { id: taskId, ...body }];
+            tasksState = [...tasksState, { id: taskId, name: `移动到坐标 ${taskSequence}`, ...body }];
             return { taskId, revision, tasks: tasksState };
         }
         if (method === "PUT" && path.startsWith("/v1/tasks/")) {
             const taskId = decodeURIComponent(path.split("/").pop());
             revision = `rev-${revision.slice(4) ? Number(revision.slice(4)) + 1 : 2}`;
             tasksState = tasksState.map((task) => task.id === taskId
-                ? { id: taskId, ...body } : task);
+                ? { ...task, ...body } : task);
             return { revision, tasks: tasksState };
         }
         if (method === "POST" && path.endsWith("/runs")) {
@@ -855,8 +841,7 @@ const settle = async () => {
     }
 };
 const node = (id) => document.querySelector(`#${id}`);
-const fill = (name, x, y, z, priority = "NORMAL") => {
-    node("move-task-name").value = name;
+const fill = (x, y, z, priority = "NORMAL") => {
     node("move-target-x").value = x;
     node("move-target-y").value = y;
     node("move-target-z").value = z;
@@ -946,7 +931,6 @@ const moveButton = savedSummary;
         confirmDelta: confirmRequests.length - confirmBeforeTaskToggle,
     };
 
-    node("move-task-name").value = "未保存手动移动";
     node("move-target-x").value = "777";
     node("move-task-form").dispatchEvent("input");
     const confirmBeforeSameTaskToggle = confirmRequests.length;
@@ -954,14 +938,12 @@ const moveButton = savedSummary;
     const manualCollapsedDirty = {
         disclosure: disclosure("existing-manual"),
         formHidden: node("move-task-form").hidden,
-        name: node("move-task-name").value,
         x: node("move-target-x").value,
     };
     moveButton("existing-manual").click();
     const manualReexpandedDirty = {
         disclosure: disclosure("existing-manual"),
         formHidden: node("move-task-form").hidden,
-        name: node("move-task-name").value,
         x: node("move-target-x").value,
     };
     const sameTaskConfirmDelta = confirmRequests.length - confirmBeforeSameTaskToggle;
@@ -986,7 +968,6 @@ const moveButton = savedSummary;
     const requestsBeforeNewDraft = requests.length;
     node("new-move-task").click();
     const newDraft = {
-        name: node("move-task-name").value,
         cardHidden: node("move-task-draft").hidden,
         expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
         bodyHidden: node("move-draft-body").hidden,
@@ -996,14 +977,13 @@ const moveButton = savedSummary;
         placeholderHidden: node("move-task-placeholder").hidden,
         count: node("move-task-count").textContent,
     };
-    fill("新移动任务", "+1", "-2", "3", "URGENT");
+    fill("+1", "-2", "3", "URGENT");
     const confirmBeforeDraftToggle = confirmRequests.length;
     node("toggle-move-draft").click();
     const newDraftCollapsed = {
         expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
         bodyHidden: node("move-draft-body").hidden,
         formHidden: node("move-task-form").hidden,
-        name: node("move-task-name").value,
         x: node("move-target-x").value,
     };
     node("toggle-move-draft").click();
@@ -1011,7 +991,6 @@ const moveButton = savedSummary;
         expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
         bodyHidden: node("move-draft-body").hidden,
         formHidden: node("move-task-form").hidden,
-        name: node("move-task-name").value,
         x: node("move-target-x").value,
     };
     const newDraftToggleConfirmDelta = confirmRequests.length - confirmBeforeDraftToggle;
@@ -1035,7 +1014,7 @@ const moveButton = savedSummary;
     const createdCount = node("move-task-count").textContent;
 
     node("new-move-task").click();
-    fill("保存坐标移动", "11", "65", "21", "NORMAL");
+    fill("11", "65", "21", "NORMAL");
     node("move-saved-coordinate").value = "coordinate-1";
     node("move-task-form").dispatchEvent("input");
     sourceButton("saved").click();
@@ -1059,7 +1038,7 @@ const moveButton = savedSummary;
     ).at(-1);
 
     node("new-move-task").click();
-    fill("无效移动任务", "bad", "", "1.5", "NORMAL");
+    fill("bad", "", "1.5", "NORMAL");
     const writesBeforeInvalid = requests.filter(
         (entry) => entry.method !== "GET"
     ).length;
@@ -1071,14 +1050,14 @@ const moveButton = savedSummary;
     ).length;
 
     moveButton("existing-saved").click();
-    node("move-task-name").value = "更新后的保存移动";
+    node("move-priority").value = "URGENT";
     node("move-task-form").dispatchEvent("input");
     node("move-task-form").dispatchEvent("submit");
     await settle();
     const putWrite = requests.find((entry) => entry.method === "PUT");
 
     node("new-move-task").click();
-    fill("入队失败任务", "7", "8", "9", "BACKGROUND");
+    fill("7", "8", "9", "BACKGROUND");
     const taskWritesBeforeQueueFailure = requests.filter(
         (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
     ).length;
@@ -1151,63 +1130,6 @@ const moveButton = savedSummary;
             .getAttribute("aria-expanded") === "true")
         .map((row) => row.dataset.taskId);
 
-    node("new-move-task").click();
-    fill("更新后的保存移动", "12", "13", "14");
-    const writesBeforeNewDuplicate = requests.filter(
-        (entry) => entry.method !== "GET"
-    ).length;
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    const localNewDuplicate = {
-        message: node("move-task-message").textContent,
-        name: node("move-task-name").value,
-        cardHidden: node("move-task-draft").hidden,
-        formHidden: node("move-task-form").hidden,
-        writesDelta: requests.filter((entry) => entry.method !== "GET").length
-            - writesBeforeNewDuplicate,
-    };
-
-    moveButton("existing-manual").click();
-    node("move-task-name").value = "更新后的保存移动";
-    node("move-task-form").dispatchEvent("input");
-    const writesBeforeEditDuplicate = requests.filter(
-        (entry) => entry.method !== "GET"
-    ).length;
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    const localEditDuplicate = {
-        message: node("move-task-message").textContent,
-        name: node("move-task-name").value,
-        cardHidden: node("move-task-draft").hidden,
-        formHidden: node("move-task-form").hidden,
-        writesDelta: requests.filter((entry) => entry.method !== "GET").length
-            - writesBeforeEditDuplicate,
-    };
-
-    node("new-move-task").click();
-    fill("并发冲突移动", "55", "66", "77");
-    failNextTaskWriteWithDuplicateName = true;
-    const writesBeforeConcurrentDuplicate = requests.filter(
-        (entry) => entry.method !== "GET"
-    ).length;
-    const taskWritesBeforeConcurrentDuplicate = requests.filter(
-        (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-    ).length;
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    const concurrentDuplicate = {
-        message: node("move-task-message").textContent,
-        name: node("move-task-name").value,
-        x: node("move-target-x").value,
-        cardHidden: node("move-task-draft").hidden,
-        formHidden: node("move-task-form").hidden,
-        writesDelta: requests.filter((entry) => entry.method !== "GET").length
-            - writesBeforeConcurrentDuplicate,
-        taskWritesDelta: requests.filter(
-            (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-        ).length - taskWritesBeforeConcurrentDuplicate,
-    };
-
     const requestCountBeforeRefresh = requests.length;
     node("refresh-runs-button").click();
     await settle();
@@ -1276,9 +1198,6 @@ const moveButton = savedSummary;
         refreshedDirtyMessage,
         refreshedDirtyDisclosure,
         refreshedDirtyExpandedIds,
-        localNewDuplicate,
-        localEditDuplicate,
-        concurrentDuplicate,
         writeRequests,
         refreshRequests,
         finalListIds,
@@ -1345,7 +1264,7 @@ def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
     assert result["createdWrite"]["method"] == "POST"
     assert result["savedOnly"] is True
     assert "id" not in result["createdWrite"]["body"]
-    assert result["createdWrite"]["body"]["name"] == "新移动任务"
+    assert "name" not in result["createdWrite"]["body"]
     assert result["createdWrite"]["body"]["steps"][0]["parameters"] == {
         "x": "+1",
         "y": "-2",
@@ -1380,7 +1299,7 @@ def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
     assert result["putWrite"]["method"] == "PUT"
     assert result["putWrite"]["path"] == "/v1/tasks/existing-saved"
     assert result["putWrite"]["body"]["revision"] == "rev-3"
-    assert result["putWrite"]["body"]["name"] == "更新后的保存移动"
+    assert "name" not in result["putWrite"]["body"]
 
     assert (
         result["taskWritesAfterQueueFailure"]
@@ -1394,41 +1313,6 @@ def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
     assert "未保存修改" in result["refreshedDirtyMessage"]
     assert result["refreshRequests"] == ["GET /v1/task-runs"]
     assert "complex-task" not in result["finalListIds"]
-
-
-@pytest.mark.skipif(
-    NODE is None,
-    reason="Node.js is required to exercise move task name conflicts",
-)
-def test_move_names_use_full_snapshot_and_preserve_duplicate_drafts(
-    page_scenario: dict[str, Any],
-) -> None:
-    result = page_scenario
-
-    local_new = result["localNewDuplicate"]
-    assert "任务名称已存在，请使用其他名称" in local_new["message"]
-    assert "task name must be unique" not in local_new["message"]
-    assert local_new["name"] == "更新后的保存移动"
-    assert local_new["writesDelta"] == 0
-    assert local_new["cardHidden"] is False
-    assert local_new["formHidden"] is False
-
-    local_edit = result["localEditDuplicate"]
-    assert "任务名称已存在，请使用其他名称" in local_edit["message"]
-    assert "task name must be unique" not in local_edit["message"]
-    assert local_edit["name"] == "更新后的保存移动"
-    assert local_edit["writesDelta"] == 0
-    assert local_edit["formHidden"] is False
-
-    concurrent = result["concurrentDuplicate"]
-    assert "任务名称已存在，请使用其他名称" in concurrent["message"]
-    assert "task name must be unique" not in concurrent["message"]
-    assert concurrent["name"] == "并发冲突移动"
-    assert concurrent["x"] == "55"
-    assert concurrent["cardHidden"] is False
-    assert concurrent["formHidden"] is False
-    assert concurrent["writesDelta"] == 1
-    assert concurrent["taskWritesDelta"] == 1
 
 
 @pytest.mark.skipif(
@@ -1466,14 +1350,12 @@ def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
     assert collapsed["disclosure"]["expanded"] == "false"
     assert collapsed["disclosure"]["hidden"] is True
     assert collapsed["formHidden"] is True
-    assert collapsed["name"] == "未保存手动移动"
     assert collapsed["x"] == "777"
 
     reexpanded = result["manualReexpandedDirty"]
     assert reexpanded["disclosure"]["expanded"] == "true"
     assert reexpanded["disclosure"]["hidden"] is False
     assert reexpanded["formHidden"] is False
-    assert reexpanded["name"] == "未保存手动移动"
     assert reexpanded["x"] == "777"
     assert result["sameTaskConfirmDelta"] == 0
 
@@ -1492,7 +1374,6 @@ def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
 
     assert result["requestsBeforeNewDraft"] == result["requestsBeforeFirstSave"]
     draft = result["newDraft"]
-    assert draft["name"] == "移动到坐标 3"
     assert draft["cardHidden"] is False
     assert draft["expanded"] == "true"
     assert draft["bodyHidden"] is False
@@ -1506,13 +1387,11 @@ def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
     assert collapsed_draft["expanded"] == "false"
     assert collapsed_draft["bodyHidden"] is True
     assert collapsed_draft["formHidden"] is True
-    assert collapsed_draft["name"] == "新移动任务"
     assert collapsed_draft["x"] == "+1"
     reexpanded_draft = result["newDraftReexpanded"]
     assert reexpanded_draft["expanded"] == "true"
     assert reexpanded_draft["bodyHidden"] is False
     assert reexpanded_draft["formHidden"] is False
-    assert reexpanded_draft["name"] == "新移动任务"
     assert reexpanded_draft["x"] == "+1"
     assert result["newDraftToggleConfirmDelta"] == 0
 

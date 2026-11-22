@@ -28,10 +28,10 @@ public record AutoEatTask(UUID id, Settings settings) {
             }
         }
 
-        TaskDefinition task(UUID id) {
+        TaskDefinition task(UUID id, String taskName) {
             String target = coordinateId == null ? null
                     : ResourceReference.of(ResourceType.COORDINATE, coordinateId).encode();
-            return new TaskDefinition(id, name, TaskPriority.URGENT,
+            return new TaskDefinition(id, taskName, TaskPriority.URGENT,
                     TaskFlowTemplates.scheduledEating(target, foodItemId, foodLevelThreshold));
         }
 

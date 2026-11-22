@@ -1039,7 +1039,7 @@
             : "DEFAULT";
         const mode = isDefault ? "NONE" : requestedMode;
         return {
-            name: String(task.name || "").trim(),
+            ...(task.name === undefined ? {} : {name: String(task.name || "").trim()}),
             folderId: task.folderId ? String(task.folderId) : null,
             priority: task.priority,
             repeatWhenIdle: Boolean(

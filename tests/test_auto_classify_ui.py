@@ -1,4 +1,8 @@
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +41,6 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-draft-body",
         "auto-task-form",
         "auto-task-fields",
-        "auto-task-name",
         "auto-detection-point",
         "auto-pickup-radius",
         "auto-cache-region",
@@ -57,7 +60,7 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
     assert 'id="new-auto-task"' not in display
     assert 'id="new-auto-task"' in html
     assert "自动分类" in display
-    assert '<input id="auto-task-name" maxlength="80"' in display
+    assert "任务名称" not in display
     assert 'id="auto-pickup-radius" type="number"' in display
     assert 'min="1" max="64" step="1" value="8"' in display
 
@@ -196,7 +199,6 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
         '"/v1/coordinates"',
         '"/v1/regions"',
         '"/v1/category-zones"',
-        '"/v1/tasks"',
     ):
         assert route in loading
     assert "Array.isArray(tasks.items) ? tasks.items : []" in loading
@@ -204,7 +206,7 @@ def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
     assert "Array.isArray(regions.regions)" in loading
     assert "Array.isArray(zones.categoryZones)" in loading
     assert "/v1/category-rules" not in loading
-    assert "Array.isArray(allTasks.tasks) ? allTasks.tasks : []" in loading
+    assert '"/v1/tasks"' not in loading
     assert "state.revision = String(tasks.revision || \"\");" in loading
 
 
@@ -257,7 +259,7 @@ def test_auto_ui_saves_settings_without_changing_listening() -> None:
     save = between(javascript, "async function saveTask()", "async function deleteTask()")
 
     assert "payload = Auto.payload(" in save
-    assert "state.draft, state.resources, state.items, state.allTasks" in save
+    assert "Auto.payload(state.draft, state.resources)" in save
     assert 'const endpoint = "/v1/auto-classify-tasks";' in javascript
     assert 'Autosave.write(`${endpoint}/${encodeURIComponent(id)}`, "PUT",' in save
     assert 'Autosave.write(endpoint, "POST", payload)' in save
@@ -278,7 +280,7 @@ def test_auto_ui_switch_delete_and_saved_task_count_contracts() -> None:
     assert 'const operation = enabled ? "start" : "stop";' in switch
     assert 'method: "POST"' in switch
     assert 'method: "DELETE"' in delete
-    assert "body: JSON.stringify({ revision: state.revision })" in switch
+    assert "body: JSON.stringify({ revision: previousRevision })" in switch
     assert "body: JSON.stringify({ revision: state.revision })" in delete
     assert "const item = response.item;" in javascript
     assert "state.revision = String(response.revision || \"\");" in javascript
@@ -326,6 +328,151 @@ def test_dirty_auto_task_switch_is_disabled_and_deletion_warns() -> None:
 
     assert "row.listening.disabled = disabled || (selected && state.dirty);" in javascript
     assert delete.index(warning) < delete.index(confirmation) < delete.index("Stowling.request(")
+
+
+def test_switching_auto_classification_keeps_the_open_card_and_rolls_back_on_error() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed to exercise the task card")
+    script = """
+const assert = require("node:assert/strict");
+
+class Element extends EventTarget {
+    children = [];
+    attributes = new Map();
+    dataset = {};
+    classList = {
+        /** @returns {void} */ add() {},
+        /** @returns {void} */ toggle() {}
+    };
+    /** @param {...Element} nodes @returns {void} */
+    append(...nodes) { this.children.push(...nodes); }
+    /** @param {...Element} nodes @returns {void} */
+    replaceChildren(...nodes) { this.children = nodes; }
+    /** @param {string} key @param {string} value @returns {void} */
+    setAttribute(key, value) { this.attributes.set(key, value); }
+    /** @param {string} key @returns {void} */
+    removeAttribute(key) { this.attributes.delete(key); }
+    /** @returns {Element} */
+    closest() { return this; }
+    /** @returns {Element[]} */
+    querySelectorAll() { return []; }
+    /** @returns {void} */
+    insertBefore() {}
+}
+
+const elements = new Map();
+/** @param {string} selector @returns {Element} */
+function element(selector) {
+    if (!elements.has(selector)) elements.set(selector, new Element());
+    return elements.get(selector);
+}
+globalThis.document = Object.assign(new EventTarget(), {
+    querySelector: element,
+    /** @returns {Element} */
+    createElement() { return new Element(); }
+});
+globalThis.Option = Element;
+globalThis.CustomEvent = class extends Event {
+    /** @param {string} type @param {object} options */
+    constructor(type, options) {
+        super(type, options);
+        this.detail = options.detail;
+    }
+};
+
+const item = {id: "sorter", name: "自动分类", enabled: false, classificationAreas: []};
+const requests = [];
+const errors = [];
+const changes = [];
+let connect;
+let finish;
+let fail;
+globalThis.window = {
+    Stowling: {
+        isConnected: () => true,
+        onConnected: (callback) => { connect = callback; },
+        element: (tag, css, textContent) => Object.assign(new Element(), {textContent}),
+        handleError: (error) => { errors.push(error.message); },
+        showToast: () => {},
+        /** @param {string} path @param {object} [options] @returns {object|Promise<object>} */
+        request(path, options) {
+            requests.push(path);
+            if (options) {
+                requests.push(JSON.parse(options.body).revision);
+                return new Promise((resolve, reject) => {
+                    finish = resolve;
+                    fail = reject;
+                });
+            }
+            return {revision: "r1", items: [item]};
+        }
+    },
+    StowlingSettings: {
+        reveal: (body, expanded) => { body.hidden = !expanded; },
+        switchControl: (control) => control,
+        disclosure: () => ({root: new Element(), summary: new Element()})
+    },
+    StowlingTaskModel: {priorityLabel: () => "普通"},
+    StowlingTaskCleanupSettings: {create: () => ({resources() {}, set() {}})},
+    StowlingStoragePolicyEditor: {create: () => ({root: new Element()})},
+    StowlingTaskAutosave: {create: () => ({cancel() {}})},
+    setInterval: () => 0
+};
+document.addEventListener("stowling:task-switch-changed", ({detail}) => changes.push(detail));
+document.addEventListener("stowling:auto-tasks-changed", () => changes.push("reload"));
+
+(async () => {
+    require(process.argv[1]);
+    require(process.argv[2]);
+    await connect();
+    const list = element("#auto-task-list");
+    list.children[0].children[0].children[0].dispatchEvent(new Event("click"));
+    const card = list.children[0];
+    const [header, body] = card.children;
+    const [summary, toggle] = header.children;
+    const status = summary.children[3];
+    const form = element("#auto-task-form");
+    assert.equal(body.hidden, false);
+    assert.ok(body.children.includes(form));
+    requests.length = 0;
+
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event("change"));
+    assert.equal(toggle.checked, true);
+    assert.equal(toggle.disabled, true);
+    finish({revision: "r2", item: {...item, enabled: true}});
+    await new Promise(setImmediate);
+    assert.equal(list.children[0], card);
+    assert.equal(body.hidden, false);
+    assert.ok(body.children.includes(form));
+    assert.equal(status.textContent, "监听中");
+    assert.equal(toggle.disabled, false);
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event("change"));
+    fail(new Error("request failed"));
+    await new Promise(setImmediate);
+    assert.equal(list.children[0], card);
+    assert.equal(toggle.checked, true);
+    assert.equal(toggle.disabled, false);
+    assert.equal(status.textContent, "监听中");
+    assert.deepEqual(errors, ["request failed"]);
+    assert.deepEqual(requests, [
+        "/v1/auto-classify-tasks/sorter/start", "r1",
+        "/v1/auto-classify-tasks/sorter/stop", "r2"
+    ]);
+    assert.deepEqual(changes, [{previousRevision: "r1", revision: "r2"}]);
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
+"""
+    subprocess.run(
+        [node, "-e", script, str(WEB / "auto-classify-task-model.js"),
+         str(WEB / "auto-classify-ui.js")],
+        check=True,
+    )
 
 
 def test_task_page_loads_model_before_ui_and_ui_after_shared_styles() -> None:

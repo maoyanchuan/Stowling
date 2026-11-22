@@ -101,7 +101,6 @@
     const form = id("refresh-cache-form");
     const fieldset = form.querySelector("fieldset");
     const list = id("refresh-cache-list");
-    const name = id("refresh-cache-name");
     const target = id("refresh-cache-target");
     const markerScan = Settings.switchControl(id("refresh-scan-markers"));
     const markerStock = Settings.switchControl(id("refresh-include-markers"));
@@ -169,6 +168,7 @@
             button.disabled = disabled;
             toggle.checked = pendingSwitch?.id === taskId ? pendingSwitch.enabled : state.checked;
             toggle.disabled = disabled || dirty || (state.stopping && !state.checked);
+            toggle.setAttribute("aria-busy", String(pendingSwitch?.id === taskId));
             toggle.title = dirty ? "修改保存后可切换任务"
                 : state.checked ? "停止任务" : "启动任务";
             status.textContent = dirty ? "未保存修改" : state.label;
@@ -257,22 +257,11 @@
         target.value = locations.has(selected) ? selected : "";
     }
 
-    /** @returns {string} */
-    function newName() {
-        const names = new Set(tasks.map((task) => task.name.toLowerCase()));
-        let candidate = "刷新缓存";
-        for (let ordinal = 2; names.has(candidate.toLowerCase()); ordinal++) {
-            candidate = "刷新缓存 " + ordinal;
-        }
-        return candidate;
-    }
-
     /** @param {object|null} task @returns {void} */
     function fillForm(task) {
         const draft = settings(task?.steps?.[0]?.parameters);
         const schedule = task && schedules[task.id];
         current.zone = schedule?.zoneId || browserZone;
-        name.value = task?.name || newName();
         renderOptions(draft.targetRef);
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
         markerScan.checked = draft.scanMarkers;
@@ -391,14 +380,12 @@
         if (!current?.dirty || busy || !S.isConnected()) return;
         try {
             const taskId = current.task?.id;
-            if (!name.value.trim()) throw new Error("请输入任务名称");
             if (!target.value) throw new Error("请选择刷新选区");
             if (mode.value === "DAILY" && !time.value) throw new Error("请输入每天触发时间");
             if (mode.value === "INTERVAL" && interval.validity?.valid === false) {
                 throw new Error("请输入有效的正整数时间间隔");
             }
             const payload = {
-                name: name.value.trim(),
                 schedule: schedulePayload({
                     mode: mode.value,
                     time: time.value,
@@ -462,21 +449,23 @@
         try {
             const action = enabled ? "start" : "stop";
             const path = `/v1/tasks/${encodeURIComponent(taskId)}/${action}`;
+            let previousRevision = revision;
             /** @returns {Promise<object>} */
             const request = () => S.request(path, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({revision})
+                body: JSON.stringify({revision: previousRevision})
             });
             const response = await request().catch(async (error) => {
                 if (enabled || error.status !== 409 || error.code !== "revision_conflict") {
                     throw error;
                 }
                 await loadResources();
+                previousRevision = revision;
                 return savedCards.has(taskId) ? request() : null;
             });
             if (!response) return;
-            if (current?.revision === revision) current.revision = response.revision;
+            if (current?.revision === previousRevision) current.revision = response.revision;
             revision = response.revision;
             if (response.scheduleEnabled) enabledSchedules.add(taskId);
             else enabledSchedules.delete(taskId);
@@ -485,7 +474,9 @@
             if (response.nextAt) nextTimes.set(taskId, response.nextAt);
             else nextTimes.delete(taskId);
             renderNextTimes();
-            changed();
+            document.dispatchEvent(new CustomEvent("stowling:task-switch-changed", {
+                detail: {previousRevision, revision}
+            }));
             S.showToast(enabled
                 ? response.scheduleEnabled ? "已开启定时刷新" : "刷新缓存任务已提交"
                 : response.runState === "INTERRUPTING" ? "正在停止刷新任务" : "刷新任务已暂停");
@@ -552,6 +543,10 @@
     });
     id("refresh-move-tasks").addEventListener("click", () => void load());
     document.addEventListener("stowling:tasks-changed", () => void load());
+    document.addEventListener("stowling:task-switch-changed", ({detail}) => {
+        if (revision === detail.previousRevision) revision = detail.revision;
+        if (current?.revision === detail.previousRevision) current.revision = detail.revision;
+    });
     document.addEventListener("stowling:refresh-task-status", (event) => {
         nextTimes = new Map(event.detail.triggers.filter((trigger) => trigger.type === "SCHEDULED")
             .map((trigger) => [trigger.targetTaskId, trigger.nextAt]));

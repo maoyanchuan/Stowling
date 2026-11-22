@@ -1,7 +1,6 @@
 (() => {
     "use strict";
 
-    const DEFAULT_NAME = "自动分类";
     const DEFAULT_PICKUP_RADIUS = "8";
     const DEFAULT_CACHE_POLICY = Object.freeze({
         enabled: false, mode: "PACK_FIRST", thresholdPercent: 80
@@ -19,67 +18,6 @@
         return {
             categoryZoneId: ""
         };
-    }
-
-    /**
-     * @param {unknown} value
-     * @param {string} key
-     * @returns {Array<object>}
-     */
-    function listValue(value, key) {
-        if (Array.isArray(value)) {
-            return value;
-        }
-        return Array.isArray(value?.[key]) ? value[key] : [];
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function normalizedName(value) {
-        return String(value ?? "").trim().toLowerCase();
-    }
-
-    /**
-     * @param {unknown} items
-     * @param {unknown} [allTasks]
-     * @returns {string}
-     */
-    function defaultDraftName(items, allTasks = []) {
-        const names = new Set([
-            ...listValue(items, "items"),
-            ...listValue(allTasks, "tasks")
-        ].map((item) => normalizedName(item?.name)));
-        let candidate = DEFAULT_NAME;
-        let suffix = 2;
-        while (names.has(normalizedName(candidate))) {
-            candidate = `${DEFAULT_NAME} ${suffix}`;
-            suffix += 1;
-        }
-        return candidate;
-    }
-
-    /**
-     * @param {unknown} name
-     * @param {unknown} items
-     * @param {unknown} allTasks
-     * @param {unknown} [excludedId]
-     * @returns {boolean}
-     */
-    function hasNameConflict(name, items, allTasks, excludedId = "") {
-        const normalized = normalizedName(name);
-        if (normalized === "") {
-            return false;
-        }
-        const excluded = String(excludedId ?? "").trim();
-        return [...listValue(items, "items"), ...listValue(allTasks, "tasks")]
-            .some((item) => {
-                if (excluded !== "" && String(item?.id ?? "") === excluded) {
-                    return false;
-                }
-                return normalizedName(item?.name) === normalized;
-            });
     }
 
     /**
@@ -108,14 +46,11 @@
     }
 
     /**
-     * @param {unknown} [items]
-     * @param {unknown} [allTasks]
      * @returns {object}
      */
-    function newDraft(items = [], allTasks = []) {
+    function newDraft() {
         return {
             id: "",
-            name: defaultDraftName(items, allTasks),
             coordinateId: "",
             pickupRadius: DEFAULT_PICKUP_RADIUS,
             cacheRegionId: "",
@@ -141,7 +76,6 @@
             : {};
         return {
             id: String(item?.id ?? ""),
-            name: String(item?.name ?? ""),
             coordinateId: referencedId(detection.coordinateRef, "coordinate"),
             pickupRadius: detection.pickupRadius === undefined
                 || detection.pickupRadius === null
@@ -209,11 +143,9 @@
     /**
      * @param {object} draft
      * @param {unknown} resources
-     * @param {unknown} items
-     * @param {unknown} [allTasks]
      * @returns {Array<string>}
      */
-    function validateDraft(draft, resources, items, allTasks = []) {
+    function validateDraft(draft, resources) {
         const errors = [];
         const policy = {...DEFAULT_CACHE_POLICY, ...draft?.cachePolicy};
         if (typeof policy.enabled !== "boolean") {
@@ -226,14 +158,6 @@
             || policy.thresholdPercent < 1 || policy.thresholdPercent > 100) {
             errors.push("缓存容量阈值必须为 1 到 100 的整数百分比");
         }
-        const name = String(draft?.name ?? "").trim();
-        if (name.length < 1 || name.length > 80) {
-            errors.push("任务名称需为1～80个字符");
-        }
-        if (hasNameConflict(name, items, allTasks, draft?.id)) {
-            errors.push("任务名称已存在，请使用其他名称");
-        }
-
         const coordinateId = String(draft?.coordinateId ?? "").trim();
         if (coordinateId === "") {
             errors.push("请选择掉落物检测点");
@@ -282,17 +206,14 @@
     /**
      * @param {object} draft
      * @param {unknown} resources
-     * @param {unknown} items
-     * @param {unknown} [allTasks]
      * @returns {object}
      */
-    function payload(draft, resources, items, allTasks = []) {
-        const errors = validateDraft(draft, resources, items, allTasks);
+    function payload(draft, resources) {
+        const errors = validateDraft(draft, resources);
         if (errors.length > 0) {
             throw new RangeError(errors.join("；"));
         }
         return {
-            name: String(draft.name).trim(),
             enabled: draft.enabled,
             overflowEnabled: draft.overflowEnabled === true,
             overflowDestinationRef: draft.overflowEnabled ? draft.overflowDestinationRef || "" : "",

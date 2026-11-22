@@ -15,7 +15,6 @@
         "steps",
         "otherwise"
     ]);
-    const DEFAULT_MOVE_NAME = "移动到坐标";
 
     /**
      * @param {unknown} value
@@ -140,69 +139,11 @@
     }
 
     /**
-     * @param {unknown} value
-     * @returns {Array<object>}
-     */
-    function taskList(value) {
-        if (Array.isArray(value)) {
-            return value;
-        }
-        return Array.isArray(value?.tasks) ? value.tasks : [];
-    }
-
-    /**
-     * @param {unknown} value
-     * @returns {string}
-     */
-    function normalizedName(value) {
-        return String(value ?? "").trim().toLowerCase();
-    }
-
-    /**
-     * @param {unknown} tasks
-     * @returns {string}
-     */
-    function defaultDraftName(tasks) {
-        const names = new Set(
-            taskList(tasks).map((task) => normalizedName(task?.name))
-        );
-        let candidate = DEFAULT_MOVE_NAME;
-        let suffix = 2;
-        while (names.has(normalizedName(candidate))) {
-            candidate = `${DEFAULT_MOVE_NAME} ${suffix}`;
-            suffix += 1;
-        }
-        return candidate;
-    }
-
-    /**
-     * @param {unknown} name
-     * @param {unknown} tasks
-     * @param {unknown} [excludedId]
-     * @returns {boolean}
-     */
-    function hasNameConflict(name, tasks, excludedId = "") {
-        const normalized = normalizedName(name);
-        if (normalized === "") {
-            return false;
-        }
-        const excluded = String(excludedId ?? "").trim();
-        return taskList(tasks).some((task) => {
-            if (excluded !== "" && String(task?.id ?? "") === excluded) {
-                return false;
-            }
-            return normalizedName(task?.name) === normalized;
-        });
-    }
-
-    /**
-     * @param {unknown} [tasks]
      * @returns {object}
      */
-    function newDraft(tasks = []) {
+    function newDraft() {
         return {
             id: "",
-            name: defaultDraftName(tasks),
             priority: "NORMAL",
             source: "manual",
             x: "",
@@ -226,7 +167,6 @@
         const saved = coordinateId !== "";
         return {
             id: normalized.id,
-            name: normalized.name,
             priority: normalized.priority,
             source: saved ? "saved" : "manual",
             x: saved ? "" : String(parameters.x || ""),
@@ -273,18 +213,10 @@
     /**
      * @param {object} draft
      * @param {unknown} coordinates
-     * @param {unknown} [tasks]
      * @returns {Array<string>}
      */
-    function validateDraft(draft, coordinates, tasks = []) {
+    function validateDraft(draft, coordinates) {
         const errors = [];
-        const name = String(draft?.name ?? "").trim();
-        if (name.length < 1 || name.length > 80) {
-            errors.push("任务名称需为1～80个字符");
-        }
-        if (hasNameConflict(name, tasks, draft?.id)) {
-            errors.push("任务名称已存在，请使用其他名称");
-        }
         if (!Model.PRIORITIES.includes(draft?.priority)) {
             errors.push("请选择运行优先级");
         }
@@ -358,11 +290,10 @@
      * @param {object} draft
      * @param {unknown} coordinates
      * @param {object | null} originalTask
-     * @param {unknown} [tasks]
      * @returns {object}
      */
-    function createTask(draft, coordinates, originalTask = null, tasks = []) {
-        const errors = validateDraft(draft, coordinates, tasks);
+    function createTask(draft, coordinates, originalTask = null) {
+        const errors = validateDraft(draft, coordinates);
         if (errors.length > 0) {
             throw new RangeError(errors.join("；"));
         }
@@ -376,7 +307,6 @@
         }
         const candidate = Model.normalizeTask({
             id: String(draft.id || ""),
-            name: String(draft.name).trim(),
             folderId: metadata.folderId,
             priority: draft.priority,
             repeatWhenIdle: false,
@@ -388,10 +318,9 @@
                 ? {cleanupPolicy: draft.cleanupPolicy || originalTask.cleanupPolicy} : {}),
             steps: [step]
         });
-        return Model.normalizeTask({
-            ...Model.payloadTask(candidate),
-            id: candidate.id
-        });
+        const task = Model.normalizeTask({...Model.payloadTask(candidate), id: candidate.id});
+        delete task.name;
+        return task;
     }
 
     window.StowlingMoveTaskModel = Object.freeze({

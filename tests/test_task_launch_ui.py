@@ -146,7 +146,7 @@ def test_material_editor_groups_source_delivery_and_unstackable_settings() -> No
         ("unstackable", "不可堆叠材料", ("material-skip-minecarts",)),
     )
     assert editor.count("<details ") == 3
-    assert editor.index('id="material-name"') < editor.index("<details ")
+    assert 'id="material-name"' not in editor
     for key, title, fields in sections:
         section = between(editor, f'id="material-{key}-settings"', "</details>")
         assert 'class="settings-disclosure"' in section

@@ -917,6 +917,11 @@ body[data-page] input.settings-switch:disabled {
     cursor: not-allowed;
 }
 
+body[data-page="tasks"] .task-card-header input.settings-switch[aria-busy="true"] {
+    opacity: 1;
+    cursor: progress;
+}
+
 body[data-page] :is(.metric, .task-run-group, .auth-steps) {
     background: var(--theme-surface, #232427);
 }

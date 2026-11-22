@@ -12,7 +12,6 @@
     const draft = byId("material-editor");
     const draftToggle = byId("toggle-material-draft");
     const draftBody = byId("material-draft-body");
-    const name = byId("material-name");
     const file = byId("material-file");
     const destination = byId("material-destination");
     const boxedDelivery = Settings.switchControl(byId("material-boxed-delivery"));
@@ -178,7 +177,6 @@
         const params = task?.steps[0].parameters;
         materials = params ? JSON.parse(params.materials) : {};
         unsupported = {};
-        name.value = task?.name || "自动收集材料";
         file.value = "";
         renderDestinations(params?.targetRef || "");
         boxedDelivery.checked = params?.boxedDelivery?.toLowerCase() === "true";
@@ -370,14 +368,13 @@
     /** @returns {Promise<void>} */
     async function save() {
         if (busy || !current?.dirty || !S.isConnected()) return;
-        if (!name.value.trim() || !destination.value || !Object.keys(materials).length) {
-            showStatus("请填写任务名称、上传投影并选择交付位置", true);
+        if (!destination.value || !Object.keys(materials).length) {
+            showStatus("请上传投影并选择交付位置", true);
             return;
         }
         const id = current.id;
         const targetRef = destination.value;
         const payload = {
-            name: name.value.trim(),
             steps: [{
                 ...(id ? {id: current.task.steps[0].id} : {}),
                 moduleId: moduleId,
@@ -505,5 +502,9 @@
         void autosave.flush();
     });
     document.addEventListener("stowling:tasks-changed", () => void load());
+    document.addEventListener("stowling:task-switch-changed", ({detail}) => {
+        if (revision === detail.previousRevision) revision = detail.revision;
+        if (current?.revision === detail.previousRevision) current.revision = detail.revision;
+    });
     S.onConnected(load);
 })();

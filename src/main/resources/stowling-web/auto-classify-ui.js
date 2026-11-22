@@ -13,16 +13,16 @@
         draftRevision: "",
         original: null,
         items: [],
-        allTasks: [],
         resources: {
             coordinates: [],
             regions: [],
             categoryZones: []
         },
-        draft: Auto.newDraft([]),
+        draft: Auto.newDraft(),
         ready: false,
         loading: false,
         busy: false,
+        pendingSwitch: null,
         dirty: false,
         active: false,
         expanded: false,
@@ -36,7 +36,6 @@
         draftBody: document.querySelector("#auto-draft-body"),
         form: document.querySelector("#auto-task-form"),
         fields: document.querySelector("#auto-task-fields"),
-        name: document.querySelector("#auto-task-name"),
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
         cache: document.querySelector("#auto-cache-region"),
@@ -96,19 +95,16 @@
                 coordinates,
                 regions,
                 zones,
-                allTasks,
                 warehouse
             ] = await Promise.all([
                 Stowling.request(endpoint),
                 Stowling.request("/v1/coordinates"),
                 Stowling.request("/v1/regions"),
                 Stowling.request("/v1/category-zones"),
-                Stowling.request("/v1/tasks"),
                 Stowling.request("/v1/storage-settings")
             ]);
             state.revision = String(tasks.revision || "");
             state.items = Array.isArray(tasks.items) ? tasks.items : [];
-            state.allTasks = Array.isArray(allTasks.tasks) ? allTasks.tasks : [];
             state.warehouseSnapshot = warehouse;
             state.resources = {
                 coordinates: Array.isArray(coordinates.coordinates) ? coordinates.coordinates : [],
@@ -125,7 +121,7 @@
                     state.original = item;
                     state.draftRevision = state.revision;
                 } else {
-                    state.draft = Auto.newDraft(state.items, state.allTasks);
+                    state.draft = Auto.newDraft();
                     state.active = false;
                     state.expanded = false;
                 }
@@ -291,7 +287,6 @@
     /** @returns {void} */
     function syncForm() {
         const draft = state.draft;
-        elements.name.value = draft.name;
         elements.radius.value = draft.pickupRadius;
         elements.priority.value = draft.collectionPriority;
         elements.cacheMode.value = draft.cachePolicy.mode;
@@ -318,7 +313,6 @@
         }
         state.draft = {
             ...state.draft,
-            name: elements.name.value,
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
             cacheRegionId: elements.cache.value,
@@ -370,7 +364,9 @@
             chevron.setAttribute("aria-hidden", "true");
             button.append(icon, overview, Stowling.element("span", "move-task-priority",
                 `${priority} / 后台`), status, chevron);
-            button.addEventListener("click", () => selectTask(item));
+            button.addEventListener("click", () => {
+                selectTask(state.items.find((task) => task.id === item.id));
+            });
             if (state.draft.id === item.id) {
                 body.append(elements.form);
             }
@@ -378,9 +374,8 @@
             const listening = window.StowlingSettings.switchControl(
                 document.createElement("input"), `监听任务：${item.name}`
             );
-            listening.checked = item.enabled;
             listening.addEventListener("change", () => {
-                void setListening(item, listening.checked);
+                void setListening(item.id, listening.checked);
             });
             header.append(button, listening);
             card.append(header, body);
@@ -411,12 +406,14 @@
         for (const [id, row] of rows) {
             const selected = state.draft.id === id;
             const expanded = selected && state.expanded;
+            const item = state.items.find((value) => value.id === id);
+            const pending = state.pendingSwitch?.id === id;
             row.button.disabled = disabled;
+            row.listening.checked = pending ? state.pendingSwitch.enabled : Boolean(item?.enabled);
             row.listening.disabled = disabled || (selected && state.dirty);
             row.listening.title = selected && state.dirty ? "修改保存后可切换监听" : "启用监听";
             row.button.setAttribute("aria-expanded", String(expanded));
             void window.StowlingSettings.reveal(row.body, expanded);
-            const item = state.items.find((value) => value.id === id);
             row.status.textContent = selected && state.dirty ? "未保存修改"
                 : (item?.enabled ? "监听中" : "已保存");
         }
@@ -469,7 +466,7 @@
         state.original = item;
         state.draftRevision = state.revision;
         state.draft = item ? Auto.draftFromTask(item)
-            : Auto.newDraft(state.items, state.allTasks);
+            : Auto.newDraft();
         state.active = !item;
         state.expanded = true;
         state.dirty = false;
@@ -511,43 +508,58 @@
     }
 
     /**
-     * @param {object} item
+     * @param {string} id
      * @param {boolean} enabled
      * @returns {Promise<void>}
      */
-    async function setListening(item, enabled) {
-        if (unavailable()) {
-            renderList();
+    async function setListening(id, enabled) {
+        const row = rows.get(id);
+        if (!row || row.listening.disabled || unavailable()) {
+            updateControls();
             return;
         }
+        const previousRevision = state.revision;
+        const retainFocus = document.activeElement === row.listening;
+        state.pendingSwitch = {id, enabled};
         state.busy = true;
+        row.listening.setAttribute("aria-busy", "true");
         updateControls();
         try {
             const operation = enabled ? "start" : "stop";
             const response = await Stowling.request(
-                `/v1/auto-classify-tasks/${encodeURIComponent(item.id)}/${operation}`, {
+                `${endpoint}/${encodeURIComponent(id)}/${operation}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ revision: state.revision })
+                    body: JSON.stringify({ revision: previousRevision })
                 }
             );
-            if (!response.item?.id) {
+            if (response.item?.id !== id) {
                 throw new Error("任务状态未返回，请刷新重试");
             }
             state.revision = String(response.revision || "");
-            state.items = state.items.map((task) => task.id === item.id ? response.item : task);
-            if (state.draft.id === item.id) {
+            state.items = state.items.map((task) => task.id === id ? response.item : task);
+            if (state.draft.id === id) {
                 state.draft.enabled = response.item.enabled;
                 state.original = response.item;
+            }
+            if (state.draftRevision === previousRevision) {
                 state.draftRevision = state.revision;
             }
-            Stowling.showToast(enabled ? "已开始监听" : "已停止监听，已排队任务会继续执行");
+            document.dispatchEvent(new CustomEvent("stowling:task-switch-changed", {
+                detail: {previousRevision, revision: state.revision}
+            }));
+            Stowling.showToast(response.item.enabled
+                ? "已开始监听" : "已停止监听，已排队任务会继续执行");
         } catch (error) {
             Stowling.handleError(error, "切换任务监听失败");
         } finally {
             state.busy = false;
-            renderList();
-            document.dispatchEvent(new Event("stowling:auto-tasks-changed"));
+            state.pendingSwitch = null;
+            row.listening.removeAttribute("aria-busy");
+            updateControls();
+            if (retainFocus && document.activeElement === document.body) {
+                row.listening.focus({preventScroll: true});
+            }
         }
     }
 
@@ -583,7 +595,7 @@
         readForm();
         let payload;
         try {
-            payload = Auto.payload(state.draft, state.resources, state.items, state.allTasks);
+            payload = Auto.payload(state.draft, state.resources);
             if (state.draft.overflowEnabled
                     && !Auto.warehouseDraft(state.warehouseSnapshot?.settings).enabled) {
                 throw new RangeError("请先在「坐标 → 公共设施 → 机器人仓库」配置存放位置");
@@ -640,7 +652,7 @@
             );
             state.revision = String(response.revision || "");
             state.items = state.items.filter((item) => item.id !== id);
-            state.draft = Auto.newDraft(state.items, state.allTasks);
+            state.draft = Auto.newDraft();
             state.dirty = false;
             state.active = false;
             state.expanded = false;
@@ -710,6 +722,12 @@
         void autosave.flush();
     });
     elements.remove.addEventListener("click", () => void deleteTask());
+    document.addEventListener("stowling:task-switch-changed", ({detail}) => {
+        if (state.revision === detail.previousRevision) state.revision = detail.revision;
+        if (state.draftRevision === detail.previousRevision) {
+            state.draftRevision = detail.revision;
+        }
+    });
     document.addEventListener("stowling:tasks-changed", () => void loadResources());
     Stowling.onConnected(loadResources);
     updateControls();

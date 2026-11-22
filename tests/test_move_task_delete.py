@@ -65,7 +65,7 @@ function move(id) {
 const original = move("move/1");
 let state = {moveBusy: false, moveLoading: false, moveResourcesReady: true,
     moveFormOpen: true, moveDraftActive: false, moveDirty: true, moveRevision: "old",
-    moveTasks: [original, move("move-2")], moveAllTasks: [original, move("move-2")],
+    moveTasks: [original, move("move-2")],
     moveDraft: {...Move.draftFromTask(original), name: "Unsaved edit"}};
 /** @returns {void} */
 function updateMoveControls() {}
@@ -108,7 +108,6 @@ def test_delete_updates_all_tasks_revision_and_closes_the_shared_editor() -> Non
     assert result["requests"][0]["url"] == "/v1/tasks/move%2F1"
     assert result["requests"][0]["method"] == "DELETE"
     assert json.loads(result["requests"][0]["body"]) == {"revision": "old"}
-    assert [task["id"] for task in result["state"]["moveAllTasks"]] == ["move-2", "complex"]
     assert [task["id"] for task in result["state"]["moveTasks"]] == ["move-2"]
     assert result["state"]["moveRevision"] == "next"
     assert result["state"]["moveDraft"]["id"] == ""

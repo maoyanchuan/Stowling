@@ -25,6 +25,7 @@ import dev.stowling.v2.model.CategoryZoneExpansionAxis;
 import dev.stowling.v2.model.CategoryZoneExpansionDefinition;
 import dev.stowling.v2.model.CategoryZoneTiler;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.MaterialRequirements;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
@@ -687,8 +688,15 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, revision);
         AppConfig config = current.config();
-        boolean listening = id != null && requireAutoEat(current, id).settings().enabled();
-        TaskDefinition task = settings.task(id == null ? UUID.randomUUID() : id);
+        AutoEatTask existing = id == null ? null : requireAutoEat(current, id);
+        boolean listening = existing != null && existing.settings().enabled();
+        String name = settings.name();
+        if (name == null) {
+            name = existing == null ? newTaskName(config, "自动进食",
+                    config.triggers().stream().map(TaskTriggerDefinition::name).toList())
+                    : existing.settings().name();
+        }
+        TaskDefinition task = settings.task(id == null ? UUID.randomUUID() : id, name);
         TaskTriggerDefinition listener = settings.trigger(task, listening);
         List<TaskDefinition> tasks = new ArrayList<>(config.tasks());
         tasks.removeIf(item -> item.id().equals(task.id()));
@@ -852,11 +860,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 );
             }
         }
-        String name = uniqueAutoName(
-                request.name(),
-                current.config(),
-                id
-        );
+        String name = request.name() == null ? existing.name()
+                : uniqueAutoName(request.name(), current.config(), id);
         AutoClassifyDefinition replacement = definition(
                 id,
                 name,
@@ -1069,12 +1074,16 @@ public final class V2ControlServiceImpl implements V2ControlService {
     @Override
     public synchronized TaskListResponse createTask(TaskRequest request) {
         V2ConfigSnapshot current = configs.read();
+        List<TaskStep> taskSteps = steps(request.steps());
+        String name = request.name() == null
+                ? newTaskName(current.config(), taskTypeName(taskSteps), List.of())
+                : request.name();
         TaskDefinition task = new TaskDefinition(
                 UUID.randomUUID(),
-                request.name(),
+                name,
                 request.priority(),
                 request.repeatWhenIdle(),
-                steps(request.steps()),
+                taskSteps,
                 request.interruptionMode(),
                 request.interruptionTaskRef(),
                 request.defaultInterruptionFlow(),
@@ -1116,7 +1125,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         TaskDefinition existing = requireTask(current.config(), id);
         TaskDefinition updatedTask = new TaskDefinition(
                 existing.id(),
-                request.name(),
+                request.name() == null ? existing.name() : request.name(),
                 request.priority(),
                 request.repeatWhenIdle(),
                 steps(request.steps()),
@@ -1567,6 +1576,24 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private static boolean overflowEnabled(Boolean enabled, String destination, boolean previous) {
         return enabled == null ? previous || destination != null && !destination.isBlank()
                 : enabled;
+    }
+
+    private static String taskTypeName(List<TaskStep> steps) {
+        if (steps.size() != 1 || steps.getFirst().moduleId() == null) {
+            return "任务";
+        }
+        return switch (steps.getFirst().moduleId()) {
+            case ConfigValidator.MOVE_TO_COORDINATE -> "移动到坐标";
+            case MaterialRequirements.MODULE -> "自动收集材料";
+            case ContainerCacheRefresh.MODULE -> "刷新缓存";
+            default -> "任务";
+        };
+    }
+
+    private static String newTaskName(AppConfig config, String base, List<String> reserved) {
+        List<String> names = new ArrayList<>(reserved);
+        config.tasks().stream().map(TaskDefinition::name).forEach(names::add);
+        return AutoClassifyTaskFactory.uniqueName(base, names);
     }
 
     private static String uniqueAutoName(

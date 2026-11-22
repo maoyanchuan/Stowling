@@ -49,7 +49,6 @@ def test_display_area_and_selection_panel_keep_the_fixed_move_workbench() -> Non
     assert 'id="task-list-title">任务选择</h2>' in selection
     for retained in (
         'id="move-task-form"',
-        'id="move-task-name"',
         'id="move-saved-coordinate"',
         'id="move-task-list"',
         'id="refresh-move-tasks"',

@@ -93,32 +93,11 @@ def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     }
 
 
-def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
-    result = _run(
-        """
-        (() => {
-            const model = window.StowlingAutoClassifyTaskModel;
-            return {
-                empty: model.newDraft([]),
-                gap: model.newDraft([
-                    { id: "item-1", name: "  自动分类  " },
-                    { id: "item-2", name: "自动分类 3" },
-                ], {
-                    tasks: [{ id: "task-1", name: "自动分类 4" }],
-                }).name,
-                continuous: model.newDraft([
-                    { id: "item-1", name: "自动分类" },
-                    { id: "item-2", name: "自动分类 2" },
-                    { id: "item-3", name: "自动分类 3" },
-                ]).name,
-            };
-        })()
-        """
-    )
+def test_new_draft_has_contract_defaults_without_a_name() -> None:
+    result = _run("window.StowlingAutoClassifyTaskModel.newDraft()")
 
-    assert result["empty"] == {
+    assert result == {
         "id": "",
-        "name": "自动分类",
         "coordinateId": "",
         "pickupRadius": "8",
         "cacheRegionId": "",
@@ -134,8 +113,6 @@ def test_new_draft_has_contract_defaults_and_uses_first_free_name() -> None:
         "overflowDestinationRef": "",
         "cleanupDestinationRef": "",
     }
-    assert result["gap"] == "自动分类 2"
-    assert result["continuous"] == "自动分类 4"
 
 
 def test_draft_from_task_reads_only_flat_business_fields() -> None:
@@ -176,7 +153,6 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
 
     assert result == {
         "id": "auto-1",
-        "name": "收集矿石",
         "coordinateId": "coordinate-1",
         "pickupRadius": "12",
         "cacheRegionId": "cache-1",
@@ -227,7 +203,6 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
 
     assert result == {
         "id": "auto-2",
-        "name": "引用容错",
         "coordinateId": "",
         "pickupRadius": "8",
         "cacheRegionId": "",
@@ -318,7 +293,6 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
 
     body = result["body"]
     assert body == {
-        "name": "自动收集",
         "enabled": False,
         "collectionEnabled": False,
         "classificationEnabled": True,
@@ -341,7 +315,6 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "collectionPriority": "URGENT",
     }
     assert result["bodyKeys"] == [
-        "name",
         "enabled",
         "overflowEnabled",
         "overflowDestinationRef",
@@ -361,7 +334,6 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     assert result["cleanup"] == "coordinate:coordinate-1"
     assert result["roundTrip"] == {
         "id": "auto-1",
-        "name": "自动收集",
         "coordinateId": "coordinate-1",
         "pickupRadius": "8",
         "cacheRegionId": "region-1",
@@ -546,74 +518,6 @@ def test_pickup_radius_accepts_only_integer_range(
         assert result == []
     else:
         assert result == ["拾取半径需为1～64的整数"]
-
-
-def test_name_validation_trims_case_folds_and_excludes_current_id() -> None:
-    result = _run(
-        """
-        (() => {
-            const model = window.StowlingAutoClassifyTaskModel;
-            const resources = {
-                coordinates: [{ id: "coordinate-1" }],
-                regions: [{ id: "region-1" }],
-                categoryZones: [{
-                    id: "zone-1",
-                    bindings: [{
-                        id: "binding-1",
-                        ruleId: "DIRECT_BLOCK_ID",
-                    }],
-                }],
-                categoryRules: [
-                    { id: "DIRECT_BLOCK_ID", name: "展示物精确匹配" },
-                    { id: "CONTAINER_CONTENTS", name: "标记箱内容" },
-                ],
-            };
-            const area = {
-                categoryZoneId: "zone-1",
-                ruleId: "DIRECT_BLOCK_ID",
-                markerSources: ["PLACED_ITEM"],
-            };
-            const base = {
-                id: "current-id",
-                name: "  Auto Sort  ",
-                coordinateId: "coordinate-1",
-                pickupRadius: "8",
-                cacheRegionId: "region-1",
-                classificationAreas: [area],
-                collectionPriority: "NORMAL",
-                enabled: false,
-                collectionEnabled: true,
-                classificationEnabled: true,
-            };
-            return {
-                self: model.validateDraft(base, resources, [
-                    { id: "current-id", name: "auto sort" },
-                ]),
-                itemConflict: model.validateDraft(base, resources, [
-                    { id: "current-id", name: "auto sort" },
-                    { id: "other-id", name: "AUTO SORT" },
-                ]),
-                taskConflict: model.validateDraft(base, resources, [], {
-                    tasks: [{ id: "task-1", name: " auto sort " }],
-                }),
-                maxLength: model.validateDraft({
-                    ...base,
-                    name: "a".repeat(80),
-                }, resources, []),
-                tooLong: model.validateDraft({
-                    ...base,
-                    name: "a".repeat(81),
-                }, resources, []),
-            };
-        })()
-        """
-    )
-
-    assert result["self"] == []
-    assert result["itemConflict"] == ["任务名称已存在，请使用其他名称"]
-    assert result["taskConflict"] == ["任务名称已存在，请使用其他名称"]
-    assert result["maxLength"] == []
-    assert result["tooLong"] == ["任务名称需为1～80个字符"]
 
 
 def test_collection_priority_and_enabled_are_strictly_validated() -> None:

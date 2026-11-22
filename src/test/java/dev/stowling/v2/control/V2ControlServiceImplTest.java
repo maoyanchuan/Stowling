@@ -210,6 +210,34 @@ class V2ControlServiceImplTest {
     }
 
     @Test
+    void namesUnnamedTasksByTypeAndKeepsTheAssignedNameOnUpdate() {
+        V2ControlService service = service();
+        var steps = List.of(moveOutputStep());
+
+        var first = service.createTask(new TaskRequest(null, steps));
+        var second = service.createTask(new TaskRequest(null, steps));
+        assertEquals("移动到坐标", service.task(first.taskId()).name());
+        assertEquals("移动到坐标 2", service.task(second.taskId()).name());
+
+        service.updateTask(second.taskId(), new TaskUpdateRequest(second.revision(), null, steps));
+        assertEquals("移动到坐标 2", service.task(second.taskId()).name());
+    }
+
+    @Test
+    void assignsDifferentNamesToUnnamedAutoEatTasksAndTheirListeners() {
+        V2ControlService service = service();
+        var settings = new AutoEatTask.Settings(null, "minecraft:bread", null, 18, 2, false);
+        var first = service.saveAutoEatTask(null, service.autoEatTasks().revision(), settings);
+        var second = service.saveAutoEatTask(null, first.revision(), settings);
+
+        assertEquals(List.of("自动进食", "自动进食 2"),
+                second.items().stream().map(item -> item.settings().name()).toList());
+        assertEquals(List.of("自动进食", "自动进食 2"),
+                service.taskTriggers().triggers().stream().map(TaskTriggerDefinition::name)
+                        .toList());
+    }
+
+    @Test
     void blocksDeletingCoordinateReferencedByTaskAndListsReferences() {
         V2ControlService service = service();
         CoordinatePoint point = createPoint(service, "Home");

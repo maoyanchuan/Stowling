@@ -29,7 +29,6 @@
         materialDraftActive: false,
         autoDraftActive: false,
         autoEatDraftActive: false,
-        moveAllTasks: [],
         coordinates: [],
         regions: [],
         moveDraft: Move.newDraft(),
@@ -49,7 +48,6 @@
         moveDraftBody: document.querySelector("#move-draft-body"),
         moveCount: document.querySelector("#move-task-count"),
         movePlaceholder: document.querySelector("#move-task-placeholder"),
-        moveName: document.querySelector("#move-task-name"),
         moveSources: [...document.querySelectorAll("[data-move-source]")],
         moveManual: document.querySelector("#move-manual-target"),
         moveSaved: document.querySelector("#move-saved-target"),
@@ -101,10 +99,9 @@
                 Stowling.request("/v1/regions")
             ]);
             state.moveRevision = String(tasks?.revision || "");
-            const allTasks = Array.isArray(tasks?.tasks)
+            const definitions = Array.isArray(tasks?.tasks)
                 ? tasks.tasks.map(Model.normalizeTask) : [];
-            state.moveAllTasks = allTasks;
-            state.moveTasks = allTasks.filter(Move.isMoveTask);
+            state.moveTasks = definitions.filter(Move.isMoveTask);
             state.coordinates = Coordinates.normalizeCoordinates(coordinates).coordinates;
             state.regions = regions.regions || [];
             cleanup.resources(state.coordinates, state.regions);
@@ -118,7 +115,7 @@
                     state.moveOriginal = refreshed;
                     state.moveDraftRevision = state.moveRevision;
                 } else {
-                    state.moveDraft = Move.newDraft(state.moveAllTasks);
+                    state.moveDraft = Move.newDraft();
                     state.moveDraftActive = false;
                     state.moveFormOpen = false;
                 }
@@ -263,7 +260,7 @@
         state.moveOriginal = task;
         state.moveDraftRevision = state.moveRevision;
         state.moveDraft = task
-            ? Move.draftFromTask(task) : Move.newDraft(state.moveAllTasks);
+            ? Move.draftFromTask(task) : Move.newDraft();
         state.moveDirty = false;
         state.moveDraftActive = !task;
         state.moveFormOpen = true;
@@ -295,7 +292,6 @@
     function syncMoveForm() {
         const draft = state.moveDraft;
         cleanup.set(draft.cleanupPolicy || {});
-        elements.moveName.value = draft.name;
         elements.moveX.value = draft.x.replace(/^\+/, "");
         elements.moveY.value = draft.y.replace(/^\+/, "");
         elements.moveZ.value = draft.z.replace(/^\+/, "");
@@ -311,7 +307,6 @@
     function readMoveForm() {
         state.moveDraft = {
             ...state.moveDraft,
-            name: elements.moveName.value,
             priority: elements.movePriority.value,
             x: elements.moveX.value,
             y: elements.moveY.value,
@@ -388,15 +383,6 @@
     }
 
     /**
-     * @param {unknown} error
-     * @returns {boolean}
-     */
-    function isTaskNameConflict(error) {
-        const message = String(error?.message ?? "").trim();
-        return /^task name must be unique:\s+.+$/.test(message);
-    }
-
-    /**
      * @param {object} response
      * @param {string} existingId
      * @returns {void}
@@ -413,7 +399,6 @@
         state.moveRevision = String(response.revision || "");
         state.moveDraftRevision = state.moveRevision;
         state.moveOriginal = saved;
-        state.moveAllTasks = allTasks;
         state.moveTasks = tasks;
         state.moveDraft = Move.draftFromTask(saved);
         state.moveDirty = false;
@@ -437,12 +422,7 @@
         }
         let task;
         try {
-            task = Move.createTask(
-                state.moveDraft,
-                state.coordinates,
-                original,
-                state.moveAllTasks
-            );
+            task = Move.createTask(state.moveDraft, state.coordinates, original);
         } catch (error) {
             showMoveMessage(String(error.message || error), true);
             return;
@@ -464,12 +444,8 @@
             document.dispatchEvent(new Event("stowling:tasks-changed"));
             showMoveMessage("已自动保存");
         } catch (error) {
-            if (isTaskNameConflict(error)) {
-                showMoveMessage("任务名称已存在，请使用其他名称", true);
-            } else {
-                showMoveMessage(String(error.message || "自动保存失败，请刷新重试"), true);
-                Stowling.handleError(error, "保存移动任务失败");
-            }
+            showMoveMessage(String(error.message || "自动保存失败，请刷新重试"), true);
+            Stowling.handleError(error, "保存移动任务失败");
         } finally {
             state.moveBusy = false;
             updateMoveControls();
@@ -536,9 +512,8 @@
                 throw new Error("删除响应不完整，请刷新任务列表确认结果");
             }
             state.moveRevision = String(response.revision);
-            state.moveAllTasks = response.tasks.map(Model.normalizeTask);
-            state.moveTasks = state.moveAllTasks.filter(Move.isMoveTask);
-            state.moveDraft = Move.newDraft(state.moveAllTasks);
+            state.moveTasks = response.tasks.map(Model.normalizeTask).filter(Move.isMoveTask);
+            state.moveDraft = Move.newDraft();
             state.moveDirty = false;
             state.moveDraftActive = false;
             state.moveFormOpen = false;
@@ -1065,6 +1040,13 @@
     });
     document.addEventListener("stowling:auto-tasks-changed", () => {
         void loadMoveResources();
+        void loadRuns();
+    });
+    document.addEventListener("stowling:task-switch-changed", ({detail}) => {
+        if (state.moveRevision === detail.previousRevision) state.moveRevision = detail.revision;
+        if (state.moveDraftRevision === detail.previousRevision) {
+            state.moveDraftRevision = detail.revision;
+        }
         void loadRuns();
     });
     document.addEventListener("stowling:monitor-refresh", () => void loadRuns());

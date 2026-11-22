@@ -457,7 +457,7 @@ public final class V2ControlServer implements AutoCloseable {
                                 "cleanupPolicy",
                                 "schedule"
                         ),
-                        Set.of("name", "steps")
+                        Set.of("steps")
                 );
                 sendJson(exchange, 201, service.createTask(taskRequest(json)));
             } else {
@@ -759,12 +759,12 @@ public final class V2ControlServer implements AutoCloseable {
                                 "cleanupPolicy",
                                 "schedule"
                         ),
-                        Set.of("revision", "name", "steps")
+                        Set.of("revision", "steps")
                 );
                 sendJson(exchange, 200, service.updateTask(id,
                         new TaskUpdateRequest(
                                 string(json, "revision"),
-                                string(json, "name"),
+                                optionalString(json, "name"),
                                 optionalPriority(json, "priority"),
                                 optionalBoolean(json, "repeatWhenIdle"),
                                 steps(json),
@@ -908,7 +908,7 @@ public final class V2ControlServer implements AutoCloseable {
 
     private static TaskRequest taskRequest(JsonObject json) {
         return new TaskRequest(
-                string(json, "name"),
+                optionalString(json, "name"),
                 optionalPriority(json, "priority"),
                 optionalBoolean(json, "repeatWhenIdle"),
                 steps(json),
@@ -935,11 +935,11 @@ public final class V2ControlServer implements AutoCloseable {
     }
 
     private static AutoEatTask.Settings autoEatSettings(JsonObject json) {
-        Set<String> required = Set.of("revision", "name", "foodItemId", "foodLevelThreshold",
+        Set<String> required = Set.of("revision", "foodItemId", "foodLevelThreshold",
                 "intervalSeconds");
         requireFieldsAny(json, Set.of("revision", "name", "foodItemId", "coordinateId",
                 "foodLevelThreshold", "intervalSeconds", "enabled"), required);
-        return new AutoEatTask.Settings(string(json, "name"), string(json, "foodItemId"),
+        return new AutoEatTask.Settings(optionalString(json, "name"), string(json, "foodItemId"),
                 optionalUuid(json, "coordinateId"), integer(json, "foodLevelThreshold"),
                 integer(json, "intervalSeconds"), optionalBoolean(json, "enabled"));
     }

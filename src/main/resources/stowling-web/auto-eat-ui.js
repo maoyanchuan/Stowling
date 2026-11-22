@@ -28,6 +28,7 @@
     let editor = null;
     let loading = false;
     let busy = false;
+    let pendingSwitch = null;
     const autosave = Autosave.create(form, () => save(false), () => loading || busy);
 
     /** @returns {boolean} */
@@ -60,7 +61,7 @@
             const selected = editor?.id === id;
             row.button.disabled = disabled;
             row.listening.disabled = disabled || (selected && editor.dirty);
-            row.listening.checked = row.enabled;
+            row.listening.checked = pendingSwitch?.id === id ? pendingSwitch.enabled : row.enabled;
             row.listening.title = selected && editor.dirty
                 ? "修改保存后可切换监听" : "饱食度监听";
             disclose(row.button, row.body, selected && editor.expanded);
@@ -104,7 +105,9 @@
             const chevron = S.element("span", "move-task-chevron", "⌄");
             chevron.setAttribute("aria-hidden", "true");
             button.append(kind, overview, state, chevron);
-            button.addEventListener("click", () => selectTask(task));
+            button.addEventListener("click", () => {
+                selectTask(tasks.find((item) => item.id === task.id));
+            });
             if (editor?.id === task.id) {
                 body.append(form);
             }
@@ -173,11 +176,6 @@
      * @returns {void}
      */
     function fillForm(settings) {
-        let name = "自动进食";
-        for (let suffix = 2; tasks.some((item) => item.settings.name === name); suffix++) {
-            name = `自动进食 ${suffix}`;
-        }
-        $("auto-eat-name").value = settings?.name ?? name;
         $("auto-eat-food").value = settings?.foodItemId ?? "minecraft:bread";
         $("auto-eat-threshold").value = settings?.foodLevelThreshold ?? 18;
         $("auto-eat-interval").value = settings?.intervalSeconds ?? 1;
@@ -244,7 +242,10 @@
             return;
         }
         const previousRevision = revision;
+        const retainFocus = document.activeElement === row.listening;
+        pendingSwitch = {id, enabled};
         busy = true;
+        row.listening.setAttribute("aria-busy", "true");
         updateControls();
         try {
             const operation = enabled ? "start" : "stop";
@@ -261,14 +262,20 @@
                 editor.revision = revision;
             }
             if (editor?.id === id) editor.original = updated;
-            document.dispatchEvent(new Event("stowling:auto-eat-tasks-changed"));
-            document.dispatchEvent(new Event("stowling:tasks-changed"));
+            document.dispatchEvent(new CustomEvent("stowling:task-switch-changed", {
+                detail: {previousRevision, revision}
+            }));
             S.showToast(row.enabled ? "已开始饱食度监听" : "已停止饱食度监听");
         } catch (error) {
             S.handleError(error, "切换自动进食监听失败");
         } finally {
             busy = false;
+            pendingSwitch = null;
+            row.listening.removeAttribute("aria-busy");
             updateControls();
+            if (retainFocus && document.activeElement === document.body) {
+                row.listening.focus({preventScroll: true});
+            }
         }
     }
 
@@ -284,14 +291,13 @@
         const body = {revision: editor.revision};
         if (!deleting) {
             Object.assign(body, {
-                name: $("auto-eat-name").value.trim(),
                 foodItemId: $("auto-eat-food").value.trim(),
                 coordinateId: source.value === "chest" ? coordinate.value : null,
                 foodLevelThreshold: $("auto-eat-threshold").valueAsNumber,
                 intervalSeconds: $("auto-eat-interval").valueAsNumber
             });
-            if (!body.name || !body.foodItemId || !form.checkValidity()) {
-                showMessage("请填写有效的任务名称、食物和进食设置", true);
+            if (!body.foodItemId || !form.checkValidity()) {
+                showMessage("请填写有效的食物和进食设置", true);
                 return;
             }
         }
@@ -355,6 +361,10 @@
         if (window.confirm("删除这个自动进食任务？")) void save(true);
     });
     $("refresh-move-tasks").addEventListener("click", () => void load());
+    document.addEventListener("stowling:task-switch-changed", ({detail}) => {
+        if (revision === detail.previousRevision) revision = detail.revision;
+        if (editor?.revision === detail.previousRevision) editor.revision = detail.revision;
+    });
     document.addEventListener("stowling:auto-tasks-changed", () => void load());
     document.addEventListener("stowling:tasks-changed", () => {
         if (!busy) void load();

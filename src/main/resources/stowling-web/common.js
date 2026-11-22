@@ -251,10 +251,7 @@
         panel.setAttribute("aria-labelledby", "auth-title");
         const heading = element("div", "panel-heading");
         const headingText = element("div");
-        headingText.append(
-            element("p", "eyebrow", "本地安全连接"),
-            element("h2", "", "连接到 Stowling")
-        );
+        headingText.append(element("h2", "", "连接到 Stowling"));
         headingText.querySelector("h2").id = "auth-title";
         heading.append(headingText, element("span", "loopback-tag", "127.0.0.1"));
         const description = element(
@@ -488,10 +485,28 @@
     }
 
     /**
+     * @returns {void}
+     */
+    function mountSkipLink() {
+        const main = document.querySelector("main");
+        if (!main) {
+            return;
+        }
+        if (!main.id) {
+            main.id = "main-content";
+        }
+        main.tabIndex = -1;
+        const link = element("a", "skip-link", "跳到主要内容");
+        link.href = "#main-content";
+        document.body.prepend(link);
+    }
+
+    /**
      * @param {string} page
      * @returns {void}
      */
     function mountPage(page) {
+        mountSkipLink();
         document.body.dataset.page = page;
         mountTheme();
         mountNavigation();

@@ -68,8 +68,8 @@
         radial-gradient(circle at 92% 4%, rgba(220, 189, 113, 0.19), transparent 27rem),
         linear-gradient(145deg, var(--bg), var(--bg-accent));
     --theme-hero:
-        radial-gradient(circle at 88% 20%, rgba(255, 232, 167, 0.28), transparent 17rem),
-        linear-gradient(135deg, #194a32, #2f7a52 62%, #275e43);
+        radial-gradient(circle at 86% 12%, rgba(183, 201, 194, 0.16), transparent 22rem),
+        linear-gradient(135deg, #131517, #1c2621 64%, #202b25);
 }
 
 .header-controls {
@@ -1394,5 +1394,413 @@ body[data-page] .storage-slot[aria-pressed="true"] {
 @media (prefers-reduced-motion: reduce) {
     body[data-page] :is(.move-task-chevron, .settings-chevron) {
         transition: none;
+    }
+}
+
+/* Dashboard operates as one status surface instead of a hero above a metric grid. */
+body[data-page] .skip-link {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 50;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--theme-primary-text, #17221c);
+    text-decoration: none;
+    background: var(--theme-primary, #c4d7cd);
+    transform: translateY(calc(-100% - 20px));
+}
+
+body[data-page] .skip-link:focus {
+    transform: translateY(0);
+}
+
+body[data-page] main:focus {
+    outline: none;
+}
+
+body[data-page] :is(.button-link, .text-link, .dashboard-sync):focus-visible {
+    outline: 3px solid var(--theme-focus, #a6bbb0);
+    outline-offset: 3px;
+}
+
+body[data-page] :is(.workspace-nav a, .theme-toggle, .compact, .text-link) {
+    min-height: 36px;
+}
+
+body[data-page] .workspace-nav a {
+    display: flex;
+    align-items: center;
+}
+
+body[data-page] .text-link {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 2px;
+}
+
+body[data-page] .button-link {
+    min-height: 44px;
+}
+
+body[data-page="dashboard"] .dashboard-overview {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 22px;
+    padding: 26px;
+}
+
+body[data-page="dashboard"] .dashboard-overview-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 28px;
+}
+
+body[data-page="dashboard"] .dashboard-overview-copy {
+    min-width: 0;
+}
+
+body[data-page="dashboard"] .dashboard-overview h2 {
+    margin-bottom: 8px;
+    color: #f5fff8;
+    font-size: clamp(24px, 3vw, 34px);
+    letter-spacing: -0.03em;
+}
+
+body[data-page="dashboard"] .dashboard-overview .hero-copy {
+    max-width: 68ch;
+    margin: 0;
+    color: rgba(245, 255, 248, 0.8);
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+body[data-page="dashboard"] .dashboard-actions {
+    align-items: center;
+}
+
+body[data-page="dashboard"] .dashboard-sync {
+    min-height: 44px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    color: #f5fff8;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+body[data-page="dashboard"] .dashboard-sync:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.42);
+    background: rgba(255, 255, 255, 0.14);
+}
+
+body[data-page="dashboard"] .dashboard-sync:disabled {
+    color: rgba(245, 255, 248, 0.72);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+body[data-page="dashboard"] .dashboard-overview
+    :is(.button-link, .dashboard-sync):focus-visible {
+    outline-color: #ffffff;
+}
+
+body[data-page="dashboard"] .dashboard-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+body[data-page="dashboard"] .dashboard-stats .metric {
+    display: grid;
+    min-height: 76px;
+    align-content: start;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+body[data-page="dashboard"] .dashboard-stats .metric:first-child {
+    padding-inline-start: 0;
+}
+
+body[data-page="dashboard"] .dashboard-stats .metric + .metric {
+    border-inline-start: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+body[data-page="dashboard"] .dashboard-stats .metric span {
+    margin-bottom: 7px;
+    color: rgba(245, 255, 248, 0.65);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+}
+
+body[data-page="dashboard"] .dashboard-stats .metric strong {
+    overflow: visible;
+    color: #ffffff;
+    font-size: 21px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+body[data-page="dashboard"] .dashboard-stats .metric small {
+    margin-top: 5px;
+    color: rgba(245, 255, 248, 0.58);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+body[data-page="dashboard"] #status-state {
+    display: inline-flex;
+    width: fit-content;
+    min-height: 27px;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+body[data-page="dashboard"] #status-state[data-tone="success"] {
+    color: #d8ffe4;
+    background: rgba(114, 205, 145, 0.2);
+}
+
+body[data-page="dashboard"] #status-state[data-tone="warning"] {
+    color: #ffe3a3;
+    background: rgba(240, 201, 106, 0.17);
+}
+
+body[data-page="dashboard"] #status-state[data-tone="danger"] {
+    color: #ffd3cf;
+    background: rgba(240, 139, 134, 0.18);
+}
+
+body[data-page="dashboard"] #status-state[data-tone="neutral"] {
+    color: #f5fff8;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+body[data-page="dashboard"] .dashboard-overview .config-errors:not(:empty) {
+    margin: 0;
+    border-color: rgba(255, 211, 207, 0.42);
+    color: #ffd3cf;
+    background: rgba(91, 27, 26, 0.32);
+}
+
+body[data-page="dashboard"] .dashboard-section-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+body[data-page="dashboard"] .dashboard-section-title .count-label {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+}
+
+body[data-page="dashboard"] .dashboard-list {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+body[data-page="dashboard"] .dashboard-row {
+    min-width: 0;
+    padding: 13px 2px;
+}
+
+body[data-page="dashboard"] .dashboard-row + .dashboard-row {
+    border-top: 1px solid var(--line);
+}
+
+body[data-page="dashboard"] .dashboard-row-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+body[data-page="dashboard"] .dashboard-row strong,
+body[data-page="dashboard"] .activity-heading strong {
+    min-width: 0;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+body[data-page="dashboard"] .dashboard-row-detail,
+body[data-page="dashboard"] .activity-message {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+body[data-page="dashboard"] .activity-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(14rem, 0.9fr) auto;
+    align-items: center;
+    gap: 18px;
+}
+
+body[data-page="dashboard"] .activity-heading {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px 10px;
+}
+
+body[data-page="dashboard"] .activity-message {
+    margin: 0;
+}
+
+body[data-page="dashboard"] .activity-time {
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+body[data-page="dashboard"] .state-tag {
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+body[data-page="dashboard"] .state-tag--neutral {
+    color: var(--theme-selected-text, #bbc6bf);
+    background: var(--theme-selected, #303535);
+}
+
+body[data-page="dashboard"] .state-tag--success {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+}
+
+body[data-page="dashboard"] .state-tag--warning {
+    border-color: rgba(154, 100, 23, 0.28);
+    color: var(--warning);
+    background: rgba(154, 100, 23, 0.1);
+}
+
+body[data-page="dashboard"] .state-tag--danger {
+    border-color: rgba(161, 61, 55, 0.28);
+    color: var(--danger);
+    background: rgba(161, 61, 55, 0.1);
+}
+
+body[data-page="dashboard"] .empty-state--row {
+    padding: 14px;
+}
+
+@media (max-width: 900px) {
+    body[data-page="dashboard"] .activity-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    body[data-page="dashboard"] .activity-message {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 720px) {
+    body[data-page="dashboard"] .dashboard-overview {
+        padding: 20px;
+    }
+
+    body[data-page="dashboard"] .dashboard-overview-heading {
+        flex-direction: column;
+        gap: 18px;
+    }
+
+    body[data-page="dashboard"] .dashboard-actions {
+        display: grid;
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    body[data-page="dashboard"] .dashboard-sync {
+        grid-column: 1 / -1;
+    }
+
+    body[data-page="dashboard"] .dashboard-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    body[data-page="dashboard"] .dashboard-stats .metric {
+        padding: 12px;
+    }
+
+    body[data-page="dashboard"] .dashboard-stats .metric:nth-child(odd) {
+        padding-inline-start: 0;
+        border-inline-start: 0;
+    }
+
+    body[data-page="dashboard"] .dashboard-stats .metric:nth-child(n + 3) {
+        padding-top: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    body[data-page] :is(.workspace-nav a, .theme-toggle, .compact, .text-link) {
+        min-height: 44px;
+    }
+}
+
+@media (pointer: coarse) {
+    body[data-page] :is(.workspace-nav a, .theme-toggle, .compact, .text-link) {
+        min-height: 44px;
+    }
+}
+
+@media (max-width: 540px) {
+    body[data-page] .workspace-nav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+
+    body[data-page] .workspace-nav a {
+        flex: 0 0 auto;
+        padding-inline: 12px;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    body[data-page="dashboard"] .dashboard-overview {
+        padding: 18px;
+    }
+
+    body[data-page="dashboard"] .dashboard-row-heading {
+        gap: 10px;
+    }
+
+    body[data-page="dashboard"] .activity-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+    }
+
+    body[data-page="dashboard"] .activity-message,
+    body[data-page="dashboard"] .activity-time {
+        grid-column: 1;
     }
 }

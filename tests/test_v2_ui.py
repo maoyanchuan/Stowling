@@ -463,6 +463,20 @@ def test_dashboard_uses_new_resource_endpoints_only() -> None:
         assert old not in dashboard
 
 
+def test_dashboard_localizes_states_and_marks_stale_data() -> None:
+    dashboard = read("dashboard.js")
+    html = read("index.html")
+
+    assert '["RUNNING", "运行中"]' in dashboard
+    assert '["FAILED", "失败"]' in dashboard
+    assert '"RUNNING", "已入队"' in dashboard
+    assert "stateTagClass(trigger.state)" in dashboard
+    assert 'return "danger";' in dashboard
+    assert "同步失败，正在显示上次数据" in dashboard
+    assert 'id="dashboard-summary"' in html
+    assert 'class="status-grid dashboard-stats"' in html
+
+
 def test_category_zone_page_uses_automatic_display_bindings() -> None:
     html = read("category-zones.html")
     javascript = read("category-zones.js")

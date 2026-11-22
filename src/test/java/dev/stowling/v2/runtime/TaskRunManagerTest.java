@@ -14,6 +14,12 @@ import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.runtime.modules.TaskModuleRuntimeRegistry;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -23,6 +29,67 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class TaskRunManagerTest {
+    @Test
+    void followUpCountdownStartsAfterSuccessAndDoesNotOccupyTheRobot() {
+        UUID point = UUID.randomUUID();
+        TaskDefinition next = task("Next task", TaskPriority.URGENT, false, step(point));
+        TaskDefinition source = task("Pickup", TaskPriority.NORMAL, false, step(point),
+                TaskStep.createTask(UUID.randomUUID(), Map.of(
+                        ConfigValidator.TASK_REF, "task:" + next.id(),
+                        ConfigValidator.CREATE_AFTER_SUCCESS, "true",
+                        ConfigValidator.CREATE_DELAY_SECONDS, "30")));
+        TaskDefinition other = task("Other task", TaskPriority.NORMAL, false, step(point));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, coordinates(point),
+                List.of(source, next, other));
+        var navigation = new RecordingNavigation(NavigationStatus.ARRIVED,
+                NavigationStatus.ARRIVED, NavigationStatus.ARRIVED);
+        var clock = new MutableClock();
+        var manager = new TaskRunManager(navigation,
+                TaskModuleRuntimeRegistry.unavailablePorts(navigation),
+                dev.stowling.automation.WorldObservation::disconnected, clock);
+        var run = manager.start(source, config, null);
+        for (int tick = 0; tick < 8; tick++) manager.tick();
+
+        assertEquals(TaskRunState.SUCCEEDED, manager.runs().stream()
+                .filter(item -> item.runId().equals(run.runId())).findFirst().orElseThrow().state());
+        assertFalse(manager.busy());
+        manager.start(other, config, null);
+        for (int tick = 0; tick < 8; tick++) manager.tick();
+        assertTrue(manager.runs().stream().anyMatch(item -> item.taskId().equals(other.id())
+                && item.state() == TaskRunState.SUCCEEDED));
+        clock.advance(Duration.ofSeconds(29));
+        manager.tick();
+        assertFalse(manager.runs().stream().anyMatch(item -> item.taskId().equals(next.id())));
+        clock.advance(Duration.ofSeconds(1));
+        manager.tick();
+        assertEquals(1, manager.runs().stream().filter(item -> item.taskId().equals(next.id())).count());
+        for (int tick = 0; tick < 8; tick++) manager.tick();
+        assertEquals(1, manager.runs().stream().filter(item -> item.taskId().equals(next.id())).count());
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant now = Instant.parse("2026-11-23T00:00:00Z");
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+
+        private void advance(Duration duration) {
+            now = now.plus(duration);
+        }
+    }
+
     @Test
     void createsTheSelectedUrgentTaskOnlyAfterTheSourceSucceeds() {
         for (NavigationStatus status : List.of(NavigationStatus.ARRIVED, NavigationStatus.FAILED)) {

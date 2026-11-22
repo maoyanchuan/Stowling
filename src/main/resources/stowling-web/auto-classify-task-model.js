@@ -50,6 +50,7 @@
             id: "",
             coordinateId: "",
             pickupRadius: "",
+            detectionIntervalSeconds: "1",
             cacheLocationRef: "",
             cachePolicy: {...DEFAULT_CACHE_POLICY},
             classificationAreas: kind === "PICKUP" ? [] : [newArea()],
@@ -62,7 +63,7 @@
             collectionEnabled: kind !== "CLASSIFICATION",
             classificationEnabled: kind !== "PICKUP",
             ...(kind !== "COMBINED" ? {kind} : {}),
-            ...(kind === "PICKUP" ? {followUpTaskRef: ""} : {})
+            ...(kind === "PICKUP" ? {followUpTaskRef: "", followUpDelaySeconds: "30"} : {})
         };
     }
 
@@ -77,6 +78,7 @@
         return {
             id: String(item?.id ?? ""),
             coordinateId: referencedId(detection.coordinateRef, "coordinate"),
+            detectionIntervalSeconds: String(detection.intervalSeconds ?? 1),
             pickupRadius: detection.pickupRadius === undefined
                 || detection.pickupRadius === null
                 ? ""
@@ -102,7 +104,8 @@
             collectionEnabled: item?.collectionEnabled === true,
             classificationEnabled: item?.classificationEnabled === true,
             ...(item?.kind && item.kind !== "COMBINED" ? {kind: item.kind} : {}),
-            ...(item?.kind === "PICKUP" ? {followUpTaskRef: item.followUpTaskRef || ""} : {})
+            ...(item?.kind === "PICKUP" ? {followUpTaskRef: item.followUpTaskRef || "",
+                followUpDelaySeconds: String(item.followUpDelaySeconds ?? 30)} : {})
         };
     }
 
@@ -143,6 +146,12 @@
             : null;
     }
 
+    /** @param {unknown} value @param {number} min @param {number} max @returns {boolean} */
+    function validSeconds(value, min, max) {
+        const text = String(value ?? "").trim();
+        return INTEGER_PATTERN.test(text) && Number(text) >= min && Number(text) <= max;
+    }
+
     /**
      * @param {object} draft
      * @param {unknown} resources
@@ -162,6 +171,9 @@
             errors.push("缓存容量阈值必须为 1 到 100 的整数百分比");
         }
         if (draft?.kind !== "CLASSIFICATION") {
+            if (!validSeconds(draft?.detectionIntervalSeconds ?? 1, 1, 60)) {
+                errors.push("掉落物检测间隔需为 1 至 60 秒");
+            }
             const coordinateId = String(draft?.coordinateId ?? "").trim();
             if (coordinateId === "") {
                 errors.push("请选择掉落物检测点");
@@ -173,6 +185,11 @@
             if (radius && parsedRadius(radius) === null) {
                 errors.push("任务覆盖半径需为 1 到 64 格");
             }
+        }
+
+        if (draft?.kind === "PICKUP"
+            && !validSeconds(draft?.followUpDelaySeconds ?? 30, 0, 86400)) {
+            errors.push("创建任务倒计时需为 0 至 86400 秒");
         }
 
         const cache = String(draft?.cacheLocationRef || "");
@@ -225,7 +242,8 @@
             classificationEnabled: draft.classificationEnabled,
             ...(draft.kind !== "CLASSIFICATION" ? {detection: {
                 coordinateRef: reference("coordinate", draft.coordinateId),
-                pickupRadius: parsedRadius(draft.pickupRadius)
+                pickupRadius: parsedRadius(draft.pickupRadius),
+                intervalSeconds: Number(draft.detectionIntervalSeconds ?? 1)
             }} : {}),
             cacheLocationRef: draft.cacheLocationRef,
             cachePolicy: {...DEFAULT_CACHE_POLICY, ...draft.cachePolicy},
@@ -239,7 +257,8 @@
             })),
             collectionPriority: draft.collectionPriority,
             ...(draft.kind ? {kind: draft.kind} : {}),
-            ...(draft.kind === "PICKUP" ? {followUpTaskRef: draft.followUpTaskRef || ""} : {})
+            ...(draft.kind === "PICKUP" ? {followUpTaskRef: draft.followUpTaskRef || "",
+                followUpDelaySeconds: Number(draft.followUpDelaySeconds ?? 30)} : {})
         };
     }
 

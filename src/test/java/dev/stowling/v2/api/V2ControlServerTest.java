@@ -221,7 +221,7 @@ class V2ControlServerTest {
         String body = """
                 {"name":"Automatic","collectionEnabled":true,
                 "classificationEnabled":true,"detection":{"coordinateRef":"coordinate:%s",
-                "pickupRadius":8},"cacheLocationRef":"region:%s",
+                "pickupRadius":8,"intervalSeconds":6},"cacheLocationRef":"region:%s",
                 "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
                 "collectionPriority":"NORMAL",
                 "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65}}
@@ -233,6 +233,7 @@ class V2ControlServerTest {
             assertEquals(201, response.statusCode());
             var item = object(response).getAsJsonObject("item");
             assertFalse(item.get("enabled").getAsBoolean());
+            assertEquals(6, item.getAsJsonObject("detection").get("intervalSeconds").getAsInt());
             assertTrue(item.getAsJsonObject("cachePolicy").get("enabled").getAsBoolean());
             assertEquals("CLASSIFY_FIRST",
                     item.getAsJsonObject("cachePolicy").get("mode").getAsString());

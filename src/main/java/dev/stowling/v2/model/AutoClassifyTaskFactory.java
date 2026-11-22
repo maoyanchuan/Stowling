@@ -12,7 +12,6 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class AutoClassifyTaskFactory {
-    private static final int TRIGGER_INTERVAL_TICKS = 20;
     private static final int TRIGGER_COOLDOWN_TICKS = 100;
     private static final int MAX_NAME_LENGTH = 80;
 
@@ -80,7 +79,9 @@ public final class AutoClassifyTaskFactory {
         if (definition.followUpTaskRef() != null) {
             collectionSteps.add(TaskStep.createTask(UUID.randomUUID(),
                     Map.of(ConfigValidator.TASK_REF, definition.followUpTaskRef(),
-                            ConfigValidator.CREATE_AFTER_SUCCESS, "true")));
+                            ConfigValidator.CREATE_AFTER_SUCCESS, "true",
+                            ConfigValidator.CREATE_DELAY_SECONDS,
+                            Integer.toString(definition.followUpDelaySeconds()))));
         }
         List<TaskStep> classificationSteps = new ArrayList<>();
         for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
@@ -149,7 +150,7 @@ public final class AutoClassifyTaskFactory {
                             TaskTriggerType.DROPPED_ITEMS,
                             definition.id(),
                             definition.collectionPriority(),
-                            TRIGGER_INTERVAL_TICKS,
+                            definition.detectionIntervalSeconds() * 20,
                             TRIGGER_COOLDOWN_TICKS,
                             coordinate.uuid(),
                             null,

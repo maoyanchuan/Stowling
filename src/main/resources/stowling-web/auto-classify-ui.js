@@ -29,7 +29,8 @@
         dirty: false,
         active: false,
         expanded: false,
-        phase: { collection: false, pickup: false, packing: false, classification: false }
+        phase: {collection: false, pickup: false, packing: false,
+            classification: false, followUp: false}
     };
     const elements = {
         list: document.querySelector("#auto-task-list"),
@@ -40,6 +41,7 @@
         fields: document.querySelector("#auto-task-fields"),
         point: document.querySelector("#auto-detection-point"),
         radius: document.querySelector("#auto-pickup-radius"),
+        detectionInterval: document.querySelector("#auto-detection-interval"),
         cache: document.querySelector("#auto-cache-location"),
         cacheMode: document.querySelector("#auto-cache-mode"),
         cacheThreshold: document.querySelector("#auto-cache-threshold"),
@@ -65,6 +67,10 @@
         combinedPreview: document.querySelector("#combined-task-preview"),
         cacheLabel: document.querySelector("#auto-cache-label"),
         followUp: document.querySelector("#auto-follow-up-task"),
+        followUpDelay: document.querySelector("#auto-follow-up-delay"),
+        followUpHeader: document.querySelector("#auto-follow-up-toggle"),
+        followUpBody: document.querySelector("#auto-follow-up-body"),
+        followUpDescription: document.querySelector("#auto-follow-up-description"),
         followUpField: document.querySelector("#auto-follow-up-field"),
         refresh: document.querySelector("#refresh-move-tasks"),
         remove: document.querySelector("#delete-auto-task"),
@@ -284,6 +290,8 @@
     function syncForm() {
         const draft = state.draft;
         elements.radius.value = draft.pickupRadius;
+        elements.detectionInterval.value = draft.detectionIntervalSeconds;
+        elements.followUpDelay.value = draft.followUpDelaySeconds ?? "30";
         elements.priority.value = draft.collectionPriority;
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
@@ -330,6 +338,7 @@
             ...state.draft,
             coordinateId: elements.point.value,
             pickupRadius: elements.radius.value,
+            detectionIntervalSeconds: elements.detectionInterval.value,
             cacheLocationRef: elements.cache.value,
             cachePolicy: {
                 enabled: kind !== "CLASSIFICATION" && elements.cacheEnabled.checked,
@@ -341,7 +350,8 @@
             collectionEnabled: kind ? kind === "PICKUP" : elements.collectEnabled.checked,
             classificationEnabled: kind ? kind === "CLASSIFICATION"
                 : elements.classifyEnabled.checked,
-            ...(kind === "PICKUP" ? {followUpTaskRef: elements.followUp.value} : {}),
+            ...(kind === "PICKUP" ? {followUpTaskRef: elements.followUp.value,
+                followUpDelaySeconds: elements.followUpDelay.value} : {}),
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             facilities: cleanup.read(),
@@ -434,18 +444,26 @@
         const kind = state.draft.kind;
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
+        elements.form.dataset.kind = kind || "COMBINED";
         elements.draftTitle.textContent = classification ? "新建 · 分类" : "新建 · 掉落物拾取";
         elements.combinedPreview.hidden = Boolean(kind);
         elements.cacheLabel.textContent = classification ? "来源缓存" : "缓存位置";
         elements.followUpField.hidden = !pickup;
+        elements.followUpDescription.textContent = elements.followUp.value
+            ? `任务完成 ${elements.followUpDelay.value} 秒后创建`
+            : "不创建任务";
+        elements.followUpDelay.disabled = !elements.followUp.value;
         elements.collectHeader.closest(".auto-config-section").hidden = classification;
         elements.classifyHeader.closest(".auto-config-section").hidden = pickup;
         elements.warehouseEnabled.closest(".auto-config-section").hidden = pickup;
         elements.cacheMode.closest("label").hidden = pickup;
-        for (const header of [elements.collectHeader, elements.pickupHeader,
-            elements.classifyHeader]) {
+        for (const header of [elements.collectHeader, elements.classifyHeader]) {
             header.closest(".auto-phase-header").hidden = Boolean(kind);
         }
+        elements.pickupHeader.closest(".auto-phase-header").hidden = classification;
+        elements.collectEnabled.closest("label").hidden = Boolean(kind);
+        elements.packingHeader.hidden = pickup;
+        document.querySelector("#pickup-packing-title").hidden = !pickup;
         for (const id of ["combined-packing-help", "combined-packing-mode-help",
             "combined-classification-help"]) {
             document.querySelector("#" + id).hidden = Boolean(kind);
@@ -482,7 +500,8 @@
             ["collection", elements.collectHeader, elements.collectBody],
             ["pickup", elements.pickupHeader, elements.pickupBody],
             ["packing", elements.packingHeader, elements.packingBody],
-            ["classification", elements.classifyHeader, elements.classifyBody]
+            ["classification", elements.classifyHeader, elements.classifyBody],
+            ["followUp", elements.followUpHeader, elements.followUpBody]
         ];
         for (const [phase, header, body] of phaseStates) {
             if (!header || !body) {
@@ -491,9 +510,10 @@
             const enabled = phaseEnabled(phase);
             header.disabled = disabled || !enabled;
             header.title = enabled ? "展开或收起子任务设置" : "";
-            const alwaysOpen = pickup && (phase === "collection" || phase === "pickup")
+            const alwaysOpen = pickup && phase === "collection"
                 || classification && phase === "classification";
-            const expanded = enabled && (alwaysOpen || state.phase[phase]);
+            const expanded = enabled && !(pickup && phase === "packing")
+                && (alwaysOpen || state.phase[phase]);
             header.setAttribute("aria-expanded", String(expanded));
             void window.StowlingSettings.reveal(body, expanded);
             header.closest(".auto-config-section").dataset.enabled = String(enabled);
@@ -539,6 +559,7 @@
         state.phase.pickup = false;
         state.phase.packing = false;
         state.phase.classification = false;
+        state.phase.followUp = false;
         syncForm();
         renderList();
         showMessage(item ? "已保存" : "配置完整后自动保存");
@@ -761,6 +782,11 @@
     elements.pickupHeader.addEventListener("click", () => togglePhase("pickup"));
     elements.packingHeader.addEventListener("click", () => togglePhase("packing"));
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
+    elements.followUpHeader.addEventListener("click", () => togglePhase("followUp"));
+    elements.followUpBody.addEventListener("invalid", () => {
+        state.phase.followUp = true;
+        updateControls();
+    }, true);
     elements.collectBody.addEventListener("invalid", (event) => {
         state.phase.collection = true;
         if (elements.pickupBody.contains(event.target)) state.phase.pickup = true;

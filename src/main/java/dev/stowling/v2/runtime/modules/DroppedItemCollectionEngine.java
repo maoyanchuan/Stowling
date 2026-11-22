@@ -25,7 +25,7 @@ final class DroppedItemCollectionEngine {
     private static final int PICKUP_ARRIVAL_RADIUS = 0;
     private static final int NAVIGATION_RETRIES = 2;
     private static final Duration NAVIGATION_RETRY_DELAY = Duration.ofMillis(500);
-    private static final Duration BATCH_IDLE_DELAY = Duration.ofSeconds(5);
+    private static final Duration STOP_CONFIRMATION_TIMEOUT = Duration.ofSeconds(5);
 
     private final TaskExecutionContext context;
     private final Source source;
@@ -34,6 +34,7 @@ final class DroppedItemCollectionEngine {
     private final PlayerInventoryManager inventory;
     private final Clock clock;
     private Instant lastProgressAt;
+    private Instant stopRequestedAt;
     private PlayerInventorySnapshot currentInventory;
     private DroppedItem current;
     private BlockPosition navigationTarget;
@@ -124,14 +125,6 @@ final class DroppedItemCollectionEngine {
             return TaskModuleResult.failed("背包空间不足，没有可先存入缓存的任务物品，请腾出空间");
         }
         fullTicks = 0;
-        if (!drops.isEmpty() && arrivedAtCurrent
-                && !context.workspace().collectedItems().isEmpty()
-                && (Duration.between(lastProgressAt, clock.instant())
-                        .compareTo(BATCH_IDLE_DELAY) >= 0 || timedOut())) {
-            context.navigation().cancel();
-            current = null;
-            return TaskModuleResult.succeeded("拾取暂时停滞，先将本批物品存入缓存后继续拾取");
-        }
         if (timedOut()) {
             return TaskModuleResult.failed("拾取掉落物超时");
         }
@@ -154,6 +147,7 @@ final class DroppedItemCollectionEngine {
     }
 
     void requestStop() {
+        if (!stopping) stopRequestedAt = clock.instant();
         stopping = true;
         context.navigation().cancel();
     }
@@ -190,7 +184,12 @@ final class DroppedItemCollectionEngine {
                 .orElse(null);
         if (observed == null) {
             current = null;
-            return TaskModuleResult.succeeded("最后一次拾取已记账");
+            return TaskModuleResult.succeeded("目标已消失，交由收尾核对背包");
+        }
+        if (Duration.between(stopRequestedAt, clock.instant())
+                .compareTo(STOP_CONFIRMATION_TIMEOUT) >= 0) {
+            current = null;
+            return TaskModuleResult.failed("拾取停止确认超时，交由收尾核对背包");
         }
         current = observed;
         return TaskModuleResult.waiting("等待最后一次拾取确认");
@@ -207,7 +206,7 @@ final class DroppedItemCollectionEngine {
             arrivedAtCurrent = false;
             pickupConfirmed = false;
             resetStableConfirmation();
-            return TaskModuleResult.running("已拾取一组掉落物");
+            return TaskModuleResult.running("目标已消失，重新扫描掉落物");
         }
         current = observed;
         return navigateToCurrent();
@@ -284,16 +283,20 @@ final class DroppedItemCollectionEngine {
         }
         if (inventory.claimCollectionItems(account, itemFilter) > 0) {
             lastProgressAt = clock.instant();
+            pickupConfirmed = true;
         }
         if (snapshot.equals(currentInventory)) {
             return;
         }
         currentInventory = snapshot;
-        pickupConfirmed = true;
         resetStableConfirmation();
     }
 
     private TaskModuleResult confirmEmpty() {
+        if (inventory.pendingPickupCount(context.workspace().inventoryAccount()) > 0) {
+            resetStableConfirmation();
+            return TaskModuleResult.waiting("等待拾取回执与背包同步");
+        }
         if (stableTicks < INVENTORY_SETTLE_TICKS) {
             stableTicks++;
             return TaskModuleResult.running(

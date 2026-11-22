@@ -57,11 +57,13 @@ class V2ControlServiceImplTest {
         assertTrue(classification.item().triggerIds().isEmpty());
         String next = "task:" + classification.item().id();
         var pickup = service.createAutoClassifyTask(new AutoClassifyTaskRequest(
-                "Pickup", false, null, null, new AutoClassifyDetectionRequest(pointRef, null),
+                "Pickup", false, null, null, new AutoClassifyDetectionRequest(pointRef, null, 6),
                 pointRef, List.of(), TaskPriority.NORMAL, null, null, null, null,
-                dev.stowling.v2.model.AutoClassifyDefinition.Kind.PICKUP, next));
+                dev.stowling.v2.model.AutoClassifyDefinition.Kind.PICKUP, next, 45));
         assertEquals(next, pickup.item().followUpTaskRef());
         assertTrue(pickup.item().classificationAreas().isEmpty());
+        assertEquals(6, pickup.item().detection().intervalSeconds());
+        assertEquals(45, pickup.item().followUpDelaySeconds());
 
         var listening = service.startAutoClassifyTask(pickup.item().id(),
                 new RevisionRequest(pickup.revision()));
@@ -72,6 +74,9 @@ class V2ControlServiceImplTest {
                 .findFirst().orElseThrow().steps().getLast();
         assertEquals(TaskStepKind.CREATE_TASK, followUp.kind());
         assertEquals(next, followUp.parameters().get(ConfigValidator.TASK_REF));
+        assertEquals("45", followUp.parameters().get(ConfigValidator.CREATE_DELAY_SECONDS));
+        assertEquals(120, reopened.triggers().getFirst().intervalTicks());
+        assertEquals(6, listening.item().detection().intervalSeconds());
     }
 
     @Test

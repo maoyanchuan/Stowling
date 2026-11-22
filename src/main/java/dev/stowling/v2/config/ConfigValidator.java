@@ -42,6 +42,7 @@ public final class ConfigValidator {
     public static final String MOVE_TO_COORDINATE = "MOVE_TO_COORDINATE";
     public static final String COLLECT_DROPPED_ITEMS = "COLLECT_DROPPED_ITEMS";
     public static final String CREATE_AFTER_SUCCESS = "afterSuccess";
+    public static final String CREATE_DELAY_SECONDS = "delaySeconds";
     public static final String SCAN_CONTAINERS_IN_REGION =
             "SCAN_CONTAINERS_IN_REGION";
     public static final String RESOLVE_CONTAINER_CATEGORIES =
@@ -736,10 +737,16 @@ public final class ConfigValidator {
         }
         requireParameters(
                 step,
-                Set.of(TASK_REF, PRIORITY, CREATE_AFTER_SUCCESS),
+                Set.of(TASK_REF, PRIORITY, CREATE_AFTER_SUCCESS, CREATE_DELAY_SECONDS),
                 Set.of(TASK_REF)
         );
         requireOptionalBoolean(step, CREATE_AFTER_SUCCESS);
+        requireOptionalInteger(step, CREATE_DELAY_SECONDS, 0,
+                AutoClassifyDefinition.MAX_FOLLOW_UP_DELAY_SECONDS);
+        if (step.parameters().containsKey(CREATE_DELAY_SECONDS)
+                && !Boolean.parseBoolean(step.parameters().get(CREATE_AFTER_SUCCESS))) {
+            throw new V2ValidationException("创建任务倒计时仅用于成功结束后创建任务");
+        }
         ResourceReference reference = requireReference(
                 step,
                 TASK_REF,

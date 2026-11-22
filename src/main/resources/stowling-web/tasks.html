@@ -586,7 +586,8 @@
                                                 <option value="">选择缓存位置</option>
                                             </select>
                                         </label>
-                                        <section class="auto-config-section"
+                                        <section id="auto-collection-settings"
+                                                 class="auto-config-section"
                                                  aria-labelledby="auto-collect-title">
                                             <div class="auto-phase-header">
                                                 <button id="auto-collect-toggle"
@@ -619,7 +620,7 @@
                                                                 aria-expanded="false"
                                                                 aria-controls="auto-pickup-body">
                                                             <strong id="auto-pickup-title">
-                                                                掉落物拾取
+                                                                掉落物拾取点
                                                             </strong>
                                                             <span class="move-task-chevron"
                                                                   aria-hidden="true">⌄</span>
@@ -657,6 +658,14 @@
                                                                        max="64"
                                                                        step="1">
                                                             </label>
+                                                            <label class="move-field"
+                                                                   for="auto-detection-interval">
+                                                                <span>掉落物检测间隔（秒）</span>
+                                                                <input id="auto-detection-interval"
+                                                                       type="number" min="1"
+                                                                       max="60" step="1" value="1"
+                                                                       required>
+                                                            </label>
                                                         </div>
                                                     </div>
                                                 </section>
@@ -664,6 +673,13 @@
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-packing-title">
                                                     <div class="auto-phase-header">
+                                                        <div id="pickup-packing-title"
+                                                             class="auto-phase-toggle" hidden>
+                                                            <strong>打包缓存</strong>
+                                                            <span class="auto-experimental-tag">
+                                                                实验性
+                                                            </span>
+                                                        </div>
                                                         <button id="auto-packing-toggle"
                                                                 class="auto-phase-toggle"
                                                                 type="button"
@@ -731,7 +747,7 @@
                                                 </section>
                                                 <label class="move-field move-priority"
                                                        for="auto-collect-priority">
-                                                    <span>收集优先级</span>
+                                                    <span>任务优先级</span>
                                                     <select id="auto-collect-priority">
                                                         <option value="NORMAL">普通</option>
                                                         <option value="URGENT">紧急</option>
@@ -821,12 +837,43 @@
                                                 <select id="robot-warehouse-location"></select>
                                             </label>
                                         </section>
-                                        <label id="auto-follow-up-field" class="move-field" hidden>
-                                            <span>任务结束后创建任务</span>
-                                            <select id="auto-follow-up-task">
-                                                <option value="">不创建任务</option>
-                                            </select>
-                                        </label>
+                                        <section id="auto-follow-up-field"
+                                                 class="auto-config-section" hidden>
+                                            <div class="auto-phase-header">
+                                                <button id="auto-follow-up-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="auto-follow-up-body">
+                                                    <span class="auto-phase-copy">
+                                                        <strong>任务结束后创建任务</strong>
+                                                        <small id="auto-follow-up-description">
+                                                            不创建任务
+                                                        </small>
+                                                    </span>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true">⌄</span>
+                                                </button>
+                                            </div>
+                                            <div id="auto-follow-up-body"
+                                                 class="auto-phase-body" hidden>
+                                                <label class="move-field"
+                                                       for="auto-follow-up-delay">
+                                                    <span>倒计时（秒）</span>
+                                                    <input id="auto-follow-up-delay" type="number"
+                                                           min="0" max="86400" step="1" value="30"
+                                                           required>
+                                                </label>
+                                                <label class="move-field" for="auto-follow-up-task">
+                                                    <span>任务选择</span>
+                                                    <select id="auto-follow-up-task">
+                                                        <option value="">不创建任务</option>
+                                                    </select>
+                                                </label>
+                                                <p class="auto-config-note">
+                                                    拾取和存入全部完成后开始倒计时，期间可执行其他任务。
+                                                </p>
+                                            </div>
+                                        </section>
                                         <div id="auto-cleanup-settings"></div>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>

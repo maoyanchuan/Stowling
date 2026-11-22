@@ -62,7 +62,8 @@ public final class TaskFlowNormalizer {
                     definition.pickupRadius(), definition.cacheLocationRef(), areas,
                     definition.collectionPriority(), definition.overflowEnabled(),
                     definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
-                    definition.cachePolicy());
+                    definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
+                    definition.detectionIntervalSeconds(), definition.followUpDelaySeconds());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -131,6 +132,7 @@ public final class TaskFlowNormalizer {
                 .map(task -> inheritLayoutRecognition(task, autoClassifications.get(task.id())))
                 .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
                 .map(task -> autoCleanupPolicy(task, config.autoClassifyTasks()))
+                .map(task -> pickupFollowUpDelay(task, config.autoClassifyTasks()))
                 .toList();
         List<TaskDefinition> tasks = new ArrayList<>(baseTasks);
         Set<UUID> taskIds = new HashSet<>();
@@ -236,6 +238,30 @@ public final class TaskFlowNormalizer {
                 config.taskFolders(),
                 config.autoClassifyTasks(), config.coordinateCatalog()
         );
+    }
+
+    private static TaskDefinition pickupFollowUpDelay(TaskDefinition task,
+            List<AutoClassifyDefinition> definitions) {
+        AutoClassifyDefinition owner = definitions.stream()
+                .filter(definition -> definition.kind() == AutoClassifyDefinition.Kind.PICKUP
+                        && definition.id().equals(task.id()))
+                .findFirst().orElse(null);
+        if (owner == null || owner.followUpTaskRef() == null) return task;
+        List<TaskStep> steps = task.steps().stream().map(step -> {
+            if (step.kind() != TaskStepKind.CREATE_TASK
+                    || !owner.followUpTaskRef().equals(
+                            step.parameters().get(ConfigValidator.TASK_REF))
+                    || !Boolean.parseBoolean(step.parameters()
+                            .get(ConfigValidator.CREATE_AFTER_SUCCESS))) return step;
+            Map<String, String> parameters = new LinkedHashMap<>(step.parameters());
+            parameters.put(ConfigValidator.CREATE_DELAY_SECONDS,
+                    Integer.toString(owner.followUpDelaySeconds()));
+            return TaskStep.createTask(step.id(), parameters);
+        }).toList();
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                steps, task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy());
     }
 
     private static TaskDefinition inheritLayoutRecognition(

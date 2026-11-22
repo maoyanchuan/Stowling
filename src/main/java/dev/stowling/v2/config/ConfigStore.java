@@ -262,6 +262,8 @@ public final class ConfigStore {
         allowed.add("detectionCoordinateRef");
         allowed.add("kind");
         allowed.add("followUpTaskRef");
+        allowed.add("detectionIntervalSeconds");
+        allowed.add("followUpDelaySeconds");
         allowed.add("overflowEnabled");
         allowed.add("overflowDestinationRef");
         allowed.add("cleanupPolicy");

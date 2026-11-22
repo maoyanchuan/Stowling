@@ -22,12 +22,26 @@ public record AutoClassifyDefinition(
         String overflowDestinationRef,
         CacheIntakePolicy cachePolicy,
         Kind kind,
-        String followUpTaskRef
+        String followUpTaskRef,
+        Integer detectionIntervalSeconds,
+        Integer followUpDelaySeconds
 ) {
     public enum Kind {
         COMBINED,
         PICKUP,
         CLASSIFICATION
+    }
+
+    public AutoClassifyDefinition(UUID id, String name, boolean enabled,
+            boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
+            Integer pickupRadius, String cacheLocationRef, List<AutoClassifyAreaDefinition> areas,
+            TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef, String overflowDestinationRef, CacheIntakePolicy cachePolicy,
+            Kind kind, String followUpTaskRef) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
+                pickupRadius, cacheLocationRef, areas, priority, overflowEnabled, cleanupPolicy,
+                unstackableRegionRef, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                null, null);
     }
 
     public AutoClassifyDefinition(UUID id, String name, boolean enabled,
@@ -118,8 +132,23 @@ public record AutoClassifyDefinition(
     public static final int DEFAULT_PICKUP_RADIUS = 8;
     public static final int MIN_PICKUP_RADIUS = 1;
     public static final int MAX_PICKUP_RADIUS = 64;
+    public static final int DEFAULT_DETECTION_INTERVAL_SECONDS = 1;
+    public static final int MAX_DETECTION_INTERVAL_SECONDS = 60;
+    public static final int DEFAULT_FOLLOW_UP_DELAY_SECONDS = 30;
+    public static final int MAX_FOLLOW_UP_DELAY_SECONDS = 86_400;
 
     public AutoClassifyDefinition {
+        detectionIntervalSeconds = detectionIntervalSeconds == null
+                ? DEFAULT_DETECTION_INTERVAL_SECONDS : detectionIntervalSeconds;
+        followUpDelaySeconds = followUpDelaySeconds == null
+                ? DEFAULT_FOLLOW_UP_DELAY_SECONDS : followUpDelaySeconds;
+        if (detectionIntervalSeconds < 1
+                || detectionIntervalSeconds > MAX_DETECTION_INTERVAL_SECONDS) {
+            throw new IllegalArgumentException("掉落物检测间隔需为 1 至 60 秒");
+        }
+        if (followUpDelaySeconds < 0 || followUpDelaySeconds > MAX_FOLLOW_UP_DELAY_SECONDS) {
+            throw new IllegalArgumentException("创建任务倒计时需为 0 至 86400 秒");
+        }
         kind = kind == null ? Kind.COMBINED : kind;
         if (kind != Kind.COMBINED) {
             collectionEnabled = kind == Kind.PICKUP;

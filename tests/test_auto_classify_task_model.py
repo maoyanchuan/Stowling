@@ -40,6 +40,39 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+@pytest.mark.parametrize("interval,delay", [(1, 30), (6, 45), (60, 0)])
+def test_pickup_timing_settings_survive_save_and_reload(interval: int, delay: int) -> None:
+    result = _run(f"""(() => {{
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {{...model.newDraft("PICKUP"), coordinateId: "point",
+            cacheLocationRef: "coordinate:point", followUpTaskRef: "task:next",
+            detectionIntervalSeconds: "{interval}", followUpDelaySeconds: "{delay}"}};
+        const payload = model.payload(draft, {{coordinates: [{{id: "point"}}]}});
+        return {{payload, loaded: model.draftFromTask(payload)}};
+    }})()""")
+    assert result["payload"]["detection"]["intervalSeconds"] == interval
+    assert result["payload"]["followUpDelaySeconds"] == delay
+    assert result["loaded"]["detectionIntervalSeconds"] == str(interval)
+    assert result["loaded"]["followUpDelaySeconds"] == str(delay)
+    assert result["loaded"]["followUpTaskRef"] == "task:next"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("detectionIntervalSeconds", "0"), ("detectionIntervalSeconds", "61"),
+    ("detectionIntervalSeconds", "1.5"), ("followUpDelaySeconds", "-1"),
+    ("followUpDelaySeconds", "86401"), ("followUpDelaySeconds", ""),
+])
+def test_pickup_rejects_invalid_timing_settings(field: str, value: str) -> None:
+    errors = _run(f"""(() => {{
+        const model = window.StowlingAutoClassifyTaskModel;
+        return model.validateDraft({{...model.newDraft("PICKUP"), coordinateId: "point",
+            cacheLocationRef: "coordinate:point", {field}: {json.dumps(value)}}},
+            {{coordinates: [{{id: "point"}}]}});
+    }})()""")
+    assert len(errors) == 1
+    assert "间隔" in errors[0] or "倒计时" in errors[0]
+
+
 def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     result = _run(
         """
@@ -82,6 +115,7 @@ def test_new_draft_has_contract_defaults_without_a_name() -> None:
         "id": "",
         "coordinateId": "",
         "pickupRadius": "",
+        "detectionIntervalSeconds": "1",
         "cacheLocationRef": "",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
@@ -138,6 +172,7 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "id": "auto-1",
         "coordinateId": "coordinate-1",
         "pickupRadius": "12",
+        "detectionIntervalSeconds": "1",
         "cacheLocationRef": "region:cache-1",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
@@ -288,6 +323,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "detection": {
             "coordinateRef": "coordinate:coordinate-1",
             "pickupRadius": 8,
+            "intervalSeconds": 1,
         },
         "cacheLocationRef": "region:region-1",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
@@ -313,7 +349,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "classificationAreas",
         "collectionPriority",
     ]
-    assert result["detectionKeys"] == ["coordinateRef", "pickupRadius"]
+    assert result["detectionKeys"] == ["coordinateRef", "pickupRadius", "intervalSeconds"]
     assert result["enabled"] is True
     assert result["overflow"] is True
     assert result["destination"] == "warehouse:overflow"
@@ -322,6 +358,7 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "id": "auto-1",
         "coordinateId": "coordinate-1",
         "pickupRadius": "8",
+        "detectionIntervalSeconds": "1",
         "cacheLocationRef": "region:region-1",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{

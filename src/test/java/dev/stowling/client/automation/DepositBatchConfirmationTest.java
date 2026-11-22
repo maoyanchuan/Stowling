@@ -7,10 +7,40 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.client.automation.DepositBatchConfirmation.Counts;
+import java.time.Duration;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class DepositBatchConfirmationTest {
+    @Test
+    void continuousRefillsConfirmOnlyTheOriginalBatchWithoutWaitingForAnEmptyBackpack() {
+        var batch = new DepositBatchConfirmation();
+        batch.record("stone", 64, key -> new Counts(64, 0, 0));
+
+        batch.observe(LIVE, key -> new Counts(64, 64, 64));
+        assertFalse(batch.settled());
+        batch.observe(LIVE, key -> new Counts(96, 64, 96));
+
+        assertTrue(batch.fullyAccepted());
+        assertEquals(Map.of("stone", 64), batch.accepted());
+        assertFalse(batch.stalled(Duration.ofSeconds(30)));
+    }
+
+    @Test
+    void anUnconfirmedInPlaceBatchRequestsASafePositionAfterTwoSeconds() {
+        var batch = new DepositBatchConfirmation();
+        batch.record("stone", 64, key -> new Counts(64, 0, 0));
+        batch.observe(LIVE, key -> new Counts(64, 0, 0));
+
+        assertFalse(batch.stalled(Duration.ofMillis(1999)));
+        assertTrue(batch.stalled(Duration.ofSeconds(2)));
+        batch.resetUnsettled();
+        batch.observe(SERVER_SNAPSHOT, key -> new Counts(64, 64, 64));
+        batch.observe(SERVER_SNAPSHOT, key -> new Counts(64, 64, 64));
+        assertTrue(batch.fullyAccepted());
+        assertFalse(batch.stalled(Duration.ofSeconds(3)));
+    }
+
     @Test
     void differentItemsAndExactVariantsShareTwoConfirmationPolls() {
         var batch = new DepositBatchConfirmation();

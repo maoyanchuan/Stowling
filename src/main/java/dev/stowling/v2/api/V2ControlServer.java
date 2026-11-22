@@ -965,7 +965,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalString(json, "overflowDestinationRef"),
                 cachePolicy(json),
                 autoClassifyKind(json),
-                optionalString(json, "followUpTaskRef")
+                optionalString(json, "followUpTaskRef"),
+                optionalInteger(json, "followUpDelaySeconds")
         );
     }
 
@@ -988,7 +989,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalString(json, "overflowDestinationRef"),
                 cachePolicy(json),
                 autoClassifyKind(json),
-                optionalString(json, "followUpTaskRef")
+                optionalString(json, "followUpTaskRef"),
+                optionalInteger(json, "followUpDelaySeconds")
         );
     }
 
@@ -1033,12 +1035,13 @@ public final class V2ControlServer implements AutoCloseable {
         );
         requireFieldsAny(
                 detection,
-                Set.of("coordinateRef", "pickupRadius"),
+                Set.of("coordinateRef", "pickupRadius", "intervalSeconds"),
                 Set.of("coordinateRef")
         );
         return new AutoClassifyDetectionRequest(
                 string(detection, "coordinateRef"),
-                optionalInteger(detection, "pickupRadius")
+                optionalInteger(detection, "pickupRadius"),
+                optionalInteger(detection, "intervalSeconds")
         );
     }
 
@@ -1060,6 +1063,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "cachePolicy",
                 "kind",
                 "followUpTaskRef",
+                "followUpDelaySeconds",
                 "detection",
                 "cacheLocationRef",
                 "classificationAreas",

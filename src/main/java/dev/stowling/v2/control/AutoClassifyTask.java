@@ -28,7 +28,8 @@ public record AutoClassifyTask(
         String overflowDestinationRef,
         dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
         Kind kind,
-        String followUpTaskRef
+        String followUpTaskRef,
+        Integer followUpDelaySeconds
 ) {
     public AutoClassifyTask(
             UUID id,
@@ -50,7 +51,8 @@ public record AutoClassifyTask(
         this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
                 cacheLocationRef, classificationAreas, collectionPriority,
                 classificationPriority, collectionTaskRef, classificationTaskRef,
-                interruptionTaskRef, triggerIds, overflowEnabled, null, null, null, Kind.COMBINED, null);
+                interruptionTaskRef, triggerIds, overflowEnabled, null, null, null,
+                Kind.COMBINED, null, null);
     }
 
     public AutoClassifyTask(

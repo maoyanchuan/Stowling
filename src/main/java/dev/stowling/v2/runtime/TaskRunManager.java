@@ -24,6 +24,7 @@ import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleRuntimeRegistry;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
 import dev.stowling.v2.runtime.modules.TaskRunWorkspace;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -50,6 +51,8 @@ public final class TaskRunManager {
     private final NavigationPort navigation;
     private final TaskModuleRuntimeRegistry registry;
     private final TaskTriggerManager triggers;
+    private final Clock clock;
+    private final List<PendingCompletion> pendingCompletions = new ArrayList<>();
     private final Deque<TaskRunSnapshot> history = new ArrayDeque<>();
     private final List<QueuedRun> queue = new ArrayList<>();
     private Map<UUID, TaskDefinition> knownTasks = Map.of();
@@ -74,8 +77,15 @@ public final class TaskRunManager {
 
     public TaskRunManager(NavigationPort navigation, TaskModuleRuntimeRegistry registry,
             java.util.function.Supplier<dev.stowling.automation.WorldObservation> world) {
+        this(navigation, registry, world, Clock.systemUTC());
+    }
+
+    TaskRunManager(NavigationPort navigation, TaskModuleRuntimeRegistry registry,
+            java.util.function.Supplier<dev.stowling.automation.WorldObservation> world,
+            Clock clock) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
         this.registry = Objects.requireNonNull(registry, "registry");
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.triggers = new TaskTriggerManager(
                 registry.droppedItems(),
                 registry.foodConsumption(),
@@ -279,6 +289,7 @@ public final class TaskRunManager {
 
     public synchronized void tick() {
         ticks++;
+        createDueCompletionTasks();
         boolean inventoryAvailable = registry.inventory().observe().isPresent();
         if (inventoryAvailable && active == null) registry.inventory().reconcileUnassignedItems();
         triggers.tick();
@@ -1004,7 +1015,12 @@ public final class TaskRunManager {
         active = null;
         if (state == TaskRunState.SUCCEEDED && !hadManagedItems) {
             for (CompletionTask followUp : finishedRun.completionTasks) {
-                createIndependentTask(finishedRun, followUp.ref(), followUp.priority());
+                if (followUp.delaySeconds() == 0) {
+                    createIndependentTask(finishedRun, followUp.ref(), followUp.priority());
+                } else {
+                    pendingCompletions.add(new PendingCompletion(finishedRun.prepared, followUp,
+                            clock.instant().plusSeconds(followUp.delaySeconds())));
+                }
             }
         }
         if (state == TaskRunState.SUCCEEDED
@@ -1068,8 +1084,9 @@ public final class TaskRunManager {
                     }
 
                     @Override
-                    public void createAfterSuccess(String taskRef, TaskPriority priority) {
-                        run.completionTasks.add(new CompletionTask(taskRef, priority));
+                    public void createAfterSuccess(String taskRef, TaskPriority priority,
+                            int delaySeconds) {
+                        run.completionTasks.add(new CompletionTask(taskRef, priority, delaySeconds));
                     }
                 },
                 allowTaskCreation,
@@ -1082,11 +1099,29 @@ public final class TaskRunManager {
             String taskRef,
             TaskPriority priority
     ) {
+        createIndependentTask(run.prepared, taskRef, priority);
+    }
+
+    private void createDueCompletionTasks() {
+        var iterator = pendingCompletions.iterator();
+        while (iterator.hasNext()) {
+            PendingCompletion pending = iterator.next();
+            if (clock.instant().isBefore(pending.readyAt())) continue;
+            iterator.remove();
+            createIndependentTask(pending.source(), pending.task().ref(), pending.task().priority());
+        }
+    }
+
+    private void createIndependentTask(
+            PreparedRun source,
+            String taskRef,
+            TaskPriority priority
+    ) {
         ResourceReference reference = ResourceReference.parse(taskRef);
         if (reference.type() != ResourceType.TASK) {
             throw new IllegalArgumentException("taskRef must reference a task");
         }
-        TaskDefinition task = run.prepared.tasks.get(reference.uuid());
+        TaskDefinition task = source.tasks.get(reference.uuid());
         if (task == null) {
             throw new IllegalArgumentException(
                     "task does not exist: " + reference
@@ -1097,13 +1132,13 @@ public final class TaskRunManager {
         }
         PreparedRun prepared = prepare(
                 task,
-                List.copyOf(run.prepared.coordinates.values()),
-                List.copyOf(run.prepared.regions.values()),
-                inventoryConfig == null ? List.copyOf(run.prepared.categoryZones.values())
+                List.copyOf(source.coordinates.values()),
+                List.copyOf(source.regions.values()),
+                inventoryConfig == null ? List.copyOf(source.categoryZones.values())
                         : taskCategoryZones(task, inventoryConfig),
-                run.prepared.warehouses,
-                run.prepared.tasks,
-                run.prepared.triggers,
+                source.warehouses,
+                source.tasks,
+                source.triggers,
                 priority,
                 false
         );
@@ -1621,7 +1656,10 @@ public final class TaskRunManager {
         }
     }
 
-    private record CompletionTask(String ref, TaskPriority priority) {
+    private record CompletionTask(String ref, TaskPriority priority, int delaySeconds) {
+    }
+
+    private record PendingCompletion(PreparedRun source, CompletionTask task, Instant readyAt) {
     }
 
     private record Continuation(TaskRunWorkspace workspace, int startStep) {

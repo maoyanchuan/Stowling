@@ -519,6 +519,15 @@ body[data-page] .auto-config-section {
     background: transparent;
 }
 
+body[data-page] .auto-task-form[data-kind="PICKUP"]
+    :is(#auto-collection-settings, #auto-collect-body) {
+    display: contents;
+}
+
+body[data-page] .auto-task-form[data-kind="PICKUP"] .auto-cache-submenu {
+    margin: 0;
+}
+
 body[data-page] .auto-phase-header {
     display: flex;
     gap: 18px;

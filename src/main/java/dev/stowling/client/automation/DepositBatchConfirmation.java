@@ -1,11 +1,13 @@
 package dev.stowling.client.automation;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 
 /** Tracks each exact item key in a wave while the container catches up with the clicks. */
 final class DepositBatchConfirmation {
+    private static final Duration IN_PLACE_STALL_TIMEOUT = Duration.ofSeconds(2);
     enum Mode { LIVE, SETTLEMENT, SERVER_SNAPSHOT }
 
     record Counts(int player, int container, long pickups) {
@@ -59,6 +61,10 @@ final class DepositBatchConfirmation {
     boolean fullyAccepted() {
         return moves.values().stream().allMatch(move -> move.observation.stable()
                 && move.observation.delta() == move.count);
+    }
+
+    boolean stalled(Duration waiting) {
+        return !settled() && waiting.compareTo(IN_PLACE_STALL_TIMEOUT) >= 0;
     }
 
     Map<String, Integer> accepted() {

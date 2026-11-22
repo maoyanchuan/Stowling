@@ -895,7 +895,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 overflowEnabled(request.overflowEnabled(), request.overflowDestinationRef(),
                         false),
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
-                request.kind(), request.followUpTaskRef()
+                request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -981,7 +981,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.overflowDestinationRef(),
                 request.cachePolicy() == null ? existing.cachePolicy() : request.cachePolicy(),
                 existing.kind(), request.followUpTaskRef() == null ? existing.followUpTaskRef()
-                        : request.followUpTaskRef()
+                        : request.followUpTaskRef(),
+                request.followUpDelaySeconds() == null ? existing.followUpDelaySeconds()
+                        : request.followUpDelaySeconds()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1579,7 +1581,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             String overflowDestinationRef,
             dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
             Kind kind,
-            String followUpTaskRef
+            String followUpTaskRef,
+            Integer followUpDelaySeconds
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1607,7 +1610,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         ? TaskPriority.NORMAL
                         : collectionPriority,
                 overflowEnabled,
-                cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef
+                cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds
         );
     }
 
@@ -1628,7 +1632,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.collectionPriority(),
                 definition.overflowEnabled(),
                 definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
-                definition.cachePolicy(), definition.kind(), definition.followUpTaskRef()
+                definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
+                definition.detectionIntervalSeconds(), definition.followUpDelaySeconds()
         );
     }
 
@@ -1650,7 +1655,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.classificationEnabled(),
                 definition.detectionCoordinateRef() == null ? null
                         : new AutoClassifyDetection(definition.detectionCoordinateRef(),
-                                definition.pickupRadius()),
+                                definition.pickupRadius(), definition.detectionIntervalSeconds()),
                 definition.cacheLocationRef(),
                 definition.classificationAreas(),
                 definition.collectionPriority(),
@@ -1666,7 +1671,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 triggerIds,
                 definition.overflowEnabled(),
                 definition.cleanupPolicy(), definition.overflowDestinationRef(),
-                definition.cachePolicy(), definition.kind(), definition.followUpTaskRef()
+                definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
+                definition.followUpDelaySeconds()
         );
     }
 

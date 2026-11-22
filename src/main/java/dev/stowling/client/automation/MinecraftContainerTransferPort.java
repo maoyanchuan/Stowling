@@ -214,6 +214,16 @@ public final class MinecraftContainerTransferPort
             }
             return fail("当前容器没有可安全转移的物品");
         }
+        if (unsafeSplitAtPickup(candidate)) {
+            // A refilled source slot can trap the protected remainder on the cursor.
+            closeContainer();
+            active.avoidPickups = true;
+            active.phase = Phase.OPENING;
+            active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target, true);
+            active.deadline = Instant.now().plus(OPEN_TIMEOUT);
+            return ContainerTransferResult.pending("原地无法安全拆分物品，换到安全站位继续存入",
+                    remaining());
+        }
         active.phase = Phase.CONFIRMING;
         active.batch = new DepositBatchConfirmation();
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
@@ -222,6 +232,7 @@ public final class MinecraftContainerTransferPort
         var before = inventoryCounts(menu);
         Map<String, Integer> request = new LinkedHashMap<>(active.remaining);
         while (candidate != null) {
+            if (unsafeSplitAtPickup(candidate)) break;
             int clicks = candidate.plan().usesQuickMove() ? 1
                     : ContainerClickPlan.exact(menu.getSlot(candidate.slot()).getItem().getCount(),
                             candidate.plan().moveCount()).size();
@@ -246,6 +257,13 @@ public final class MinecraftContainerTransferPort
         );
     }
 
+    private boolean unsafeSplitAtPickup(TransferCandidate candidate) {
+        return !active.avoidPickups && !candidate.plan().usesQuickMove()
+                && minecraft.player != null
+                && !MinecraftPickupSafety.safe(minecraft.player.getBoundingBox(),
+                        MinecraftPickupSafety.hazards(minecraft.player, active.target.position()));
+    }
+
     private ContainerTransferResult pollConfirmation() {
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen == null) {
@@ -263,6 +281,10 @@ public final class MinecraftContainerTransferPort
         }
         if (active.batch.settled()) {
             return settleConfirmed("服务器没有确认到物品转出，尝试其他缓存");
+        }
+        if (!active.avoidPickups && active.batch.stalled(
+                Duration.ofNanos(System.nanoTime() - active.pendingStartedAt))) {
+            return beginResynchronization("原地存入确认停滞，换到不吸取掉落物的站位继续核对");
         }
         return ContainerTransferResult.pending(
                 "等待服务器确认实际存入数量",
@@ -431,6 +453,8 @@ public final class MinecraftContainerTransferPort
         active.phase = Phase.RESYNCHRONIZING;
         active.rollbackMessage = message;
         active.batch.resetUnsettled();
+        // Retry the same fixed batch outside pickup range after an in-place stall.
+        active.avoidPickups = true;
         active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target,
                 active.avoidPickups);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
@@ -438,7 +462,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult pollResynchronization() {
-        if (Instant.now().isAfter(active.deadline)) {
+        if (active.visit == null && Instant.now().isAfter(active.deadline)) {
             return finishFailure("重新读取缓存后仍无法核对存入数量，请检查容器或背包变化");
         }
         if (active.visit != null) {
@@ -738,7 +762,7 @@ public final class MinecraftContainerTransferPort
         private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private final Map<String, Integer> remaining;
-        private final boolean avoidPickups;
+        private boolean avoidPickups;
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;

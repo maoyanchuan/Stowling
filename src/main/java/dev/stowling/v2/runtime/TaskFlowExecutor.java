@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime;
 
 import dev.stowling.automation.FoodStatus;
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.TaskCondition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
@@ -29,6 +30,13 @@ public final class TaskFlowExecutor {
 
         default void createAfterSuccess(String taskRef, TaskPriority priority) {
             throw new IllegalStateException("当前流程不支持在成功结束后创建任务");
+        }
+
+        default void createAfterSuccess(String taskRef, TaskPriority priority, int delaySeconds) {
+            if (delaySeconds != 0) {
+                throw new IllegalStateException("当前流程不支持延迟创建任务");
+            }
+            createAfterSuccess(taskRef, priority);
         }
     }
 
@@ -300,7 +308,12 @@ public final class TaskFlowExecutor {
             priority = TaskPriority.valueOf(priorityValue.toUpperCase());
         }
         if (Boolean.parseBoolean(parameterOptional(step, ConfigValidator.CREATE_AFTER_SUCCESS))) {
-            host.createAfterSuccess(taskRef, priority);
+            int delaySeconds = integerParameter(step, ConfigValidator.CREATE_DELAY_SECONDS, 0);
+            if (delaySeconds < 0
+                    || delaySeconds > AutoClassifyDefinition.MAX_FOLLOW_UP_DELAY_SECONDS) {
+                return failAt(frame, "创建任务倒计时需为 0 至 86400 秒");
+            }
+            host.createAfterSuccess(taskRef, priority, delaySeconds);
         } else {
             host.createTask(taskRef, priority);
         }

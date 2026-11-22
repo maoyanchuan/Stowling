@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime.modules;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -253,7 +254,7 @@ class DroppedItemCollectionEngineTest {
     }
 
     @Test
-    void incomingDropsCannotKeepAnIdlePartialBatchFromBeingDeposited() {
+    void aPartialBatchKeepsCollectingAfterFiveIdleSecondsUntilTheRealTimeout() {
         MutableDrops drops = new MutableDrops();
         MutableInventory inventory = new MutableInventory();
         TaskRunWorkspace workspace = new TaskRunWorkspace();
@@ -273,9 +274,55 @@ class DroppedItemCollectionEngineTest {
         entries(drops, item(1, GOLD, 64), item(105, GOLD, 64));
         TaskModuleResult result = engine.tick();
 
-        assertEquals(TaskModuleState.SUCCEEDED, result.state());
-        assertTrue(result.message().contains("先将本批物品存入缓存"));
+        assertEquals(TaskModuleState.RUNNING, result.state());
         assertEquals(Map.of(GOLD, 2173), workspace.collectedItems());
+        clock.advance(Duration.ofSeconds(115));
+        assertEquals(TaskModuleState.FAILED, engine.tick().state());
+    }
+
+    @Test
+    void unrelatedInventoryChangesDoNotConfirmAPickupAndStoppingHasABoundedWait() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        MutableClock clock = new MutableClock();
+        inventory.set(Map.of(IRON, 4));
+        entries(drops, item(1, GOLD, 1));
+        var engine = engine(drops, inventory, new TaskRunWorkspace(), clock);
+        engine.start();
+        inventory.set(Map.of(IRON, 3));
+        engine.tick();
+        engine.requestStop();
+
+        assertFalse(engine.safeToStop());
+        assertEquals(TaskModuleState.WAITING, engine.tick().state());
+        clock.advance(Duration.ofSeconds(5));
+        assertEquals(TaskModuleState.FAILED, engine.tick().state());
+        assertTrue(engine.safeToStop());
+    }
+
+    @Test
+    void anEmptyAreaStillWaitsForThePointsPendingPickupReceipt() {
+        MutableDrops drops = new MutableDrops();
+        MutableInventory inventory = new MutableInventory();
+        MutableClock clock = new MutableClock();
+        var manager = new PlayerInventoryManager(inventory, clock);
+        UUID task = UUID.randomUUID();
+        manager.retainCollectionTasks(Set.of(task));
+        manager.observe();
+        var account = manager.account(UUID.randomUUID());
+        account.usePickupReceipts(task);
+        var workspace = new TaskRunWorkspace(account);
+        manager.recordPickup(task, GOLD, 1);
+        var engine = new DroppedItemCollectionEngine(context(workspace), drops, 120,
+                Set.of(), manager, clock);
+
+        assertEquals(TaskModuleState.WAITING, engine.start().state());
+        for (int tick = 0; tick < 30; tick++) {
+            assertEquals(TaskModuleState.WAITING, engine.tick().state());
+        }
+        inventory.set(Map.of(GOLD, 1));
+        assertEquals(TaskModuleState.SUCCEEDED, tickUntilFinished(engine, 45).state());
+        assertEquals(Map.of(GOLD, 1), workspace.collectedItems());
     }
 
     @Test

@@ -61,8 +61,10 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
     assert 'id="new-auto-task"' in html
     assert "掉落物拾取" in display
     assert "任务名称" not in display
-    assert 'id="auto-pickup-radius" type="number"' in display
-    assert 'min="1" max="64" step="1" value="8"' in display
+    radius = between(display, '<input id="auto-pickup-radius"', '>')
+    assert 'type="number"' in radius
+    assert 'min="1"' in radius
+    assert 'max="64"' in radius
 
 
 def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
@@ -120,7 +122,7 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
         assert selector in javascript
     assert 'togglePhase("collection")' in javascript
     assert 'togglePhase("classification")' in javascript
-    assert "reveal(body, enabled && state.phase[phase])" in javascript
+    assert "reveal(body, expanded)" in javascript
     assert "header.disabled = disabled || !enabled" in javascript
     assert "areaReaders.forEach(reader => reader.collapse())" in javascript
 
@@ -148,7 +150,29 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
     assert 'role="switch"' in packing
     assert 'togglePhase("pickup")' in javascript
     assert 'togglePhase("packing")' in javascript
-    assert "enabled: elements.cacheEnabled.checked" in javascript
+    assert 'kind !== "CLASSIFICATION" && elements.cacheEnabled.checked' in javascript
+
+
+def test_pickup_settings_group_detection_and_follow_up_and_keep_packing_as_a_switch() -> None:
+    html = read("tasks.html")
+    javascript = read("auto-classify-ui.js")
+    pickup = between(html, 'id="auto-pickup-body"', 'id="pickup-packing-title"')
+    follow_up = between(html, 'id="auto-follow-up-field"', 'id="auto-cleanup-settings"')
+
+    for field in ("auto-detection-point", "auto-pickup-radius", "auto-detection-interval"):
+        assert f'id="{field}"' in pickup
+        assert f'id="{field}"' not in follow_up
+    assert "掉落物拾取点" in html
+    assert "倒计时（秒）" in follow_up
+    assert 'value="30"' in follow_up
+    assert 'id="auto-follow-up-task"' in follow_up
+    assert 'aria-controls="auto-follow-up-body"' in follow_up
+    assert 'elements.packingHeader.hidden = pickup' in javascript
+    assert '!(pickup && phase === "packing")' in javascript
+    assert 'const alwaysOpen = pickup && phase === "collection"' in javascript
+    assert 'phase === "collection" || phase === "pickup"' not in javascript
+    assert html.index('id="auto-pickup-toggle"') < html.index('id="pickup-packing-title"')
+    assert html.index('id="auto-collect-priority"') < html.index('id="auto-follow-up-field"')
 
 
 def test_robot_warehouse_has_a_switch_and_location_inside_the_classification_task() -> None:

@@ -53,7 +53,8 @@ public final class CoordinateResourceMigration {
                         definition.unstackableRegionRef(),
                         definition.overflowDestinationRef(), definition.cachePolicy(),
                         definition.kind(), definition.followUpTaskRef(),
-                        definition.detectionIntervalSeconds(), definition.followUpDelaySeconds()))
+                        definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
+                        definition.followUpEnabled()))
                 .toList();
         var migrated = new StorageAutomationSettings(settings.cleanupEnabled(), List.of(),
                 List.of(), null, temporary.stream().distinct().toList(),

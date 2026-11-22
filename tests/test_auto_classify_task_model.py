@@ -45,6 +45,7 @@ def test_pickup_timing_settings_survive_save_and_reload(interval: int, delay: in
     result = _run(f"""(() => {{
         const model = window.StowlingAutoClassifyTaskModel;
         const draft = {{...model.newDraft("PICKUP"), coordinateId: "point",
+            followUpEnabled: true,
             cacheLocationRef: "coordinate:point", followUpTaskRef: "task:next",
             detectionIntervalSeconds: "{interval}", followUpDelaySeconds: "{delay}"}};
         const payload = model.payload(draft, {{coordinates: [{{id: "point"}}]}});
@@ -66,11 +67,57 @@ def test_pickup_rejects_invalid_timing_settings(field: str, value: str) -> None:
     errors = _run(f"""(() => {{
         const model = window.StowlingAutoClassifyTaskModel;
         return model.validateDraft({{...model.newDraft("PICKUP"), coordinateId: "point",
+            followUpEnabled: true,
             cacheLocationRef: "coordinate:point", {field}: {json.dumps(value)}}},
             {{coordinates: [{{id: "point"}}]}});
     }})()""")
     assert len(errors) == 1
     assert "间隔" in errors[0] or "倒计时" in errors[0]
+
+
+def test_pickup_follow_up_defaults_off_and_keeps_legacy_successors_enabled() -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return {
+            fresh: model.newDraft("PICKUP").followUpEnabled,
+            empty: model.draftFromTask({kind: "PICKUP"}).followUpEnabled,
+            legacy: model.draftFromTask({kind: "PICKUP",
+                followUpTaskRef: "task:next"}).followUpEnabled,
+            disabled: model.draftFromTask({kind: "PICKUP", followUpEnabled: false,
+                followUpTaskRef: "task:next"}).followUpEnabled
+        };
+    })()""")
+    assert result == {"fresh": False, "empty": False, "legacy": True, "disabled": False}
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("successor", ["", "task:next"])
+def test_pickup_follow_up_switch_and_settings_survive_save_and_reload(
+    enabled: bool, successor: str,
+) -> None:
+    result = _run(f"""(() => {{
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {{...model.newDraft("PICKUP"), coordinateId: "point",
+            cacheLocationRef: "coordinate:point", followUpEnabled: {json.dumps(enabled)},
+            followUpTaskRef: {json.dumps(successor)}, followUpDelaySeconds: "45"}};
+        return model.draftFromTask(model.payload(draft, {{coordinates: [{{id: "point"}}]}}));
+    }})()""")
+    assert result["followUpEnabled"] is enabled
+    assert result["followUpTaskRef"] == successor
+    assert result["followUpDelaySeconds"] == "45"
+
+
+def test_disabling_pickup_follow_up_allows_saving_with_an_unfinished_countdown() -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {...model.newDraft("PICKUP"), coordinateId: "point",
+            cacheLocationRef: "coordinate:point", followUpTaskRef: "task:next",
+            followUpDelaySeconds: ""};
+        return model.payload(draft, {coordinates: [{id: "point"}]});
+    })()""")
+    assert result["followUpEnabled"] is False
+    assert result["followUpTaskRef"] == "task:next"
+    assert result["followUpDelaySeconds"] == 30
 
 
 def test_task_configures_unstackable_sorting_through_a_layout() -> None:

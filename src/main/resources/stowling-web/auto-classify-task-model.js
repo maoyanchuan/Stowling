@@ -63,7 +63,8 @@
             collectionEnabled: kind !== "CLASSIFICATION",
             classificationEnabled: kind !== "PICKUP",
             ...(kind !== "COMBINED" ? {kind} : {}),
-            ...(kind === "PICKUP" ? {followUpTaskRef: "", followUpDelaySeconds: "30"} : {})
+            ...(kind === "PICKUP" ? {followUpEnabled: false,
+                followUpTaskRef: "", followUpDelaySeconds: "30"} : {})
         };
     }
 
@@ -104,7 +105,9 @@
             collectionEnabled: item?.collectionEnabled === true,
             classificationEnabled: item?.classificationEnabled === true,
             ...(item?.kind && item.kind !== "COMBINED" ? {kind: item.kind} : {}),
-            ...(item?.kind === "PICKUP" ? {followUpTaskRef: item.followUpTaskRef || "",
+            ...(item?.kind === "PICKUP" ? {
+                followUpEnabled: item.followUpEnabled ?? Boolean(item.followUpTaskRef),
+                followUpTaskRef: item.followUpTaskRef || "",
                 followUpDelaySeconds: String(item.followUpDelaySeconds ?? 30)} : {})
         };
     }
@@ -187,7 +190,10 @@
             }
         }
 
-        if (draft?.kind === "PICKUP"
+        if (draft?.kind === "PICKUP" && typeof draft.followUpEnabled !== "boolean") {
+            errors.push("任务结束后创建任务开关需为布尔值");
+        }
+        if (draft?.kind === "PICKUP" && draft.followUpEnabled
             && !validSeconds(draft?.followUpDelaySeconds ?? 30, 0, 86400)) {
             errors.push("创建任务倒计时需为 0 至 86400 秒");
         }
@@ -257,8 +263,10 @@
             })),
             collectionPriority: draft.collectionPriority,
             ...(draft.kind ? {kind: draft.kind} : {}),
-            ...(draft.kind === "PICKUP" ? {followUpTaskRef: draft.followUpTaskRef || "",
-                followUpDelaySeconds: Number(draft.followUpDelaySeconds ?? 30)} : {})
+            ...(draft.kind === "PICKUP" ? {followUpEnabled: draft.followUpEnabled === true,
+                followUpTaskRef: draft.followUpTaskRef || "",
+                followUpDelaySeconds: validSeconds(draft.followUpDelaySeconds ?? 30, 0, 86400)
+                    ? Number(draft.followUpDelaySeconds ?? 30) : 30} : {})
         };
     }
 

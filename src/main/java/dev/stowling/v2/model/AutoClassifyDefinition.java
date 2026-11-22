@@ -24,12 +24,26 @@ public record AutoClassifyDefinition(
         Kind kind,
         String followUpTaskRef,
         Integer detectionIntervalSeconds,
-        Integer followUpDelaySeconds
+        Integer followUpDelaySeconds,
+        Boolean followUpEnabled
 ) {
     public enum Kind {
         COMBINED,
         PICKUP,
         CLASSIFICATION
+    }
+
+    public AutoClassifyDefinition(UUID id, String name, boolean enabled,
+            boolean collectionEnabled, boolean classificationEnabled, String detectionCoordinateRef,
+            Integer pickupRadius, String cacheLocationRef, List<AutoClassifyAreaDefinition> areas,
+            TaskPriority priority, boolean overflowEnabled, TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef, String overflowDestinationRef, CacheIntakePolicy cachePolicy,
+            Kind kind, String followUpTaskRef, Integer detectionIntervalSeconds,
+            Integer followUpDelaySeconds) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detectionCoordinateRef,
+                pickupRadius, cacheLocationRef, areas, priority, overflowEnabled, cleanupPolicy,
+                unstackableRegionRef, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                detectionIntervalSeconds, followUpDelaySeconds, null);
     }
 
     public AutoClassifyDefinition(UUID id, String name, boolean enabled,
@@ -170,6 +184,9 @@ public record AutoClassifyDefinition(
         } else {
             followUpTaskRef = null;
         }
+        // Legacy configurations used the task reference itself as the opt-in.
+        followUpEnabled = kind == Kind.PICKUP && (followUpEnabled == null
+                ? followUpTaskRef != null : followUpEnabled);
         if (kind == Kind.CLASSIFICATION) {
             enabled = false;
             pickupRadius = null;

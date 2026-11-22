@@ -76,7 +76,7 @@ public final class AutoClassifyTaskFactory {
                     )
             ));
         }
-        if (definition.followUpTaskRef() != null) {
+        if (definition.followUpEnabled() && definition.followUpTaskRef() != null) {
             collectionSteps.add(TaskStep.createTask(UUID.randomUUID(),
                     Map.of(ConfigValidator.TASK_REF, definition.followUpTaskRef(),
                             ConfigValidator.CREATE_AFTER_SUCCESS, "true",

@@ -282,7 +282,9 @@ public final class ConfigValidator {
                 if (hidden.contains(target) || !tasks.containsKey(target)) {
                     throw new V2ValidationException("请选择一个已保存的任务作为结束后的任务");
                 }
-                requireAcyclicFollowUp(definition.id(), target, tasks);
+                if (definition.followUpEnabled()) {
+                    requireAcyclicFollowUp(definition.id(), target, tasks);
+                }
             }
             requireSpatialReference(definition.cacheLocationRef(), coordinates, regions);
             if (definition.unstackableRegionRef() != null && !regions.containsKey(

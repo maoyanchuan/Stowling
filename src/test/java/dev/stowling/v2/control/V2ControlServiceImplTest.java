@@ -77,6 +77,67 @@ class V2ControlServiceImplTest {
         assertEquals("45", followUp.parameters().get(ConfigValidator.CREATE_DELAY_SECONDS));
         assertEquals(120, reopened.triggers().getFirst().intervalTicks());
         assertEquals(6, listening.item().detection().intervalSeconds());
+        assertTrue(listening.item().followUpEnabled());
+
+        var disabled = service.updateAutoClassifyTask(pickup.item().id(),
+                new AutoClassifyTaskUpdateRequest(listening.revision(), null, null, null, null,
+                        new AutoClassifyDetectionRequest(pointRef, null, 6), pointRef, List.of(),
+                        TaskPriority.NORMAL, null, null, null, null, null, null, null, false));
+        assertFalse(disabled.item().followUpEnabled());
+        assertEquals(next, disabled.item().followUpTaskRef());
+        assertEquals(45, disabled.item().followUpDelaySeconds());
+        var disabledConfig = new ConfigStore(path).loadOrReset().config();
+        assertFalse(disabledConfig.autoClassifyTasks().stream()
+                .filter(item -> item.id().equals(pickup.item().id()))
+                .findFirst().orElseThrow().followUpEnabled());
+        assertTrue(disabledConfig.tasks().stream()
+                .filter(task -> task.id().equals(pickup.item().id()))
+                .findFirst().orElseThrow().steps().stream()
+                .noneMatch(step -> step.kind() == TaskStepKind.CREATE_TASK));
+
+        var stopped = service.stopAutoClassifyTask(pickup.item().id(),
+                new RevisionRequest(disabled.revision()));
+        var restarted = service.startAutoClassifyTask(pickup.item().id(),
+                new RevisionRequest(stopped.revision()));
+        assertFalse(restarted.item().followUpEnabled());
+        assertEquals(next, restarted.item().followUpTaskRef());
+
+        var resumed = service.updateAutoClassifyTask(pickup.item().id(),
+                new AutoClassifyTaskUpdateRequest(restarted.revision(), null, null, null, null,
+                        new AutoClassifyDetectionRequest(pointRef, null, 6), pointRef, List.of(),
+                        TaskPriority.NORMAL, null, null, null, null, null, null, null, true));
+        assertTrue(resumed.item().followUpEnabled());
+        assertEquals(next, resumed.item().followUpTaskRef());
+        assertEquals(45, resumed.item().followUpDelaySeconds());
+        var resumedConfig = new ConfigStore(path).loadOrReset().config();
+        assertEquals(TaskStepKind.CREATE_TASK, resumedConfig.tasks().stream()
+                .filter(task -> task.id().equals(pickup.item().id()))
+                .findFirst().orElseThrow().steps().getLast().kind());
+    }
+
+    @Test
+    void pickupFollowUpDefaultsOffAndCanBeEnabledBeforeSelectingASuccessor() {
+        var path = directory.resolve("pickup-follow-up-switch.json");
+        var store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var point = createPoint(service, "Pickup");
+        String pointRef = "coordinate:" + point.id();
+        var created = service.createAutoClassifyTask(new AutoClassifyTaskRequest(
+                "Pickup", false, null, null, new AutoClassifyDetectionRequest(pointRef, null),
+                pointRef, List.of(), TaskPriority.NORMAL, null, null, null, null,
+                dev.stowling.v2.model.AutoClassifyDefinition.Kind.PICKUP, null));
+        assertFalse(created.item().followUpEnabled());
+
+        var enabled = service.updateAutoClassifyTask(created.item().id(),
+                new AutoClassifyTaskUpdateRequest(created.revision(), null, null, null, null,
+                        new AutoClassifyDetectionRequest(pointRef, null), pointRef, List.of(),
+                        TaskPriority.NORMAL, null, null, null, null, null, null, null, true));
+        assertTrue(enabled.item().followUpEnabled());
+        assertNull(enabled.item().followUpTaskRef());
+        assertTrue(new ConfigStore(path).loadOrReset().config()
+                .autoClassifyTasks().getFirst().followUpEnabled());
     }
 
     @Test

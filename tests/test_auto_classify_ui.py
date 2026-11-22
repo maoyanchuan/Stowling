@@ -505,6 +505,147 @@ document.addEventListener("stowling:auto-tasks-changed", () => changes.push("rel
     )
 
 
+def test_pickup_follow_up_submenu_requires_the_switch_and_closes_when_disabled() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed to exercise the follow-up submenu")
+    script = r"""
+const assert = require("node:assert/strict");
+
+class Element extends EventTarget {
+    children = [];
+    attributes = new Map();
+    dataset = {};
+    checked = false;
+    disabled = false;
+    value = "";
+    classList = {
+        /** @returns {void} */ add() {},
+        /** @returns {void} */ toggle() {}
+    };
+    /** @param {...Element} nodes @returns {void} */
+    append(...nodes) { this.children.push(...nodes); }
+    /** @param {...Element} nodes @returns {void} */
+    replaceChildren(...nodes) { this.children = nodes; }
+    /** @param {string} key @param {string} value @returns {void} */
+    setAttribute(key, value) { this.attributes.set(key, value); }
+    /** @returns {Element} */
+    closest() { return this; }
+    /** @param {Element} node @returns {boolean} */
+    contains(node) { return this.children.includes(node); }
+    /** @returns {Element[]} */
+    querySelectorAll() { return this.controls || []; }
+    /** @returns {void} */
+    insertBefore() {}
+}
+const elements = new Map();
+/** @param {string} selector @returns {Element} */
+function element(selector) {
+    if (!elements.has(selector)) elements.set(selector, new Element());
+    return elements.get(selector);
+}
+globalThis.document = Object.assign(new EventTarget(), {
+    querySelector: element,
+    /** @returns {Element} */
+    createElement() { return new Element(); }
+});
+globalThis.Option = Element;
+globalThis.CustomEvent = class extends Event {
+    /** @param {string} type @param {object} options */
+    constructor(type, options) { super(type); this.detail = options.detail; }
+};
+let connect;
+let scheduled = 0;
+const enabled = element("#auto-follow-up-enabled");
+const header = element("#auto-follow-up-toggle");
+const body = element("#auto-follow-up-body");
+const successor = element("#auto-follow-up-task");
+const delay = element("#auto-follow-up-delay");
+body.controls = [successor, delay];
+globalThis.window = {
+    Stowling: {
+        isConnected: () => true,
+        onConnected: (callback) => { connect = callback; },
+        element: () => new Element(),
+        request: async () => ({revision: "r1", items: []}),
+        handleError: (error) => { throw error; }
+    },
+    StowlingSettings: {
+        reveal: (body, expanded) => { body.hidden = !expanded; },
+        disclosure: () => ({root: new Element(), summary: new Element()})
+    },
+    StowlingResourcePicker: {
+        load: async () => ({coordinates: [], regions: [], categoryZones: [], catalog: {}}),
+        group: () => {}
+    },
+    StowlingTaskCleanupSettings: {
+        create: () => ({resources() {}, set() {}, read: () => ({})})
+    },
+    StowlingStoragePolicyEditor: {create: () => ({root: new Element()})},
+    StowlingTaskAutosave: {
+        create: () => ({cancel() {}, schedule: () => { scheduled++; }})
+    },
+    setInterval: () => 0
+};
+/** @param {Element} target @returns {void} */
+function input(target) {
+    const event = new Event("input");
+    Object.defineProperty(event, "target", {value: target});
+    element("#auto-task-form").dispatchEvent(event);
+}
+(async () => {
+    require(process.argv[1]);
+    require(process.argv[2]);
+    await connect();
+    element("#new-auto-task").dispatchEvent(new Event("click"));
+    assert.equal(enabled.checked, false);
+    assert.equal(header.disabled, true);
+    assert.equal(body.hidden, true);
+    assert.equal(successor.disabled, true);
+    header.dispatchEvent(new Event("click"));
+    assert.equal(body.hidden, true);
+
+    enabled.checked = true;
+    input(enabled);
+    assert.equal(header.disabled, false);
+    assert.equal(body.hidden, true);
+    header.dispatchEvent(new Event("click"));
+    assert.equal(body.hidden, false);
+    assert.equal(successor.disabled, false);
+    assert.equal(delay.disabled, true);
+    successor.value = "task:next";
+    delay.value = "45";
+    input(successor);
+    assert.equal(delay.disabled, false);
+
+    enabled.checked = false;
+    input(enabled);
+    assert.equal(header.disabled, true);
+    assert.equal(header.attributes.get("aria-expanded"), "false");
+    assert.equal(body.hidden, true);
+    assert.equal(successor.disabled, true);
+    assert.equal(delay.disabled, true);
+    header.dispatchEvent(new Event("click"));
+    assert.equal(body.hidden, true);
+
+    enabled.checked = true;
+    input(enabled);
+    assert.equal(body.hidden, true);
+    header.dispatchEvent(new Event("click"));
+    assert.equal(body.hidden, false);
+    assert.equal(successor.value, "task:next");
+    assert.equal(delay.value, "45");
+    assert.equal(delay.disabled, false);
+    assert.equal(scheduled, 4);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(WEB / "auto-classify-task-model.js"),
+         str(WEB / "auto-classify-ui.js")],
+        check=True,
+    )
+
+
 def test_task_page_loads_model_before_ui_and_ui_after_shared_styles() -> None:
     html = read("tasks.html")
     model = '<script src="/auto-classify-task-model.js" defer></script>'

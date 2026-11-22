@@ -67,6 +67,7 @@
         combinedPreview: document.querySelector("#combined-task-preview"),
         cacheLabel: document.querySelector("#auto-cache-label"),
         followUp: document.querySelector("#auto-follow-up-task"),
+        followUpEnabled: document.querySelector("#auto-follow-up-enabled"),
         followUpDelay: document.querySelector("#auto-follow-up-delay"),
         followUpHeader: document.querySelector("#auto-follow-up-toggle"),
         followUpBody: document.querySelector("#auto-follow-up-body"),
@@ -292,6 +293,7 @@
         elements.radius.value = draft.pickupRadius;
         elements.detectionInterval.value = draft.detectionIntervalSeconds;
         elements.followUpDelay.value = draft.followUpDelaySeconds ?? "30";
+        elements.followUpEnabled.checked = draft.followUpEnabled === true;
         elements.priority.value = draft.collectionPriority;
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
@@ -351,6 +353,7 @@
             classificationEnabled: kind ? kind === "CLASSIFICATION"
                 : elements.classifyEnabled.checked,
             ...(kind === "PICKUP" ? {followUpTaskRef: elements.followUp.value,
+                followUpEnabled: elements.followUpEnabled.checked,
                 followUpDelaySeconds: elements.followUpDelay.value} : {}),
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
@@ -449,10 +452,9 @@
         elements.combinedPreview.hidden = Boolean(kind);
         elements.cacheLabel.textContent = classification ? "来源缓存" : "缓存位置";
         elements.followUpField.hidden = !pickup;
-        elements.followUpDescription.textContent = elements.followUp.value
-            ? `任务完成 ${elements.followUpDelay.value} 秒后创建`
-            : "不创建任务";
-        elements.followUpDelay.disabled = !elements.followUp.value;
+        elements.followUpDescription.textContent = !elements.followUpEnabled.checked
+            ? "不创建任务" : elements.followUp.value
+                ? `任务完成 ${elements.followUpDelay.value} 秒后创建` : "请选择后续任务";
         elements.collectHeader.closest(".auto-config-section").hidden = classification;
         elements.classifyHeader.closest(".auto-config-section").hidden = pickup;
         elements.warehouseEnabled.closest(".auto-config-section").hidden = pickup;
@@ -528,6 +530,8 @@
                 }
             }
         }
+        elements.followUpDelay.disabled = !elements.followUpEnabled.checked
+            || !elements.followUp.value;
     }
 
     /**
@@ -573,6 +577,7 @@
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;
         if (phase === "classification") return elements.classifyEnabled.checked;
+        if (phase === "followUp") return elements.followUpEnabled.checked;
         return true;
     }
 
@@ -818,6 +823,9 @@
         if (event.target === elements.cacheEnabled) {
             state.phase.packing = elements.cacheEnabled.checked;
             if (elements.cacheEnabled.checked) elements.collectEnabled.checked = true;
+        }
+        if (event.target === elements.followUpEnabled) {
+            state.phase.followUp = false;
         }
         readForm();
         state.dirty = true;

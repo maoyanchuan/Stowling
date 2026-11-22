@@ -63,7 +63,8 @@ public final class TaskFlowNormalizer {
                     definition.collectionPriority(), definition.overflowEnabled(),
                     definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
                     definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
-                    definition.detectionIntervalSeconds(), definition.followUpDelaySeconds());
+                    definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
+                    definition.followUpEnabled());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }

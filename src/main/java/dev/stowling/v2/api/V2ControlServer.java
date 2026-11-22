@@ -966,7 +966,8 @@ public final class V2ControlServer implements AutoCloseable {
                 cachePolicy(json),
                 autoClassifyKind(json),
                 optionalString(json, "followUpTaskRef"),
-                optionalInteger(json, "followUpDelaySeconds")
+                optionalInteger(json, "followUpDelaySeconds"),
+                optionalBooleanValue(json, "followUpEnabled")
         );
     }
 
@@ -990,7 +991,8 @@ public final class V2ControlServer implements AutoCloseable {
                 cachePolicy(json),
                 autoClassifyKind(json),
                 optionalString(json, "followUpTaskRef"),
-                optionalInteger(json, "followUpDelaySeconds")
+                optionalInteger(json, "followUpDelaySeconds"),
+                optionalBooleanValue(json, "followUpEnabled")
         );
     }
 
@@ -1064,6 +1066,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "kind",
                 "followUpTaskRef",
                 "followUpDelaySeconds",
+                "followUpEnabled",
                 "detection",
                 "cacheLocationRef",
                 "classificationAreas",

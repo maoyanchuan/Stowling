@@ -264,6 +264,7 @@ public final class ConfigStore {
         allowed.add("followUpTaskRef");
         allowed.add("detectionIntervalSeconds");
         allowed.add("followUpDelaySeconds");
+        allowed.add("followUpEnabled");
         allowed.add("overflowEnabled");
         allowed.add("overflowDestinationRef");
         allowed.add("cleanupPolicy");

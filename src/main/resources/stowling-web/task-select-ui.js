@@ -43,6 +43,7 @@
             const items = [];
             view.choices = [];
             for (const [index, option] of Array.from(select.options).entries()) {
+                if (select.required && !option.value) continue;
                 const button = S.element("button", "task-select-option");
                 button.type = "button";
                 button.setAttribute("role", "option");
@@ -69,6 +70,9 @@
                 });
                 items.push(button);
                 if (!button.disabled) view.choices.push(button);
+            }
+            if (!items.length) {
+                items.push(S.element("p", "task-select-empty", "暂无可选项，请先添加对应资源。"));
             }
             menu.replaceChildren(...items);
             if (focused !== null) {

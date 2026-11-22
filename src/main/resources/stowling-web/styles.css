@@ -4536,10 +4536,13 @@ button:active:not(:disabled) {
 .auto-config-section {
     display: grid;
     gap: 0;
-    overflow: hidden;
     border: 1px solid var(--line);
     border-radius: 11px;
     background: rgba(255, 255, 255, 0.48);
+}
+
+:where(.auto-task-form:not([data-kind="PICKUP"])) .auto-config-section {
+    overflow: hidden;
 }
 
 .auto-phase-header {
@@ -4580,8 +4583,8 @@ button:active:not(:disabled) {
     text-align: left;
 }
 
-.auto-phase-toggle:hover:not(:disabled),
-.auto-phase-toggle[aria-expanded="true"] {
+:where(.auto-task-form:not([data-kind="PICKUP"])) .auto-phase-toggle:hover:not(:disabled),
+:where(.auto-task-form:not([data-kind="PICKUP"])) .auto-phase-toggle[aria-expanded="true"] {
     background: var(--accent-soft);
     transform: none;
 }

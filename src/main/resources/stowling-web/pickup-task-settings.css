@@ -96,6 +96,8 @@ body[data-page] .auto-task-form[data-kind="PICKUP"]
     justify-content: space-between;
     gap: 16px;
     min-height: 82px;
+    min-width: 0;
+    max-width: none;
     margin: 0;
     padding: 0;
     border: 0;
@@ -125,7 +127,7 @@ body[data-page] .auto-task-form[data-kind="PICKUP"]
 body[data-page] .auto-task-form[data-kind="PICKUP"]
     :is(.move-field > span:first-child, .auto-phase-toggle, .settings-copy > strong) {
     min-width: 0;
-    color: var(--muted);
+    color: var(--text);
     font-size: 16px;
     font-weight: 400;
     overflow-wrap: anywhere;
@@ -148,6 +150,7 @@ body[data-page] .auto-task-form[data-kind="PICKUP"] .auto-phase-toggle {
 }
 
 body[data-page] .auto-task-form[data-kind="PICKUP"] .auto-phase-copy strong {
+    color: var(--text);
     font-size: 16px;
     font-weight: 400;
 }
@@ -317,6 +320,14 @@ body[data-page] .task-select-option {
 
 .task-select-copy {
     min-width: 0;
+}
+
+.task-select-empty {
+    margin: 0;
+    padding: 12px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
 }
 
 .task-select-option small {

@@ -283,6 +283,7 @@
         min-height: var(--sample-row-height);
     }
     #stowling-settings-standard .sample-row::before {
+        /* One rounded hover layer; parent containers must not clip either edge. */
         content: "";
         position: absolute;
         z-index: -1;
@@ -3026,6 +3027,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
                     </button>
                     <div class="sample-select-wrap">
+                        <!-- Required resource hints stay in the trigger, outside menu options.
+                             Preserve the empty native value until the user chooses a resource. -->
                         <select id="sample-strategy" hidden aria-hidden="true">
                             <option value="price">按价格波动设置</option>
                             <option value="stock">按库存数量设置</option>

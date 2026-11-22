@@ -1428,7 +1428,8 @@ body[data-page] .backpack-editor {
     }
 }
 
-body[data-page] :is(.category-layout-section, .task-cleanup-section) {
+body[data-page] :is(.category-layout-section,
+    .task-cleanup-section:not(:where(.auto-task-form[data-kind="PICKUP"] *))) {
     margin: 12px 0;
     padding: 0 16px;
     border: 1px solid var(--theme-border, #3b3c42);

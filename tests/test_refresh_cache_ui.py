@@ -53,3 +53,120 @@ assert.equal(model.taskSwitch(true, false, null).checked, false);
 assert.equal(model.taskSwitch(true, true, null).checked, true);
 '''
     subprocess.run([node, "-e", script, str(WEB / "refresh-cache-ui.js")], check=True)
+
+
+def test_disabling_refresh_reloads_a_stale_revision_and_retries() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed to exercise the console")
+    script = '''
+const assert = require("node:assert/strict");
+
+class Element extends EventTarget {
+    children = [];
+    value = "";
+    classList = {/** @returns {void} */ toggle() {}};
+    /** @param {...Element} nodes @returns {void} */
+    append(...nodes) { this.children.push(...nodes); }
+    /** @param {...Element} nodes @returns {void} */
+    replaceChildren(...nodes) { this.children = nodes; }
+    /** @returns {Element} */
+    querySelector() { return new Element(); }
+    /** @returns {Element[]} */
+    querySelectorAll() { return []; }
+    /** @returns {void} */
+    setAttribute() {}
+    /** @returns {void} */
+    focus() {}
+}
+
+const elements = new Map();
+/** @param {string} id @returns {Element} */
+function element(id) {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id);
+}
+globalThis.document = Object.assign(new EventTarget(), {
+    getElementById: element,
+    /** @returns {Element} */
+    createElement() { return new Element(); }
+});
+globalThis.Option = Element;
+globalThis.CustomEvent = Event;
+
+let task = {id: "refresh", name: "Refresh", steps: [{id: "step",
+    moduleId: "REFRESH_CONTAINER_CACHE", parameters: {targetRef: "region:stock"}}]};
+const schedules = {refresh: {mode: "DAILY", time: "04:00", zoneId: "Asia/Shanghai"}};
+const requests = [];
+const errors = [];
+let connect;
+let revision = "old";
+globalThis.window = {
+    StowlingSettings: {
+        /** @param {Element} input @returns {Element} */
+        switchControl(input) { return input; },
+        /** @returns {object} */
+        bindDisclosure() { return {/** @returns {void} */ setExpanded() {}}; },
+        /** @returns {void} */
+        reveal() {}
+    },
+    Stowling: {
+        /** @returns {boolean} */
+        isConnected() { return true; },
+        /** @param {Function} callback @returns {void} */
+        onConnected(callback) { connect = callback; },
+        /** @param {string} tag @param {string} css @param {string} value @returns {Element} */
+        element(tag, css, value) { return Object.assign(new Element(), {textContent: value}); },
+        /** @param {Error} error @returns {void} */
+        handleError(error) { errors.push(error); },
+        /** @returns {void} */
+        showToast() {},
+        /** @param {string} path @param {object} options @returns {Promise<object>} */
+        async request(path, options) {
+            if (path === "/v1/regions") return {regions: [{id: "stock", name: "Stock"}]};
+            if (path === "/v1/category-zones") return {categoryZones: []};
+            if (path === "/v1/tasks") {
+                requests.push(["GET", revision]);
+                return {revision, tasks: [task], schedules, enabledSchedules: ["refresh"]};
+            }
+            assert.equal(path, "/v1/tasks/refresh/stop");
+            assert.equal(options.method, "POST");
+            const submitted = JSON.parse(options.body).revision;
+            requests.push(["STOP", submitted]);
+            if (submitted !== revision) {
+                throw Object.assign(new Error("stale"), {status: 409, code: "revision_conflict"});
+            }
+            return {revision: "paused", scheduleEnabled: false};
+        }
+    }
+};
+
+/** @returns {Element} */
+function taskHeader() {
+    return element("refresh-cache-list").children[0].children[0];
+}
+
+(async () => {
+    require(process.argv[1]);
+    await connect();
+    const [summary, toggle] = taskHeader().children;
+    summary.dispatchEvent(new Event("click"));
+    assert.equal(toggle.checked, true);
+    revision = "latest";
+    task = {...task, name: "Renamed externally"};
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event("change"));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(requests, [
+        ["GET", "old"], ["STOP", "old"], ["GET", "latest"], ["STOP", "latest"]
+    ]);
+    assert.deepEqual(errors, []);
+    assert.equal(taskHeader().children[1].checked, false);
+    assert.equal(taskHeader().children[0].children[2].textContent, "已暂停");
+    assert.equal(element("refresh-cache-name").value, "Renamed externally");
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
+'''
+    subprocess.run([node, "-e", script, str(WEB / "refresh-cache-ui.js")], check=True)

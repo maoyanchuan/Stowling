@@ -333,26 +333,31 @@
     }
 
     /** @returns {Promise<void>} */
+    async function loadResources() {
+        const [response, regions, zones] = await Promise.all([
+            S.request("/v1/tasks"),
+            S.request("/v1/regions"),
+            S.request("/v1/category-zones")
+        ]);
+        locations = new Map();
+        for (const region of regions.regions) {
+            locations.set("region:" + region.id, "基础区域 · " + region.name);
+        }
+        for (const zone of zones.categoryZones) {
+            locations.set("category-zone:" + zone.id, "仓储布局 · " + zone.name);
+        }
+        if (current) renderOptions(target.value);
+        ready = true;
+        apply(response);
+    }
+
+    /** @returns {Promise<void>} */
     async function load() {
         if (busy || !S.isConnected()) return;
         busy = true;
         controls();
         try {
-            const [response, regions, zones] = await Promise.all([
-                S.request("/v1/tasks"),
-                S.request("/v1/regions"),
-                S.request("/v1/category-zones")
-            ]);
-            locations = new Map();
-            for (const region of regions.regions) {
-                locations.set("region:" + region.id, "基础区域 · " + region.name);
-            }
-            for (const zone of zones.categoryZones) {
-                locations.set("category-zone:" + zone.id, "仓储布局 · " + zone.name);
-            }
-            if (current) renderOptions(target.value);
-            ready = true;
-            apply(response);
+            await loadResources();
         } catch (error) {
             S.handleError(error, "读取刷新任务失败");
         } finally {
@@ -438,19 +443,28 @@
             controls();
             return;
         }
-        const previousRevision = revision;
         pendingSwitch = {id: taskId, enabled};
         busy = true;
         controls();
         try {
             const action = enabled ? "start" : "stop";
-            const response = await S.request(`/v1/tasks/${encodeURIComponent(taskId)}/${action}`, {
+            const path = `/v1/tasks/${encodeURIComponent(taskId)}/${action}`;
+            /** @returns {Promise<object>} */
+            const request = () => S.request(path, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({revision: previousRevision})
+                body: JSON.stringify({revision})
             });
+            const response = await request().catch(async (error) => {
+                if (enabled || error.status !== 409 || error.code !== "revision_conflict") {
+                    throw error;
+                }
+                await loadResources();
+                return savedCards.has(taskId) ? request() : null;
+            });
+            if (!response) return;
+            if (current?.revision === revision) current.revision = response.revision;
             revision = response.revision;
-            if (current?.revision === previousRevision) current.revision = revision;
             if (response.scheduleEnabled) enabledSchedules.add(taskId);
             else enabledSchedules.delete(taskId);
             if (response.runState) runStates.set(taskId, response.runState);

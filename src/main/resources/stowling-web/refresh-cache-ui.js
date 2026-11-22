@@ -66,17 +66,25 @@
     if (typeof document === "undefined") return;
 
     const S = window.Stowling;
+    const Settings = window.StowlingSettings;
+    /** @param {string} value @returns {HTMLElement} */
     const id = (value) => document.getElementById(value);
     const add = id("new-refresh-cache-task");
-    const editor = id("refresh-cache-editor");
+    const draftCard = id("refresh-cache-editor");
+    const draftToggle = id("toggle-refresh-cache-draft");
+    const draftBody = id("refresh-cache-draft-body");
     const form = id("refresh-cache-form");
     const fieldset = form.querySelector("fieldset");
     const list = id("refresh-cache-list");
     const name = id("refresh-cache-name");
     const target = id("refresh-cache-target");
-    const markerScan = id("refresh-scan-markers");
-    const markerStock = id("refresh-include-markers");
-    const kinds = [...form.querySelectorAll("[data-refresh-kind]")];
+    const markerScan = Settings.switchControl(id("refresh-scan-markers"));
+    const markerStock = Settings.switchControl(id("refresh-include-markers"));
+    const kinds = [...form.querySelectorAll("[data-refresh-kind]")]
+        .map((input) => Settings.switchControl(input));
+    const kindSelection = id("refresh-kind-selection");
+    const kindDisclosure = Settings.bindDisclosure(id("refresh-kind-settings"),
+        id("refresh-kind-summary"), id("refresh-kind-options"));
     const mode = id("refresh-schedule-mode");
     const time = id("refresh-daily-time");
     const interval = id("refresh-interval");
@@ -84,7 +92,7 @@
     const remove = id("delete-refresh-task");
     const message = id("refresh-cache-message");
     const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    const nextLabels = new Map();
+    const savedCards = new Map();
     let nextTimes = new Map();
     let locations = new Map();
     let tasks = [];
@@ -93,6 +101,14 @@
     let current = null;
     let ready = false;
     let busy = false;
+
+    /** @param {HTMLElement} button @param {HTMLElement} body
+     * @param {boolean} expanded @returns {void} */
+    function disclose(button, body, expanded) {
+        button.setAttribute("aria-expanded", String(expanded));
+        body.inert = !expanded;
+        void Settings.reveal(body, expanded);
+    }
 
     /** @returns {void} */
     function controls() {
@@ -106,8 +122,22 @@
         id("refresh-interval-field").hidden = mode.value !== "INTERVAL";
         time.disabled = mode.value !== "DAILY";
         unit.disabled = interval.disabled = mode.value !== "INTERVAL";
-        add.disabled = !ready || busy || !S.isConnected();
-        fieldset.disabled = busy || !ready || !S.isConnected();
+        const enabledKinds = kinds.filter((input) => input.checked)
+            .map((input) => input.labels[0].textContent.trim());
+        kindSelection.textContent = enabledKinds.join("、") || "未选择容器";
+        const disabled = !ready || busy || !S.isConnected();
+        add.disabled = disabled;
+        fieldset.disabled = disabled;
+        const isDraft = current?.task === null;
+        draftCard.hidden = !isDraft;
+        draftToggle.disabled = disabled;
+        disclose(draftToggle, draftBody, isDraft && current.expanded);
+        for (const [taskId, {button, body, run, status}] of savedCards) {
+            const selected = current?.task?.id === taskId;
+            button.disabled = run.disabled = disabled;
+            status.textContent = selected && current.dirty ? "未保存修改" : "已保存";
+            disclose(button, body, selected && current.expanded);
+        }
     }
 
     /** @returns {void} */
@@ -119,49 +149,61 @@
 
     /** @returns {void} */
     function renderNextTimes() {
-        for (const [taskId, label] of nextLabels) {
+        for (const [taskId, {nextLabel: label}] of savedCards) {
             const schedule = schedules[taskId];
             const next = nextTimes.get(taskId);
             const zone = schedule?.zoneId || browserZone;
-            label.textContent = schedule ? "下次触发时间同步中" : "仅手动";
+            label.textContent = schedule ? "同步中" : "仅手动";
+            label.removeAttribute("title");
             if (schedule && next) {
                 const formatted = new Intl.DateTimeFormat("zh-CN", {timeZone: zone,
                     month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"})
                     .format(new Date(next));
-                label.textContent = "下次触发 " + formatted + " · " + zone;
+                label.textContent = "下次触发 " + formatted;
+                label.title = zone;
             }
         }
     }
 
     /** @returns {void} */
     function renderRows() {
+        draftBody.append(form);
         list.replaceChildren();
-        nextLabels.clear();
+        savedCards.clear();
         for (const task of tasks.filter(isRefreshTask)) {
             const card = S.element("article", "move-saved-task");
             const header = S.element("div", "task-card-header");
             const edit = S.element("button", "move-task-summary");
             edit.type = "button";
-            edit.setAttribute("aria-controls", editor.id);
-            edit.setAttribute("aria-expanded", String(current?.task?.id === task.id));
+            const body = S.element("div", "move-task-body");
+            body.id = "refresh-cache-body-" + task.id;
+            body.hidden = true;
+            edit.setAttribute("aria-controls", body.id);
             const kind = S.element("span", "move-task-kind", "刷");
             kind.setAttribute("aria-hidden", "true");
             const overview = S.element("span", "move-task-overview");
-            const label = S.element("span", "move-task-state");
-            nextLabels.set(task.id, label);
+            const nextLabel = S.element("span", "refresh-task-timing");
+            const status = S.element("span", "move-task-state", "已保存");
+            const chevron = S.element("span", "move-task-chevron");
+            chevron.setAttribute("aria-hidden", "true");
             const targetRef = task.steps[0].parameters.targetRef;
-            overview.append(S.element("strong", "", task.name),
-                S.element("span", "", locations.get(targetRef) || "选区已不存在"), label);
-            edit.append(kind, overview);
+            const meta = S.element("span", "refresh-task-meta");
+            meta.append(S.element("span", "refresh-task-target",
+                locations.get(targetRef) || "选区已不存在"), nextLabel);
+            overview.append(S.element("strong", "", task.name), meta);
+            edit.append(kind, overview, status, chevron);
             edit.addEventListener("click", () => open(task));
             const run = S.element("button", "secondary move-task-run", "加入队列");
             run.type = "button";
             run.setAttribute("aria-label", "加入队列：" + task.name);
             run.addEventListener("click", () => void enqueue(task.id));
             header.append(edit, run);
-            card.append(header);
+            card.append(header, body);
+            if (current?.task?.id === task.id) body.append(form);
             list.append(card);
+            savedCards.set(task.id, {button: edit, body, run, status, nextLabel});
         }
+        controls();
         renderNextTimes();
         syncCount();
     }
@@ -184,11 +226,10 @@
     }
 
     /** @param {object|null} task @returns {void} */
-    function open(task = null) {
-        if (busy || !ready) return;
+    function fillForm(task) {
         const draft = settings(task?.steps?.[0]?.parameters);
         const schedule = task && schedules[task.id];
-        current = {task, revision, zone: schedule?.zoneId || browserZone};
+        current.zone = schedule?.zoneId || browserZone;
         name.value = task?.name || newName();
         renderOptions(draft.targetRef);
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
@@ -200,21 +241,34 @@
         unit.value = minutes % 60 === 0 ? "60" : "1";
         interval.value = String(minutes / Number(unit.value));
         id("refresh-zone").textContent = current.zone;
-        id("refresh-cache-heading").textContent = task ? "编辑刷新缓存任务" : "新建刷新缓存任务";
         remove.hidden = !task;
-        message.textContent = "";
-        message.classList.remove("error");
-        editor.hidden = false;
+        showMessage("");
+    }
+
+    /** @param {object|null} task @returns {void} */
+    function open(task = null) {
+        const row = task ? savedCards.get(task.id) : {button: draftToggle, body: draftBody};
+        if (busy || !ready || !S.isConnected() || !row) return;
+        if (current && current.task?.id === task?.id) {
+            current.expanded = !current.expanded;
+        } else {
+            if (current?.dirty && !window.confirm("当前修改尚未保存。仍要切换任务吗？")) return;
+            current = {task, revision, expanded: true, dirty: false, zone: browserZone};
+            row.body.append(form);
+            kindDisclosure.setExpanded(false);
+            fillForm(task);
+        }
         controls();
-        renderRows();
-        name.focus();
+        syncCount();
+        row.button.focus();
     }
 
     /** @returns {void} */
     function close() {
         current = null;
-        editor.hidden = true;
-        renderRows();
+        draftBody.append(form);
+        controls();
+        syncCount();
     }
 
     /** @param {object} response @returns {void} */
@@ -222,6 +276,19 @@
         revision = response.revision;
         tasks = response.tasks || [];
         schedules = response.schedules || {};
+        if (current) {
+            const taskId = current.task?.id;
+            const saved = taskId && tasks.find((task) => task.id === taskId && isRefreshTask(task));
+            if (taskId && !saved) {
+                close();
+            } else if (!current.dirty) {
+                current.revision = revision;
+                if (saved) {
+                    current.task = saved;
+                    fillForm(saved);
+                }
+            }
+        }
         renderRows();
     }
 
@@ -260,12 +327,19 @@
         document.dispatchEvent(new Event("stowling:tasks-changed"));
     }
 
+    /** @param {string} value @returns {void} */
+    function showMessage(value) {
+        message.hidden = !value;
+        message.textContent = value;
+        message.classList.toggle("error", Boolean(value));
+    }
+
     /** @param {Event} event @returns {Promise<void>} */
     async function save(event) {
         event.preventDefault();
         if (!current || busy) return;
-        message.textContent = "";
-        message.classList.remove("error");
+        showMessage("");
+        let savedId;
         try {
             const taskId = current.task?.id;
             const payload = {
@@ -305,14 +379,16 @@
             });
             close();
             apply(response);
+            savedId = response.taskId || taskId;
             changed();
             S.showToast("刷新缓存任务已保存");
         } catch (error) {
-            message.textContent = error.message;
-            message.classList.add("error");
+            showMessage(error.message);
+            if (!kinds.some((input) => input.checked)) kindDisclosure.setExpanded(true);
         } finally {
             busy = false;
             controls();
+            if (savedId) savedCards.get(savedId)?.button.focus();
         }
     }
 
@@ -352,10 +428,24 @@
         }
     }
 
-    add.addEventListener("click", () => open());
-    id("cancel-refresh-edit").addEventListener("click", close);
+    add.addEventListener("click", () => {
+        if (current?.task === null && current.expanded) {
+            draftToggle.focus();
+        } else {
+            open();
+        }
+    });
+    draftToggle.addEventListener("click", () => open());
+    id("cancel-refresh-edit").addEventListener("click", () => {
+        const button = savedCards.get(current?.task?.id)?.button || add;
+        close();
+        button.focus();
+    });
     remove.addEventListener("click", () => void deleteTask());
-    form.addEventListener("change", controls);
+    form.addEventListener("input", () => {
+        if (current) current.dirty = true;
+        controls();
+    });
     form.addEventListener("submit", (event) => void save(event));
     id("refresh-move-tasks").addEventListener("click", () => void load());
     document.addEventListener("stowling:tasks-changed", () => void load());

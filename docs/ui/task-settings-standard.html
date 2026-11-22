@@ -216,6 +216,10 @@
         border-bottom-right-radius: 0;
         background: var(--sample-header);
     }
+    #stowling-settings-standard .sample-header:has(+ .sample-body[hidden]) {
+        border-bottom-left-radius: calc(var(--sample-radius) - 1px);
+        border-bottom-right-radius: calc(var(--sample-radius) - 1px);
+    }
     #stowling-settings-standard .sample-title {
         display: flex;
         align-items: center;

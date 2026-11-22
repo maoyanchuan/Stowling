@@ -30,6 +30,12 @@ public final class ClientThreadNavigationPort implements NavigationPort {
     }
 
     @Override
+    public NavigationStatus startHorizontal(BlockPosition target) {
+        return scheduler.isClientThread()
+                ? delegate.startHorizontal(target) : NavigationStatus.FAILED;
+    }
+
+    @Override
     public NavigationStatus startNear(BlockPosition target, int radius) {
         Objects.requireNonNull(target, "target");
         if (radius < 0) {

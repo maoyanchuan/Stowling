@@ -14,6 +14,8 @@ import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.model.TaskTriggerType;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -35,6 +37,10 @@ final class TaskTriggerManager {
 
         boolean taskPending(UUID taskId);
 
+        default boolean canRunScheduledTasks() {
+            return false;
+        }
+
         default boolean hasProtectedFood(String itemId) {
             return false;
         }
@@ -52,6 +58,7 @@ final class TaskTriggerManager {
     private final FoodConsumptionPort foodConsumption;
     private final NavigationPort navigation;
     private final Host host;
+    private final Clock clock;
     private final Map<UUID, TriggerRuntime> triggers = new LinkedHashMap<>();
     private final Map<UUID, UUID> collectionTriggers = new LinkedHashMap<>();
     private long ticks;
@@ -62,6 +69,12 @@ final class TaskTriggerManager {
             NavigationPort navigation,
             Host host
     ) {
+        this(droppedItems, foodConsumption, navigation, host, Clock.systemUTC());
+    }
+
+    TaskTriggerManager(DroppedItemObserverPort droppedItems, FoodConsumptionPort foodConsumption,
+            NavigationPort navigation, Host host, Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.droppedItems = Objects.requireNonNull(
                 droppedItems,
                 "droppedItems"
@@ -125,7 +138,7 @@ final class TaskTriggerManager {
             )) {
                 triggers.put(
                         entry.getKey(),
-                        new TriggerRuntime(replacement, ticks)
+                        new TriggerRuntime(replacement, ticks, clock.instant())
                 );
             } else {
                 existing.configuration = replacement;
@@ -165,10 +178,17 @@ final class TaskTriggerManager {
 
     void tick() {
         ticks++;
+        Instant now = clock.instant();
         for (TriggerRuntime trigger : triggers.values()) {
-            synchronize(trigger);
+            if (trigger.nextAt == null) {
+                synchronize(trigger);
+            }
         }
         for (TriggerRuntime trigger : triggers.values()) {
+            if (trigger.nextAt != null) {
+                evaluateSchedule(trigger, now);
+                continue;
+            }
             if (trigger.configuration.trigger.type()
                     == TaskTriggerType.CACHE_UPDATED) {
                 dispatchCacheEvent(trigger);
@@ -212,17 +232,55 @@ final class TaskTriggerManager {
             TriggerConfiguration config = runtime.configuration;
             result.add(new TaskTriggerSnapshot(
                     config.trigger.id(),
-                    config.trigger.name(),
+                    runtime.nextAt == null ? config.trigger.name() : config.target.name(),
                     config.trigger.type(),
                     config.target.id(),
                     config.target.name(),
                     config.trigger.priority(),
                     runtime.state,
-                    runtime.message
+                    runtime.message,
+                    runtime.nextAt
             ));
         }
         result.sort(Comparator.comparing(TaskTriggerSnapshot::triggerName));
         return List.copyOf(result);
+    }
+
+    private void evaluateSchedule(TriggerRuntime runtime, Instant now) {
+        boolean online = host.canRunScheduledTasks();
+        boolean onlineAtPreviousTick = runtime.onlineAtPreviousTick;
+        runtime.onlineAtPreviousTick = online;
+        UUID targetId = runtime.configuration.target.id();
+        if (runtime.waitingForRun && !host.taskPending(targetId)) {
+            runtime.waitingForRun = false;
+            runtime.state = TaskTriggerState.IDLE;
+            runtime.message = "等待下次定时刷新";
+        }
+        if (now.isBefore(runtime.nextAt)) {
+            return;
+        }
+        Instant due = runtime.nextAt;
+        TaskTriggerDefinition trigger = runtime.configuration.trigger;
+        runtime.nextAt = trigger.schedule().nextAfter(now);
+        if (host.taskPending(targetId)) {
+            runtime.message = "本次已跳过 · 任务正在排队或执行";
+            return;
+        }
+        if (!online || !onlineAtPreviousTick || now.isAfter(due.plusSeconds(5))) {
+            runtime.state = TaskTriggerState.IDLE;
+            runtime.message = "已跳过错过的触发时间";
+            return;
+        }
+        try {
+            host.start(runtime.configuration.target, trigger.priority(),
+                    runtime.configuration.config);
+            runtime.waitingForRun = true;
+            runtime.state = TaskTriggerState.RUNNING;
+            runtime.message = "定时触发 · 已加入后台队列";
+        } catch (RuntimeException exception) {
+            runtime.state = TaskTriggerState.ERROR;
+            runtime.message = safeMessage(exception);
+        }
     }
 
     private void synchronize(TriggerRuntime runtime) {
@@ -314,7 +372,7 @@ final class TaskTriggerManager {
             ConditionResult condition = switch (trigger.type()) {
                 case DROPPED_ITEMS -> droppedItemCondition(runtime);
                 case FOOD_LEVEL_AT_OR_BELOW -> foodLevelCondition(runtime);
-                case CACHE_UPDATED -> ConditionResult.miss();
+                case CACHE_UPDATED, SCHEDULED -> ConditionResult.miss();
             };
             if (condition.error() != null) {
                 runtime.state = TaskTriggerState.ERROR;
@@ -403,6 +461,9 @@ final class TaskTriggerManager {
     }
 
     private static String idleMessage(TaskTriggerDefinition trigger) {
+        if (trigger.type() == TaskTriggerType.SCHEDULED) {
+            return "等待下次定时刷新";
+        }
         if (trigger.type() == TaskTriggerType.CACHE_UPDATED) {
             return "空闲 · 等待缓存区域收到物品";
         }
@@ -476,13 +537,19 @@ final class TaskTriggerManager {
         private long nextCheckTick;
         private long cooldownUntilTick;
         private long cacheEventReadyAtTick;
+        private Instant nextAt;
+        private boolean onlineAtPreviousTick;
 
         private TriggerRuntime(
                 TriggerConfiguration configuration,
-                long currentTick
+                long currentTick,
+                Instant now
         ) {
             this.configuration = configuration;
             this.nextCheckTick = currentTick;
+            if (configuration.trigger.schedule() != null) {
+                nextAt = configuration.trigger.schedule().nextAfter(now);
+            }
             this.message = idleMessage(configuration.trigger);
         }
     }

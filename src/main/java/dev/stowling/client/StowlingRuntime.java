@@ -119,14 +119,15 @@ public final class StowlingRuntime implements AutoCloseable {
                 configDirectory.resolve("stowling-player-inventory.json"));
         moduleRuntime.inventory().configureProtection(protection.load(), protection::save);
         var warehouse = new dev.stowling.client.automation.ChestTrackerInventorySource(
-                minecraft, scheduler, configs, storageSettings);
+                minecraft, scheduler, configs, storageSettings, categoryMarkerCache);
         moduleRuntime.setStorageAutomation(
                 new dev.stowling.client.automation.MinecraftStorageAutomation(
                         minecraft, storageSettings, containerScanner, warehouse,
-                        warehouse::getForDisplay));
+                        warehouse::getForMaterial));
         TaskRunManager taskRuns = new TaskRunManager(
                 navigationPort,
-                moduleRuntime
+                moduleRuntime,
+                worldObserver::observeWorld
         );
         V2ControlService service = new V2ControlServiceImpl(
                 configs,

@@ -17,7 +17,8 @@ public record TaskTriggerDefinition(
         UUID cacheRegionId,
         Integer radius,
         Boolean disabled,
-        String requiredProtectedFood
+        String requiredProtectedFood,
+        TaskSchedule schedule
 ) {
     public static final int DEFAULT_INTERVAL_TICKS = 20;
     public static final int DEFAULT_COOLDOWN_TICKS = 100;
@@ -51,6 +52,17 @@ public record TaskTriggerDefinition(
                             + MAX_COOLDOWN_TICKS
             );
         }
+        if (type == TaskTriggerType.SCHEDULED) {
+            if (schedule == null || schedule.mode() == TaskSchedule.Mode.MANUAL
+                    || schedule.mode() == TaskSchedule.Mode.INTERVAL
+                            && schedule.anchorEpochSecond() == null
+                    || coordinateId != null || itemFilter != null || foodLevelThreshold != null
+                    || cacheRegionId != null || radius != null) {
+                throw new IllegalArgumentException("定时触发器必须包含有效的时间规则");
+            }
+        } else if (schedule != null) {
+            throw new IllegalArgumentException("只有定时触发器可以设置时间规则");
+        }
         if (type == TaskTriggerType.DROPPED_ITEMS) {
             if (coordinateId == null
                     || foodLevelThreshold != null
@@ -83,6 +95,22 @@ public record TaskTriggerDefinition(
                 );
             }
         }
+    }
+
+    public TaskTriggerDefinition(UUID id, String name, TaskTriggerType type, UUID targetTaskId,
+            TaskPriority priority, int intervalTicks, int cooldownTicks, UUID coordinateId,
+            String itemFilter, Integer foodLevelThreshold, UUID cacheRegionId, Integer radius,
+            Boolean disabled, String requiredProtectedFood) {
+        this(id, name, type, targetTaskId, priority, intervalTicks, cooldownTicks, coordinateId,
+                itemFilter, foodLevelThreshold, cacheRegionId, radius, disabled,
+                requiredProtectedFood, null);
+    }
+
+    public static TaskTriggerDefinition scheduled(UUID id, String name, UUID taskId,
+            TaskSchedule schedule) {
+        return new TaskTriggerDefinition(id, name, TaskTriggerType.SCHEDULED, taskId,
+                TaskPriority.BACKGROUND, DEFAULT_INTERVAL_TICKS, 0, null, null, null, null,
+                null, null, null, schedule);
     }
 
     public TaskTriggerDefinition(UUID id, String name, TaskTriggerType type, UUID targetTaskId,
@@ -221,7 +249,7 @@ public record TaskTriggerDefinition(
     public TaskTriggerDefinition withEnabled(boolean enabled) {
         return new TaskTriggerDefinition(id, name, type, targetTaskId, priority, intervalTicks,
                 cooldownTicks, coordinateId, itemFilter, foodLevelThreshold, cacheRegionId, radius,
-                enabled ? null : true, requiredProtectedFood);
+                enabled ? null : true, requiredProtectedFood, schedule);
     }
 
     private static String requireName(String value) {

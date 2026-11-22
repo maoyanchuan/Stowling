@@ -4,6 +4,7 @@ import dev.stowling.v2.model.TaskCleanupPolicy;
 
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskSchedule;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,8 +19,19 @@ public record TaskUpdateRequest(
         boolean defaultInterruptionFlow,
         boolean requeueAfterInterruption,
         UUID folderId,
-        TaskCleanupPolicy cleanupPolicy
+        TaskCleanupPolicy cleanupPolicy,
+        TaskSchedule schedule
 ) {
+    public TaskUpdateRequest(String revision, String name, TaskPriority priority,
+            boolean repeatWhenIdle, List<TaskStepRequest> steps,
+            TaskInterruptionMode interruptionMode, String interruptionTaskRef,
+            boolean defaultInterruptionFlow, boolean requeueAfterInterruption, UUID folderId,
+            TaskCleanupPolicy cleanupPolicy) {
+        this(revision, name, priority, repeatWhenIdle, steps, interruptionMode,
+                interruptionTaskRef, defaultInterruptionFlow, requeueAfterInterruption, folderId,
+                cleanupPolicy, null);
+    }
+
     public TaskUpdateRequest(
             String revision,
             String name,

@@ -348,6 +348,9 @@ public final class TaskFlowNormalizer {
 
     private static TaskDefinition normalizeTask(TaskDefinition task, boolean autoClassify) {
         List<TaskStep> steps = normalizeSteps(task.steps(), autoClassify);
+        if (autoClassify) {
+            steps = upgradeMarkerRefresh(steps);
+        }
         return new TaskDefinition(
                 task.id(),
                 task.name(),
@@ -361,6 +364,43 @@ public final class TaskFlowNormalizer {
                 task.folderId(),
                 task.cleanupPolicy()
         );
+    }
+
+    private static List<TaskStep> upgradeMarkerRefresh(List<TaskStep> steps) {
+        List<TaskStep> upgraded = new ArrayList<>();
+        for (int index = 0; index < steps.size(); index++) {
+            TaskStep step = steps.get(index);
+            if (index + 2 < steps.size()
+                    && isGeneratedMarkerRefresh(step, steps.get(index + 1), steps.get(index + 2))) {
+                upgraded.add(TaskFlowTemplates.refreshMarkerContainers(step.id(),
+                        step.parameters().get(ConfigValidator.CATEGORY_ZONE_REF)));
+                index += 2;
+            } else if (step.steps().isEmpty() && step.otherwise().isEmpty()) {
+                upgraded.add(step);
+            } else {
+                upgraded.add(new TaskStep(step.id(), step.kind(), step.moduleId(),
+                        step.parameters(), upgradeMarkerRefresh(step.steps()),
+                        upgradeMarkerRefresh(step.otherwise())));
+            }
+        }
+        return List.copyOf(upgraded);
+    }
+
+    private static boolean isGeneratedMarkerRefresh(TaskStep scan, TaskStep loop, TaskStep save) {
+        return ConfigValidator.SCAN_CATEGORY_MARKERS.equals(scan.moduleId())
+                && scan.parameters().keySet().equals(Set.of(ConfigValidator.CATEGORY_ZONE_REF))
+                && ConfigValidator.SAVE_CATEGORY_MARKER_CACHE.equals(save.moduleId())
+                && scan.parameters().equals(save.parameters())
+                && loop.kind() == TaskStepKind.REPEAT
+                && TaskCondition.HAS_MARKER_CONTAINERS.name().equals(
+                        loop.parameters().get(TaskFlowTemplates.CONDITION))
+                && loop.steps().stream().map(TaskStep::moduleId).toList().equals(List.of(
+                        ConfigValidator.SELECT_MARKER_CONTAINER, ConfigValidator.MOVE_TO_COORDINATE,
+                        ConfigValidator.READ_CONTAINER))
+                && "output:marker".equals(loop.steps().get(1).parameters()
+                        .get(ConfigValidator.TARGET_REF))
+                && "output:marker".equals(loop.steps().get(2).parameters()
+                        .get(ConfigValidator.TARGET_REF));
     }
 
     private static boolean containsCacheIntake(List<TaskStep> steps) {

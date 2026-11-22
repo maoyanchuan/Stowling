@@ -5,6 +5,8 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.inventory.RecordedContainerCapacity;
 import dev.stowling.inventory.WarehouseInventory;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
+import dev.stowling.v2.cache.CategoryMarkerCacheStore;
+import dev.stowling.v2.cache.CategoryMarkerCacheStore.Visibility;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
@@ -33,11 +35,19 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
     private final ClientActionScheduler scheduler;
     private final ConfigStore configs;
     private final StorageSettingsStore storageSettings;
+    private final CategoryMarkerCacheStore markerCache;
     private Object activeBank;
     private final Map<String, CachedContainer> cached = new LinkedHashMap<>();
 
     public ChestTrackerInventorySource(Minecraft minecraft, ClientActionScheduler scheduler,
             ConfigStore configs, StorageSettingsStore storageSettings) {
+        this(minecraft, scheduler, configs, storageSettings, null);
+    }
+
+    public ChestTrackerInventorySource(Minecraft minecraft, ClientActionScheduler scheduler,
+            ConfigStore configs, StorageSettingsStore storageSettings,
+            CategoryMarkerCacheStore markerCache) {
+        this.markerCache = markerCache;
         this.minecraft = minecraft;
         this.scheduler = scheduler;
         this.configs = configs;
@@ -46,16 +56,20 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
 
     @Override
     public WarehouseInventory get() {
-        return get(false);
+        return get(View.RAW);
     }
 
     public WarehouseInventory getForDisplay() {
-        return get(true);
+        return get(View.DISPLAY);
     }
 
-    private WarehouseInventory get(boolean excludeMarkers) {
+    public WarehouseInventory getForMaterial() {
+        return get(View.MATERIAL);
+    }
+
+    private WarehouseInventory get(View view) {
         try {
-            return scheduler.submit(() -> read(excludeMarkers)).get(8, TimeUnit.SECONDS);
+            return scheduler.submit(() -> read(view)).get(8, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("库存读取已中断", exception);
@@ -66,12 +80,12 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
         }
     }
 
-    private WarehouseInventory read(boolean excludeMarkers) {
+    private WarehouseInventory read(View view) {
         if (minecraft.level == null || minecraft.player == null) {
             cached.clear();
             activeBank = null;
             return snapshot("DISCONNECTED", "请先进入世界，库存仅读取当前连接的记忆库。", "",
-                    List.of(), excludeMarkers);
+                    List.of(), view);
         }
         String dimension = minecraft.level.dimension().identifier().toString();
         var loaded = MemoryBankAccess.INSTANCE.getLoaded();
@@ -79,7 +93,7 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
             cached.clear();
             activeBank = null;
             return snapshot("NO_MEMORY_BANK", "Chest Tracker 尚未加载记忆库，请先打开一个箱子。",
-                    dimension, List.of(), excludeMarkers);
+                    dimension, List.of(), view);
         }
         List<WarehouseInventory.Container> containers = new ArrayList<>();
         if (activeBank != loaded.orElseThrow()) {
@@ -135,18 +149,30 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                 .collect(java.util.stream.Collectors.toSet());
         cached.keySet().retainAll(retained);
         return snapshot("READY", "Chest Tracker 最近记录；未打开的容器与外部改动需重新核对。",
-                dimension, containers, excludeMarkers);
+                dimension, containers, view);
     }
 
     private WarehouseInventory snapshot(String state, String message, String dimension,
-            List<WarehouseInventory.Container> containers, boolean excludeMarkers) {
+            List<WarehouseInventory.Container> containers, View view) {
         var config = configs.read().config();
-        List<AreaBounds> markerAreas = excludeMarkers
-                ? markerAreas(config.categoryZones()) : List.of();
-        if (!markerAreas.isEmpty()) {
-            containers = containers.stream().filter(stock -> !isMarkerContainer(
-                    stock, cached.get(stock.id()).blockId(), dimension, markerAreas)).toList();
+        var zones = config.categoryZones();
+        List<AreaBounds> recognitionAreas = zones.stream().flatMap(zone -> zone.bindings().stream())
+                .map(CategoryBindingDefinition::markerArea).toList();
+        List<AreaBounds> storageAreas = zones.stream().flatMap(zone -> zone.bindings().stream())
+                .map(CategoryBindingDefinition::storageArea).toList();
+        List<AreaBounds> sampleAreas = view == View.MATERIAL ? markerAreas(zones) : List.of();
+        Map<String, Visibility> markersByDimension = new LinkedHashMap<>();
+        Visibility current = visibility(dimension);
+        if (view != View.RAW) {
+            containers = containers.stream().filter(stock -> {
+                Visibility markers = markersByDimension.computeIfAbsent(stock.dimension(),
+                        key -> key.equals(dimension) ? current : visibility(key));
+                Set<BlockPosition> allowed = view == View.DISPLAY ? markers.visible() : Set.of();
+                return visible(stock, cached.get(stock.id()).blockId(), dimension,
+                        recognitionAreas, storageAreas, sampleAreas, markers.known(), allowed);
+            }).toList();
         }
+        Set<BlockPosition> allowedMarkers = view == View.DISPLAY ? current.visible() : Set.of();
         List<WarehouseInventory.Area> areas = new ArrayList<>();
         for (var region : config.regions()) {
             areas.add(new WarehouseInventory.Area("region:" + region.id(), "区域 · " + region.name(),
@@ -154,12 +180,45 @@ public final class ChestTrackerInventorySource implements Supplier<WarehouseInve
                             region.firstZ(), region.secondX(), region.secondY(), region.secondZ()))));
         }
         for (var zone : config.categoryZones()) {
+            List<AreaBounds> layout = new ArrayList<>(zone.bindings().stream()
+                    .map(CategoryBindingDefinition::storageArea).toList());
+            for (BlockPosition position : allowedMarkers) {
+                if (zone.bindings().stream().anyMatch(binding ->
+                        binding.markerArea().contains(position))) {
+                    layout.add(new AreaBounds(position.x(), position.y(), position.z(),
+                            position.x(), position.y(), position.z()));
+                }
+            }
             areas.add(new WarehouseInventory.Area("category-zone:" + zone.id(),
-                    "仓储布局 · " + zone.name(), dimension,
-                    zone.bindings().stream().map(binding -> binding.storageArea()).toList()));
+                    "仓储布局 · " + zone.name(), dimension, layout));
         }
         return new WarehouseInventory(state, message, dimension, Instant.now(), containers, areas);
     }
+
+    private Visibility visibility(String dimension) {
+        return markerCache == null ? Visibility.EMPTY
+                : markerCache.visibility(MinecraftWorldScope.identify(minecraft, dimension));
+    }
+
+    static boolean visible(WarehouseInventory.Container stock, String blockId, String dimension,
+            List<AreaBounds> markerAreas, List<AreaBounds> storageAreas,
+            List<AreaBounds> sampleAreas, Set<BlockPosition> knownMarkers,
+            Set<BlockPosition> allowedMarkers) {
+        if (!stock.dimension().equals(dimension)) {
+            return stock.positions().stream().noneMatch(knownMarkers::contains)
+                    || stock.positions().stream().anyMatch(allowedMarkers::contains);
+        }
+        if (isMarkerContainer(stock, blockId, dimension, sampleAreas)) {
+            return false;
+        }
+        boolean marker = stock.positions().stream().anyMatch(position ->
+                markerAreas.stream().anyMatch(area -> area.contains(position)));
+        boolean storage = stock.positions().stream().anyMatch(position ->
+                storageAreas.stream().anyMatch(area -> area.contains(position)));
+        return !marker || storage || stock.positions().stream().anyMatch(allowedMarkers::contains);
+    }
+
+    private enum View { RAW, DISPLAY, MATERIAL }
 
     static List<AreaBounds> markerAreas(List<CategoryZoneDefinition> zones) {
         return zones.stream().flatMap(zone -> zone.bindings().stream())

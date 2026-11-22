@@ -5,6 +5,8 @@ import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
+import dev.stowling.v2.model.ContainerCacheRefresh;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,7 +22,9 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.Container;
 import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.Vec3;
@@ -56,17 +60,21 @@ public final class MinecraftContainerRegionScanner
             Set<String> containerTypes,
             int maxVolume
     ) {
-        return scan(region, containerTypes, maxVolume, false);
+        return scan(region, containerTypes, maxVolume, false, null);
     }
 
     @Override
     public ContainerScanResult scanComplete(RegionDefinition region, Set<String> containerTypes,
             int maxVolume) {
-        return scan(region, containerTypes, maxVolume, true);
+        return scan(region, containerTypes, maxVolume, true, null);
+    }
+
+    ContainerScanResult scanRefresh(RegionDefinition region, ContainerCacheRefresh refresh) {
+        return scan(region, Set.of(), ContainerCacheRefreshPlan.MAX_SCAN_VOLUME, true, refresh);
     }
 
     private ContainerScanResult scan(RegionDefinition region, Set<String> containerTypes,
-            int maxVolume, boolean requireLoadedRegion) {
+            int maxVolume, boolean requireLoadedRegion, ContainerCacheRefresh refresh) {
         if (!scheduler.isClientThread()) {
             return ContainerScanResult.failure("区域扫描必须在客户端线程执行");
         }
@@ -119,7 +127,8 @@ public final class MinecraftContainerRegionScanner
                         String id = BuiltInRegistries.BLOCK.getKey(
                                 state.getBlock()
                         ).toString();
-                        if (matchesType(id, types)) {
+                        if (refresh == null ? matchesType(id, types)
+                                : refreshCandidate(level, position, state, id, refresh)) {
                             ContainerTarget target = new ContainerTarget(
                                     new BlockPosition(blockX, blockY, blockZ),
                                     id
@@ -138,6 +147,8 @@ public final class MinecraftContainerRegionScanner
                                                     .equals(position)) {
                                         chestPartners.put(target.position(), blockPosition(other));
                                     }
+                                } else if (refresh != null) {
+                                    chestPartners.put(target.position(), blockPosition(other));
                                 }
                             }
                         }
@@ -202,6 +213,31 @@ public final class MinecraftContainerRegionScanner
                 position.getY(),
                 position.getZ()
         );
+    }
+
+    private static boolean refreshCandidate(ClientLevel level, BlockPos position,
+            BlockState state, String id, ContainerCacheRefresh refresh) {
+        if (ContainerContentsCategoryRule.CONTAINER_TYPES.contains(id)) {
+            return refresh.scanMarkers() || refresh.markerOnly() || enabledRefreshType(id, refresh);
+        }
+        if (refresh.markerOnly() || "minecraft:ender_chest".equals(id)) {
+            return false;
+        }
+        if (state.getBlock() instanceof ShulkerBoxBlock) {
+            return refresh.shulkerBoxes();
+        }
+        return refresh.otherContainers() && level.getBlockEntity(position) instanceof Container
+                && state.getMenuProvider(level, position) != null;
+    }
+
+    static boolean enabledRefreshType(String id, ContainerCacheRefresh refresh) {
+        if (isChest(id)) {
+            return refresh.chests();
+        }
+        if ("minecraft:barrel".equals(id)) {
+            return refresh.barrels();
+        }
+        return true;
     }
 
     private static boolean isChest(String type) {

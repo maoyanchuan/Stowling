@@ -6,6 +6,7 @@ import baritone.api.behavior.IPathingBehavior;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
+import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.pathing.goals.GoalComposite;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.client.automation.MinecraftPickupSafety;
@@ -40,6 +41,12 @@ public final class BaritoneNavigationService implements NavigationService {
         primaryBaritone().getCustomGoalProcess().setGoalAndPath(
                 coordinateGoal(target, radius)
         );
+    }
+
+    @Override
+    public void navigateToHorizontal(BlockPosition target) {
+        primaryBaritone().getCustomGoalProcess().setGoalAndPath(
+                new GoalXZ(target.x(), target.z()));
     }
 
     @Override

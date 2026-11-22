@@ -8,6 +8,10 @@ import java.util.Objects;
 public interface NavigationPort {
     NavigationStatus start(BlockPosition target);
 
+    default NavigationStatus startHorizontal(BlockPosition target) {
+        return start(target);
+    }
+
     default NavigationStatus startNear(BlockPosition target, int radius) {
         Objects.requireNonNull(target, "target");
         if (radius < 0) {

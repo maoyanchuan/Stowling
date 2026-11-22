@@ -1,6 +1,7 @@
 package dev.stowling.v2.control;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -20,6 +21,7 @@ import dev.stowling.v2.model.CategoryZoneExpansionAxis;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskSchedule;
 import dev.stowling.v2.model.TaskStepKind;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.model.TaskTriggerType;
@@ -32,6 +34,41 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
+    @Test
+    void savesRefreshScheduleWithTaskAndPreservesItsAnchorOnEdits() {
+        Path path = directory.resolve("refresh-schedule.json");
+        ConfigStore store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var region = service.createRegion(new RegionRequest("Stock", 0, 64, 0, 3, 64, 3))
+                .regions().getFirst();
+        var steps = List.of(new TaskStepRequest(null, "REFRESH_CONTAINER_CACHE",
+                Map.of("targetRef", "region:" + region.id())));
+        var hourly = new TaskSchedule(TaskSchedule.Mode.INTERVAL, null, null, 60, null);
+        var created = service.createTask(new TaskRequest("Refresh", TaskPriority.NORMAL,
+                false, steps, null, null, false, false, null, null, hourly));
+        UUID id = created.taskId();
+        TaskSchedule persisted = created.schedules().get(id);
+        assertNotNull(persisted.anchorEpochSecond());
+
+        var reopened = new ConfigStore(path);
+        reopened.loadOrReset();
+        var restarted = new V2ControlServiceImpl(reopened,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        assertEquals(persisted, restarted.tasks().schedules().get(id));
+        var renamed = restarted.updateTask(id, new TaskUpdateRequest(
+                restarted.tasks().revision(), "Renamed", steps));
+        assertEquals(persisted, renamed.schedules().get(id));
+
+        var manual = new TaskSchedule(TaskSchedule.Mode.MANUAL, null, null, null, null);
+        var updated = restarted.updateTask(id, new TaskUpdateRequest(renamed.revision(),
+                "Renamed", TaskPriority.NORMAL, false, steps, null, null, false, false,
+                null, null, manual));
+        assertTrue(updated.schedules().isEmpty());
+        assertTrue(restarted.taskRuns().triggers().isEmpty());
+    }
+
     @Test
     void savesAndReloadsPausedAutoEatWithChestAndUpdatesItToBackpackOnly() {
         Path path = directory.resolve("auto-eat.json");

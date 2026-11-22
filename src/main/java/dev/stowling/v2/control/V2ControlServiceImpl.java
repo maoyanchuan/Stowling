@@ -14,6 +14,9 @@ import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
 import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.AutoClassifyTaskFactory;
+import dev.stowling.v2.model.TaskSchedule;
+import dev.stowling.v2.model.ContainerCacheRefresh;
+import java.time.Instant;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideMode;
@@ -339,7 +342,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.secondY(),
                 request.secondZ()
         ));
-        return regionResponse(configs.save(current.revision(), new AppConfig(
+        return regionResponse(saveSpatialConfig(current.revision(), new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 current.config().tasks(),
@@ -373,7 +376,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         )
                         : region)
                 .toList();
-        return regionResponse(configs.save(current.revision(), new AppConfig(
+        return regionResponse(saveSpatialConfig(current.revision(), new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 current.config().tasks(),
@@ -427,7 +430,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     "region is used by: " + String.join(", ", references)
             );
         }
-        return regionResponse(configs.save(current.revision(), new AppConfig(
+        return regionResponse(saveSpatialConfig(current.revision(), new AppConfig(
                 AppConfig.CURRENT_SCHEMA_VERSION,
                 current.config().coordinates(),
                 current.config().tasks(),
@@ -488,7 +491,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.expansion(),
                 null
         ));
-        return categoryZoneResponse(configs.save(
+        return categoryZoneResponse(saveSpatialConfig(
                 current.revision(),
                 new AppConfig(
                         AppConfig.CURRENT_SCHEMA_VERSION,
@@ -526,7 +529,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 .stream()
                 .map(zone -> zone.id().equals(id) ? replacement : zone)
                 .toList();
-        return categoryZoneResponse(configs.save(
+        return categoryZoneResponse(saveSpatialConfig(
                 current.revision(),
                 new AppConfig(
                         AppConfig.CURRENT_SCHEMA_VERSION,
@@ -563,7 +566,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             + String.join(", ", references)
             );
         }
-        return categoryZoneResponse(configs.save(
+        return categoryZoneResponse(saveSpatialConfig(
                 current.revision(),
                 new AppConfig(
                         AppConfig.CURRENT_SCHEMA_VERSION,
@@ -1087,7 +1090,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 tasks,
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers(),
+                updateSchedule(current.config(), task, request.schedule()),
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks()
         );
@@ -1097,7 +1100,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return new TaskListResponse(
                 response.revision(),
                 task.id(),
-                response.tasks()
+                response.tasks(),
+                response.schedules()
         );
     }
 
@@ -1131,13 +1135,36 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 tasks,
                 current.config().regions(),
                 current.config().categoryZones(),
-                current.config().triggers(),
+                updateSchedule(current.config(), updatedTask, request.schedule()),
                 current.config().taskFolders(),
                 current.config().autoClassifyTasks()
         );
         V2ConfigSnapshot saved = configs.save(current.revision(), updated);
         runs.refreshTriggers(saved.config());
         return taskResponse(saved);
+    }
+
+    private static List<TaskTriggerDefinition> updateSchedule(AppConfig config,
+            TaskDefinition task, TaskSchedule request) {
+        if (request == null) {
+            return config.triggers();
+        }
+        if (!ContainerCacheRefresh.isManualTask(task)) {
+            throw new V2ValidationException("只可为刷新缓存任务配置定时");
+        }
+        List<TaskTriggerDefinition> triggers = new ArrayList<>(config.triggers());
+        var previous = triggers.stream().filter(trigger -> trigger.schedule() != null
+                && trigger.targetTaskId().equals(task.id())).findFirst().orElse(null);
+        if (previous != null) {
+            triggers.remove(previous);
+        }
+        if (request.mode() != TaskSchedule.Mode.MANUAL) {
+            UUID id = previous == null ? UUID.randomUUID() : previous.id();
+            TaskSchedule active = request.activate(previous == null ? null : previous.schedule(),
+                    Instant.now());
+            triggers.add(TaskTriggerDefinition.scheduled(id, "刷新缓存 " + id, task.id(), active));
+        }
+        return List.copyOf(triggers);
     }
 
     @Override
@@ -1238,6 +1265,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
         V2ConfigSnapshot current = configs.read();
         requireRevision(current, request.revision());
         TaskTriggerDefinition existing = requireTaskTrigger(current.config(), id);
+        if (existing.schedule() != null) {
+            throw new V2ValidationException("请在刷新缓存任务中修改定时");
+        }
         TaskTriggerDefinition replacement = new TaskTriggerDefinition(
                 id,
                 request.name(),
@@ -1539,14 +1569,22 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     private static TaskListResponse taskResponse(V2ConfigSnapshot snapshot) {
+        Map<UUID, TaskSchedule> schedules = new LinkedHashMap<>();
+        for (var trigger : snapshot.config().triggers()) {
+            if (trigger.enabled() && trigger.schedule() != null) {
+                schedules.put(trigger.targetTaskId(), trigger.schedule());
+            }
+        }
         Set<UUID> derivedIds = AutoClassifyTaskFactory.ownedTaskIds(
                 snapshot.config().autoClassifyTasks()
         );
         return new TaskListResponse(
                 snapshot.revision(),
+                null,
                 snapshot.config().tasks().stream()
                         .filter(task -> !derivedIds.contains(task.id()))
-                        .toList()
+                        .toList(),
+                schedules
         );
     }
 
@@ -1571,6 +1609,12 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .filter(trigger -> !derivedIds.contains(trigger.id()))
                         .toList()
         );
+    }
+
+    private V2ConfigSnapshot saveSpatialConfig(String revision, AppConfig config) {
+        V2ConfigSnapshot saved = configs.save(revision, config);
+        runs.refreshTriggers(saved.config());
+        return saved;
     }
 
     private static RegionListResponse regionResponse(V2ConfigSnapshot snapshot) {

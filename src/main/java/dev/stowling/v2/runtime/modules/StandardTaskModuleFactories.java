@@ -11,6 +11,9 @@ public final class StandardTaskModuleFactories {
 
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
+                factory(dev.stowling.v2.model.ContainerCacheRefresh.MODULE,
+                        (context, step) -> context.storageAutomation()
+                                .refreshContainerCache(context, step)),
                 factory("MANAGE_CACHE_INTAKE", ManageCacheIntakeModule::new),
                 factory(dev.stowling.v2.model.MaterialRequirements.MODULE,
                         (context, step) -> context.storageAutomation()

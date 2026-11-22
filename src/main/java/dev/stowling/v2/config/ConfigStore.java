@@ -465,7 +465,8 @@ public final class ConfigStore {
                             "cacheRegionId",
                             "radius",
                             "disabled",
-                            "requiredProtectedFood"
+                            "requiredProtectedFood",
+                            "schedule"
                     ),
                     Set.of(
                             "id",

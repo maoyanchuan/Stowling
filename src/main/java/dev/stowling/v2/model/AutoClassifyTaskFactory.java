@@ -74,8 +74,8 @@ public final class AutoClassifyTaskFactory {
         for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
             Map<String, String> scan = new LinkedHashMap<>();
             scan.put(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true");
-            List<TaskStep> preResolveSteps = TaskFlowTemplates.refreshMarkers(
-                    area.categoryZoneRef(), null);
+            List<TaskStep> preResolveSteps = List.of(TaskFlowTemplates.refreshMarkerContainers(
+                    UUID.randomUUID(), area.categoryZoneRef()));
             classificationSteps.addAll(
                     TaskFlowTemplates.sortByCategoryZone(
                             definition.cacheRegionRef(),

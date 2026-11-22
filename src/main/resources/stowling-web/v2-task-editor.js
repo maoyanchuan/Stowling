@@ -1044,6 +1044,9 @@
         if (parameter.kind === "container-reference") {
             return ["output"];
         }
+        if (parameter.kind === "region-category-zone-reference") {
+            return ["region", "category-zone"];
+        }
         if (parameter.kind === "resource-reference") {
             return resourceTypesFromParameter(parameter);
         }

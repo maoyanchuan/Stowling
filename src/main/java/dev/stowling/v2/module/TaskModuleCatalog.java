@@ -312,6 +312,21 @@ public final class TaskModuleCatalog {
                     )
             ),
             action(
+                    dev.stowling.v2.model.ContainerCacheRefresh.MODULE,
+                    "刷新缓存",
+                    "前往选区并打开容器，刷新库存与识别区标记。",
+                    List.of(
+                            reference(ConfigValidator.TARGET_REF, "选区",
+                                    "region-category-zone-reference", true),
+                            refreshSwitch("chests", "箱子", true),
+                            refreshSwitch("barrels", "木桶", true),
+                            refreshSwitch("shulkerBoxes", "潜影盒", true),
+                            refreshSwitch("otherContainers", "其他容器", false),
+                            refreshSwitch("scanMarkers", "扫描识别区", false),
+                            refreshSwitch("includeMarkersInInventory", "识别区物品计入库存", false)
+                    )
+            ),
+            action(
                     dev.stowling.v2.model.MaterialRequirements.MODULE,
                     "自动收集材料",
                     "从仓库批量取出投影材料并交付到指定容器或区域。",
@@ -602,6 +617,11 @@ public final class TaskModuleCatalog {
                 null,
                 defaultValue
         );
+    }
+
+    private static ModuleParameter refreshSwitch(String key, String label, boolean enabled) {
+        return new ModuleParameter(key, label, "boolean", false, List.of(), null, null,
+                null, Boolean.toString(enabled));
     }
 
     private static ModuleParameter booleanParameter(

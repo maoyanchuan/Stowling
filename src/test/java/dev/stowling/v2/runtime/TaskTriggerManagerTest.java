@@ -17,6 +17,10 @@ import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskSchedule;
+import java.time.Clock;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import dev.stowling.v2.model.TaskStep;
 import dev.stowling.v2.model.TaskTriggerDefinition;
 import dev.stowling.v2.model.TaskTriggerType;
@@ -27,6 +31,97 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class TaskTriggerManagerTest {
+    @Test
+    void dailyScheduleQueuesOnceAtFourLocalTime() {
+        var task = task(UUID.randomUUID());
+        var host = new FakeHost();
+        host.online = true;
+        var clock = new MutableClock("2026-11-21T19:59:59Z");
+        var schedule = new TaskSchedule(TaskSchedule.Mode.DAILY, "04:00", "Asia/Shanghai",
+                null, null);
+        var trigger = TaskTriggerDefinition.scheduled(UUID.randomUUID(), "Daily", task.id(),
+                schedule);
+        var manager = scheduledManager(task, trigger, clock, host);
+
+        manager.tick();
+        assertEquals(Instant.parse("2026-11-21T20:00:00Z"),
+                manager.snapshots().getFirst().nextAt());
+        clock.set("2026-11-21T20:00:00Z");
+        manager.tick();
+        manager.tick();
+        assertEquals(1, host.startCount);
+        assertEquals(TaskPriority.BACKGROUND, host.priority);
+        assertEquals(Instant.parse("2026-11-22T20:00:00Z"),
+                manager.snapshots().getFirst().nextAt());
+    }
+
+    @Test
+    void intervalSurvivesRestartAndSkipsOfflineOrBusyOccurrences() {
+        var task = task(UUID.randomUUID());
+        var host = new FakeHost();
+        var clock = new MutableClock("2026-11-22T00:17:00Z");
+        var schedule = new TaskSchedule(TaskSchedule.Mode.INTERVAL, null, null, 60, null)
+                .activate(null, clock.instant());
+        var trigger = TaskTriggerDefinition.scheduled(UUID.randomUUID(), "Hourly", task.id(),
+                schedule);
+        var manager = scheduledManager(task, trigger, clock, host);
+        clock.set("2026-11-22T01:17:00Z");
+        manager.tick();
+        assertEquals(0, host.startCount);
+
+        clock.set("2026-11-22T02:01:00Z");
+        manager = scheduledManager(task, trigger, clock, host);
+        assertEquals(Instant.parse("2026-11-22T02:17:00Z"),
+                manager.snapshots().getFirst().nextAt());
+        host.online = true;
+        host.pending = true;
+        manager.tick();
+        clock.set("2026-11-22T02:17:00Z");
+        manager.tick();
+        host.pending = false;
+        manager.tick();
+        assertEquals(0, host.startCount);
+
+        clock.set("2026-11-22T03:17:00Z");
+        manager.tick();
+        assertEquals(1, host.startCount);
+    }
+
+    private static TaskTriggerManager scheduledManager(TaskDefinition task,
+            TaskTriggerDefinition trigger, Clock clock, FakeHost host) {
+        var manager = new TaskTriggerManager(new FakeDroppedItems(), new FakeFood(20),
+                new NoopNavigation(), host, clock);
+        manager.refresh(config(task, trigger));
+        return manager;
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant now;
+
+        private MutableClock(String value) {
+            set(value);
+        }
+
+        void set(String value) {
+            now = Instant.parse(value);
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return Clock.fixed(now, zone);
+        }
+    }
+
     @Test
     void droppedItemTriggerQueuesTheSelectedTaskAtItsPriority() {
         UUID coordinateId = UUID.randomUUID();
@@ -341,6 +436,7 @@ class TaskTriggerManagerTest {
     private static final class FakeHost implements TaskTriggerManager.Host {
         private int startCount;
         private boolean pending;
+        private boolean online;
         private UUID taskId;
         private TaskPriority priority;
         private String protectedFood;
@@ -373,6 +469,11 @@ class TaskTriggerManagerTest {
         @Override
         public boolean taskPending(UUID ignoredTaskId) {
             return pending;
+        }
+
+        @Override
+        public boolean canRunScheduledTasks() {
+            return online;
         }
 
         @Override

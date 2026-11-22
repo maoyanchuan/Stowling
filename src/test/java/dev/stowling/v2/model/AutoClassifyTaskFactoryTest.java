@@ -360,7 +360,7 @@ class AutoClassifyTaskFactoryTest {
         );
         assertEquals(TaskStepKind.IF, classification.steps().get(1).kind());
         assertEquals(
-                ConfigValidator.SCAN_CATEGORY_MARKERS,
+                ContainerCacheRefresh.MODULE,
                 classification.steps().get(1).steps().getFirst().moduleId()
         );
     }
@@ -412,22 +412,46 @@ class AutoClassifyTaskFactoryTest {
         assertTrue(hasContainers.otherwise().isEmpty());
         List<TaskStep> classify = hasContainers.steps();
         TaskStep markerScan = classify.getFirst();
-        assertEquals(ConfigValidator.SCAN_CATEGORY_MARKERS, markerScan.moduleId());
+        assertEquals(ContainerCacheRefresh.MODULE, markerScan.moduleId());
         assertEquals(
                 definition.classificationAreas().getFirst().categoryZoneRef(),
-                markerScan.parameters().get(ConfigValidator.CATEGORY_ZONE_REF)
+                markerScan.parameters().get(ContainerCacheRefresh.TARGET_REF)
         );
-        assertEquals(TaskStepKind.REPEAT, classify.get(1).kind());
-        assertEquals(
-                ConfigValidator.SAVE_CATEGORY_MARKER_CACHE,
-                classify.get(2).moduleId()
-        );
-        TaskStep resolve = classify.get(3);
+        assertEquals("true", markerScan.parameters().get(ContainerCacheRefresh.MARKER_ONLY));
+        TaskStep resolve = classify.get(1);
         assertEquals(ConfigValidator.RESOLVE_CONTAINER_CATEGORIES, resolve.moduleId());
         assertFalse(markerScan.parameters().containsKey(ConfigValidator.MARKER_SOURCES));
         assertFalse(markerScan.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID));
         assertFalse(resolve.parameters().containsKey(ConfigValidator.MARKER_SOURCES));
         assertFalse(resolve.parameters().containsKey(ConfigValidator.CATEGORY_RULE_ID));
+    }
+
+    @Test
+    void migratesAnExistingGeneratedMarkerSequenceWithItsOriginalStepId() {
+        var definition = definition(false);
+        var generated = AutoClassifyTaskFactory.tasks(definition, List.of());
+        var task = generated.get(1);
+        var branch = task.steps().get(1);
+        var body = new java.util.ArrayList<>(branch.steps());
+        var legacy = TaskFlowTemplates.refreshMarkers(
+                definition.classificationAreas().getFirst().categoryZoneRef(), null);
+        body.removeFirst();
+        body.addAll(0, legacy);
+        var steps = new java.util.ArrayList<>(task.steps());
+        steps.set(1, TaskStep.conditional(branch.id(), branch.parameters(), body, List.of()));
+        var oldTask = new TaskDefinition(task.id(), task.name(), task.priority(), false, steps,
+                task.interruptionMode(), task.interruptionTaskRef(), false, true, null,
+                task.cleanupPolicy());
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                List.of(generated.getFirst(), oldTask, generated.get(2)), List.of(), List.of(),
+                List.of(), List.of(), List.of(definition));
+        var migrated = TaskFlowNormalizer.normalize(config).tasks().stream()
+                .filter(value -> value.id().equals(task.id())).findFirst().orElseThrow();
+        var refresh = migrated.steps().get(1).steps().getFirst();
+
+        assertEquals(legacy.getFirst().id(), refresh.id());
+        assertEquals(ContainerCacheRefresh.MODULE, refresh.moduleId());
+        assertEquals("true", refresh.parameters().get(ContainerCacheRefresh.MARKER_ONLY));
     }
 
     @Test

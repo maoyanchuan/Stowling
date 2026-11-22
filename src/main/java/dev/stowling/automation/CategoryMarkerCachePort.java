@@ -13,6 +13,14 @@ public interface CategoryMarkerCachePort {
             Map<UUID, Map<BlockPosition, Set<String>>> contents
     );
 
+    default void updateRefresh(Map<UUID, Map<BlockPosition, Set<String>>> contents,
+            String scope, Set<BlockPosition> markerPositions,
+            Map<BlockPosition, Boolean> inventoryVisibility) {
+        if (!contents.isEmpty()) {
+            replaceBindings(contents);
+        }
+    }
+
     CategoryMarkerCachePort UNAVAILABLE =
             new CategoryMarkerCachePort() {
                 @Override

@@ -229,7 +229,7 @@ public final class ConfigValidator {
                     "only one default interruption flow is allowed"
             );
         }
-        validateTriggers(config.triggers(), coordinates, regions, tasks.keySet());
+        validateTriggers(config.triggers(), coordinates, regions, tasks);
         validateAutoClassifyTasks(
                 config.autoClassifyTasks(),
                 config.triggers(),
@@ -434,18 +434,25 @@ public final class ConfigValidator {
             List<TaskTriggerDefinition> triggers,
             Map<UUID, CoordinatePoint> coordinates,
             Map<UUID, RegionDefinition> regions,
-            Set<UUID> taskIds
+            Map<UUID, TaskDefinition> tasks
     ) {
         Set<UUID> triggerIds = new HashSet<>();
+        Set<UUID> scheduledTasks = new HashSet<>();
         for (TaskTriggerDefinition trigger : triggers) {
             if (!triggerIds.add(trigger.id())) {
                 throw new V2ValidationException("duplicate task trigger id");
             }
-            if (!taskIds.contains(trigger.targetTaskId())) {
+            if (!tasks.containsKey(trigger.targetTaskId())) {
                 throw new V2ValidationException(
                         "target task does not exist: "
                                 + trigger.targetTaskId()
                 );
+            }
+            if (trigger.schedule() != null
+                    && (!dev.stowling.v2.model.ContainerCacheRefresh.isManualTask(
+                            tasks.get(trigger.targetTaskId()))
+                    || !scheduledTasks.add(trigger.targetTaskId()))) {
+                throw new V2ValidationException("每个刷新缓存任务只能配置一条定时规则");
             }
             if (trigger.coordinateId() != null
                     && !coordinates.containsKey(trigger.coordinateId())) {
@@ -687,6 +694,15 @@ public final class ConfigValidator {
                     categoryZones
             );
             case MOVE_TO_COORDINATE -> requireMoveStep(step, coordinates);
+            case dev.stowling.v2.model.ContainerCacheRefresh.MODULE -> {
+                var keys = dev.stowling.v2.model.ContainerCacheRefresh.BOOLEAN_FIELDS;
+                Set<String> fields = new HashSet<>(keys);
+                fields.add(TARGET_REF);
+                requireParameters(step, fields, Set.of(TARGET_REF));
+                var refresh = dev.stowling.v2.model.ContainerCacheRefresh.from(step.parameters());
+                requireInteractionResource(refresh.target().encode(), coordinates, regions,
+                        categoryZones);
+            }
             case dev.stowling.v2.model.MaterialRequirements.MODULE -> {
                 var materials = dev.stowling.v2.model.MaterialRequirements.PARAMETER;
                 var boxedDelivery = dev.stowling.v2.model.MaterialRequirements.BOXED_DELIVERY;

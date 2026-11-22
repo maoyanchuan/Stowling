@@ -99,6 +99,10 @@ final class MinecraftContainerVisit {
         return TaskModuleResult.waiting("等待容器打开 " + openRequested);
     }
 
+    boolean requestedOpen() {
+        return openRequested != null;
+    }
+
     void cancelNavigation() {
         approach.cancel();
         hand.restore();

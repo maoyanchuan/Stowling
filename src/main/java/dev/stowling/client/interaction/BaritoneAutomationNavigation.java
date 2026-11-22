@@ -24,6 +24,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private final Set<BlockPosition> rejectedStances = new HashSet<>();
     private boolean active;
     private boolean nearNavigation;
+    private boolean horizontalNavigation;
     private boolean pathObserved;
     private int coordinateRadius = DEFAULT_COORDINATE_RADIUS;
     private int missingPathTicks;
@@ -54,6 +55,20 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         retryDelayTicks = 0;
         prepareNavigation();
         navigationService.navigateTo(target);
+        return NavigationStatus.NAVIGATING;
+    }
+
+    @Override
+    public NavigationStatus startHorizontal(BlockPosition target) {
+        Objects.requireNonNull(target, "target");
+        coordinateRadius = DEFAULT_COORDINATE_RADIUS;
+        nearNavigation = false;
+        standingArea = null;
+        nearPathRetries = 0;
+        retryDelayTicks = 0;
+        prepareNavigation();
+        horizontalNavigation = true;
+        navigationService.navigateToHorizontal(target);
         return NavigationStatus.NAVIGATING;
     }
 
@@ -115,6 +130,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     }
 
     private void prepareNavigation() {
+        horizontalNavigation = false;
         active = true;
         pathObserved = false;
         missingPathTicks = 0;
@@ -138,7 +154,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
         }
         BlockPosition current = world.playerPosition().orElseThrow();
         double deltaX = current.x() - target.x();
-        double deltaY = current.y() - target.y();
+        double deltaY = horizontalNavigation ? 0 : current.y() - target.y();
         double deltaZ = current.z() - target.z();
         double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
         int targetRadius = radius == null ? coordinateRadius : radius;

@@ -21,6 +21,7 @@
     <script src="/auto-classify-ui.js" defer></script>
     <script src="/auto-eat-ui.js" defer></script>
     <script src="/material-collection-ui.js" defer></script>
+    <script src="/refresh-cache-ui.js" defer></script>
 </head>
 <body data-page="tasks">
     <header class="topbar">
@@ -119,6 +120,87 @@
                              aria-label="已保存的自动进食任务"></div>
                         <div id="material-task-list" class="move-task-list"
                              aria-label="已保存的自动收集材料任务"></div>
+                        <div id="refresh-cache-list" class="move-task-list"
+                             aria-label="已保存的刷新缓存任务"></div>
+                        <article id="refresh-cache-editor" class="move-saved-task" hidden>
+                            <div class="move-task-body">
+                                <form id="refresh-cache-form" class="move-task-form">
+                                    <fieldset>
+                                        <legend id="refresh-cache-heading">刷新缓存</legend>
+                                        <label class="move-field" for="refresh-cache-name">
+                                            <span>任务名称</span>
+                                            <input id="refresh-cache-name" maxlength="80"
+                                                   required autocomplete="off">
+                                        </label>
+                                        <label class="move-field" for="refresh-cache-target">
+                                            <span>选区</span>
+                                            <select id="refresh-cache-target" required></select>
+                                        </label>
+                                        <div class="move-field">
+                                            <span>容器类型</span>
+                                            <div>
+                                                <label><input type="checkbox"
+                                                       data-refresh-kind="chests" checked> 箱子</label>
+                                                <label><input type="checkbox"
+                                                       data-refresh-kind="barrels" checked> 木桶</label>
+                                                <label><input type="checkbox"
+                                                       data-refresh-kind="shulkerBoxes" checked>
+                                                    潜影盒</label>
+                                                <label><input type="checkbox"
+                                                       data-refresh-kind="otherContainers">
+                                                    其他容器</label>
+                                            </div>
+                                        </div>
+                                        <label id="refresh-marker-field" class="move-field
+                                               material-switch-field" hidden>
+                                            <span>扫描识别区</span>
+                                            <input id="refresh-scan-markers" type="checkbox">
+                                        </label>
+                                        <label id="refresh-marker-stock-field" class="move-field
+                                               material-switch-field" hidden>
+                                            <span>识别区物品计入库存</span>
+                                            <input id="refresh-include-markers" type="checkbox">
+                                        </label>
+                                        <label class="move-field" for="refresh-schedule-mode">
+                                            <span>触发方式</span>
+                                            <select id="refresh-schedule-mode">
+                                                <option value="MANUAL">仅手动</option>
+                                                <option value="DAILY">每天固定时间</option>
+                                                <option value="INTERVAL">每隔指定时长</option>
+                                            </select>
+                                        </label>
+                                        <label id="refresh-daily-field" class="move-field"
+                                               for="refresh-daily-time" hidden>
+                                            <span>每天触发时间
+                                                <small id="refresh-zone"></small>
+                                            </span>
+                                            <input id="refresh-daily-time" type="time" required>
+                                        </label>
+                                        <div id="refresh-interval-field" class="move-field" hidden>
+                                            <label for="refresh-interval">每隔</label>
+                                            <div>
+                                                <input id="refresh-interval" type="number"
+                                                       min="1" step="1" required>
+                                                <select id="refresh-interval-unit"
+                                                        aria-label="时间单位">
+                                                    <option value="1">分钟</option>
+                                                    <option value="60">小时</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <p id="refresh-cache-message" class="field-message"
+                                           role="status" aria-live="polite"></p>
+                                        <div class="move-form-actions">
+                                            <button id="delete-refresh-task" type="button"
+                                                    class="secondary" hidden>删除任务</button>
+                                            <button id="cancel-refresh-edit" type="button"
+                                                    class="secondary">取消</button>
+                                            <button type="submit" class="primary">保存任务</button>
+                                        </div>
+                                    </fieldset>
+                                </form>
+                            </div>
+                        </article>
                         <article id="material-editor" class="move-saved-task is-draft" hidden>
                             <button id="toggle-material-draft" class="move-task-summary"
                                     type="button" aria-expanded="false"
@@ -765,6 +847,11 @@
                                     type="button" disabled>
                                 <strong>＋ 自动收集材料</strong>
                                 <span>上传投影，自动从仓库取料并交付</span>
+                            </button>
+                            <button id="new-refresh-cache-task" class="move-task-option is-new"
+                                    type="button" disabled>
+                                <strong>＋ 刷新缓存</strong>
+                                <span>前往选区逐一开箱，按需定时更新库存</span>
                             </button>
                         </div>
                     </section>

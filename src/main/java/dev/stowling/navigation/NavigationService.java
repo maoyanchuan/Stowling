@@ -9,6 +9,10 @@ import java.util.Set;
 public interface NavigationService {
     void navigateTo(BlockPosition target);
 
+    default void navigateToHorizontal(BlockPosition target) {
+        navigateTo(target);
+    }
+
     void navigateToNear(BlockPosition target, int radius);
 
     default boolean navigateToInteractionRange(BlockPosition target, AreaBounds standingArea,

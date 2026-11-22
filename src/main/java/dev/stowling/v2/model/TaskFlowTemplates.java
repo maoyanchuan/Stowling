@@ -366,6 +366,12 @@ public final class TaskFlowTemplates {
         return List.copyOf(result);
     }
 
+    static TaskStep refreshMarkerContainers(UUID stepId, String zoneRef) {
+        return TaskStep.action(stepId, ContainerCacheRefresh.MODULE,
+                Map.of(ContainerCacheRefresh.TARGET_REF, zoneRef,
+                        ContainerCacheRefresh.MARKER_ONLY, "true"));
+    }
+
     public static List<TaskStep> refreshMarkers(
             String categoryZoneRef,
             String maxVolume

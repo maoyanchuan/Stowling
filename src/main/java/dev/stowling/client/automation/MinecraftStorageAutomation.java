@@ -18,6 +18,7 @@ import dev.stowling.v2.cache.RobotWarehouseCache;
 import dev.stowling.v2.cache.RobotWarehouseCache.Location;
 import dev.stowling.v2.config.StorageSettingsStore;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.ContainerCacheRefresh;
 import dev.stowling.v2.model.MaterialRequirements;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
@@ -34,7 +35,6 @@ import dev.stowling.v2.runtime.modules.TaskModuleExecutor;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
 import dev.stowling.v2.runtime.modules.TaskRunWorkspace;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -56,7 +56,6 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.component.ItemContainerContents;
-import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.AABB;
 
 /** Shared packing and cleanup coordinator. One active task owns the client's interaction slot. */
@@ -284,19 +283,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         if (minecraft.level == null || minecraft.player == null) {
             throw new IllegalStateException("进入世界后才能使用机器人仓库");
         }
-        var local = minecraft.getSingleplayerServer();
-        var remote = minecraft.getCurrentServer();
-        String world;
-        if (local != null) {
-            world = "world:" + local.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
-        } else if (remote != null && !remote.ip.isBlank()) {
-            world = "server:" + remote.ip;
-        } else {
+        String scope = MinecraftWorldScope.identify(minecraft);
+        if (scope == null) {
             throw new IllegalStateException("无法识别当前世界的机器人仓库缓存");
         }
-        String scope = world + "\n" + minecraft.player.getUUID() + "\n"
-                + minecraft.level.dimension().identifier();
-        return UUID.nameUUIDFromBytes(scope.getBytes(StandardCharsets.UTF_8)).toString();
+        return scope;
     }
 
     private List<ContainerTarget> emptyBoxSources(TaskExecutionContext context) {
@@ -332,6 +323,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 : List.of();
         return TemporaryContainerResolver.resolve(points, regions, containerRegions,
                 Set.copyOf(settings.resolved().emptyBoxContainers()), "机器人仓库");
+    }
+
+    @Override
+    public TaskModuleExecutor refreshContainerCache(TaskExecutionContext context, TaskStep step) {
+        if (!(containerRegions instanceof MinecraftContainerRegionScanner scanner)) {
+            throw new IllegalStateException("区域扫描组件不可用");
+        }
+        return new MinecraftContainerCacheRefresh(minecraft, scanner, context,
+                ContainerCacheRefresh.from(step.parameters()));
     }
 
     @Override

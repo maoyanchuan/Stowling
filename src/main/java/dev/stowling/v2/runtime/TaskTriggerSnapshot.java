@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime;
 
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskTriggerType;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -13,8 +14,16 @@ public record TaskTriggerSnapshot(
         String targetTaskName,
         TaskPriority priority,
         TaskTriggerState state,
-        String message
+        String message,
+        Instant nextAt
 ) {
+    public TaskTriggerSnapshot(UUID triggerId, String triggerName, TaskTriggerType type,
+            UUID targetTaskId, String targetTaskName, TaskPriority priority,
+            TaskTriggerState state, String message) {
+        this(triggerId, triggerName, type, targetTaskId, targetTaskName, priority, state,
+                message, null);
+    }
+
     public TaskTriggerSnapshot {
         triggerId = Objects.requireNonNull(triggerId, "triggerId");
         triggerName = Objects.requireNonNull(triggerName, "triggerName");

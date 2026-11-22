@@ -31,12 +31,13 @@ public final class CategoryMarkerCacheStore
             .create();
 
     private final Path path;
-    private final Map<UUID, CachedBinding> bindings;
+    private final Map<UUID, CachedBinding> bindings = new LinkedHashMap<>();
+    private final Map<String, Visibility> markerVisibility = new LinkedHashMap<>();
 
     public CategoryMarkerCacheStore(Path path) {
         this.path = Objects.requireNonNull(path, "path").toAbsolutePath()
                 .normalize();
-        this.bindings = load();
+        load();
     }
 
     @Override
@@ -66,7 +67,37 @@ public final class CategoryMarkerCacheStore
     public synchronized void replaceBindings(
             Map<UUID, Map<BlockPosition, Set<String>>> contents
     ) {
+        updateRefresh(contents, null, Set.of(), Map.of());
+    }
+
+    public synchronized Visibility visibility(String scope) {
+        return markerVisibility.getOrDefault(scope, Visibility.EMPTY);
+    }
+
+    @Override
+    public synchronized void updateRefresh(Map<UUID, Map<BlockPosition, Set<String>>> contents,
+            String scope, Set<BlockPosition> markerPositions,
+            Map<BlockPosition, Boolean> inventoryVisibility) {
         Objects.requireNonNull(contents, "contents");
+        if (contents.isEmpty() && markerPositions.isEmpty() && inventoryVisibility.isEmpty()) {
+            return;
+        }
+        Map<UUID, CachedBinding> updatedBindings = new LinkedHashMap<>(bindings);
+        Map<String, Visibility> updatedVisibility = new LinkedHashMap<>(markerVisibility);
+        if (scope != null && !markerPositions.isEmpty()) {
+            Visibility previous = visibility(scope);
+            Set<BlockPosition> known = new LinkedHashSet<>(previous.known());
+            known.addAll(markerPositions);
+            Set<BlockPosition> updated = new LinkedHashSet<>(previous.visible());
+            inventoryVisibility.forEach((position, visible) -> {
+                if (visible) {
+                    updated.add(position);
+                } else {
+                    updated.remove(position);
+                }
+            });
+            updatedVisibility.put(scope, new Visibility(known, updated));
+        }
         String updatedAt = Instant.now().toString();
         for (Map.Entry<UUID, Map<BlockPosition, Set<String>>> entry
                 : contents.entrySet()) {
@@ -81,7 +112,7 @@ public final class CategoryMarkerCacheStore
                         List.copyOf(container.getValue())
                 ));
             }
-            bindings.put(
+            updatedBindings.put(
                     entry.getKey(),
                     new CachedBinding(
                             entry.getKey().toString(),
@@ -90,12 +121,16 @@ public final class CategoryMarkerCacheStore
                     )
             );
         }
-        write();
+        write(updatedBindings, updatedVisibility);
+        bindings.clear();
+        bindings.putAll(updatedBindings);
+        markerVisibility.clear();
+        markerVisibility.putAll(updatedVisibility);
     }
 
-    private Map<UUID, CachedBinding> load() {
+    private void load() {
         if (!Files.isRegularFile(path)) {
-            return new LinkedHashMap<>();
+            return;
         }
         try {
             String json = Files.readString(path, StandardCharsets.UTF_8);
@@ -103,30 +138,33 @@ public final class CategoryMarkerCacheStore
             if (file == null
                     || file.schemaVersion() != SCHEMA_VERSION
                     || file.bindings() == null) {
-                return new LinkedHashMap<>();
+                return;
             }
-            Map<UUID, CachedBinding> result = new LinkedHashMap<>();
             for (CachedBinding binding : file.bindings()) {
-                result.put(UUID.fromString(binding.bindingId()), binding);
+                bindings.put(UUID.fromString(binding.bindingId()), binding);
             }
-            return result;
+            if (file.markerVisibility() != null) {
+                markerVisibility.putAll(file.markerVisibility());
+            }
         } catch (IOException | RuntimeException exception) {
-            return new LinkedHashMap<>();
+            bindings.clear();
+            markerVisibility.clear();
         }
     }
 
-    private void write() {
+    private void write(Map<UUID, CachedBinding> updatedBindings,
+            Map<String, Visibility> updatedVisibility) {
         Path parent = path.getParent();
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            List<CachedBinding> values = bindings.values().stream()
+            List<CachedBinding> values = updatedBindings.values().stream()
                     .sorted((left, right) ->
                             left.bindingId().compareTo(right.bindingId()))
                     .toList();
-            CacheFile file = new CacheFile(SCHEMA_VERSION, values);
+            CacheFile file = new CacheFile(SCHEMA_VERSION, values, updatedVisibility);
             Files.writeString(
                     temporary,
                     GSON.toJson(file) + System.lineSeparator(),
@@ -154,9 +192,19 @@ public final class CategoryMarkerCacheStore
         }
     }
 
+    public record Visibility(Set<BlockPosition> known, Set<BlockPosition> visible) {
+        public static final Visibility EMPTY = new Visibility(Set.of(), Set.of());
+
+        public Visibility {
+            known = Set.copyOf(known);
+            visible = Set.copyOf(visible);
+        }
+    }
+
     private record CacheFile(
             int schemaVersion,
-            List<CachedBinding> bindings
+            List<CachedBinding> bindings,
+            Map<String, Visibility> markerVisibility
     ) {
     }
 

@@ -454,7 +454,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "defaultInterruptionFlow",
                                 "requeueAfterInterruption",
                                 "folderId",
-                                "cleanupPolicy"
+                                "cleanupPolicy",
+                                "schedule"
                         ),
                         Set.of("name", "steps")
                 );
@@ -748,7 +749,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 "defaultInterruptionFlow",
                                 "requeueAfterInterruption",
                                 "folderId",
-                                "cleanupPolicy"
+                                "cleanupPolicy",
+                                "schedule"
                         ),
                         Set.of("revision", "name", "steps")
                 );
@@ -764,7 +766,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 optionalBoolean(json, "defaultInterruptionFlow"),
                                 optionalBoolean(json, "requeueAfterInterruption"),
                                 optionalUuid(json, "folderId"),
-                                cleanupPolicy(json)
+                                cleanupPolicy(json),
+                                taskSchedule(json)
                         )));
             } else if ("DELETE".equals(method)) {
                 sendJson(exchange, 200, service.deleteTask(id, revision(body)));
@@ -907,8 +910,21 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBoolean(json, "defaultInterruptionFlow"),
                 optionalBoolean(json, "requeueAfterInterruption"),
                 optionalUuid(json, "folderId"),
-                cleanupPolicy(json)
+                cleanupPolicy(json),
+                taskSchedule(json)
         );
+    }
+
+    private static dev.stowling.v2.model.TaskSchedule taskSchedule(JsonObject json) {
+        if (!json.has("schedule")) {
+            return null;
+        }
+        var value = jsonObject(json.get("schedule"), "schedule");
+        requireFieldsAny(value, Set.of("mode", "time", "zoneId", "intervalMinutes"),
+                Set.of("mode"));
+        var mode = dev.stowling.v2.model.TaskSchedule.Mode.valueOf(string(value, "mode"));
+        return new dev.stowling.v2.model.TaskSchedule(mode, optionalString(value, "time"),
+                optionalString(value, "zoneId"), optionalInteger(value, "intervalMinutes"), null);
     }
 
     private static AutoEatTask.Settings autoEatSettings(JsonObject json) {
@@ -1866,6 +1882,7 @@ public final class V2ControlServer implements AutoCloseable {
                         "/auto-eat-ui.js",
                         read("stowling-web/auto-eat-ui.js", js)
                 ),
+                Map.entry("/refresh-cache-ui.js", read("stowling-web/refresh-cache-ui.js", js)),
                 Map.entry(
                         "/material-collection-ui.js",
                         read("stowling-web/material-collection-ui.js", js)

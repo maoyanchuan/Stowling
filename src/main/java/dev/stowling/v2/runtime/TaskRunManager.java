@@ -68,6 +68,11 @@ public final class TaskRunManager {
             NavigationPort navigation,
             TaskModuleRuntimeRegistry registry
     ) {
+        this(navigation, registry, dev.stowling.automation.WorldObservation::disconnected);
+    }
+
+    public TaskRunManager(NavigationPort navigation, TaskModuleRuntimeRegistry registry,
+            java.util.function.Supplier<dev.stowling.automation.WorldObservation> world) {
         this.navigation = Objects.requireNonNull(navigation, "navigation");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.triggers = new TaskTriggerManager(
@@ -92,6 +97,12 @@ public final class TaskRunManager {
                     @Override
                     public boolean taskPending(UUID taskId) {
                         return isTaskPending(taskId);
+                    }
+
+                    @Override
+                    public boolean canRunScheduledTasks() {
+                        var observation = world.get();
+                        return observation.connected() && observation.alive();
                     }
 
                     @Override

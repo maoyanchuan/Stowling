@@ -4,6 +4,7 @@ import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
+import dev.stowling.v2.model.TaskStep;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,10 @@ public interface StorageAutomationPort {
             Map<String, Integer> items);
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
+
+    default TaskModuleExecutor refreshContainerCache(TaskExecutionContext context, TaskStep step) {
+        throw new IllegalStateException("当前环境不支持刷新容器缓存");
+    }
 
     default TaskModuleExecutor collectMaterials(TaskExecutionContext context,
             dev.stowling.v2.model.TaskStep step) {

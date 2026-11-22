@@ -12,6 +12,7 @@ import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -54,6 +55,26 @@ class ChestTrackerInventorySourceTest {
                 hopper, "minecraft:hopper", OVERWORLD, areas));
         assertFalse(ChestTrackerInventorySource.isMarkerContainer(
                 netherBarrel, "minecraft:barrel", OVERWORLD, areas));
+    }
+
+    @Test
+    void markerInventoryOptInOnlyChangesDisplay() {
+        var marker = stock(OVERWORLD, List.of(MARKER), 1);
+        var markerBounds = List.of(at(MARKER));
+        var storageBounds = List.of(at(STORAGE));
+
+        assertFalse(ChestTrackerInventorySource.visible(marker, "minecraft:barrel", OVERWORLD,
+                markerBounds, storageBounds, List.of(), Set.of(MARKER), Set.of()));
+        assertTrue(ChestTrackerInventorySource.visible(marker, "minecraft:barrel", OVERWORLD,
+                markerBounds, storageBounds, List.of(), Set.of(MARKER), Set.of(MARKER)));
+        assertFalse(ChestTrackerInventorySource.visible(marker, "minecraft:barrel", OVERWORLD,
+                markerBounds, storageBounds, markerBounds, Set.of(MARKER), Set.of()));
+
+        var doubles = stock(OVERWORLD, List.of(MARKER, STORAGE), 2);
+        assertTrue(ChestTrackerInventorySource.visible(doubles, "minecraft:chest", OVERWORLD,
+                markerBounds, storageBounds, List.of(), Set.of(MARKER), Set.of()));
+        assertFalse(ChestTrackerInventorySource.visible(doubles, "minecraft:chest", OVERWORLD,
+                markerBounds, storageBounds, markerBounds, Set.of(MARKER), Set.of()));
     }
 
     private static List<AreaBounds> markerAreas() {

@@ -35,6 +35,25 @@ class CategoryMarkerCacheStoreTest {
     }
 
     @Test
+    void visibilityIsScopedAndAutomaticRefreshPreservesTheManualChoice() {
+        Path path = directory.resolve("marker-visibility.json");
+        var marker = new BlockPosition(7, 64, 2);
+        UUID binding = UUID.randomUUID();
+        var cache = new CategoryMarkerCacheStore(path);
+        cache.updateRefresh(Map.of(binding, Map.of(marker, Set.of("minecraft:oak_log"))),
+                "world-a", Set.of(marker), Map.of(marker, true));
+        cache.updateRefresh(Map.of(binding, Map.of(marker, Set.of("minecraft:dirt"))),
+                "world-a", Set.of(marker), Map.of());
+
+        var reloaded = new CategoryMarkerCacheStore(path);
+        assertEquals(Set.of(marker), reloaded.visibility("world-a").visible());
+        assertTrue(reloaded.visibility("world-b").visible().isEmpty());
+        assertEquals(Set.of("minecraft:dirt"), reloaded.contents(binding).orElseThrow().get(marker));
+        reloaded.updateRefresh(Map.of(), "world-a", Set.of(marker), Map.of(marker, false));
+        assertTrue(new CategoryMarkerCacheStore(path).visibility("world-a").visible().isEmpty());
+    }
+
+    @Test
     void persistsMarkerContainerContentsAcrossReloads() {
         Path path = directory.resolve("category-cache.json");
         UUID bindingId = UUID.randomUUID();

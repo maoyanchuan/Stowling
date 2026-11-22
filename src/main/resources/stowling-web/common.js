@@ -282,7 +282,7 @@
         controls.append(input, connect, clear);
         form.append(label, controls);
         panel.append(heading, description, form);
-        host.append(panel);
+        host.replaceChildren(panel);
 
         form.addEventListener("submit", (event) => {
             event.preventDefault();

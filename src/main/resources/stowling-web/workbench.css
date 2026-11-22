@@ -199,8 +199,14 @@ body[data-page] .connection-state {
     backdrop-filter: var(--theme-backdrop, none);
 }
 
-@view-transition {
-    navigation: auto;
+body[data-page] .route-loading {
+    margin: 18px 0 0;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 13px;
+    background: var(--panel);
 }
 
 body[data-page] .workspace-nav {
@@ -249,10 +255,15 @@ body[data-page] .workspace-nav a::before {
     }
 }
 
+body[data-page] .workspace-nav a:active::before {
+    opacity: 0.82;
+    transform: scale(0.94);
+    transition-duration: 80ms;
+}
+
 body[data-page] .workspace-nav a[aria-current="page"] {
     color: var(--theme-selected-text, #f1f1f3);
     background: transparent;
-    view-transition-name: workspace-active-tab;
 }
 
 body[data-page] .workspace-nav a[aria-current="page"]::before {
@@ -269,28 +280,14 @@ body[data-page] .workspace-nav a[aria-current="page"]::before {
     }
 }
 
-::view-transition-old(root) {
-    animation: workspace-page-out 140ms ease-out both;
+body[data-page] .workspace:not([aria-hidden="true"]) {
+    animation: workspace-arrive 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-::view-transition-new(root) {
-    animation: workspace-page-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-::view-transition-group(workspace-active-tab) {
-    animation-duration: 280ms;
-    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes workspace-page-out {
-    to {
-        opacity: 0;
-    }
-}
-
-@keyframes workspace-page-in {
+@keyframes workspace-arrive {
     from {
-        opacity: 0;
+        opacity: 0.72;
+        transform: translateY(4px);
     }
 }
 
@@ -1470,10 +1467,8 @@ body[data-page] .storage-slot[aria-pressed="true"] {
         transition: none;
     }
 
-    ::view-transition-old(root),
-    ::view-transition-new(root),
-    ::view-transition-group(workspace-active-tab) {
-        animation-duration: 1ms !important;
+    body[data-page] .workspace:not([aria-hidden="true"]) {
+        animation: none;
     }
 }
 

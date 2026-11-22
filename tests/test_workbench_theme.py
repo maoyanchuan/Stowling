@@ -167,20 +167,36 @@ def test_light_palette_keeps_original_colors_and_page_gradients() -> None:
     assert "background: var(--theme-hero, #24272a);" in workbench
 
 
-def test_navigation_switch_uses_shared_motion_with_reduced_motion_fallback() -> None:
+def test_navigation_motion_avoids_cross_document_snapshots() -> None:
     workbench = (WEB / "workbench.css").read_text(encoding="utf-8")
     common = (WEB / "common.js").read_text(encoding="utf-8")
 
     assert "link.dataset.page = item.page;" in common
-    assert "@view-transition {\n    navigation: auto;\n}" in workbench
-    assert "view-transition-name: workspace-active-tab;" in workbench
+    assert "@view-transition" not in workbench
+    assert "view-transition-name" not in workbench
     assert "@keyframes workspace-tab-arrive" in workbench
-    assert "::view-transition-group(workspace-active-tab)" in workbench
+    assert "@keyframes workspace-arrive" in workbench
+    assert 'body[data-page] .workspace-nav a:active::before' in workbench
     assert (
         "body[data-page] .workspace-nav a::before {\n"
         "        animation: none;"
     ) in workbench
     assert (
-        "::view-transition-group(workspace-active-tab) {\n"
-        "        animation-duration: 1ms !important;"
+        'body[data-page] .workspace:not([aria-hidden="true"]) {\n'
+        "        animation: none;"
     ) in workbench
+
+
+def test_pages_show_a_static_loading_state_before_scripts_run() -> None:
+    pages = (
+        "index.html",
+        "coordinates.html",
+        "tasks.html",
+        "backpack.html",
+        "storage.html",
+        "category-zones.html",
+    )
+
+    for page in pages:
+        html = (WEB / page).read_text(encoding="utf-8")
+        assert 'class="route-loading" role="status"' in html

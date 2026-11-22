@@ -2,14 +2,30 @@
 body[data-page="tasks"] .pickup-task-module {
     --pickup-padding: 20px;
     --pickup-control-height: 42px;
+    --pickup-rail-width: 5px;
+    position: relative;
     min-width: 0;
     overflow: visible;
+    padding-left: var(--pickup-rail-width);
     border: 1px solid var(--line);
-    border-left: 6px solid var(--theme-switch-on, #91989c);
     border-radius: var(--radius);
     background: var(--theme-surface, #252629);
     color: var(--text);
     font-size: 16px;
+}
+
+body[data-page="tasks"] .pickup-task-module::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    border-radius: calc(var(--radius) - 1px);
+    background: linear-gradient(
+        90deg,
+        var(--theme-switch-on, #91989c) 0 var(--pickup-rail-width),
+        transparent var(--pickup-rail-width)
+    );
+    pointer-events: none;
 }
 
 .pickup-task-module[hidden],
@@ -28,6 +44,18 @@ body[data-page="tasks"] .pickup-task-module {
     padding: 10px var(--pickup-padding);
     border-radius: calc(var(--radius) - 1px);
     background: var(--theme-surface, #191a1d);
+}
+
+.pickup-task-module > .pickup-task-header {
+    margin-left: calc(-1 * var(--pickup-rail-width));
+    padding-left: calc(var(--pickup-padding) + var(--pickup-rail-width));
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.pickup-task-module > .pickup-task-header:has(+ .pickup-task-body[hidden]) {
+    border-bottom-left-radius: calc(var(--radius) - 1px);
+    border-bottom-right-radius: calc(var(--radius) - 1px);
 }
 
 .pickup-task-title {

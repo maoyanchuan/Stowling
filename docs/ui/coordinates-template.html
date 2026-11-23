@@ -65,71 +65,50 @@
                     </label>
                     <nav id="coordinate-bookmarks" aria-label="坐标和文件夹">
                         <ul class="coordinate-bookmark-list">
-                            <li class="coordinate-bookmark-folder" data-folder-id="base-map">
+                            <li class="coordinate-bookmark-folder">
                                 <div class="coordinate-bookmark-row">
                                     <button class="coordinate-bookmark" type="button"
                                             aria-expanded="true">
-                                        <span class="coordinate-bookmark-name">基地地图</span>
-                                        <span class="coordinate-bookmark-type">文件夹</span>
+                                        <span class="coordinate-bookmark-name">我的坐标</span>
                                     </button>
                                     <button class="ghost compact" type="button"
-                                            aria-label="编辑基地地图">···</button>
+                                            aria-label="编辑我的坐标">···</button>
                                 </div>
                                 <ul class="coordinate-bookmark-list coordinate-bookmark-children">
-                                    <li class="coordinate-bookmark-row"
-                                        data-resource-ref="coordinate:main-base"
-                                        draggable="true">
+                                    <li class="coordinate-bookmark-row">
                                         <button class="coordinate-bookmark" type="button"
                                                 aria-current="true" data-panel="coordinate-points">
                                             <span class="coordinate-bookmark-name">主基地</span>
                                             <span class="coordinate-bookmark-type">坐标点</span>
                                         </button>
                                     </li>
-                                </ul>
-                            </li>
-                            <li class="coordinate-bookmark-row"
-                                data-resource-ref="region:farm" draggable="true">
-                                <button class="coordinate-bookmark" type="button"
-                                        data-panel="regions">
-                                    <span class="coordinate-bookmark-name">农场区域</span>
-                                    <span class="coordinate-bookmark-type">区域</span>
-                                </button>
-                            </li>
-                            <li class="coordinate-bookmark-row"
-                                data-resource-ref="warehouse:buffer" draggable="true">
-                                <button class="coordinate-bookmark" type="button"
-                                        data-panel="warehouses">
-                                    <span class="coordinate-bookmark-name">储存区 A</span>
-                                    <span class="coordinate-bookmark-type">储存区</span>
-                                </button>
-                            </li>
-                            <li class="coordinate-bookmark-folder" data-folder-id="shared-points">
-                                <div class="coordinate-bookmark-row">
-                                    <button class="coordinate-bookmark" type="button"
-                                            aria-expanded="false">
-                                        <span class="coordinate-bookmark-name">公共点位</span>
-                                        <span class="coordinate-bookmark-type">文件夹</span>
-                                    </button>
-                                    <button class="ghost compact" type="button"
-                                            aria-label="编辑公共点位">···</button>
-                                </div>
-                                <ul class="coordinate-bookmark-list coordinate-bookmark-children"
-                                    hidden>
-                                    <li class="coordinate-bookmark-row"
-                                        data-resource-ref="coordinate:villager-hall"
-                                        draggable="true">
+                                    <li class="coordinate-bookmark-row">
                                         <button class="coordinate-bookmark" type="button"
-                                                data-panel="coordinate-points">
-                                            <span class="coordinate-bookmark-name">村民交易所</span>
-                                            <span class="coordinate-bookmark-type">坐标点</span>
+                                                data-panel="regions">
+                                            <span class="coordinate-bookmark-name">农场区域</span>
+                                            <span class="coordinate-bookmark-type">区域</span>
+                                        </button>
+                                    </li>
+                                    <li class="coordinate-bookmark-row">
+                                        <button class="coordinate-bookmark" type="button"
+                                                data-panel="warehouses">
+                                            <span class="coordinate-bookmark-name">储存区 A</span>
+                                            <span class="coordinate-bookmark-type">储存区</span>
                                         </button>
                                     </li>
                                 </ul>
                             </li>
+                            <li class="coordinate-bookmark-row">
+                                <button class="coordinate-bookmark" type="button"
+                                        data-panel="category-zones">
+                                    <span class="coordinate-bookmark-name">分类区示例</span>
+                                    <span class="coordinate-bookmark-type">分类区</span>
+                                </button>
+                            </li>
                         </ul>
                     </nav>
                     <p id="coordinate-library-status" class="field-message" role="status">
-                        已载入 3 个示例资源
+                        已载入 4 个示例资源
                     </p>
                 </aside>
 
@@ -208,7 +187,7 @@
                             <div class="editor-card-heading">
                                 <div class="resource-summary-text">
                                     <strong>储存区 A</strong>
-                                    <span class="resource-summary-meta">3 个容器 · 根目录</span>
+                                    <span class="resource-summary-meta">3 个容器 · 我的坐标</span>
                                 </div>
                             </div>
                             <div class="resource-editor-body">

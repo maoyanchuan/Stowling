@@ -34,6 +34,23 @@ body[data-template="coordinates"] .coordinate-bookmark {
     cursor: pointer;
 }
 
+body[data-template="coordinates"] .coordinate-bookmark-row[draggable="true"] {
+    cursor: grab;
+}
+
+body[data-template="coordinates"] .coordinate-bookmark-row[draggable="true"]:active,
+body[data-template="coordinates"] .coordinate-bookmark-row.is-dragging {
+    cursor: grabbing;
+    opacity: 0.55;
+}
+
+body[data-template="coordinates"] .coordinate-bookmark-folder.is-drag-over
+    > .coordinate-bookmark-row {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    background: var(--accent-soft);
+}
+
 body[data-template="coordinates"] .coordinate-bookmark:focus-visible,
 body[data-template="coordinates"] .coordinate-library-actions button:focus-visible,
 body[data-template="coordinates"] .template-control:focus-visible {

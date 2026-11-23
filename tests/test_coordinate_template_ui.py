@@ -36,3 +36,23 @@ def test_coordinate_template_can_open_directly_from_the_repository() -> None:
     assert '../../src/main/resources/stowling-web/coordinates-template.js' in html
     assert '../../src/main/resources/assets/stowling/icon.png' in html
     assert 'src="/coordinates-template.js"' not in html
+
+
+def test_coordinate_template_directory_stays_flat_and_creates_category_zones() -> None:
+    html = (WEB / "coordinates-template.html").read_text(encoding="utf-8")
+
+    assert 'coordinate-bookmark-name">我的坐标' not in html
+    assert 'data-panel="category-zones"' not in html
+    assert 'option value="category-zones">分类区</option>' in html
+    assert 'class="coordinate-bookmark-folder"' in html
+    assert 'data-resource-ref="coordinate:main-base"' in html
+    assert 'draggable="true"' in html
+
+
+def test_coordinate_template_exposes_folder_drop_interaction() -> None:
+    script = (WEB / "coordinates-template.js").read_text(encoding="utf-8")
+
+    assert 'dragstart' in script
+    assert 'drop' in script
+    assert 'children.append(draggedRow)' in script
+    assert '已将“${name.trim()}”移入文件夹' in script

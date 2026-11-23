@@ -5,11 +5,15 @@
     const bookmarks = Array.from(document.querySelectorAll(".coordinate-bookmark"));
     const search = document.querySelector("#coordinate-library-search");
     const resourceSearch = document.querySelector("#resource-search");
+    const resourceKind = document.querySelector("#coordinate-resource-kind");
+    const areaKindField = document.querySelector("#coordinate-area-kind-field");
+    const areaKind = document.querySelector("#coordinate-area-kind");
     const folderForm = document.querySelector("#coordinate-folder-form");
     const kindForm = document.querySelector("#coordinate-kind-form");
     const coordinateForm = document.querySelector("#new-coordinate-form");
     const regionForm = document.querySelector("#new-region-form");
     const status = document.querySelector("#coordinate-library-status");
+    let draggedRow = null;
 
     /**
      * @param {string} panelId
@@ -83,7 +87,7 @@
             card.hidden = Boolean(normalized) && !text.includes(normalized);
             visible += card.hidden ? 0 : 1;
         }
-        updateStatus(normalized ? `找到 ${visible} 个匹配资源` : "已载入 4 个示例资源");
+        updateStatus(normalized ? `找到 ${visible} 个匹配资源` : "已载入 3 个示例资源");
     }
 
     /**
@@ -121,8 +125,84 @@
         });
     }
 
+    /**
+     * @returns {void}
+     */
+    function clearDragState() {
+        draggedRow?.classList.remove("is-dragging");
+        draggedRow = null;
+        document.body.classList.remove("is-dragging");
+        for (const folder of document.querySelectorAll(".coordinate-bookmark-folder")) {
+            folder.classList.remove("is-drag-over");
+        }
+    }
+
+    /**
+     * @returns {void}
+     */
+    function bindDragAndDrop() {
+        for (const row of document.querySelectorAll(
+            ".coordinate-bookmark-row[draggable=\"true\"]"
+        )) {
+            row.addEventListener("dragstart", event => {
+                draggedRow = row;
+                row.classList.add("is-dragging");
+                document.body.classList.add("is-dragging");
+                event.dataTransfer?.setData(
+                    "text/plain",
+                    row.dataset.resourceRef || row.textContent || ""
+                );
+                if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = "move";
+                }
+            });
+            row.addEventListener("dragend", clearDragState);
+        }
+
+        for (const folder of document.querySelectorAll(".coordinate-bookmark-folder")) {
+            const folderRow = folder.querySelector(":scope > .coordinate-bookmark-row");
+            const children = folder.querySelector(":scope > .coordinate-bookmark-children");
+            if (!folderRow || !children) {
+                continue;
+            }
+            folderRow.addEventListener("dragover", event => {
+                event.preventDefault();
+                folder.classList.add("is-drag-over");
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = "move";
+                }
+            });
+            folderRow.addEventListener("dragleave", event => {
+                if (!folderRow.contains(event.relatedTarget)) {
+                    folder.classList.remove("is-drag-over");
+                }
+            });
+            folderRow.addEventListener("drop", event => {
+                event.preventDefault();
+                if (!draggedRow || draggedRow === folderRow || folder.contains(draggedRow)) {
+                    clearDragState();
+                    return;
+                }
+                const name = draggedRow.querySelector(".coordinate-bookmark-name")?.textContent
+                    || "坐标";
+                children.hidden = false;
+                const folderButton = folderRow.querySelector(".coordinate-bookmark");
+                folderButton?.setAttribute("aria-expanded", "true");
+                children.append(draggedRow);
+                updateStatus(`已将“${name.trim()}”移入文件夹`);
+                clearDragState();
+            });
+        }
+    }
+
     search?.addEventListener("input", () => filterBookmarks(search.value));
     resourceSearch?.addEventListener("input", () => filterResources(resourceSearch.value));
+
+    resourceKind?.addEventListener("change", () => {
+        if (areaKindField) {
+            areaKindField.hidden = resourceKind.value !== "regions";
+        }
+    });
 
     document.querySelector("#new-coordinate-resource")?.addEventListener("click", () => {
         showForm(kindForm);
@@ -149,8 +229,10 @@
     kindForm?.addEventListener("submit", event => {
         event.preventDefault();
         const kind = document.querySelector("#coordinate-resource-kind")?.value;
-        const panelId = kind === "regions" ? "regions" : kind === "warehouses"
-            ? "warehouses" : "coordinate-points";
+        const panelId = kind === "regions" && areaKind?.value === "category-zones"
+            ? "category-zones"
+            : kind === "regions" ? "regions" : kind === "warehouses"
+                ? "warehouses" : "coordinate-points";
         activatePanel(panelId);
         showForm(null);
         updateStatus("已切换到示例资源");
@@ -171,5 +253,6 @@
         });
     }
 
+    bindDragAndDrop();
     activatePanel("coordinate-points");
 })();

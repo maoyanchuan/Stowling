@@ -793,11 +793,27 @@ select {
 }
 
 .category-binding-card {
+    position: relative;
     display: grid;
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid var(--line);
     border-radius: 11px;
     background: var(--theme-subtle, var(--panel-solid));
+}
+
+.category-binding-card:has(.category-select-menu:not([hidden])) {
+    z-index: 3;
+}
+
+.category-binding-override {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-weight: 400;
+}
+
+.category-binding-override-status {
+    color: var(--muted);
+    font-size: 12px;
 }
 
 .category-binding-summary {
@@ -848,29 +864,24 @@ select {
 }
 
 .category-binding-card-body {
+    min-height: 0;
+    overflow: visible;
+}
+
+.category-binding-content {
     display: grid;
-    grid-template-rows: 1fr;
     gap: 12px;
-    min-height: 0;
-    overflow: hidden;
     padding: 0 12px 12px;
-    opacity: 1;
-    transition:
-        grid-template-rows 220ms cubic-bezier(0.16, 1, 0.3, 1),
-        opacity 150ms ease,
-        padding 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.category-binding-card-body > .coordinate-region-grid {
+.category-binding-options {
     min-height: 0;
-    overflow: hidden;
 }
 
-.category-binding-card[data-collapsed="true"] .category-binding-card-body {
-    grid-template-rows: 0fr;
-    padding-block: 0;
-    opacity: 0;
-    pointer-events: none;
+.category-binding-options .category-options {
+    padding: 0 0 12px;
+    border: 0;
+    background: transparent;
 }
 
 #category-bindings {
@@ -1280,6 +1291,21 @@ select {
 
     .coordinate-column {
         padding: 18px;
+    }
+
+    .category-binding-summary {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .category-binding-name {
+        flex: 1 1 80px;
+        width: auto;
+        max-width: none;
+    }
+
+    .category-binding-override {
+        flex-basis: 100%;
     }
 
     .editor-fields,
@@ -1848,7 +1874,8 @@ select {
     /** @typedef {{first: CoordinateCorner, second: CoordinateCorner}} CoordinateRegion */
 
     /** @typedef {{id: string, name?: string, markerRegion: CoordinateRegion,
-     * storageRegion: CoordinateRegion}} CategoryBinding */
+     * storageRegion: CoordinateRegion, optionsEnabled?: boolean,
+     * categoryOptions?: CategoryOptions}} CategoryBinding */
 
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
@@ -1886,7 +1913,7 @@ select {
     let kindMenuOpen = false;
     let categoryMenuOpen = null;
     const reveals = new WeakMap();
-    state.categorySupportExpanded = false;
+    const bindingOptions = new WeakMap();
     const nodes = {
         list: document.querySelector("#coordinate-list"),
         add: document.querySelector("#add-coordinate"),
@@ -1912,15 +1939,6 @@ select {
         categoryFields: document.querySelector("#category-zone-fields"),
         categoryBindings: document.querySelector("#category-bindings"),
         addCategoryBinding: document.querySelector("#add-category-binding"),
-        categoryScopeMode: document.querySelector("#category-scope-mode"),
-        categoryRecognitionMode: document.querySelector("#category-recognition-mode"),
-        categoryStorageMethod: document.querySelector("#category-storage-method"),
-        categoryNoCacheRow: document.querySelector("#category-no-cache-row"),
-        categoryNoCacheLocation: document.querySelector("#category-no-cache-location"),
-        categoryIgnoreSupport: document.querySelector("#category-ignore-support"),
-        categorySupportExpand: document.querySelector("#category-support-expand"),
-        categorySupportBlockRow: document.querySelector("#category-support-block-row"),
-        categorySupportBlock: document.querySelector("#category-support-block"),
         form: document.querySelector("#coordinate-form"),
         name: document.querySelector("#coordinate-name"),
         x: document.querySelector("#coordinate-x"),
@@ -1956,24 +1974,33 @@ select {
         status: document.querySelector("#editor-status")
     };
 
-    /** @type {CategorySelect[]} */
-    const categorySelects = [
-        ["scopeMode", nodes.categoryScopeMode],
-        ["recognitionMode", nodes.categoryRecognitionMode],
-        ["storageMethod", nodes.categoryStorageMethod],
-        ["noCacheLocation", nodes.categoryNoCacheLocation]
-    ].map(([key, select]) => {
-        const wrap = document.querySelector(`[data-category-select="${key}"]`);
-        return {
-            key,
-            select,
-            wrap,
-            trigger: wrap.querySelector(".category-select-trigger"),
-            current: wrap.querySelector(".category-select-current"),
-            menu: wrap.querySelector(".category-select-menu"),
-            options: Array.from(wrap.querySelectorAll(".category-select-option"))
-        };
-    });
+    /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
+     * selects: CategorySelect[], supportExpanded: boolean}} CategoryOptionsContext */
+
+    const globalCategoryContext = createCategoryOptionsContext(
+        document.querySelector(".category-options")
+    );
+
+    /** @param {HTMLElement} root @returns {CategoryOptionsContext} */
+    function createCategoryOptionsContext(root) {
+        const fields = {};
+        for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
+            "no-cache-location", "ignore-support", "support-expand", "support-block-row",
+            "support-block"]) {
+            fields[key] = root.querySelector(`[id$="category-${key}"]`);
+        }
+        const selects = Array.from(root.querySelectorAll("[data-category-select]"))
+            .map(wrap => ({
+                key: wrap.dataset.categorySelect,
+                select: wrap.querySelector("select"),
+                wrap,
+                trigger: wrap.querySelector(".category-select-trigger"),
+                current: wrap.querySelector(".category-select-current"),
+                menu: wrap.querySelector(".category-select-menu"),
+                options: Array.from(wrap.querySelectorAll(".category-select-option"))
+            }));
+        return {root, fields, selects, supportExpanded: false};
+    }
 
     /** @param {HTMLElement} content @param {boolean} expanded
      * @param {boolean} animate @param {string} [kind] @returns {void} */
@@ -2206,53 +2233,90 @@ select {
         const body = card.querySelector(".category-binding-card-body");
         toggle.setAttribute("aria-expanded", String(open));
         toggle.setAttribute("aria-label", `${open ? "收起" : "展开"}绑定组`);
-        body.inert = !open;
+        if (!open && categoryMenuOpen && card.contains(categoryMenuOpen.wrap)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
+        reveal(body, open, true);
     }
 
-    /** @param {CategoryOptions} options @returns {void} */
-    function writeCategoryOptions(options) {
+    /** @param {CategoryOptions} options @param {CategoryOptionsContext} [context]
+     * @returns {void} */
+    function writeCategoryOptions(options, context = globalCategoryContext) {
         const values = {...defaultCategoryOptions(), ...options};
-        nodes.categoryScopeMode.value = values.scopeMode;
-        nodes.categoryRecognitionMode.value = values.recognitionMode;
-        nodes.categoryStorageMethod.value = values.storageMethod;
-        nodes.categoryNoCacheLocation.value = values.noCacheLocation;
-        nodes.categoryIgnoreSupport.checked = values.ignoreSupportBlock;
-        nodes.categorySupportBlock.value = values.supportBlock;
-        state.categorySupportExpanded = values.ignoreSupportBlock;
-        categorySelects.forEach(syncCategorySelect);
-        updateCategoryOptionState();
+        const fields = context.fields;
+        fields["scope-mode"].value = values.scopeMode;
+        fields["recognition-mode"].value = values.recognitionMode;
+        fields["storage-method"].value = values.storageMethod;
+        fields["no-cache-location"].value = values.noCacheLocation;
+        fields["ignore-support"].checked = values.ignoreSupportBlock;
+        fields["support-block"].value = values.supportBlock;
+        context.supportExpanded = values.ignoreSupportBlock;
+        updateCategoryOptionState(context, false);
     }
 
-    /** @returns {CategoryOptions} */
-    function readCategoryOptions() {
+    /** @param {CategoryOptionsContext} [context] @returns {CategoryOptions} */
+    function readCategoryOptions(context = globalCategoryContext) {
+        const fields = context.fields;
         return {
-            scopeMode: nodes.categoryScopeMode.value,
-            recognitionMode: nodes.categoryRecognitionMode.value,
-            storageMethod: nodes.categoryStorageMethod.value,
-            noCacheLocation: nodes.categoryNoCacheLocation.value,
-            ignoreSupportBlock: nodes.categoryIgnoreSupport.checked,
-            supportBlock: nodes.categorySupportBlock.value.trim()
+            scopeMode: fields["scope-mode"].value,
+            recognitionMode: fields["recognition-mode"].value,
+            storageMethod: fields["storage-method"].value,
+            noCacheLocation: fields["no-cache-location"].value,
+            ignoreSupportBlock: fields["ignore-support"].checked,
+            supportBlock: fields["support-block"].value.trim()
         };
     }
 
-    /** @returns {void} */
-    function updateCategoryOptionState() {
-        const hasStorageLocation = ["mixed", "box"]
-            .includes(nodes.categoryStorageMethod.value);
-        nodes.categoryNoCacheLocation.disabled = !hasStorageLocation;
-        categorySelects.forEach(syncCategorySelect);
-        reveal(nodes.categoryNoCacheRow, hasStorageLocation, true);
-        const ignoreSupport = nodes.categoryIgnoreSupport.checked;
-        nodes.categorySupportExpand.hidden = !ignoreSupport;
-        nodes.categorySupportExpand.disabled = !ignoreSupport;
-        const supportExpanded = ignoreSupport && state.categorySupportExpanded;
-        nodes.categorySupportExpand.setAttribute("aria-expanded", String(supportExpanded));
-        nodes.categorySupportExpand.setAttribute(
-            "aria-label",
-            `${supportExpanded ? "收起" : "展开"}支撑方块设置`
+    /** @param {CategoryOptionsContext} [context] @param {boolean} [animate]
+     * @returns {void} */
+    function updateCategoryOptionState(context = globalCategoryContext, animate = true) {
+        const fields = context.fields;
+        const hasStorageLocation = ["mixed", "box"].includes(fields["storage-method"].value);
+        fields["no-cache-location"].disabled = !hasStorageLocation;
+        context.selects.forEach(syncCategorySelect);
+        reveal(fields["no-cache-row"], hasStorageLocation, animate);
+        const ignoreSupport = fields["ignore-support"].checked;
+        fields["support-expand"].hidden = !ignoreSupport;
+        fields["support-expand"].disabled = !ignoreSupport;
+        const expanded = ignoreSupport && context.supportExpanded;
+        fields["support-expand"].setAttribute("aria-expanded", String(expanded));
+        fields["support-expand"].setAttribute(
+            "aria-label", `${expanded ? "收起" : "展开"}支撑方块设置`
         );
-        reveal(nodes.categorySupportBlockRow, supportExpanded, true);
-        nodes.categorySupportBlock.disabled = !ignoreSupport;
+        reveal(fields["support-block-row"], expanded, animate);
+        fields["support-block"].disabled = !ignoreSupport;
+    }
+
+    /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
+    function createBindingOptions(binding) {
+        const root = globalCategoryContext.root.cloneNode(true);
+        const prefix = `binding-${binding.id}-`;
+        root.querySelectorAll("[id]").forEach(element => {
+            element.id = prefix + element.id;
+        });
+        root.querySelectorAll("[for], [aria-controls], [aria-labelledby]").forEach(element => {
+            for (const attribute of ["for", "aria-controls", "aria-labelledby"]) {
+                const value = element.getAttribute(attribute);
+                if (value) {
+                    element.setAttribute(attribute,
+                        value.split(/\s+/).map(id => prefix + id).join(" "));
+                }
+            }
+        });
+        root.querySelectorAll("[data-menu-open]").forEach(row => {
+            row.removeAttribute("data-menu-open");
+        });
+        root.querySelectorAll(".category-select-menu").forEach(menu => {
+            menu.hidden = true;
+            menu.inert = true;
+        });
+        root.querySelectorAll(".category-select-trigger").forEach(trigger => {
+            trigger.setAttribute("aria-expanded", "false");
+        });
+        const context = createCategoryOptionsContext(root);
+        writeCategoryOptions(binding.categoryOptions || readCategoryOptions(), context);
+        bindCategoryOptions(context);
+        return context;
     }
 
     /** @param {HTMLElement} host @param {string} title @param {string} regionKind
@@ -2333,6 +2397,47 @@ select {
         const grid = document.createElement("div");
         const body = document.createElement("div");
         body.className = "category-binding-card-body";
+        body.id = `binding-${binding.id}-body`;
+        toggle.setAttribute("aria-controls", body.id);
+        const content = document.createElement("div");
+        content.className = "category-binding-content";
+        const context = createBindingOptions(binding);
+        bindingOptions.set(card, context);
+        const detail = document.createElement("div");
+        detail.className = "category-binding-options";
+        detail.id = `binding-${binding.id}-options`;
+        detail.append(context.root);
+        const override = document.createElement("label");
+        override.className = "category-option-switch category-binding-override";
+        const status = document.createElement("span");
+        status.className = "category-binding-override-status";
+        const enabled = document.createElement("input");
+        enabled.className = "category-binding-enabled";
+        enabled.type = "checkbox";
+        enabled.checked = Boolean(binding.optionsEnabled);
+        enabled.setAttribute("role", "switch");
+        enabled.setAttribute("aria-label", `启用绑定组 ${index + 1}独立设置`);
+        enabled.setAttribute("aria-controls", detail.id);
+        override.append(status, enabled);
+        override.addEventListener("click", event => event.stopPropagation());
+        summary.append(override);
+        let initialized = Boolean(binding.categoryOptions);
+        /** @param {boolean} animate @returns {void} */
+        const updateOverride = animate => {
+            if (enabled.checked && !initialized) {
+                writeCategoryOptions(readCategoryOptions(), context);
+                initialized = true;
+            }
+            status.textContent = enabled.checked ? "独立设置" : "使用全局设置";
+            enabled.setAttribute("aria-expanded", String(enabled.checked));
+            if (!enabled.checked && categoryMenuOpen
+                    && context.root.contains(categoryMenuOpen.wrap)) {
+                setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+            }
+            reveal(detail, enabled.checked, animate);
+        };
+        enabled.addEventListener("change", () => updateOverride(true));
+        updateOverride(false);
         grid.className = "coordinate-region-grid";
         appendBindingRegion(
             grid,
@@ -2348,7 +2453,8 @@ select {
             binding.id,
             binding.storageRegion || emptyRegion()
         );
-        body.append(grid);
+        content.append(detail, grid);
+        body.append(content);
         card.append(summary, body);
         setCategoryBindingOpen(card, open);
         return card;
@@ -2366,6 +2472,9 @@ select {
     /** @param {CategoryBinding[]} bindings @returns {void} */
     function renderCategoryBindings(bindings) {
         const values = bindings.length ? bindings : [emptyBinding()];
+        if (categoryMenuOpen && nodes.categoryBindings.contains(categoryMenuOpen.wrap)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
         nodes.categoryBindings.replaceChildren();
         values.forEach((binding, index) => {
             nodes.categoryBindings.append(createCategoryBindingCard(binding, index));
@@ -2408,7 +2517,9 @@ select {
                 name: card.querySelector(".category-binding-name").value.trim()
                     || `绑定组 ${index + 1}`,
                 markerRegion,
-                storageRegion
+                storageRegion,
+                optionsEnabled: card.querySelector(".category-binding-enabled").checked,
+                categoryOptions: readCategoryOptions(bindingOptions.get(card))
             };
         });
         return bindings.some(binding => !binding) ? null : bindings;
@@ -2525,7 +2636,12 @@ select {
         setFieldGroupEnabled(nodes.pointOptions, kind === "point");
         setFieldGroupEnabled(nodes.regionFields, kind === "region");
         setFieldGroupEnabled(nodes.categoryFields, kind === "category-zone");
-        if (kind === "category-zone") updateCategoryOptionState();
+        if (kind === "category-zone") {
+            updateCategoryOptionState();
+            for (const card of nodes.categoryBindings.children) {
+                updateCategoryOptionState(bindingOptions.get(card), false);
+            }
+        }
         if (kind === "point") {
             nodes.x.value = String(coordinate.x ?? 0);
             nodes.y.value = String(coordinate.y ?? 64);
@@ -2582,7 +2698,9 @@ select {
                 id: nextId(),
                 name: binding.name,
                 markerRegion: cloneRegion(binding.markerRegion),
-                storageRegion: cloneRegion(binding.storageRegion)
+                storageRegion: cloneRegion(binding.storageRegion),
+                optionsEnabled: Boolean(binding.optionsEnabled),
+                categoryOptions: binding.categoryOptions ? {...binding.categoryOptions} : undefined
             }));
         }
         return copy;
@@ -3024,60 +3142,70 @@ select {
         }
         nodes.kindOptions[index].focus();
     });
-    for (const control of categorySelects) {
-        control.trigger.addEventListener("click", () => {
-            const open = control.trigger.getAttribute("aria-expanded") === "true";
-            setCategoryMenuOpen(control, !open);
-        });
-        control.trigger.addEventListener("keydown", event => {
-            if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
-            event.preventDefault();
-            setCategoryMenuOpen(control, true, true);
-        });
-        for (const option of control.options) {
-            option.addEventListener("click", () => {
-                selectCategoryOption(control, option.dataset.categoryValue);
+    /** @param {CategoryOptionsContext} context @returns {void} */
+    function bindCategoryOptions(context) {
+        for (const control of context.selects) {
+            control.trigger.addEventListener("click", () => {
+                const open = control.trigger.getAttribute("aria-expanded") === "true";
+                setCategoryMenuOpen(control, !open);
+            });
+            control.trigger.addEventListener("keydown", event => {
+                if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
+                event.preventDefault();
+                setCategoryMenuOpen(control, true, true);
+            });
+            for (const option of control.options) {
+                option.addEventListener("click", () => {
+                    selectCategoryOption(control, option.dataset.categoryValue);
+                });
+            }
+            control.menu.addEventListener("keydown", event => {
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    setCategoryMenuOpen(control, false, true);
+                    return;
+                }
+                if (event.key === "Tab") {
+                    setCategoryMenuOpen(control, false);
+                    return;
+                }
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    const option = /** @type {HTMLButtonElement} */ (document.activeElement);
+                    selectCategoryOption(control, option.dataset.categoryValue);
+                    return;
+                }
+                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                let index = control.options.indexOf(document.activeElement);
+                if (event.key === "Home") index = 0;
+                if (event.key === "End") index = control.options.length - 1;
+                if (event.key === "ArrowDown") index = (index + 1) % control.options.length;
+                if (event.key === "ArrowUp") {
+                    index = (index - 1 + control.options.length) % control.options.length;
+                }
+                control.options[index].focus();
+            });
+            control.select.addEventListener("change", () => {
+                syncCategorySelect(control);
+                if (control.select === context.fields["storage-method"]) {
+                    updateCategoryOptionState(context);
+                }
             });
         }
-        control.menu.addEventListener("keydown", event => {
-            if (event.key === "Escape") {
-                event.preventDefault();
-                setCategoryMenuOpen(control, false, true);
-                return;
-            }
-            if (event.key === "Tab") {
-                setCategoryMenuOpen(control, false);
-                return;
-            }
-            if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                const option = /** @type {HTMLButtonElement} */ (document.activeElement);
-                selectCategoryOption(control, option.dataset.categoryValue);
-                return;
-            }
-            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-            event.preventDefault();
-            let index = control.options.indexOf(document.activeElement);
-            if (event.key === "Home") index = 0;
-            if (event.key === "End") index = control.options.length - 1;
-            if (event.key === "ArrowDown") index = (index + 1) % control.options.length;
-            if (event.key === "ArrowUp") {
-                index = (index - 1 + control.options.length) % control.options.length;
-            }
-            control.options[index].focus();
+        const fields = context.fields;
+        fields["support-expand"].addEventListener("click", () => {
+            if (!fields["ignore-support"].checked) return;
+            context.supportExpanded = !context.supportExpanded;
+            updateCategoryOptionState(context);
         });
-        control.select.addEventListener("change", () => {
-            syncCategorySelect(control);
-            if (control.select === nodes.categoryStorageMethod) {
-                updateCategoryOptionState();
-            }
+        fields["ignore-support"].addEventListener("change", () => {
+            context.supportExpanded = fields["ignore-support"].checked;
+            updateCategoryOptionState(context);
         });
     }
-    nodes.categorySupportExpand.addEventListener("click", () => {
-        if (!nodes.categoryIgnoreSupport.checked) return;
-        state.categorySupportExpanded = !state.categorySupportExpanded;
-        updateCategoryOptionState();
-    });
+
+    bindCategoryOptions(globalCategoryContext);
     document.addEventListener("pointerdown", event => {
         if (kindMenuOpen && !nodes.kindWrap.contains(event.target)) setKindMenuOpen(false);
         if (categoryMenuOpen && !categoryMenuOpen.wrap.contains(event.target)) {
@@ -3092,10 +3220,6 @@ select {
     });
     nodes.add.addEventListener("click", addCoordinate);
     nodes.addCategoryBinding.addEventListener("click", addCategoryBinding);
-    nodes.categoryIgnoreSupport.addEventListener("change", () => {
-        state.categorySupportExpanded = nodes.categoryIgnoreSupport.checked;
-        updateCategoryOptionState();
-    });
     nodes.addFolder.addEventListener("click", showFolderForm);
     nodes.cancelFolder.addEventListener("click", hideFolderForm);
     nodes.folderForm.addEventListener("submit", event => {

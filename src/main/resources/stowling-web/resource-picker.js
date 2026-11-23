@@ -26,26 +26,33 @@
      * @param {HTMLSelectElement} select
      * @param {string} [type]
      * @param {string} [panel]
+     * @param {boolean} [showCreateLink]
      * @returns {void}
      */
-    function group(select, type, panel = "coordinate-points") {
+    function group(select, type, panel = "coordinate-points", showCreateLink = true) {
         if (!select?.parentElement) return;
         let state = states.get(select);
         if (!state) {
-            const controls = S.element("span", "resource-picker-controls");
-            const link = S.element("a", "text-link", "去坐标页添加");
-            link.target = "_blank";
-            link.rel = "noopener";
-            controls.append(link);
-            const anchor = select.closest("label") || select;
-            anchor.after(controls);
+            let controls = null;
+            let link = null;
+            if (showCreateLink) {
+                controls = S.element("span", "resource-picker-controls");
+                link = S.element("a", "text-link", "去坐标页添加");
+                link.target = "_blank";
+                link.rel = "noopener";
+                controls.append(link);
+                const anchor = select.closest("label") || select;
+                anchor.after(controls);
+            }
             state = {controls, link, options: [], catalog: {}};
             states.set(select, state);
         }
         state.options = Array.from(select.options, option => option.cloneNode(true));
         state.type = type;
-        state.link.href = "/coordinates.html#" + panel;
-        state.controls.hidden = state.options.some(option => option.value && !option.disabled);
+        if (state.link) state.link.href = "/coordinates.html#" + panel;
+        if (state.controls) {
+            state.controls.hidden = state.options.some(option => option.value && !option.disabled);
+        }
         const captured = state.options;
         load().then(response => {
             if (state.options !== captured || !select.isConnected) return;

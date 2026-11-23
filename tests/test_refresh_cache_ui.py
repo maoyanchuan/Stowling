@@ -251,14 +251,6 @@ def refresh_page() -> Iterator[Any]:
                         parameters: {targetRef: 'region:stock', chests: 'true',
                             barrels: 'true', shulkerBoxes: 'true', otherContainers: 'false'}}]}]
             };
-            window.StowlingResourcePicker = {
-                /** @returns {Promise<object>} */
-                async load() {return {regions: [
-                    {id: 'stock', name: '主仓选区'}, {id: 'reserve', name: '备用仓选区'}
-                ]};},
-                /** @returns {void} */
-                group() {}
-            };
             window.Stowling = {
                 /** @param {string} tag @param {string} css @param {string} text
                  * @returns {HTMLElement} */
@@ -281,6 +273,9 @@ def refresh_page() -> Iterator[Any]:
                     const method = options.method || 'GET';
                     const body = options.body ? JSON.parse(options.body) : null;
                     backend.requests.push({path, method, body});
+                    if (path === '/v1/coordinate-resources') return {regions: [
+                        {id: 'stock', name: '主仓选区'}, {id: 'reserve', name: '备用仓选区'}
+                    ], catalog: {}};
                     const scheduled = backend.schedules[backend.tasks[0].id];
                     let taskId;
                     if (method === 'POST' && /\/(start|stop)$/.test(path)) {
@@ -307,8 +302,8 @@ def refresh_page() -> Iterator[Any]:
                 }
             };
         """)
-        for name in ("settings-ui.js", "task-select-ui.js", "task-autosave.js",
-                     "refresh-cache-ui.js"):
+        for name in ("resource-picker.js", "settings-ui.js", "task-select-ui.js",
+                     "task-autosave.js", "refresh-cache-ui.js"):
             page.add_script_tag(content=(WEB / name).read_text(encoding="utf-8"))
         page.evaluate("async () => {for (const handler of backend.handlers) await handler();}")
         yield page
@@ -392,6 +387,11 @@ def test_refresh_container_disclosure_preserves_values_and_animates(refresh_page
     page = refresh_page
     open_refresh(page)
     summary = page.locator("#refresh-kind-summary")
+    arrow = summary.locator(".settings-chevron")
+    assert arrow.count() == 1
+    assert arrow.locator("svg").count() == 0
+    assert arrow.evaluate("node => getComputedStyle(node).borderRightWidth") == "2px"
+    assert arrow.evaluate("node => getComputedStyle(node).borderBottomWidth") == "2px"
     summary.focus()
     summary.press("Enter")
     settle_refresh(page)
@@ -460,6 +460,26 @@ def test_refresh_dropdown_keyboard_and_upward_placement(refresh_page: Any) -> No
     menu.get_by_role("option").first.press("Escape")
     assert menu.count() == 0
     assert mode.evaluate("node => node === document.activeElement")
+
+
+def test_refresh_range_only_shows_dropdown_even_without_regions(refresh_page: Any) -> None:
+    page = refresh_page
+    open_refresh(page)
+    row = page.locator("#refresh-cache-target").locator("xpath=../..")
+    assert row.locator(".resource-picker-controls, a").count() == 0
+    assert row.locator(".task-select-trigger").count() == 1
+    page.evaluate("""async () => {
+        const select = document.getElementById('refresh-cache-target');
+        select.replaceChildren(new Option('选择普通区域', ''));
+        StowlingResourcePicker.group(select, undefined, 'regions', false);
+        await StowlingResourcePicker.load();
+    }""")
+    assert row.locator(".resource-picker-controls, a").count() == 0
+    trigger = row.locator(".task-select-trigger")
+    trigger.click()
+    assert page.locator(".task-select-menu:not([hidden])").get_by_role("option").count() == 0
+    page.keyboard.press("Escape")
+    assert trigger.evaluate("node => node === document.activeElement")
 
 
 def test_refresh_run_failure_restores_switch_and_draft_stays_editable(refresh_page: Any) -> None:

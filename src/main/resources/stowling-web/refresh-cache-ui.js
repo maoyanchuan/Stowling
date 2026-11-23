@@ -271,7 +271,7 @@
         target.replaceChildren(new Option("选择普通区域", ""));
         for (const [value, label] of locations) target.append(new Option(label, value));
         target.value = locations.has(selected) ? selected : "";
-        window.StowlingResourcePicker?.group(target, undefined, "regions");
+        window.StowlingResourcePicker?.group(target, undefined, "regions", false);
     }
 
     /** @param {object|null} task @returns {void} */

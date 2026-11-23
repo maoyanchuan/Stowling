@@ -60,13 +60,13 @@ class V2ControlServerTest {
             assertEquals("石材", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
                     .get("name").getAsString());
 
-            binding.addProperty("name", "木材");
+            binding.addProperty("name", "A1");
             payload.add("revision", response.get("revision"));
             var updated = fixture.send(path, "PUT", payload.toString(), true);
             assertEquals(200, updated.statusCode());
             response = object(updated);
             zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
-            assertEquals("木材", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+            assertEquals("A1", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
                     .get("name").getAsString());
 
             binding.remove("name");
@@ -74,7 +74,11 @@ class V2ControlServerTest {
             var legacy = fixture.send(path, "PUT", payload.toString(), true);
             assertEquals(200, legacy.statusCode());
             zone = object(legacy).getAsJsonArray("categoryZones").get(0).getAsJsonObject();
-            assertEquals("木材", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+            assertEquals("A1", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .get("name").getAsString());
+            var reloaded = fixture.send(path, "GET", null, true);
+            assertEquals(200, reloaded.statusCode());
+            assertEquals("A1", object(reloaded).getAsJsonArray("bindings").get(0).getAsJsonObject()
                     .get("name").getAsString());
         }
     }

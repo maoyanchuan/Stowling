@@ -410,7 +410,8 @@ public final class ConfigStore {
                                 "containerOverrides",
                                 "standingArea",
                                 "storagePolicy",
-                                "wholeStorage"
+                                "wholeStorage",
+                                "name"
                         ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );

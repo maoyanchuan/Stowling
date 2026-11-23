@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonParser;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
@@ -27,6 +28,45 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigStoreTest {
     @TempDir
     Path directory;
+
+    @Test
+    void acceptsBindingNamesInSavedFilesAndLegacyFilesWithoutNames() throws Exception {
+        Path path = directory.resolve("binding-name.json");
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "DIRECT_BLOCK_ID");
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "分类区1", List.of(binding));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(), List.of(), List.of(), List.of(zone));
+        var legacy = new Gson().toJsonTree(config).getAsJsonObject();
+        legacy.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                .getAsJsonArray("bindings").get(0).getAsJsonObject().remove("name");
+        Files.writeString(path, legacy.toString());
+
+        var store = new ConfigStore(path);
+        var initial = store.read();
+        assertEquals("", initial.config().categoryZones().getFirst().bindings().getFirst().name());
+        var renamed = new CategoryBindingDefinition(binding.id(), area, area, binding.ruleId(),
+                List.of(), List.of(), null, dev.stowling.v2.model.StoragePolicy.DEFAULT,
+                false, "A1");
+        var updated = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(), List.of(), List.of(),
+                List.of(new CategoryZoneDefinition(zone.id(), zone.name(), List.of(renamed))));
+        var saved = store.save(initial.revision(), updated);
+        assertEquals("A1", saved.config().categoryZones().getFirst().bindings().getFirst().name());
+        assertEquals(renamed, new ConfigStore(path).read().config()
+                .categoryZones().getFirst().bindings().getFirst());
+
+        var invalid = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        invalid.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                .getAsJsonArray("bindings").get(0).getAsJsonObject()
+                .addProperty("unexpectedName", "typo");
+        Files.writeString(path, invalid.toString());
+        var error = assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+        assertTrue(error.getMessage().contains("categoryZones[0].bindings[0]"));
+        assertTrue(error.getMessage().contains("unexpectedName"));
+        assertEquals(invalid.toString(), Files.readString(path));
+    }
 
     @Test
     void cacheIntakePolicyPersistsAcrossConfigurationRestart() throws Exception {

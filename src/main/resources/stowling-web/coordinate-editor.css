@@ -877,6 +877,7 @@
     align-items: center;
     gap: 12px;
     min-height: 62px;
+    padding: 10px 12px;
     border-radius: 10px;
 }
 
@@ -1045,7 +1046,7 @@
 
 :root body[data-coordinate-editor] .category-option-sub {
     overflow: visible;
-    padding-left: 18px;
+    padding-left: 30px;
     opacity: 1;
 }
 
@@ -1278,7 +1279,7 @@
     }
 
     :root body[data-coordinate-editor] .category-option-sub {
-        padding-left: 0;
+        padding-left: 12px;
     }
 
     :root body[data-coordinate-editor] .editor-fields .field-label:first-child {

@@ -32,13 +32,13 @@ def test_coordinate_page_uses_template_sidebar_and_real_creation_types() -> None
     assert 'aria-label="坐标列表"' in html
     assert 'role="tablist"' not in html
     create = html.split('id="coordinate-kind"', 1)[1].split("</select>", 1)[0]
-    for label in ("坐标点", "区域", "分类区", "储存区"):
+    for label in ("坐标点", "区域", "分类区"):
         assert f'>{label}</option>' in create
 
 
 def test_inactive_editor_fields_use_hidden_attribute() -> None:
     html = read("coordinates.html")
-    for panel in ("region-fields", "category-zone-fields", "warehouse-members"):
+    for panel in ("region-fields", "category-zone-fields"):
         assert re.search(rf'id="{panel}"[^>]*\bhidden\b', html)
 
 
@@ -47,7 +47,7 @@ def test_selecting_a_resource_opens_template_editor_and_old_links_keep_their_typ
     assert "state.selectedId = coordinate.id" in editor
     assert "populateEditor(coordinate)" in editor
     assert 'window.addEventListener("hashchange"' in editor
-    for anchor in ("#coordinate-points", "#regions", "#category-zones", "#warehouses"):
+    for anchor in ("#coordinate-points", "#regions", "#category-zones"):
         assert anchor in editor
 
 

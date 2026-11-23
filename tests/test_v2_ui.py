@@ -31,7 +31,7 @@ def test_configuration_notice_appears_inside_the_authenticated_console() -> None
 def test_coordinate_editor_exposes_template_point_fields_and_optional_values() -> None:
     html = read("coordinates.html")
     for field in ("coordinate-name", "coordinate-x", "coordinate-y", "coordinate-z",
-                  "coordinate-radius", "coordinate-dimension"):
+                  "coordinate-radius"):
         assert f'id="{field}"' in html
     assert 'src="/coordinate-editor.js"' in html
     assert 'src="/coordinates.js"' not in html
@@ -581,18 +581,21 @@ def test_coordinate_editors_group_xyz_and_separate_optional_settings() -> None:
     assert 'id="point-options" class="editor-options"' in html
     assert 'class="coordinate-corner-fields"' in html
     assert 'id="coordinate-radius"' in html
-    assert 'id="coordinate-dimension"' in html
+    assert 'id="coordinate-dimension"' not in html
     assert 'id="library-footer"' in html
 
 
-def test_coordinate_search_filters_without_discarding_unsaved_fields() -> None:
+def test_coordinate_library_omits_controls_outside_the_template() -> None:
     html = read("coordinates.html")
     javascript = read("coordinate-editor.js")
-    search = javascript.split("function filterLibrary()", 1)[1].split("\n    }", 1)[0]
-    assert 'id="coordinate-search"' in html
-    assert "item.hidden" in search
-    assert "replaceChildren" not in search
-    assert "populateEditor" not in search
+    assert 'id="coordinate-search"' not in html
+    assert "搜索资源" not in html
+    assert "搜索名称或坐标" not in html
+    assert "#coordinate-search" not in javascript
+    assert "filterLibrary" not in javascript
+    assert 'id="refresh-coordinates"' not in html
+    assert "#refresh-coordinates" not in javascript
+    assert "储存区成员" not in html
 
 
 def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:

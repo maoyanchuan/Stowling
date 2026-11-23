@@ -13,12 +13,12 @@ NODE = shutil.which("node")
 def test_folder_and_resource_actions_share_the_coordinate_page() -> None:
     html = (WEB / "coordinates.html").read_text(encoding="utf-8")
     for control in (
-        "coordinate-list", "add-folder", "folder-form", "delete-folder",
-        "coordinate-search", "coordinate-kind", "warehouse-members",
+        "coordinate-list", "add-folder", "folder-form", "coordinate-kind",
     ):
         assert f'id="{control}"' in html
     assert 'data-coordinate-kind="category-zone"' in html
-    assert 'data-coordinate-kind="warehouse"' in html
+    assert 'data-coordinate-kind="warehouse"' not in html
+    assert "储存区成员" not in html
     assert 'id="facilities"' not in html
 
 

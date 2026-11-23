@@ -19,7 +19,7 @@
 
     /** @typedef {{id: string, name: string, kind: string, folderId: string,
      * x?: number, y?: number, z?: number, radius?: number|null, dimension?: string,
-     * saved?: boolean, members?: string[], originalOptions?: CategoryOptions,
+     * saved?: boolean, originalOptions?: CategoryOptions,
      * originalExpansion?: object,
      * region?: CoordinateRegion, overallRegion?: CoordinateRegion,
      * bindings?: CategoryBinding[], categoryOptions?: CategoryOptions}} Coordinate */
@@ -30,7 +30,6 @@
     const coordinates = [];
     let directory = null;
     let busy = false;
-    let editingFolder = "";
     let dirty = false;
     const state = {
         selectedId: coordinates[0]?.id || "",
@@ -85,12 +84,6 @@
         y: document.querySelector("#coordinate-y"),
         z: document.querySelector("#coordinate-z"),
         radius: document.querySelector("#coordinate-radius"),
-        dimension: document.querySelector("#coordinate-dimension"),
-        warehouseMembers: document.querySelector("#warehouse-members"),
-        cacheDestination: document.querySelector("#category-cache-destination"),
-        cacheRow: document.querySelector("#category-cache-row"),
-        expansionDirection: document.querySelector("#category-expansion-direction"),
-        expansionStep: document.querySelector("#category-expansion-step"),
         categoryOverall: {
             first: {
                 x: document.querySelector("#category-overall-first-x"),
@@ -125,9 +118,7 @@
         ["scopeMode", nodes.categoryScopeMode],
         ["recognitionMode", nodes.categoryRecognitionMode],
         ["storageMethod", nodes.categoryStorageMethod],
-        ["noCacheLocation", nodes.categoryNoCacheLocation],
-        ["cacheDestination", nodes.cacheDestination],
-        ["expansionDirection", nodes.expansionDirection]
+        ["noCacheLocation", nodes.categoryNoCacheLocation]
     ].map(([key, select]) => {
         const wrap = document.querySelector(`[data-category-select="${key}"]`);
         return {
@@ -324,8 +315,7 @@
         return {
             point: "坐标点",
             region: "区域",
-            "category-zone": "分类区",
-            warehouse: "储存区"
+            "category-zone": "分类区"
         }[kind] || "坐标点";
     }
 
@@ -383,13 +373,21 @@
     function writeCategoryOptions(options) {
         const values = {...defaultCategoryOptions(), ...options};
         populateCacheOptions();
-        nodes.cacheDestination.value = values.cacheDestination;
-        nodes.expansionDirection.value = values.expansionDirection;
-        nodes.expansionStep.value = String(values.expansionStep);
+        if (values.recognitionMode === "unstackable"
+                && !nodes.categoryRecognitionMode.querySelector('[value="unstackable"]')) {
+            const control = categorySelects.find(item => item.key === "recognitionMode");
+            control.select.append(new Option("不可堆叠物品", "unstackable"));
+            const option = control.menu.firstElementChild.cloneNode(true);
+            option.dataset.categoryValue = "unstackable";
+            option.querySelector("span").textContent = "不可堆叠物品";
+            control.menu.append(option);
+            control.options = Array.from(control.menu.children);
+        }
         nodes.categoryScopeMode.value = values.scopeMode;
         nodes.categoryRecognitionMode.value = values.recognitionMode;
         nodes.categoryStorageMethod.value = values.storageMethod;
-        nodes.categoryNoCacheLocation.value = values.noCacheLocation;
+        nodes.categoryNoCacheLocation.value = values.noCacheLocation === "specified"
+            ? values.cacheDestination : "inside-box";
         nodes.categoryIgnoreSupport.checked = values.ignoreSupportBlock;
         nodes.categorySupportBlock.value = values.supportBlock;
         state.categorySupportExpanded = values.ignoreSupportBlock;
@@ -400,15 +398,16 @@
     /** @returns {CategoryOptions} */
     function readCategoryOptions() {
         return {
+            ...selectedCoordinate()?.categoryOptions,
             scopeMode: nodes.categoryScopeMode.value,
             recognitionMode: nodes.categoryRecognitionMode.value,
             storageMethod: nodes.categoryStorageMethod.value,
-            noCacheLocation: nodes.categoryNoCacheLocation.value,
+            noCacheLocation: nodes.categoryNoCacheLocation.value === "inside-box"
+                ? "inside-box" : "specified",
             ignoreSupportBlock: nodes.categoryIgnoreSupport.checked,
             supportBlock: nodes.categorySupportBlock.value.trim(),
-            cacheDestination: nodes.cacheDestination.value,
-            expansionDirection: nodes.expansionDirection.value,
-            expansionStep: Number(nodes.expansionStep.value)
+            cacheDestination: nodes.categoryNoCacheLocation.value === "inside-box"
+                ? "" : nodes.categoryNoCacheLocation.value
         };
     }
 
@@ -418,14 +417,6 @@
             .includes(nodes.categoryStorageMethod.value);
         nodes.categoryNoCacheLocation.disabled = !hasStorageLocation;
         reveal(nodes.categoryNoCacheRow, hasStorageLocation, true);
-        const needsCache = hasStorageLocation
-            && nodes.categoryNoCacheLocation.value === "specified";
-        nodes.cacheDestination.disabled = !needsCache;
-        reveal(nodes.cacheRow, needsCache, true);
-        const single = nodes.categoryScopeMode.value === "single";
-        nodes.expansionDirection.disabled = nodes.expansionStep.disabled = !single;
-        reveal(document.querySelector("#category-expansion-row"), single, true);
-        reveal(document.querySelector("#category-step-row"), single, true);
         categorySelects.forEach(syncCategorySelect);
         const ignoreSupport = nodes.categoryIgnoreSupport.checked;
         nodes.categorySupportExpand.hidden = !ignoreSupport;
@@ -651,7 +642,7 @@
 
     /** @param {string} kind @returns {boolean} */
     function isCoordinateKind(kind) {
-        return ["point", "region", "category-zone", "warehouse"].includes(kind);
+        return ["point", "region", "category-zone"].includes(kind);
     }
 
     /** @param {string} kind @returns {void} */
@@ -700,7 +691,6 @@
                     coordinate[axis] = integerValue(nodes[axis].value) ?? coordinate[axis];
                 }
                 coordinate.radius = integerValue(nodes.radius.value);
-                coordinate.dimension = nodes.dimension.value;
             } else if (state.editorKind === "region") {
                 coordinate.region = readRegionFields(nodes.region) || coordinate.region;
             } else if (state.editorKind === "category-zone") {
@@ -708,9 +698,6 @@
                     || coordinate.overallRegion;
                 coordinate.bindings = readCategoryBindings() || coordinate.bindings;
                 coordinate.categoryOptions = readCategoryOptions();
-            } else if (state.editorKind === "warehouse") {
-                coordinate.members = Array.from(nodes.warehouseMembers.querySelectorAll(
-                    "input:checked"), input => input.value);
             }
         }
         dirty = false;
@@ -724,11 +711,6 @@
     function populateEditor(coordinate) {
         const kind = state.editorKind || coordinate.kind || "point";
         nodes.kindPicker.hidden = !state.showKindPicker;
-        setFieldGroupEnabled(nodes.warehouseMembers, kind === "warehouse");
-        if (kind === "warehouse") populateWarehouseMembers(coordinate);
-        const references = directory?.references?.[Model.ref(coordinate)] || [];
-        document.querySelector("#resource-references").textContent = references.length
-            ? `被引用：${references.join("、")}` : "";
         nodes.title.textContent = `${kindLabel(kind)}编辑`;
         syncKindMenu(kind);
         nodes.subtitle.textContent = kind === coordinate.kind
@@ -753,7 +735,6 @@
             nodes.y.value = String(coordinate.y ?? 64);
             nodes.z.value = String(coordinate.z ?? 0);
             nodes.radius.value = coordinate.radius == null ? "" : String(coordinate.radius);
-            nodes.dimension.value = coordinate.dimension || "";
         } else if (kind === "region") {
             writeRegionFields(nodes.region, coordinate.region || emptyRegion());
         }
@@ -764,7 +745,6 @@
 
     /** @param {Coordinate} coordinate @returns {string} */
     function coordinateSummary(coordinate) {
-        if (coordinate.kind === "warehouse") return `${coordinate.members?.length || 0} 个成员`;
         const format = corner => `${corner.x}, ${corner.y}, ${corner.z}`;
         if (coordinate.kind === "region" && coordinate.region) {
             return `${format(coordinate.region.first)} → ${format(coordinate.region.second)}`;
@@ -790,7 +770,6 @@
             return {...coordinate, x: 0, y: 64, z: 0, radius: 3};
         }
         if (kind === "region") return {...coordinate, region: emptyRegion()};
-        if (kind === "warehouse") return {...coordinate, members: []};
         return {
             ...coordinate,
             overallRegion: emptyRegion(),
@@ -888,13 +867,6 @@
         count.className = "coordinate-folder-count";
         count.textContent = `${coordinates.filter(value => value.folderId === folder.id).length}`;
         header.append(title, count);
-        header.title = "双击或按 F2 管理文件夹";
-        header.addEventListener("dblclick", () => showFolderForm(folder));
-        header.addEventListener("keydown", event => {
-            if (event.key !== "F2") return;
-            event.preventDefault();
-            showFolderForm(folder);
-        });
         header.addEventListener("click", () => {
             folder.collapsed = !folder.collapsed;
             section.dataset.collapsed = String(folder.collapsed);
@@ -1052,7 +1024,6 @@
         nodes.list.append(root);
         nodes.footer.textContent = `${coordinates.length} 个资源 · ${folders.length} 个文件夹`;
 
-        filterLibrary();
     }
 
     /** @returns {void} */
@@ -1088,15 +1059,11 @@
         nodes.name.select();
     }
 
-    /** @param {object|null} [folder] @returns {void} */
-    function showFolderForm(folder = null) {
+    /** @returns {void} */
+    function showFolderForm() {
         if (busy) return;
-        editingFolder = folder?.id || "";
         nodes.folderForm.hidden = false;
-        nodes.folderName.value = folder?.name || "";
-        nodes.folderForm.querySelector("button[type=submit]").textContent = folder
-            ? "保存文件夹" : "创建文件夹";
-        document.querySelector("#delete-folder").hidden = !editingFolder;
+        nodes.folderName.value = "";
         nodes.folderName.focus();
     }
 
@@ -1111,8 +1078,7 @@
         const name = nodes.folderName.value.trim();
         if (!name) return;
         await writeAction(async () => {
-            const path = "/v1/coordinate-folders" + (editingFolder ? "/" + editingFolder : "");
-            await send(path, editingFolder ? "PUT" : "POST", {name}, true);
+            await send("/v1/coordinate-folders", "POST", {name}, true);
             await loadDirectory(false);
             hideFolderForm();
         }, "文件夹已保存。");
@@ -1139,7 +1105,6 @@
                 return;
             }
             [coordinate.x, coordinate.y, coordinate.z] = values;
-            coordinate.dimension = nodes.dimension.value.trim();
             coordinate.radius = nodes.radius.value.trim() ? integerValue(nodes.radius.value) : null;
             if (coordinate.radius !== null && (coordinate.radius < 0 || coordinate.radius > 128)) {
                 setStatus("半径必须在 0 到 128 之间。", "error");
@@ -1148,9 +1113,6 @@
         } else if (coordinate.kind === "region") {
             coordinate.region = readRegionFields(nodes.region);
             if (!coordinate.region) return;
-        } else if (coordinate.kind === "warehouse") {
-            coordinate.members = Array.from(nodes.warehouseMembers.querySelectorAll(
-                "input:checked"), input => input.value);
         } else {
             coordinate.overallRegion = readRegionFields(nodes.categoryOverall);
             coordinate.bindings = readCategoryBindings();
@@ -1165,11 +1127,10 @@
             const previous = new Set(coordinates.filter(item => item.saved).map(item => item.id));
             const path = Model.route(coordinate) + (source.saved ? "/" + source.id : "");
             const response = await send(path, source.saved ? "PUT" : "POST", body,
-                Boolean(source.saved) || coordinate.kind === "warehouse");
+                Boolean(source.saved));
             const collection = coordinate.kind === "point" ? response.coordinates
                 : coordinate.kind === "region" ? response.regions
-                    : coordinate.kind === "category-zone" ? response.categoryZones
-                        : response.catalog.warehouses;
+                    : response.categoryZones;
             const id = source.saved ? source.id : collection.find(item => !previous.has(item.id))?.id;
             if (!id) throw new Error("资源已保存，请重新读取目录。");
             state.selectedId = id;
@@ -1249,76 +1210,24 @@
     }
 
     /** @returns {void} */
-    function filterLibrary() {
-        const query = document.querySelector("#coordinate-search").value.trim().toLowerCase();
-        for (const item of nodes.list.querySelectorAll(".coordinate-item")) {
-            const resource = coordinates.find(value => value.id === item.dataset.coordinateId);
-            item.hidden = !(resource.name + " " + coordinateSummary(resource))
-                .toLowerCase().includes(query);
-        }
-        for (const group of nodes.list.querySelectorAll(".coordinate-folder")) {
-            const header = group.querySelector(".coordinate-folder-header");
-            const matches = header.textContent.toLowerCase().includes(query);
-            if (matches && query) {
-                group.querySelectorAll(".coordinate-item").forEach(item => { item.hidden = false; });
-            }
-            group.hidden = Boolean(query) && !matches
-                && !group.querySelector(".coordinate-item:not([hidden])");
-            if (query && !group.hidden) {
-                group.dataset.collapsed = "false";
-                const children = group.querySelector(".coordinate-folder-children");
-                children.dataset.collapsed = "false";
-                children.inert = false;
-                header.setAttribute("aria-expanded", "true");
-            }
-        }
-    }
-
-    /** @param {Coordinate} coordinate @returns {void} */
-    function populateWarehouseMembers(coordinate) {
-        const legend = document.createElement("legend");
-        legend.textContent = "储存区成员";
-        nodes.warehouseMembers.replaceChildren(legend);
-        for (const member of coordinates.filter(item => item.saved
-                && ["point", "region"].includes(item.kind))) {
-            const label = document.createElement("label");
-            label.className = "warehouse-member";
-            const input = document.createElement("input");
-            input.type = "checkbox";
-            input.value = Model.ref(member);
-            input.checked = (coordinate.members || []).includes(input.value);
-            label.append(input, `${kindLabel(member.kind)} · ${member.name}`);
-            nodes.warehouseMembers.append(label);
-        }
-        if (nodes.warehouseMembers.children.length === 1) {
-            const message = document.createElement("p");
-            message.textContent = "请先添加坐标点或区域，再组合为储存区。";
-            nodes.warehouseMembers.append(message);
-        }
-    }
-
-    /** @returns {void} */
     function populateCacheOptions() {
-        const control = categorySelects.find(item => item.key === "cacheDestination");
-        control.select.replaceChildren(new Option("请选择缓存位置", ""));
-        control.menu.replaceChildren();
+        const control = categorySelects.find(item => item.key === "noCacheLocation");
+        const current = control.menu.querySelector(".category-select-option").cloneNode(true);
+        control.select.replaceChildren(new Option("当前存储位置", "inside-box"));
+        control.menu.replaceChildren(current);
         for (const resource of coordinates.filter(item => item.saved
                 && ["point", "region"].includes(item.kind))) {
             const ref = Model.ref(resource);
-            const label = `${kindLabel(resource.kind)} · ${resource.name}`;
-            control.select.append(new Option(label, ref));
-            const option = document.createElement("button");
-            option.type = "button";
-            option.className = "category-select-option";
+            control.select.append(new Option(`指定缓存位置 · ${resource.name}`, ref));
+            const option = current.cloneNode(true);
             option.dataset.categoryValue = ref;
-            option.setAttribute("role", "option");
             option.setAttribute("aria-selected", "false");
             option.tabIndex = -1;
-            const text = document.createElement("span");
-            text.textContent = label;
-            const check = nodes.categoryScopeMode.closest(".category-select-wrap")
-                .querySelector(".category-select-option svg").cloneNode(true);
-            option.append(text, check);
+            const text = option.querySelector("span");
+            text.replaceChildren(document.createTextNode(resource.name));
+            const detail = document.createElement("small");
+            detail.textContent = `指定缓存位置 · ${kindLabel(resource.kind)}`;
+            text.append(detail);
             control.menu.append(option);
         }
         control.options = Array.from(control.menu.children);
@@ -1342,7 +1251,7 @@
         coordinates.splice(0, coordinates.length, ...drafts, ...Model.resources(response));
         if (!selectedCoordinate()) {
             const kind = {"#coordinate-points": "point", "#regions": "region",
-                "#category-zones": "category-zone", "#warehouses": "warehouse"}[
+                "#category-zones": "category-zone"}[
                     window.location.hash];
             const selected = coordinates.find(item => item.kind === kind) || coordinates[0];
             state.selectedId = selected?.id || "";
@@ -1386,7 +1295,7 @@
             return true;
         } catch (error) {
             const message = error.code === "revision_conflict"
-                ? "配置已被外部修改，当前草稿已保留。请重新读取后再保存。"
+                ? "配置已被外部修改，当前草稿已保留。请刷新页面后再编辑保存。"
                 : error.message || "操作失败，请重试。";
             setStatus(message, "error");
             nodes.footer.textContent = message;
@@ -1426,24 +1335,9 @@
         event.preventDefault();
         event.returnValue = "";
     });
-    document.querySelector("#coordinate-search").addEventListener("input", filterLibrary);
-    document.querySelector("#refresh-coordinates").addEventListener("click", () => {
-        if (!leaveEditor()) return;
-        const saved = coordinates.filter(item => item.saved);
-        coordinates.splice(0, coordinates.length, ...saved);
-        void writeAction(loadDirectory, "坐标资源已同步。");
-    });
-    document.querySelector("#delete-folder").addEventListener("click", () => {
-        if (!editingFolder || busy || !window.confirm("删除文件夹？其中的资源将保留在根目录。")) return;
-        void writeAction(async () => {
-            await send("/v1/coordinate-folders/" + editingFolder, "DELETE", {}, true);
-            hideFolderForm();
-            await loadDirectory(false);
-        }, "文件夹已删除，资源已保留。");
-    });
     window.addEventListener("hashchange", () => {
         const kind = {"#coordinate-points": "point", "#regions": "region",
-            "#category-zones": "category-zone", "#warehouses": "warehouse"}[window.location.hash];
+            "#category-zones": "category-zone"}[window.location.hash];
         const selected = coordinates.find(item => item.kind === kind);
         if (!kind || !leaveEditor()) return;
         state.selectedId = selected?.id || "";
@@ -1577,6 +1471,7 @@
         // The standalone preview works without local storage.
     }
     setTheme(savedTheme);
+    nodes.radius.required = false;
     S.bindCoordinateInputs(nodes.x, nodes.y, nodes.z);
     for (const fields of [nodes.region, nodes.categoryOverall]) {
         for (const corner of [fields.first, fields.second]) {

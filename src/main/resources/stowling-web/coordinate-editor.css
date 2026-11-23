@@ -31,31 +31,6 @@
     cursor: text;
 }
 
-:root body[data-coordinate-editor] .warehouse-members {
-    display: grid;
-    grid-column: 1 / -1;
-    gap: 10px;
-    border: 0;
-    padding: 0;
-}
-
-:root body[data-coordinate-editor] .warehouse-member {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0;
-    color: var(--text);
-}
-
-:root body[data-coordinate-editor] .warehouse-member input {
-    width: 18px;
-    min-height: 18px;
-    accent-color: var(--accent);
-}
-:root body[data-coordinate-editor] * {
-    box-sizing: border-box;
-}
-
 :root body[data-coordinate-editor] {
     min-width: 320px;
     min-height: 100vh;

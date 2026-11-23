@@ -3,9 +3,9 @@
 
     const Zone = window.StowlingCategoryZoneModel;
     const types = {point: "coordinate", region: "region",
-        "category-zone": "category-zone", warehouse: "warehouse"};
+        "category-zone": "category-zone"};
     const routes = {point: "coordinates", region: "regions",
-        "category-zone": "category-zones", warehouse: "warehouses"};
+        "category-zone": "category-zones"};
 
     /** @param {object} value @returns {object} */
     function copy(value) {
@@ -86,9 +86,6 @@
                 categoryOptions: options, originalOptions: copy(options),
                 originalExpansion: normalized.expansion});
         }
-        for (const warehouse of directory.catalog?.warehouses || []) {
-            values.push({...copy(warehouse), kind: "warehouse"});
-        }
         const order = directory.catalog?.order || [];
         for (const value of values) {
             value.saved = true;
@@ -120,7 +117,6 @@
                 dimension: value.dimension || null, radius: value.radius ?? null};
         }
         if (value.kind === "region") return {name, ...area(value.region)};
-        if (value.kind === "warehouse") return {name, members: value.members};
         const options = value.categoryOptions;
         const baseline = value.originalOptions || {};
         const changed = key => !(key in baseline) || options[key] !== baseline[key];

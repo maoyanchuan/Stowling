@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -34,16 +35,56 @@ def test_directory_restores_order_placements_and_optional_point_values() -> None
         const values = model.resources(directory);
         process.stdout.write(JSON.stringify({order: values.map(model.ref),
             folder: values[1].folderId, point: model.payload(values[1]),
-            region: model.payload(values[0]), warehouse: model.payload(values[2])}));
+            region: model.payload(values[0])}));
     """)
-    assert result["order"] == ["region:r", "coordinate:p", "warehouse:w"]
+    assert result["order"] == ["region:r", "coordinate:p"]
     assert result["folder"] == "folder"
     assert result["point"] == {
         "name": "Point", "x": 1, "y": 2, "z": 3,
         "radius": None, "dimension": "minecraft:the_nether",
     }
     assert result["region"]["secondZ"] == 6
-    assert result["warehouse"]["members"] == ["coordinate:p"]
+
+
+def editor_structure(source: str) -> list[tuple]:
+    class EditorParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.depth = 0
+            self.structure: list[tuple] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if not self.depth and dict(attrs).get("class") != "coordinate-shell":
+                return
+            normalized = [(key, " ".join(value.split()) if value is not None else None)
+                          for key, value in attrs]
+            self.structure.append(("start", tag, sorted(normalized)))
+            if tag not in {"input", "img", "br", "meta", "link"}:
+                self.depth += 1
+
+        def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if self.depth:
+                self.structure.append(("single", tag, sorted(attrs)))
+
+        def handle_endtag(self, tag: str) -> None:
+            if self.depth:
+                self.structure.append(("end", tag))
+                self.depth -= 1
+
+        def handle_data(self, data: str) -> None:
+            if self.depth and data.strip():
+                self.structure.append(("text", " ".join(data.split())))
+
+    parser = EditorParser()
+    parser.feed(source)
+    return parser.structure
+
+
+def test_coordinate_editor_uses_the_complete_approved_template_structure() -> None:
+    root = WEB.parents[3]
+    template = (root / "docs/ui/coordinate-management-standard.html").read_text(encoding="utf-8")
+    page = (WEB / "coordinates.html").read_text(encoding="utf-8")
+    assert editor_structure(page) == editor_structure(template)
 
 
 ZONE_SETUP = """

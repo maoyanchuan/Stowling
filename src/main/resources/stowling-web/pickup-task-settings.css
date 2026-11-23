@@ -1,4 +1,4 @@
-/* Approved task template shared by pickup, coordinate and auto-eat tasks. */
+/* Approved task template shared by pickup, coordinate, auto-eat and refresh. */
 body[data-page="tasks"] .pickup-task-module {
     --pickup-padding: 20px;
     --pickup-control-height: 42px;
@@ -30,8 +30,8 @@ body[data-page="tasks"] .pickup-task-module::before {
 
 .pickup-task-module[hidden],
 .pickup-task-body[hidden],
-:is(.coordinate-task-form, .auto-eat-task-form)[hidden],
-:is(.coordinate-task-form, .auto-eat-task-form) [hidden],
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form)[hidden],
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) [hidden],
 .task-select-menu[hidden],
 .task-select-trigger[hidden] {
     display: none !important;
@@ -77,12 +77,12 @@ body[data-page="tasks"] .pickup-task-module::before {
     color: var(--warning);
 }
 
-:is(.coordinate-task-form, .auto-eat-task-form) {
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) {
     min-width: 0;
     margin: 0;
 }
 
-:is(.coordinate-task-form, .auto-eat-task-form) fieldset {
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) fieldset {
     display: block;
     min-width: 0;
     margin: 0;
@@ -90,13 +90,13 @@ body[data-page="tasks"] .pickup-task-module::before {
     border: 0;
 }
 
-:is(.coordinate-task-form, .auto-eat-task-form) .settings-copy {
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) .settings-copy {
     flex: 1;
     min-width: 0;
     color: var(--text);
 }
 
-:is(.coordinate-task-form, .auto-eat-task-form) .settings-copy label {
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) .settings-copy label {
     color: var(--text);
     font: inherit;
 }
@@ -119,7 +119,7 @@ body[data-page] .auto-eat-task-form .move-field .pickup-task-expand {
     background: transparent;
 }
 
-:is(.coordinate-task-form, .auto-eat-task-form) .field-message:empty {
+:is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) .field-message:empty {
     display: none;
 }
 
@@ -159,13 +159,15 @@ body[data-page] .pickup-task-body {
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form) {
+    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        .auto-eat-task-form, .refresh-cache-task-form) {
     padding: 4px 20px 14px;
     font-size: 16px;
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form)
+    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        .auto-eat-task-form, .refresh-cache-task-form)
     :is(.move-field, .auto-phase-header, .settings-row) {
     position: relative;
     isolation: isolate;
@@ -182,7 +184,8 @@ body[data-page]
     background: transparent;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form)
+:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    .auto-eat-task-form, .refresh-cache-task-form)
     :is(.move-field, .auto-phase-header, .settings-row)::before {
     content: "";
     position: absolute;
@@ -196,14 +199,16 @@ body[data-page]
 }
 
 @media (hover: hover) {
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form)
+    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        .auto-eat-task-form, .refresh-cache-task-form)
         :is(.move-field, .auto-phase-header, .settings-row):hover::before {
         opacity: 1;
     }
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form)
+    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        .auto-eat-task-form, .refresh-cache-task-form)
     :is(.move-field > span:first-child, .auto-phase-toggle, .settings-copy > strong) {
     min-width: 0;
     color: var(--text);
@@ -213,20 +218,20 @@ body[data-page]
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .move-field > span:first-child {
+    .auto-eat-task-form, .refresh-cache-task-form) .move-field > span:first-child {
     flex: 1;
 }
 
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .auto-phase-toggle {
+        .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-toggle {
     gap: 12px;
     min-height: 82px;
     padding: 10px 0;
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .auto-phase-toggle > strong {
+    .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-toggle > strong {
     flex: 1;
     font-size: inherit;
     font-weight: 400;
@@ -234,7 +239,7 @@ body[data-page]
 
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .auto-phase-copy strong {
+        .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-copy strong {
     color: var(--text);
     font-size: 16px;
     font-weight: 400;
@@ -242,10 +247,10 @@ body[data-page]
 
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .auto-phase-body,
+        .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-body,
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .settings-detail {
+        .auto-eat-task-form, .refresh-cache-task-form) .settings-detail {
     min-width: 0;
     margin: 0;
     padding: 0;
@@ -253,12 +258,13 @@ body[data-page]
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .task-settings-inner {
+    .auto-eat-task-form, .refresh-cache-task-form) .task-settings-inner {
     padding: 2px 0 18px 20px;
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form)
+    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        .auto-eat-task-form, .refresh-cache-task-form)
     :is(.auto-config-note, .settings-description, .auto-phase-copy small) {
     color: var(--muted);
     font-size: 14px;
@@ -267,13 +273,13 @@ body[data-page]
 
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .settings-disclosure {
+        .auto-eat-task-form, .refresh-cache-task-form) .settings-disclosure {
     border: 0;
 }
 
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .settings-detail
+        .auto-eat-task-form, .refresh-cache-task-form) .settings-detail
     .move-field:has(> small) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(min(240px, 100%), 38%);
@@ -282,7 +288,7 @@ body[data-page]
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .move-field:has(> small)
+    .auto-eat-task-form, .refresh-cache-task-form) .move-field:has(> small)
     > span:first-child {
     grid-column: 1;
     grid-row: 1;
@@ -290,7 +296,7 @@ body[data-page]
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .move-field:has(> small)
+    .auto-eat-task-form, .refresh-cache-task-form) .move-field:has(> small)
     > .task-select-wrap {
     grid-column: 2;
     grid-row: 1 / span 2;
@@ -298,7 +304,7 @@ body[data-page]
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .move-field > small {
+    .auto-eat-task-form, .refresh-cache-task-form) .move-field > small {
     grid-column: 1;
     grid-row: 2;
     align-self: start;
@@ -311,8 +317,9 @@ body[data-page]
 
 body[data-page]
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) input[type="number"],
-body[data-page] .auto-eat-task-form input[type="text"] {
+        .auto-eat-task-form, .refresh-cache-task-form) input[type="number"],
+body[data-page] .auto-eat-task-form input[type="text"],
+body[data-page] .refresh-cache-task-form input[type="time"] {
     flex: 0 0 56%;
     width: 56%;
     min-width: 0;
@@ -327,7 +334,7 @@ body[data-page] .auto-eat-task-form input[type="text"] {
 
 body[data-page] .pickup-task-module input.settings-switch,
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .auto-switch-track {
+    .auto-eat-task-form, .refresh-cache-task-form) .auto-switch-track {
     flex: 0 0 56px;
     width: 56px;
     min-width: 56px;
@@ -343,7 +350,7 @@ body[data-page] .pickup-task-module input.settings-switch {
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .auto-switch-track::after {
+    .auto-eat-task-form, .refresh-cache-task-form) .auto-switch-track::after {
     top: 5px;
     left: 5px;
     width: 22px;
@@ -351,7 +358,8 @@ body[data-page] .pickup-task-module input.settings-switch {
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form, .auto-eat-task-form)
+    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        .auto-eat-task-form, .refresh-cache-task-form)
     .auto-phase-switch input:checked + .auto-switch-track::after {
     transform: translateX(24px);
 }
@@ -361,7 +369,7 @@ body[data-page]
 }
 
 :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-    .auto-eat-task-form) .move-field > .task-select-wrap {
+    .auto-eat-task-form, .refresh-cache-task-form) .move-field > .task-select-wrap {
     flex: 0 0 38%;
     min-width: min(240px, 100%);
 }
@@ -502,29 +510,32 @@ body[data-page] .task-select-option:focus-visible {
 @media (max-width: 600px) {
     body[data-page]
         :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-            .auto-eat-task-form) .move-field {
+            .auto-eat-task-form, .refresh-cache-task-form) .move-field {
         flex-wrap: wrap;
         padding: 14px 0;
     }
 
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .move-field > span:first-child,
+        .auto-eat-task-form, .refresh-cache-task-form) .move-field > span:first-child,
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .move-field > .task-select-wrap,
+        .auto-eat-task-form, .refresh-cache-task-form) .move-field > .task-select-wrap,
     body[data-page]
         :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-            .auto-eat-task-form) input[type="number"],
-    body[data-page] .auto-eat-task-form input[type="text"] {
+            .auto-eat-task-form, .refresh-cache-task-form) input[type="number"],
+    body[data-page] .auto-eat-task-form input[type="text"],
+    body[data-page] .refresh-cache-task-form input[type="time"] {
         flex-basis: 100%;
         width: 100%;
         min-width: 0;
     }
 
-    body[data-page] .auto-eat-task-form .move-field.auto-eat-switch-row {
+    body[data-page] :is(.auto-eat-task-form, .refresh-cache-task-form)
+        :is(.auto-eat-switch-row, .refresh-cache-switch-row) {
         flex-wrap: nowrap;
     }
 
-    body[data-page] .auto-eat-task-form .auto-eat-switch-row > span:first-child {
+    body[data-page] :is(.auto-eat-task-form, .refresh-cache-task-form)
+        :is(.auto-eat-switch-row, .refresh-cache-switch-row) > span:first-child {
         flex-basis: auto;
         width: auto;
     }
@@ -535,17 +546,30 @@ body[data-page] .task-select-option:focus-visible {
 
     body[data-page]
         :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-            .auto-eat-task-form) .settings-detail
+            .auto-eat-task-form, .refresh-cache-task-form) .settings-detail
         .move-field:has(> small) {
         grid-template-columns: minmax(0, 1fr);
     }
 
     :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
-        .auto-eat-task-form) .move-field:has(> small)
+        .auto-eat-task-form, .refresh-cache-task-form) .move-field:has(> small)
         > .task-select-wrap {
         grid-column: 1;
         grid-row: 3;
         margin-top: 11px;
+    }
+}
+
+.refresh-cache-task-module .refresh-task-timing {
+    margin: 0;
+    padding: 14px 20px 0;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+    .refresh-cache-task-form .task-settings-inner {
+        padding-left: 0;
     }
 }
 

@@ -126,29 +126,53 @@
                              aria-label="已保存的自动收集材料任务"></div>
                         <div id="refresh-cache-list" class="move-task-list"
                              aria-label="已保存的刷新缓存任务"></div>
-                        <article id="refresh-cache-editor" class="move-saved-task is-draft"
-                                 hidden>
-                            <button id="toggle-refresh-cache-draft" class="move-task-summary"
-                                    type="button" aria-expanded="false"
-                                    aria-controls="refresh-cache-draft-body">
-                                <span class="move-task-kind" aria-hidden="true">刷</span>
-                                <span class="move-task-overview">
-                                    <strong>新建 · 刷新缓存</strong>
-                                    <span>选择开箱范围与触发方式</span>
-                                </span>
-                                <span class="move-task-state">未保存</span>
-                                <span class="move-task-chevron" aria-hidden="true"></span>
-                            </button>
-                            <div id="refresh-cache-draft-body" class="move-task-body" hidden>
-                                <form id="refresh-cache-form" class="move-task-form">
-                                    <fieldset>
-                                        <label class="move-field" for="refresh-cache-target">
-                                            <span>选区</span>
-                                            <select id="refresh-cache-target" required></select>
-                                        </label>
+                        <article id="refresh-cache-editor"
+                                 class="pickup-task-module refresh-cache-task-module" hidden>
+                            <div class="pickup-task-header">
+                                <h3 class="pickup-task-title">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                         stroke="currentColor" stroke-width="1.8"
+                                         stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7" />
+                                    </svg>
+                                    新建 · 刷新缓存
+                                </h3>
+                                <button id="toggle-refresh-cache-draft" class="pickup-task-expand"
+                                        type="button" aria-expanded="false"
+                                        aria-label="展开刷新缓存设置"
+                                        aria-controls="refresh-cache-draft-body">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                         stroke="currentColor" stroke-width="1.8"
+                                         stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="m9 5 7 7-7 7" />
+                                    </svg>
+                                </button>
+                                <input class="settings-switch" type="checkbox" role="switch"
+                                       disabled aria-label="运行刷新缓存任务"
+                                       title="选择选区并自动保存后可启动任务">
+                            </div>
+                            <div id="refresh-cache-draft-body" class="pickup-task-body" hidden>
+                                <form id="refresh-cache-form" class="refresh-cache-task-form">
+                                    <fieldset disabled>
+                                        <div class="move-field">
+                                            <span class="settings-copy">
+                                                <label for="refresh-cache-target">选区</label>
+                                                <span id="refresh-cache-target-note"
+                                                      class="settings-description">
+                                                    刷新此区域内已启用类型的容器缓存。
+                                                </span>
+                                            </span>
+                                            <select id="refresh-cache-target" required
+                                                    data-option-description="刷新此区域内的容器缓存"
+                                                    aria-describedby="refresh-cache-target-note">
+                                            </select>
+                                        </div>
                                         <details id="refresh-kind-settings"
                                                  class="settings-disclosure">
-                                            <summary id="refresh-kind-summary" class="settings-row">
+                                            <summary id="refresh-kind-summary" class="settings-row"
+                                                     aria-controls="refresh-kind-options">
                                                 <span class="settings-copy">
                                                     <strong>容器类型</strong>
                                                     <span id="refresh-kind-selection"
@@ -156,78 +180,126 @@
                                                         箱子、木桶、潜影盒
                                                     </span>
                                                 </span>
-                                                <span class="settings-chevron"
-                                                      aria-hidden="true"></span>
+                                                <span class="settings-chevron" aria-hidden="true">
+                                                    <svg width="18" height="18" viewBox="0 0 24 24"
+                                                         fill="none" stroke="currentColor"
+                                                         stroke-width="1.8" stroke-linecap="round"
+                                                         stroke-linejoin="round">
+                                                        <path d="m9 5 7 7-7 7" />
+                                                    </svg>
+                                                </span>
                                             </summary>
                                             <div id="refresh-kind-options" class="settings-detail"
                                                  hidden>
-                                                <label class="move-field material-switch-field">
-                                                    <span>箱子</span>
-                                                    <input type="checkbox"
-                                                           data-refresh-kind="chests" checked>
-                                                </label>
-                                                <label class="move-field material-switch-field">
-                                                    <span>木桶</span>
-                                                    <input type="checkbox"
-                                                           data-refresh-kind="barrels" checked>
-                                                </label>
-                                                <label class="move-field material-switch-field">
-                                                    <span>潜影盒</span>
-                                                    <input type="checkbox"
-                                                           data-refresh-kind="shulkerBoxes" checked>
-                                                </label>
-                                                <label class="move-field material-switch-field">
-                                                    <span>其他容器</span>
-                                                    <input type="checkbox"
-                                                           data-refresh-kind="otherContainers">
-                                                </label>
+                                                <div class="task-settings-inner">
+                                                    <label class="move-field
+                                                           refresh-cache-switch-row">
+                                                        <span>箱子</span>
+                                                        <input type="checkbox"
+                                                               data-refresh-kind="chests" checked>
+                                                    </label>
+                                                    <label class="move-field
+                                                           refresh-cache-switch-row">
+                                                        <span>木桶</span>
+                                                        <input type="checkbox"
+                                                               data-refresh-kind="barrels" checked>
+                                                    </label>
+                                                    <label class="move-field
+                                                           refresh-cache-switch-row">
+                                                        <span>潜影盒</span>
+                                                        <input type="checkbox" checked
+                                                               data-refresh-kind="shulkerBoxes">
+                                                    </label>
+                                                    <label class="move-field
+                                                           refresh-cache-switch-row">
+                                                        <span>其他容器</span>
+                                                        <input type="checkbox"
+                                                               data-refresh-kind="otherContainers">
+                                                    </label>
+                                                </div>
                                             </div>
                                         </details>
-                                        <label id="refresh-marker-field" class="move-field
-                                               material-switch-field" hidden>
-                                            <span>扫描识别区</span>
-                                            <input id="refresh-scan-markers" type="checkbox">
-                                        </label>
-                                        <label id="refresh-marker-stock-field" class="move-field
-                                               material-switch-field" hidden>
-                                            <span>识别区物品计入库存</span>
-                                            <input id="refresh-include-markers" type="checkbox">
-                                        </label>
+                                        <div id="refresh-marker-field" class="settings-detail" hidden>
+                                            <div class="task-settings-inner">
+                                                <label class="move-field refresh-cache-switch-row">
+                                                    <span>扫描识别区</span>
+                                                    <input id="refresh-scan-markers" type="checkbox">
+                                                </label>
+                                                <div id="refresh-marker-stock-field"
+                                                     class="settings-detail" hidden>
+                                                    <div class="task-settings-inner">
+                                                        <label class="move-field
+                                                               refresh-cache-switch-row">
+                                                            <span>识别区物品计入库存</span>
+                                                            <input id="refresh-include-markers"
+                                                                   type="checkbox">
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <label class="move-field" for="refresh-schedule-mode">
                                             <span>触发方式</span>
                                             <select id="refresh-schedule-mode">
-                                                <option value="MANUAL">仅手动</option>
-                                                <option value="DAILY">每天固定时间</option>
-                                                <option value="INTERVAL">每隔指定时长</option>
+                                                <option value="MANUAL"
+                                                        data-description="开启任务开关时执行一次刷新">
+                                                    仅手动
+                                                </option>
+                                                <option value="DAILY"
+                                                        data-description="启用后每天在设定时间刷新">
+                                                    每天固定时间
+                                                </option>
+                                                <option value="INTERVAL"
+                                                        data-description="启用后按设定的时间间隔刷新">
+                                                    每隔指定时长
+                                                </option>
                                             </select>
                                         </label>
-                                        <label id="refresh-daily-field" class="move-field"
-                                               for="refresh-daily-time" hidden>
-                                            <span>每天触发时间
-                                                <small id="refresh-zone" class="muted"></small>
-                                            </span>
-                                            <input id="refresh-daily-time" type="time" required>
-                                        </label>
-                                        <div id="refresh-interval-field" class="move-field" hidden>
-                                            <span><label for="refresh-interval">每隔</label></span>
-                                            <div class="refresh-interval-inputs">
-                                                <input id="refresh-interval" type="number"
-                                                       min="1" step="1" required>
-                                                <select id="refresh-interval-unit"
-                                                        aria-label="时间单位">
-                                                    <option value="1">分钟</option>
-                                                    <option value="60">小时</option>
-                                                </select>
+                                        <div id="refresh-daily-field" class="settings-detail" hidden>
+                                            <div class="task-settings-inner">
+                                                <div class="move-field">
+                                                    <span class="settings-copy">
+                                                        <label for="refresh-daily-time">
+                                                            每天触发时间
+                                                        </label>
+                                                        <span id="refresh-zone"
+                                                              class="settings-description"></span>
+                                                    </span>
+                                                    <input id="refresh-daily-time" type="time"
+                                                           aria-describedby="refresh-zone" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div id="refresh-interval-field" class="settings-detail"
+                                             hidden>
+                                            <div class="task-settings-inner">
+                                                <label class="move-field" for="refresh-interval">
+                                                    <span>刷新间隔</span>
+                                                    <input id="refresh-interval" type="number"
+                                                           min="1" step="1" required>
+                                                </label>
+                                                <label class="move-field"
+                                                       for="refresh-interval-unit">
+                                                    <span>时间单位</span>
+                                                    <select id="refresh-interval-unit">
+                                                        <option value="1"
+                                                                data-description="按分钟计算刷新间隔">
+                                                            分钟
+                                                        </option>
+                                                        <option value="60"
+                                                                data-description="按小时计算刷新间隔">
+                                                            小时
+                                                        </option>
+                                                    </select>
+                                                </label>
                                             </div>
                                         </div>
                                         <p id="refresh-cache-message" class="field-message"
                                            role="status" aria-live="polite" hidden></p>
-                                        <div class="move-form-actions">
+                                        <div class="coordinate-task-actions">
                                             <button id="delete-refresh-task" type="button"
                                                     class="ghost danger-action task-delete-action"
                                                     hidden>删除任务</button>
-                                            <button id="cancel-refresh-edit" type="button"
-                                                    class="secondary">关闭</button>
                                         </div>
                                     </fieldset>
                                 </form>

@@ -115,6 +115,7 @@
     const unit = id("refresh-interval-unit");
     const remove = id("delete-refresh-task");
     const message = id("refresh-cache-message");
+    const selects = window.StowlingTaskSelect.create(form);
     const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const savedCards = new Map();
     let nextTimes = new Map();
@@ -134,6 +135,7 @@
      * @param {boolean} expanded @returns {void} */
     function disclose(button, body, expanded) {
         button.setAttribute("aria-expanded", String(expanded));
+        button.setAttribute("aria-label", (expanded ? "收起" : "展开") + "刷新缓存设置");
         body.inert = !expanded;
         void Settings.reveal(body, expanded);
     }
@@ -141,13 +143,12 @@
     /** @returns {void} */
     function controls() {
         const layout = target.value.startsWith("category-zone:");
-        id("refresh-marker-field").hidden = !layout;
-        id("refresh-marker-stock-field").hidden = !layout;
+        void Settings.reveal(id("refresh-marker-field"), layout);
+        void Settings.reveal(id("refresh-marker-stock-field"), layout && markerScan.checked);
         markerScan.disabled = !layout;
         markerStock.disabled = !layout || !markerScan.checked;
-        if (markerStock.disabled) markerStock.checked = false;
-        id("refresh-daily-field").hidden = mode.value !== "DAILY";
-        id("refresh-interval-field").hidden = mode.value !== "INTERVAL";
+        void Settings.reveal(id("refresh-daily-field"), mode.value === "DAILY");
+        void Settings.reveal(id("refresh-interval-field"), mode.value === "INTERVAL");
         time.disabled = mode.value !== "DAILY";
         unit.disabled = interval.disabled = mode.value !== "INTERVAL";
         const enabledKinds = kinds.filter((input) => input.checked)
@@ -174,6 +175,7 @@
             status.textContent = dirty ? "未保存修改" : state.label;
             disclose(button, body, selected && current.expanded);
         }
+        selects.refresh(true);
     }
 
     /** @returns {void} */
@@ -208,39 +210,53 @@
             : "每隔 " + minutes + " 分钟";
     }
 
+    /** @param {string} path @returns {SVGElement} */
+    function icon(path) {
+        const namespace = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(namespace, "svg");
+        for (const [key, value] of Object.entries({width: "18", height: "18",
+            viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+            "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round",
+            "aria-hidden": "true"})) {
+            svg.setAttribute(key, value);
+        }
+        const shape = document.createElementNS(namespace, "path");
+        shape.setAttribute("d", path);
+        svg.append(shape);
+        return svg;
+    }
+
     /** @returns {void} */
     function renderRows() {
         draftBody.append(form);
         list.replaceChildren();
         savedCards.clear();
         for (const task of tasks.filter(isRefreshTask)) {
-            const card = S.element("article", "move-saved-task");
-            const header = S.element("div", "task-card-header");
-            const edit = S.element("button", "move-task-summary");
+            const card = S.element("article", "pickup-task-module refresh-cache-task-module");
+            const header = S.element("div", "pickup-task-header");
+            const title = S.element("h3", "pickup-task-title");
+            title.append(icon("M20 11a8 8 0 1 0-2 6M20 4v7h-7"),
+                S.element("span", "", task.name));
+            const edit = S.element("button", "pickup-task-expand");
             edit.type = "button";
-            const body = S.element("div", "move-task-body");
+            edit.append(icon("m9 5 7 7-7 7"));
+            const body = S.element("div", "pickup-task-body");
             body.id = "refresh-cache-body-" + task.id;
-            body.hidden = true;
+            void Settings.reveal(body, false);
             edit.setAttribute("aria-controls", body.id);
-            const kind = S.element("span", "move-task-kind", "刷");
-            kind.setAttribute("aria-hidden", "true");
-            const overview = S.element("span", "move-task-overview");
-            const nextLabel = S.element("span", "refresh-task-timing");
-            const status = S.element("span", "move-task-state");
-            const chevron = S.element("span", "move-task-chevron");
-            chevron.setAttribute("aria-hidden", "true");
-            const targetRef = task.steps[0].parameters.targetRef;
-            const meta = S.element("span", "refresh-task-meta");
-            meta.append(S.element("span", "refresh-task-target",
-                locations.get(targetRef) || "选区已不存在"), nextLabel);
-            overview.append(S.element("strong", "", task.name), meta);
-            edit.append(kind, overview, status, chevron);
+            const nextLabel = S.element("p", "refresh-task-timing field-message");
+            const status = S.element("span", "visually-hidden");
+            status.id = "refresh-cache-status-" + task.id;
+            status.setAttribute("role", "status");
+            status.setAttribute("aria-live", "polite");
             edit.addEventListener("click", () => open(task));
             const toggle = Settings.switchControl(document.createElement("input"),
                 "运行任务：" + task.name);
+            toggle.setAttribute("aria-describedby", status.id);
             toggle.addEventListener("change", () => void setRunning(task.id, toggle.checked));
-            header.append(edit, toggle);
-            card.append(header, body);
+            header.append(title, edit, toggle);
+            body.append(nextLabel);
+            card.append(header, body, status);
             if (current?.task?.id === task.id) body.append(form);
             list.append(card);
             savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel});
@@ -519,13 +535,6 @@
         }
     });
     draftToggle.addEventListener("click", () => open());
-    id("cancel-refresh-edit").addEventListener("click", async () => {
-        if (current?.dirty) await autosave.flush();
-        if (current?.dirty && !window.confirm("关闭并放弃未保存的修改？")) return;
-        const button = savedCards.get(current?.task?.id)?.button || add;
-        close();
-        button.focus();
-    });
     remove.addEventListener("click", () => void deleteTask());
     form.addEventListener("input", () => {
         if (!current) return;

@@ -452,33 +452,9 @@ body[data-page] :is(.move-field > span, .editor-field > label) {
     font-weight: 400;
 }
 
-body[data-page] .move-task-overview > .refresh-task-meta {
-    display: flex;
-    gap: 0 0.5em;
-}
-
-.refresh-task-target {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.refresh-task-timing {
-    flex: none;
-}
-
-.refresh-task-timing::before {
-    content: "· ";
-}
-
 body[data-page] .material-switch-field {
     display: flex;
     justify-content: space-between;
-}
-
-.refresh-interval-inputs {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
 }
 
 #material-boxed-modes input[type="radio"] {
@@ -643,11 +619,6 @@ body[data-page] .move-form-actions {
     margin-top: 16px;
     padding-top: 16px;
     border-top: 1px solid var(--theme-border, #3a3b40);
-}
-
-#refresh-cache-form .move-form-actions {
-    margin-top: 0;
-    border-top: 0;
 }
 
 .move-form-actions > .task-delete-action {
@@ -1507,14 +1478,6 @@ body[data-page] :is(.coordinate-point-summary,
     body[data-page] :is(.move-field, .editor-field) {
         grid-template-columns: minmax(0, 1fr);
         gap: 8px;
-    }
-
-    body[data-page] .move-task-overview > .refresh-task-meta {
-        display: grid;
-    }
-
-    .refresh-task-timing::before {
-        content: none;
     }
 
     body[data-page] .settings-detail.category-binding-section {

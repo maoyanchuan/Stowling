@@ -65,9 +65,9 @@ process.stdout.write(JSON.stringify({coordinate, region, automatic: automatic.re
     assert value["automatic"] == {"destinationRef": "region:area", "resumeMode": "RESTART"}
 
 
-def test_task_page_loads_shared_cleanup_editor_for_both_task_types() -> None:
+def test_task_page_keeps_cleanup_editor_outside_movement_tasks() -> None:
     html = (WEB / "tasks.html").read_text(encoding="utf-8")
     assert 'src="/task-cleanup-settings.js"' in html
     assert html.index('/task-cleanup-settings.js') < html.index('/tasks.js')
     assert 'id="auto-cleanup-settings"' in html
-    assert 'id="move-cleanup-settings"' in html
+    assert 'id="move-cleanup-settings"' not in html

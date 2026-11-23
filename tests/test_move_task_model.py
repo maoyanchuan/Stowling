@@ -49,7 +49,7 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_cleanup_selection_and_continue_mode_survive_the_move_template() -> None:
+def test_new_movement_tasks_ignore_cleanup_settings() -> None:
     result = _run(
         """
         (() => {
@@ -59,14 +59,47 @@ def test_cleanup_selection_and_continue_mode_survive_the_move_template() -> None
                     destinationRef: "coordinate:delivery", resumeMode: "CONTINUE"
                 }}, [], null, []);
             return {recognized: model.isMoveTask(task),
-                restored: model.draftFromTask(task).cleanupPolicy,
-                payload: window.StowlingTaskModel.payloadTask(task).cleanupPolicy,
+                restored: "cleanupPolicy" in model.draftFromTask(task),
+                payload: "cleanupPolicy" in window.StowlingTaskModel.payloadTask(task),
                 requeue: task.requeueAfterInterruption};
         })()
         """
     )
-    policy = {"destinationRef": "coordinate:delivery", "resumeMode": "CONTINUE"}
-    assert result == {"recognized": True, "restored": policy, "payload": policy, "requeue": True}
+    assert result == {"recognized": True, "restored": False, "payload": False, "requeue": False}
+
+
+@pytest.mark.parametrize("resume_mode", ["RESTART", "CONTINUE"])
+def test_existing_movement_tasks_clear_legacy_cleanup_on_save(resume_mode: str) -> None:
+    result = _run(
+        """
+        (() => {
+            const model = window.StowlingMoveTaskModel;
+            const original = model.createTask({...model.newDraft(), id: "move-1",
+                x: "1", y: "64", z: "2"}, []);
+            original.cleanupPolicy = {destinationRef: "coordinate:delivery",
+                resumeMode: RESUME_MODE};
+            original.requeueAfterInterruption = RESUME_MODE === "CONTINUE";
+            const draft = model.draftFromTask(original);
+            draft.priority = "URGENT";
+            const saved = model.createTask(draft, [], original);
+            return {recognized: model.isMoveTask(original),
+                draftHasCleanup: "cleanupPolicy" in draft,
+                policy: window.StowlingTaskModel.payloadTask(saved).cleanupPolicy,
+                requeue: saved.requeueAfterInterruption,
+                parameters: saved.steps[0].parameters, priority: saved.priority,
+                originalDestination: original.cleanupPolicy.destinationRef};
+        })()
+        """.replace("RESUME_MODE", json.dumps(resume_mode))
+    )
+    assert result == {
+        "recognized": True,
+        "draftHasCleanup": False,
+        "policy": {"destinationRef": None, "resumeMode": "RESTART"},
+        "requeue": False,
+        "parameters": {"x": "1", "y": "64", "z": "2"},
+        "priority": "URGENT",
+        "originalDestination": "coordinate:delivery",
+    }
 
 
 def test_new_draft_returns_fixed_shape_without_a_name() -> None:

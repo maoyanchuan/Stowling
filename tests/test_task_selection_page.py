@@ -237,7 +237,8 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
     assert "Promise.all([" in load_move
     assert '"/v1/tasks"' in load_move
     assert '"/v1/coordinates"' in load_move
-    assert load_move.count("Stowling.request(") == 3
+    assert load_move.count("Stowling.request(") == 2
+    assert '"/v1/regions"' not in load_move
     assert "const definitions = Array.isArray(tasks?.tasks)" in load_move
     assert "? tasks.tasks.map(Model.normalizeTask) : [];" in load_move
     assert "state.moveTasks = definitions.filter(Move.isMoveTask);" in load_move
@@ -287,14 +288,14 @@ def test_move_save_and_queue_routes_use_explicit_task_ids() -> None:
     assert '"/v1/task-triggers"' not in javascript
 
 
-def test_move_form_preserves_saved_coordinate_and_cleanup_fields() -> None:
+def test_move_form_preserves_coordinate_and_priority_without_cleanup_fields() -> None:
     javascript = read("tasks.js")
     read_form = between(javascript, "function readMoveForm()", "function updateMoveTarget()")
 
     assert 'elements.moveForm.addEventListener("input", () => {' in javascript
     assert "coordinateId: elements.moveCoordinate.value" in read_form
     assert "priority: elements.movePriority.value" in read_form
-    assert "cleanupPolicy: cleanup.read()" in read_form
+    assert "cleanupPolicy" not in read_form
     assert "...state.moveDraft" in read_form
     assert "moveSources" not in javascript
     assert "moveManual" not in javascript
@@ -563,7 +564,7 @@ def test_move_stop_cancels_its_active_runs_and_keeps_dirty_settings(move_page: A
     assert page.locator("#move-task-form").is_visible()
 
 
-def test_move_autosave_preserves_coordinate_and_cleanup_fields(move_page: Any) -> None:
+def test_move_autosave_preserves_coordinate_and_clears_legacy_cleanup(move_page: Any) -> None:
     page = move_page
     page.locator(".coordinate-task-module .pickup-task-expand").click()
     form = page.locator("#move-task-form")
@@ -575,14 +576,14 @@ def test_move_autosave_preserves_coordinate_and_cleanup_fields(move_page: Any) -
     page.wait_for_function("backend.requests.some(r => r.method === 'PUT')")
     task = page.evaluate("backend.tasks[0]")
     assert task["steps"][0]["parameters"] == {"targetRef": "coordinate:mine"}
-    assert task["cleanupPolicy"]["destinationRef"] == "coordinate:home"
-    assert task["cleanupPolicy"]["resumeMode"] == "CONTINUE"
+    assert task["cleanupPolicy"] == {"destinationRef": None, "resumeMode": "RESTART"}
+    assert task["requeueAfterInterruption"] is False
     page.locator(".coordinate-task-module .pickup-task-expand").click()
     page.locator(".coordinate-task-module .pickup-task-expand").click()
     assert page.locator("#move-saved-coordinate").input_value() == "mine"
-    page.locator("#move-cleanup-settings summary").click()
-    assert page.locator("#move-cleanup-settings .settings-detail").is_visible()
-    assert page.locator("#move-cleanup-settings select").count() == 2
+    assert form.locator("#move-cleanup-settings, .task-cleanup-section").count() == 0
+    assert form.get_by_text("中断与收尾设置").count() == 0
+    assert form.locator("select").count() == 2
 
 
 def test_move_new_draft_keeps_empty_target_until_selection(move_page: Any) -> None:
@@ -591,6 +592,7 @@ def test_move_new_draft_keeps_empty_target_until_selection(move_page: Any) -> No
     assert page.locator("#move-task-draft").is_visible()
     assert page.locator("#move-draft-run").is_disabled()
     assert page.locator("#move-saved-coordinate").input_value() == ""
+    assert page.locator("#move-task-form .task-cleanup-section").count() == 0
     target = page.locator("#move-saved-target .task-select-trigger")
     target.click()
     page.locator(".task-select-menu:visible").get_by_role("option", name="仓库").click()
@@ -600,6 +602,9 @@ def test_move_new_draft_keeps_empty_target_until_selection(move_page: Any) -> No
     assert created.locator("#move-task-form").is_visible()
     assert created.get_by_role("switch").is_enabled()
     assert not created.get_by_role("switch").is_checked()
+    created_task = page.evaluate("backend.tasks.find(task => task.id === 'created')")
+    assert "cleanupPolicy" not in created_task
+    assert created_task["requeueAfterInterruption"] is False
 
 
 @pytest.mark.parametrize("theme", ["green", "gray"])

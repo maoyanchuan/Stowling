@@ -172,8 +172,7 @@
             x: saved ? "" : String(parameters.x || ""),
             y: saved ? "" : String(parameters.y || ""),
             z: saved ? "" : String(parameters.z || ""),
-            coordinateId: saved ? coordinateId : "",
-            ...(normalized.cleanupPolicy ? {cleanupPolicy: normalized.cleanupPolicy} : {})
+            coordinateId: saved ? coordinateId : ""
         };
     }
 
@@ -313,9 +312,11 @@
             interruptionMode: metadata.interruptionMode,
             interruptionTaskRef: "",
             defaultInterruptionFlow: false,
-            requeueAfterInterruption: draft?.cleanupPolicy?.resumeMode === "CONTINUE",
-            ...(draft?.cleanupPolicy || originalTask?.cleanupPolicy
-                ? {cleanupPolicy: draft.cleanupPolicy || originalTask.cleanupPolicy} : {}),
+            requeueAfterInterruption: false,
+            // Updates retain omitted policies on the server; reset legacy movement settings.
+            ...(originalTask?.cleanupPolicy ? {cleanupPolicy: {
+                destinationRef: null, resumeMode: "RESTART"
+            }} : {}),
             steps: [step]
         });
         const task = Model.normalizeTask({...Model.payloadTask(candidate), id: candidate.id});

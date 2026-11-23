@@ -7,8 +7,6 @@
     const Move = window.StowlingMoveTaskModel;
     const Coordinates = window.StowlingCoordinateModel;
     const Autosave = window.StowlingTaskAutosave;
-    const cleanup = window.StowlingTaskCleanupSettings.create(
-        document.querySelector("#move-cleanup-settings"));
     const taskLogs = Monitor.createLogBuffer(300);
     const state = {
         triggerStatuses: [],
@@ -30,7 +28,6 @@
         autoDraftActive: false,
         autoEatDraftActive: false,
         coordinates: [],
-        regions: [],
         moveDraft: Move.newDraft(),
         moveFormOpen: false,
         moveDraftActive: false,
@@ -74,11 +71,6 @@
 
     const moveRows = new Map();
     const moveSelect = window.StowlingTaskSelect?.create(elements.moveForm);
-    for (const content of elements.moveForm.querySelectorAll(".settings-detail")) {
-        const inner = Stowling.element("div", "task-settings-inner");
-        inner.append(...content.childNodes);
-        content.append(inner);
-    }
     const moveSave = Autosave.create(elements.moveForm, saveMoveTask,
         () => state.moveBusy || state.moveLoading);
 
@@ -94,18 +86,15 @@
         elements.moveResourcesMessage.textContent = "正在读取任务和坐标…";
         elements.moveResourcesMessage.classList.remove("error");
         try {
-            const [tasks, coordinates, regions] = await Promise.all([
+            const [tasks, coordinates] = await Promise.all([
                 Stowling.request("/v1/tasks"),
-                Stowling.request("/v1/coordinates"),
-                Stowling.request("/v1/regions")
+                Stowling.request("/v1/coordinates")
             ]);
             state.moveRevision = String(tasks?.revision || "");
             const definitions = Array.isArray(tasks?.tasks)
                 ? tasks.tasks.map(Model.normalizeTask) : [];
             state.moveTasks = definitions.filter(Move.isMoveTask);
             state.coordinates = Coordinates.normalizeCoordinates(coordinates).coordinates;
-            state.regions = regions.regions || [];
-            cleanup.resources(state.coordinates, state.regions);
             state.moveResourcesReady = true;
             if (state.moveDraft.id && !state.moveDirty) {
                 const refreshed = state.moveTasks.find(
@@ -300,7 +289,6 @@
      */
     function syncMoveForm() {
         const draft = state.moveDraft;
-        cleanup.set(draft.cleanupPolicy || {});
         elements.movePriority.value = draft.priority;
         renderMoveCoordinates();
         updateMoveTarget();
@@ -314,8 +302,7 @@
         state.moveDraft = {
             ...state.moveDraft,
             priority: elements.movePriority.value,
-            coordinateId: elements.moveCoordinate.value,
-            cleanupPolicy: cleanup.read()
+            coordinateId: elements.moveCoordinate.value
         };
     }
 
@@ -361,7 +348,7 @@
             row.run.setAttribute("aria-busy", String(pending !== undefined));
             row.run.setAttribute("aria-label", `${running ? "关闭" : "开始"}任务`);
             row.run.title = unsaved && !running ? "修改保存后可开始任务"
-                : running ? "关闭任务并执行收尾" : "开始任务";
+                : running ? "关闭任务" : "开始任务";
             row.status.textContent = pending !== undefined
                 ? (pending ? "正在开始任务" : "正在关闭任务")
                 : runs.length ? runStateLabel(runs[0].state) : "未运行";
@@ -489,7 +476,7 @@
                         `/v1/task-runs/${encodeURIComponent(run.runId)}/cancel`,
                         {method: "POST"});
                 }
-                Stowling.showToast("已请求关闭任务并执行收尾");
+                Stowling.showToast("已请求关闭移动任务");
             }
             await loadRuns();
         } catch (error) {

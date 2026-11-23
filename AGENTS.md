@@ -15,6 +15,24 @@
   用户明确要求的规范变化，应同步更新模板和项目提示词，避免后续实现回退。
 - 模板规则不改变下文的测试授权和交付要求，不自动授权运行测试或代码检查。
 
+## 坐标页面 UI 模板
+- 修改正式坐标页面、坐标资源编辑器或分类区设置前，必须先读取：
+  `docs/ui/task-ui-prompt.md`、`docs/ui/task-settings-standard.html`、
+  `docs/ui/coordinate-management-standard.html`、
+  `src/main/resources/stowling-web/workbench.css`、
+  `src/main/resources/stowling-web/styles.css`、
+  `src/main/resources/stowling-web/coordinates.html`、
+  `src/main/resources/stowling-web/coordinates.js`、
+  `src/main/resources/stowling-web/category-zones.js`。
+- 正式坐标页面的设置行、下拉框、开关、展开箭头、主题和动画，必须参考
+  `docs/ui/coordinate-management-standard.html` 实现。
+- 模板中的名称、选项说明、坐标和数值只是界面示例；正式页面必须使用真实字段、
+  接口和业务逻辑，不得直接复制示例数据。
+- 保持模板约定的浅绿／深灰主题、设置行对齐、下拉选中勾号、键盘操作、上下展开、
+  200／150ms reveal 动画，以及开关状态与展开状态分离。
+- 坐标业务字段变化沿用模板结构；只有通用视觉或交互规范变化时，才同步更新模板、
+  `docs/ui/task-ui-prompt.md` 和相关测试。
+
 ## 测试与代理分工
 - 新功能必须包含测试；Python 测试使用 pytest。
 - 未经用户另行要求，不运行测试、代码检查或游戏验证。

@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="green">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="/theme.js" blocking="render"></script>
+    <title>坐标管理模板 · Stowling</title>
+    <link rel="icon" type="image/png" href="/icon.png">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/workbench.css">
+    <link rel="stylesheet" href="/coordinates-template.css">
+    <script src="/coordinates-template.js" defer></script>
+</head>
+<body data-page="coordinates" data-template="coordinates">
+    <header class="topbar">
+        <div class="brand">
+            <img class="brand-mark" src="/icon.png" width="36" height="36" alt="">
+            <div>
+                <h1>Stowling 控制台</h1>
+                <p>坐标管理 · 模板预览</p>
+            </div>
+        </div>
+        <div class="connection-state">
+            <span class="status-dot online" aria-hidden="true"></span>
+            <span>模板预览</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="workspace" class="workspace page-workspace">
+            <nav id="app-nav" class="workspace-nav" aria-label="页面导航">
+                <a class="workspace-nav-link" href="/index.html">状态概览</a>
+                <a class="workspace-nav-link active" href="/coordinates-template.html"
+                   aria-current="page">坐标模板</a>
+                <a class="workspace-nav-link" href="/tasks.html">任务管理</a>
+                <a class="workspace-nav-link" href="/backpack.html">背包管理</a>
+                <a class="workspace-nav-link" href="/storage.html">库存管理</a>
+            </nav>
+
+            <section class="panel wide coordinate-workbench" aria-labelledby="coordinate-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">独立设计模板</p>
+                        <h2 id="coordinate-title">坐标资源</h2>
+                        <p class="compact-help">使用静态示例数据调整布局、文案和交互层级。</p>
+                    </div>
+                    <span class="template-badge">未连接后端</span>
+                </div>
+
+                <aside id="coordinate-library" class="coordinate-library" aria-label="坐标目录">
+                    <div class="coordinate-library-actions">
+                        <button id="new-coordinate-resource" type="button" class="primary compact">
+                            添加坐标
+                        </button>
+                        <button id="new-coordinate-folder" type="button" class="secondary compact">
+                            新建文件夹
+                        </button>
+                    </div>
+                    <label class="coordinate-search">
+                        <span class="visually-hidden">搜索坐标或文件夹</span>
+                        <input id="coordinate-library-search" type="search"
+                               placeholder="搜索坐标或文件夹" autocomplete="off">
+                    </label>
+                    <nav id="coordinate-bookmarks" aria-label="坐标和文件夹">
+                        <ul class="coordinate-bookmark-list">
+                            <li class="coordinate-bookmark-folder">
+                                <div class="coordinate-bookmark-row">
+                                    <button class="coordinate-bookmark" type="button"
+                                            aria-expanded="true">
+                                        <span class="coordinate-bookmark-name">我的坐标</span>
+                                    </button>
+                                    <button class="ghost compact" type="button"
+                                            aria-label="编辑我的坐标">···</button>
+                                </div>
+                                <ul class="coordinate-bookmark-list coordinate-bookmark-children">
+                                    <li class="coordinate-bookmark-row">
+                                        <button class="coordinate-bookmark" type="button"
+                                                aria-current="true" data-panel="coordinate-points">
+                                            <span class="coordinate-bookmark-name">主基地</span>
+                                            <span class="coordinate-bookmark-type">坐标点</span>
+                                        </button>
+                                    </li>
+                                    <li class="coordinate-bookmark-row">
+                                        <button class="coordinate-bookmark" type="button"
+                                                data-panel="regions">
+                                            <span class="coordinate-bookmark-name">农场区域</span>
+                                            <span class="coordinate-bookmark-type">区域</span>
+                                        </button>
+                                    </li>
+                                    <li class="coordinate-bookmark-row">
+                                        <button class="coordinate-bookmark" type="button"
+                                                data-panel="warehouses">
+                                            <span class="coordinate-bookmark-name">储存区 A</span>
+                                            <span class="coordinate-bookmark-type">储存区</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="coordinate-bookmark-row">
+                                <button class="coordinate-bookmark" type="button"
+                                        data-panel="category-zones">
+                                    <span class="coordinate-bookmark-name">分类区示例</span>
+                                    <span class="coordinate-bookmark-type">分类区</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </nav>
+                    <p id="coordinate-library-status" class="field-message" role="status">
+                        已载入 4 个示例资源
+                    </p>
+                </aside>
+
+                <div id="coordinate-editor-empty" class="coordinate-workspace-pane" hidden>
+                    <p class="muted">选择左侧的坐标查看或编辑。</p>
+                </div>
+
+                <form id="coordinate-folder-form" class="coordinate-workspace-pane" hidden>
+                    <h3 id="coordinate-folder-editor-title">新建文件夹</h3>
+                    <label class="move-field">
+                        <span>文件夹名称</span>
+                        <input id="coordinate-folder-name" type="text" maxlength="80" required>
+                    </label>
+                    <div class="move-form-actions">
+                        <button type="submit" class="primary">保存文件夹</button>
+                        <button id="cancel-coordinate-folder" type="button" class="ghost">
+                            取消
+                        </button>
+                        <button id="delete-coordinate-folder" type="button"
+                                class="ghost danger-action" hidden>删除文件夹</button>
+                    </div>
+                    <div id="coordinate-folder-order" class="coordinate-order-actions" hidden>
+                        <button id="move-coordinate-folder-up" type="button" class="ghost compact">
+                            上移
+                        </button>
+                        <button id="move-coordinate-folder-down" type="button"
+                                class="ghost compact">下移</button>
+                    </div>
+                </form>
+
+                <form id="coordinate-kind-form" class="coordinate-workspace-pane" hidden>
+                    <h3>添加坐标</h3>
+                    <p id="coordinate-create-destination" class="muted compact-help"></p>
+                    <label class="move-field">
+                        <span>坐标类型</span>
+                        <select id="coordinate-resource-kind" required>
+                            <option value="">请选择</option>
+                            <option value="coordinate-points">坐标点</option>
+                            <option value="regions">区域</option>
+                            <option value="warehouses">储存区</option>
+                        </select>
+                    </label>
+                    <label id="coordinate-area-kind-field" class="move-field" hidden>
+                        <span>区域类型</span>
+                        <select id="coordinate-area-kind">
+                            <option value="regions">普通区域</option>
+                            <option value="category-zones">分类区</option>
+                        </select>
+                    </label>
+                    <div class="move-form-actions">
+                        <button type="submit" class="primary">继续</button>
+                        <button id="cancel-coordinate-kind" type="button" class="ghost">取消</button>
+                    </div>
+                </form>
+
+                <section id="warehouses" class="resource-tab-panel resource-list-section"
+                         aria-label="储存区" hidden>
+                    <div class="resource-section-heading">
+                        <h3>储存区</h3>
+                    </div>
+                    <form id="new-warehouse-form" class="resource-editor-body" hidden>
+                        <h3>添加储存区</h3>
+                        <label class="move-field">
+                            <span>储存区名称</span>
+                            <input id="new-warehouse-name" type="text" maxlength="80" required>
+                        </label>
+                        <fieldset id="new-warehouse-members"></fieldset>
+                        <div class="move-form-actions">
+                            <button type="submit" class="primary">保存储存区</button>
+                            <button id="cancel-new-warehouse" type="button"
+                                    class="ghost">取消</button>
+                        </div>
+                    </form>
+                    <div id="warehouse-list" class="resource-card-list">
+                        <article class="editor-card">
+                            <div class="editor-card-heading">
+                                <div class="resource-summary-text">
+                                    <strong>储存区 A</strong>
+                                    <span class="resource-summary-meta">3 个容器 · 我的坐标</span>
+                                </div>
+                            </div>
+                            <div class="resource-editor-body">
+                                <p class="muted compact-help">
+                                    绑定箱子、木桶或其他容器，为任务提供稳定的储存目标。
+                                </p>
+                                <div class="action-row">
+                                    <button class="primary compact" type="button">编辑</button>
+                                    <button class="ghost compact danger-action" type="button">
+                                        删除
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section id="coordinate-points"
+                         class="resource-tab-panel resource-list-section">
+                    <div class="resource-section-heading">
+                        <div>
+                            <h3 id="coordinate-list-title">坐标点
+                                <span id="coordinate-list-count"
+                                      class="count-label">3</span></h3>
+                            <p class="muted compact-help">
+                                可被任务引用的单点坐标。
+                            </p>
+                        </div>
+                        <div class="action-row">
+                            <button id="add-coordinate-button" hidden
+                                    class="secondary compact"
+                                    type="button">添加坐标</button>
+                        </div>
+                    </div>
+
+                    <div class="resource-create-grid">
+                        <form id="new-coordinate-form"
+                              class="coordinate-create-form" hidden>
+                            <div class="coordinate-create-heading">
+                                <div>
+                                    <p class="eyebrow">新增资源</p>
+                                    <h3>添加坐标</h3>
+                                    <p class="compact-help">
+                                        名称与 X/Y/Z 必填，维度和半径可按需开启。
+                                    </p>
+                                </div>
+                                <button id="cancel-coordinate-button"
+                                        class="ghost compact"
+                                        type="button">关闭</button>
+                            </div>
+                            <div class="coordinate-create-fields">
+                                <div class="editor-field coordinate-name-field">
+                                    <label for="new-coordinate-name">名称</label>
+                                    <input id="new-coordinate-name"
+                                           maxlength="80" required>
+                                </div>
+                                <div class="editor-field">
+                                    <label for="new-coordinate-x">X</label>
+                                    <input id="new-coordinate-x" type="number"
+                                           step="1" value="0" required>
+                                </div>
+                                <div class="editor-field">
+                                    <label for="new-coordinate-y">Y</label>
+                                    <input id="new-coordinate-y" type="number"
+                                           step="1" value="64" required>
+                                </div>
+                                <div class="editor-field">
+                                    <label for="new-coordinate-z">Z</label>
+                                    <input id="new-coordinate-z" type="number"
+                                           step="1" value="0" required>
+                                </div>
+                                <div class="editor-field coordinate-optional-field">
+                                    <label class="coordinate-switch"
+                                           for="new-coordinate-use-dimension">
+                                        <input id="new-coordinate-use-dimension"
+                                               type="checkbox">
+                                        <span>指定维度</span>
+                                    </label>
+                                    <input id="new-coordinate-dimension"
+                                           value="minecraft:overworld"
+                                           placeholder="minecraft:overworld"
+                                           disabled hidden>
+                                </div>
+                                <div class="editor-field coordinate-optional-field">
+                                    <label class="coordinate-switch"
+                                           for="new-coordinate-use-radius">
+                                        <input id="new-coordinate-use-radius"
+                                               type="checkbox">
+                                        <span>指定半径</span>
+                                    </label>
+                                    <input id="new-coordinate-radius" type="number"
+                                           min="0" max="128" step="1" value="3"
+                                           disabled hidden>
+                                </div>
+                            </div>
+                            <div class="coordinate-create-actions">
+                                <button class="primary compact"
+                                        type="submit">保存坐标</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="resource-toolbar">
+                        <label class="search-field" for="resource-search">
+                            <span>查找坐标点</span>
+                            <input id="resource-search" type="search"
+                                   placeholder="搜索名称或坐标" autocomplete="off">
+                        </label>
+                        <span class="compact-help">
+                            点击名称展开编辑 · 支持粘贴三维坐标
+                        </span>
+                    </div>
+
+                    <div id="coordinate-list" class="editor-list"
+                         aria-live="polite">
+                        <details class="editor-card coordinate-point-editor" open
+                                 data-search-text="主基地 128 64 -42">
+                            <summary class="editor-card-heading coordinate-point-summary">
+                                <div class="resource-summary-text">
+                                    <strong>主基地</strong>
+                                    <span class="resource-summary-meta">128, 64, -42</span>
+                                </div>
+                            </summary>
+                            <div class="resource-editor-body">
+                                <div class="editor-field">
+                                    <label for="template-coordinate-name">名称</label>
+                                    <input id="template-coordinate-name" value="主基地"
+                                           maxlength="80">
+                                </div>
+                                <fieldset class="resource-axis-group">
+                                    <legend>位置</legend>
+                                    <div class="coordinate-axis-row">
+                                        <div class="editor-field">
+                                            <label for="template-coordinate-x">X</label>
+                                            <input id="template-coordinate-x" type="number"
+                                                   value="128" step="1">
+                                        </div>
+                                        <div class="editor-field">
+                                            <label for="template-coordinate-y">Y</label>
+                                            <input id="template-coordinate-y" type="number"
+                                                   value="64" step="1">
+                                        </div>
+                                        <div class="editor-field">
+                                            <label for="template-coordinate-z">Z</label>
+                                            <input id="template-coordinate-z" type="number"
+                                                   value="-42" step="1">
+                                        </div>
+                                    </div>
+                                </fieldset>
+                                <details class="settings-disclosure resource-options" open>
+                                    <summary>
+                                        <span class="settings-copy">
+                                            <strong>更多选项</strong>
+                                            <small>维度与到达半径</small>
+                                        </span>
+                                        <span class="settings-chevron" aria-hidden="true"></span>
+                                    </summary>
+                                    <div class="settings-detail">
+                                        <div class="resource-option-fields">
+                                            <div class="editor-field coordinate-optional-field">
+                                                <label class="coordinate-switch"
+                                                       for="template-coordinate-dimension-enabled">
+                                                    <input
+                                                        id="template-coordinate-dimension-enabled"
+                                                        type="checkbox" checked>
+                                                    <span>指定维度</span>
+                                                </label>
+                                                <input id="template-coordinate-dimension"
+                                                       value="minecraft:overworld">
+                                            </div>
+                                            <div class="editor-field coordinate-optional-field">
+                                                <label class="coordinate-switch"
+                                                       for="template-coordinate-radius-enabled">
+                                                    <input id="template-coordinate-radius-enabled"
+                                                           type="checkbox" checked>
+                                                    <span>指定半径</span>
+                                                </label>
+                                                <input id="template-coordinate-radius" type="number"
+                                                       value="3" min="0" max="128" step="1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </details>
+                                <div class="action-row">
+                                    <button class="primary compact" type="button">
+                                        保存
+                                    </button>
+                                    <button class="ghost compact danger-action" type="button">
+                                        删除
+                                    </button>
+                                </div>
+                            </div>
+                        </details>
+                        <details class="editor-card coordinate-point-editor"
+                                 data-search-text="下界入口 -16 72 24">
+                            <summary class="editor-card-heading coordinate-point-summary">
+                                <div class="resource-summary-text">
+                                    <strong>下界入口</strong>
+                                    <span class="resource-summary-meta">-16, 72, 24</span>
+                                </div>
+                            </summary>
+                        </details>
+                        <details class="editor-card coordinate-point-editor"
+                                 data-search-text="村民交易所 240 68 96">
+                            <summary class="editor-card-heading coordinate-point-summary">
+                                <div class="resource-summary-text">
+                                    <strong>村民交易所</strong>
+                                    <span class="resource-summary-meta">240, 68, 96</span>
+                                </div>
+                            </summary>
+                        </details>
+                    </div>
+                    <div id="coordinate-errors" class="config-errors"
+                         role="alert"></div>
+                    <div class="coordinate-footer">
+                        <span id="coordinate-status">尚未读取坐标</span>
+                        <code id="coordinate-revision">配置版本：--</code>
+                    </div>
+                </section>
+
+                <section id="regions"
+                         class="resource-tab-panel resource-list-section"
+                         hidden>
+                    <div class="resource-section-heading">
+                        <div>
+                            <h3 id="region-list-title">区域
+                                <span id="region-list-count"
+                                      class="count-label">1</span></h3>
+                            <p class="muted compact-help">
+                                由两个三维角点定义的共享长方体区域。
+                            </p>
+                        </div>
+                        <div class="action-row">
+                            <button id="add-region-button" hidden
+                                    class="primary compact"
+                                    type="button">添加区域</button>
+                        </div>
+                    </div>
+
+                    <div class="resource-create-grid">
+                        <form id="new-region-form"
+                              class="coordinate-create-form" hidden>
+                            <div class="coordinate-create-heading">
+                                <div>
+                                    <p class="eyebrow">新增资源</p>
+                                    <h3>添加区域</h3>
+                                    <p class="compact-help">
+                                        输入两个三维角点，区域会包含两个端点。
+                                    </p>
+                                </div>
+                                <button id="cancel-region-button"
+                                        class="ghost compact"
+                                        type="button">关闭</button>
+                            </div>
+                            <div class="region-create-fields">
+                                <div class="editor-field">
+                                    <label for="new-region-name">区域名称</label>
+                                    <input id="new-region-name"
+                                           maxlength="80" required>
+                                </div>
+                                <fieldset class="region-corner-group">
+                                    <legend>角点 1</legend>
+                                    <div class="coordinate-axis-row">
+                                        <div class="editor-field">
+                                            <label for="new-region-first-x">X</label>
+                                            <input id="new-region-first-x"
+                                                   type="number" step="1"
+                                                   value="0" required>
+                                        </div>
+                                        <div class="editor-field">
+                                            <label for="new-region-first-y">Y</label>
+                                            <input id="new-region-first-y"
+                                                   type="number" step="1"
+                                                   value="64" required>
+                                        </div>
+                                        <div class="editor-field">
+                                            <label for="new-region-first-z">Z</label>
+                                            <input id="new-region-first-z"
+                                                   type="number" step="1"
+                                                   value="0" required>
+                                        </div>
+                                    </div>
+                                </fieldset>
+                                <fieldset class="region-corner-group">
+                                    <legend>角点 2</legend>
+                                    <div class="coordinate-axis-row">
+                                        <div class="editor-field">
+                                            <label for="new-region-second-x">X</label>
+                                            <input id="new-region-second-x"
+                                                   type="number" step="1"
+                                                   value="0" required>
+                                        </div>
+                                        <div class="editor-field">
+                                            <label for="new-region-second-y">Y</label>
+                                            <input id="new-region-second-y"
+                                                   type="number" step="1"
+                                                   value="64" required>
+                                        </div>
+                                        <div class="editor-field">
+                                            <label for="new-region-second-z">Z</label>
+                                            <input id="new-region-second-z"
+                                                   type="number" step="1"
+                                                   value="0" required>
+                                        </div>
+                                    </div>
+                                </fieldset>
+                            </div>
+                            <div class="coordinate-create-actions">
+                                <button class="primary compact"
+                                        type="submit">保存区域</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="resource-toolbar" hidden>
+                        <label class="search-field" for="region-resource-search">
+                            <span>查找区域</span>
+                            <input id="region-resource-search" type="search"
+                                   placeholder="搜索名称或角点坐标" autocomplete="off">
+                        </label>
+                        <span class="compact-help">
+                            点击名称展开编辑 · 支持粘贴三维坐标
+                        </span>
+                    </div>
+
+                    <div id="region-list" class="editor-list"
+                         aria-live="polite">
+                        <details class="editor-card coordinate-point-editor" open>
+                            <summary class="editor-card-heading coordinate-point-summary">
+                                <div class="resource-summary-text">
+                                    <strong>农场区域</strong>
+                                    <span class="resource-summary-meta">0, 64, 0 → 32, 80, 32</span>
+                                </div>
+                            </summary>
+                            <div class="resource-editor-body">
+                                <div class="editor-field">
+                                    <label for="template-region-name">区域名称</label>
+                                    <input id="template-region-name" value="农场区域"
+                                           maxlength="80">
+                                </div>
+                                <div class="resource-corners">
+                                    <fieldset class="resource-axis-group">
+                                        <legend>角点 1</legend>
+                                        <div class="coordinate-axis-row">
+                                            <div class="editor-field">
+                                                <label for="template-region-first-x">X</label>
+                                                <input id="template-region-first-x" type="number"
+                                                       value="0" step="1">
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="template-region-first-y">Y</label>
+                                                <input id="template-region-first-y" type="number"
+                                                       value="64" step="1">
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="template-region-first-z">Z</label>
+                                                <input id="template-region-first-z" type="number"
+                                                       value="0" step="1">
+                                            </div>
+                                        </div>
+                                    </fieldset>
+                                    <fieldset class="resource-axis-group">
+                                        <legend>角点 2</legend>
+                                        <div class="coordinate-axis-row">
+                                            <div class="editor-field">
+                                                <label for="template-region-second-x">X</label>
+                                                <input id="template-region-second-x" type="number"
+                                                       value="32" step="1">
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="template-region-second-y">Y</label>
+                                                <input id="template-region-second-y" type="number"
+                                                       value="80" step="1">
+                                            </div>
+                                            <div class="editor-field">
+                                                <label for="template-region-second-z">Z</label>
+                                                <input id="template-region-second-z" type="number"
+                                                       value="32" step="1">
+                                            </div>
+                                        </div>
+                                    </fieldset>
+                                </div>
+                                <div class="action-row">
+                                    <button class="primary compact" type="button">保存</button>
+                                    <button class="ghost compact danger-action" type="button">
+                                        删除
+                                    </button>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                    <div id="region-errors" class="config-errors"
+                         role="alert"></div>
+                    <div class="coordinate-footer">
+                        <span id="region-status">尚未读取区域</span>
+                        <code id="region-revision">配置版本：--</code>
+                    </div>
+                </section>
+
+                <section id="category-zones"
+                         class="resource-tab-panel resource-list-section"
+                         hidden>
+                    <div class="resource-section-heading">
+                        <div>
+                            <h3 id="category-zone-title">分类区
+                                <span id="category-zone-list-count"
+                                      class="count-label">1</span></h3>
+                            <p class="muted compact-help">
+                                将展示物品与储存容器配对，并按识别规则自动分类。
+                            </p>
+                            <details class="inline-help">
+                                <summary>分类区如何工作？</summary>
+                                <p class="compact-help">
+                                    摆放方块、展示框、展示架和花盆内物品会自动转换为物品 ID，
+                                与同一列储存容器精确匹配。长条分类架可框选总选区，
+                                再填写多个母版分类物并设置方向、步长。
+                                </p>
+                            </details>
+                        </div>
+                        <div class="action-row">
+                            <button id="add-category-zone-button" hidden
+                                    class="primary compact"
+                                    type="button">添加分类区</button>
+                        </div>
+                    </div>
+
+                    <form id="new-category-zone-form" hidden>
+                        <div class="coordinate-create-heading">
+                            <div>
+                                <p class="eyebrow">新增资源</p>
+                                <h3>添加分类区</h3>
+                            </div>
+                            <button id="cancel-category-zone-button"
+                                    class="ghost compact"
+                                    type="button">关闭</button>
+                        </div>
+                        <div class="editor-field category-zone-name-field">
+                            <label for="new-category-zone-name">分类区名称</label>
+                            <input id="new-category-zone-name"
+                                   maxlength="80" required>
+                        </div>
+                        <div class="resource-section-heading">
+                            <div>
+                                <h3>范围模式与单片母版</h3>
+                                <p class="muted compact-help">
+                                    自动铺满的单片母版可添加多个分类物；
+                                    所有范围必须完整位于总选区内，并且每组
+                                    识别区与储存区等长。
+                                </p>
+                            </div>
+                        </div>
+                        <div id="new-category-bindings"
+                             class="category-binding-list category-zone-binding-list">
+                        </div>
+                        <div class="action-row">
+                            <button id="add-new-binding-button"
+                                    class="secondary compact"
+                                    type="button">添加绑定</button>
+                            <button class="primary compact"
+                                    type="submit">保存分类区</button>
+                        </div>
+                    </form>
+
+                    <div class="resource-toolbar" hidden>
+                        <label class="search-field" for="category-zone-search">
+                            <span>查找分类区</span>
+                            <input id="category-zone-search" type="search"
+                                   placeholder="搜索名称或范围坐标" autocomplete="off">
+                        </label>
+                        <span class="compact-help">
+                            点击名称展开编辑 · 分类物识别方式按需展开
+                        </span>
+                    </div>
+
+                    <div id="category-zone-list"
+                         class="editor-list" aria-live="polite">
+                        <article class="editor-card category-zone-editor">
+                            <div class="editor-card-heading">
+                                <div class="resource-summary-text">
+                                    <strong>分类区示例</strong>
+                                    <span class="resource-summary-meta">2 组绑定 · 方向 X</span>
+                                </div>
+                            </div>
+                            <div class="resource-editor-body">
+                                <p class="muted compact-help">
+                                    用展示物与容器列定义自动分类规则。
+                                </p>
+                                <div class="action-row">
+                                    <button class="primary compact" type="button">编辑</button>
+                                    <button class="ghost compact danger-action" type="button">
+                                        删除
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                    <div id="category-zone-errors"
+                         class="config-errors" role="alert"></div>
+                    <div class="coordinate-footer">
+                        <span id="category-zone-status">尚未读取分类区</span>
+                        <code id="category-zone-revision">配置版本：--</code>
+                    </div>
+                </section>
+            </section>
+        </div>
+    </main>
+
+    <div id="toast-region" class="toast-region" aria-live="polite"
+         aria-atomic="true"></div>
+</body>
+</html>

@@ -1116,12 +1116,12 @@ select {
 
 .category-option-switch input {
     position: relative;
-    width: 44px;
-    height: 24px;
-    min-height: 24px;
+    width: 56px;
+    height: 32px;
+    min-height: 32px;
     margin: 0;
     appearance: none;
-    border: 1px solid var(--line);
+    border: 0;
     border-radius: 999px;
     background: var(--theme-switch-off, #a6aca8);
     transition: background-color 160ms ease;
@@ -1130,23 +1130,22 @@ select {
 .category-option-switch input::after {
     content: "";
     position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 16px;
-    height: 16px;
+    top: 5px;
+    left: 5px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    background: #ffffff;
+    background: var(--theme-switch-thumb, #ffffff);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
     transition: transform 160ms ease;
 }
 
 .category-option-switch input:checked {
-    border-color: var(--theme-switch-on, var(--accent));
     background: var(--theme-switch-on, var(--accent));
 }
 
 .category-option-switch input:checked::after {
-    transform: translateX(20px);
+    transform: translateX(24px);
 }
 
 .category-support-block-input {
@@ -1990,14 +1989,23 @@ select {
         if (!previous || !animate || reduced || !content.animate) {
             content.hidden = !expanded;
             content.style.overflow = "";
+            content.style.minHeight = "";
             return;
+        }
+        let expandedHeight = 0;
+        if (kind === "panel" && expanded) {
+            content.style.minHeight = "";
+            expandedHeight = content.scrollHeight;
+        }
+        if (kind === "panel") {
+            content.style.minHeight = "0";
         }
         const frames = kind === "menu" ? [
             {opacity, transform},
             {opacity: expanded ? 1 : 0, transform: expanded ? "none" : offset}
         ] : [
             {height: `${height}px`, opacity},
-            {height: `${expanded ? content.scrollHeight : 0}px`, opacity: expanded ? 1 : 0}
+            {height: `${expanded ? expandedHeight : 0}px`, opacity: expanded ? 1 : 0}
         ];
         if (kind === "panel") content.style.overflow = "hidden";
         const animation = content.animate(frames, {
@@ -2009,6 +2017,7 @@ select {
             if (reveals.get(content) !== current) return;
             content.hidden = !expanded;
             content.style.overflow = "";
+            content.style.minHeight = "";
             current.animation = null;
         }).catch(() => {});
     }

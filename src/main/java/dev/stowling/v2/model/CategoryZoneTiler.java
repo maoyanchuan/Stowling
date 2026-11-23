@@ -18,6 +18,14 @@ public final class CategoryZoneTiler {
             CategoryZoneExpansionDefinition expansion,
             List<CategoryBindingDefinition> templates
     ) {
+        return expand(expansion, templates, null);
+    }
+
+    public static List<CategoryBindingDefinition> expand(
+            CategoryZoneExpansionDefinition expansion,
+            List<CategoryBindingDefinition> templates,
+            CategoryZoneOptions globalOptions
+    ) {
         Objects.requireNonNull(expansion, "expansion");
         Objects.requireNonNull(templates, "templates");
         if (templates.size() != expansion.templateCount()) {
@@ -25,8 +33,12 @@ public final class CategoryZoneTiler {
                     "单片母版分类物数量与配置不一致"
             );
         }
+        if (templates.stream().noneMatch(template -> expands(template, globalOptions))) {
+            return List.copyOf(templates);
+        }
         int maximumSpan = 1;
         for (CategoryBindingDefinition template : templates) {
+            if (!expands(template, globalOptions)) continue;
             int markerSpan = span(template.markerArea(), expansion.direction());
             int storageSpan = span(template.storageArea(), expansion.direction());
             if (markerSpan != storageSpan && !template.wholeStorage()
@@ -52,7 +64,8 @@ public final class CategoryZoneTiler {
         for (int index = 0; ; index++) {
             int delta = offset(expansion, index);
             List<CategoryBindingDefinition> shifted = templates.stream()
-                    .map(template -> shift(template, expansion, delta))
+                    .map(template -> expands(template, globalOptions)
+                            ? shift(template, expansion, delta) : template)
                     .toList();
             if (shifted.stream().anyMatch(binding ->
                     !expansion.area().contains(binding.markerArea())
@@ -70,6 +83,7 @@ public final class CategoryZoneTiler {
                     templateIndex < templates.size();
                     templateIndex++) {
                 CategoryBindingDefinition template = templates.get(templateIndex);
+                if (index > 0 && !expands(template, globalOptions)) continue;
                 CategoryBindingDefinition shiftedBinding =
                         shifted.get(templateIndex);
                 result.add(index == 0
@@ -83,6 +97,11 @@ public final class CategoryZoneTiler {
             }
         }
         return List.copyOf(result);
+    }
+
+    private static boolean expands(CategoryBindingDefinition binding, CategoryZoneOptions global) {
+        CategoryZoneOptions options = binding.optionsEnabled() ? binding.categoryOptions() : global;
+        return options == null || "single".equals(options.scopeMode());
     }
 
     private static int span(
@@ -130,7 +149,9 @@ public final class CategoryZoneTiler {
                 template.standingArea() == null ? null : template.standingArea().shift(x, 0, z),
                 template.storagePolicy().shift(x, z),
                 template.wholeStorage(),
-                template.name()
+                template.name(),
+                template.optionsEnabled(),
+                template.categoryOptions()
         );
     }
 
@@ -158,7 +179,9 @@ public final class CategoryZoneTiler {
                 shifted.standingArea(),
                 shifted.storagePolicy(),
                 template.wholeStorage(),
-                template.name()
+                template.name(),
+                template.optionsEnabled(),
+                template.categoryOptions()
         );
     }
 

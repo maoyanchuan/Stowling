@@ -12,6 +12,29 @@ import org.junit.jupiter.api.Test;
 
 class CategoryZoneTilerTest {
     @Test
+    void selectionOverridesStayFixedWhileSingleSliceBindingsExpand() {
+        var point = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var total = new AreaBounds(0, 64, 0, 3, 64, 0);
+        var global = new CategoryZoneOptions("single", "marker", "bulk", "inside-box",
+                "", false, "");
+        var local = new CategoryZoneOptions("selection", "container-item", "box", "inside-box",
+                "", false, "");
+        var repeating = new CategoryBindingDefinition(UUID.randomUUID(), point, point,
+                "DIRECT_BLOCK_ID", List.of(), List.of(), null, StoragePolicy.DEFAULT,
+                false, "单片", false, null);
+        var fixed = new CategoryBindingDefinition(UUID.randomUUID(), total, total,
+                "MARKER_CONTAINER_CONTENTS", List.of(), List.of(), null,
+                local.storagePolicy(StoragePolicy.DEFAULT), false, "固定选区", true, local);
+        var expansion = new CategoryZoneExpansionDefinition(total,
+                CategoryZoneExpansionAxis.X_POSITIVE, 1, 2);
+        var result = CategoryZoneTiler.expand(expansion, List.of(repeating, fixed), global);
+        assertEquals(5, result.size());
+        assertEquals(fixed, result.get(1));
+        assertEquals(1, result.stream().filter(binding -> binding.name().equals("固定选区")).count());
+        assertEquals(4, result.stream().filter(binding -> binding.name().equals("单片")).count());
+    }
+
+    @Test
     void retainsBindingNamesInEveryExpandedSlice() {
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);
         var template = new CategoryBindingDefinition(UUID.randomUUID(), area, area,

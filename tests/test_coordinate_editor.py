@@ -125,6 +125,68 @@ def test_binding_names_survive_loading_renaming_copying_and_auto_expansion() -> 
 
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_independent_settings_preserve_global_values_and_disabled_drafts() -> None:
+    result = run_model(ZONE_SETUP + """
+        const value = model.resources(directory)[0];
+        const global = {...value.categoryOptions, storageMethod: 'bulk',
+            recognitionMode: 'marker', noCacheLocation: 'inside-box', cacheDestination: '',
+            ignoreSupportBlock: false, supportBlock: ''};
+        value.categoryOptions = global;
+        value.overallRegion.second.x = 7;
+        value.bindings[0].optionsEnabled = true;
+        value.bindings[0].categoryOptions = {...global, storageMethod: 'box',
+            recognitionMode: 'container-item', ignoreSupportBlock: true,
+            supportBlock: 'minecraft:stone'};
+        const enabled = model.payload(value);
+        value.bindings[0].optionsEnabled = false;
+        const disabled = model.payload(value);
+        const server = {...raw, categoryOptions: disabled.categoryOptions,
+            overallArea: disabled.overallArea,
+            bindings: [{...raw.bindings[0], optionsEnabled: false,
+                categoryOptions: disabled.bindings[0].categoryOptions,
+                ruleId: disabled.bindings[0].ruleId,
+                storagePolicy: disabled.bindings[0].storagePolicy}]};
+        const restored = model.resources({categoryZones: [server], catalog: {}})[0];
+        const copy = model.copy(restored);
+        copy.bindings[0].optionsEnabled = true;
+        const reenabled = model.payload(copy);
+        process.stdout.write(JSON.stringify({enabled, disabled, restored, reenabled}));
+    """)
+    assert result["enabled"]["categoryOptions"]["storageMethod"] == "bulk"
+    assert result["enabled"]["bindings"][0]["storagePolicy"]["mode"] == "BOX_ONLY"
+    assert result["enabled"]["bindings"][0]["ruleId"] == "MARKER_CONTAINER_CONTENTS"
+    disabled = result["disabled"]["bindings"][0]
+    assert disabled["optionsEnabled"] is False
+    assert disabled["storagePolicy"]["mode"] == "NORMAL"
+    assert disabled["categoryOptions"]["storageMethod"] == "box"
+    assert result["restored"]["bindings"][0]["optionsEnabled"] is False
+    assert result["restored"]["overallRegion"]["second"]["x"] == 7
+    assert result["reenabled"]["bindings"][0]["storagePolicy"]["mode"] == "BOX_ONLY"
+    assert result["reenabled"]["categoryOptions"]["storageMethod"] == "bulk"
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_selection_group_does_not_interfere_with_an_independent_single_slice() -> None:
+    result = run_model(ZONE_SETUP + """
+        const value = model.resources(directory)[0];
+        value.categoryOptions = {...value.categoryOptions, scopeMode: 'selection',
+            recognitionMode: 'marker', noCacheLocation: 'inside-box', cacheDestination: ''};
+        const second = model.copy(value.bindings[0]);
+        second.id = 'independent';
+        second.optionsEnabled = true;
+        second.categoryOptions = {...value.categoryOptions, scopeMode: 'single'};
+        value.bindings.push(second);
+        value.overallRegion.second.x = 3;
+        const saved = model.payload(value);
+        process.stdout.write(JSON.stringify(saved));
+    """)
+    assert len(result["bindings"]) == 2
+    assert result["categoryOptions"]["scopeMode"] == "selection"
+    assert result["bindings"][1]["categoryOptions"]["scopeMode"] == "single"
+    assert result["expansion"]["direction"] == "X_POSITIVE"
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_binding_name_accepts_focus_and_edits_without_toggling_the_card() -> None:
     script = r"""
         const fs = require('node:fs');
@@ -144,6 +206,8 @@ def test_binding_name_accepts_focus_and_edits_without_toggling_the_card() -> Non
         }};
         let toggles = 0;
         const context = {document, dirty: false, appendBindingRegion() {},
+            bindingOptions: new WeakMap(), categoryMenuOpen: null,
+            createBindingOptions: () => ({root: {}}), reveal() {},
             setCategoryBindingOpen() { toggles++; }};
         vm.createContext(context);
         for (const name of ['createCategoryBindingCard', 'readCategoryBindings']) {

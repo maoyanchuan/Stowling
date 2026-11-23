@@ -576,6 +576,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.bindings(),
                 request.expansion(),
+                request.categoryOptions(),
+                request.overallArea(),
                 null
         ));
         return categoryZoneResponse(saveSpatialConfig(
@@ -610,6 +612,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.name(),
                 request.bindings(),
                 request.expansion(),
+                request.categoryOptions(),
+                request.overallArea(),
                 existing
         );
         List<CategoryZoneDefinition> zones = current.config()
@@ -1948,16 +1952,30 @@ public final class V2ControlServiceImpl implements V2ControlService {
             String name,
             List<CategoryBindingRequest> requestedBindings,
             CategoryZoneExpansionRequest requestedExpansion,
+            dev.stowling.v2.model.CategoryZoneOptions requestedOptions,
+            dev.stowling.v2.model.AreaBounds requestedArea,
             CategoryZoneDefinition existing
     ) {
+        var options = requestedOptions != null ? requestedOptions
+                : existing == null ? null : existing.categoryOptions();
+        var overallArea = requestedArea != null ? requestedArea
+                : requestedExpansion != null ? new dev.stowling.v2.model.AreaBounds(
+                        requestedExpansion.firstX(), requestedExpansion.firstY(),
+                        requestedExpansion.firstZ(), requestedExpansion.secondX(),
+                        requestedExpansion.secondY(), requestedExpansion.secondZ())
+                        : existing == null ? null : existing.overallArea();
         if (requestedExpansion == null) {
             return new CategoryZoneDefinition(
                     id,
                     name,
                     bindings(
                             requestedBindings,
-                            existing == null ? List.of() : existing.bindings()
-                    )
+                            existing == null ? List.of() : existing.bindings(),
+                            options
+                    ),
+                    null,
+                    options,
+                    overallArea
             );
         }
         List<CategoryBindingDefinition> prior;
@@ -1973,7 +1991,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         }
         List<CategoryBindingDefinition> templates = bindings(
                 requestedBindings,
-                prior
+                prior,
+                options
         );
         CategoryZoneExpansionDefinition expansion = expansion(
                 requestedExpansion,
@@ -1983,8 +2002,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
             return new CategoryZoneDefinition(
                     id,
                     name,
-                    CategoryZoneTiler.expand(expansion, templates),
-                    expansion
+                    CategoryZoneTiler.expand(expansion, templates, options),
+                    expansion,
+                    options,
+                    overallArea
             );
         } catch (IllegalArgumentException exception) {
             throw new V2ValidationException(exception.getMessage(), exception);
@@ -2027,7 +2048,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
 
     private List<CategoryBindingDefinition> bindings(
             List<CategoryBindingRequest> requested,
-            List<CategoryBindingDefinition> existing
+            List<CategoryBindingDefinition> existing,
+            dev.stowling.v2.model.CategoryZoneOptions globalOptions
     ) {
         if (requested.isEmpty()) {
             throw new V2ValidationException(
@@ -2045,6 +2067,17 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     : UUID.randomUUID();
             String name = binding.name() != null ? binding.name()
                     : existingBinding == null ? "" : existingBinding.name();
+            boolean enabled = binding.optionsEnabled() != null ? binding.optionsEnabled()
+                    : existingBinding != null && existingBinding.optionsEnabled();
+            var independent = binding.categoryOptions() != null ? binding.categoryOptions()
+                    : existingBinding == null ? null : existingBinding.categoryOptions();
+            if (enabled && independent == null) independent = globalOptions;
+            var effective = enabled ? independent : globalOptions;
+            String ruleId = effective == null ? binding.ruleId() : effective.ruleId();
+            var policy = effective == null ? binding.storagePolicy()
+                    : effective.storagePolicy(binding.storagePolicy());
+            var ignored = effective == null ? binding.ignoredMarkerBlockIds()
+                    : effective.ignoredBlockIds();
             result.add(new CategoryBindingDefinition(
                     id,
                     new AreaBounds(
@@ -2063,16 +2096,18 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             binding.storageSecondY(),
                             binding.storageSecondZ()
                     ),
-                    binding.ruleId(),
-                    binding.ignoredMarkerBlockIds(),
+                    ruleId,
+                    ignored,
                     containerOverrides(
                             binding.containerOverrides(),
                             existingBinding
                     ),
                     binding.standingArea(),
-                    binding.storagePolicy(),
-                    binding.wholeStorage(),
-                    name
+                    policy,
+                    binding.wholeStorage() && "MARKER_CONTAINER_CONTENTS".equals(ruleId),
+                    name,
+                    enabled,
+                    independent
             ));
         }
         return List.copyOf(result);

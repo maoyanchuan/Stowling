@@ -30,6 +30,30 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void preservesGlobalSettingsAndDisabledIndependentDraftsAfterRestart() throws Exception {
+        Path path = directory.resolve("independent-settings.json");
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var global = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker", "bulk",
+                "inside-box", "", false, "");
+        var local = new dev.stowling.v2.model.CategoryZoneOptions("selection", "container-item",
+                "box", "inside-box", "", true, "minecraft:stone");
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "DIRECT_BLOCK_ID", List.of(), List.of(), null,
+                dev.stowling.v2.model.StoragePolicy.DEFAULT, false, "A1", false, local);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "分类区", List.of(binding),
+                null, global, new AreaBounds(-10, 60, -10, 10, 70, 10));
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(), List.of(), List.of(), List.of(zone));
+        var store = new ConfigStore(path);
+        store.save(store.loadOrReset().revision(), config);
+        var restored = new ConfigStore(path).read().config().categoryZones().getFirst();
+        assertEquals(zone, restored);
+        assertEquals(false, restored.bindings().getFirst().optionsEnabled());
+        assertEquals("box", restored.bindings().getFirst().categoryOptions().storageMethod());
+        assertEquals("bulk", restored.categoryOptions().storageMethod());
+    }
+
+    @Test
     void acceptsBindingNamesInSavedFilesAndLegacyFilesWithoutNames() throws Exception {
         Path path = directory.resolve("binding-name.json");
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);

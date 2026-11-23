@@ -148,7 +148,7 @@ final class TaskModuleSupport {
             CategoryBindingDefinition binding,
             String ruleId
     ) {
-        if (ruleId == null || ruleId.isBlank()
+        if (binding.optionsEnabled() || ruleId == null || ruleId.isBlank()
                 || ruleId.trim().equals(binding.ruleId())) {
             return binding;
         }
@@ -162,7 +162,9 @@ final class TaskModuleSupport {
                 binding.standingArea(),
                 binding.storagePolicy(),
                 binding.wholeStorage(),
-                binding.name()
+                binding.name(),
+                binding.optionsEnabled(),
+                binding.categoryOptions()
         );
     }
 

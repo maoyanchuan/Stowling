@@ -31,6 +31,10 @@
     cursor: text;
 }
 
+:root body[data-coordinate-editor] * {
+    box-sizing: border-box;
+}
+
 :root body[data-coordinate-editor] {
     min-width: 320px;
     min-height: 100vh;
@@ -237,6 +241,7 @@
 }
 
 :root body[data-coordinate-editor] .coordinate-kind-picker .field-label {
+    font-weight: 400;
     margin-top: 0;
 }
 
@@ -426,7 +431,6 @@
 }
 
 :root body[data-coordinate-editor] .field-label {
-    font-weight: 400;
     display: grid;
     gap: 7px;
     margin: 18px 0 0;
@@ -770,27 +774,39 @@
 }
 
 :root body[data-coordinate-editor] .category-binding-card {
-    display: grid;
     gap: 0;
     margin: 0;
-    overflow: hidden;
+    position: relative;
+    display: grid;
+    overflow: visible;
     border: 1px solid var(--line);
     border-radius: 11px;
     background: var(--theme-subtle, var(--panel-solid));
 }
 
+:root body[data-coordinate-editor] .category-binding-card:has(.category-select-menu:not([hidden])) {
+    z-index: 3;
+}
+
+:root body[data-coordinate-editor] .category-binding-override {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-weight: 400;
+}
+
+:root body[data-coordinate-editor] .category-binding-override-status {
+    color: var(--muted);
+    font-size: 12px;
+}
+
 :root body[data-coordinate-editor] .category-binding-summary {
+    justify-content: flex-start;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
     gap: 10px;
     min-height: 56px;
     padding: 8px 12px;
     cursor: pointer;
-}
-
-:root body[data-coordinate-editor] .category-binding-summary::after {
-    content: none;
 }
 
 :root body[data-coordinate-editor] .category-binding-toggle {
@@ -833,22 +849,31 @@
 }
 
 :root body[data-coordinate-editor] .category-binding-card-body {
-    display: block;
     min-height: 0;
-    overflow: hidden;
-    padding: 0;
-    opacity: 1;
+    overflow: visible;
 }
 
-:root body[data-coordinate-editor] .category-binding-card-body > .coordinate-region-grid {
-    min-height: 0;
-    overflow: hidden;
+:root body[data-coordinate-editor] .category-binding-content {
+    display: grid;
+    gap: 12px;
     padding: 0 12px 12px;
 }
 
-:root body[data-coordinate-editor]
-    .category-binding-card[data-collapsed="true"] .category-binding-card-body {
-    pointer-events: none;
+:root body[data-coordinate-editor] .category-binding-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+}
+
+:root body[data-coordinate-editor] .category-binding-options {
+    min-height: 0;
+}
+
+:root body[data-coordinate-editor] .category-binding-options .category-options {
+    padding: 0 0 12px;
+    border: 0;
+    background: transparent;
 }
 
 :root body[data-coordinate-editor] #category-bindings {
@@ -1263,6 +1288,21 @@
         padding: 18px;
     }
 
+    :root body[data-coordinate-editor] .category-binding-summary {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    :root body[data-coordinate-editor] input.category-binding-name {
+        flex: 1 1 80px;
+        width: auto;
+        max-width: none;
+    }
+
+    :root body[data-coordinate-editor] .category-binding-override {
+        flex-basis: 100%;
+    }
+
     :root body[data-coordinate-editor] .editor-fields,
     :root body[data-coordinate-editor] .editor-options {
         grid-template-columns: minmax(0, 1fr);
@@ -1293,4 +1333,8 @@
         scroll-behavior: auto !important;
     }
 
+}
+
+:root body[data-coordinate-editor] .category-binding-summary::after {
+    content: none;
 }

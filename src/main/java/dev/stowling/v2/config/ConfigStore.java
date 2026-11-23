@@ -367,7 +367,7 @@ public final class ConfigStore {
             requireFields(
                     zone,
                     zonePath,
-                    Set.of("id", "name", "bindings", "expansion"),
+                    Set.of("id", "name", "bindings", "expansion", "categoryOptions", "overallArea"),
                     Set.of("id", "name", "bindings")
             );
             JsonElement expansion = zone.get("expansion");
@@ -391,6 +391,11 @@ public final class ConfigStore {
                         "category expansion area"
                 );
             }
+            requireCategoryOptions(zone.get("categoryOptions"), zonePath + ".categoryOptions");
+            JsonElement overallArea = zone.get("overallArea");
+            if (overallArea != null && !overallArea.isJsonNull()) {
+                requireArea(overallArea, zonePath + ".overallArea");
+            }
             String bindingsPath = zonePath + ".bindings";
             JsonArray bindings = requireArray(zone.get("bindings"), bindingsPath);
             for (int bindingIndex = 0; bindingIndex < bindings.size(); bindingIndex++) {
@@ -411,10 +416,14 @@ public final class ConfigStore {
                                 "standingArea",
                                 "storagePolicy",
                                 "wholeStorage",
-                                "name"
+                                "name",
+                                "optionsEnabled",
+                                "categoryOptions"
                         ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );
+                requireCategoryOptions(binding.get("categoryOptions"),
+                        bindingPath + ".categoryOptions");
                 requireArea(binding.get("markerArea"), "markerArea");
                 requireArea(binding.get("storageArea"), "storageArea");
                 JsonElement standing = binding.get("standingArea");
@@ -424,6 +433,13 @@ public final class ConfigStore {
                 requireContainerOverrides(binding.get("containerOverrides"));
             }
         }
+    }
+
+    private static void requireCategoryOptions(JsonElement value, String path) {
+        if (value == null || value.isJsonNull()) return;
+        requireFields(requireObject(value, path), path, Set.of("scopeMode", "recognitionMode",
+                "storageMethod", "noCacheLocation", "cacheDestination", "ignoreSupportBlock",
+                "supportBlock"), Set.of());
     }
 
     private static void requireContainerOverrides(JsonElement value) {

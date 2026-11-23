@@ -15,7 +15,9 @@ public record CategoryBindingDefinition(
         AreaBounds standingArea,
         StoragePolicy storagePolicy,
         boolean wholeStorage,
-        String name
+        String name,
+        boolean optionsEnabled,
+        CategoryZoneOptions categoryOptions
 ) {
     public CategoryBindingDefinition {
         name = name == null ? "" : name.trim();
@@ -31,6 +33,16 @@ public record CategoryBindingDefinition(
         containerOverrides = containerOverrides == null
                 ? List.of()
                 : List.copyOf(containerOverrides);
+    }
+
+    public CategoryBindingDefinition(
+            UUID id, AreaBounds markerArea, AreaBounds storageArea, String ruleId,
+            List<String> ignoredMarkerBlockIds,
+            List<CategoryContainerOverrideDefinition> containerOverrides, AreaBounds standingArea,
+            StoragePolicy storagePolicy, boolean wholeStorage, String name
+    ) {
+        this(id, markerArea, storageArea, ruleId, ignoredMarkerBlockIds,
+                containerOverrides, standingArea, storagePolicy, wholeStorage, name, false, null);
     }
 
     public CategoryBindingDefinition(

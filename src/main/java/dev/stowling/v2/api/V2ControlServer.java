@@ -591,7 +591,7 @@ public final class V2ControlServer implements AutoCloseable {
                 JsonObject json = object(body);
                 requireFieldsAny(
                         json,
-                        Set.of("name", "bindings", "expansion"),
+                        Set.of("name", "bindings", "expansion", "categoryOptions", "overallArea"),
                         Set.of("name", "bindings")
                 );
                 sendJson(
@@ -613,7 +613,8 @@ public final class V2ControlServer implements AutoCloseable {
                 JsonObject json = object(body);
                 requireFieldsAny(
                         json,
-                        Set.of("revision", "name", "bindings", "expansion"),
+                        Set.of("revision", "name", "bindings", "expansion", "categoryOptions",
+                                "overallArea"),
                         Set.of("revision", "name", "bindings")
                 );
                 sendJson(exchange, 200, service.updateCategoryZone(
@@ -622,7 +623,9 @@ public final class V2ControlServer implements AutoCloseable {
                                 string(json, "revision"),
                                 string(json, "name"),
                                 categoryBindings(json),
-                                categoryExpansion(json)
+                                categoryExpansion(json),
+                                categoryOptions(json),
+                                areaBounds(json, "overallArea")
                         )
                 ));
             } else if ("DELETE".equals(method)) {
@@ -1182,7 +1185,9 @@ public final class V2ControlServer implements AutoCloseable {
         return new CategoryZoneRequest(
                 string(json, "name"),
                 categoryBindings(json),
-                categoryExpansion(json)
+                categoryExpansion(json),
+                categoryOptions(json),
+                areaBounds(json, "overallArea")
         );
     }
 
@@ -1246,7 +1251,9 @@ public final class V2ControlServer implements AutoCloseable {
                             "standingArea",
                             "storagePolicy",
                             "wholeStorage",
-                            "name"
+                            "name",
+                            "optionsEnabled",
+                            "categoryOptions"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -1283,10 +1290,27 @@ public final class V2ControlServer implements AutoCloseable {
                     standingArea(binding),
                     storagePolicy(binding),
                     optionalBoolean(binding, "wholeStorage"),
-                    optionalString(binding, "name")
+                    optionalString(binding, "name"),
+                    optionalBooleanValue(binding, "optionsEnabled"),
+                    categoryOptions(binding)
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static dev.stowling.v2.model.CategoryZoneOptions categoryOptions(JsonObject parent) {
+        JsonElement value = parent.get("categoryOptions");
+        if (value == null || value.isJsonNull()) return null;
+        JsonObject options = jsonObject(value, "categoryOptions");
+        requireFieldsAny(options, Set.of("scopeMode", "recognitionMode", "storageMethod",
+                "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock"),
+                Set.of());
+        return new dev.stowling.v2.model.CategoryZoneOptions(
+                optionalString(options, "scopeMode"), optionalString(options, "recognitionMode"),
+                optionalString(options, "storageMethod"), optionalString(options, "noCacheLocation"),
+                optionalString(options, "cacheDestination"),
+                optionalBoolean(options, "ignoreSupportBlock"),
+                optionalString(options, "supportBlock"));
     }
 
     private static dev.stowling.v2.model.StoragePolicy storagePolicy(JsonObject binding) {
@@ -1302,11 +1326,15 @@ public final class V2ControlServer implements AutoCloseable {
     }
 
     private static dev.stowling.v2.model.AreaBounds standingArea(JsonObject binding) {
-        JsonElement value = binding.get("standingArea");
+        return areaBounds(binding, "standingArea");
+    }
+
+    private static dev.stowling.v2.model.AreaBounds areaBounds(JsonObject parent, String key) {
+        JsonElement value = parent.get(key);
         if (value == null || value.isJsonNull()) {
             return null;
         }
-        JsonObject area = jsonObject(value, "standingArea");
+        JsonObject area = jsonObject(value, key);
         requireFields(area, Set.of("firstX", "firstY", "firstZ", "secondX", "secondY", "secondZ"));
         return new dev.stowling.v2.model.AreaBounds(integer(area, "firstX"), integer(area, "firstY"),
                 integer(area, "firstZ"), integer(area, "secondX"), integer(area, "secondY"),

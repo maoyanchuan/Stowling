@@ -13,6 +13,21 @@ import org.junit.jupiter.api.Test;
 
 class TaskModuleSupportTest {
     @Test
+    void independentBindingRecognitionWinsOverTheTaskDefault() {
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var local = new dev.stowling.v2.model.CategoryZoneOptions("selection", "container-item",
+                "box", "inside-box", "", false, "");
+        var independent = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "MARKER_CONTAINER_CONTENTS", List.of(), List.of(), null,
+                local.storagePolicy(null), false, "A1", true, local);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "分类区", List.of(independent));
+        var step = TaskStep.action(UUID.randomUUID(), TaskModuleIds.RESOLVE_CONTAINER_CATEGORIES,
+                Map.of(TaskModuleIds.CATEGORY_RULE_ID, "DIRECT_BLOCK_ID"));
+        assertEquals(independent,
+                TaskModuleSupport.categoryZoneSelection(step, zone).bindings().getFirst());
+    }
+
+    @Test
     void selectsOneBindingAndAppliesTheConfiguredRuleOverride() {
         UUID zoneId = UUID.randomUUID();
         UUID selectedId = UUID.randomUUID();

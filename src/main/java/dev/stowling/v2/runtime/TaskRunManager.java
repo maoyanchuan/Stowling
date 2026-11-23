@@ -226,7 +226,8 @@ public final class TaskRunManager {
                     .filter(Objects::nonNull).findFirst().orElse(null);
             if (policy == null) return zone;
             return new CategoryZoneDefinition(zone.id(), zone.name(), zone.bindings().stream()
-                    .map(binding -> new dev.stowling.v2.model.CategoryBindingDefinition(
+                    .map(binding -> binding.optionsEnabled() ? binding
+                            : new dev.stowling.v2.model.CategoryBindingDefinition(
                             binding.id(), binding.markerArea(), binding.storageArea(),
                             binding.ruleId(), binding.ignoredMarkerBlockIds(),
                             binding.containerOverrides(), binding.standingArea(),
@@ -234,7 +235,8 @@ public final class TaskRunManager {
                                     policy.loosePercent(), policy.allowPartialBoxes(),
                                     binding.storagePolicy().packingArea(), policy.refillLoose(),
                                     policy.looseSlots(), policy.partialBoxDestinationRef()),
-                            binding.wholeStorage()))
+                            binding.wholeStorage(), binding.name(), binding.optionsEnabled(),
+                            binding.categoryOptions()))
                     .toList());
         }).toList();
     }

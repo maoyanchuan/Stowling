@@ -6,7 +6,8 @@
     /** @typedef {{first: CoordinateCorner, second: CoordinateCorner}} CoordinateRegion */
 
     /** @typedef {{id: string, name?: string, markerRegion: CoordinateRegion,
-     * storageRegion: CoordinateRegion, original?: object}} CategoryBinding */
+     * storageRegion: CoordinateRegion, original?: object, optionsEnabled?: boolean,
+     * categoryOptions?: CategoryOptions}} CategoryBinding */
 
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
@@ -43,7 +44,6 @@
     let kindMenuOpen = false;
     let categoryMenuOpen = null;
     const reveals = new WeakMap();
-    state.categorySupportExpanded = false;
     const nodes = {
         list: document.querySelector("#coordinate-list"),
         add: document.querySelector("#add-coordinate"),
@@ -69,15 +69,6 @@
         categoryFields: document.querySelector("#category-zone-fields"),
         categoryBindings: document.querySelector("#category-bindings"),
         addCategoryBinding: document.querySelector("#add-category-binding"),
-        categoryScopeMode: document.querySelector("#category-scope-mode"),
-        categoryRecognitionMode: document.querySelector("#category-recognition-mode"),
-        categoryStorageMethod: document.querySelector("#category-storage-method"),
-        categoryNoCacheRow: document.querySelector("#category-no-cache-row"),
-        categoryNoCacheLocation: document.querySelector("#category-no-cache-location"),
-        categoryIgnoreSupport: document.querySelector("#category-ignore-support"),
-        categorySupportExpand: document.querySelector("#category-support-expand"),
-        categorySupportBlockRow: document.querySelector("#category-support-block-row"),
-        categorySupportBlock: document.querySelector("#category-support-block"),
         form: document.querySelector("#coordinate-form"),
         name: document.querySelector("#coordinate-name"),
         x: document.querySelector("#coordinate-x"),
@@ -113,24 +104,34 @@
         status: document.querySelector("#editor-status")
     };
 
-    /** @type {CategorySelect[]} */
-    const categorySelects = [
-        ["scopeMode", nodes.categoryScopeMode],
-        ["recognitionMode", nodes.categoryRecognitionMode],
-        ["storageMethod", nodes.categoryStorageMethod],
-        ["noCacheLocation", nodes.categoryNoCacheLocation]
-    ].map(([key, select]) => {
-        const wrap = document.querySelector(`[data-category-select="${key}"]`);
-        return {
-            key,
-            select,
-            wrap,
-            trigger: wrap.querySelector(".category-select-trigger"),
-            current: wrap.querySelector(".category-select-current"),
-            menu: wrap.querySelector(".category-select-menu"),
-            options: Array.from(wrap.querySelectorAll(".category-select-option"))
-        };
-    });
+    /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
+     * selects: CategorySelect[], supportExpanded: boolean, values?: CategoryOptions,
+     * initialized?: boolean}} CategoryOptionsContext */
+    const bindingOptions = new WeakMap();
+    const globalCategoryContext = createCategoryOptionsContext(
+        document.querySelector(".category-options")
+    );
+
+    /** @param {HTMLElement} root @returns {CategoryOptionsContext} */
+    function createCategoryOptionsContext(root) {
+        const fields = {};
+        for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
+            "no-cache-location", "ignore-support", "support-expand", "support-block-row",
+            "support-block"]) {
+            fields[key] = root.querySelector(`[id$="category-${key}"]`);
+        }
+        const selects = Array.from(root.querySelectorAll("[data-category-select]"))
+            .map(wrap => ({
+                key: wrap.dataset.categorySelect,
+                select: wrap.querySelector("select"),
+                wrap,
+                trigger: wrap.querySelector(".category-select-trigger"),
+                current: wrap.querySelector(".category-select-current"),
+                menu: wrap.querySelector(".category-select-menu"),
+                options: Array.from(wrap.querySelectorAll(".category-select-option"))
+            }));
+        return {root, fields, selects, supportExpanded: false};
+    }
 
     /** @param {HTMLElement} content @param {boolean} expanded
      * @param {boolean} animate @param {string} [kind] @returns {void} */
@@ -366,69 +367,106 @@
         const body = card.querySelector(".category-binding-card-body");
         toggle.setAttribute("aria-expanded", String(open));
         toggle.setAttribute("aria-label", `${open ? "收起" : "展开"}绑定组`);
+        if (!open && categoryMenuOpen && card.contains(categoryMenuOpen.wrap)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
         reveal(body, open, true);
     }
 
-    /** @param {CategoryOptions} options @returns {void} */
-    function writeCategoryOptions(options) {
+    /** @param {CategoryOptions} options @param {CategoryOptionsContext} [context]
+     * @returns {void} */
+    function writeCategoryOptions(options, context = globalCategoryContext) {
         const values = {...defaultCategoryOptions(), ...options};
-        populateCacheOptions();
+        context.values = values;
+        populateCacheOptions(context);
+        const fields = context.fields;
+        const recognition = context.selects.find(item => item.key === "recognitionMode");
         if (values.recognitionMode === "unstackable"
-                && !nodes.categoryRecognitionMode.querySelector('[value="unstackable"]')) {
-            const control = categorySelects.find(item => item.key === "recognitionMode");
-            control.select.append(new Option("不可堆叠物品", "unstackable"));
-            const option = control.menu.firstElementChild.cloneNode(true);
+                && !recognition.select.querySelector('[value="unstackable"]')) {
+            recognition.select.append(new Option("不可堆叠物品", "unstackable"));
+            const option = recognition.menu.firstElementChild.cloneNode(true);
             option.dataset.categoryValue = "unstackable";
             option.querySelector("span").textContent = "不可堆叠物品";
-            control.menu.append(option);
-            control.options = Array.from(control.menu.children);
+            recognition.menu.append(option);
+            recognition.options = Array.from(recognition.menu.children);
         }
-        nodes.categoryScopeMode.value = values.scopeMode;
-        nodes.categoryRecognitionMode.value = values.recognitionMode;
-        nodes.categoryStorageMethod.value = values.storageMethod;
-        nodes.categoryNoCacheLocation.value = values.noCacheLocation === "specified"
+        fields["scope-mode"].value = values.scopeMode;
+        fields["recognition-mode"].value = values.recognitionMode;
+        fields["storage-method"].value = values.storageMethod;
+        fields["no-cache-location"].value = values.noCacheLocation === "specified"
             ? values.cacheDestination : "inside-box";
-        nodes.categoryIgnoreSupport.checked = values.ignoreSupportBlock;
-        nodes.categorySupportBlock.value = values.supportBlock;
-        state.categorySupportExpanded = values.ignoreSupportBlock;
-        categorySelects.forEach(syncCategorySelect);
-        updateCategoryOptionState();
+        fields["ignore-support"].checked = values.ignoreSupportBlock;
+        fields["support-block"].value = values.supportBlock;
+        context.supportExpanded = values.ignoreSupportBlock;
+        updateCategoryOptionState(context, false);
     }
 
-    /** @returns {CategoryOptions} */
-    function readCategoryOptions() {
+    /** @param {CategoryOptionsContext} [context] @returns {CategoryOptions} */
+    function readCategoryOptions(context = globalCategoryContext) {
+        const fields = context.fields;
         return {
-            ...selectedCoordinate()?.categoryOptions,
-            scopeMode: nodes.categoryScopeMode.value,
-            recognitionMode: nodes.categoryRecognitionMode.value,
-            storageMethod: nodes.categoryStorageMethod.value,
-            noCacheLocation: nodes.categoryNoCacheLocation.value === "inside-box"
+            ...context.values,
+            scopeMode: fields["scope-mode"].value,
+            recognitionMode: fields["recognition-mode"].value,
+            storageMethod: fields["storage-method"].value,
+            noCacheLocation: fields["no-cache-location"].value === "inside-box"
                 ? "inside-box" : "specified",
-            ignoreSupportBlock: nodes.categoryIgnoreSupport.checked,
-            supportBlock: nodes.categorySupportBlock.value.trim(),
-            cacheDestination: nodes.categoryNoCacheLocation.value === "inside-box"
-                ? "" : nodes.categoryNoCacheLocation.value
+            cacheDestination: fields["no-cache-location"].value === "inside-box"
+                ? "" : fields["no-cache-location"].value,
+            ignoreSupportBlock: fields["ignore-support"].checked,
+            supportBlock: fields["support-block"].value.trim()
         };
     }
 
-    /** @returns {void} */
-    function updateCategoryOptionState() {
-        const hasStorageLocation = ["mixed", "box"]
-            .includes(nodes.categoryStorageMethod.value);
-        nodes.categoryNoCacheLocation.disabled = !hasStorageLocation;
-        reveal(nodes.categoryNoCacheRow, hasStorageLocation, true);
-        categorySelects.forEach(syncCategorySelect);
-        const ignoreSupport = nodes.categoryIgnoreSupport.checked;
-        nodes.categorySupportExpand.hidden = !ignoreSupport;
-        nodes.categorySupportExpand.disabled = !ignoreSupport;
-        const supportExpanded = ignoreSupport && state.categorySupportExpanded;
-        nodes.categorySupportExpand.setAttribute("aria-expanded", String(supportExpanded));
-        nodes.categorySupportExpand.setAttribute(
-            "aria-label",
-            `${supportExpanded ? "收起" : "展开"}支撑方块设置`
+    /** @param {CategoryOptionsContext} [context] @param {boolean} [animate] @returns {void} */
+    function updateCategoryOptionState(context = globalCategoryContext, animate = true) {
+        const fields = context.fields;
+        const hasStorageLocation = ["mixed", "box"].includes(fields["storage-method"].value);
+        fields["no-cache-location"].disabled = !hasStorageLocation;
+        context.selects.forEach(syncCategorySelect);
+        reveal(fields["no-cache-row"], hasStorageLocation, animate);
+        const ignoreSupport = fields["ignore-support"].checked;
+        fields["support-expand"].hidden = !ignoreSupport;
+        fields["support-expand"].disabled = !ignoreSupport;
+        const expanded = ignoreSupport && context.supportExpanded;
+        fields["support-expand"].setAttribute("aria-expanded", String(expanded));
+        fields["support-expand"].setAttribute(
+            "aria-label", `${expanded ? "收起" : "展开"}支撑方块设置`
         );
-        reveal(nodes.categorySupportBlockRow, supportExpanded, true);
-        nodes.categorySupportBlock.disabled = !ignoreSupport;
+        reveal(fields["support-block-row"], expanded, animate);
+        fields["support-block"].disabled = !ignoreSupport;
+    }
+
+    /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
+    function createBindingOptions(binding) {
+        const root = globalCategoryContext.root.cloneNode(true);
+        const prefix = `binding-${binding.id}-`;
+        root.querySelectorAll("[id]").forEach(element => {
+            element.id = prefix + element.id;
+        });
+        root.querySelectorAll("[for], [aria-controls], [aria-labelledby]").forEach(element => {
+            for (const attribute of ["for", "aria-controls", "aria-labelledby"]) {
+                const value = element.getAttribute(attribute);
+                if (value) {
+                    element.setAttribute(attribute,
+                        value.split(/\s+/).map(id => prefix + id).join(" "));
+                }
+            }
+        });
+        root.querySelectorAll("[data-menu-open]").forEach(row => {
+            row.removeAttribute("data-menu-open");
+        });
+        root.querySelectorAll(".category-select-menu").forEach(menu => {
+            menu.hidden = true;
+            menu.inert = true;
+        });
+        root.querySelectorAll(".category-select-trigger").forEach(trigger => {
+            trigger.setAttribute("aria-expanded", "false");
+        });
+        const context = createCategoryOptionsContext(root);
+        writeCategoryOptions(binding.categoryOptions || readCategoryOptions(), context);
+        bindCategoryOptions(context);
+        return context;
     }
 
     /** @param {HTMLElement} host @param {string} title @param {string} regionKind
@@ -511,10 +549,51 @@
             dirty = true;
             updateCategoryBindingCards();
         });
-        summary.append(toggle, name, remove);
+        summary.append(toggle, name);
         const grid = document.createElement("div");
         const body = document.createElement("div");
         body.className = "category-binding-card-body";
+        body.id = `binding-${binding.id}-body`;
+        toggle.setAttribute("aria-controls", body.id);
+        const content = document.createElement("div");
+        content.className = "category-binding-content";
+        const context = createBindingOptions(binding);
+        bindingOptions.set(card, context);
+        const detail = document.createElement("div");
+        detail.className = "category-binding-options";
+        detail.id = `binding-${binding.id}-options`;
+        detail.append(context.root);
+        const override = document.createElement("label");
+        override.className = "category-option-switch category-binding-override";
+        const status = document.createElement("span");
+        status.className = "category-binding-override-status";
+        status.textContent = "独立设置";
+        const enabled = document.createElement("input");
+        enabled.className = "category-binding-enabled";
+        enabled.type = "checkbox";
+        enabled.checked = Boolean(binding.optionsEnabled);
+        enabled.setAttribute("role", "switch");
+        enabled.setAttribute("aria-label", `启用绑定组 ${index + 1}独立设置`);
+        enabled.setAttribute("aria-controls", detail.id);
+        override.append(status, enabled);
+        override.addEventListener("click", event => event.stopPropagation());
+        summary.append(override);
+        context.initialized = Boolean(binding.categoryOptions);
+        /** @param {boolean} animate @returns {void} */
+        const updateOverride = animate => {
+            if (enabled.checked && !context.initialized) {
+                writeCategoryOptions(readCategoryOptions(), context);
+                context.initialized = true;
+            }
+            enabled.setAttribute("aria-expanded", String(enabled.checked));
+            if (!enabled.checked && categoryMenuOpen
+                    && context.root.contains(categoryMenuOpen.wrap)) {
+                setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+            }
+            reveal(detail, enabled.checked, animate);
+        };
+        enabled.addEventListener("change", () => updateOverride(true));
+        updateOverride(false);
         grid.className = "coordinate-region-grid";
         appendBindingRegion(
             grid,
@@ -530,7 +609,11 @@
             binding.id,
             binding.storageRegion || emptyRegion()
         );
-        body.append(grid);
+        const actions = document.createElement("div");
+        actions.className = "category-binding-actions";
+        actions.append(remove);
+        content.append(detail, grid, actions);
+        body.append(content);
         card.append(summary, body);
         setCategoryBindingOpen(card, open);
         return card;
@@ -548,6 +631,9 @@
     /** @param {CategoryBinding[]} bindings @returns {void} */
     function renderCategoryBindings(bindings) {
         const values = bindings.length ? bindings : [emptyBinding()];
+        if (categoryMenuOpen && nodes.categoryBindings.contains(categoryMenuOpen.wrap)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
         nodes.categoryBindings.replaceChildren();
         values.forEach((binding, index) => {
             nodes.categoryBindings.append(createCategoryBindingCard(binding, index));
@@ -592,7 +678,10 @@
                     || `绑定组 ${index + 1}`,
                 original: card.originalBinding,
                 markerRegion,
-                storageRegion
+                storageRegion,
+                optionsEnabled: card.querySelector(".category-binding-enabled").checked,
+                categoryOptions: bindingOptions.get(card).initialized
+                    ? readCategoryOptions(bindingOptions.get(card)) : null
             };
         });
         return bindings.some(binding => !binding) ? null : bindings;
@@ -727,7 +816,12 @@
         setFieldGroupEnabled(nodes.pointOptions, kind === "point");
         setFieldGroupEnabled(nodes.regionFields, kind === "region");
         setFieldGroupEnabled(nodes.categoryFields, kind === "category-zone");
-        if (kind === "category-zone") updateCategoryOptionState();
+        if (kind === "category-zone") {
+            updateCategoryOptionState();
+            for (const card of nodes.categoryBindings.children) {
+                updateCategoryOptionState(bindingOptions.get(card), false);
+            }
+        }
         if (kind === "point") {
             nodes.x.value = String(coordinate.x ?? 0);
             nodes.y.value = String(coordinate.y ?? 64);
@@ -1207,9 +1301,9 @@
         return true;
     }
 
-    /** @returns {void} */
-    function populateCacheOptions() {
-        const control = categorySelects.find(item => item.key === "noCacheLocation");
+    /** @param {CategoryOptionsContext} context @returns {void} */
+    function populateCacheOptions(context) {
+        const control = context.selects.find(item => item.key === "noCacheLocation");
         const current = control.menu.querySelector(".category-select-option").cloneNode(true);
         control.select.replaceChildren(new Option("当前存储位置", "inside-box"));
         control.menu.replaceChildren(current);
@@ -1374,60 +1468,69 @@
         }
         nodes.kindOptions[index].focus();
     });
-    for (const control of categorySelects) {
-        control.trigger.addEventListener("click", () => {
-            const open = control.trigger.getAttribute("aria-expanded") === "true";
-            setCategoryMenuOpen(control, !open);
-        });
-        control.trigger.addEventListener("keydown", event => {
-            if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
-            event.preventDefault();
-            setCategoryMenuOpen(control, true, true);
-        });
-        control.menu.addEventListener("click", event => {
-            const option = event.target.closest("[data-category-value]");
-            if (option) selectCategoryOption(control, option.dataset.categoryValue);
-        });
-        control.menu.addEventListener("keydown", event => {
-            if (event.key === "Escape") {
+    /** @param {CategoryOptionsContext} context @returns {void} */
+    function bindCategoryOptions(context) {
+        for (const control of context.selects) {
+            control.trigger.addEventListener("click", () => {
+                const open = control.trigger.getAttribute("aria-expanded") === "true";
+                setCategoryMenuOpen(control, !open);
+            });
+            control.trigger.addEventListener("keydown", event => {
+                if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
                 event.preventDefault();
-                setCategoryMenuOpen(control, false, true);
-                return;
-            }
-            if (event.key === "Tab") {
-                setCategoryMenuOpen(control, false);
-                return;
-            }
-            if (event.key === "Enter" || event.key === " ") {
+                setCategoryMenuOpen(control, true, true);
+            });
+            control.menu.addEventListener("click", event => {
+                const option = event.target.closest("[data-category-value]");
+                if (option) selectCategoryOption(control, option.dataset.categoryValue);
+            });
+            control.menu.addEventListener("keydown", event => {
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    setCategoryMenuOpen(control, false, true);
+                    return;
+                }
+                if (event.key === "Tab") {
+                    setCategoryMenuOpen(control, false);
+                    return;
+                }
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    const option = /** @type {HTMLButtonElement} */ (document.activeElement);
+                    selectCategoryOption(control, option.dataset.categoryValue);
+                    return;
+                }
+                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
                 event.preventDefault();
-                const option = /** @type {HTMLButtonElement} */ (document.activeElement);
-                selectCategoryOption(control, option.dataset.categoryValue);
-                return;
-            }
-            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-            event.preventDefault();
-            let index = control.options.indexOf(document.activeElement);
-            if (event.key === "Home") index = 0;
-            if (event.key === "End") index = control.options.length - 1;
-            if (event.key === "ArrowDown") index = (index + 1) % control.options.length;
-            if (event.key === "ArrowUp") {
-                index = (index - 1 + control.options.length) % control.options.length;
-            }
-            control.options[index]?.focus();
+                let index = control.options.indexOf(document.activeElement);
+                if (event.key === "Home") index = 0;
+                if (event.key === "End") index = control.options.length - 1;
+                if (event.key === "ArrowDown") index = (index + 1) % control.options.length;
+                if (event.key === "ArrowUp") {
+                    index = (index - 1 + control.options.length) % control.options.length;
+                }
+                control.options[index]?.focus();
+            });
+            control.select.addEventListener("change", () => {
+                syncCategorySelect(control);
+                if (control.select === context.fields["storage-method"]) {
+                    updateCategoryOptionState(context);
+                }
+            });
+        }
+        const fields = context.fields;
+        fields["support-expand"].addEventListener("click", () => {
+            if (!fields["ignore-support"].checked) return;
+            context.supportExpanded = !context.supportExpanded;
+            updateCategoryOptionState(context);
         });
-        control.select.addEventListener("change", () => {
-            syncCategorySelect(control);
-            if ([nodes.categoryStorageMethod, nodes.categoryNoCacheLocation, nodes.categoryScopeMode]
-                .includes(control.select)) {
-                updateCategoryOptionState();
-            }
+        fields["ignore-support"].addEventListener("change", () => {
+            context.supportExpanded = fields["ignore-support"].checked;
+            updateCategoryOptionState(context);
         });
     }
-    nodes.categorySupportExpand.addEventListener("click", () => {
-        if (!nodes.categoryIgnoreSupport.checked) return;
-        state.categorySupportExpanded = !state.categorySupportExpanded;
-        updateCategoryOptionState();
-    });
+
+    bindCategoryOptions(globalCategoryContext);
     document.addEventListener("pointerdown", event => {
         if (kindMenuOpen && !nodes.kindWrap.contains(event.target)) setKindMenuOpen(false);
         if (categoryMenuOpen && !categoryMenuOpen.wrap.contains(event.target)) {
@@ -1442,10 +1545,6 @@
     });
     nodes.add.addEventListener("click", addCoordinate);
     nodes.addCategoryBinding.addEventListener("click", addCategoryBinding);
-    nodes.categoryIgnoreSupport.addEventListener("change", () => {
-        state.categorySupportExpanded = nodes.categoryIgnoreSupport.checked;
-        updateCategoryOptionState();
-    });
     nodes.addFolder.addEventListener("click", () => showFolderForm());
     nodes.cancelFolder.addEventListener("click", hideFolderForm);
     nodes.folderForm.addEventListener("submit", event => {

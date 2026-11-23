@@ -22,7 +22,9 @@ public record CategoryBindingRequest(
         AreaBounds standingArea,
         dev.stowling.v2.model.StoragePolicy storagePolicy,
         boolean wholeStorage,
-        String name
+        String name,
+        Boolean optionsEnabled,
+        dev.stowling.v2.model.CategoryZoneOptions categoryOptions
 ) {
     public CategoryBindingRequest {
         ignoredMarkerBlockIds = ignoredMarkerBlockIds == null
@@ -31,6 +33,21 @@ public record CategoryBindingRequest(
         containerOverrides = containerOverrides == null
                 ? List.of()
                 : List.copyOf(containerOverrides);
+    }
+
+    public CategoryBindingRequest(
+            int markerFirstX, int markerFirstY, int markerFirstZ,
+            int markerSecondX, int markerSecondY, int markerSecondZ,
+            int storageFirstX, int storageFirstY, int storageFirstZ,
+            int storageSecondX, int storageSecondY, int storageSecondZ,
+            String ruleId, List<String> ignoredMarkerBlockIds,
+            List<CategoryContainerOverrideRequest> containerOverrides, AreaBounds standingArea,
+            dev.stowling.v2.model.StoragePolicy storagePolicy, boolean wholeStorage, String name
+    ) {
+        this(markerFirstX, markerFirstY, markerFirstZ, markerSecondX, markerSecondY, markerSecondZ,
+                storageFirstX, storageFirstY, storageFirstZ, storageSecondX, storageSecondY,
+                storageSecondZ, ruleId, ignoredMarkerBlockIds, containerOverrides, standingArea,
+                storagePolicy, wholeStorage, name, null, null);
     }
 
     public CategoryBindingRequest(

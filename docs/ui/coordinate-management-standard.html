@@ -1982,7 +1982,8 @@ select {
     };
 
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
-     * selects: CategorySelect[], supportExpanded: boolean}} CategoryOptionsContext */
+     * selects: CategorySelect[], supportExpanded: boolean,
+     * initialized?: boolean}} CategoryOptionsContext */
 
     const globalCategoryContext = createCategoryOptionsContext(
         document.querySelector(".category-options")
@@ -2429,12 +2430,12 @@ select {
         override.append(status, enabled);
         override.addEventListener("click", event => event.stopPropagation());
         summary.append(override);
-        let initialized = Boolean(binding.categoryOptions);
+        context.initialized = Boolean(binding.categoryOptions);
         /** @param {boolean} animate @returns {void} */
         const updateOverride = animate => {
-            if (enabled.checked && !initialized) {
+            if (enabled.checked && !context.initialized) {
                 writeCategoryOptions(readCategoryOptions(), context);
-                initialized = true;
+                context.initialized = true;
             }
             enabled.setAttribute("aria-expanded", String(enabled.checked));
             if (!enabled.checked && categoryMenuOpen
@@ -2529,7 +2530,8 @@ select {
                 markerRegion,
                 storageRegion,
                 optionsEnabled: card.querySelector(".category-binding-enabled").checked,
-                categoryOptions: readCategoryOptions(bindingOptions.get(card))
+                categoryOptions: bindingOptions.get(card).initialized
+                    ? readCategoryOptions(bindingOptions.get(card)) : undefined
             };
         });
         return bindings.some(binding => !binding) ? null : bindings;

@@ -47,6 +47,50 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void togglesIndependentBindingsWithoutDiscardingTheirStoredOptions() throws Exception {
+        try (var fixture = fixture()) {
+            var payload = JsonParser.parseString(categoryZone("Independent")).getAsJsonObject();
+            var global = JsonParser.parseString("""
+                    {"scopeMode":"selection","recognitionMode":"marker","storageMethod":"bulk",
+                    "noCacheLocation":"inside-box","cacheDestination":"",
+                    "ignoreSupportBlock":false,"supportBlock":""}
+                    """).getAsJsonObject();
+            var local = global.deepCopy();
+            local.addProperty("recognitionMode", "container-item");
+            local.addProperty("storageMethod", "box");
+            payload.add("categoryOptions", global);
+            var input = payload.getAsJsonArray("bindings").get(0).getAsJsonObject();
+            input.addProperty("optionsEnabled", true);
+            input.add("categoryOptions", local);
+            var created = fixture.send("/v1/category-zones", "POST", payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            var response = object(created);
+            var zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            var binding = zone.getAsJsonArray("bindings").get(0).getAsJsonObject();
+            assertEquals("BOX_ONLY", binding.getAsJsonObject("storagePolicy")
+                    .get("mode").getAsString());
+            assertEquals("MARKER_CONTAINER_CONTENTS", binding.get("ruleId").getAsString());
+            String path = "/v1/category-zones/" + zone.get("id").getAsString();
+            for (boolean enabled : List.of(false, true)) {
+                input.addProperty("optionsEnabled", enabled);
+                payload.add("revision", response.get("revision"));
+                var updated = fixture.send(path, "PUT", payload.toString(), true);
+                assertEquals(200, updated.statusCode());
+                response = object(updated);
+                zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+                binding = zone.getAsJsonArray("bindings").get(0).getAsJsonObject();
+                assertEquals(enabled, binding.get("optionsEnabled").getAsBoolean());
+                assertEquals(enabled ? "BOX_ONLY" : "NORMAL",
+                        binding.getAsJsonObject("storagePolicy").get("mode").getAsString());
+                assertEquals("box", binding.getAsJsonObject("categoryOptions")
+                        .get("storageMethod").getAsString());
+                assertEquals("bulk", zone.getAsJsonObject("categoryOptions")
+                        .get("storageMethod").getAsString());
+            }
+        }
+    }
+
+    @Test
     void createsAndRenamesBindingsWithoutLosingNamesForOlderClients() throws Exception {
         try (var fixture = fixture()) {
             JsonObject payload = JsonParser.parseString(categoryZone("Named")).getAsJsonObject();

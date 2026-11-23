@@ -8,7 +8,9 @@ public record CategoryZoneDefinition(
         UUID id,
         String name,
         List<CategoryBindingDefinition> bindings,
-        CategoryZoneExpansionDefinition expansion
+        CategoryZoneExpansionDefinition expansion,
+        CategoryZoneOptions categoryOptions,
+        AreaBounds overallArea
 ) {
     public CategoryZoneDefinition {
         id = Objects.requireNonNull(id, "id");
@@ -21,6 +23,18 @@ public record CategoryZoneDefinition(
                     "category zone must contain at least one binding"
             );
         }
+    }
+
+    public CategoryZoneDefinition(UUID id, String name, List<CategoryBindingDefinition> bindings,
+            CategoryZoneExpansionDefinition expansion, CategoryZoneOptions categoryOptions) {
+        this(id, name, bindings, expansion, categoryOptions, null);
+    }
+
+    public CategoryZoneDefinition(
+            UUID id, String name, List<CategoryBindingDefinition> bindings,
+            CategoryZoneExpansionDefinition expansion
+    ) {
+        this(id, name, bindings, expansion, null);
     }
 
     public CategoryZoneDefinition(

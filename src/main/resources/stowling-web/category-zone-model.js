@@ -10,6 +10,8 @@
         const storage = value?.storageArea || {};
         return {
             ...(value?.name != null ? {name: String(value.name).trim()} : {}),
+            ...(value?.optionsEnabled != null ? {optionsEnabled: Boolean(value.optionsEnabled)} : {}),
+            ...(value?.categoryOptions ? {categoryOptions: {...value.categoryOptions}} : {}),
             markerFirstX: Number(marker.firstX ?? 0),
             markerFirstY: Number(marker.firstY ?? 64),
             markerFirstZ: Number(marker.firstZ ?? 0),
@@ -133,12 +135,24 @@
      */
     function payload(zone) {
         if (zone.expansion?.direction === "AUTO") {
-            zone = { ...zone, ...inferExpansion(zone.bindings, zone.expansion) };
+            const expanding = zone.bindings.filter(binding => (binding.optionsEnabled
+                ? binding.categoryOptions?.scopeMode || zone.categoryOptions?.scopeMode || "single"
+                : zone.categoryOptions?.scopeMode || "single") === "single");
+            const inferred = inferExpansion(expanding, zone.expansion);
+            let index = 0;
+            zone = {...zone, expansion: inferred.expansion,
+                bindings: zone.bindings.map(binding => expanding.includes(binding)
+                    ? inferred.bindings[index++] : binding)};
         }
         const result = {
             name: String(zone.name || "").trim(),
+            ...(zone.categoryOptions ? {categoryOptions: {...zone.categoryOptions}} : {}),
+            ...(zone.overallArea ? {overallArea: {...zone.overallArea}} : {}),
             bindings: zone.bindings.map((binding) => ({
                 ...(binding.name != null ? {name: String(binding.name).trim()} : {}),
+                ...(binding.optionsEnabled != null
+                    ? {optionsEnabled: Boolean(binding.optionsEnabled)} : {}),
+                ...(binding.categoryOptions ? {categoryOptions: {...binding.categoryOptions}} : {}),
                 markerFirstX: Number(binding.markerFirstX),
                 markerFirstY: Number(binding.markerFirstY),
                 markerFirstZ: Number(binding.markerFirstZ),

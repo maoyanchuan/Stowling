@@ -1862,7 +1862,8 @@ public final class ConfigValidator {
             }
             List<CategoryBindingDefinition> expected = CategoryZoneTiler.expand(
                     zone.expansion(),
-                    zone.bindings().subList(0, templateCount)
+                    zone.bindings().subList(0, templateCount),
+                    zone.categoryOptions()
             );
             if (!expected.equals(zone.bindings())) {
                 throw new V2ValidationException(

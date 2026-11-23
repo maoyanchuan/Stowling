@@ -1882,10 +1882,6 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/", read("stowling-web/index.html", html)),
                 Map.entry("/index.html", read("stowling-web/index.html", html)),
                 Map.entry("/coordinates.html", read("stowling-web/coordinates.html", html)),
-                Map.entry(
-                        "/coordinates-template.html",
-                        read("stowling-web/coordinates-template.html", html)
-                ),
                 Map.entry("/category-zones.html", read("stowling-web/category-zones.html", html)),
                 Map.entry("/tasks.html", read("stowling-web/tasks.html", html)),
                 Map.entry("/theme.js", read("stowling-web/theme.js", js)),
@@ -1897,10 +1893,6 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/backpack-model.js", read("stowling-web/backpack-model.js", js)),
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
-                Map.entry(
-                        "/coordinates-template.js",
-                        read("stowling-web/coordinates-template.js", js)
-                ),
                 Map.entry(
                         "/category-zone-model.js",
                         read("stowling-web/category-zone-model.js", js)
@@ -1973,10 +1965,6 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/workbench.css",
                         read("stowling-web/workbench.css", "text/css; charset=utf-8")
-                ),
-                Map.entry(
-                        "/coordinates-template.css",
-                        read("stowling-web/coordinates-template.css", "text/css; charset=utf-8")
                 ),
                 Map.entry(
                         "/storage-policy-editor.js",

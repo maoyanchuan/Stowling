@@ -15,3 +15,7 @@
 `tests/test_task_settings_sample_interactions.py` 覆盖任务与配置解耦、旧状态迁移、
 下拉键盘操作、菜单弹出方向、动画中断和主菜单动画。
 按项目规定，仅在用户要求时运行测试。
+
+[coordinates-template.html](coordinates-template.html) 是坐标页面的独立静态模板，
+可以直接用浏览器打开，不需要启动游戏或安装依赖。应用内入口仍然是
+`/coordinates-template.html`，用于在 Stowling 控制台中预览同一份模板。

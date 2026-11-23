@@ -901,6 +901,11 @@ select {
     min-height: 62px;
 }
 
+.category-option-row[data-menu-open="true"],
+.category-option-sub[data-menu-open="true"] {
+    z-index: 5;
+}
+
 .category-option-row::before,
 .category-option-sub::before {
     content: "";
@@ -2041,6 +2046,9 @@ select {
             setCategoryMenuOpen(categoryMenuOpen, false, false, false);
         }
         categoryMenuOpen = open ? control : categoryMenuOpen;
+        const optionRow = control.wrap.closest(".category-option-row, .category-option-sub");
+        if (open) optionRow?.setAttribute("data-menu-open", "true");
+        else optionRow?.removeAttribute("data-menu-open");
         if (open) {
             control.menu.hidden = false;
             const bounds = control.trigger.getBoundingClientRect();

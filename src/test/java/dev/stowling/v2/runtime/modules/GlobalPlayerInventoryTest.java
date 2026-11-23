@@ -63,9 +63,36 @@ class GlobalPlayerInventoryTest {
 
         assertFalse(runs.busy());
         assertEquals(List.of("eat", "withdraw", "eat"), food.actions);
+        assertEquals(64, food.requestedCount);
         assertEquals(20, food.level);
         var bread = registry.inventory().view(false, true, Map.of()).items().getFirst();
         assertEquals(4, bread.count());
+        assertEquals(4, bread.protectedCount());
+        assertEquals(0, bread.taskCount());
+    }
+
+    @Test
+    void mealCanRefillBeforeEatingExistingProtectedFoodAndPassTheRequestedCount() {
+        InventorySource source = new InventorySource(Map.of(BREAD, 1));
+        MealFoodPort food = new MealFoodPort(source);
+        TaskModuleRuntimeRegistry registry = registry(source, food);
+        TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
+        runs.tick();
+        var view = registry.inventory().view(false, true, Map.of());
+        registry.inventory().allocate(view.revision(), BREAD, 1);
+        var chest = new CoordinatePoint(UUID.randomUUID(), "Food chest", 0, 64, 0);
+        var task = new TaskDefinition(UUID.randomUUID(), "Meal", TaskPriority.NORMAL, false,
+                TaskFlowTemplates.scheduledEating("coordinate:" + chest.id(), BREAD, 18, 12, false));
+
+        runs.start(task, List.of(chest));
+        for (int tick = 0; tick < 30 && runs.busy(); tick++) runs.tick();
+        runs.tick();
+
+        assertFalse(runs.busy());
+        assertEquals(List.of("withdraw", "eat", "eat"), food.actions);
+        assertEquals(12, food.requestedCount);
+        assertEquals(20, food.level);
+        var bread = registry.inventory().view(false, true, Map.of()).items().getFirst();
         assertEquals(4, bread.protectedCount());
         assertEquals(0, bread.taskCount());
     }
@@ -382,6 +409,7 @@ class GlobalPlayerInventoryTest {
         private final InventorySource source;
         private final List<String> actions = new ArrayList<>();
         private int level = 12;
+        private int requestedCount;
 
         private MealFoodPort(InventorySource source) {
             this.source = source;
@@ -394,13 +422,13 @@ class GlobalPlayerInventoryTest {
 
         @Override
         public FoodConsumptionResult startAcquiringFood(
-                ContainerTarget target, String itemId, boolean replenish
+                ContainerTarget target, String itemId, boolean replenish, int count
         ) {
             assertEquals(BREAD, itemId);
             assertTrue(replenish);
-            assertEquals(0, source.current.count(BREAD));
+            requestedCount = count;
             actions.add("withdraw");
-            source.set(Map.of(BREAD, 5));
+            source.set(Map.of(BREAD, source.current.count(BREAD) + 5));
             return FoodConsumptionResult.pending("withdrawing");
         }
 

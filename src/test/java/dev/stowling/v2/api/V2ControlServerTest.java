@@ -47,6 +47,47 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void acceptsAutoEatPriorityAndRefillOptionsAndRejectsInvalidValues() throws Exception {
+        try (var fixture = fixture()) {
+            var response = object(fixture.send("/v1/auto-eat-tasks", "GET", null, true));
+            var payload = new JsonObject();
+            payload.add("revision", response.get("revision"));
+            payload.addProperty("foodItemId", "minecraft:bread");
+            payload.addProperty("foodLevelThreshold", 16);
+            payload.addProperty("intervalSeconds", 3);
+            payload.addProperty("priority", "NORMAL");
+            payload.addProperty("autoRefill", false);
+            payload.addProperty("refillCount", 23);
+            payload.addProperty("preferInventory", false);
+            assertEquals(401, fixture.send("/v1/auto-eat-tasks", "POST",
+                    payload.toString(), false).statusCode());
+            var created = fixture.send("/v1/auto-eat-tasks", "POST", payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            response = object(created);
+            var settings = response.getAsJsonArray("items").get(0).getAsJsonObject()
+                    .getAsJsonObject("settings");
+            assertEquals("NORMAL", settings.get("priority").getAsString());
+            assertEquals(23, settings.get("refillCount").getAsInt());
+            assertFalse(settings.get("autoRefill").getAsBoolean());
+            assertFalse(settings.get("preferInventory").getAsBoolean());
+            payload.add("revision", response.get("revision"));
+            for (int count : List.of(0, 2305)) {
+                payload.addProperty("refillCount", count);
+                assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",
+                        payload.toString(), true).statusCode());
+            }
+            payload.addProperty("refillCount", 23);
+            payload.addProperty("autoRefill", true);
+            assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",
+                    payload.toString(), true).statusCode());
+            payload.addProperty("autoRefill", false);
+            payload.addProperty("priority", "INVALID");
+            assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",
+                    payload.toString(), true).statusCode());
+        }
+    }
+
+    @Test
     void togglesIndependentBindingsWithoutDiscardingTheirStoredOptions() throws Exception {
         try (var fixture = fixture()) {
             var payload = JsonParser.parseString(categoryZone("Independent")).getAsJsonObject();
@@ -693,7 +734,7 @@ class V2ControlServerTest {
             assertEquals(200, tasksPage.statusCode());
             assertTrue(tasksPage.body().contains("aria-controls=\"auto-eat-draft-body\""));
             assertTrue(tasksPage.body().contains(
-                    "<div id=\"auto-eat-draft-body\" class=\"move-task-body\" hidden>"
+                    "<div id=\"auto-eat-draft-body\" class=\"pickup-task-body\" hidden>"
             ));
             assertFalse(tasksPage.body().contains("id=\"auto-eat-dialog\""));
             assertEquals(200, fixture.send("/auto-eat-ui.js", "GET", null, false).statusCode());

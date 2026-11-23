@@ -120,6 +120,7 @@ public final class ConfigStore {
                 String path = "tasks[" + index + "]";
                 JsonObject taskObject = requireObject(tasks.get(index), path);
                 requireCleanupPolicy(taskObject.get("cleanupPolicy"));
+                requireAutoEatOptions(taskObject.get("autoEatOptions"));
                 requireFields(
                         taskObject,
                         path,
@@ -135,7 +136,7 @@ public final class ConfigStore {
                                 "defaultInterruptionFlow",
                                 "requeueAfterInterruption",
                                 "folderId",
-                                "cleanupPolicy"
+                                "cleanupPolicy", "autoEatOptions"
                         ),
                         Set.of("id", "name", "steps")
                 );
@@ -243,6 +244,29 @@ public final class ConfigStore {
                 || !mode.getAsJsonPrimitive().isString()
                 || !Set.of("RESTART", "CONTINUE").contains(mode.getAsString()))) {
             throw new V2ValidationException("cleanupPolicy.resumeMode is invalid");
+        }
+    }
+
+    private static void requireAutoEatOptions(JsonElement value) {
+        if (value == null || value.isJsonNull()) return;
+        JsonObject options = requireObject(value, "autoEatOptions");
+        requireFields(options, "autoEatOptions",
+                Set.of("autoRefill", "coordinateId", "refillCount", "preferInventory"),
+                Set.of("autoRefill", "refillCount", "preferInventory"));
+        for (String key : Set.of("autoRefill", "preferInventory")) {
+            JsonElement flag = options.get(key);
+            if (!flag.isJsonPrimitive() || !flag.getAsJsonPrimitive().isBoolean()) {
+                throw new V2ValidationException("autoEatOptions." + key + " 必须是布尔值");
+            }
+        }
+        JsonElement count = options.get("refillCount");
+        try {
+            if (!count.isJsonPrimitive() || !count.getAsJsonPrimitive().isNumber()) {
+                throw new NumberFormatException();
+            }
+            count.getAsBigDecimal().intValueExact();
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new V2ValidationException("autoEatOptions.refillCount 必须是整数", exception);
         }
     }
 

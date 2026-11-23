@@ -45,6 +45,7 @@ public final class TaskModuleIds {
     public static final String ITEM_FILTER = "itemFilter";
     public static final String FOOD_ITEM_ID = "foodItemId";
     public static final String RESERVE_FOOD = "reserveFood";
+    public static final String REFILL_COUNT = "refillCount";
     public static final String FOOD_LEVEL_THRESHOLD = "foodLevelThreshold";
     public static final String CONTAINER_TYPES = "containerTypes";
     public static final String MAX_VOLUME = "maxVolume";

@@ -33,6 +33,12 @@ public interface FoodConsumptionPort {
         return FoodConsumptionResult.failed("食物获取组件不可用");
     }
 
+    default FoodConsumptionResult startAcquiringFood(
+            ContainerTarget target, String itemId, boolean replenish, int count
+    ) {
+        return FoodConsumptionResult.failed("食物补给组件不支持指定拿取数量");
+    }
+
     default void cancelAcquiringFood() {
     }
 

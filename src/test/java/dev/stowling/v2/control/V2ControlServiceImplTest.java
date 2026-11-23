@@ -36,6 +36,63 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
+    void retainsDisabledRefillDraftAndTaskPriorityAcrossReloads() {
+        Path path = directory.resolve("auto-eat-refill.json");
+        var store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var chest = createPoint(service, "Food chest");
+        var settings = new AutoEatTask.Settings("Meal", "minecraft:bread", chest.id(), 15, 3,
+                false, TaskPriority.NORMAL, true, 17, false);
+        var created = service.saveAutoEatTask(null, service.autoEatTasks().revision(), settings);
+        assertEquals(settings, created.items().getFirst().settings());
+        assertEquals(TaskPriority.NORMAL, service.tasks().tasks().getFirst().priority());
+        assertEquals(TaskPriority.NORMAL, service.taskTriggers().triggers().getFirst().priority());
+
+        var listening = service.setAutoEatListening(created.taskId(),
+                new RevisionRequest(created.revision()), true);
+        var disabled = new AutoEatTask.Settings("Meal", "minecraft:bread", chest.id(), 15, 3,
+                true, TaskPriority.BACKGROUND, false, 17, false);
+        service.saveAutoEatTask(created.taskId(), listening.revision(), disabled);
+
+        var reopened = new ConfigStore(path);
+        reopened.loadOrReset();
+        var restored = new V2ControlServiceImpl(reopened,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var saved = restored.autoEatTasks();
+        assertEquals(disabled, saved.items().getFirst().settings());
+        assertEquals(TaskPriority.BACKGROUND, restored.tasks().tasks().getFirst().priority());
+        var trigger = restored.taskTriggers().triggers().getFirst();
+        assertEquals(TaskPriority.BACKGROUND, trigger.priority());
+        assertEquals("minecraft:bread", trigger.requiredProtectedFood());
+        assertTrue(trigger.enabled());
+
+        var enabled = new AutoEatTask.Settings("Meal", "minecraft:bread", chest.id(), 15, 3,
+                true, TaskPriority.BACKGROUND, true, 17, false);
+        var updated = restored.saveAutoEatTask(created.taskId(), saved.revision(), enabled);
+        assertEquals(enabled, updated.items().getFirst().settings());
+        assertNull(restored.taskTriggers().triggers().getFirst().requiredProtectedFood());
+        var flow = restored.tasks().tasks().getFirst().steps().getFirst().steps();
+        assertEquals(ConfigValidator.MOVE_TO_COORDINATE, flow.getFirst().moduleId());
+        assertEquals("17", flow.get(1).parameters().get(ConfigValidator.REFILL_COUNT));
+        assertEquals("true", flow.get(1).parameters().get(ConfigValidator.RESERVE_FOOD));
+    }
+
+    @Test
+    void readsLegacyMealsWithTheirExistingPriorityAndDefaultRefillOptions() {
+        var settings = new AutoEatTask.Settings("Meal", "minecraft:bread", null, 18, 1, false);
+        var generated = settings.task(UUID.randomUUID(), "Meal");
+        var legacy = new dev.stowling.v2.model.TaskDefinition(generated.id(), "Meal",
+                TaskPriority.NORMAL, generated.steps());
+        var restored = AutoEatTask.from(legacy, settings.trigger(legacy, false)).settings();
+        assertEquals(TaskPriority.NORMAL, restored.priority());
+        assertFalse(restored.autoRefill());
+        assertEquals(64, restored.refillCount());
+        assertTrue(restored.preferInventory());
+    }
+
+    @Test
     void savesIndependentPickupAndClassificationAndPersistsTheChosenSuccessor() {
         var path = directory.resolve("independent-storage-tasks.json");
         var store = new ConfigStore(path);

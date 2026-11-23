@@ -1252,7 +1252,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.defaultInterruptionFlow(),
                 request.requeueAfterInterruption(),
                 request.folderId(),
-                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy()
+                request.cleanupPolicy() == null ? existing.cleanupPolicy() : request.cleanupPolicy(),
+                existing.autoEatOptions()
         );
         List<TaskDefinition> tasks = current.config().tasks().stream()
                 .map(task -> task.id().equals(id) ? updatedTask : task)
@@ -1884,7 +1885,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 task.defaultInterruptionFlow(),
                 task.requeueAfterInterruption(),
                 folderId,
-                task.cleanupPolicy()
+                task.cleanupPolicy(),
+                task.autoEatOptions()
         );
     }
 

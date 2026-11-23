@@ -33,7 +33,7 @@ public final class CoordinateResourceMigration {
                 task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps(task.steps(), points), task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
-                task.cleanupPolicy()))
+                task.cleanupPolicy(), task.autoEatOptions()))
                 .toList();
         List<AutoClassifyDefinition> automatic = config.autoClassifyTasks().stream().map(definition ->
                 new AutoClassifyDefinition(definition.id(), definition.name(), definition.enabled(),

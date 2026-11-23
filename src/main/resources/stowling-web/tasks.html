@@ -476,9 +476,26 @@
                                                    pattern="[a-z0-9_.\-]+:[a-z0-9_.\/\-]+"
                                                    spellcheck="false" autocomplete="off" required>
                                         </div>
-                                        <div class="move-field">
+                                        <label class="move-field" for="auto-eat-priority">
+                                            <span>任务优先级</span>
+                                            <select id="auto-eat-priority">
+                                                <option value="BACKGROUND"
+                                                        data-description="等待更高优先级任务完成后进食">
+                                                    后台
+                                                </option>
+                                                <option value="NORMAL"
+                                                        data-description="按普通任务优先级排队进食">
+                                                    普通
+                                                </option>
+                                                <option value="URGENT"
+                                                        data-description="可中断较低优先级的任务先行进食">
+                                                    紧急
+                                                </option>
+                                            </select>
+                                        </label>
+                                        <div class="move-field auto-eat-switch-row">
                                             <span class="settings-copy">
-                                                <label for="auto-eat-source">补给方式</label>
+                                                <label for="auto-eat-refill">自动补给</label>
                                                 <span id="auto-eat-inventory-note"
                                                       class="settings-description">
                                                     在 <a href="/backpack.html"
@@ -486,16 +503,23 @@
                                                     将食物设为「保留自用」。
                                                 </span>
                                             </span>
-                                            <select id="auto-eat-source">
-                                                <option value="inventory"
-                                                        data-description="只吃保留自用的食物，不自动补给">
-                                                    只吃背包锁定食物
-                                                </option>
-                                                <option value="chest"
-                                                        data-description="优先吃背包食物，用完后前往指定箱子补给">
-                                                    用完后从食物箱补给
-                                                </option>
-                                            </select>
+                                            <span class="auto-eat-refill-actions">
+                                                <button id="toggle-auto-eat-refill"
+                                                        class="pickup-task-expand" type="button"
+                                                        aria-label="展开自动补给设置"
+                                                        aria-controls="auto-eat-chest-settings"
+                                                        aria-expanded="false" hidden>
+                                                    <svg width="18" height="18"
+                                                         viewBox="0 0 24 24" fill="none"
+                                                         stroke="currentColor" stroke-width="1.8"
+                                                         stroke-linecap="round"
+                                                         stroke-linejoin="round" aria-hidden="true">
+                                                        <path d="m9 5 7 7-7 7" />
+                                                    </svg>
+                                                </button>
+                                                <input id="auto-eat-refill" type="checkbox"
+                                                       role="switch" aria-label="自动补给">
+                                            </span>
                                         </div>
                                         <div id="auto-eat-chest-settings" class="settings-detail"
                                              hidden inert>
@@ -508,7 +532,7 @@
                                                         </label>
                                                     </span>
                                                     <select id="auto-eat-coordinate" disabled
-                                                            data-option-description="食物用完后前往此坐标补给"
+                                                            data-option-description="自动补给时前往此坐标拿取食物"
                                                             aria-describedby="auto-eat-chest-note">
                                                     </select>
                                                     <small id="auto-eat-chest-note">
@@ -516,6 +540,31 @@
                                                         <a href="/coordinates.html#coordinate-points"
                                                            class="text-link">管理坐标 →</a>
                                                     </small>
+                                                </div>
+                                                <div class="move-field">
+                                                    <span class="settings-copy">
+                                                        <label for="auto-eat-refill-count">
+                                                            拿取数量（个）
+                                                        </label>
+                                                        <span class="settings-description">
+                                                            每次最多拿取此数量，拿取后自动锁定自用。
+                                                        </span>
+                                                    </span>
+                                                    <input id="auto-eat-refill-count" type="number"
+                                                           min="1" max="2304" step="1" required>
+                                                </div>
+                                                <div class="move-field auto-eat-switch-row">
+                                                    <span class="settings-copy">
+                                                        <label for="auto-eat-prefer-inventory">
+                                                            优先吃身上的食物
+                                                        </label>
+                                                        <span class="settings-description">
+                                                            优先吃身上锁定的食物；关闭后先去食物箱补给。
+                                                        </span>
+                                                    </span>
+                                                    <input id="auto-eat-prefer-inventory"
+                                                           type="checkbox" role="switch"
+                                                           aria-label="优先吃身上的食物" checked>
                                                 </div>
                                             </div>
                                         </div>
@@ -525,8 +574,6 @@
                                             <button id="delete-auto-eat"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
-                                            <button id="cancel-auto-eat" class="secondary"
-                                                    type="button">关闭</button>
                                         </div>
                                     </fieldset>
                                 </form>

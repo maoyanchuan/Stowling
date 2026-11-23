@@ -1,6 +1,7 @@
 package dev.stowling.v2.control;
 
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.v2.model.AutoEatOptions;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskDefinition;
@@ -16,9 +17,19 @@ import java.util.UUID;
 
 public record AutoEatTask(UUID id, Settings settings) {
     public record Settings(String name, String foodItemId, UUID coordinateId,
-            int foodLevelThreshold, int intervalSeconds, boolean enabled) {
+            int foodLevelThreshold, int intervalSeconds, boolean enabled,
+            TaskPriority priority, boolean autoRefill, int refillCount, boolean preferInventory) {
+        public Settings(String name, String foodItemId, UUID coordinateId,
+                int foodLevelThreshold, int intervalSeconds, boolean enabled) {
+            this(name, foodItemId, coordinateId, foodLevelThreshold, intervalSeconds, enabled,
+                    TaskPriority.URGENT, coordinateId != null,
+                    AutoEatOptions.DEFAULT_REFILL_COUNT, true);
+        }
+
         public Settings {
             foodItemId = Objects.requireNonNull(foodItemId, "foodItemId").trim();
+            priority = priority == null ? TaskPriority.URGENT : priority;
+            new AutoEatOptions(autoRefill, coordinateId, refillCount, preferInventory);
             if (foodLevelThreshold < 0 || foodLevelThreshold >= 20) {
                 throw new IllegalArgumentException("饱食度阈值必须在 0 到 19 之间");
             }
@@ -29,10 +40,12 @@ public record AutoEatTask(UUID id, Settings settings) {
         }
 
         TaskDefinition task(UUID id, String taskName) {
-            String target = coordinateId == null ? null
+            String target = !autoRefill ? null
                     : ResourceReference.of(ResourceType.COORDINATE, coordinateId).encode();
-            return new TaskDefinition(id, taskName, TaskPriority.URGENT,
-                    TaskFlowTemplates.scheduledEating(target, foodItemId, foodLevelThreshold));
+            return new TaskDefinition(id, taskName, priority, false,
+                    TaskFlowTemplates.scheduledEating(target, foodItemId, foodLevelThreshold,
+                            refillCount, preferInventory), null, null, false, false, null, null,
+                    new AutoEatOptions(autoRefill, coordinateId, refillCount, preferInventory));
         }
 
         TaskTriggerDefinition trigger(TaskDefinition task, boolean listening) {
@@ -41,7 +54,7 @@ public record AutoEatTask(UUID id, Settings settings) {
                     TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW, task.id(), task.priority(), ticks,
                     Math.max(ticks, TaskTriggerDefinition.DEFAULT_COOLDOWN_TICKS), null, null,
                     foodLevelThreshold, null, null, listening ? null : true,
-                    coordinateId == null ? foodItemId : null);
+                    autoRefill ? null : foodItemId);
         }
     }
 
@@ -70,6 +83,14 @@ public record AutoEatTask(UUID id, Settings settings) {
         if (!ConfigValidator.EAT_FOOD.equals(eat.moduleId())) {
             return null;
         }
+        AutoEatOptions options = task.autoEatOptions();
+        if (options != null) {
+            return new AutoEatTask(task.id(), new Settings(task.name(),
+                    eat.parameters().get(ConfigValidator.FOOD_ITEM_ID), options.coordinateId(),
+                    trigger.foodLevelThreshold(), trigger.intervalTicks() / 20, trigger.enabled(),
+                    task.priority(), options.autoRefill(), options.refillCount(),
+                    options.preferInventory()));
+        }
         UUID coordinate = null;
         if (meals.steps().size() == 2) {
             TaskStep refill = meals.steps().getFirst();
@@ -87,6 +108,7 @@ public record AutoEatTask(UUID id, Settings settings) {
         }
         return new AutoEatTask(task.id(), new Settings(task.name(),
                 eat.parameters().get(ConfigValidator.FOOD_ITEM_ID), coordinate,
-                trigger.foodLevelThreshold(), trigger.intervalTicks() / 20, trigger.enabled()));
+                trigger.foodLevelThreshold(), trigger.intervalTicks() / 20, trigger.enabled(),
+                task.priority(), coordinate != null, AutoEatOptions.DEFAULT_REFILL_COUNT, true));
     }
 }

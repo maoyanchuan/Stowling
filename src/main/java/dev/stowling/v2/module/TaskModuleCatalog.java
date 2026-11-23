@@ -371,6 +371,8 @@ public final class TaskModuleCatalog {
                                     true
                             ),
                             text(ConfigValidator.FOOD_ITEM_ID, "食物 ID", true),
+                            integer(ConfigValidator.REFILL_COUNT, "拿取数量", false, 1,
+                                    dev.stowling.v2.model.AutoEatOptions.MAX_REFILL_COUNT, null),
                             booleanParameter(ConfigValidator.RESERVE_FOOD, "补给并保留自用", false)
                     )
             ),

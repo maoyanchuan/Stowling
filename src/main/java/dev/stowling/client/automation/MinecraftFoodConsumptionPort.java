@@ -7,6 +7,7 @@ import dev.stowling.automation.FoodStatus;
 import dev.stowling.client.interaction.ClientActionScheduler;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -254,11 +255,21 @@ public final class MinecraftFoodConsumptionPort
     public FoodConsumptionResult startAcquiringFood(
             ContainerTarget target, String itemId, boolean replenish
     ) {
+        return startAcquiringFood(target, itemId, replenish, replenish ? 64 : 1);
+    }
+
+    @Override
+    public FoodConsumptionResult startAcquiringFood(
+            ContainerTarget target, String itemId, boolean replenish, int count
+    ) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(itemId, "itemId");
         String checkedItemId = itemId.trim();
         if (checkedItemId.isEmpty()) {
             return FoodConsumptionResult.failed("食物 ID 不能为空");
+        }
+        if (count < 1 || count > dev.stowling.v2.model.AutoEatOptions.MAX_REFILL_COUNT) {
+            return FoodConsumptionResult.failed("拿取数量必须在 1 到 2304 之间");
         }
         if (!scheduler.isClientThread()) {
             return FoodConsumptionResult.failed(
@@ -274,7 +285,7 @@ public final class MinecraftFoodConsumptionPort
         if (minecraft.gui.screen() != null) {
             return FoodConsumptionResult.failed("请先关闭当前界面");
         }
-        acquiring = new ActiveAcquiringFood(target, checkedItemId, replenish);
+        acquiring = new ActiveAcquiringFood(target, checkedItemId, count);
         acquiring.deadline = Instant.now().plus(CONTAINER_TIMEOUT);
         return FoodConsumptionResult.pending("正在打开食物箱");
     }
@@ -333,14 +344,20 @@ public final class MinecraftFoodConsumptionPort
             return failAcquiring("请先清空手持槽");
         }
         acquiring.menu = menu;
+        return prepareFoodTransfer(menu);
+    }
+
+    private FoodConsumptionResult prepareFoodTransfer(AbstractContainerMenu menu) {
         int sourceSlot = findFoodSource(menu, acquiring.itemId);
         if (sourceSlot < 0) {
+            if (!acquiring.acquiredItems.isEmpty()) return closeAcquisition();
             return failAcquiring("食物箱中没有指定食物: "
                     + acquiring.itemId);
         }
         ItemStack source = menu.getSlot(sourceSlot).getItem();
         int destinationSlot = findFoodDestination(menu, source);
         if (destinationSlot < 0) {
+            if (!acquiring.acquiredItems.isEmpty()) return closeAcquisition();
             return failAcquiring("背包没有空间存放食物");
         }
         acquiring.sourceSlot = sourceSlot;
@@ -349,7 +366,11 @@ public final class MinecraftFoodConsumptionPort
         Slot destination = menu.getSlot(destinationSlot);
         int capacity = destination.getMaxStackSize(source) - destination.getItem().getCount();
         acquiring.sourceCount = source.getCount();
-        acquiring.takeCount = acquiring.replenish ? Math.min(source.getCount(), capacity) : 1;
+        acquiring.takeCount = Math.min(acquiring.remainingCount,
+                Math.min(source.getCount(), capacity));
+        acquiring.bulkPlacement = acquiring.takeCount == Math.min(source.getCount(), capacity);
+        acquiring.placedCount = 0;
+        acquiring.placementSent = false;
         acquiring.playerBefore = playerItemCount(
                 minecraft.player,
                 acquiring.itemKey
@@ -378,15 +399,18 @@ public final class MinecraftFoodConsumptionPort
                 || carried.getCount() != acquiring.sourceCount) {
             return failAcquiring("食物箱取出的物品与目标食物不匹配");
         }
-        click(
-                menu,
-                acquiring.destinationSlot,
-                acquiring.replenish ? 0 : 1,
-                ContainerInput.PICKUP
-        );
+        placeFood(menu);
         acquiring.phase = AcquisitionPhase.WAITING_FOR_PLACEMENT;
         acquiring.placementSent = true;
         return FoodConsumptionResult.pending("正在将食物放入背包");
+    }
+
+    private void placeFood(AbstractContainerMenu menu) {
+        click(menu, acquiring.destinationSlot, acquiring.bulkPlacement ? 0 : 1,
+                ContainerInput.PICKUP);
+        acquiring.placedCount = acquiring.bulkPlacement ? acquiring.takeCount
+                : acquiring.placedCount + 1;
+        acquiring.deadline = Instant.now().plus(TAKING_TIMEOUT);
     }
 
     private FoodConsumptionResult pollFoodPlacement() {
@@ -396,16 +420,24 @@ public final class MinecraftFoodConsumptionPort
         }
         AbstractContainerMenu menu = screen.getMenu();
         ItemStack carried = menu.getCarried();
-        if (carried.isEmpty()) {
+        int remaining = acquiring.sourceCount - acquiring.placedCount;
+        if (carried.isEmpty() && remaining == 0) {
             acquiring.phase = AcquisitionPhase.CONFIRMING;
             acquiring.confirmationPolls = 0;
             return FoodConsumptionResult.pending("等待服务器确认取食");
         }
+        if (carried.isEmpty()) {
+            return FoodConsumptionResult.pending("等待食物放入背包");
+        }
         if (!acquiring.itemKey.equals(MinecraftItemIdentity.key(carried))) {
             return failAcquiring("手持槽物品已变化");
         }
-        if (carried.getCount() != acquiring.sourceCount - acquiring.takeCount) {
+        if (carried.getCount() != remaining) {
             return FoodConsumptionResult.pending("等待食物放入背包");
+        }
+        if (acquiring.placedCount < acquiring.takeCount) {
+            placeFood(menu);
+            return FoodConsumptionResult.pending("正在按指定数量放入食物");
         }
         click(menu, acquiring.sourceSlot, 0, ContainerInput.PICKUP);
         acquiring.phase = AcquisitionPhase.RETURNING_REMAINDER;
@@ -442,38 +474,45 @@ public final class MinecraftFoodConsumptionPort
         if (acquiring.confirmationPolls >= CONFIRM_POLLS
                 && confirmed
                 && menu.getCarried().isEmpty()) {
-            acquiring.acquiredCount = acquiring.takeCount;
-            closeContainer();
-            acquiring.phase = AcquisitionPhase.CLOSING;
-            acquiring.deadline = Instant.now().plus(CLOSING_TIMEOUT);
-            return FoodConsumptionResult.pending("正在关闭食物箱");
+            acquiring.acquiredItems.merge(acquiring.itemKey, acquiring.takeCount, Integer::sum);
+            acquiring.remainingCount -= acquiring.takeCount;
+            acquiring.placementSent = false;
+            return acquiring.remainingCount > 0 ? prepareFoodTransfer(menu) : closeAcquisition();
         }
         return FoodConsumptionResult.pending("等待服务器确认取食");
+    }
+
+    private FoodConsumptionResult closeAcquisition() {
+        closeContainer();
+        acquiring.phase = AcquisitionPhase.CLOSING;
+        acquiring.deadline = Instant.now().plus(CLOSING_TIMEOUT);
+        return FoodConsumptionResult.pending("正在关闭食物箱");
     }
 
     private FoodConsumptionResult pollFoodContainerClosing() {
         if (requireContainerScreen() != null) {
             return FoodConsumptionResult.pending("等待食物箱关闭");
         }
-        String itemKey = acquiring.itemKey;
-        int acquired = acquiring.acquiredCount;
+        Map<String, Integer> items = Map.copyOf(acquiring.acquiredItems);
+        int acquired = items.values().stream().mapToInt(Integer::intValue).sum();
         acquiring = null;
         return FoodConsumptionResult.succeeded(
                 "已从食物箱取出 " + acquired + " 个食物",
-                acquired > 0 ? Map.of(itemKey, acquired) : Map.of()
+                items
         );
     }
 
     private FoodConsumptionResult failAcquiring(String message) {
         String itemKey = acquiring.itemKey;
-        int acquired = acquiring.acquiredCount;
+        Map<String, Integer> items = new LinkedHashMap<>(acquiring.acquiredItems);
         if (acquiring.placementSent) {
             int current = playerItemCount(minecraft.player, itemKey);
             int observed = Math.max(
                     0,
                     current - acquiring.playerBefore
             );
-            acquired = Math.max(acquired, Math.min(observed, acquiring.takeCount));
+            int acquired = Math.min(observed, acquiring.takeCount);
+            if (acquired > 0) items.merge(itemKey, acquired, Integer::sum);
         }
         returnCarriedToSource();
         if (requireContainerScreen() != null) {
@@ -482,7 +521,7 @@ public final class MinecraftFoodConsumptionPort
         acquiring = null;
         return FoodConsumptionResult.failed(
                 message,
-                acquired > 0 ? Map.of(itemKey, acquired) : Map.of()
+                items
         );
     }
 
@@ -830,7 +869,8 @@ public final class MinecraftFoodConsumptionPort
     private static final class ActiveAcquiringFood {
         private final ContainerTarget target;
         private final String itemId;
-        private final boolean replenish;
+        private final Map<String, Integer> acquiredItems = new LinkedHashMap<>();
+        private int remainingCount;
         private AbstractContainerMenu menu;
         private String itemKey;
         private AcquisitionPhase phase = AcquisitionPhase.OPENING;
@@ -842,18 +882,19 @@ public final class MinecraftFoodConsumptionPort
         private int containerBefore;
         private int sourceCount;
         private int takeCount;
+        private int placedCount;
+        private boolean bulkPlacement;
         private boolean placementSent;
-        private int acquiredCount;
         private int confirmationPolls;
 
         private ActiveAcquiringFood(
                 ContainerTarget target,
                 String itemId,
-                boolean replenish
+                int count
         ) {
             this.target = target;
             this.itemId = itemId;
-            this.replenish = replenish;
+            remainingCount = count;
         }
     }
 }

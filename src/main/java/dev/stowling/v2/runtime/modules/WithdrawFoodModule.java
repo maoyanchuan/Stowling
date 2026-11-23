@@ -15,6 +15,7 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
     private final ContainerTarget target;
     private final String foodItemId;
     private final boolean reserveFood;
+    private final Integer refillCount;
     private boolean started;
     private boolean inFlight;
 
@@ -43,6 +44,8 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
                 TaskModuleIds.FOOD_ITEM_ID
         );
         reserveFood = Boolean.parseBoolean(step.parameters().get(TaskModuleIds.RESERVE_FOOD));
+        String count = step.parameters().get(TaskModuleIds.REFILL_COUNT);
+        refillCount = count == null ? null : Integer.valueOf(count);
     }
 
     @Override
@@ -52,6 +55,10 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
         }
         started = true;
         inFlight = true;
+        if (refillCount != null) {
+            return handle(context.foodConsumption().startAcquiringFood(
+                    target, foodItemId, reserveFood, refillCount));
+        }
         return handle(context.foodConsumption().startAcquiringFood(
                 target,
                 foodItemId,

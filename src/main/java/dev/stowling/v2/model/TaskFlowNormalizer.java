@@ -187,7 +187,8 @@ public final class TaskFlowNormalizer {
                     false,
                     task.requeueAfterInterruption(),
                     task.folderId(),
-                    task.cleanupPolicy()
+                    task.cleanupPolicy(),
+                    task.autoEatOptions()
             );
             replacements.put(task.id(), interrupted);
             if (!taskIds.contains(interruptionId)) {
@@ -262,7 +263,7 @@ public final class TaskFlowNormalizer {
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps, task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
-                task.cleanupPolicy());
+                task.cleanupPolicy(), task.autoEatOptions());
     }
 
     private static TaskDefinition inheritLayoutRecognition(
@@ -283,7 +284,7 @@ public final class TaskFlowNormalizer {
                 remapStepIds(steps, definition.derivedId(role)),
                 task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
-                task.cleanupPolicy());
+                task.cleanupPolicy(), task.autoEatOptions());
     }
 
     private static boolean hasTaskRecognitionOverrides(List<TaskStep> steps) {
@@ -318,7 +319,7 @@ public final class TaskFlowNormalizer {
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 steps, task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
-                task.cleanupPolicy());
+                task.cleanupPolicy(), task.autoEatOptions());
     }
 
     private static TaskDefinition autoCleanupPolicy(TaskDefinition task,
@@ -330,7 +331,7 @@ public final class TaskFlowNormalizer {
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 task.steps(), task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
-                owner.cleanupPolicy());
+                owner.cleanupPolicy(), task.autoEatOptions());
     }
 
     private static TaskDefinition upgradeAutoCollection(
@@ -373,7 +374,7 @@ public final class TaskFlowNormalizer {
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 upgraded, task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
-                task.cleanupPolicy());
+                task.cleanupPolicy(), task.autoEatOptions());
     }
 
     private static TaskDefinition normalizeTask(TaskDefinition task, boolean autoClassify) {
@@ -392,7 +393,8 @@ public final class TaskFlowNormalizer {
                 task.defaultInterruptionFlow(),
                 task.requeueAfterInterruption(),
                 task.folderId(),
-                task.cleanupPolicy()
+                task.cleanupPolicy(),
+                task.autoEatOptions()
         );
     }
 

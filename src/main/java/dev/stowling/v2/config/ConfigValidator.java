@@ -101,6 +101,7 @@ public final class ConfigValidator {
     public static final String AREA_REFERENCE = "area";
     public static final String FOOD_ITEM_ID = "foodItemId";
     public static final String RESERVE_FOOD = "reserveFood";
+    public static final String REFILL_COUNT = "refillCount";
     public static final String INTERACT_WITH_TARGET = "interactWithTarget";
     public static final String FOOD_LEVEL_THRESHOLD = "foodLevelThreshold";
     public static final String ITEM_FILTER = "itemFilter";
@@ -1344,12 +1345,14 @@ public final class ConfigValidator {
     ) {
         requireParameters(
                 step,
-                Set.of(TARGET_REF, COORDINATE_ID, FOOD_ITEM_ID, RESERVE_FOOD),
+                Set.of(TARGET_REF, COORDINATE_ID, FOOD_ITEM_ID, RESERVE_FOOD, REFILL_COUNT),
                 Set.of(FOOD_ITEM_ID)
         );
         requireCoordinateReference(step, coordinates);
         requireFoodItemId(step);
         requireOptionalBoolean(step, RESERVE_FOOD);
+        requireOptionalInteger(step, REFILL_COUNT, 1,
+                dev.stowling.v2.model.AutoEatOptions.MAX_REFILL_COUNT);
     }
 
     private static void requireEatFoodStep(TaskStep step) {

@@ -108,6 +108,17 @@ body[data-page="tasks"] .pickup-task-module::before {
     padding-top: 10px;
 }
 
+.auto-eat-refill-actions {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 12px;
+}
+
+body[data-page] .auto-eat-task-form .move-field .pickup-task-expand {
+    background: transparent;
+}
+
 :is(.coordinate-task-form, .auto-eat-task-form) .field-message:empty {
     display: none;
 }
@@ -507,6 +518,15 @@ body[data-page] .task-select-option:focus-visible {
         flex-basis: 100%;
         width: 100%;
         min-width: 0;
+    }
+
+    body[data-page] .auto-eat-task-form .move-field.auto-eat-switch-row {
+        flex-wrap: nowrap;
+    }
+
+    body[data-page] .auto-eat-task-form .auto-eat-switch-row > span:first-child {
+        flex-basis: auto;
+        width: auto;
     }
 
     .pickup-task-header {

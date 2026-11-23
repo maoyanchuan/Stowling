@@ -17,8 +17,19 @@ public record TaskDefinition(
         boolean defaultInterruptionFlow,
         boolean requeueAfterInterruption,
         UUID folderId,
-        TaskCleanupPolicy cleanupPolicy
+        TaskCleanupPolicy cleanupPolicy,
+        AutoEatOptions autoEatOptions
 ) {
+    public TaskDefinition(
+            UUID id, String name, TaskPriority priority, boolean repeatWhenIdle,
+            List<TaskStep> steps, TaskInterruptionMode interruptionMode,
+            String interruptionTaskRef, boolean defaultInterruptionFlow,
+            boolean requeueAfterInterruption, UUID folderId, TaskCleanupPolicy cleanupPolicy
+    ) {
+        this(id, name, priority, repeatWhenIdle, steps, interruptionMode, interruptionTaskRef,
+                defaultInterruptionFlow, requeueAfterInterruption, folderId, cleanupPolicy, null);
+    }
+
     public TaskDefinition(
             UUID id,
             String name,

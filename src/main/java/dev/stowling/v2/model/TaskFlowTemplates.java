@@ -63,7 +63,16 @@ public final class TaskFlowTemplates {
     public static List<TaskStep> scheduledEating(
             String coordinateRef, String foodItemId, int triggerThreshold
     ) {
+        return scheduledEating(coordinateRef, foodItemId, triggerThreshold,
+                AutoEatOptions.DEFAULT_REFILL_COUNT, true);
+    }
+
+    public static List<TaskStep> scheduledEating(
+            String coordinateRef, String foodItemId, int triggerThreshold,
+            int refillCount, boolean preferInventory
+    ) {
         List<TaskStep> meal = new ArrayList<>();
+        List<TaskStep> beforeMeal = new ArrayList<>();
         if (coordinateRef != null) {
             TaskStep move = TaskStep.action(UUID.randomUUID(), ConfigValidator.MOVE_TO_COORDINATE,
                     Map.of(ConfigValidator.TARGET_REF, coordinateRef,
@@ -71,7 +80,15 @@ public final class TaskFlowTemplates {
             TaskStep withdraw = TaskStep.action(UUID.randomUUID(), ConfigValidator.WITHDRAW_FOOD,
                     Map.of(ConfigValidator.TARGET_REF, coordinateRef,
                             ConfigValidator.FOOD_ITEM_ID, foodItemId,
-                            ConfigValidator.RESERVE_FOOD, "true"));
+                            ConfigValidator.RESERVE_FOOD, "true",
+                            ConfigValidator.REFILL_COUNT, Integer.toString(refillCount)));
+            if (!preferInventory) {
+                beforeMeal.add(move);
+                beforeMeal.add(withdraw);
+                move = TaskStep.action(UUID.randomUUID(), move.moduleId(), move.parameters());
+                withdraw = TaskStep.action(UUID.randomUUID(), withdraw.moduleId(),
+                        withdraw.parameters());
+            }
             meal.add(TaskStep.conditional(UUID.randomUUID(),
                     conditionParameters(TaskCondition.HAS_PROTECTED_FOOD,
                             Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId, NEGATE, "true")),
@@ -81,8 +98,9 @@ public final class TaskFlowTemplates {
                 Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId,
                         ConfigValidator.ITEM_SOURCE, "protected")));
         TaskStep eatUntilFull = TaskStep.repeat(UUID.randomUUID(), hungerBelow(20), meal);
+        beforeMeal.add(eatUntilFull);
         return List.of(TaskStep.conditional(UUID.randomUUID(), hungerBelow(triggerThreshold + 1),
-                List.of(eatUntilFull), List.of()));
+                beforeMeal, List.of()));
     }
 
     private static Map<String, String> hungerBelow(int threshold) {

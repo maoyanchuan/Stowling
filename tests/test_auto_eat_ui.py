@@ -34,7 +34,8 @@ def eat_page() -> Iterator[Any]:
                 revision: '1', requests: [], errors: [], handlers: [], failSwitch: false,
                 tasks: [{id: 'eat/1', settings: {name: '自动进食', enabled: false,
                     foodItemId: 'minecraft:bread', coordinateId: null,
-                    foodLevelThreshold: 18, intervalSeconds: 1}}]
+                    foodLevelThreshold: 18, intervalSeconds: 1, priority: 'URGENT',
+                    autoRefill: false, refillCount: 64, preferInventory: true}}]
             };
             window.Stowling = {
                 /** @param {string} tag @param {string} css @param {string} text
@@ -70,7 +71,9 @@ def eat_page() -> Iterator[Any]:
                         Object.assign(backend.tasks[0].settings, {
                             foodItemId: body.foodItemId, coordinateId: body.coordinateId,
                             foodLevelThreshold: body.foodLevelThreshold,
-                            intervalSeconds: body.intervalSeconds
+                            intervalSeconds: body.intervalSeconds, priority: body.priority,
+                            autoRefill: body.autoRefill, refillCount: body.refillCount,
+                            preferInventory: body.preferInventory
                         });
                         taskId = backend.tasks[0].id;
                     } else if (method === 'POST') {
@@ -100,7 +103,7 @@ def settle(page: Any) -> None:
 
 
 def open_settings(page: Any) -> None:
-    page.locator("#auto-eat-list .pickup-task-expand").click()
+    page.locator("#auto-eat-list .pickup-task-header > button").click()
     settle(page)
 
 
@@ -115,26 +118,26 @@ def test_template_header_separates_disclosure_and_listening(eat_page: Any) -> No
     assert card.locator(".pickup-task-body").is_hidden()
     assert card.locator(".pickup-task-body").evaluate("node => node.inert")
     header = card.locator(".pickup-task-header").bounding_box()
-    switch = card.get_by_role("switch").bounding_box()
+    switch = card.locator(".pickup-task-header").get_by_role("switch").bounding_box()
     assert header is not None and header["height"] >= 70
     assert switch is not None and (switch["width"], switch["height"]) == (56, 32)
 
-    toggle = card.locator(".pickup-task-expand")
+    toggle = card.locator(".pickup-task-header .pickup-task-expand")
     toggle.focus()
     toggle.press("Enter")
     settle(page)
     assert page.locator("#auto-eat-threshold").is_enabled()
-    assert not card.get_by_role("switch").is_checked()
+    assert not card.locator(".pickup-task-header").get_by_role("switch").is_checked()
     assert page.evaluate("backend.requests.filter(item => item.method !== 'GET')") == []
 
-    card.get_by_role("switch").check()
+    card.locator(".pickup-task-header").get_by_role("switch").check()
     page.wait_for_function("backend.tasks[0].settings.enabled")
     assert toggle.get_attribute("aria-expanded") == "true"
     toggle.press("Space")
     settle(page)
-    assert card.get_by_role("switch").is_checked()
+    assert card.locator(".pickup-task-header").get_by_role("switch").is_checked()
     assert card.locator(".pickup-task-body").is_hidden()
-    card.get_by_role("switch").uncheck()
+    card.locator(".pickup-task-header").get_by_role("switch").uncheck()
     page.wait_for_function("!backend.tasks[0].settings.enabled")
     assert toggle.get_attribute("aria-expanded") == "false"
     assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == [
@@ -153,70 +156,87 @@ def test_paused_task_remains_editable_and_autosaves_without_starting(eat_page: A
     assert page.locator("#auto-eat-threshold").input_value() == "12"
     assert page.locator("#auto-eat-interval").input_value() == "3"
     assert page.locator("#auto-eat-threshold").is_enabled()
-    assert not page.get_by_role("switch").is_checked()
+    assert not page.locator("#auto-eat-list .pickup-task-header").get_by_role("switch").is_checked()
     writes = page.evaluate("backend.requests.filter(item => item.method !== 'GET')")
     assert writes and all(item["method"] == "PUT" for item in writes)
     assert all("enabled" not in item["body"] for item in writes)
     assert writes[-1]["body"]["coordinateId"] is None
 
 
-def test_source_and_coordinate_use_keyboard_menus_and_preserve_selection(eat_page: Any) -> None:
+def test_refill_submenu_preserves_saved_options_when_disabled(eat_page: Any) -> None:
     page = eat_page
     open_settings(page)
-    trigger = page.locator("#auto-eat-source + .task-select-trigger")
-    trigger.press("ArrowDown")
-    menu = page.locator(".task-select-menu:not([hidden])")
-    assert menu.get_by_role("option").count() == 2
-    assert menu.get_by_role("option").first.get_attribute("aria-selected") == "true"
-    assert menu.locator("small").count() == 2
-    menu.get_by_role("option").first.press("End")
-    menu.get_by_role("option").last.press("Enter")
-    assert trigger.evaluate("node => node === document.activeElement")
+    refill = page.locator("#auto-eat-refill")
+    refill.check()
     settle(page)
     assert page.locator("#auto-eat-chest-settings").is_visible()
     assert page.locator("#auto-eat-coordinate").evaluate("node => node.required && !node.disabled")
-
+    assert page.locator("#auto-eat-refill-count").input_value() == "64"
+    assert page.locator("#auto-eat-prefer-inventory").is_checked()
     coordinate = page.locator("#auto-eat-coordinate + .task-select-trigger")
     coordinate.press("ArrowDown")
+    menu = page.locator(".task-select-menu:not([hidden])")
     assert menu.get_by_role("option").count() == 2
     assert "请选择" not in menu.inner_text()
     menu.get_by_role("option").first.press("Enter")
-    assert page.locator("#auto-eat-coordinate").input_value() == "food"
-    states = page.evaluate("""() => {
-        const source = document.getElementById('auto-eat-source');
-        const coordinate = document.getElementById('auto-eat-coordinate');
-        const states = [];
-        for (const value of ['inventory', 'chest', 'inventory', 'chest']) {
-            source.value = value;
-            source.dispatchEvent(new Event('input', {bubbles: true}));
-            source.dispatchEvent(new Event('change', {bubbles: true}));
-            states.push([coordinate.value, coordinate.required, coordinate.disabled]);
-        }
-        return states;
-    }""")
-    assert states == [["food", False, True], ["food", True, False]] * 2
+    assert coordinate.evaluate("node => node === document.activeElement")
+    page.locator("#auto-eat-refill-count").fill("17")
+    page.locator("#auto-eat-prefer-inventory").uncheck()
+    page.wait_for_function("backend.tasks[0].settings.refillCount === 17")
+    arrow = page.locator("#toggle-auto-eat-refill")
+    arrow.click()
+    settle(page)
+    assert page.locator("#auto-eat-chest-settings").is_hidden()
+    assert refill.is_checked()
+    assert page.evaluate("backend.tasks[0].settings.autoRefill")
+    refill.uncheck()
+    page.wait_for_function("!backend.tasks[0].settings.autoRefill")
+    assert page.locator("#auto-eat-coordinate").evaluate(
+        "node => node.disabled && !node.required && node.value === 'food'"
+    )
+    assert page.evaluate("backend.tasks[0].settings.coordinateId") == "food"
+    page.locator("#refresh-move-tasks").click()
+    refill.check()
     settle(page)
     assert page.locator("#auto-eat-coordinate").input_value() == "food"
-    assert not page.locator("#auto-eat-chest-settings").evaluate("node => node.inert")
-    page.wait_for_function("backend.tasks[0].settings.coordinateId === 'food'")
+    assert page.locator("#auto-eat-refill-count").input_value() == "17"
+    assert not page.locator("#auto-eat-prefer-inventory").is_checked()
+    page.wait_for_function("backend.tasks[0].settings.autoRefill")
+    assert page.locator("#cancel-auto-eat").count() == 0
+
+
+def test_priority_uses_keyboard_menu_and_updates_the_saved_task(eat_page: Any) -> None:
+    page = eat_page
+    open_settings(page)
+    trigger = page.locator("#auto-eat-priority + .task-select-trigger")
+    trigger.press("ArrowDown")
+    menu = page.locator(".task-select-menu:not([hidden])")
+    assert menu.get_by_role("option").count() == 3
+    assert menu.get_by_role("option").last.get_attribute("aria-selected") == "true"
+    assert menu.locator("small").count() == 3
+    menu.get_by_role("option").last.press("Home")
+    menu.get_by_role("option").first.press("Enter")
+    assert trigger.evaluate("node => node === document.activeElement")
+    page.wait_for_function("backend.tasks[0].settings.priority === 'BACKGROUND'")
+    assert not page.locator("#auto-eat-list .pickup-task-header").get_by_role("switch").is_checked()
 
 
 def test_rapid_disclosure_changes_keep_final_state_and_keyboard_focus(eat_page: Any) -> None:
     page = eat_page
     open_settings(page)
     page.evaluate("""() => {
-        const button = document.querySelector('#auto-eat-list .pickup-task-expand');
+        const button = document.querySelector('#auto-eat-list .pickup-task-header > button');
         for (let index = 0; index < 4; index++) button.click();
     }""")
     settle(page)
     body = page.locator("#auto-eat-list .pickup-task-body")
     assert body.is_visible() and not body.evaluate("node => node.inert")
-    trigger = page.locator("#auto-eat-source + .task-select-trigger")
+    trigger = page.locator("#auto-eat-priority + .task-select-trigger")
     trigger.press("ArrowDown")
     page.locator(".task-select-menu:not([hidden]) [role=option]").first.press("Escape")
     assert trigger.evaluate("node => node === document.activeElement")
     assert page.locator(".task-select-menu:not([hidden])").count() == 0
-    page.locator("#auto-eat-list .pickup-task-expand").click()
+    page.locator("#auto-eat-list .pickup-task-header > button").click()
     settle(page)
     assert body.is_hidden() and body.evaluate("node => node.inert")
     assert page.evaluate("backend.requests.filter(item => item.method !== 'GET')") == []
@@ -226,12 +246,11 @@ def test_failed_listening_switch_preserves_settings_and_expansion(eat_page: Any)
     page = eat_page
     open_settings(page)
     page.evaluate("backend.failSwitch = true")
-    page.get_by_role("switch").click()
+    page.locator("#auto-eat-list .pickup-task-header").get_by_role("switch").click()
     page.wait_for_function("backend.errors.length === 1")
-    assert not page.get_by_role("switch").is_checked()
-    assert page.locator("#auto-eat-list .pickup-task-expand").get_attribute(
-        "aria-expanded"
-    ) == "true"
+    assert not page.locator("#auto-eat-list .pickup-task-header").get_by_role("switch").is_checked()
+    arrow = page.locator("#auto-eat-list .pickup-task-header > button")
+    assert arrow.get_attribute("aria-expanded") == "true"
     assert page.locator("#auto-eat-food").input_value() == "minecraft:bread"
     assert page.locator("#auto-eat-threshold").is_enabled()
 
@@ -241,7 +260,7 @@ def test_dropdown_opens_upwards_when_space_below_is_limited(eat_page: Any) -> No
     page.set_viewport_size({"width": 700, "height": 360})
     page.emulate_media(reduced_motion="reduce")
     open_settings(page)
-    trigger = page.locator("#auto-eat-source + .task-select-trigger")
+    trigger = page.locator("#auto-eat-priority + .task-select-trigger")
     trigger.evaluate("node => node.scrollIntoView({block: 'end'})")
     trigger.click()
     menu = page.locator(".task-select-menu:not([hidden])")
@@ -262,7 +281,7 @@ def test_new_draft_keeps_template_and_becomes_a_paused_saved_task(eat_page: Any)
     assert page.locator("#auto-eat-draft").is_hidden()
     card = page.locator('#auto-eat-list article[data-task-id="eat/new"]')
     assert card.locator("h3").inner_text() == "自动进食 2"
-    assert not card.get_by_role("switch").is_checked()
+    assert not card.locator(".pickup-task-header").get_by_role("switch").is_checked()
     assert card.locator("#auto-eat-form").is_visible()
 
 
@@ -277,12 +296,13 @@ def test_template_layout_and_dropdown_fit_both_themes(
     page.emulate_media(reduced_motion="reduce")
     open_settings(page)
     rows = page.locator("#auto-eat-form > fieldset > .move-field")
-    assert rows.count() == 4
+    assert rows.count() == 5
     for row in rows.all():
         bounds = row.bounding_box()
         assert bounds is not None and bounds["height"] >= 82
     controls = page.locator(
-        '#auto-eat-form input:visible, #auto-eat-form .task-select-trigger:visible'
+        '#auto-eat-form input:not([type=checkbox]):visible, '
+        '#auto-eat-form .task-select-trigger:visible'
     )
     for control in controls.all():
         bounds = control.bounding_box()
@@ -293,7 +313,7 @@ def test_template_layout_and_dropdown_fit_both_themes(
                        for control in controls.all()]
         assert max(right_edges) - min(right_edges) < 1
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    trigger = page.locator("#auto-eat-source + .task-select-trigger")
+    trigger = page.locator("#auto-eat-priority + .task-select-trigger")
     trigger.click()
     menu = page.locator(".task-select-menu:not([hidden])")
     bounds = menu.bounding_box()

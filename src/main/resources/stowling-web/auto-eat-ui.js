@@ -16,7 +16,10 @@
     const form = $("auto-eat-form");
     const fields = form.querySelector("fieldset");
     const remove = $("delete-auto-eat");
-    const source = $("auto-eat-source");
+    const source = Settings.switchControl($("auto-eat-refill"));
+    const refillToggle = $("toggle-auto-eat-refill");
+    const refillCount = $("auto-eat-refill-count");
+    const preferInventory = Settings.switchControl($("auto-eat-prefer-inventory"));
     const coordinate = $("auto-eat-coordinate");
     const message = $("auto-eat-message");
     const selects = window.StowlingTaskSelect.create(form);
@@ -30,6 +33,7 @@
     let loading = false;
     let busy = false;
     let pendingSwitch = null;
+    let refillExpanded = false;
     const autosave = Autosave.create(form, () => save(false), () => loading || busy);
 
     /** @returns {boolean} */
@@ -182,11 +186,17 @@
 
     /** @returns {void} */
     function updateSource() {
-        const useChest = source.value === "chest";
+        const useChest = source.checked;
         $("auto-eat-inventory-note").hidden = useChest;
         coordinate.required = useChest;
         coordinate.disabled = !useChest;
-        void Settings.reveal($("auto-eat-chest-settings"), useChest);
+        refillCount.disabled = !useChest;
+        preferInventory.disabled = !useChest;
+        refillToggle.hidden = !useChest;
+        refillToggle.disabled = !useChest || unavailable();
+        refillToggle.setAttribute("aria-label", useChest && refillExpanded
+            ? "收起自动补给设置" : "展开自动补给设置");
+        disclose(refillToggle, $("auto-eat-chest-settings"), useChest && refillExpanded);
         selects.refresh(true);
     }
 
@@ -198,11 +208,21 @@
         $("auto-eat-food").value = settings?.foodItemId ?? "minecraft:bread";
         $("auto-eat-threshold").value = settings?.foodLevelThreshold ?? 18;
         $("auto-eat-interval").value = settings?.intervalSeconds ?? 1;
-        source.value = settings?.coordinateId ? "chest" : "inventory";
+        $("auto-eat-priority").value = settings?.priority ?? "URGENT";
+        source.checked = settings?.autoRefill ?? Boolean(settings?.coordinateId);
+        refillCount.value = settings?.refillCount ?? 64;
+        preferInventory.checked = settings?.preferInventory ?? true;
+        refillExpanded = source.checked;
         coordinate.replaceChildren(new Option("请选择食物箱所在方块", ""));
         for (const point of coordinates) {
             coordinate.append(new Option(
                 `${point.name} · ${point.x}, ${point.y}, ${point.z}`, point.id));
+        }
+        if (settings?.coordinateId
+                && !coordinates.some((point) => point.id === settings.coordinateId)) {
+            const missing = new Option("原食物箱坐标已不存在，请重新选择", settings.coordinateId);
+            missing.disabled = true;
+            coordinate.append(missing);
         }
         coordinate.value = settings?.coordinateId ?? "";
         window.StowlingResourcePicker?.group(coordinate, "coordinate");
@@ -235,19 +255,6 @@
         updateControls();
         notifyTaskCount();
         row.button.focus();
-    }
-
-    /** @returns {Promise<void>} */
-    async function cancelEditor() {
-        if (!editor) return;
-        if (editor.dirty) await autosave.flush();
-        if (!editor || (editor.dirty && !window.confirm("关闭并放弃未保存的修改？"))) return;
-        autosave.cancel();
-        const button = editor.id ? rows.get(editor.id)?.button : newTask;
-        editor = null;
-        updateControls();
-        notifyTaskCount();
-        button?.focus();
     }
 
     /**
@@ -312,9 +319,13 @@
         if (!deleting) {
             Object.assign(body, {
                 foodItemId: $("auto-eat-food").value.trim(),
-                coordinateId: source.value === "chest" ? coordinate.value : null,
+                coordinateId: coordinate.value || null,
                 foodLevelThreshold: $("auto-eat-threshold").valueAsNumber,
-                intervalSeconds: $("auto-eat-interval").valueAsNumber
+                intervalSeconds: $("auto-eat-interval").valueAsNumber,
+                priority: $("auto-eat-priority").value,
+                autoRefill: source.checked,
+                refillCount: refillCount.valueAsNumber,
+                preferInventory: preferInventory.checked
             });
             if (!body.foodItemId || !form.checkValidity()) {
                 showMessage("请填写有效的食物和进食设置", true);
@@ -364,7 +375,6 @@
         editor.expanded = !editor.expanded;
         updateControls();
     });
-    $("cancel-auto-eat").addEventListener("click", cancelEditor);
     form.addEventListener("input", () => {
         if (!editor) return;
         editor.dirty = true;
@@ -372,7 +382,14 @@
         updateControls();
         autosave.schedule();
     });
-    source.addEventListener("change", updateSource);
+    source.addEventListener("change", () => {
+        refillExpanded = source.checked;
+        updateSource();
+    });
+    refillToggle.addEventListener("click", () => {
+        refillExpanded = !refillExpanded;
+        updateSource();
+    });
     form.addEventListener("submit", (event) => {
         event.preventDefault();
         void autosave.flush();

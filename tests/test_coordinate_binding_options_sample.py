@@ -40,7 +40,7 @@ def selected(root: Any, key: str) -> str:
 def test_binding_defaults_to_global_with_editable_regions(sample_page: Any) -> None:
     card = sample_page.locator(".category-binding-card").first
     assert not card.locator(".category-binding-enabled").is_checked()
-    assert card.locator(".category-binding-override-status").inner_text() == "使用全局设置"
+    assert card.locator(".category-binding-override-status").inner_text() == "独立设置"
     assert card.locator(".category-binding-options").is_hidden()
     assert card.locator('[data-binding-axis="x"]').first.is_editable()
     assert sample_page.locator("#category-scope-mode-trigger").is_visible()
@@ -86,11 +86,13 @@ def test_disabling_overrides_preserves_draft_and_binding_expansion(sample_page: 
     card = page.locator(".category-binding-card").first
     enabled = card.locator(".category-binding-enabled")
     enabled.check()
+    assert card.locator(".category-binding-override-status").inner_text() == "独立设置"
     choose(card, "storageMethod", "box")
     choose(card, "noCacheLocation", "specified")
     card.locator('[id$="category-ignore-support"]').check()
     card.locator('[id$="category-support-block"]').fill("minecraft:stone")
     enabled.uncheck()
+    assert card.locator(".category-binding-override-status").inner_text() == "独立设置"
     assert card.locator(".category-binding-options").is_hidden()
     assert card.get_attribute("data-collapsed") == "false"
     choose(page.locator(".category-options").first, "storageMethod", "mixed")
@@ -98,6 +100,22 @@ def test_disabling_overrides_preserves_draft_and_binding_expansion(sample_page: 
     assert selected(card, "storageMethod") == "box"
     assert selected(card, "noCacheLocation") == "specified"
     assert card.locator('[id$="category-support-block"]').input_value() == "minecraft:stone"
+
+
+def test_delete_action_is_only_available_inside_an_expanded_binding(sample_page: Any) -> None:
+    page = sample_page
+    page.locator("#add-category-binding").click()
+    card = page.locator(".category-binding-card").nth(1)
+    assert card.locator(".category-binding-summary .category-binding-remove").count() == 0
+    remove = card.locator(".category-binding-card-body .category-binding-remove")
+    assert remove.is_visible()
+    assert remove.is_enabled()
+    card.locator(".category-binding-toggle").click()
+    assert remove.is_hidden()
+    card.locator(".category-binding-toggle").click()
+    remove.click()
+    assert page.locator(".category-binding-card").count() == 1
+    assert page.locator(".category-binding-remove").is_disabled()
 
 
 @pytest.mark.parametrize("enabled", [False, True])

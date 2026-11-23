@@ -874,6 +874,13 @@ select {
     padding: 0 12px 12px;
 }
 
+.category-binding-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+}
+
 .category-binding-options {
     min-height: 0;
 }
@@ -2393,7 +2400,7 @@ select {
             card.remove();
             updateCategoryBindingCards();
         });
-        summary.append(toggle, name, remove);
+        summary.append(toggle, name);
         const grid = document.createElement("div");
         const body = document.createElement("div");
         body.className = "category-binding-card-body";
@@ -2411,6 +2418,7 @@ select {
         override.className = "category-option-switch category-binding-override";
         const status = document.createElement("span");
         status.className = "category-binding-override-status";
+        status.textContent = "独立设置";
         const enabled = document.createElement("input");
         enabled.className = "category-binding-enabled";
         enabled.type = "checkbox";
@@ -2428,7 +2436,6 @@ select {
                 writeCategoryOptions(readCategoryOptions(), context);
                 initialized = true;
             }
-            status.textContent = enabled.checked ? "独立设置" : "使用全局设置";
             enabled.setAttribute("aria-expanded", String(enabled.checked));
             if (!enabled.checked && categoryMenuOpen
                     && context.root.contains(categoryMenuOpen.wrap)) {
@@ -2453,7 +2460,10 @@ select {
             binding.id,
             binding.storageRegion || emptyRegion()
         );
-        content.append(detail, grid);
+        const actions = document.createElement("div");
+        actions.className = "category-binding-actions";
+        actions.append(remove);
+        content.append(detail, grid, actions);
         body.append(content);
         card.append(summary, body);
         setCategoryBindingOpen(card, open);

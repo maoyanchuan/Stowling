@@ -494,11 +494,9 @@
         name.className = "category-binding-name";
         name.type = "text";
         name.maxLength = 40;
-        name.value = `绑定组 ${index + 1}`;
-        name.readOnly = true;
+        name.value = binding.name || `绑定组 ${index + 1}`;
         name.setAttribute("aria-label", `绑定组 ${index + 1}名称`);
         name.addEventListener("click", event => {
-            event.preventDefault();
             event.stopPropagation();
         });
         name.addEventListener("keydown", event => event.stopPropagation());

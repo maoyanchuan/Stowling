@@ -161,7 +161,8 @@ final class TaskModuleSupport {
                 binding.containerOverrides(),
                 binding.standingArea(),
                 binding.storagePolicy(),
-                binding.wholeStorage()
+                binding.wholeStorage(),
+                binding.name()
         );
     }
 

@@ -14,9 +14,14 @@ public record CategoryBindingDefinition(
         List<CategoryContainerOverrideDefinition> containerOverrides,
         AreaBounds standingArea,
         StoragePolicy storagePolicy,
-        boolean wholeStorage
+        boolean wholeStorage,
+        String name
 ) {
     public CategoryBindingDefinition {
+        name = name == null ? "" : name.trim();
+        if (name.length() > 40) {
+            throw new IllegalArgumentException("绑定组名称最多 40 个字符");
+        }
         storagePolicy = storagePolicy == null ? StoragePolicy.DEFAULT : storagePolicy;
         id = Objects.requireNonNull(id, "id");
         markerArea = Objects.requireNonNull(markerArea, "markerArea");
@@ -26,6 +31,16 @@ public record CategoryBindingDefinition(
         containerOverrides = containerOverrides == null
                 ? List.of()
                 : List.copyOf(containerOverrides);
+    }
+
+    public CategoryBindingDefinition(
+            UUID id, AreaBounds markerArea, AreaBounds storageArea, String ruleId,
+            List<String> ignoredMarkerBlockIds,
+            List<CategoryContainerOverrideDefinition> containerOverrides, AreaBounds standingArea,
+            StoragePolicy storagePolicy, boolean wholeStorage
+    ) {
+        this(id, markerArea, storageArea, ruleId, ignoredMarkerBlockIds,
+                containerOverrides, standingArea, storagePolicy, wholeStorage, "");
     }
 
     public CategoryBindingDefinition(

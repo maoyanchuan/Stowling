@@ -129,7 +129,8 @@ public final class CategoryZoneTiler {
                 template.containerOverrides(),
                 template.standingArea() == null ? null : template.standingArea().shift(x, 0, z),
                 template.storagePolicy().shift(x, z),
-                template.wholeStorage()
+                template.wholeStorage(),
+                template.name()
         );
     }
 
@@ -156,7 +157,8 @@ public final class CategoryZoneTiler {
                 overrides,
                 shifted.standingArea(),
                 shifted.storagePolicy(),
-                template.wholeStorage()
+                template.wholeStorage(),
+                template.name()
         );
     }
 

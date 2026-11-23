@@ -47,6 +47,39 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void createsAndRenamesBindingsWithoutLosingNamesForOlderClients() throws Exception {
+        try (var fixture = fixture()) {
+            JsonObject payload = JsonParser.parseString(categoryZone("Named")).getAsJsonObject();
+            var binding = payload.getAsJsonArray("bindings").get(0).getAsJsonObject();
+            binding.addProperty("name", "石材");
+            var created = fixture.send("/v1/category-zones", "POST", payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            var response = object(created);
+            var zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            String path = "/v1/category-zones/" + zone.get("id").getAsString();
+            assertEquals("石材", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .get("name").getAsString());
+
+            binding.addProperty("name", "木材");
+            payload.add("revision", response.get("revision"));
+            var updated = fixture.send(path, "PUT", payload.toString(), true);
+            assertEquals(200, updated.statusCode());
+            response = object(updated);
+            zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            assertEquals("木材", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .get("name").getAsString());
+
+            binding.remove("name");
+            payload.add("revision", response.get("revision"));
+            var legacy = fixture.send(path, "PUT", payload.toString(), true);
+            assertEquals(200, legacy.statusCode());
+            zone = object(legacy).getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            assertEquals("木材", zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .get("name").getAsString());
+        }
+    }
+
+    @Test
     void servesTheCoordinateTemplateAssetsAndKeepsItsDataAuthenticated() throws Exception {
         try (var fixture = fixture()) {
             var page = fixture.send("/coordinates.html", "GET", null, false);

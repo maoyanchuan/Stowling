@@ -9,6 +9,7 @@
         const marker = value?.markerArea || {};
         const storage = value?.storageArea || {};
         return {
+            ...(value?.name != null ? {name: String(value.name).trim()} : {}),
             markerFirstX: Number(marker.firstX ?? 0),
             markerFirstY: Number(marker.firstY ?? 64),
             markerFirstZ: Number(marker.firstZ ?? 0),
@@ -137,6 +138,7 @@
         const result = {
             name: String(zone.name || "").trim(),
             bindings: zone.bindings.map((binding) => ({
+                ...(binding.name != null ? {name: String(binding.name).trim()} : {}),
                 markerFirstX: Number(binding.markerFirstX),
                 markerFirstY: Number(binding.markerFirstY),
                 markerFirstZ: Number(binding.markerFirstZ),

@@ -104,6 +104,81 @@ ZONE_SETUP = """
 
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_binding_names_survive_loading_renaming_copying_and_auto_expansion() -> None:
+    result = run_model(ZONE_SETUP + """
+        raw.bindings[0].name = '石材';
+        const value = model.resources(directory)[0];
+        const loaded = value.bindings[0].name;
+        value.bindings[0].name = '木材';
+        const renamed = model.payload(value);
+        const copied = model.payload(model.copy(value));
+        value.categoryOptions.scopeMode = 'single';
+        value.categoryOptions.expansionDirection = 'AUTO';
+        value.overallRegion.second.x = 3;
+        const expanded = model.payload(value);
+        process.stdout.write(JSON.stringify({loaded, renamed, copied, expanded}));
+    """)
+    assert result["loaded"] == "石材"
+    for key in ("renamed", "copied", "expanded"):
+        assert result[key]["bindings"][0]["name"] == "木材"
+    assert result["expanded"]["expansion"]["direction"] == "X_POSITIVE"
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_binding_name_accepts_focus_and_edits_without_toggling_the_card() -> None:
+    script = r"""
+        const fs = require('node:fs');
+        const vm = require('node:vm');
+        const source = fs.readFileSync(process.argv[1], 'utf8');
+        const elements = [];
+        const document = {createElement: tag => {
+            const element = {tag, dataset: {}, children: [], handlers: {}, readOnly: false,
+                append(...children) { this.children.push(...children); },
+                setAttribute() {},
+                addEventListener(name, handler) { this.handlers[name] = handler; },
+                querySelector(selector) {
+                    return elements.find(child => child.className === selector.slice(1));
+                }};
+            elements.push(element);
+            return element;
+        }};
+        let toggles = 0;
+        const context = {document, dirty: false, appendBindingRegion() {},
+            setCategoryBindingOpen() { toggles++; }};
+        vm.createContext(context);
+        for (const name of ['createCategoryBindingCard', 'readCategoryBindings']) {
+            const start = source.indexOf('    function ' + name + '(');
+            const end = source.indexOf('\n    }', start) + 6;
+            vm.runInContext(source.slice(start, end), context);
+        }
+        const region = {first: {x: 0, y: 64, z: 0}, second: {x: 0, y: 64, z: 0}};
+        const card = context.createCategoryBindingCard({id: 'binding', name: '石材',
+            markerRegion: region, storageRegion: region}, 0);
+        const input = elements.find(element => element.className === 'category-binding-name');
+        const loaded = input.value;
+        let prevented = false;
+        let stopped = false;
+        input.handlers.click({preventDefault() { prevented = true; },
+            stopPropagation() { stopped = true; }});
+        input.value = '木材';
+        context.nodes = {categoryBindings: {children: [card]}};
+        context.readBindingRegion = () => region;
+        const result = context.readCategoryBindings();
+        process.stdout.write(JSON.stringify({loaded, prevented, stopped,
+            readOnly: input.readOnly, saved: result[0].name, toggles}));
+    """
+    completed = subprocess.run(
+        [str(NODE), "-e", script, str(WEB / "coordinate-editor.js")],
+        check=True, capture_output=True, encoding="utf-8",
+    )
+    result = json.loads(completed.stdout)
+    assert result == {
+        "loaded": "石材", "prevented": False, "stopped": True,
+        "readOnly": False, "saved": "木材", "toggles": 1,
+    }
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_renaming_keeps_unshown_category_settings_and_per_binding_policies() -> None:
     result = run_model(ZONE_SETUP + """
         raw.bindings.push({...binding, ruleId: 'MARKER_CONTAINER_CONTENTS', wholeStorage: true,

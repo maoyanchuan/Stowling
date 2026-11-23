@@ -1,6 +1,7 @@
 package dev.stowling.v2.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
@@ -8,6 +9,20 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class CategoryBindingDefinitionTest {
+    @Test
+    void supportsNamedBindingsAndLegacyUnnamedDefinitions() {
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var legacy = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "DIRECT_BLOCK_ID");
+        assertEquals("", legacy.name());
+        var named = new CategoryBindingDefinition(legacy.id(), area, area, legacy.ruleId(),
+                List.of(), List.of(), null, StoragePolicy.DEFAULT, false, " 石材 ");
+        assertEquals("石材", named.name());
+        assertThrows(IllegalArgumentException.class, () -> new CategoryBindingDefinition(
+                legacy.id(), area, area, legacy.ruleId(), List.of(), List.of(), null,
+                StoragePolicy.DEFAULT, false, "a".repeat(41)));
+    }
+
     @Test
     void normalizesIgnoredSupportBlockIds() {
         CategoryBindingDefinition binding = new CategoryBindingDefinition(

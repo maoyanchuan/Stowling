@@ -12,6 +12,20 @@ import org.junit.jupiter.api.Test;
 
 class CategoryZoneTilerTest {
     @Test
+    void retainsBindingNamesInEveryExpandedSlice() {
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var template = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "DIRECT_BLOCK_ID", List.of(), List.of(), null, StoragePolicy.DEFAULT,
+                false, "石材");
+        var expansion = new CategoryZoneExpansionDefinition(
+                new AreaBounds(0, 64, 0, 2, 64, 0), CategoryZoneExpansionAxis.X_POSITIVE, 1, 1);
+        var slices = CategoryZoneTiler.expand(expansion, List.of(template));
+        assertEquals(List.of("石材", "石材", "石材"), slices.stream()
+                .map(CategoryBindingDefinition::name).toList());
+        assertEquals(3, slices.stream().map(CategoryBindingDefinition::id).distinct().count());
+    }
+
+    @Test
     void separateFrameAreaFollowsAllThirteenUnstackableSlices() {
         var marker = new AreaBounds(0, -34, 56, 0, -34, 56);
         var storage = new AreaBounds(0, -37, 57, 1, -35, 57);

@@ -1245,7 +1245,8 @@ public final class V2ControlServer implements AutoCloseable {
                             "containerOverrides",
                             "standingArea",
                             "storagePolicy",
-                            "wholeStorage"
+                            "wholeStorage",
+                            "name"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -1281,7 +1282,8 @@ public final class V2ControlServer implements AutoCloseable {
                     containerOverrideRequests(binding),
                     standingArea(binding),
                     storagePolicy(binding),
-                    optionalBoolean(binding, "wholeStorage")
+                    optionalBoolean(binding, "wholeStorage"),
+                    optionalString(binding, "name")
             ));
         }
         return List.copyOf(result);

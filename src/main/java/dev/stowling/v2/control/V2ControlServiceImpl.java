@@ -2043,6 +2043,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             UUID id = existingBinding != null
                     ? existingBinding.id()
                     : UUID.randomUUID();
+            String name = binding.name() != null ? binding.name()
+                    : existingBinding == null ? "" : existingBinding.name();
             result.add(new CategoryBindingDefinition(
                     id,
                     new AreaBounds(
@@ -2069,7 +2071,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     ),
                     binding.standingArea(),
                     binding.storagePolicy(),
-                    binding.wholeStorage()
+                    binding.wholeStorage(),
+                    name
             ));
         }
         return List.copyOf(result);

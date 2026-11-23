@@ -83,7 +83,8 @@ class ConfigStoreTest {
         var binding = new CategoryBindingDefinition(UUID.randomUUID(),
                 new AreaBounds(11, -40, 46, 10, -40, 46),
                 new AreaBounds(10, -38, 46, 10, -36, 47), "MARKER_CONTAINER_CONTENTS",
-                List.of(), List.of(), null, dev.stowling.v2.model.StoragePolicy.DEFAULT, true);
+                List.of(), List.of(), null, dev.stowling.v2.model.StoragePolicy.DEFAULT, true,
+                "石材缓存");
         var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Rotated", List.of(binding));
         var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
                 List.of(), List.of(), List.of(), List.of(zone));

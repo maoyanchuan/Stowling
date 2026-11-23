@@ -79,7 +79,8 @@
                 overallRegion: raw.expansion ? region(raw.expansion.area)
                     : enclosingRegion(raw.bindings),
                 bindings: raw.bindings.slice(0, count).map((binding, index) => ({
-                    id: `${raw.id}-${index}`, markerRegion: region(binding.markerArea),
+                    id: `${raw.id}-${index}`, name: String(binding.name || ""),
+                    markerRegion: region(binding.markerArea),
                     storageRegion: region(binding.storageArea),
                     original: copy(normalized.bindings[index])
                 })),
@@ -123,6 +124,7 @@
         const bindings = value.bindings.map(binding => {
             const original = binding.original || Zone.normalizeBinding({});
             const result = copy(original);
+            result.name = String(binding.name ?? original.name ?? "").trim();
             for (const [kind, bounds] of [["marker", binding.markerRegion],
                 ["storage", binding.storageRegion]]) {
                 for (const [key, number] of Object.entries(area(bounds))) {

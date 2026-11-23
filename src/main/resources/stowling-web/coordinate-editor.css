@@ -771,6 +771,8 @@
 
 :root body[data-coordinate-editor] .category-binding-card {
     display: grid;
+    gap: 0;
+    margin: 0;
     overflow: hidden;
     border: 1px solid var(--line);
     border-radius: 11px;
@@ -780,10 +782,15 @@
 :root body[data-coordinate-editor] .category-binding-summary {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 10px;
     min-height: 56px;
     padding: 8px 12px;
     cursor: pointer;
+}
+
+:root body[data-coordinate-editor] .category-binding-summary::after {
+    content: none;
 }
 
 :root body[data-coordinate-editor] .category-binding-toggle {
@@ -806,7 +813,7 @@
     transform: rotate(90deg);
 }
 
-:root body[data-coordinate-editor] .category-binding-name {
+:root body[data-coordinate-editor] input.category-binding-name {
     flex: 0 1 160px;
     width: 160px;
     max-width: 160px;
@@ -820,7 +827,7 @@
     font-weight: 650;
 }
 
-:root body[data-coordinate-editor] .category-binding-name:focus {
+:root body[data-coordinate-editor] input.category-binding-name:focus {
     border-color: var(--accent);
     background: var(--theme-input, var(--panel-solid));
 }

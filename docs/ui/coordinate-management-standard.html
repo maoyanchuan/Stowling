@@ -904,7 +904,7 @@ select {
 
 .category-option-row[data-menu-open="true"],
 .category-option-sub[data-menu-open="true"] {
-    z-index: 5;
+    z-index: 20;
 }
 
 .category-option-row::before,
@@ -983,13 +983,12 @@ select {
 }
 
 .category-select-menu {
-    position: fixed;
+    position: absolute;
     display: grid;
     gap: 6px;
     z-index: 100;
-    top: 0;
-    left: 0;
-    right: auto;
+    top: calc(100% + 6px);
+    right: 0;
     width: max(100%, min(320px, calc(100vw - 64px)));
     padding: 6px;
     border: 1px solid var(--line);
@@ -1000,6 +999,8 @@ select {
 }
 
 .category-select-menu[data-placement="above"] {
+    top: auto;
+    bottom: calc(100% + 6px);
     transform-origin: bottom center;
 }
 
@@ -2039,29 +2040,6 @@ select {
         });
     }
 
-    /** @param {CategorySelect} control @returns {void} */
-    function positionCategoryMenu(control) {
-        const bounds = control.trigger.getBoundingClientRect();
-        const viewportWidth = Math.max(0, window.innerWidth - 24);
-        const preferredWidth = Math.min(320, Math.max(0, window.innerWidth - 64));
-        const width = Math.min(viewportWidth, Math.max(bounds.width, preferredWidth));
-        const left = Math.max(
-            12,
-            Math.min(bounds.right - width, window.innerWidth - width - 12)
-        );
-        control.menu.style.width = `${width}px`;
-        control.menu.style.left = `${left}px`;
-        control.menu.style.top = "0px";
-        const height = control.menu.scrollHeight;
-        const below = window.innerHeight - bounds.bottom - 12;
-        const above = below < height && bounds.top > height + 12;
-        const preferredTop = above ? bounds.top - height - 6 : bounds.bottom + 6;
-        const maxTop = Math.max(12, window.innerHeight - height - 12);
-        const top = Math.max(12, Math.min(preferredTop, maxTop));
-        control.menu.dataset.placement = above ? "above" : "below";
-        control.menu.style.top = `${top}px`;
-    }
-
     /** @param {CategorySelect} control @param {boolean} open
      * @param {boolean} [focus] @param {boolean} [animate] @returns {void} */
     function setCategoryMenuOpen(control, open, focus = false, animate = true) {
@@ -2074,7 +2052,11 @@ select {
         else optionRow?.removeAttribute("data-menu-open");
         if (open) {
             control.menu.hidden = false;
-            positionCategoryMenu(control);
+            const bounds = control.trigger.getBoundingClientRect();
+            const height = control.menu.scrollHeight;
+            const below = window.innerHeight - bounds.bottom - 12;
+            control.menu.dataset.placement = below < height && bounds.top > height + 12
+                ? "above" : "below";
         }
         control.trigger.setAttribute("aria-expanded", String(open));
         reveal(control.menu, open, animate, "menu");
@@ -2095,11 +2077,6 @@ select {
         syncCategorySelect(control);
         control.select.dispatchEvent(new Event("change", {bubbles: true}));
         setCategoryMenuOpen(control, false, true);
-    }
-
-    /** @returns {void} */
-    function repositionCategoryMenu() {
-        if (categoryMenuOpen) positionCategoryMenu(categoryMenuOpen);
     }
 
     /** @returns {void} */
@@ -3112,8 +3089,6 @@ select {
             setCategoryMenuOpen(categoryMenuOpen, false, true);
         }
     });
-    window.addEventListener("resize", repositionCategoryMenu);
-    window.addEventListener("scroll", repositionCategoryMenu, true);
     nodes.add.addEventListener("click", addCoordinate);
     nodes.addCategoryBinding.addEventListener("click", addCategoryBinding);
     nodes.categoryIgnoreSupport.addEventListener("change", () => {

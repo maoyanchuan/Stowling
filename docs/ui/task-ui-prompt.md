@@ -17,6 +17,12 @@
 模板保存在仓库中，可以离线打开。不要依赖聊天附件、临时截图或本机预览端口。
 已有测试只能证明其实际覆盖的行为，不能据此宣称界面已与模板视觉一致。
 
+正式坐标页面 `coordinates.html` 直接使用 `coordinate-management-standard.html` 的双栏结构。
+其生效样式与脚本为 `coordinate-editor.css`、`coordinate-editor.js` 和
+`coordinate-editor-model.js`；维护坐标页面时也必须读取这些文件。
+通过 `common.js` 的鉴权请求连接 `/v1/coordinate-resources` 和已有资源接口，
+不得恢复模板示例数据或仅保存在内存中的演示操作。
+
 ## 模板适用范围
 
 任务页中的模块卡片、标题栏、任务开关、设置行、子设置、下拉框和数字输入均适用。

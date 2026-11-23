@@ -13,20 +13,15 @@ NODE = shutil.which("node")
 def test_folder_and_resource_actions_share_the_coordinate_page() -> None:
     html = (WEB / "coordinates.html").read_text(encoding="utf-8")
     for control in (
-        "coordinate-bookmarks",
-        "new-coordinate-folder",
-        "coordinate-folder-editor-title",
-        "delete-coordinate-folder",
-        "coordinate-library-search",
-        "coordinate-resource-kind",
-        "new-warehouse-members",
+        "coordinate-list", "add-folder", "folder-form", "delete-folder",
+        "coordinate-search", "coordinate-kind", "warehouse-members",
     ):
         assert f'id="{control}"' in html
-    assert 'id="coordinate-area-kind"' in html
+    assert 'data-coordinate-kind="category-zone"' in html
+    assert 'data-coordinate-kind="warehouse"' in html
     assert 'id="facilities"' not in html
 
 
-@pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_cache_resource_types_keep_their_folder_and_radius_setting() -> None:
     script = """
         globalThis.document = {querySelector: () => null};

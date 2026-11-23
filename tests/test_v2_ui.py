@@ -28,45 +28,22 @@ def test_configuration_notice_appears_inside_the_authenticated_console() -> None
     assert 'id="app-nav"' in read("index.html")
 
 
-def test_coordinate_editor_exposes_only_name_and_xyz() -> None:
+def test_coordinate_editor_exposes_template_point_fields_and_optional_values() -> None:
     html = read("coordinates.html")
-    javascript = read("coordinates.js")
-    coordinate_points = html.split('id="coordinate-points"', 1)[1]
-    coordinate_points = coordinate_points.split('id="regions"', 1)[0]
-    assert "坐标管理" in html
-    for field in ("名称", "X", "Y", "Z"):
-        assert field in coordinate_points
-    for removed in ("第二角点", "容器"):
-        assert removed not in coordinate_points
-    assert "new-coordinate-use-dimension" in coordinate_points
-    assert "new-coordinate-use-radius" in coordinate_points
-    assert "/v1/coordinates/${encodeURIComponent(coordinate.id)}" in javascript
-    assert "coordinate.name" in javascript
-    assert "coordinate.x" in javascript
-    assert "coordinate.y" in javascript
-    assert "coordinate.z" in javascript
-    assert "dimension: values.useDimension.checked" in javascript
-    assert "radius: values.useRadius.checked" in javascript
+    for field in ("coordinate-name", "coordinate-x", "coordinate-y", "coordinate-z",
+                  "coordinate-radius", "coordinate-dimension"):
+        assert f'id="{field}"' in html
+    assert 'src="/coordinate-editor.js"' in html
+    assert 'src="/coordinates.js"' not in html
+    assert 'id="auth-shell"' in html
 
 
 def test_region_editor_accepts_two_three_dimensional_corners() -> None:
     html = read("coordinates.html")
-    javascript = read("coordinates.js")
-    model = read("region-model.js")
-
-    assert 'id="add-region-button"' in html
-    assert 'id="new-region-form"' in html
-    for field in (
-        "new-region-first-x",
-        "new-region-first-y",
-        "new-region-first-z",
-        "new-region-second-x",
-        "new-region-second-y",
-        "new-region-second-z",
-    ):
-        assert field in html
-    assert "/v1/regions" in javascript
-    assert "normalizeRegions" in model
+    for corner in ("first", "second"):
+        for axis in ("x", "y", "z"):
+            assert f'id="region-{corner}-{axis}"' in html
+    assert "...area(value.region)" in read("coordinate-editor-model.js")
 
 
 def test_coordinate_inputs_hide_spinners_and_expand_pasted_triples() -> None:
@@ -92,22 +69,14 @@ def test_coordinate_inputs_hide_spinners_and_expand_pasted_triples() -> None:
     assert "Stowling.bindCoordinateInputs(x, y, z)" in category_zones
 
 
-def test_coordinate_page_uses_progressive_creation_layout() -> None:
+def test_coordinate_page_uses_approved_dual_column_editor() -> None:
     html = read("coordinates.html")
-    javascript = read("coordinates.js")
-    styles = read("styles.css")
-
-    assert 'class="resource-create-grid"' in html
-    assert "resource-tab-panel" in html
-    assert 'id="new-coordinate-form"' in html
-    assert 'id="new-region-form"' in html
-    assert 'class="coordinate-create-form" hidden' in html
-    assert 'id="cancel-coordinate-button"' in html
-    assert 'id="cancel-region-button"' in html
-    assert "hideCreateForms" in javascript
-    assert ".coordinate-create-fields" in styles
-    assert ".region-corner-group" in styles
-    assert ".resource-tab-panel" in styles
+    assert 'class="coordinate-shell"' in html
+    assert 'class="coordinate-column coordinate-library"' in html
+    assert 'class="coordinate-column coordinate-editor"' in html
+    assert html.count('id="coordinate-form"') == 1
+    assert 'id="coordinate-kind-picker"' in html
+    assert 'class="resource-create-grid"' not in html
 
 
 def test_coordinate_cards_collapse_to_the_saved_name() -> None:
@@ -552,6 +521,11 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
     )
     for name, label in pages:
         html = read(name)
+        if name == "coordinates.html":
+            header = html.split('<header class="page-header">', 1)[1].split("</header>", 1)[0]
+            assert "<strong>Stowling 控制台</strong>" in header
+            assert "<span>坐标管理</span>" in header
+            continue
         header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
         assert "<h1>Stowling 控制台</h1>" in header
         assert f"<p>{label} · " in header
@@ -561,30 +535,24 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
 def test_console_pages_use_the_packaged_brand_icon() -> None:
     for path in sorted(WEB.glob("*.html")):
         html = read(path.name)
+        if path.name == "coordinates.html":
+            assert 'class="brand-mark" aria-hidden="true"' in html
+            assert '<link rel="icon" type="image/png" href="/icon.png">' in html
+            continue
         header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
         assert '<link rel="icon" type="image/png" href="/icon.png">' in html
         assert '<img class="brand-mark" src="/icon.png"' in header
 
 
-def test_coordinate_navigation_groups_spatial_resources() -> None:
+def test_coordinate_navigation_uses_one_entry_and_preserves_old_resource_links() -> None:
     common = read("common.js")
-    coordinates = read("coordinates.html")
-    styles = read("styles.css")
-
-    assert 'label: "坐标"' in common
-    assert 'label: "坐标点"' in common
-    assert 'href: "/coordinates.html#coordinate-points"' in common
-    assert 'label: "区域"' in common
-    assert 'href: "/coordinates.html#regions"' in common
-    assert 'label: "分类区"' in common
-    assert 'href: "/category-zones.html"' in common
-    assert 'className = "workspace-nav-group"' in common
-    assert 'className = "workspace-subnav"' in common
+    editor = read("coordinate-editor.js")
+    nav = common.split("const NAV_ITEMS", 1)[1].split("]);", 1)[0]
+    assert 'href: "/coordinates.html"' in nav
+    assert 'href: "/category-zones.html"' not in nav
     assert 'window.addEventListener("hashchange", mountNavigation);' in common
-    assert 'id="coordinate-points"' in coordinates
-    assert 'id="regions"' in coordinates
-    assert ".workspace-nav-group" in styles
-    assert ".workspace-subnav" in styles
+    for anchor in ("#coordinate-points", "#regions", "#category-zones"):
+        assert anchor in editor
 
 
 def test_header_and_content_share_responsive_page_width() -> None:
@@ -609,33 +577,22 @@ def test_header_and_content_share_responsive_page_width() -> None:
 
 
 def test_coordinate_editors_group_xyz_and_separate_optional_settings() -> None:
-    javascript = read("coordinates.js")
     html = read("coordinates.html")
-
-    assert 'axisGroup("位置", x, y, z)' in javascript
-    assert 'axisGroup("角点 1", firstX, firstY, firstZ)' in javascript
-    assert 'axisGroup("角点 2", secondX, secondY, secondZ)' in javascript
-    assert 'options.classList.add("resource-options")' in javascript
-    assert '"更多选项", "维度与到达半径", optionFields)' in javascript
-    assert "options.open = useDimension.checked || useRadius.checked" not in javascript
-    assert "resourceIdentity(" in javascript
-    assert 'id="coordinate-list-count"' in html
-    assert 'id="region-list-count"' in html
+    assert 'id="point-options" class="editor-options"' in html
+    assert 'class="coordinate-corner-fields"' in html
+    assert 'id="coordinate-radius"' in html
+    assert 'id="coordinate-dimension"' in html
+    assert 'id="library-footer"' in html
 
 
 def test_coordinate_search_filters_without_discarding_unsaved_fields() -> None:
-    javascript = read("coordinates.js")
     html = read("coordinates.html")
-    search = javascript.split('elements.search.addEventListener("input"', 1)[1]
-    search = search.split("});", 1)[0]
-
-    assert 'id="resource-search"' in html
-    assert "filterResourceList(elements.list)" in search
-    assert "filterResourceList(elements.regionList)" in search
+    javascript = read("coordinate-editor.js")
+    search = javascript.split("function filterLibrary()", 1)[1].split("\n    }", 1)[0]
+    assert 'id="coordinate-search"' in html
+    assert "item.hidden" in search
     assert "replaceChildren" not in search
-    assert "renderCoordinates" not in search
-    assert "renderRegions" not in search
-    assert "card.hidden = !card.dataset.searchText" in javascript
+    assert "populateEditor" not in search
 
 
 def test_category_bindings_collapse_ranges_and_keep_rules_on_demand() -> None:

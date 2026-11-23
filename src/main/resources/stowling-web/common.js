@@ -436,7 +436,7 @@
     /** @returns {void} */
     function mountTheme() {
         const connection = document.querySelector(".connection-state");
-        if (!connection || document.querySelector("#theme-toggle")) {
+        if (!connection || document.querySelector("#theme-toggle, .theme-picker")) {
             return;
         }
         const controls = element("div", "header-controls");

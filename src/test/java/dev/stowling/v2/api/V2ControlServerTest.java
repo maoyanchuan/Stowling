@@ -47,6 +47,28 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void servesTheCoordinateTemplateAssetsAndKeepsItsDataAuthenticated() throws Exception {
+        try (var fixture = fixture()) {
+            var page = fixture.send("/coordinates.html", "GET", null, false);
+            assertEquals(200, page.statusCode());
+            assertTrue(page.body().contains("class=\"coordinate-shell\""));
+            assertTrue(page.body().contains("src=\"/coordinate-editor.js\""));
+            for (String path : List.of("/coordinate-editor.js", "/coordinate-editor-model.js")) {
+                var asset = fixture.send(path, "GET", null, false);
+                assertEquals(200, asset.statusCode());
+                assertEquals("text/javascript; charset=utf-8",
+                        asset.headers().firstValue("Content-Type").orElse(""));
+            }
+            var style = fixture.send("/coordinate-editor.css", "GET", null, false);
+            assertEquals(200, style.statusCode());
+            assertEquals("text/css; charset=utf-8",
+                    style.headers().firstValue("Content-Type").orElse(""));
+            assertEquals(401,
+                    fixture.send("/v1/coordinate-resources", "GET", null, false).statusCode());
+        }
+    }
+
+    @Test
     void protectsTheCoordinateDirectoryAndFolderWritesWithBearerAuthentication() throws Exception {
         try (var fixture = fixture()) {
             String path = "/v1/coordinate-resources";

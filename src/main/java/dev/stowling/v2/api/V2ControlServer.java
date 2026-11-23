@@ -1893,6 +1893,11 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/backpack-model.js", read("stowling-web/backpack-model.js", js)),
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
+                Map.entry("/coordinate-editor.js", read("stowling-web/coordinate-editor.js", js)),
+                Map.entry("/coordinate-editor-model.js",
+                        read("stowling-web/coordinate-editor-model.js", js)),
+                Map.entry("/coordinate-editor.css",
+                        read("stowling-web/coordinate-editor.css", "text/css; charset=utf-8")),
                 Map.entry(
                         "/category-zone-model.js",
                         read("stowling-web/category-zone-model.js", js)

@@ -75,7 +75,8 @@ def test_saved_task_summary_actions_are_separate_from_disclosure_and_save() -> N
     assert "queueMoveTask(task.id, run.checked)" in move
     for source in (classify, eat):
         assert 'switchControl(' in source
-        assert "header.append(button, listening);" in source
+    assert "header.append(button, listening);" in classify
+    assert "header.append(title, button, listening);" in eat
 
     eat_save = between(eat, "async function save(deleting)", "newTask.addEventListener")
     eat_switch = between(eat, "async function setListening(", "async function save(deleting)")

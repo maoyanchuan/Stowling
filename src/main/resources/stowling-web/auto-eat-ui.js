@@ -19,6 +19,7 @@
     const source = $("auto-eat-source");
     const coordinate = $("auto-eat-coordinate");
     const message = $("auto-eat-message");
+    const selects = window.StowlingTaskSelect.create(form);
     const rows = new Map();
     let tasks = [];
     let coordinates = [];
@@ -57,18 +58,23 @@
         draftToggle.disabled = disabled;
         draft.hidden = !isDraft;
         disclose(draftToggle, draftBody, isDraft && editor.expanded);
+        draftToggle.setAttribute("aria-label", editor?.expanded
+            ? "收起自动进食设置" : "展开自动进食设置");
         for (const [id, row] of rows) {
             const selected = editor?.id === id;
             row.button.disabled = disabled;
             row.listening.disabled = disabled || (selected && editor.dirty);
             row.listening.checked = pendingSwitch?.id === id ? pendingSwitch.enabled : row.enabled;
-            row.listening.title = selected && editor.dirty
-                ? "修改保存后可切换监听" : "饱食度监听";
+            row.listening.title = selected && editor.dirty ? "修改保存后可切换监听"
+                : row.listening.checked ? "停止饱食度监听" : "开始饱食度监听";
+            row.button.setAttribute("aria-label", selected && editor.expanded
+                ? `收起${row.name}设置` : `展开${row.name}设置`);
             disclose(row.button, row.body, selected && editor.expanded);
             row.status.textContent = selected && editor.dirty
                 ? "未保存修改"
                 : row.enabled ? "监听中" : "已暂停";
         }
+        updateSource();
     }
 
     /** @returns {void} */
@@ -85,46 +91,59 @@
         rows.clear();
         for (const task of tasks) {
             const settings = task.settings;
-            const location = settings.coordinateId
-                ? coordinates.find((point) => point.id === settings.coordinateId)?.name
-                    || "指定食物箱"
-                : "随身锁定食物";
-            const row = S.element("article", "move-saved-task");
-            const button = S.element("button", "move-task-summary");
+            const row = S.element("article", "pickup-task-module auto-eat-task-module");
+            row.dataset.taskId = task.id;
+            const button = S.element("button", "pickup-task-expand");
             button.type = "button";
-            const body = S.element("div", "move-task-body");
+            const body = S.element("div", "pickup-task-body");
             body.id = `auto-eat-task-body-${task.id}`;
-            body.hidden = true;
+            void Settings.reveal(body, false);
             button.setAttribute("aria-controls", body.id);
-            const kind = S.element("span", "move-task-kind", "食");
-            kind.setAttribute("aria-hidden", "true");
-            const overview = S.element("span", "move-task-overview");
-            overview.append(S.element("strong", "", settings.name), S.element("span", "",
-                `${location} · 饱食度 ≤ ${settings.foodLevelThreshold} · ${settings.foodItemId}`));
-            const state = S.element("span", "move-task-state");
-            const chevron = S.element("span", "move-task-chevron", "⌄");
-            chevron.setAttribute("aria-hidden", "true");
-            button.append(kind, overview, state, chevron);
+            button.append(icon("m9 5 7 7-7 7"));
+            const title = S.element("h3", "pickup-task-title", settings.name);
+            title.prepend(icon("M4 3v5a3 3 0 0 0 6 0V3M7 3v18M20 3c-4 0-4 9 0 9V3v18"));
+            const state = S.element("span", "visually-hidden");
+            state.id = `auto-eat-task-status-${task.id}`;
+            state.setAttribute("role", "status");
+            state.setAttribute("aria-live", "polite");
             button.addEventListener("click", () => {
                 selectTask(tasks.find((item) => item.id === task.id));
             });
             if (editor?.id === task.id) {
                 body.append(form);
             }
-            const header = S.element("div", "task-card-header");
+            const header = S.element("div", "pickup-task-header");
             const listening = Settings.switchControl(
                 document.createElement("input"), `监听任务：${settings.name}`
             );
+            listening.setAttribute("aria-describedby", state.id);
             listening.addEventListener("change", () => {
                 void setListening(task.id, listening.checked);
             });
-            header.append(button, listening);
-            row.append(header, body);
+            header.append(title, button, listening);
+            row.append(header, body, state);
             list.append(row);
-            rows.set(task.id, {button, body, status: state, listening, enabled: settings.enabled});
+            rows.set(task.id, {button, body, status: state, listening,
+                name: settings.name, enabled: settings.enabled});
         }
         updateControls();
         notifyTaskCount();
+    }
+
+    /** @param {string} path @returns {SVGElement} */
+    function icon(path) {
+        const namespace = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(namespace, "svg");
+        for (const [key, value] of Object.entries({width: "18", height: "18",
+            viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+            "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round",
+            "aria-hidden": "true"})) {
+            svg.setAttribute(key, value);
+        }
+        const shape = document.createElementNS(namespace, "path");
+        shape.setAttribute("d", path);
+        svg.append(shape);
+        return svg;
     }
 
     /** @returns {Promise<void>} */
@@ -164,11 +183,11 @@
     /** @returns {void} */
     function updateSource() {
         const useChest = source.value === "chest";
-        $("auto-eat-coordinate-field").hidden = !useChest;
         $("auto-eat-inventory-note").hidden = useChest;
-        $("auto-eat-chest-note").hidden = !useChest;
         coordinate.required = useChest;
         coordinate.disabled = !useChest;
+        void Settings.reveal($("auto-eat-chest-settings"), useChest);
+        selects.refresh(true);
     }
 
     /**

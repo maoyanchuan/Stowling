@@ -416,65 +416,112 @@
                                 </form>
                             </div>
                         </article>
-                        <article id="auto-eat-draft" class="move-saved-task is-draft" hidden>
-                            <button id="toggle-auto-eat-draft" class="move-task-summary"
-                                    type="button" aria-expanded="false"
-                                    aria-controls="auto-eat-draft-body">
-                                <span class="move-task-kind" aria-hidden="true">食</span>
-                                <span class="move-task-overview">
-                                    <strong>新建 · 自动进食</strong>
-                                    <span>设置饱食度与食物来源</span>
-                                </span>
-                                <span class="move-task-state">未保存</span>
-                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                            </button>
-                            <div id="auto-eat-draft-body" class="move-task-body" hidden>
-                                <form id="auto-eat-form" class="move-task-form">
+                        <article id="auto-eat-draft"
+                                 class="pickup-task-module auto-eat-task-module" hidden>
+                            <div class="pickup-task-header">
+                                <h3 class="pickup-task-title">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                         stroke="currentColor" stroke-width="1.8"
+                                         stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="M4 3v5a3 3 0 0 0 6 0V3M7 3v18" />
+                                        <path d="M20 3c-4 0-4 9 0 9V3v18" />
+                                    </svg>
+                                    新建 · 自动进食
+                                </h3>
+                                <button id="toggle-auto-eat-draft" class="pickup-task-expand"
+                                        type="button" aria-expanded="false"
+                                        aria-controls="auto-eat-draft-body"
+                                        aria-label="展开自动进食设置">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                         stroke="currentColor" stroke-width="1.8"
+                                         stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="m9 5 7 7-7 7" />
+                                    </svg>
+                                </button>
+                                <input class="settings-switch" type="checkbox" role="switch"
+                                       disabled aria-label="开始自动进食监听"
+                                       title="自动保存后可开始监听">
+                            </div>
+                            <div id="auto-eat-draft-body" class="pickup-task-body" hidden>
+                                <form id="auto-eat-form" class="auto-eat-task-form">
                                     <fieldset disabled>
-                                        <label class="move-field" for="auto-eat-threshold">
-                                            <span>饱食度不高于</span>
+                                        <div class="move-field">
+                                            <span class="settings-copy">
+                                                <label for="auto-eat-threshold">进食阈值</label>
+                                                <span id="auto-eat-threshold-note"
+                                                      class="settings-description">
+                                                    饱食度不高于此值时进食，范围 0–19。
+                                                </span>
+                                            </span>
                                             <input id="auto-eat-threshold" type="number" min="0"
-                                                   max="19" step="1" required>
-                                        </label>
+                                                   max="19" step="1" required
+                                                   aria-describedby="auto-eat-threshold-note">
+                                        </div>
                                         <label class="move-field" for="auto-eat-interval">
                                             <span>检查间隔（秒）</span>
                                             <input id="auto-eat-interval" type="number" min="1"
                                                    max="60" step="1" required>
                                         </label>
-                                        <label class="move-field" for="auto-eat-food">
-                                            <span>食物 ID</span>
-                                            <input id="auto-eat-food" placeholder="minecraft:bread"
+                                        <div class="move-field">
+                                            <span class="settings-copy">
+                                                <label for="auto-eat-food">食物 ID</label>
+                                                <span class="settings-description">
+                                                    仅食用此物品，例如 minecraft:bread。
+                                                </span>
+                                            </span>
+                                            <input id="auto-eat-food" type="text"
+                                                   placeholder="minecraft:bread"
                                                    pattern="[a-z0-9_.\-]+:[a-z0-9_.\/\-]+"
                                                    spellcheck="false" autocomplete="off" required>
-                                        </label>
-                                        <label class="move-field" for="auto-eat-source">
-                                            <span>补给方式</span>
-                                            <select id="auto-eat-source">
-                                                <option value="inventory">只吃背包锁定食物</option>
-                                                <option value="chest">用完后从食物箱补给</option>
-                                            </select>
-                                        </label>
-                                        <div id="auto-eat-coordinate-field" class="move-field"
-                                             hidden>
-                                            <span>
-                                                <label for="auto-eat-coordinate">食物箱坐标</label>
+                                        </div>
+                                        <div class="move-field">
+                                            <span class="settings-copy">
+                                                <label for="auto-eat-source">补给方式</label>
+                                                <span id="auto-eat-inventory-note"
+                                                      class="settings-description">
+                                                    在 <a href="/backpack.html"
+                                                        class="text-link">背包管理</a>
+                                                    将食物设为「保留自用」。
+                                                </span>
                                             </span>
-                                            <div>
-                                                <select id="auto-eat-coordinate" disabled></select>
-                                                <a href="/coordinates.html#coordinate-points"
-                                                   class="text-link">管理坐标 →</a>
+                                            <select id="auto-eat-source">
+                                                <option value="inventory"
+                                                        data-description="只吃保留自用的食物，不自动补给">
+                                                    只吃背包锁定食物
+                                                </option>
+                                                <option value="chest"
+                                                        data-description="优先吃背包食物，用完后前往指定箱子补给">
+                                                    用完后从食物箱补给
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <div id="auto-eat-chest-settings" class="settings-detail"
+                                             hidden inert>
+                                            <div class="task-settings-inner">
+                                                <div id="auto-eat-coordinate-field"
+                                                     class="move-field">
+                                                    <span>
+                                                        <label for="auto-eat-coordinate">
+                                                            食物箱坐标
+                                                        </label>
+                                                    </span>
+                                                    <select id="auto-eat-coordinate" disabled
+                                                            data-option-description="食物用完后前往此坐标补给"
+                                                            aria-describedby="auto-eat-chest-note">
+                                                    </select>
+                                                    <small id="auto-eat-chest-note">
+                                                        补给食物自动设为「保留自用」。
+                                                        <a href="/coordinates.html#coordinate-points"
+                                                           class="text-link">管理坐标 →</a>
+                                                    </small>
+                                                </div>
                                             </div>
                                         </div>
-                                        <p id="auto-eat-inventory-note" class="move-target-note">
-                                            在 <a href="/backpack.html" class="text-link">背包管理</a>
-                                            将食物设为「保留自用」。
-                                        </p>
-                                        <p id="auto-eat-chest-note" class="move-target-note" hidden>
-                                            优先吃背包锁定的食物，取回的食物自动设为「保留自用」。
-                                        </p>
                                         <p id="auto-eat-message" class="field-message"
                                            role="status" aria-live="polite"></p>
-                                        <div class="move-form-actions">
+                                        <div class="coordinate-task-actions">
                                             <button id="delete-auto-eat"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>

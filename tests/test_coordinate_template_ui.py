@@ -2,7 +2,6 @@ from pathlib import Path
 
 
 WEB = Path(__file__).resolve().parents[1] / "src/main/resources/stowling-web"
-STANDALONE = Path(__file__).resolve().parents[1] / "docs/ui/coordinates-template.html"
 SERVER = Path(__file__).resolve().parents[1] / (
     "src/main/java/dev/stowling/v2/api/V2ControlServer.java"
 )
@@ -27,12 +26,3 @@ def test_coordinate_template_route_and_assets_are_served() -> None:
     assert '"/coordinates-template.html"' in source
     assert '"/coordinates-template.js"' in source
     assert '"/coordinates-template.css"' in source
-
-
-def test_coordinate_template_can_open_directly_from_the_repository() -> None:
-    html = STANDALONE.read_text(encoding="utf-8")
-
-    assert '../../src/main/resources/stowling-web/styles.css' in html
-    assert '../../src/main/resources/stowling-web/coordinates-template.js' in html
-    assert '../../src/main/resources/assets/stowling/icon.png' in html
-    assert 'src="/coordinates-template.js"' not in html

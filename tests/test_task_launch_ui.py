@@ -70,9 +70,9 @@ def test_saved_task_summary_actions_are_separate_from_disclosure_and_save() -> N
     move = read("tasks.js")
     classify = read("auto-classify-ui.js")
     eat = read("auto-eat-ui.js")
-    assert "header.append(button, run);" in move
-    assert 'run.type = "button";' in move
-    assert "queueMoveTask(task.id)" in move
+    assert "header.append(title, button, run);" in move
+    assert "StowlingSettings.switchControl(" in move
+    assert "queueMoveTask(task.id, run.checked)" in move
     for source in (classify, eat):
         assert 'switchControl(' in source
         assert "header.append(button, listening);" in source

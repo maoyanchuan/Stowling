@@ -1,7 +1,5 @@
-import json
 import re
-import shutil
-import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -10,13 +8,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "main" / "resources" / "stowling-web"
-TASKS_HTML = WEB / "tasks.html"
-TASKS_SCRIPT = WEB / "tasks.js"
-TASK_MODEL = WEB / "v2-task-model.js"
-COORDINATE_MODEL = WEB / "coordinate-model.js"
-MOVE_MODEL = WEB / "move-task-model.js"
-MONITOR_MODEL = WEB / "task-monitor-model.js"
-NODE = shutil.which("node")
 
 
 def read(name: str) -> str:
@@ -74,15 +65,12 @@ def test_task_workbench_has_saved_task_disclosure_and_new_task_entry() -> None:
     assert 'id="new-move-task"' not in display
     assert 'id="move-task-fields"' in display
     for field_id in (
-        "move-target-x",
-        "move-target-y",
-        "move-target-z",
         "move-saved-coordinate",
         "move-priority",
     ):
         assert f'id="{field_id}"' in display
-    assert "data-move-source=\"manual\"" in display
-    assert "data-move-source=\"saved\"" in display
+    assert "data-move-source=" not in display
+    assert 'id="move-target-x"' not in display
     assert 'type="submit"' not in display
     assert "保存并加入队列" not in display
     assert "hidden" in opening_tag(display, "move-task-form")
@@ -249,7 +237,7 @@ def test_move_resources_are_loaded_separately_from_monitoring() -> None:
     assert "Promise.all([" in load_move
     assert '"/v1/tasks"' in load_move
     assert '"/v1/coordinates"' in load_move
-    assert load_move.count("Stowling.request(") == 2
+    assert load_move.count("Stowling.request(") == 3
     assert "const definitions = Array.isArray(tasks?.tasks)" in load_move
     assert "? tasks.tasks.map(Model.normalizeTask) : [];" in load_move
     assert "state.moveTasks = definitions.filter(Move.isMoveTask);" in load_move
@@ -299,30 +287,17 @@ def test_move_save_and_queue_routes_use_explicit_task_ids() -> None:
     assert '"/v1/task-triggers"' not in javascript
 
 
-def test_move_form_uses_input_events_and_preserves_both_source_values() -> None:
+def test_move_form_preserves_saved_coordinate_and_cleanup_fields() -> None:
     javascript = read("tasks.js")
-    read_form = between(
-        javascript,
-        "function readMoveForm()",
-        "function updateMoveTarget()",
-    )
-    source_handler = between(
-        javascript,
-        "for (const button of elements.moveSources)",
-        "elements.removeMove.addEventListener",
-    )
+    read_form = between(javascript, "function readMoveForm()", "function updateMoveTarget()")
 
     assert 'elements.moveForm.addEventListener("input", () => {' in javascript
-    assert 'elements.moveX.value = draft.x.replace(/^\+/, "");' in javascript
-    assert "readMoveForm();" in source_handler
-    assert "state.moveDraft.source = button.dataset.moveSource;" in source_handler
-    assert "x: elements.moveX.value" in read_form
-    assert "y: elements.moveY.value" in read_form
-    assert "z: elements.moveZ.value" in read_form
     assert "coordinateId: elements.moveCoordinate.value" in read_form
-    assert ".moveAxisGrid" not in read_form
-    assert "elements.moveX.value = \"\";" not in source_handler
-    assert "elements.moveCoordinate.value = \"\";" not in source_handler
+    assert "priority: elements.movePriority.value" in read_form
+    assert "cleanupPolicy: cleanup.read()" in read_form
+    assert "...state.moveDraft" in read_form
+    assert "moveSources" not in javascript
+    assert "moveManual" not in javascript
 
 
 def test_move_disclosure_uses_row_controls_and_guards_disconnected_actions() -> None:
@@ -344,9 +319,8 @@ def test_move_disclosure_uses_row_controls_and_guards_disconnected_actions() -> 
     )
 
     assert "elements.moveDraftCard.hidden = !newDraft;" in disclosure
-    assert "elements.moveDraftBody.hidden = !newDraft || !state.moveFormOpen;" in disclosure
-    placeholder = "elements.movePlaceholder.hidden = state.moveTasks.length > 0"
-    assert placeholder + " || newDraft;" in disclosure
+    assert "StowlingSettings.reveal(elements.moveDraftBody," in disclosure
+    assert "elements.movePlaceholder.hidden = savedCount > 0 || newDraft" in disclosure
     same_task = selection.index("if (task && state.moveDraft.id === task.id)")
     dirty_confirm = selection.index(
         "if (state.moveDirty && !window.confirm("
@@ -362,7 +336,8 @@ def test_move_disclosure_uses_row_controls_and_guards_disconnected_actions() -> 
         assert retained in selection
     assert "for (const [id, row] of moveRows)" in controls
     assert "row.button.disabled = disabled;" in controls
-    assert "row.run.disabled = disabled || unsaved;" in controls
+    assert "state.movePendingRuns.get(id)" in controls
+    assert "(!running && (state.moveBusy || unsaved))" in controls
     assert "elements.newMove.disabled = disabled;" in controls
     assert "elements.moveDraftToggle.disabled = disabled;" in controls
     assert "elements.refreshMove.disabled = state.moveBusy || state.moveLoading" in controls
@@ -404,1038 +379,272 @@ def test_interruption_recovery_and_monitor_endpoints_are_retained() -> None:
     assert "同步失败 · 显示上次状态" in javascript
 
 
-PAGE_RUNNER = r"""
-const fs = require("node:fs");
-const vm = require("node:vm");
-
-const [
-    htmlPath,
-    tasksPath,
-    taskModelPath,
-    coordinateModelPath,
-    moveModelPath,
-    monitorPath,
-    autosavePath,
-] = process.argv.slice(1);
-const html = fs.readFileSync(htmlPath, "utf8");
-const requests = [];
-const connectedHandlers = [];
-const sourceButtons = [];
-const errors = [];
-const toasts = [];
-const confirmRequests = [];
-let runReads = 0;
-let taskSequence = 0;
-let failNextRun = false;
-let confirmResult = true;
-let revision = "rev-1";
-let tasksState = [];
-let pendingAutosave;
-
-class FakeElement {
-    constructor(tagName = "div", id = "") {
-        this.tagName = String(tagName).toUpperCase();
-        this.id = id;
-        this.className = "";
-        this.children = [];
-        this.parentElement = null;
-        this.listeners = new Map();
-        this.dataset = {};
-        this.attributes = new Map();
-        this.disabled = false;
-        this.hidden = false;
-        this.focused = false;
-        this.open = false;
-        this.value = "";
-        this.scrollTop = 0;
-        this.scrollHeight = 0;
-        this._text = "";
-        const classes = new Set();
-        this.classList = {
-            add: (...names) => names.forEach((name) => classes.add(name)),
-            remove: (...names) => names.forEach((name) => classes.delete(name)),
-            toggle: (name, force) => {
-                const enabled = force === undefined ? !classes.has(name) : force;
-                if (enabled) {
-                    classes.add(name);
-                } else {
-                    classes.delete(name);
+@pytest.fixture
+def move_page() -> Iterator[Any]:
+    playwright = pytest.importorskip("playwright.sync_api")
+    with playwright.sync_playwright() as runtime:
+        try:
+            browser = runtime.chromium.launch()
+        except playwright.Error as error:
+            pytest.skip(f"Playwright Chromium is required: {error}")
+        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        html = re.sub(r"<script\b[^>]*>[\s\S]*?</script>", "", read("tasks.html"))
+        html = re.sub(r"<link\b[^>]*>", "", html)
+        page.set_content(html)
+        for name in ("styles.css", "workbench.css", "pickup-task-settings.css"):
+            page.add_style_tag(content=read(name))
+        page.add_script_tag(content=r"""
+            window.backend = {
+                requests: [], errors: [], handlers: [], revision: "1", runs: [],
+                failStart: false, holdStart: false,
+                tasks: [{id: "move/1", name: "移动到坐标", priority: "NORMAL",
+                    steps: [{id: "step-1", kind: "ACTION", moduleId: "MOVE_TO_COORDINATE",
+                        parameters: {targetRef: "coordinate:home"}, steps: [], otherwise: []}],
+                    cleanupPolicy: {destinationRef: "coordinate:home", resumeMode: "CONTINUE"}}]
+            };
+            window.Stowling = {
+                /** @param {unknown} value @returns {unknown} */
+                clone(value) {return JSON.parse(JSON.stringify(value));},
+                /** @param {string} tag @param {string} css @param {string} text
+                 * @returns {HTMLElement} */
+                element(tag, css = "", text = "") {
+                    const node = document.createElement(tag);
+                    node.className = css;
+                    node.textContent = text;
+                    return node;
+                },
+                /** @param {string} text @returns {HTMLElement} */
+                emptyState(text) {return this.element("p", "empty-state", text);},
+                /** @returns {string} */
+                formatDate() {return "";},
+                /** @returns {boolean} */
+                isConnected() {return true;},
+                /** @returns {void} */
+                showToast() {},
+                /** @param {Error} error @returns {void} */
+                handleError(error) {backend.errors.push(error.message);},
+                /** @param {Function} handler @returns {void} */
+                onConnected(handler) {backend.handlers.push(handler);},
+                /** @param {string} path @param {object} options @returns {Promise<object>} */
+                async request(path, options = {}) {
+                    const method = options.method || "GET";
+                    const body = options.body ? JSON.parse(options.body) : null;
+                    backend.requests.push({path, method, body});
+                    if (method === "GET") {
+                        if (path === "/v1/tasks") return {
+                            tasks: backend.tasks, revision: backend.revision};
+                        if (path === "/v1/coordinates") return {coordinates: [
+                            {id: "home", name: "仓库", x: 10, y: 64, z: -20},
+                            {id: "mine", name: "矿区", x: 120, y: 70, z: 300}]};
+                        if (path === "/v1/regions") return {regions: []};
+                        if (path === "/v1/task-modules") return {modules: []};
+                        if (path === "/v1/task-runs") return {
+                            runs: backend.runs, queue: [], triggers: []};
+                    }
+                    if (path.endsWith("/runs")) {
+                        if (backend.holdStart) await new Promise(resolve => {
+                            backend.release = resolve;
+                        });
+                        if (backend.failStart) throw new Error("start failed");
+                        backend.runs.push({runId: "run/1", taskId: "move/1",
+                            taskName: "移动到坐标", state: "QUEUED", priority: "NORMAL"});
+                        return {state: "QUEUED"};
+                    }
+                    if (path.endsWith("/cancel")) {
+                        const runId = decodeURIComponent(path.split("/").at(-2));
+                        backend.runs = backend.runs.filter(run => run.runId !== runId);
+                        return {};
+                    }
+                    if (method === "PUT") {
+                        backend.tasks = backend.tasks.map(task => task.id === "move/1"
+                            ? {...task, ...body} : task);
+                        backend.revision = String(Number(backend.revision) + 1);
+                        return {tasks: backend.tasks, revision: backend.revision};
+                    }
+                    if (method === "POST" && path === "/v1/tasks") {
+                        backend.tasks.push({...body, id: "created", name: "移动到坐标 2"});
+                        backend.revision = String(Number(backend.revision) + 1);
+                        return {taskId: "created", tasks: backend.tasks,
+                            revision: backend.revision};
+                    }
+                    throw new Error(`Unexpected request: ${method} ${path}`);
                 }
-                return enabled;
-            },
-        };
-    }
-
-    get textContent() {
-        return this._text + this.children.map((child) => child.textContent).join("");
-    }
-
-    set textContent(value) {
-        for (const child of this.children) {
-            child.parentElement = null;
-        }
-        this._text = String(value);
-        this.children = [];
-    }
-
-    get childElementCount() {
-        return this.children.length;
-    }
-
-    /**
-     * @param {FakeElement | string} node
-     * @returns {FakeElement}
-     */
-    adopt(node) {
-        const child = typeof node === "string"
-            ? Object.assign(new FakeElement("#text"), { _text: node })
-            : node;
-        if (child.parentElement) {
-            child.parentElement.removeChild(child);
-        }
-        child.parentElement = this;
-        return child;
-    }
-
-    append(...nodes) {
-        this.children.push(...nodes.map((node) => this.adopt(node)));
-    }
-
-    prepend(...nodes) {
-        const added = nodes.map((node) => this.adopt(node));
-        this.children.unshift(...added);
-    }
-
-    replaceChildren(...nodes) {
-        for (const child of this.children) {
-            child.parentElement = null;
-        }
-        this.children = [];
-        this.append(...nodes);
-    }
-
-    /**
-     * @param {FakeElement} node
-     * @returns {FakeElement}
-     */
-    removeChild(node) {
-        const index = this.children.indexOf(node);
-        if (index < 0) {
-            throw new Error("removeChild called with a node that is not a child");
-        }
-        this.children.splice(index, 1);
-        node.parentElement = null;
-        return node;
-    }
-
-    /**
-     * @returns {void}
-     */
-    remove() {
-        if (this.parentElement) {
-            this.parentElement.removeChild(this);
-        }
-    }
-
-    addEventListener(type, listener) {
-        const entries = this.listeners.get(type) || [];
-        entries.push(listener);
-        this.listeners.set(type, entries);
-    }
-
-    dispatchEvent(type, values = {}) {
-        let defaultPrevented = false;
-        const event = {
-            target: this,
-            currentTarget: this,
-            ...values,
-            preventDefault() {
-                defaultPrevented = true;
-            },
-        };
-        for (const listener of this.listeners.get(type) || []) {
-            listener(event);
-        }
-        return { ...event, defaultPrevented };
-    }
-
-    click() {
-        this.dispatchEvent("click");
-    }
-
-    /**
-     * @returns {void}
-     */
-    focus() {
-        this.focused = true;
-    }
-
-    setAttribute(name, value) {
-        this.attributes.set(name, String(value));
-    }
-
-    getAttribute(name) {
-        return this.attributes.get(name) ?? null;
-    }
-
-    /**
-     * @param {string} selector
-     * @returns {boolean}
-     */
-    matches(selector) {
-        const tag = selector.match(/^[a-z][\w-]*/i)?.[0];
-        if (tag && this.tagName !== tag.toUpperCase()) {
-            return false;
-        }
-        for (const match of selector.matchAll(/\.([\w-]+)/g)) {
-            if (!this.className.split(" ").includes(match[1])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * @returns {FakeElement[]}
-     */
-    descendants() {
-        const found = [];
-        for (const child of this.children) {
-            found.push(child, ...child.descendants());
-        }
-        return found;
-    }
-
-    querySelector(selector) {
-        return this.descendants().find((child) => child.matches(selector)) || null;
-    }
-
-    querySelectorAll(selector) {
-        return this.descendants().filter((child) => child.matches(selector));
-    }
-
-    showModal() {
-        this.open = true;
-    }
-
-    close() {
-        this.open = false;
-    }
-
-    getBoundingClientRect() {
-        return { left: 0, right: 0, top: 0, bottom: 0 };
-    }
-}
-
-const byId = new Map();
-const markupPattern = /<([a-z][\w-]*)([^>]*\bid="([^"]+)"[^>]*)>/gi;
-for (const match of html.matchAll(markupPattern)) {
-    const [, tagName, attributes, id] = match;
-    const element = new FakeElement(tagName, id);
-    const className = attributes.match(/\bclass="([^"]*)"/i)?.[1];
-    if (className) {
-        element.className = className;
-    }
-    element.hidden = /(?:^|\s)hidden(?:\s|=|$)/i.test(attributes);
-    element.disabled = /(?:^|\s)disabled(?:\s|=|$)/i.test(attributes);
-    for (const attribute of attributes.matchAll(/(aria-[\w-]+)="([^"]*)"/g)) {
-        element.setAttribute(attribute[1], attribute[2]);
-    }
-    byId.set(id, element);
-}
-for (const source of ["manual", "saved"]) {
-    const button = new FakeElement("button");
-    button.dataset.moveSource = source;
-    sourceButtons.push(button);
-}
-const document = {
-    body: new FakeElement("body"),
-    createElement: (tagName) => new FakeElement(tagName),
-    querySelector: (selector) => {
-        if (!selector.startsWith("#")) {
-            return null;
-        }
-        const id = selector.slice(1);
-        if (!byId.has(id)) {
-            throw new Error(`tasks.js requested missing DOM node #${id}`);
-        }
-        return byId.get(id);
-    },
-    querySelectorAll: (selector) => selector === "[data-move-source]"
-        ? sourceButtons : [],
-};
-
-const runResponses = [
-    {
-        runs: [{ runId: "run-1", taskName: "初始任务", state: "RUNNING",
-            priority: "URGENT", completedSteps: 1, totalSteps: 2 }],
-        queue: [],
-        triggers: [],
-    },
-    {
-        runs: [{ runId: "run-2", taskName: "刷新任务", state: "WAITING",
-            priority: "NORMAL", completedSteps: 0, totalSteps: 1 }],
-        queue: [],
-        triggers: [],
-    },
-];
-
-function moveTask(id, name, parameters, priority = "NORMAL", mode = "DEFAULT") {
-    return {
-        id,
-        name,
-        folderId: "folder-1",
-        priority,
-        repeatWhenIdle: false,
-        interruptionMode: mode,
-        interruptionTaskRef: "",
-        defaultInterruptionFlow: false,
-        requeueAfterInterruption: false,
-        steps: [{
-            id: `step-${id}`,
-            kind: "ACTION",
-            moduleId: "MOVE_TO_COORDINATE",
-            parameters,
-            steps: [],
-            otherwise: [],
-        }],
-    };
-}
-
-tasksState = [
-    moveTask("existing-manual", "已有手动移动", { x: "3", y: "4", z: "5" }),
-    moveTask("existing-saved", "已有保存移动", {
-        targetRef: "coordinate:coordinate-1",
-    }, "URGENT", "NONE"),
-    {
-        id: "complex-task",
-        name: " 移动到坐标 ",
-        priority: "NORMAL",
-        steps: [{
-            kind: "ACTION",
-            moduleId: "ASSERT_NO_MANAGED_ITEMS",
-            parameters: {},
-            steps: [],
-            otherwise: [],
-        }],
-    },
-    {
-        id: "complex-task-2",
-        name: "移动到坐标 2",
-        priority: "NORMAL",
-        steps: [{
-            kind: "ACTION",
-            moduleId: "ASSERT_NO_MANAGED_ITEMS",
-            parameters: {},
-            steps: [],
-            otherwise: [],
-        }],
-    },
-];
-
-const Stowling = {
-    clone: (value) => JSON.parse(JSON.stringify(value)),
-    element: (tagName, className = "", text = "") => {
-        const element = new FakeElement(tagName);
-        element.className = className;
-        element.textContent = text;
-        return element;
-    },
-    emptyState: (text) => Stowling.element("p", "empty-state", text),
-    formatDate: () => "2026-11-16 00:00",
-    handleError: (error, context) => errors.push(`${context}: ${error}`),
-    showToast: (message) => toasts.push(message),
-    request: async (path, options = {}) => {
-        const method = String(options.method || "GET").toUpperCase();
-        const body = options.body ? JSON.parse(options.body) : null;
-        requests.push({ path, method, body });
-        if (method === "GET") {
-            if (path === "/v1/task-modules") {
-                return { modules: [{ id: "MOVE_TO_COORDINATE", name: "移动到坐标" }] };
-            }
-            if (path === "/v1/task-runs") {
-                const response = runResponses[Math.min(runReads, runResponses.length - 1)];
-                runReads += 1;
-                return response;
-            }
-            if (path === "/v1/tasks") {
-                return { revision, tasks: tasksState };
-            }
-            if (path === "/v1/regions") {
-                return { regions: [] };
-            }
-            if (path === "/v1/coordinates") {
-                return {
-                    revision,
-                    coordinates: [{
-                        id: "coordinate-1",
-                        name: "保存点",
-                        x: 10,
-                        y: 64,
-                        z: 20,
-                    }],
-                };
-            }
-            throw new Error(`unexpected ${method} request ${path}`);
-        }
-        if (method === "POST" && path === "/v1/tasks") {
-            taskSequence += 1;
-            const taskId = `server-created-id-${taskSequence}`;
-            revision = `rev-${revision.slice(4) ? Number(revision.slice(4)) + 1 : 2}`;
-            tasksState = [...tasksState, { id: taskId, name: `移动到坐标 ${taskSequence}`, ...body }];
-            return { taskId, revision, tasks: tasksState };
-        }
-        if (method === "PUT" && path.startsWith("/v1/tasks/")) {
-            const taskId = decodeURIComponent(path.split("/").pop());
-            revision = `rev-${revision.slice(4) ? Number(revision.slice(4)) + 1 : 2}`;
-            tasksState = tasksState.map((task) => task.id === taskId
-                ? { ...task, ...body } : task);
-            return { revision, tasks: tasksState };
-        }
-        if (method === "POST" && path.endsWith("/runs")) {
-            if (failNextRun) {
-                failNextRun = false;
-                throw new Error("queue unavailable");
-            }
-            return { state: "QUEUED" };
-        }
-        throw new Error(`unexpected ${method} request ${path}`);
-    },
-    onConnected: (handler) => connectedHandlers.push(handler),
-    isConnected: () => true,
-    mountPage: () => {},
-};
-
-global.document = document;
-global.window = {
-    Stowling,
-    StowlingSettings: {reveal: (element, expanded) => { element.hidden = !expanded; }},
-    StowlingTaskCleanupSettings: {create: () => ({
-        resources() {},
-        set() {},
-        read() { return {}; },
-    })},
-    setInterval: () => 1,
-    addEventListener: () => {},
-    setTimeout: (callback) => { pendingAutosave = callback; return 1; },
-    clearTimeout: () => { pendingAutosave = undefined; },
-    confirm: (message) => {
-        confirmRequests.push(message);
-        return confirmResult;
-    },
-};
-
-for (const path of [
-    taskModelPath,
-    coordinateModelPath,
-    moveModelPath,
-    monitorPath,
-    autosavePath,
-    tasksPath,
-]) {
-    vm.runInThisContext(fs.readFileSync(path, "utf8"), { filename: path });
-}
-
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const settle = async () => {
-    for (let index = 0; index < 6; index += 1) {
-        await tick();
-    }
-};
-const node = (id) => document.querySelector(`#${id}`);
-const fill = (x, y, z, priority = "NORMAL") => {
-    node("move-target-x").value = x;
-    node("move-target-y").value = y;
-    node("move-target-z").value = z;
-    node("move-priority").value = priority;
-    node("move-task-form").dispatchEvent("input");
-};
-const sourceButton = (source) => sourceButtons.find(
-    (button) => button.dataset.moveSource === source
-);
-/**
- * @returns {FakeElement[]}
- */
-const savedRows = () => node("move-task-list")
-    .querySelectorAll("article.move-saved-task");
-/**
- * @param {string} taskId
- * @returns {FakeElement | undefined}
- */
-const savedRow = (taskId) => savedRows()
-    .find((row) => row.dataset.taskId === taskId);
-/**
- * @param {string} taskId
- * @returns {FakeElement | undefined}
- */
-const savedSummary = (taskId) => savedRow(taskId)
-    ?.querySelector("button.move-task-summary");
-/**
- * @param {string} taskId
- * @returns {FakeElement | undefined}
- */
-const savedRun = (taskId) => savedRow(taskId)?.querySelector("button.move-task-run");
-/**
- * @param {string} taskId
- * @returns {FakeElement | undefined}
- */
-const savedBody = (taskId) => savedRow(taskId)
-    ?.querySelector(".move-task-body");
-/**
- * @returns {string[]}
- */
-const savedIds = () => savedRows().map(
-    (row) => row.dataset.taskId || row.querySelector(".move-task-summary")?.dataset.taskId
-);
-/**
- * @param {string} taskId
- * @returns {object}
- */
-const disclosure = (taskId) => {
-    const summary = savedSummary(taskId);
-    const body = savedBody(taskId);
-    return {
-        expanded: summary?.getAttribute("aria-expanded"),
-        controls: summary?.getAttribute("aria-controls"),
-        bodyId: body?.id,
-        hidden: body?.hidden,
-        formInside: body?.children.includes(node("move-task-form")),
-    };
-};
-const moveButton = savedSummary;
-
-(async () => {
-    for (const handler of connectedHandlers) {
-        await handler();
-    }
-    await settle();
-
-    const initialRequests = requests.map((entry) => `${entry.method} ${entry.path}`);
-    const initialQueueText = node("task-queue-list").textContent;
-    const initialListIds = savedIds();
-    const initialDisclosures = Object.fromEntries(savedRows().map((row) => [
-        row.dataset.taskId,
-        disclosure(row.dataset.taskId),
-    ]));
-    const initialFormHidden = node("move-task-form").hidden;
-    const initialDraftHidden = node("move-task-draft").hidden;
-    const initialPlaceholderHidden = node("move-task-placeholder").hidden;
-    const initialCount = node("move-task-count").textContent;
-
-    const confirmBeforeTaskToggle = confirmRequests.length;
-    moveButton("existing-manual").click();
-    const manualExpanded = {
-        disclosure: disclosure("existing-manual"),
-        savedDisclosure: disclosure("existing-saved"),
-        formHidden: node("move-task-form").hidden,
-        summaryText: savedSummary("existing-manual").textContent,
-        focused: savedSummary("existing-manual").focused,
-        confirmDelta: confirmRequests.length - confirmBeforeTaskToggle,
-    };
-
-    node("move-target-x").value = "777";
-    node("move-task-form").dispatchEvent("input");
-    const confirmBeforeSameTaskToggle = confirmRequests.length;
-    moveButton("existing-manual").click();
-    const manualCollapsedDirty = {
-        disclosure: disclosure("existing-manual"),
-        formHidden: node("move-task-form").hidden,
-        x: node("move-target-x").value,
-    };
-    moveButton("existing-manual").click();
-    const manualReexpandedDirty = {
-        disclosure: disclosure("existing-manual"),
-        formHidden: node("move-task-form").hidden,
-        x: node("move-target-x").value,
-    };
-    const sameTaskConfirmDelta = confirmRequests.length - confirmBeforeSameTaskToggle;
-
-    confirmResult = false;
-    const confirmBeforeBlockedSwitch = confirmRequests.length;
-    moveButton("existing-saved").click();
-    const blockedDirtySwitch = {
-        manual: disclosure("existing-manual"),
-        saved: disclosure("existing-saved"),
-        x: node("move-target-x").value,
-        confirmDelta: confirmRequests.length - confirmBeforeBlockedSwitch,
-    };
-    confirmResult = true;
-    moveButton("existing-saved").click();
-    const acceptedDirtySwitch = {
-        manual: disclosure("existing-manual"),
-        saved: disclosure("existing-saved"),
-        formInside: disclosure("existing-saved").formInside,
-    };
-
-    const requestsBeforeNewDraft = requests.length;
-    node("new-move-task").click();
-    const newDraft = {
-        cardHidden: node("move-task-draft").hidden,
-        expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
-        bodyHidden: node("move-draft-body").hidden,
-        formHidden: node("move-task-form").hidden,
-        formInside: node("move-draft-body").children.includes(node("move-task-form")),
-        focused: node("toggle-move-draft").focused,
-        placeholderHidden: node("move-task-placeholder").hidden,
-        count: node("move-task-count").textContent,
-    };
-    fill("+1", "-2", "3", "URGENT");
-    const confirmBeforeDraftToggle = confirmRequests.length;
-    node("toggle-move-draft").click();
-    const newDraftCollapsed = {
-        expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
-        bodyHidden: node("move-draft-body").hidden,
-        formHidden: node("move-task-form").hidden,
-        x: node("move-target-x").value,
-    };
-    node("toggle-move-draft").click();
-    const newDraftReexpanded = {
-        expanded: node("toggle-move-draft").getAttribute("aria-expanded"),
-        bodyHidden: node("move-draft-body").hidden,
-        formHidden: node("move-task-form").hidden,
-        x: node("move-target-x").value,
-    };
-    const newDraftToggleConfirmDelta = confirmRequests.length - confirmBeforeDraftToggle;
-    const requestsBeforeFirstSave = requests.length;
-    pendingAutosave();
-    await settle();
-    const createdWrite = requests.find(
-        (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-    );
-    const savedOnly = !requests.some((entry) => entry.path.endsWith("/runs"));
-    savedRun("server-created-id-1").click();
-    await settle();
-    const createRun = requests.find(
-        (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
-    );
-    const createdListIds = savedIds();
-    const createdFormX = node("move-target-x").value;
-    const createdDisclosure = disclosure("server-created-id-1");
-    const createdDraftHidden = node("move-task-draft").hidden;
-    const createdFormHidden = node("move-task-form").hidden;
-    const createdCount = node("move-task-count").textContent;
-
-    node("new-move-task").click();
-    fill("11", "65", "21", "NORMAL");
-    node("move-saved-coordinate").value = "coordinate-1";
-    node("move-task-form").dispatchEvent("input");
-    sourceButton("saved").click();
-    const savedCoordinateAfterSwitch = node("move-saved-coordinate").value;
-    sourceButton("manual").click();
-    const manualAfterSwitch = {
-        x: node("move-target-x").value,
-        y: node("move-target-y").value,
-        z: node("move-target-z").value,
-        source: sourceButton("manual").getAttribute("aria-pressed"),
-    };
-    sourceButton("saved").click();
-    const savedAfterSwitch = {
-        coordinateId: node("move-saved-coordinate").value,
-        source: sourceButton("saved").getAttribute("aria-pressed"),
-    };
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    const savedWrite = requests.filter(
-        (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-    ).at(-1);
-
-    node("new-move-task").click();
-    fill("bad", "", "1.5", "NORMAL");
-    const writesBeforeInvalid = requests.filter(
-        (entry) => entry.method !== "GET"
-    ).length;
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    const invalidMessage = node("move-task-message").textContent;
-    const writesAfterInvalid = requests.filter(
-        (entry) => entry.method !== "GET"
-    ).length;
-
-    moveButton("existing-saved").click();
-    node("move-priority").value = "URGENT";
-    node("move-task-form").dispatchEvent("input");
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    const putWrite = requests.find((entry) => entry.method === "PUT");
-
-    node("new-move-task").click();
-    fill("7", "8", "9", "BACKGROUND");
-    const taskWritesBeforeQueueFailure = requests.filter(
-        (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-    ).length;
-    node("move-task-form").dispatchEvent("submit");
-    await settle();
-    failNextRun = true;
-    savedRun("server-created-id-3").click();
-    await settle();
-    const queueFailureDisclosure = disclosure("server-created-id-3");
-    const queueFailureFormHidden = node("move-task-form").hidden;
-    const taskWritesAfterQueueFailure = requests.filter(
-        (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-    ).length;
-    const runRequestsBeforeRetry = requests.filter(
-        (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
-    ).length;
-    savedRun("server-created-id-3").click();
-    await settle();
-    const taskWritesAfterQueueRetry = requests.filter(
-        (entry) => entry.method === "POST" && entry.path === "/v1/tasks"
-    ).length;
-    const runRequestsAfterRetry = requests.filter(
-        (entry) => entry.method === "POST" && entry.path.endsWith("/runs")
-    ).length;
-    const queueRetryMessage = toasts.at(-1);
-    const queueRetryDisclosure = disclosure("server-created-id-3");
-    const queueRetryFormHidden = node("move-task-form").hidden;
-
-    moveButton("existing-manual").click();
-    const cleanSourceTask = tasksState.find((task) => task.id === "existing-manual");
-    cleanSourceTask.steps[0].parameters.x = "30";
-    revision = "rev-move-refresh";
-    node("refresh-move-tasks").click();
-    await settle();
-    const refreshedCleanX = node("move-target-x").value;
-    const refreshedCleanDisclosure = {
-        manual: disclosure("existing-manual"),
-        saved: disclosure("existing-saved"),
-        created: disclosure("server-created-id-1"),
-    };
-    const refreshedCleanExpandedIds = savedRows()
-        .filter((row) => row.querySelector("button.move-task-summary")
-            .getAttribute("aria-expanded") === "true")
-        .map((row) => row.dataset.taskId);
-    const refreshedCleanDraftHidden = node("move-task-draft").hidden;
-
-    moveButton("existing-manual").click();
-    revision = "rev-move-refresh-collapsed";
-    node("refresh-move-tasks").click();
-    await settle();
-    const refreshedCollapsedDisclosure = disclosure("existing-manual");
-    const refreshedCollapsedExpandedIds = savedRows()
-        .filter((row) => row.querySelector("button.move-task-summary")
-            .getAttribute("aria-expanded") === "true")
-        .map((row) => row.dataset.taskId);
-    const refreshedCollapsedFormHidden = node("move-task-form").hidden;
-    moveButton("existing-manual").click();
-
-    node("move-target-x").value = "42";
-    node("move-task-form").dispatchEvent("input");
-    cleanSourceTask.steps[0].parameters.x = "99";
-    revision = "rev-move-refresh-dirty";
-    node("refresh-move-tasks").click();
-    await settle();
-    const refreshedDirtyX = node("move-target-x").value;
-    const refreshedDirtyMessage = node("move-task-message").textContent;
-    const refreshedDirtyDisclosure = disclosure("existing-manual");
-    const refreshedDirtyExpandedIds = savedRows()
-        .filter((row) => row.querySelector("button.move-task-summary")
-            .getAttribute("aria-expanded") === "true")
-        .map((row) => row.dataset.taskId);
-
-    const requestCountBeforeRefresh = requests.length;
-    node("refresh-runs-button").click();
-    await settle();
-    const refreshRequests = requests.slice(requestCountBeforeRefresh)
-        .map((entry) => `${entry.method} ${entry.path}`);
-
-    const finalListIds = savedIds();
-    const writeRequests = requests.filter((entry) => entry.method !== "GET")
-        .map((entry) => `${entry.method} ${entry.path}`);
-    process.stdout.write(JSON.stringify({
-        initialRequests,
-        initialQueueText,
-        initialListIds,
-        initialDisclosures,
-        initialFormHidden,
-        initialDraftHidden,
-        initialPlaceholderHidden,
-        initialCount,
-        manualExpanded,
-        manualCollapsedDirty,
-        manualReexpandedDirty,
-        sameTaskConfirmDelta,
-        blockedDirtySwitch,
-        acceptedDirtySwitch,
-        requestsBeforeNewDraft,
-        newDraft,
-        newDraftCollapsed,
-        newDraftReexpanded,
-        newDraftToggleConfirmDelta,
-        requestsBeforeFirstSave,
-        createdWrite,
-        savedOnly,
-        createRun,
-        createdListIds,
-        createdFormX,
-        createdDisclosure,
-        createdDraftHidden,
-        createdFormHidden,
-        createdCount,
-        savedCoordinateAfterSwitch,
-        manualAfterSwitch,
-        savedAfterSwitch,
-        savedWrite,
-        invalidMessage,
-        writesBeforeInvalid,
-        writesAfterInvalid,
-        putWrite,
-        taskWritesBeforeQueueFailure,
-        taskWritesAfterQueueFailure,
-        taskWritesAfterQueueRetry,
-        runRequestsBeforeRetry,
-        runRequestsAfterRetry,
-        queueFailureDisclosure,
-        queueFailureFormHidden,
-        queueRetryMessage,
-        queueRetryDisclosure,
-        queueRetryFormHidden,
-        refreshedCleanX,
-        refreshedCleanDisclosure,
-        refreshedCleanExpandedIds,
-        refreshedCleanDraftHidden,
-        refreshedCollapsedDisclosure,
-        refreshedCollapsedExpandedIds,
-        refreshedCollapsedFormHidden,
-        refreshedDirtyX,
-        refreshedDirtyMessage,
-        refreshedDirtyDisclosure,
-        refreshedDirtyExpandedIds,
-        writeRequests,
-        refreshRequests,
-        finalListIds,
-        errors,
-    }));
-})().catch((error) => {
-    process.stderr.write(error.stack || String(error));
-    process.exitCode = 1;
-});
-"""
+            };
+            document.querySelector("#workspace").setAttribute("aria-hidden", "false");
+            document.querySelector("#auth-shell").hidden = true;
+            window.setInterval = () => 0;
+        """)
+        for name in (
+            "settings-ui.js", "task-select-ui.js", "v2-task-model.js", "coordinate-model.js",
+            "move-task-model.js", "task-monitor-model.js", "task-cleanup-settings.js",
+            "task-autosave.js", "tasks.js",
+        ):
+            page.add_script_tag(content=read(name))
+        page.evaluate("async () => {for (const handler of backend.handlers) await handler();}")
+        yield page
+        browser.close()
 
 
-def _run_page_scenario() -> dict[str, Any]:
-    if NODE is None:
-        raise RuntimeError("Node.js is unavailable")
-    completed = subprocess.run(
-        [
-            NODE,
-            "-e",
-            PAGE_RUNNER,
-            str(TASKS_HTML),
-            str(TASKS_SCRIPT),
-            str(TASK_MODEL),
-            str(COORDINATE_MODEL),
-            str(MOVE_MODEL),
-            str(MONITOR_MODEL),
-            str(WEB / "task-autosave.js"),
-        ],
-        check=True,
-        capture_output=True,
-        encoding="utf-8",
-        text=True,
-    )
-    return json.loads(completed.stdout)
+def test_move_header_uses_template_order_and_separate_controls(move_page: Any) -> None:
+    page = move_page
+    card = page.locator(".coordinate-task-module")
+    assert card.locator(".pickup-task-title").inner_text() == "移动到坐标"
+    assert card.locator(".pickup-task-title svg").count() == 1
+    assert card.locator(".move-task-summary, .move-task-overview").count() == 0
+    assert card.locator(".pickup-task-header").evaluate(
+        "node => [...node.children].map(child => child.tagName)"
+    ) == ["H3", "BUTTON", "INPUT"]
+    assert not card.get_by_role("switch").is_checked()
+    assert card.locator(".pickup-task-body").is_hidden()
+    card.get_by_role("button", name="展开任务设置").click()
+    page.wait_for_function("!document.querySelector('#move-task-fields').disabled")
+    assert page.locator("#move-task-form").is_visible()
+    card.get_by_role("button", name="收起任务设置").click()
+    page.wait_for_function("document.querySelector('.coordinate-task-module .pickup-task-body')"
+                           ".hidden")
+    assert not card.get_by_role("switch").is_checked()
+    assert not page.evaluate("backend.requests.some(request => request.path.endsWith('/runs')"
+                             " && request.method === 'POST')")
 
 
-@pytest.fixture(scope="module")
-def page_scenario() -> dict[str, Any]:
-    return _run_page_scenario()
+def test_move_run_switch_preserves_open_configuration_and_reports_failures(move_page: Any) -> None:
+    page = move_page
+    card = page.locator(".coordinate-task-module")
+    card.get_by_role("button", name="展开任务设置").click()
+    page.evaluate("backend.holdStart = true")
+    card.get_by_role("switch").check()
+    page.wait_for_function("Boolean(backend.release)")
+    assert not page.locator("#move-task-fields").is_disabled()
+    assert page.locator("#move-task-form").is_visible()
+    assert page.locator("#move-saved-coordinate").input_value() == "home"
+    page.evaluate("backend.release()")
+    page.wait_for_function("document.querySelector('.coordinate-task-module input')"
+                           ".getAttribute('aria-busy') === 'false'")
+    assert card.get_by_role("switch").is_checked()
+    card.get_by_role("switch").uncheck()
+    page.wait_for_function("backend.runs.length === 0")
+    page.wait_for_function("!document.querySelector('.coordinate-task-module input').disabled")
+    assert page.locator("#move-task-form").is_visible()
+    assert not page.locator("#move-task-fields").is_disabled()
+    assert page.evaluate("backend.requests.some(request => "
+                         "request.path === '/v1/task-runs/run%2F1/cancel')")
+    page.evaluate("backend.holdStart = false; backend.failStart = true")
+    card.get_by_role("switch").check()
+    page.wait_for_function("backend.errors.includes('start failed')")
+    page.wait_for_function("!document.querySelector('.coordinate-task-module input').checked")
+    assert page.locator("#move-task-form").is_visible()
+    assert page.locator("#move-saved-coordinate").input_value() == "home"
 
 
-@pytest.mark.skipif(
-    NODE is None,
-    reason="Node.js is required to exercise the fixed move task page",
-)
-def test_fixed_move_page_save_run_switch_invalid_put_and_queue_retry(
-    page_scenario: dict[str, Any],
+def test_move_stop_cancels_its_active_runs_and_keeps_dirty_settings(move_page: Any) -> None:
+    page = move_page
+    page.evaluate("""() => {
+        backend.runs = [
+            {runId:'active', taskId:'move/1', state:'RUNNING', priority:'NORMAL'},
+            {runId:'queued', taskId:'move/1', state:'QUEUED', priority:'NORMAL'},
+            {runId:'done', taskId:'move/1', state:'SUCCEEDED', priority:'NORMAL'},
+            {runId:'other', taskId:'other', state:'RUNNING', priority:'NORMAL'}];
+        document.dispatchEvent(new Event('stowling:monitor-refresh'));
+    }""")
+    card = page.locator(".coordinate-task-module")
+    page.wait_for_function("document.querySelector('.coordinate-task-module input').checked")
+    card.get_by_role("button", name="展开任务设置").click()
+    page.locator("#move-priority").evaluate("""select => {
+        select.value = 'URGENT';
+        select.dispatchEvent(new Event('input', {bubbles:true}));
+    }""")
+    card.get_by_role("switch").uncheck()
+    page.wait_for_function("backend.requests.filter(r => r.path.endsWith('/cancel')).length === 2")
+    assert page.evaluate("backend.requests.filter(r => r.path.endsWith('/cancel'))"
+                         ".map(r => r.path)") == [
+        "/v1/task-runs/active/cancel", "/v1/task-runs/queued/cancel",
+    ]
+    assert page.locator("#move-priority").input_value() == "URGENT"
+    assert page.locator("#move-task-form").is_visible()
+
+
+def test_move_autosave_preserves_coordinate_and_cleanup_fields(move_page: Any) -> None:
+    page = move_page
+    page.locator(".coordinate-task-module .pickup-task-expand").click()
+    form = page.locator("#move-task-form")
+    target = form.locator("#move-saved-target .task-select-trigger")
+    target.click()
+    menu = page.locator(".task-select-menu:visible")
+    assert menu.get_by_role("option").count() == 2
+    menu.get_by_role("option", name="矿区", exact=False).click()
+    page.wait_for_function("backend.requests.some(r => r.method === 'PUT')")
+    task = page.evaluate("backend.tasks[0]")
+    assert task["steps"][0]["parameters"] == {"targetRef": "coordinate:mine"}
+    assert task["cleanupPolicy"]["destinationRef"] == "coordinate:home"
+    assert task["cleanupPolicy"]["resumeMode"] == "CONTINUE"
+    page.locator(".coordinate-task-module .pickup-task-expand").click()
+    page.locator(".coordinate-task-module .pickup-task-expand").click()
+    assert page.locator("#move-saved-coordinate").input_value() == "mine"
+    page.locator("#move-cleanup-settings summary").click()
+    assert page.locator("#move-cleanup-settings .settings-detail").is_visible()
+    assert page.locator("#move-cleanup-settings select").count() == 2
+
+
+def test_move_new_draft_keeps_empty_target_until_selection(move_page: Any) -> None:
+    page = move_page
+    page.locator("#new-move-task").click()
+    assert page.locator("#move-task-draft").is_visible()
+    assert page.locator("#move-draft-run").is_disabled()
+    assert page.locator("#move-saved-coordinate").input_value() == ""
+    target = page.locator("#move-saved-target .task-select-trigger")
+    target.click()
+    page.locator(".task-select-menu:visible").get_by_role("option", name="仓库").click()
+    page.wait_for_function("backend.tasks.length === 2")
+    page.wait_for_function("document.querySelector('#move-task-draft').hidden")
+    created = page.locator(".coordinate-task-module[data-task-id='created']")
+    assert created.locator("#move-task-form").is_visible()
+    assert created.get_by_role("switch").is_enabled()
+    assert not created.get_by_role("switch").is_checked()
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width", [390, 1440])
+def test_move_template_layout_keyboard_and_reveal(
+    move_page: Any, theme: str, width: int,
 ) -> None:
-    result = page_scenario
-
-    assert len(result["errors"]) == 1
-    assert result["errors"][0].startswith("加入队列失败:")
-    initial = result["initialRequests"]
-    for expected in (
-        "GET /v1/task-modules",
-        "GET /v1/task-runs",
-        "GET /v1/tasks",
-        "GET /v1/coordinates",
-    ):
-        assert initial.count(expected) == 1
-    assert result["initialListIds"] == ["existing-manual", "existing-saved"]
-    assert "初始任务" in result["initialQueueText"]
-
-    assert result["createdWrite"]["method"] == "POST"
-    assert result["savedOnly"] is True
-    assert "id" not in result["createdWrite"]["body"]
-    assert "name" not in result["createdWrite"]["body"]
-    assert result["createdWrite"]["body"]["steps"][0]["parameters"] == {
-        "x": "+1",
-        "y": "-2",
-        "z": "3",
-    }
-    assert result["createRun"]["path"] == "/v1/tasks/server-created-id-1/runs"
-    assert result["createRun"]["body"] == {}
-    assert "server-created-id-1" in result["createdListIds"]
-    assert result["createdFormX"] == "1"
-    assert "complex-task" not in result["createdListIds"]
-
-    assert result["savedCoordinateAfterSwitch"] == "coordinate-1"
-    assert result["manualAfterSwitch"] == {
-        "x": "11",
-        "y": "65",
-        "z": "21",
-        "source": "true",
-    }
-    assert result["savedAfterSwitch"] == {
-        "coordinateId": "coordinate-1",
-        "source": "true",
-    }
-    assert result["savedWrite"]["body"]["steps"][0]["parameters"] == {
-        "targetRef": "coordinate:coordinate-1",
-    }
-
-    assert result["writesBeforeInvalid"] == result["writesAfterInvalid"]
-    assert "X 坐标需为整数" in result["invalidMessage"]
-    assert "请填写 Y 坐标" in result["invalidMessage"]
-    assert "Z 坐标需为整数" in result["invalidMessage"]
-
-    assert result["putWrite"]["method"] == "PUT"
-    assert result["putWrite"]["path"] == "/v1/tasks/existing-saved"
-    assert result["putWrite"]["body"]["revision"] == "rev-3"
-    assert "name" not in result["putWrite"]["body"]
-
-    assert (
-        result["taskWritesAfterQueueFailure"]
-        == result["taskWritesBeforeQueueFailure"] + 1
-    )
-    assert result["taskWritesAfterQueueRetry"] == result["taskWritesAfterQueueFailure"]
-    assert result["runRequestsAfterRetry"] == result["runRequestsBeforeRetry"] + 1
-    assert "任务已加入队列" in result["queueRetryMessage"]
-    assert result["refreshedCleanX"] == "30"
-    assert result["refreshedDirtyX"] == "42"
-    assert "未保存修改" in result["refreshedDirtyMessage"]
-    assert result["refreshRequests"] == ["GET /v1/task-runs"]
-    assert "complex-task" not in result["finalListIds"]
+    page = move_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    card = page.locator(".coordinate-task-module")
+    card.locator(".pickup-task-expand").click()
+    page.wait_for_function("document.querySelector('#move-task-form').getAnimations()"
+                           ".length === 0")
+    target = page.locator("#move-saved-target .task-select-trigger")
+    target.focus()
+    target.press("ArrowDown")
+    menu = page.locator(".task-select-menu:visible")
+    assert menu.is_visible()
+    assert menu.get_by_role("option", name="仓库").get_attribute("aria-selected") == "true"
+    menu.get_by_role("option", name="仓库").press("ArrowDown")
+    menu.get_by_role("option", name="矿区").press("Escape")
+    assert target.evaluate("node => node === document.activeElement")
+    assert page.locator("#move-saved-coordinate").input_value() == "home"
+    assert target.bounding_box()["height"] == 42
+    assert card.get_by_role("switch").bounding_box()["width"] == 56
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    card.locator(".pickup-task-expand").click()
+    card.locator(".pickup-task-expand").click()
+    page.wait_for_function("""() => {
+        const body = document.querySelector('.coordinate-task-module .pickup-task-body');
+        return !body.hidden && body.getAnimations().length === 0;
+    }""")
+    assert page.locator("#move-task-form").is_visible()
 
 
-@pytest.mark.skipif(
-    NODE is None,
-    reason="Node.js is required to exercise saved task disclosure",
-)
-def test_saved_tasks_start_collapsed_and_preserve_disclosure_and_dirty_input(
-    page_scenario: dict[str, Any],
-) -> None:
-    result = page_scenario
+def test_move_template_respects_reduced_motion(move_page: Any) -> None:
+    page = move_page
+    page.emulate_media(reduced_motion="reduce")
+    toggle = page.locator(".coordinate-task-module .pickup-task-expand")
+    toggle.click()
+    body = page.locator(".coordinate-task-module .pickup-task-body")
+    assert body.is_visible()
+    assert body.evaluate("node => node.getAnimations().length") == 0
+    toggle.click()
+    assert body.is_hidden()
 
-    assert result["initialCount"] == "2"
-    assert result["initialFormHidden"] is True
-    assert result["initialDraftHidden"] is True
-    assert result["initialPlaceholderHidden"] is True
-    for state in result["initialDisclosures"].values():
-        assert state["expanded"] == "false"
-        assert state["hidden"] is True
-        assert state["formInside"] is False
-        assert state["controls"] == state["bodyId"]
 
-    expanded = result["manualExpanded"]
-    assert expanded["disclosure"]["expanded"] == "true"
-    assert expanded["disclosure"]["hidden"] is False
-    assert expanded["disclosure"]["formInside"] is True
-    assert expanded["savedDisclosure"]["expanded"] == "false"
-    assert expanded["savedDisclosure"]["hidden"] is True
-    assert expanded["formHidden"] is False
-    assert expanded["focused"] is True
-    assert expanded["confirmDelta"] == 0
-    for text in ("已有手动移动", "3, 4, 5", "普通"):
-        assert text in expanded["summaryText"]
-
-    collapsed = result["manualCollapsedDirty"]
-    assert collapsed["disclosure"]["expanded"] == "false"
-    assert collapsed["disclosure"]["hidden"] is True
-    assert collapsed["formHidden"] is True
-    assert collapsed["x"] == "777"
-
-    reexpanded = result["manualReexpandedDirty"]
-    assert reexpanded["disclosure"]["expanded"] == "true"
-    assert reexpanded["disclosure"]["hidden"] is False
-    assert reexpanded["formHidden"] is False
-    assert reexpanded["x"] == "777"
-    assert result["sameTaskConfirmDelta"] == 0
-
-    blocked = result["blockedDirtySwitch"]
-    assert blocked["confirmDelta"] == 1
-    assert blocked["manual"]["expanded"] == "true"
-    assert blocked["saved"]["expanded"] == "false"
-    assert blocked["x"] == "777"
-
-    accepted = result["acceptedDirtySwitch"]
-    assert accepted["manual"]["expanded"] == "false"
-    assert accepted["manual"]["hidden"] is True
-    assert accepted["saved"]["expanded"] == "true"
-    assert accepted["saved"]["hidden"] is False
-    assert accepted["formInside"] is True
-
-    assert result["requestsBeforeNewDraft"] == result["requestsBeforeFirstSave"]
-    draft = result["newDraft"]
-    assert draft["cardHidden"] is False
-    assert draft["expanded"] == "true"
-    assert draft["bodyHidden"] is False
-    assert draft["formHidden"] is False
-    assert draft["formInside"] is True
-    assert draft["focused"] is True
-    assert draft["placeholderHidden"] is True
-    assert draft["count"] == "2"
-
-    collapsed_draft = result["newDraftCollapsed"]
-    assert collapsed_draft["expanded"] == "false"
-    assert collapsed_draft["bodyHidden"] is True
-    assert collapsed_draft["formHidden"] is True
-    assert collapsed_draft["x"] == "+1"
-    reexpanded_draft = result["newDraftReexpanded"]
-    assert reexpanded_draft["expanded"] == "true"
-    assert reexpanded_draft["bodyHidden"] is False
-    assert reexpanded_draft["formHidden"] is False
-    assert reexpanded_draft["x"] == "+1"
-    assert result["newDraftToggleConfirmDelta"] == 0
-
-    created = result["createdDisclosure"]
-    assert created["expanded"] == "true"
-    assert created["hidden"] is False
-    assert created["formInside"] is True
-    assert created["controls"] == created["bodyId"]
-    assert result["createdDraftHidden"] is True
-    assert result["createdFormHidden"] is False
-    assert result["createdCount"] == "3"
-    assert "server-created-id-1" in result["createdListIds"]
-
-    for state in (
-        result["queueFailureDisclosure"],
-        result["queueRetryDisclosure"],
-    ):
-        assert state["expanded"] == "true"
-        assert state["hidden"] is False
-        assert state["formInside"] is True
-    assert result["queueFailureFormHidden"] is False
-    assert result["queueRetryFormHidden"] is False
-
-    clean_refresh = result["refreshedCleanDisclosure"]
-    assert clean_refresh["manual"]["expanded"] == "true"
-    assert clean_refresh["manual"]["hidden"] is False
-    assert clean_refresh["saved"]["expanded"] == "false"
-    assert clean_refresh["saved"]["hidden"] is True
-    assert clean_refresh["created"]["expanded"] == "false"
-    assert clean_refresh["created"]["hidden"] is True
-    assert result["refreshedCleanExpandedIds"] == ["existing-manual"]
-    assert result["refreshedCleanDraftHidden"] is True
-
-    collapsed_refresh = result["refreshedCollapsedDisclosure"]
-    assert collapsed_refresh["expanded"] == "false"
-    assert collapsed_refresh["hidden"] is True
-    assert collapsed_refresh["formInside"] is True
-    assert result["refreshedCollapsedExpandedIds"] == []
-    assert result["refreshedCollapsedFormHidden"] is True
-
-    assert result["refreshedDirtyX"] == "42"
-    assert result["refreshedDirtyMessage"] == "未保存修改"
-    assert result["refreshedDirtyDisclosure"]["expanded"] == "true"
-    assert result["refreshedDirtyDisclosure"]["hidden"] is False
-    assert result["refreshedDirtyExpandedIds"] == ["existing-manual"]

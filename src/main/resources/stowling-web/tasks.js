@@ -37,7 +37,8 @@
         moveResourcesReady: false,
         moveLoading: false,
         moveBusy: false,
-        moveDirty: false
+        moveDirty: false,
+        movePendingRuns: new Map()
     };
 
     const elements = {
@@ -48,12 +49,6 @@
         moveDraftBody: document.querySelector("#move-draft-body"),
         moveCount: document.querySelector("#move-task-count"),
         movePlaceholder: document.querySelector("#move-task-placeholder"),
-        moveSources: [...document.querySelectorAll("[data-move-source]")],
-        moveManual: document.querySelector("#move-manual-target"),
-        moveSaved: document.querySelector("#move-saved-target"),
-        moveX: document.querySelector("#move-target-x"),
-        moveY: document.querySelector("#move-target-y"),
-        moveZ: document.querySelector("#move-target-z"),
         moveCoordinate: document.querySelector("#move-saved-coordinate"),
         moveNote: document.querySelector("#move-target-note"),
         movePriority: document.querySelector("#move-priority"),
@@ -78,6 +73,12 @@
     };
 
     const moveRows = new Map();
+    const moveSelect = window.StowlingTaskSelect?.create(elements.moveForm);
+    for (const content of elements.moveForm.querySelectorAll(".settings-detail")) {
+        const inner = Stowling.element("div", "task-settings-inner");
+        inner.append(...content.childNodes);
+        content.append(inner);
+    }
     const moveSave = Autosave.create(elements.moveForm, saveMoveTask,
         () => state.moveBusy || state.moveLoading);
 
@@ -169,49 +170,53 @@
         elements.moveList.replaceChildren();
         moveRows.clear();
         for (const task of state.moveTasks) {
-            const draft = Move.draftFromTask(task);
-            const card = Stowling.element("article", "move-saved-task");
+            const card = Stowling.element("article", "pickup-task-module coordinate-task-module");
             card.dataset.taskId = task.id;
-            const button = Stowling.element("button", "move-task-summary");
+            const button = Stowling.element("button", "pickup-task-expand");
             button.type = "button";
             button.dataset.taskId = task.id;
-            const body = Stowling.element("div", "move-task-body");
+            const body = Stowling.element("div", "pickup-task-body");
             body.id = `move-task-body-${task.id}`;
+            void window.StowlingSettings.reveal(body, false);
             button.setAttribute("aria-controls", body.id);
-            const kind = Stowling.element("span", "move-task-kind", "↗");
-            kind.setAttribute("aria-hidden", "true");
-            button.append(kind);
-            const overview = Stowling.element("span", "move-task-overview");
-            overview.append(Stowling.element("strong", "", task.name));
-            const coordinate = state.coordinates.find((point) => point.id === draft.coordinateId);
-            const target = draft.source === "saved"
-                ? (coordinate?.name || "坐标已不存在")
-                : `${draft.x}, ${draft.y}, ${draft.z}`;
-            overview.append(Stowling.element("span", "move-task-target", target));
-            button.append(overview);
-            button.append(Stowling.element(
-                "span", "move-task-priority", Model.priorityLabel(task.priority)
-            ));
-            const status = Stowling.element("span", "move-task-state", "已保存");
-            button.append(status);
-            const chevron = Stowling.element("span", "move-task-chevron", "⌄");
-            chevron.setAttribute("aria-hidden", "true");
-            button.append(chevron);
+            button.append(moveIcon("m9 5 7 7-7 7"));
             button.addEventListener("click", () => selectMoveTask(task));
+            const title = Stowling.element("h3", "pickup-task-title", task.name);
+            title.prepend(moveIcon("m12 3 8 18-8-4-8 4 8-18Z"));
+            const status = Stowling.element("span", "visually-hidden");
+            status.id = `move-task-status-${task.id}`;
+            status.setAttribute("role", "status");
+            status.setAttribute("aria-live", "polite");
             if (state.moveDraft.id === task.id) {
                 body.append(elements.moveForm);
             }
-            const header = Stowling.element("div", "task-card-header");
-            const run = Stowling.element("button", "secondary move-task-run", "加入队列");
-            run.type = "button";
-            run.setAttribute("aria-label", `加入队列：${task.name}`);
-            run.addEventListener("click", () => void queueMoveTask(task.id));
-            header.append(button, run);
-            card.append(header, body);
+            const header = Stowling.element("div", "pickup-task-header");
+            const run = window.StowlingSettings.switchControl(
+                document.createElement("input"), `开始任务：${task.name}`);
+            run.setAttribute("aria-describedby", status.id);
+            run.addEventListener("change", () => void queueMoveTask(task.id, run.checked));
+            header.append(title, button, run);
+            card.append(header, body, status);
             elements.moveList.append(card);
             moveRows.set(task.id, { button, body, status, run });
         }
         updateMoveControls();
+    }
+
+    /** @param {string} path @returns {SVGElement} */
+    function moveIcon(path) {
+        const namespace = "http://www.w3.org/2000/svg";
+        const icon = document.createElementNS(namespace, "svg");
+        for (const [key, value] of Object.entries({width: "18", height: "18",
+            viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+            "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round",
+            "aria-hidden": "true"})) {
+            icon.setAttribute(key, value);
+        }
+        const shape = document.createElementNS(namespace, "path");
+        shape.setAttribute("d", path);
+        icon.append(shape);
+        return icon;
     }
 
     /**
@@ -225,6 +230,8 @@
         elements.moveDraftToggle.setAttribute("aria-expanded", String(
             newDraft && state.moveFormOpen
         ));
+        elements.moveDraftToggle.setAttribute("aria-label", state.moveFormOpen
+            ? "收起移动到坐标设置" : "展开移动到坐标设置");
         elements.moveForm.hidden = false;
         const savedCount = state.moveTasks.length + state.autoTaskCount + state.autoEatTaskCount
             + state.materialTaskCount + state.refreshTaskCount;
@@ -235,9 +242,10 @@
             const selected = state.moveDraft.id === id;
             const expanded = selected && state.moveFormOpen;
             row.button.setAttribute("aria-expanded", String(expanded));
+            row.button.setAttribute("aria-label", `${expanded ? "收起" : "展开"}任务设置`);
             void window.StowlingSettings.reveal(row.body, expanded);
-            row.status.textContent = selected && state.moveDirty ? "未保存修改" : "已保存";
         }
+        moveSelect?.refresh(true);
     }
 
     /**
@@ -293,9 +301,6 @@
     function syncMoveForm() {
         const draft = state.moveDraft;
         cleanup.set(draft.cleanupPolicy || {});
-        elements.moveX.value = draft.x.replace(/^\+/, "");
-        elements.moveY.value = draft.y.replace(/^\+/, "");
-        elements.moveZ.value = draft.z.replace(/^\+/, "");
         elements.movePriority.value = draft.priority;
         renderMoveCoordinates();
         updateMoveTarget();
@@ -309,9 +314,6 @@
         state.moveDraft = {
             ...state.moveDraft,
             priority: elements.movePriority.value,
-            x: elements.moveX.value,
-            y: elements.moveY.value,
-            z: elements.moveZ.value,
             coordinateId: elements.moveCoordinate.value,
             cleanupPolicy: cleanup.read()
         };
@@ -322,17 +324,6 @@
      */
     function updateMoveTarget() {
         state.moveDraft.source = "saved";
-        const manual = state.moveDraft.source === "manual";
-        elements.moveManual.hidden = !manual;
-        elements.moveSaved.hidden = manual;
-        for (const button of elements.moveSources) {
-            button.setAttribute("aria-pressed", String(button.dataset.moveSource
-                === state.moveDraft.source));
-        }
-        if (manual) {
-            elements.moveNote.textContent = "精确到达目标方块；手动坐标在当前维度生效。";
-            return;
-        }
         const coordinate = state.coordinates.find(
             (point) => point.id === state.moveDraft.coordinateId
         );
@@ -359,15 +350,25 @@
         elements.moveDraftToggle.disabled = disabled;
         for (const [id, row] of moveRows) {
             const unsaved = state.moveDraft.id === id && state.moveDirty;
+            const runs = moveTaskRuns(id);
+            const pending = state.movePendingRuns.get(id);
+            const running = runs.length > 0;
             row.button.disabled = disabled;
-            row.run.disabled = disabled || unsaved;
-            row.run.title = unsaved ? "修改保存后可加入队列" : "加入运行队列";
+            row.run.checked = pending ?? running;
+            row.run.disabled = !Stowling.isConnected() || state.moveLoading
+                || !state.moveResourcesReady || pending !== undefined
+                || (!running && (state.moveBusy || unsaved));
+            row.run.setAttribute("aria-busy", String(pending !== undefined));
+            row.run.setAttribute("aria-label", `${running ? "关闭" : "开始"}任务`);
+            row.run.title = unsaved && !running ? "修改保存后可开始任务"
+                : running ? "关闭任务并执行收尾" : "开始任务";
+            row.status.textContent = pending !== undefined
+                ? (pending ? "正在开始任务" : "正在关闭任务")
+                : runs.length ? runStateLabel(runs[0].state) : "未运行";
+            if (unsaved) row.status.textContent += " · 未保存修改";
         }
         elements.moveCoordinate.disabled = state.moveDraft.source !== "saved"
             || state.coordinates.length === 0;
-        for (const input of [elements.moveX, elements.moveY, elements.moveZ]) {
-            input.disabled = state.moveDraft.source !== "manual";
-        }
         elements.removeMove.hidden = !state.moveDraft.id;
         elements.removeMove.disabled = disabled;
         syncMoveDisclosure();
@@ -455,26 +456,47 @@
 
     /**
      * @param {string} id
+     * @returns {Array<object>}
+     */
+    function moveTaskRuns(id) {
+        return Monitor.queueEntries(state.runs, state.queue, [])
+            .filter(entry => entry.taskId === id && entry.run).map(entry => entry.run);
+    }
+
+    /**
+     * @param {string} id
+     * @param {boolean} [enabled]
      * @returns {Promise<void>}
      */
-    async function queueMoveTask(id) {
+    async function queueMoveTask(id, enabled = true) {
         const row = moveRows.get(id);
         if (!row || row.run.disabled || !Stowling.isConnected()) return;
-        state.moveBusy = true;
+        state.movePendingRuns.set(id, enabled);
         updateMoveControls();
         try {
-            const response = await Stowling.request(`/v1/tasks/${encodeURIComponent(id)}/runs`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({})
-            });
-            Stowling.showToast(response?.state === "QUEUED"
-                ? "任务已加入队列" : "任务已开始运行");
+            if (enabled) {
+                const response = await Stowling.request(
+                    `/v1/tasks/${encodeURIComponent(id)}/runs`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({})
+                    });
+                Stowling.showToast(response?.state === "QUEUED"
+                    ? "任务已加入队列" : "任务已开始运行");
+            } else {
+                for (const run of moveTaskRuns(id)) {
+                    await Stowling.request(
+                        `/v1/task-runs/${encodeURIComponent(run.runId)}/cancel`,
+                        {method: "POST"});
+                }
+                Stowling.showToast("已请求关闭任务并执行收尾");
+            }
             await loadRuns();
         } catch (error) {
-            Stowling.handleError(error, "加入队列失败");
+            Stowling.handleError(error, enabled ? "开始移动任务失败" : "关闭移动任务失败");
+            await loadRuns();
         } finally {
-            state.moveBusy = false;
+            state.movePendingRuns.delete(id);
             updateMoveControls();
         }
     }
@@ -555,6 +577,7 @@
             appendMonitorLogs();
             showMonitorSync();
             state.lastRunResponseId = requestId;
+            updateMoveControls();
         } catch (error) {
             Stowling.handleError(error, "读取运行状态失败");
         }
@@ -635,6 +658,7 @@
             appendMonitorLogs();
             showMonitorSync();
             state.lastRunResponseId = requestId;
+            updateMoveControls();
         } catch (error) {
             if (requestId <= state.lastRunResponseId) return;
             elements.monitorMessage.textContent = "同步失败 · 显示上次状态";
@@ -1062,20 +1086,6 @@
         updateMoveControls();
         moveSave.schedule();
     });
-    for (const button of elements.moveSources) {
-        button.addEventListener("click", () => {
-            readMoveForm();
-            if (state.moveDraft.source === button.dataset.moveSource) {
-                return;
-            }
-            state.moveDraft.source = button.dataset.moveSource;
-            state.moveDirty = true;
-            showMoveMessage("未保存修改");
-            updateMoveTarget();
-            updateMoveControls();
-            moveSave.schedule();
-        });
-    }
     elements.removeMove.addEventListener("click", () => void deleteMoveTask());
     elements.moveForm.addEventListener("submit", (event) => {
         event.preventDefault();

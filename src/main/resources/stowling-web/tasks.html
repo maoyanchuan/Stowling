@@ -485,76 +485,71 @@
                                 </form>
                             </div>
                         </article>
-                        <div id="move-task-draft" class="move-saved-task is-draft" hidden>
-                            <button id="toggle-move-draft" class="move-task-summary"
-                                    type="button" aria-expanded="false"
-                                    aria-controls="move-draft-body">
-                                <span class="move-task-kind" aria-hidden="true">↗</span>
-                                <span class="move-task-overview">
-                                    <strong>新建 · 移动到坐标</strong>
-                                    <span>选择目标后自动保存</span>
-                                </span>
-                                <span class="move-task-state">未保存</span>
-                                <span class="move-task-chevron" aria-hidden="true">⌄</span>
-                            </button>
-                            <div id="move-draft-body" class="move-task-body" hidden>
-                                <form id="move-task-form" class="move-task-form"
+                        <article id="move-task-draft" class="pickup-task-module" hidden>
+                            <div class="pickup-task-header">
+                                <h3 class="pickup-task-title">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                         stroke="currentColor" stroke-width="1.8"
+                                         stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="m12 3 8 18-8-4-8 4 8-18Z" />
+                                    </svg>
+                                    新建 · 移动到坐标
+                                </h3>
+                                <button id="toggle-move-draft" class="pickup-task-expand"
+                                        type="button" aria-expanded="false"
+                                        aria-controls="move-draft-body"
+                                        aria-label="展开移动到坐标设置">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                         stroke="currentColor" stroke-width="1.8"
+                                         stroke-linecap="round" stroke-linejoin="round"
+                                         aria-hidden="true">
+                                        <path d="m9 5 7 7-7 7" />
+                                    </svg>
+                                </button>
+                                <input id="move-draft-run" class="settings-switch"
+                                       type="checkbox" role="switch" disabled
+                                       aria-label="开始移动到坐标任务"
+                                       aria-describedby="move-draft-status">
+                            </div>
+                            <div id="move-draft-body" class="pickup-task-body" hidden>
+                                <form id="move-task-form" class="coordinate-task-form"
                                       hidden novalidate>
                                     <fieldset id="move-task-fields" disabled>
-                                        <div class="move-target-heading">
-                                            <span>目标位置</span>
-                                            <a href="/coordinates.html#coordinate-points"
-                                               class="text-link">管理坐标 →</a>
-                                            <div class="move-source-switch" hidden role="group"
-                                                 aria-label="坐标来源">
-                                                <button type="button" data-move-source="manual"
-                                                        aria-pressed="true">手动输入</button>
-                                                <button type="button" data-move-source="saved"
-                                                        aria-pressed="false">已保存坐标</button>
-                                            </div>
-                                        </div>
-                                        <div id="move-manual-target" class="move-axis-grid" hidden inert>
-                                            <label class="move-field" for="move-target-x">
-                                                <span>X</span>
-                                                <input id="move-target-x" type="number" step="1"
-                                                       min="-2147483648" max="2147483647"
-                                                       placeholder="例如 120" required>
-                                            </label>
-                                            <label class="move-field" for="move-target-y">
-                                                <span>Y</span>
-                                                <input id="move-target-y" type="number" step="1"
-                                                       min="-2147483648" max="2147483647"
-                                                       placeholder="例如 64" required>
-                                            </label>
-                                            <label class="move-field" for="move-target-z">
-                                                <span>Z</span>
-                                                <input id="move-target-z" type="number" step="1"
-                                                       min="-2147483648" max="2147483647"
-                                                       placeholder="例如 -80" required>
-                                            </label>
-                                        </div>
-                                        <div id="move-saved-target" class="move-field" hidden>
-                                            <label for="move-saved-coordinate">选择坐标</label>
-                                            <select id="move-saved-coordinate">
+                                        <div id="move-saved-target" class="move-field">
+                                            <span class="settings-copy">
+                                                <label for="move-saved-coordinate">目标坐标</label>
+                                                <span id="move-target-note"
+                                                      class="settings-description">
+                                                    选择坐标页面中已保存的坐标点。
+                                                </span>
+                                            </span>
+                                            <select id="move-saved-coordinate" required
+                                                    aria-describedby="move-target-note">
                                                 <option value="">请选择已保存坐标</option>
                                             </select>
                                         </div>
-                                        <p id="move-target-note" class="move-target-note">
-                                            精确到达目标方块；手动坐标在当前维度生效。
-                                        </p>
-                                        <label class="move-field move-priority"
-                                               for="move-priority">
+                                        <label class="move-field" for="move-priority">
                                             <span>运行优先级</span>
                                             <select id="move-priority">
-                                                <option value="NORMAL">普通</option>
-                                                <option value="URGENT">紧急</option>
-                                                <option value="BACKGROUND">后台</option>
+                                                <option value="NORMAL"
+                                                        data-description="加入普通任务队列">
+                                                    普通
+                                                </option>
+                                                <option value="URGENT"
+                                                        data-description="优先于普通任务执行">
+                                                    紧急
+                                                </option>
+                                                <option value="BACKGROUND"
+                                                        data-description="在更高优先级任务后执行">
+                                                    后台
+                                                </option>
                                             </select>
                                         </label>
                                         <div id="move-cleanup-settings"></div>
                                         <p id="move-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
-                                        <div class="move-form-actions">
+                                        <div class="coordinate-task-actions">
                                             <button id="delete-move-task"
                                                     class="ghost danger-action task-delete-action"
                                                     type="button" hidden>删除任务</button>
@@ -562,7 +557,10 @@
                                     </fieldset>
                                 </form>
                             </div>
-                        </div>
+                            <p id="move-draft-status" class="visually-hidden" role="status">
+                                选择目标并自动保存后可开始任务
+                            </p>
+                        </article>
                         <article id="auto-task-draft" class="move-saved-task is-draft" hidden>
                             <div class="pickup-task-header">
                                 <h3 class="pickup-task-title">

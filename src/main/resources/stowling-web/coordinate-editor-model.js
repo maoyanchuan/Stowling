@@ -57,6 +57,11 @@
             cacheDestination: policy.partialBoxDestinationRef || "",
             ignoreSupportBlock: Boolean(binding.ignoredMarkerBlockIds?.length),
             supportBlock: (binding.ignoredMarkerBlockIds || []).join("\n"),
+            ignoreMarkerPositions: false,
+            ignoredMarkerPositions: [],
+            ignoreRepeatedBlocks: false,
+            multiItemBindingsEnabled: false,
+            multiItemBindings: [],
             expansionDirection: zone.expansion?.direction || "AUTO",
             expansionStep: zone.expansion?.step || 1
         };
@@ -76,8 +81,51 @@
             cacheDestination: value.cacheDestination || "",
             ignoreSupportBlock: Boolean(value.ignoreSupportBlock),
             supportBlock: value.supportBlock || "",
+            ignoreMarkerPositions: Boolean(value.ignoreMarkerPositions),
+            ignoredMarkerPositions: copy(value.ignoredMarkerPositions || []),
+            ignoreRepeatedBlocks: Boolean(value.ignoreRepeatedBlocks),
+            multiItemBindingsEnabled: Boolean(value.multiItemBindingsEnabled),
+            multiItemBindings: copy(value.multiItemBindings || []),
             specifyStanding: value.specifyStanding ?? null,
             standingPosition: value.standingPosition ? copy(value.standingPosition) : null};
+    }
+
+    /** @param {object} options @returns {void} */
+    function validateRules(options) {
+        /** @param {object} position @returns {boolean} */
+        const validPosition = position => position && ["x", "y", "z"].every(axis =>
+            Number.isInteger(position[axis]) && position[axis] >= -2147483648
+                && position[axis] <= 2147483647);
+        const positions = options.ignoredMarkerPositions || [];
+        if (options.ignoreMarkerPositions
+                && (!positions.length || !positions.every(validPosition))) {
+            throw new Error("请添加排除位置，并填写完整的 X、Y、Z 整数坐标。");
+        }
+        if (!options.multiItemBindingsEnabled) return;
+        const rules = options.multiItemBindings || [];
+        if (!rules.length) throw new Error("请至少添加一条物品绑定规则。");
+        const idPattern = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
+        for (const rule of rules) {
+            const ids = String(rule.itemIds || "").trim().split(/\s+/).filter(Boolean);
+            if (!ids.length || !ids.every(id => idPattern.test(id))) {
+                throw new Error("物品绑定请每行填写一个完整物品 ID。");
+            }
+            if (!["marker-id", "marker-position", "container"].includes(rule.targetType)) {
+                throw new Error("物品绑定目标类型无效。");
+            }
+            if (rule.targetType === "marker-id") {
+                if (!idPattern.test(String(rule.markerId || "").trim())) {
+                    throw new Error("请填写完整的识别物 ID。");
+                }
+            } else if (!validPosition(rule.position)) {
+                throw new Error("请填写绑定目标的 X、Y、Z 整数坐标。");
+            }
+            if (rule.targetType === "marker-position" && options.ignoreMarkerPositions
+                    && positions.some(point => ["x", "y", "z"].every(axis =>
+                        point[axis] === rule.position[axis]))) {
+                throw new Error("物品绑定的目标标记已被坐标排除。");
+            }
+        }
     }
 
     /** @param {object} binding @param {object} globalOptions @param {object} zone
@@ -85,7 +133,7 @@
     function bindingSettings(binding, globalOptions, zone) {
         if (binding.categoryOptions) {
             return {optionsEnabled: Boolean(binding.optionsEnabled),
-                categoryOptions: {...copy(binding.categoryOptions),
+                categoryOptions: {...optionsPayload(binding.categoryOptions),
                     bulkStacks: binding.categoryOptions.bulkStacks
                         ?? categoryOptions({bindings: [binding]}).bulkStacks}};
         }
@@ -160,6 +208,7 @@
         const bindings = value.bindings.map(binding => {
             const options = binding.optionsEnabled ? binding.categoryOptions || globalOptions
                 : globalOptions;
+            validateRules(options);
             const original = binding.original || Zone.normalizeBinding({});
             const result = copy(original);
             result.name = String(binding.name ?? original.name ?? "").trim();

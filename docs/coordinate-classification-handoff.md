@@ -3,15 +3,16 @@
 这是一次性交接快照，记录于 2026 年 11 月 24 日。接入完成后可删除或归档，
 不替代 `AGENTS.md`，也不作为新的长期规范。
 
-## 当前进度
+## 接入完成（2026 年 11 月 24 日）
 
-- 工作目录：`G:\github\Stowling`，分支：`main`。
-- UI 基线提交：`50e2cc8`，已推送 GitHub。
-- 用户已确认分类逻辑，并要求保持现有浅绿／深灰 UI 风格。
-- 提示词标题中的“待用户确认”是模板阶段残留字样，本次方案已获确认。
-- 已完成离线模板、交互和测试用例；正式页面、API、配置模型和游戏执行尚未接入新功能。
-- 未运行测试、代码检查或游戏验证，也没有为这些模板改动生成新版安装包。
-- 下一步：把已确认模板接入真实 Mod，实现保存、读取和实际分类，不能只复制 HTML。
+- 已接入正式坐标编辑器、鉴权 API、配置保存和游戏分类解析，版本 `0.1.0-alpha.293`。
+- 坐标排除只过滤自动标记；重复方块参照在整个分类区过滤后的原始列中一次性收集，
+  仅采用剩余一种物品的结果，不链式推断。
+- 三种多物品绑定目标追加真实物品 ID；全局和独立绑定组分别作用于各自范围，
+  绝对坐标不随单片拓展平移，独立组的 ID 规则覆盖该组生成的单片。
+- 关闭状态下保留独立配置、多行物品文本、未完成坐标与规则展开草稿。
+- 已补充分类、API、持久化、拓展和正式页面测试；按项目规范未运行测试、检查或游戏验证。
+- 主代理已使用 `assemble` 成功构建安装包与源码包；以下内容保留为本次确认依据。
 
 ## UI 依据
 
@@ -66,8 +67,8 @@
 - `client/automation/MinecraftCategoryZoneResolver.java`：采集与解析标记。
 - `v2/category/ColumnCategoryMatcher.java`、`DirectBlockIdCategoryRule.java`：列匹配与冲突。
 
-现有 resolver 逐绑定组采集并立即解析；重复参照可能位于其他绑定组，
-需要先收集同一分类区的原始单片信息，再判定冲突，不能在首个冲突处提前结束。
+resolver 已先采集整个分类区，再由 `v2/category/CategoryZoneClassifier.java` 处理过滤、
+原始参照、重复判定和绑定追加，避免跨绑定组参照丢失或扫描顺序依赖。
 底层已有 `CategoryContainerOverrideDefinition` 的多 ID 追加／替换能力，可复用追加能力。
 
 模板新增草稿字段：`ignoreMarkerPositions`、`ignoredMarkerPositions`、
@@ -81,8 +82,9 @@
 
 参考 `tests/test_coordinate_custom_rules_sample.py`、
 `tests/test_coordinate_binding_options_sample.py` 和相关坐标测试。
-`tests/test_coordinate_editor.py` 目前为模板预览保留了结构比较例外，
-正式页面同步后应移除相应例外并验证真实页面，而不是继续扩大豁免范围。
+`tests/test_coordinate_editor.py` 的模板预览结构比较例外已移除，正式页面与完整模板比较。
+实际接入测试另见 `tests/test_coordinate_classification_editor.py`、
+`CategoryZoneClassifierTest.java` 和 `CategoryOptionsPersistenceTest.java`。
 
 补充实际分类测试：花簇支撑与正常草方块分类并存、珊瑚扇重复排除、
 无法唯一判断时继续报错、三种绑定目标、继承与独立设置、保存复制及旧配置兼容。

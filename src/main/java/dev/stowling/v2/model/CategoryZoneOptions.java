@@ -15,7 +15,12 @@ public record CategoryZoneOptions(
         String supportBlock,
         Boolean specifyStanding,
         BlockPosition standingPosition,
-        Integer bulkStacks
+        Integer bulkStacks,
+        boolean ignoreMarkerPositions,
+        List<CategoryPositionDraft> ignoredMarkerPositions,
+        boolean ignoreRepeatedBlocks,
+        boolean multiItemBindingsEnabled,
+        List<CategoryItemBinding> multiItemBindings
 ) {
     public CategoryZoneOptions {
         scopeMode = choice(scopeMode, "single", Set.of("single", "selection"));
@@ -25,6 +30,10 @@ public record CategoryZoneOptions(
         noCacheLocation = choice(noCacheLocation, "inside-box", Set.of("inside-box", "specified"));
         cacheDestination = cacheDestination == null ? "" : cacheDestination.trim();
         supportBlock = supportBlock == null ? "" : supportBlock.trim();
+        ignoredMarkerPositions = ignoredMarkerPositions == null
+                ? List.of() : List.copyOf(ignoredMarkerPositions);
+        multiItemBindings = multiItemBindings == null
+                ? List.of() : List.copyOf(multiItemBindings);
         if (bulkStacks != null && (bulkStacks < 0 || bulkStacks > 54)) {
             throw new IllegalArgumentException("散货占比请填写 0 到 54 之间的整数组数");
         }
@@ -34,6 +43,40 @@ public record CategoryZoneOptions(
         if (Boolean.TRUE.equals(specifyStanding) && standingPosition.y() == Integer.MAX_VALUE) {
             throw new IllegalArgumentException("站立脚下方块 Y 坐标过大");
         }
+    }
+
+    public CategoryZoneOptions(
+            String scopeMode, String recognitionMode, String storageMethod,
+            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
+            String supportBlock, Boolean specifyStanding, BlockPosition standingPosition,
+            Integer bulkStacks
+    ) {
+        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
+                ignoreSupportBlock, supportBlock, specifyStanding, standingPosition, bulkStacks,
+                false, List.of(), false, false, List.of());
+    }
+
+    public void validateActiveRules() {
+        if (ignoreMarkerPositions && ignoredMarkerPositions.isEmpty()) {
+            throw new IllegalArgumentException("请至少添加一个排除标记坐标");
+        }
+        excludedMarkerPositions();
+        if (!multiItemBindingsEnabled) return;
+        if (multiItemBindings.isEmpty()) {
+            throw new IllegalArgumentException("请至少添加一条物品绑定规则");
+        }
+        for (CategoryItemBinding rule : multiItemBindings) {
+            rule.validate();
+            if (ignoreMarkerPositions && "marker-position".equals(rule.targetType())
+                    && ignoredMarkerPositions.contains(rule.position())) {
+                throw new IllegalArgumentException("物品绑定的目标标记已被坐标排除");
+            }
+        }
+    }
+
+    public List<BlockPosition> excludedMarkerPositions() {
+        return ignoreMarkerPositions ? ignoredMarkerPositions.stream()
+                .map(CategoryPositionDraft::blockPosition).toList() : List.of();
     }
 
     public CategoryZoneOptions(

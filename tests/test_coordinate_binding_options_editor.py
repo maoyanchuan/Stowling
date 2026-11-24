@@ -113,6 +113,7 @@ def test_support_blocks_accept_multiline_input_without_submitting(
     if scope == "binding":
         root = page.locator(".category-binding-card").first
         root.locator(".category-binding-enabled").check()
+    open_recognition(root)
     enabled = root.locator('[id$="category-ignore-support"]')
     expand = root.locator('[id$="category-support-expand"]')
     field = root.locator('[id$="category-support-block"]')
@@ -154,11 +155,13 @@ def test_support_block_lines_keep_inherited_saved_and_copied_drafts(
         "minecraft:glass\nminecraft:oak_planks\nminecraft:polished_deepslate\n"
         "minecraft:obsidian\nminecraft:granite"
     )
+    open_recognition(global_options)
     global_options.locator('[id$="category-ignore-support"]').check()
     global_options.locator('[id$="category-support-block"]').fill(global_draft)
     card = page.locator(".category-binding-card").first
     override = card.locator(".category-binding-enabled")
     override.check()
+    open_recognition(card)
     local_field = card.locator('[id$="category-support-block"]')
     assert local_field.input_value() == global_draft
     local_field.fill(local_draft)
@@ -183,12 +186,14 @@ def test_support_block_lines_keep_inherited_saved_and_copied_drafts(
         effective_draft.splitlines() if ignore_support else []
     )
     page.locator("#duplicate-coordinate").click()
+    open_recognition(global_options)
     global_options.locator('[id$="category-ignore-support"]').check()
     assert global_options.locator('[id$="category-support-block"]').input_value() == global_draft
     card = page.locator(".category-binding-card").first
     assert card.locator(".category-binding-enabled").is_checked() is independent
     card.locator(".category-binding-toggle").click()
     card.locator(".category-binding-enabled").check()
+    open_recognition(card)
     card.locator('[id$="category-ignore-support"]').check()
     assert card.locator('[id$="category-support-block"]').input_value() == local_draft
 
@@ -509,3 +514,9 @@ def test_standing_submenu_reverses_without_losing_values_or_wrapping_twice(
     assert not result["inert"]
     assert result["nested"] == 0
     assert page.locator("#category-standing-x").input_value() == "23"
+
+
+def open_recognition(root: Any) -> None:
+    toggle = root.locator('[id$="category-recognition-expand"]')
+    if toggle.get_attribute("aria-expanded") == "false":
+        toggle.click()

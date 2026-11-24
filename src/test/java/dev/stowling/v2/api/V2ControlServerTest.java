@@ -88,6 +88,49 @@ class V2ControlServerTest {
     }
 
     @Test
+    void savesClassificationRulesThroughAuthenticatedApiAndRetainsDisabledDrafts() throws Exception {
+        try (var fixture = fixture()) {
+            var payload = JsonParser.parseString(categoryZone("Rules")).getAsJsonObject();
+            var options = JsonParser.parseString("""
+                    {"scopeMode":"selection","ignoreMarkerPositions":true,
+                    "ignoredMarkerPositions":[{"x":44,"y":64,"z":39}],
+                    "ignoreRepeatedBlocks":true,"multiItemBindingsEnabled":true,
+                    "multiItemBindings":[{"name":"Sculk","targetType":"marker-id",
+                    "markerId":"minecraft:sculk","position":{"x":0,"y":64,"z":0},
+                    "itemIds":"minecraft:sculk_sensor\\nminecraft:sculk_catalyst","expanded":true}]}
+                    """).getAsJsonObject();
+            payload.add("categoryOptions", options);
+            var binding = payload.getAsJsonArray("bindings").get(0).getAsJsonObject();
+            var draft = options.deepCopy();
+            draft.addProperty("multiItemBindingsEnabled", false);
+            draft.getAsJsonArray("multiItemBindings").get(0).getAsJsonObject()
+                    .addProperty("itemIds", "unfinished draft");
+            binding.addProperty("optionsEnabled", false);
+            binding.add("categoryOptions", draft);
+            assertEquals(401, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), false).statusCode());
+            var created = fixture.send("/v1/category-zones", "POST", payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            var response = object(created);
+            var zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            for (String key : List.of("ignoreMarkerPositions", "ignoredMarkerPositions",
+                    "ignoreRepeatedBlocks", "multiItemBindingsEnabled", "multiItemBindings")) {
+                assertEquals(options.get(key), zone.getAsJsonObject("categoryOptions").get(key));
+                assertEquals(draft.get(key), zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                        .getAsJsonObject("categoryOptions").get(key));
+            }
+            payload.add("revision", response.get("revision"));
+            String path = "/v1/category-zones/" + zone.get("id").getAsString();
+            for (String invalid : List.of("{\"ignoreRepeatedBlocks\":\"true\"}",
+                    "{\"multiItemBindings\":[{\"unexpected\":1}]}",
+                    "{\"ignoreMarkerPositions\":true,\"ignoredMarkerPositions\":[]}")) {
+                payload.add("categoryOptions", JsonParser.parseString(invalid));
+                assertEquals(400, fixture.send(path, "PUT", payload.toString(), true).statusCode());
+            }
+        }
+    }
+
+    @Test
     void savesMixedBulkStackLimitsAndRejectsInvalidAllocations() throws Exception {
         try (var fixture = fixture()) {
             var payload = JsonParser.parseString(categoryZone("Bulk")).getAsJsonObject();

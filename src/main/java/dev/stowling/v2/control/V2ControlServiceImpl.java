@@ -2066,6 +2066,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     : existingBinding == null ? null : existingBinding.categoryOptions();
             if (enabled && independent == null) independent = globalOptions;
             var effective = enabled ? independent : globalOptions;
+            if (effective != null) effective.validateActiveRules();
             String ruleId = effective == null ? binding.ruleId() : effective.ruleId();
             var policy = effective == null ? binding.storagePolicy()
                     : effective.storagePolicy(binding.storagePolicy());

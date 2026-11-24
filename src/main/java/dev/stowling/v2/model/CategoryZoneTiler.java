@@ -104,6 +104,17 @@ public final class CategoryZoneTiler {
         return options == null || "single".equals(options.scopeMode());
     }
 
+    /** Returns the original template so independent rules share a scope across its slices. */
+    public static CategoryBindingDefinition templateFor(CategoryZoneDefinition zone, int index) {
+        if (zone.expansion() == null || index < zone.expansion().templateCount()) {
+            return zone.bindings().get(index);
+        }
+        int count = zone.expansion().templateCount();
+        List<CategoryBindingDefinition> expanding = zone.bindings().subList(0, count).stream()
+                .filter(binding -> expands(binding, zone.categoryOptions())).toList();
+        return expanding.get((index - count) % expanding.size());
+    }
+
     private static int span(
             AreaBounds area,
             CategoryZoneExpansionAxis direction

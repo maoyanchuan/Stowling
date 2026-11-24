@@ -2,7 +2,6 @@ package dev.stowling.client.automation;
 
 import dev.stowling.automation.CategoryZonePort;
 import dev.stowling.automation.CategoryZoneResult;
-import dev.stowling.automation.ClassificationLayoutEntry;
 import dev.stowling.automation.ContainerRegionPort;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
@@ -10,9 +9,9 @@ import dev.stowling.client.interaction.ClientActionScheduler;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.category.CategoryMarker;
 import dev.stowling.v2.category.CategoryMarkerSource;
-import dev.stowling.v2.category.CategoryRule;
 import dev.stowling.v2.category.CategoryRuleRegistry;
 import dev.stowling.v2.category.CategoryRuleResult;
+import dev.stowling.v2.category.CategoryZoneClassifier;
 import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.category.DirectBlockIdCategoryRule;
 import dev.stowling.v2.category.PottedBlockItems;
@@ -20,11 +19,11 @@ import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.CategoryZoneTiler;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -159,10 +158,13 @@ public final class MinecraftCategoryZoneResolver
             Map<BlockPosition, Set<String>> markerContainerContents,
             Set<CategoryMarkerSource> markerSources
     ) {
-        Map<String, List<ContainerTarget>> categories =
-                new LinkedHashMap<>();
-        List<ClassificationLayoutEntry> layout = new ArrayList<>();
-        for (CategoryBindingDefinition binding : zone.bindings()) {
+        List<CategoryZoneClassifier.Scan> scans = new ArrayList<>();
+        for (int index = 0; index < zone.bindings().size(); index++) {
+            CategoryBindingDefinition binding = zone.bindings().get(index);
+            var options = binding.optionsEnabled()
+                    ? binding.categoryOptions() : zone.categoryOptions();
+            Set<BlockPosition> excluded = options == null ? Set.of()
+                    : Set.copyOf(options.excludedMarkerPositions());
             boolean unstackable = UnstackableCategoryRule.ID.equals(binding.ruleId());
             if (volume(binding.markerArea()) > maxVolume) {
                 return CategoryZoneResult.failure(
@@ -180,28 +182,25 @@ public final class MinecraftCategoryZoneResolver
             List<CategoryMarker> markers = new ArrayList<>();
             if (unstackable) {
                 appendItemFrameMarkers(level, binding.markerArea(), markers,
-                        sameMarkerAndStorageArea(binding));
+                        sameMarkerAndStorageArea(binding), excluded);
             } else {
                 markers = markers(level, binding.markerArea(),
                         Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
-                        markerSourcesFor(binding.ruleId(), markerSources));
+                        markerSourcesFor(binding.ruleId(), markerSources), excluded);
             }
-            CategoryRuleResult resolved = resolveBinding(
-                    binding,
-                    markers,
+            var template = CategoryZoneTiler.templateFor(zone, index);
+            scans.add(new CategoryZoneClassifier.Scan(binding, options,
+                    binding.optionsEnabled() ? template.id() : null, markers,
                     storageScan.containers().stream().map(target ->
                             target.withStandingArea(binding.standingArea(), binding.storagePolicy()))
-                            .toList(),
-                    markerSources
-            );
-            if (!resolved.succeeded()) {
-                return CategoryZoneResult.failure("分类区「" + zone.name() + "」识别起点 ("
-                        + binding.markerArea().firstX() + ", " + binding.markerArea().firstY()
-                        + ", " + binding.markerArea().firstZ() + ")：" + resolved.message());
-            }
-            mergeCategories(categories, resolved.categories());
-            layout.addAll(resolved.layout());
+                            .toList()));
         }
+        CategoryRuleResult resolved = CategoryZoneClassifier.resolve(scans, rules, markerSources);
+        if (!resolved.succeeded()) {
+            return CategoryZoneResult.failure("分类区「" + zone.name() + "」" + resolved.message());
+        }
+        var categories = resolved.categories();
+        var layout = resolved.layout();
         if (categories.isEmpty()) {
             if (zone.bindings().stream().allMatch(binding ->
                     UnstackableCategoryRule.ID.equals(binding.ruleId()))) {
@@ -236,41 +235,6 @@ public final class MinecraftCategoryZoneResolver
         };
     }
 
-    private CategoryRuleResult resolveBinding(
-            CategoryBindingDefinition binding,
-            List<CategoryMarker> markers,
-            List<ContainerTarget> storageContainers,
-            Set<CategoryMarkerSource> markerSources
-    ) {
-        if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
-            if (sameMarkerAndStorageArea(binding)) {
-                return rules.require(binding.ruleId()).resolve(markers, storageContainers);
-            }
-            return UnstackableCategoryRule.resolveMarkerArea(markers, storageContainers);
-        }
-        if (markerSources != null) {
-            return DirectBlockIdCategoryRule.resolveExplicitSources(
-                    markers,
-                    storageContainers,
-                    binding.containerOverrides(),
-                    binding.wholeStorage()
-            );
-        }
-        CategoryRule rule = rules.require(binding.ruleId());
-        List<CategoryMarker> acceptedMarkers = markers.stream()
-                .filter(rule::accepts)
-                .toList();
-        if (rule instanceof ContainerContentsCategoryRule contentsRule) {
-            return contentsRule.resolve(acceptedMarkers, storageContainers,
-                    binding.containerOverrides(), binding.wholeStorage());
-        }
-        return rule.resolve(
-                acceptedMarkers,
-                storageContainers,
-                binding.containerOverrides()
-        );
-    }
-
     private static boolean sameMarkerAndStorageArea(CategoryBindingDefinition binding) {
         return binding.markerArea().contains(binding.storageArea())
                 && binding.storageArea().contains(binding.markerArea());
@@ -288,31 +252,13 @@ public final class MinecraftCategoryZoneResolver
         return String.join(",", names);
     }
 
-    private static void mergeCategories(
-            Map<String, List<ContainerTarget>> categories,
-            Map<String, List<ContainerTarget>> incoming
-    ) {
-        for (Map.Entry<String, List<ContainerTarget>> entry
-                : incoming.entrySet()) {
-            String category = entry.getKey();
-            List<ContainerTarget> merged = new ArrayList<>(
-                    categories.getOrDefault(category, List.of())
-            );
-            for (ContainerTarget container : entry.getValue()) {
-                if (!merged.contains(container)) {
-                    merged.add(container);
-                }
-            }
-            categories.put(category, List.copyOf(merged));
-        }
-    }
-
     private static List<CategoryMarker> markers(
             ClientLevel level,
             AreaBounds area,
             Set<String> ignoredBlockIds,
             Map<BlockPosition, Set<String>> markerContainerContents,
-            Set<CategoryMarkerSource> markerSources
+            Set<CategoryMarkerSource> markerSources,
+            Set<BlockPosition> excluded
     ) {
         List<CategoryMarker> result = new ArrayList<>();
         for (long x = area.minX(); x <= area.maxX(); x++) {
@@ -323,7 +269,7 @@ public final class MinecraftCategoryZoneResolver
                             (int) y,
                             (int) z
                     );
-                    if (!level.isLoaded(position)) {
+                    if (excluded.contains(blockPosition(position)) || !level.isLoaded(position)) {
                         continue;
                     }
                     appendBlockMarkers(
@@ -338,7 +284,7 @@ public final class MinecraftCategoryZoneResolver
             }
         }
         if (markerSources.contains(CategoryMarkerSource.ITEM_FRAME)) {
-            appendItemFrameMarkers(level, area, result, false);
+            appendItemFrameMarkers(level, area, result, false, excluded);
         }
         result.sort(Comparator.<CategoryMarker>comparingLong(marker ->
                         Math.abs((long) marker.position().x() - area.firstX()))
@@ -465,7 +411,8 @@ public final class MinecraftCategoryZoneResolver
             ClientLevel level,
             AreaBounds area,
             List<CategoryMarker> result,
-            boolean attachedOnly
+            boolean attachedOnly,
+            Set<BlockPosition> excluded
     ) {
         AABB searchArea = new AABB(
                 area.minX(),
@@ -486,7 +433,7 @@ public final class MinecraftCategoryZoneResolver
             BlockPos framePos = frame.getPos();
             BlockPos support = framePos.relative(frame.getDirection().getOpposite());
             BlockPos position = attachedOnly || !contains(area, framePos) ? support : framePos;
-            if (!contains(area, position)) {
+            if (!contains(area, position) || excluded.contains(blockPosition(position))) {
                 continue;
             }
             if (!attachedOnly) {

@@ -481,43 +481,7 @@ public final class ConfigStore {
     }
 
     private static void requireCategoryOptions(JsonElement value, String path) {
-        if (value == null || value.isJsonNull()) return;
-        JsonObject options = requireObject(value, path);
-        requireFields(options, path, Set.of("scopeMode", "recognitionMode",
-                "storageMethod", "noCacheLocation", "cacheDestination", "ignoreSupportBlock",
-                "supportBlock", "specifyStanding", "standingPosition", "bulkStacks"), Set.of());
-        JsonElement stacks = options.get("bulkStacks");
-        if (stacks != null && !stacks.isJsonNull()) {
-            if (!stacks.isJsonPrimitive() || !stacks.getAsJsonPrimitive().isNumber()) {
-                throw new V2ValidationException("散货占比必须使用整数");
-            }
-            try {
-                stacks.getAsBigDecimal().intValueExact();
-            } catch (ArithmeticException | NumberFormatException exception) {
-                throw new V2ValidationException("散货占比必须使用整数", exception);
-            }
-        }
-        JsonElement position = options.get("standingPosition");
-        if (position != null && !position.isJsonNull()) {
-            JsonObject coordinates = requireObject(position, path + ".standingPosition");
-            requireExactFields(coordinates, path + ".standingPosition", Set.of("x", "y", "z"));
-            for (String axis : Set.of("x", "y", "z")) {
-                JsonElement number = coordinates.get(axis);
-                if (!number.isJsonPrimitive() || !number.getAsJsonPrimitive().isNumber()) {
-                    throw new V2ValidationException("站立位置必须使用整数坐标");
-                }
-                try {
-                    number.getAsBigDecimal().intValueExact();
-                } catch (ArithmeticException | NumberFormatException exception) {
-                    throw new V2ValidationException("站立位置必须使用 32 位整数坐标", exception);
-                }
-            }
-        }
-        JsonElement enabled = options.get("specifyStanding");
-        if (enabled != null && !enabled.isJsonNull()
-                && (!enabled.isJsonPrimitive() || !enabled.getAsJsonPrimitive().isBoolean())) {
-            throw new V2ValidationException("指定站立位置必须使用布尔值");
-        }
+        CategoryOptionsJson.validate(value);
     }
 
     private static void requireContainerOverrides(JsonElement value) {

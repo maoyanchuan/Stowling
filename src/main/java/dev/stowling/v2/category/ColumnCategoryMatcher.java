@@ -112,6 +112,26 @@ final class ColumnCategoryMatcher {
         return CategoryRuleResult.success(immutable, layout);
     }
 
+    static List<ContainerTarget> targets(
+            CategoryMarker marker,
+            List<ContainerTarget> storageContainers,
+            List<CategoryContainerOverrideDefinition> overrides,
+            boolean wholeStorage
+    ) {
+        PairingAxis axis = pairingAxis(storageContainers);
+        return storageContainers.stream()
+                .filter(container -> overrides.stream().noneMatch(override ->
+                        override.mode() == CategoryContainerOverrideMode.REPLACE
+                                && override.storagePosition().equals(container.position())))
+                .filter(container -> (wholeStorage
+                        && marker.source() == CategoryMarkerSource.CONTAINER_CONTENTS)
+                        || matchesColumn(axis, marker.position(), container.position())
+                        || (marker.source() == CategoryMarkerSource.ITEM_FRAME
+                            && container.partner() != null
+                            && matchesColumn(axis, marker.position(), container.partner())))
+                .toList();
+    }
+
     private static String applyOverrides(
             Map<String, List<ContainerTarget>> categories,
             List<ContainerTarget> storageContainers,

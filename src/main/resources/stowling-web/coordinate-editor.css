@@ -965,6 +965,36 @@
     line-height: 1.5;
 }
 
+:root body[data-coordinate-editor] .category-group-trigger.category-option-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+}
+
+:root body[data-coordinate-editor] .category-group-trigger svg {
+    flex: 0 0 auto;
+    color: var(--muted);
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root body[data-coordinate-editor] .category-group-trigger[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+}
+
+:root body[data-coordinate-editor] .category-option-summary {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+:root body[data-coordinate-editor] .category-recognition-panel {
+    min-width: 0;
+    min-height: 0;
+    padding-left: 18px;
+}
+
 :root body[data-coordinate-editor] .category-option-row .field-label,
 :root body[data-coordinate-editor] .category-option-sub .field-label {
     margin: 0;
@@ -1193,6 +1223,147 @@
     resize: vertical;
 }
 
+:root body[data-coordinate-editor] .category-rule-panel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding-top: 0;
+    padding-bottom: 16px;
+}
+
+:root body[data-coordinate-editor] .category-rule-panel::before {
+    display: none;
+}
+
+:root body[data-coordinate-editor] .category-rule-list {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+:root body[data-coordinate-editor] .category-position-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 8px;
+}
+
+:root body[data-coordinate-editor] .category-rule-toolbar,
+:root body[data-coordinate-editor] .category-rule-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+
+:root body[data-coordinate-editor] .category-rule-help {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+:root body[data-coordinate-editor] .category-rule-form {
+    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+
+:root body[data-coordinate-editor] .category-rule-form:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+
+:root body[data-coordinate-editor] .category-rule-heading input {
+    flex: 1 1 0;
+    min-width: 0;
+    border-color: transparent;
+    background: transparent;
+    font-weight: 650;
+}
+
+:root body[data-coordinate-editor] .category-rule-heading input:focus {
+    border-color: var(--accent);
+    background: var(--theme-input, var(--panel-solid));
+}
+
+:root body[data-coordinate-editor] .category-rule-heading {
+    cursor: pointer;
+}
+
+:root body[data-coordinate-editor] .category-rule-count {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+:root body[data-coordinate-editor] .category-rule-heading .category-rule-toggle {
+    width: 32px;
+    min-height: 36px;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+}
+
+:root body[data-coordinate-editor] .category-rule-toggle svg {
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root body[data-coordinate-editor] .category-rule-form[data-collapsed="false"] .category-rule-toggle svg {
+    transform: rotate(90deg);
+}
+
+:root body[data-coordinate-editor] .category-rule-body {
+    min-width: 0;
+    min-height: 0;
+}
+
+:root body[data-coordinate-editor] .category-rule-content {
+    padding-left: 18px;
+}
+
+:root body[data-coordinate-editor] .category-rule-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 0 8px;
+}
+
+:root body[data-coordinate-editor] .category-repeat-example {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    font-size: 12px;
+}
+
+:root body[data-coordinate-editor] .category-repeat-example > div {
+    display: grid;
+    grid-template-columns: 5em minmax(0, 1fr);
+    gap: 12px;
+}
+
+:root body[data-coordinate-editor] .category-repeat-example dt {
+    color: var(--muted);
+}
+
+:root body[data-coordinate-editor] .category-repeat-example dd {
+    margin: 0;
+}
+
+:root body[data-coordinate-editor] .category-rule-heading button,
+:root body[data-coordinate-editor] .category-position-entry > button {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+:root body[data-coordinate-editor] .category-rule-form .category-option-row {
+    padding-right: 0;
+    padding-left: 0;
+}
+
 :root body[data-coordinate-editor] .category-bulk-ratio {
     display: flex;
     align-items: center;
@@ -1366,6 +1537,11 @@
 
     :root body[data-coordinate-editor] .category-option-sub {
         padding-left: 12px;
+    }
+
+    :root body[data-coordinate-editor] .category-rule-content,
+    :root body[data-coordinate-editor] .category-recognition-panel {
+        padding-left: 0;
     }
 
     :root body[data-coordinate-editor] .editor-fields .field-label:first-child {

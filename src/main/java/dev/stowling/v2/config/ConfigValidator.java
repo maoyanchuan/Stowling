@@ -1789,6 +1789,7 @@ public final class ConfigValidator {
                 throw new V2ValidationException("duplicate category zone id");
             }
             validateCategoryZoneExpansion(zone);
+            validateCategoryRuleTargets(zone);
             for (int bindingIndex = 0; bindingIndex < zone.bindings().size(); bindingIndex++) {
                 CategoryBindingDefinition binding = zone.bindings().get(bindingIndex);
                 if (!bindingIds.add(binding.id())) {
@@ -1797,6 +1798,9 @@ public final class ConfigValidator {
                     );
                 }
                 try {
+                    var effective = binding.optionsEnabled()
+                            ? binding.categoryOptions() : zone.categoryOptions();
+                    if (effective != null) effective.validateActiveRules();
                     rules.require(binding.ruleId());
                 } catch (IllegalArgumentException exception) {
                     throw new V2ValidationException(
@@ -1851,6 +1855,38 @@ public final class ConfigValidator {
             }
         }
         return Map.copyOf(result);
+    }
+
+    private static void validateCategoryRuleTargets(CategoryZoneDefinition zone) {
+        Map<UUID, List<CategoryBindingDefinition>> scopes = new LinkedHashMap<>();
+        for (int index = 0; index < zone.bindings().size(); index++) {
+            var binding = zone.bindings().get(index);
+            UUID scope = binding.optionsEnabled()
+                    ? CategoryZoneTiler.templateFor(zone, index).id() : null;
+            scopes.computeIfAbsent(scope, ignored -> new ArrayList<>()).add(binding);
+        }
+        for (var bindings : scopes.values()) {
+            var first = bindings.getFirst();
+            var options = first.optionsEnabled() ? first.categoryOptions() : zone.categoryOptions();
+            if (options == null) continue;
+            try {
+                options.validateActiveRules();
+                if (!options.multiItemBindingsEnabled()) continue;
+                for (var rule : options.multiItemBindings()) {
+                    if ("marker-id".equals(rule.targetType())) continue;
+                    boolean container = "container".equals(rule.targetType());
+                    boolean inside = bindings.stream().anyMatch(binding -> contains(
+                            container ? binding.storageArea() : binding.markerArea(),
+                            rule.position().blockPosition()));
+                    if (!inside) {
+                        throw new V2ValidationException("物品绑定「" + rule.name() + "」的目标必须位于"
+                                + (container ? "当前储存区" : "当前识别区") + "内");
+                    }
+                }
+            } catch (IllegalArgumentException exception) {
+                throw new V2ValidationException(exception.getMessage(), exception);
+            }
+        }
     }
 
     private static void validateCategoryZoneExpansion(

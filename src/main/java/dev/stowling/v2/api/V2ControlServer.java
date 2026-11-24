@@ -1320,28 +1320,14 @@ public final class V2ControlServer implements AutoCloseable {
 
     private static dev.stowling.v2.model.CategoryZoneOptions categoryOptions(JsonObject parent) {
         JsonElement value = parent.get("categoryOptions");
+        dev.stowling.v2.config.CategoryOptionsJson.validate(value);
         if (value == null || value.isJsonNull()) return null;
-        JsonObject options = jsonObject(value, "categoryOptions");
-        requireFieldsAny(options, Set.of("scopeMode", "recognitionMode", "storageMethod",
-                "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock",
-                "specifyStanding", "standingPosition", "bulkStacks"),
-                Set.of());
-        dev.stowling.domain.BlockPosition position = null;
-        JsonElement point = options.get("standingPosition");
-        if (point != null && !point.isJsonNull()) {
-            JsonObject coordinates = jsonObject(point, "standingPosition");
-            requireFields(coordinates, Set.of("x", "y", "z"));
-            position = new dev.stowling.domain.BlockPosition(integer(coordinates, "x"),
-                    integer(coordinates, "y"), integer(coordinates, "z"));
+        try {
+            return V2Json.gson().fromJson(value, dev.stowling.v2.model.CategoryZoneOptions.class);
+        } catch (RuntimeException exception) {
+            // Record-constructor wrappers include draft arguments; never expose their message.
+            throw invalid("分类区设置无效，请检查选项、数值和绑定规则");
         }
-        return new dev.stowling.v2.model.CategoryZoneOptions(
-                optionalString(options, "scopeMode"), optionalString(options, "recognitionMode"),
-                optionalString(options, "storageMethod"), optionalString(options, "noCacheLocation"),
-                optionalString(options, "cacheDestination"),
-                optionalBoolean(options, "ignoreSupportBlock"),
-                optionalString(options, "supportBlock"),
-                optionalBooleanValue(options, "specifyStanding"), position,
-                optionalInteger(options, "bulkStacks"));
     }
 
     private static dev.stowling.v2.model.StoragePolicy storagePolicy(JsonObject binding) {

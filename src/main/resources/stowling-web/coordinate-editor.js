@@ -5,6 +5,9 @@
 
     /** @typedef {{first: CoordinateCorner, second: CoordinateCorner}} CoordinateRegion */
 
+    /** @typedef {{name: string, targetType: string, markerId: string,
+     * position: CoordinateCorner, itemIds: string, expanded?: boolean}} CategoryItemBinding */
+
     /** @typedef {{id: string, name?: string, markerRegion: CoordinateRegion,
      * storageRegion: CoordinateRegion, original?: object, optionsEnabled?: boolean,
      * categoryOptions?: CategoryOptions}} CategoryBinding */
@@ -13,7 +16,9 @@
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
      * supportBlock: string, cacheDestination: string, expansionDirection: string,
      * expansionStep: number, bulkStacks: number, specifyStanding: boolean|null,
-     * standingPosition: CoordinateCorner|null}} CategoryOptions */
+     * standingPosition: CoordinateCorner|null, ignoreMarkerPositions: boolean,
+     * ignoredMarkerPositions: CoordinateCorner[], ignoreRepeatedBlocks: boolean,
+     * multiItemBindingsEnabled: boolean, multiItemBindings: CategoryItemBinding[]}} CategoryOptions */
 
     /** @typedef {{key: string, select: HTMLSelectElement, wrap: HTMLElement,
      * trigger: HTMLButtonElement, current: HTMLElement, menu: HTMLElement,
@@ -108,7 +113,9 @@
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
      * selects: CategorySelect[], supportExpanded: boolean, standingExpanded: boolean,
      * values?: CategoryOptions, active?: boolean,
-     * initialized?: boolean}} CategoryOptionsContext */
+     * initialized?: boolean, positionsExpanded: boolean, bindingsExpanded: boolean,
+     * repeatsExpanded: boolean, recognitionExpanded: boolean,
+     * ruleSelects: CategorySelect[]}} CategoryOptionsContext */
     const bindingOptions = new WeakMap();
     const globalCategoryContext = createCategoryOptionsContext(
         document.querySelector(".category-options")
@@ -120,8 +127,12 @@
         for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
             "no-cache-location", "ignore-support", "support-expand", "support-block-row",
             "support-block", "bulk-ratio-row", "bulk-stacks", "specify-standing",
-            "standing-expand", "standing-row",
-            "standing-x", "standing-y", "standing-z"]) {
+            "standing-expand", "standing-row", "standing-x", "standing-y", "standing-z",
+            "ignore-positions", "positions-expand", "positions-panel", "positions-list",
+            "add-position", "multi-bindings", "bindings-expand", "bindings-panel",
+            "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel",
+            "recognition-expand", "recognition-panel", "recognition-summary",
+            "bindings-summary"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
@@ -134,7 +145,9 @@
                 menu: wrap.querySelector(".category-select-menu"),
                 options: Array.from(wrap.querySelectorAll(".category-select-option"))
             }));
-        return {root, fields, selects, supportExpanded: false, standingExpanded: false};
+        return {root, fields, selects, supportExpanded: false, standingExpanded: false,
+            positionsExpanded: false, bindingsExpanded: false, repeatsExpanded: false,
+            recognitionExpanded: false, ruleSelects: []};
     }
 
     /** @param {HTMLElement} content @param {boolean} expanded
@@ -376,7 +389,12 @@
             expansionStep: 1,
             bulkStacks: 27,
             specifyStanding: false,
-            standingPosition: emptyCorner()
+            standingPosition: emptyCorner(),
+            ignoreMarkerPositions: false,
+            ignoredMarkerPositions: [],
+            ignoreRepeatedBlocks: false,
+            multiItemBindingsEnabled: false,
+            multiItemBindings: []
         };
     }
 
@@ -427,6 +445,18 @@
         }, values.standingPosition || emptyCorner());
         context.supportExpanded = values.ignoreSupportBlock;
         context.standingExpanded = Boolean(values.specifyStanding);
+        fields["ignore-positions"].checked = values.ignoreMarkerPositions;
+        fields["ignore-repeated"].checked = values.ignoreRepeatedBlocks;
+        fields["multi-bindings"].checked = values.multiItemBindingsEnabled;
+        fields["positions-list"].replaceChildren();
+        fields["rules-list"].replaceChildren();
+        context.ruleSelects = [];
+        values.ignoredMarkerPositions.forEach(position => appendExcludedPosition(context, position));
+        values.multiItemBindings.forEach(rule => appendItemBinding(context, rule));
+        context.positionsExpanded = values.ignoreMarkerPositions;
+        context.bindingsExpanded = false;
+        context.repeatsExpanded = false;
+        context.recognitionExpanded = false;
         updateCategoryOptionState(context, false);
     }
 
@@ -443,7 +473,12 @@
             cacheDestination: fields["no-cache-location"].value === "inside-box"
                 ? "" : fields["no-cache-location"].value,
             ignoreSupportBlock: fields["ignore-support"].checked,
-            supportBlock: fields["support-block"].value.trim(),
+            supportBlock: fields["support-block"].value,
+            ignoreMarkerPositions: fields["ignore-positions"].checked,
+            ignoreRepeatedBlocks: fields["ignore-repeated"].checked,
+            ignoredMarkerPositions: Array.from(fields["positions-list"].children, readRulePosition),
+            multiItemBindingsEnabled: fields["multi-bindings"].checked,
+            multiItemBindings: Array.from(fields["rules-list"].children, readItemBinding),
             bulkStacks: fields["bulk-stacks"].valueAsNumber,
             specifyStanding: context.values.specifyStanding === null
                 ? null : fields["specify-standing"].checked,
@@ -489,11 +524,411 @@
         for (const axis of ["x", "y", "z"]) {
             fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
         }
+        updateCustomRuleState(context, animate);
+    }
+
+    /** @param {CategoryOptionsContext} context @returns {boolean} */
+    function validateCategoryOptions(context) {
+        if (context.active === false) return true;
+        const fields = context.fields;
+        if (fields["storage-method"].value === "mixed") {
+            const stacks = fields["bulk-stacks"].valueAsNumber;
+            if (!Number.isInteger(stacks) || stacks < 0 || stacks > 54) {
+                setStatus("散货占比请填写 0 到 54 之间的整数组数。", "error");
+                return false;
+            }
+        }
+        if (fields["specify-standing"].checked && ["x", "y", "z"].some(axis =>
+            !Number.isInteger(fields[`standing-${axis}`].valueAsNumber))) {
+            setStatus("请填写站立位置的 X、Y、Z 整数坐标。", "error");
+            return false;
+        }
+        return validateCustomRules(context);
+    }
+
+    /** @param {CategoryOptionsContext} context @returns {void} */
+    function syncCategoryOptionSummaries(context) {
+        const fields = context.fields;
+        const enabled = ["ignore-support", "ignore-positions", "ignore-repeated"]
+            .filter(key => fields[key].checked).length;
+        fields["recognition-summary"].textContent = enabled ? `已启用 ${enabled} 项` : "未启用";
+        const rules = fields["rules-list"].children.length;
+        fields["bindings-summary"].textContent = fields["multi-bindings"].checked
+            ? `${rules} 条规则` : (rules ? `已关闭 · ${rules} 条规则` : "未启用");
+    }
+
+    /** @param {CategoryOptionsContext} context @param {boolean} open
+     * @param {boolean} [animate] @returns {void} */
+    function setRecognitionGroupOpen(context, open, animate = true) {
+        context.recognitionExpanded = open;
+        context.fields["recognition-expand"].setAttribute("aria-expanded", String(open));
+        reveal(context.fields["recognition-panel"], open, animate);
+    }
+
+    /** @param {HTMLElement} host @param {string} title @param {HTMLElement} control
+     * @param {string} [help] @returns {HTMLElement} */
+    function appendRuleField(host, title, control, help = "") {
+        const row = document.createElement("div");
+        row.className = "category-option-row";
+        const label = document.createElement("label");
+        label.className = "category-option-label";
+        label.htmlFor = control.id;
+        label.textContent = title;
+        if (help) {
+            const description = document.createElement("small");
+            description.textContent = help;
+            label.append(description);
+        }
+        row.append(label, control);
+        host.append(row);
+        return row;
+    }
+
+    /** @param {CoordinateCorner} position @returns {HTMLElement} */
+    function createRulePosition(position) {
+        const row = document.createElement("div");
+        row.className = "coordinate-corner-fields";
+        for (const axis of ["x", "y", "z"]) {
+            const label = document.createElement("label");
+            label.className = "field-label";
+            label.textContent = axis.toUpperCase();
+            const input = document.createElement("input");
+            input.id = `${nextId()}-${axis}`;
+            input.type = "number";
+            input.step = "1";
+            input.dataset.positionAxis = axis;
+            input.value = String(position[axis] ?? "");
+            label.htmlFor = input.id;
+            label.append(input);
+            row.append(label);
+        }
+        return row;
+    }
+
+    /** @param {HTMLElement} row @returns {CoordinateCorner} */
+    function readRulePosition(row) {
+        return Object.fromEntries(["x", "y", "z"].map(axis => [axis,
+            row.querySelector(`[data-position-axis="${axis}"]`).valueAsNumber]));
+    }
+
+    /** @param {CategoryOptionsContext} context @param {CoordinateCorner} [position]
+     * @returns {void} */
+    function appendExcludedPosition(context, position = emptyCorner()) {
+        const row = document.createElement("div");
+        row.className = "category-position-entry";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ghost danger";
+        remove.textContent = "删除";
+        remove.setAttribute("aria-label", "删除排除坐标");
+        remove.addEventListener("click", () => {
+            row.remove();
+            dirty = true;
+            context.fields["add-position"].focus();
+        });
+        row.append(createRulePosition(position), remove);
+        context.fields["positions-list"].append(row);
+    }
+
+    /** @param {string} value @returns {CategorySelect} */
+    function createRuleTargetSelect(value) {
+        const wrap = document.createElement("div");
+        wrap.className = "category-select-wrap";
+        wrap.dataset.categorySelect = "bindingTarget";
+        const select = document.createElement("select");
+        select.hidden = true;
+        select.tabIndex = -1;
+        select.setAttribute("aria-hidden", "true");
+        select.dataset.ruleField = "targetType";
+        const trigger = document.createElement("button");
+        trigger.id = `${nextId()}-target`;
+        trigger.type = "button";
+        trigger.className = "category-select-trigger";
+        trigger.setAttribute("role", "combobox");
+        trigger.setAttribute("aria-haspopup", "listbox");
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.setAttribute("aria-label", "绑定目标");
+        const current = document.createElement("span");
+        current.className = "category-select-current";
+        trigger.append(current, globalCategoryContext.selects[0].trigger
+            .querySelector("svg").cloneNode(true));
+        const menu = document.createElement("div");
+        menu.id = `${trigger.id}-menu`;
+        menu.className = "category-select-menu";
+        menu.hidden = true;
+        menu.inert = true;
+        menu.setAttribute("role", "listbox");
+        menu.setAttribute("aria-label", "绑定目标");
+        trigger.setAttribute("aria-controls", menu.id);
+        const choices = [
+            ["marker-id", "识别物 ID", "当前范围内的同类标记共用规则"],
+            ["marker-position", "标记坐标", "只绑定指定位置的一个标记"],
+            ["container", "容器坐标", "直接追加到指定储存容器"]
+        ];
+        for (const [key, title, help] of choices) {
+            select.add(new Option(title, key));
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "category-select-option";
+            option.dataset.categoryValue = key;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", String(key === value));
+            option.tabIndex = -1;
+            const text = document.createElement("span");
+            text.textContent = title;
+            const description = document.createElement("small");
+            description.textContent = help;
+            text.append(description);
+            option.append(text, globalCategoryContext.selects[0].options[0]
+                .querySelector("svg").cloneNode(true));
+            menu.append(option);
+        }
+        select.value = value;
+        wrap.append(select, trigger, menu);
+        return {key: "bindingTarget", select, wrap, trigger, current, menu,
+            options: Array.from(menu.children)};
+    }
+
+    /** @param {HTMLElement} form @returns {void} */
+    function syncItemBindingHeading(form) {
+        const name = form.querySelector('[data-rule-field="name"]').value.trim() || "未命名规则";
+        const ids = form.querySelector("textarea").value.trim().split(/\s+/).filter(Boolean);
+        form.querySelector(".category-rule-count").textContent = `${new Set(ids).size} 项物品`;
+        const action = form.dataset.collapsed === "true" ? "展开" : "收起";
+        form.querySelector(".category-rule-toggle").setAttribute(
+            "aria-label", `${action}物品绑定：${name}`
+        );
+    }
+
+    /** @param {HTMLElement} form @param {boolean} open @param {boolean} [animate]
+     * @returns {void} */
+    function setItemBindingOpen(form, open, animate = true) {
+        form.dataset.collapsed = String(!open);
+        form.querySelector(".category-rule-toggle").setAttribute("aria-expanded", String(open));
+        if (!open && categoryMenuOpen && form.contains(categoryMenuOpen.wrap)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
+        reveal(form.querySelector(".category-rule-body"), open, animate);
+        syncItemBindingHeading(form);
+    }
+
+    /** @param {CategoryOptionsContext} context @param {CategoryItemBinding} [rule]
+     * @returns {void} */
+    function appendItemBinding(context, rule = {
+        name: "", targetType: "marker-id", markerId: "", position: emptyCorner(), itemIds: "",
+        expanded: true
+    }) {
+        const form = document.createElement("div");
+        form.className = "category-rule-form";
+        const heading = document.createElement("div");
+        heading.className = "category-rule-heading";
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "category-rule-toggle";
+        toggle.append(globalCategoryContext.fields["bindings-expand"]
+            .querySelector("svg").cloneNode(true));
+        const body = document.createElement("div");
+        body.className = "category-rule-body";
+        body.id = `${nextId()}-rule-body`;
+        toggle.setAttribute("aria-controls", body.id);
+        const content = document.createElement("div");
+        content.className = "category-rule-content";
+        body.append(content);
+        const name = document.createElement("input");
+        name.type = "text";
+        name.dataset.ruleField = "name";
+        name.setAttribute("aria-label", "绑定规则名称");
+        name.placeholder = "规则名称，例如：幽匿系列";
+        name.value = rule.name;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ghost danger";
+        remove.textContent = "删除规则";
+        const count = document.createElement("span");
+        count.className = "category-rule-count";
+        heading.append(toggle, name, count);
+        form.append(heading, body);
+        toggle.addEventListener("click", () => {
+            setItemBindingOpen(form, form.dataset.collapsed === "true");
+        });
+        heading.addEventListener("click", event => {
+            if (!event.target.closest("input, button")) {
+                setItemBindingOpen(form, form.dataset.collapsed === "true");
+            }
+        });
+        name.addEventListener("input", () => syncItemBindingHeading(form));
+        const control = createRuleTargetSelect(rule.targetType);
+        const targetRow = appendRuleField(content, "绑定目标", control.wrap);
+        targetRow.querySelector("label").htmlFor = control.trigger.id;
+        context.ruleSelects.push(control);
+        bindCategorySelect(control, () => updateCustomRuleState(context));
+        const marker = document.createElement("input");
+        marker.id = `${nextId()}-marker`;
+        marker.type = "text";
+        marker.spellcheck = false;
+        marker.dataset.ruleField = "markerId";
+        marker.placeholder = "例如：minecraft:sculk";
+        marker.value = rule.markerId;
+        appendRuleField(content, "识别物 ID", marker,
+            "这些物品沿用该标记对应的储存列").dataset.ruleRow = "marker";
+        const position = createRulePosition(rule.position);
+        position.id = `${nextId()}-position`;
+        const positionRow = appendRuleField(content, "标记坐标", position,
+            "填写识别物本身的坐标，不是其支撑坐标");
+        positionRow.querySelector("label").removeAttribute("for");
+        position.setAttribute("role", "group");
+        positionRow.querySelector("label").id = `${position.id}-label`;
+        position.setAttribute("aria-labelledby", `${position.id}-label`);
+        positionRow.dataset.ruleRow = "position";
+        const items = document.createElement("textarea");
+        items.id = `${nextId()}-items`;
+        items.className = "category-support-block-input";
+        items.rows = 4;
+        items.spellcheck = false;
+        items.dataset.ruleField = "itemIds";
+        items.placeholder = "minecraft:sculk_sensor\nminecraft:sculk_catalyst";
+        items.value = rule.itemIds;
+        items.addEventListener("input", () => syncItemBindingHeading(form));
+        appendRuleField(content, "接收的物品", items, "每行一个物品 ID，追加到目标原有分类");
+        const actions = document.createElement("div");
+        actions.className = "category-rule-actions";
+        actions.append(remove);
+        content.append(actions);
+        remove.addEventListener("click", () => {
+            if (categoryMenuOpen === control) setCategoryMenuOpen(control, false, false, false);
+            context.ruleSelects = context.ruleSelects.filter(value => value !== control);
+            form.remove();
+            dirty = true;
+            syncCategoryOptionSummaries(context);
+            context.fields["add-rule"].focus();
+        });
+        context.fields["rules-list"].append(form);
+        setItemBindingOpen(form, Boolean(rule.expanded), false);
+    }
+
+    /** @param {HTMLElement} form @returns {CategoryItemBinding} */
+    function readItemBinding(form) {
+        /** @param {string} key @returns {string} */
+        const read = key => form.querySelector(`[data-rule-field="${key}"]`).value;
+        return {name: read("name"), targetType: read("targetType"), markerId: read("markerId"),
+            position: readRulePosition(form), itemIds: read("itemIds"),
+            expanded: form.dataset.collapsed === "false"};
+    }
+
+    /** @param {CategoryOptionsContext} context @param {boolean} [animate] @returns {void} */
+    function updateCustomRuleState(context, animate = true) {
+        const fields = context.fields;
+        for (const [key, toggle, stateKey, title] of [
+            ["positions", "ignore-positions", "positionsExpanded", "排除坐标设置"],
+            ["repeats", "ignore-repeated", "repeatsExpanded", "重复方块判定说明"],
+            ["bindings", "multi-bindings", "bindingsExpanded", "多物品绑定设置"]
+        ]) {
+            const enabled = fields[toggle].checked;
+            const open = enabled && context[stateKey];
+            const panel = fields[`${key}-panel`];
+            const expand = fields[`${key}-expand`];
+            expand.hidden = !enabled;
+            expand.disabled = !enabled || context.active === false;
+            expand.setAttribute("aria-label", `${open ? "收起" : "展开"}${title}`);
+            for (const element of [expand, fields[toggle]]) {
+                element.setAttribute("aria-expanded", String(open));
+            }
+            if (!open && categoryMenuOpen && panel.contains(categoryMenuOpen.wrap)) {
+                setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+            }
+            panel.querySelectorAll("input, textarea, select, button").forEach(element => {
+                element.disabled = !enabled || context.active === false;
+            });
+            reveal(panel, open, animate);
+        }
+        for (const control of context.ruleSelects) {
+            const form = control.wrap.closest(".category-rule-form");
+            const type = control.select.value;
+            const markerRow = form.querySelector('[data-rule-row="marker"]');
+            const positionRow = form.querySelector('[data-rule-row="position"]');
+            const disabled = !fields["multi-bindings"].checked || context.active === false;
+            markerRow.querySelector("input").disabled = disabled || type !== "marker-id";
+            positionRow.querySelectorAll("input").forEach(input => {
+                input.disabled = disabled || type === "marker-id";
+            });
+            positionRow.querySelector(".category-option-label").firstChild.textContent =
+                type === "container" ? "容器坐标" : "标记坐标";
+            positionRow.querySelector("small").textContent = type === "container"
+                ? "填写当前储存区中的容器坐标" : "填写识别物本身的坐标，不是其支撑坐标";
+            const showMotion = animate && form.dataset.collapsed === "false";
+            reveal(markerRow, type === "marker-id", showMotion);
+            reveal(positionRow, type !== "marker-id", showMotion);
+            syncCategorySelect(control);
+        }
+        setRecognitionGroupOpen(context, context.recognitionExpanded, animate);
+        syncCategoryOptionSummaries(context);
+    }
+
+    /** @param {CoordinateCorner} position @returns {boolean} */
+    function validRulePosition(position) {
+        return Object.values(position).every(value => Number.isInteger(value)
+            && value >= -2147483648 && value <= 2147483647);
+    }
+
+    /** @param {CategoryOptionsContext} context @returns {boolean} */
+    function validateCustomRules(context) {
+        const options = readCategoryOptions(context);
+        let message = "";
+        let invalidRule = null;
+        const invalidPositions = options.ignoreMarkerPositions
+            && (!options.ignoredMarkerPositions.length
+                || !options.ignoredMarkerPositions.every(validRulePosition));
+        if (invalidPositions) {
+            message = "请添加排除位置，并填写完整的 X、Y、Z 整数坐标。";
+        }
+        if (options.multiItemBindingsEnabled) {
+            if (!options.multiItemBindings.length) message = "请至少添加一条物品绑定规则。";
+            const itemId = /^[a-z0-9_.-]+:[a-z0-9_./-]+$/;
+            for (const [index, rule] of options.multiItemBindings.entries()) {
+                const prefix = `物品绑定「${rule.name.trim() || index + 1}」：`;
+                const ids = rule.itemIds.trim().split(/\s+/).filter(Boolean);
+                if (!ids.length || !ids.every(id => itemId.test(id))) {
+                    invalidRule = index;
+                    message = prefix + "请每行填写一个完整物品 ID，例如 minecraft:sculk。";
+                    break;
+                }
+                if (rule.targetType === "marker-id" && !itemId.test(rule.markerId.trim())) {
+                    invalidRule = index;
+                    message = prefix + "请填写完整的识别物 ID。";
+                    break;
+                }
+                if (rule.targetType !== "marker-id" && !validRulePosition(rule.position)) {
+                    invalidRule = index;
+                    message = prefix + "请填写目标的 X、Y、Z 整数坐标。";
+                    break;
+                }
+                if (rule.targetType === "marker-position" && options.ignoreMarkerPositions
+                        && options.ignoredMarkerPositions.some(position => ["x", "y", "z"]
+                            .every(axis => position[axis] === rule.position[axis]))) {
+                    invalidRule = index;
+                    message = prefix + "目标标记已被排除，请修改标记坐标或移除对应排除项。";
+                    break;
+                }
+            }
+        }
+        if (!message) return true;
+        if (invalidRule !== null) {
+            context.bindingsExpanded = true;
+            updateCustomRuleState(context, false);
+            setItemBindingOpen(context.fields["rules-list"].children[invalidRule], true, false);
+        } else if (invalidPositions) {
+            context.recognitionExpanded = true;
+            context.positionsExpanded = true;
+            updateCustomRuleState(context, false);
+        }
+        setStatus(message, "error");
+        return false;
     }
 
     /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
     function createBindingOptions(binding) {
         const root = globalCategoryContext.root.cloneNode(true);
+        root.querySelectorAll(".category-rule-list").forEach(list => list.replaceChildren());
         const prefix = `binding-${binding.id}-`;
         root.querySelectorAll("[id]").forEach(element => {
             element.id = prefix + element.id;
@@ -1262,6 +1697,10 @@
             coordinate.region = readRegionFields(nodes.region);
             if (!coordinate.region) return;
         } else {
+            const contexts = [globalCategoryContext, ...Array.from(
+                nodes.categoryBindings.children, card => bindingOptions.get(card)
+            )];
+            if (!contexts.every(validateCategoryOptions)) return;
             coordinate.overallRegion = readRegionFields(nodes.categoryOverall);
             coordinate.bindings = readCategoryBindings();
             coordinate.categoryOptions = readCategoryOptions();
@@ -1524,57 +1963,102 @@
         }
         nodes.kindOptions[index].focus();
     });
+    /** @param {CategorySelect} control @param {() => void} onChange @returns {void} */
+    function bindCategorySelect(control, onChange) {
+        control.trigger.addEventListener("click", () => {
+            const open = control.trigger.getAttribute("aria-expanded") === "true";
+            setCategoryMenuOpen(control, !open);
+        });
+        control.trigger.addEventListener("keydown", event => {
+            if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
+            event.preventDefault();
+            setCategoryMenuOpen(control, true, true);
+        });
+        control.menu.addEventListener("click", event => {
+            const option = event.target.closest("[data-category-value]");
+            if (option) selectCategoryOption(control, option.dataset.categoryValue);
+        });
+        control.menu.addEventListener("keydown", event => {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                setCategoryMenuOpen(control, false, true);
+                return;
+            }
+            if (event.key === "Tab") {
+                setCategoryMenuOpen(control, false);
+                return;
+            }
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                const option = /** @type {HTMLButtonElement} */ (document.activeElement);
+                selectCategoryOption(control, option.dataset.categoryValue);
+                return;
+            }
+            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            let index = control.options.indexOf(document.activeElement);
+            if (event.key === "Home") index = 0;
+            if (event.key === "End") index = control.options.length - 1;
+            if (event.key === "ArrowDown") index = (index + 1) % control.options.length;
+            if (event.key === "ArrowUp") {
+                index = (index - 1 + control.options.length) % control.options.length;
+            }
+            control.options[index]?.focus();
+        });
+        control.select.addEventListener("change", () => {
+            syncCategorySelect(control);
+            onChange();
+        });
+    }
+
     /** @param {CategoryOptionsContext} context @returns {void} */
     function bindCategoryOptions(context) {
         for (const control of context.selects) {
-            control.trigger.addEventListener("click", () => {
-                const open = control.trigger.getAttribute("aria-expanded") === "true";
-                setCategoryMenuOpen(control, !open);
-            });
-            control.trigger.addEventListener("keydown", event => {
-                if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
-                event.preventDefault();
-                setCategoryMenuOpen(control, true, true);
-            });
-            control.menu.addEventListener("click", event => {
-                const option = event.target.closest("[data-category-value]");
-                if (option) selectCategoryOption(control, option.dataset.categoryValue);
-            });
-            control.menu.addEventListener("keydown", event => {
-                if (event.key === "Escape") {
-                    event.preventDefault();
-                    setCategoryMenuOpen(control, false, true);
-                    return;
-                }
-                if (event.key === "Tab") {
-                    setCategoryMenuOpen(control, false);
-                    return;
-                }
-                if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    const option = /** @type {HTMLButtonElement} */ (document.activeElement);
-                    selectCategoryOption(control, option.dataset.categoryValue);
-                    return;
-                }
-                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                event.preventDefault();
-                let index = control.options.indexOf(document.activeElement);
-                if (event.key === "Home") index = 0;
-                if (event.key === "End") index = control.options.length - 1;
-                if (event.key === "ArrowDown") index = (index + 1) % control.options.length;
-                if (event.key === "ArrowUp") {
-                    index = (index - 1 + control.options.length) % control.options.length;
-                }
-                control.options[index]?.focus();
-            });
-            control.select.addEventListener("change", () => {
-                syncCategorySelect(control);
+            bindCategorySelect(control, () => {
                 if (control.select === context.fields["storage-method"]) {
                     updateCategoryOptionState(context);
                 }
             });
         }
         const fields = context.fields;
+        fields["recognition-expand"].addEventListener("click", () => {
+            setRecognitionGroupOpen(context, !context.recognitionExpanded);
+        });
+        for (const [key, toggle, stateKey] of [
+            ["positions", "ignore-positions", "positionsExpanded"],
+            ["repeats", "ignore-repeated", "repeatsExpanded"],
+            ["bindings", "multi-bindings", "bindingsExpanded"]
+        ]) {
+            fields[`${key}-expand`].addEventListener("click", () => {
+                if (!fields[toggle].checked) return;
+                context[stateKey] = !context[stateKey];
+                updateCustomRuleState(context);
+            });
+            fields[toggle].addEventListener("change", () => {
+                context[stateKey] = fields[toggle].checked;
+                if (fields[toggle].checked) {
+                    if (key === "positions" && !fields["positions-list"].children.length) {
+                        appendExcludedPosition(context);
+                    }
+                    if (key === "bindings" && !fields["rules-list"].children.length) {
+                        appendItemBinding(context);
+                    }
+                }
+                updateCustomRuleState(context);
+            });
+        }
+        fields["add-position"].addEventListener("click", () => {
+            appendExcludedPosition(context);
+            dirty = true;
+            updateCustomRuleState(context, false);
+            fields["positions-list"].lastElementChild.querySelector("input").focus();
+        });
+        fields["add-rule"].addEventListener("click", () => {
+            appendItemBinding(context);
+            dirty = true;
+            updateCustomRuleState(context, false);
+            fields["rules-list"].lastElementChild.querySelector("input").focus();
+        });
         fields["support-expand"].addEventListener("click", () => {
             if (!fields["ignore-support"].checked) return;
             context.supportExpanded = !context.supportExpanded;

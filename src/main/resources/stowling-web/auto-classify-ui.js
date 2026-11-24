@@ -26,11 +26,12 @@
         loading: false,
         busy: false,
         pendingSwitch: null,
+        classificationRuns: [],
         dirty: false,
         active: false,
         expanded: false,
         phase: {collection: false, pickup: false, packing: false,
-            classification: false, followUp: false}
+            classification: false, followUp: false, warehouse: false}
     };
     const elements = {
         list: document.querySelector("#auto-task-list"),
@@ -64,6 +65,8 @@
         newTask: document.querySelector("#new-auto-task"),
         newClassification: document.querySelector("#new-classification-task"),
         draftTitle: document.querySelector("#auto-draft-title"),
+        draftIcon: document.querySelector("#auto-draft-icon"),
+        draftRun: document.querySelector("#auto-draft-run"),
         combinedPreview: document.querySelector("#combined-task-preview"),
         cacheLabel: document.querySelector("#auto-cache-label"),
         followUp: document.querySelector("#auto-follow-up-task"),
@@ -77,19 +80,25 @@
         remove: document.querySelector("#delete-auto-task"),
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
-        warehouseField: document.querySelector("#robot-warehouse-location-field")
+        warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
+        warehouseBody: document.querySelector("#robot-warehouse-body")
     };
     const rows = new Map();
     for (const content of elements.form.querySelectorAll(
         ".auto-phase-body:not(#auto-collect-body), .settings-detail")) {
-        const inner = Stowling.element("div", "task-settings-inner");
-        inner.append(...content.childNodes);
-        content.append(inner);
+        wrapSettingsContent(content);
     }
     const selectView = window.StowlingTaskSelect?.create(elements.form);
     const phaseDisabledControls = new Map();
     let areaReaders = [];
     const autosave = Autosave.create(elements.form, saveTask, () => state.busy || state.loading);
+
+    /** @param {HTMLElement} content @returns {void} */
+    function wrapSettingsContent(content) {
+        const inner = Stowling.element("div", "task-settings-inner");
+        inner.append(...content.childNodes);
+        content.append(inner);
+    }
 
     /** @returns {boolean} */
     function unavailable() {
@@ -219,10 +228,12 @@
         fields.append(
             labeledControl(state.draft.kind === "CLASSIFICATION" ? "分类储存区" : "分类范围",
                 range),
-            Stowling.element("p", "muted compact-help",
+            Stowling.element("p", "settings-description compact-help",
                 "识别方式使用仓储布局中各分类物的设置。"),
             storage.root
         );
+        wrapSettingsContent(storage.root.querySelector(".settings-detail"));
+        wrapSettingsContent(fields);
         const disclosure = window.StowlingSettings.disclosure(
             `分类选区 ${index + 1}`,
             selectedZone?.name || "请选择分类范围", fields);
@@ -234,7 +245,7 @@
             event.stopPropagation();
             removeClassificationArea(index);
         });
-        disclosure.summary.insertBefore(remove, disclosure.summary.lastElementChild);
+        fields.firstElementChild.append(remove);
         range.addEventListener("input", () => {
             disclosure.description.textContent = range.selectedOptions[0]?.textContent || "";
         });
@@ -377,8 +388,11 @@
         for (const item of state.items) {
             const draft = Auto.draftFromTask(item);
             const pickup = item.kind === "PICKUP";
-            const card = Stowling.element("article", pickup
+            const classification = item.kind === "CLASSIFICATION";
+            const standard = pickup || classification;
+            const card = Stowling.element("article", standard
                 ? "pickup-task-module" : "move-saved-task auto-saved-task");
+            card.dataset.taskId = item.id;
             const button = Stowling.element("button", "move-task-summary");
             button.type = "button";
             const body = Stowling.element("div", "move-task-body");
@@ -419,13 +433,18 @@
             }
             const header = Stowling.element("div", "task-card-header");
             const row = {button, body, status};
-            if (pickup) {
+            if (standard) {
                 header.className = "pickup-task-header";
                 const title = Stowling.element("h3", "pickup-task-title", item.name);
                 title.prepend(pickupIcon());
+                if (classification) {
+                    title.firstElementChild.firstElementChild.setAttribute("d",
+                        "M4 4h6v6H4ZM14 4h6v6h-6ZM4 14h6v6H4ZM14 14h6v6h-6Z");
+                }
                 button.className = "pickup-task-expand";
                 button.replaceChildren(disclosureIcon());
                 status.className = "visually-hidden";
+                status.id = `auto-task-status-${item.id}`;
                 status.setAttribute("role", "status");
                 status.setAttribute("aria-live", "polite");
                 body.className = "pickup-task-body";
@@ -433,22 +452,16 @@
             } else {
                 header.append(button);
             }
-            if (item.kind === "CLASSIFICATION") {
-                row.run = Stowling.element("button", "secondary compact", "运行一次");
-                row.run.type = "button";
-                row.run.addEventListener("click", () => void runClassification(item.id));
-                header.append(row.run);
-            } else {
-                row.listening = window.StowlingSettings.switchControl(
-                    document.createElement("input"), "监听任务：" + item.name
-                );
-                row.listening.addEventListener("change", () => {
-                    void setListening(item.id, row.listening.checked);
-                });
-                header.append(row.listening);
-            }
+            row.listening = window.StowlingSettings.switchControl(
+                document.createElement("input"), "开始任务：" + item.name
+            );
+            if (standard) row.listening.setAttribute("aria-describedby", status.id);
+            row.listening.addEventListener("change", () => {
+                void setListening(item.id, row.listening.checked);
+            });
+            header.append(row.listening);
             card.append(header, body);
-            if (pickup) card.append(status);
+            if (standard) card.append(status);
             elements.list.append(card);
             rows.set(item.id, row);
         }
@@ -495,9 +508,13 @@
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
         elements.form.dataset.kind = kind || "COMBINED";
-        elements.draft.classList.toggle("pickup-task-module", pickup);
-        elements.draftBody.classList.toggle("pickup-task-body", pickup);
+        elements.draft.classList.toggle("pickup-task-module", pickup || classification);
+        elements.draftBody.classList.toggle("pickup-task-body", pickup || classification);
         elements.draftTitle.textContent = classification ? "新建 · 分类" : "新建 · 掉落物拾取";
+        elements.draftIcon.setAttribute("d", classification
+            ? "M4 4h6v6H4ZM14 4h6v6h-6ZM4 14h6v6H4ZM14 14h6v6h-6Z"
+            : "M12 3 3 7.5v9L12 21l9-4.5v-9L12 3ZM3 7.5l9 4.5 9-4.5M12 12v9");
+        elements.draftRun.hidden = !classification;
         elements.combinedPreview.hidden = Boolean(kind);
         elements.cacheLabel.textContent = classification ? "来源缓存" : "缓存位置";
         elements.followUpField.hidden = !pickup;
@@ -528,39 +545,37 @@
         elements.draftToggle.setAttribute("aria-label",
             `${state.expanded ? "收起" : "展开"}${elements.draftTitle.textContent}设置`);
         elements.remove.hidden = !state.draft.id;
-        elements.warehouseField.hidden = !elements.warehouseEnabled.checked;
         for (const [id, row] of rows) {
             const selected = state.draft.id === id;
             const expanded = selected && state.expanded;
             const item = state.items.find((value) => value.id === id);
             const pending = state.pendingSwitch?.id === id;
+            const classification = item.kind === "CLASSIFICATION";
+            const active = classification ? state.classificationRuns.some(run => run.taskId === id)
+                : Boolean(item.enabled);
             row.button.disabled = disabled;
-            if (row.listening) {
-                row.listening.checked = pending ? state.pendingSwitch.enabled
-                    : Boolean(item?.enabled);
-                row.listening.disabled = disabled || (selected && state.dirty);
-                row.listening.title = selected && state.dirty ? "修改保存后可切换监听" : "启用监听";
-            } else {
-                row.run.disabled = disabled || (selected && state.dirty);
-            }
+            row.listening.checked = pending ? state.pendingSwitch.enabled : active;
+            row.listening.disabled = disabled || (!active && selected && state.dirty);
             row.button.setAttribute("aria-expanded", String(expanded));
             row.button.setAttribute("aria-label", `${expanded ? "收起" : "展开"}${item.name}设置`);
             if (row.listening) {
-                const action = item?.enabled ? "关闭" : "开始";
+                const action = row.listening.checked ? "关闭" : "开始";
                 row.listening.setAttribute("aria-label", `${action}任务：${item.name}`);
-                row.listening.title = selected && state.dirty
-                    ? "修改保存后可切换监听" : `${action}任务`;
+                row.listening.title = !active && selected && state.dirty
+                    ? "修改保存后可开始任务" : `${action}任务`;
             }
             void window.StowlingSettings.reveal(row.body, expanded);
-            row.status.textContent = selected && state.dirty ? "未保存修改"
-                : (item?.enabled ? "监听中" : "已保存");
+            row.status.textContent = pending ? "正在切换任务状态"
+                : active ? classification ? "排队或运行中" : "监听中"
+                    : selected && state.dirty ? "未保存修改" : "已保存";
         }
         const phaseStates = [
             ["collection", elements.collectHeader, elements.collectBody],
             ["pickup", elements.pickupHeader, elements.pickupBody],
             ["packing", elements.packingHeader, elements.packingBody],
             ["classification", elements.classifyHeader, elements.classifyBody],
-            ["followUp", elements.followUpHeader, elements.followUpBody]
+            ["followUp", elements.followUpHeader, elements.followUpBody],
+            ["warehouse", elements.warehouseHeader, elements.warehouseBody]
         ];
         for (const [phase, header, body] of phaseStates) {
             if (!header || !body) {
@@ -574,7 +589,7 @@
             const expanded = enabled && (alwaysOpen || state.phase[phase]);
             header.setAttribute("aria-expanded", String(expanded));
             const labels = {collection: "缓存", pickup: "掉落物拾取点", packing: "打包缓存",
-                classification: "后台分类", followUp: "任务结束后创建任务"};
+                classification: "后台分类", followUp: "任务结束后创建任务", warehouse: "机器人仓库"};
             header.setAttribute("aria-label",
                 `${expanded ? "收起" : "展开"}${labels[phase]}设置`);
             void window.StowlingSettings.reveal(body, expanded);
@@ -592,7 +607,7 @@
         }
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
-        selectView?.refresh(pickup);
+        selectView?.refresh(pickup || classification);
     }
 
     /**
@@ -625,6 +640,7 @@
         state.phase.packing = false;
         state.phase.classification = false;
         state.phase.followUp = false;
+        state.phase.warehouse = false;
         syncForm();
         renderList();
         showMessage(item ? "已保存" : "配置完整后自动保存");
@@ -639,6 +655,7 @@
         if (phase === "packing") return elements.cacheEnabled.checked;
         if (phase === "classification") return elements.classifyEnabled.checked;
         if (phase === "followUp") return elements.followUpEnabled.checked;
+        if (phase === "warehouse") return elements.warehouseEnabled.checked;
         return true;
     }
 
@@ -659,25 +676,6 @@
         updateControls();
     }
 
-    /** @param {string} id @returns {Promise<void>} */
-    async function runClassification(id) {
-        if (unavailable()) return;
-        state.busy = true;
-        updateControls();
-        try {
-            await Stowling.request("/v1/tasks/" + encodeURIComponent(id) + "/runs", {
-                method: "POST"
-            });
-            Stowling.showToast("分类任务已提交");
-            document.dispatchEvent(new Event("stowling:monitor-refresh"));
-        } catch (error) {
-            Stowling.handleError(error, "启动分类任务失败");
-        } finally {
-            state.busy = false;
-            updateControls();
-        }
-    }
-
     /**
      * @param {string} id
      * @param {boolean} enabled
@@ -690,6 +688,7 @@
             return;
         }
         const previousRevision = state.revision;
+        const classification = state.items.find(item => item.id === id)?.kind === "CLASSIFICATION";
         const retainFocus = document.activeElement === row.listening;
         state.pendingSwitch = {id, enabled};
         state.busy = true;
@@ -719,19 +718,32 @@
             document.dispatchEvent(new CustomEvent("stowling:task-switch-changed", {
                 detail: {previousRevision, revision: state.revision}
             }));
-            Stowling.showToast(response.item.enabled
-                ? "已开始监听" : "已停止监听，已排队任务会继续执行");
+            if (classification) {
+                state.classificationRuns = state.classificationRuns.filter(run => run.taskId !== id);
+                if (enabled) state.classificationRuns.push({taskId: id, state: "QUEUED"});
+            }
+            Stowling.showToast(classification
+                ? enabled ? "分类任务已提交" : "已请求关闭分类任务"
+                : response.item.enabled ? "已开始监听" : "已停止监听，已排队任务会继续执行");
         } catch (error) {
-            Stowling.handleError(error, "切换任务监听失败");
+            Stowling.handleError(error, "切换任务运行状态失败");
         } finally {
             state.busy = false;
             state.pendingSwitch = null;
             row.listening.removeAttribute("aria-busy");
             updateControls();
+            document.dispatchEvent(new Event("stowling:monitor-refresh"));
             if (retainFocus && document.activeElement === document.body) {
                 row.listening.focus({preventScroll: true});
             }
         }
+    }
+
+    /** @param {Array<object>} pending @returns {void} */
+    function syncClassificationRuns(pending) {
+        state.classificationRuns = pending.filter(run => ["QUEUED", "RUNNING", "WAITING",
+            "INTERRUPTING", "INTERRUPTION_FAILED"].includes(run.state || "QUEUED"));
+        updateControls();
     }
 
     /**
@@ -849,6 +861,7 @@
     elements.packingHeader.addEventListener("click", () => togglePhase("packing"));
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
     elements.followUpHeader.addEventListener("click", () => togglePhase("followUp"));
+    elements.warehouseHeader.addEventListener("click", () => togglePhase("warehouse"));
     elements.followUpBody.addEventListener("invalid", () => {
         state.phase.followUp = true;
         updateControls();
@@ -888,6 +901,9 @@
         if (event.target === elements.followUpEnabled) {
             state.phase.followUp = false;
         }
+        if (event.target === elements.warehouseEnabled) {
+            state.phase.warehouse = false;
+        }
         readForm();
         state.dirty = true;
         showMessage("未保存修改");
@@ -906,6 +922,9 @@
         }
     });
     document.addEventListener("stowling:tasks-changed", () => void loadResources());
+    document.addEventListener("stowling:refresh-task-status", ({detail}) => {
+        syncClassificationRuns(detail.pending || []);
+    });
     Stowling.onConnected(loadResources);
     updateControls();
     window.setInterval(updateControls, 3000);

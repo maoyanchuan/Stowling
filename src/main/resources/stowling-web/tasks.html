@@ -726,7 +726,8 @@
                                     <svg aria-hidden="true" viewBox="0 0 24 24" width="20"
                                          height="20" fill="none" stroke="currentColor"
                                          stroke-width="1.8" stroke-linejoin="round">
-                                        <path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z
+                                        <path id="auto-draft-icon"
+                                              d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z
                                                  M3 7.5l9 4.5 9-4.5M12 12v9"/>
                                     </svg>
                                     <strong id="auto-draft-title">新建 · 掉落物拾取</strong>
@@ -739,6 +740,9 @@
                                          height="20" fill="none" stroke="currentColor"
                                          stroke-width="1.8"><path d="m9 5 7 7-7 7"/></svg>
                                 </button>
+                                <input id="auto-draft-run" class="settings-switch" type="checkbox"
+                                       role="switch" disabled hidden aria-label="运行分类任务"
+                                       title="配置完整并自动保存后可开始任务">
                             </div>
                             <div id="auto-draft-body" class="move-task-body" hidden>
                                 <form id="auto-task-form" class="auto-task-form" hidden novalidate>
@@ -974,7 +978,10 @@
                                                  class="auto-config-section"
                                                  aria-labelledby="robot-warehouse-title">
                                             <div class="auto-phase-header">
-                                                <div class="auto-phase-toggle">
+                                                <button id="robot-warehouse-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="robot-warehouse-body">
                                                     <span class="auto-phase-title">
                                                         <span class="auto-phase-index"
                                                               aria-hidden="true">3</span>
@@ -987,7 +994,9 @@
                                                             </small>
                                                         </span>
                                                     </span>
-                                                </div>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true"></span>
+                                                </button>
                                                 <label class="auto-phase-switch"
                                                        for="robot-warehouse-enabled">
                                                     <span class="visually-hidden">
@@ -999,11 +1008,17 @@
                                                           aria-hidden="true"></span>
                                                 </label>
                                             </div>
-                                            <label id="robot-warehouse-location-field"
-                                                   class="move-field" hidden>
-                                                <span>溢出存放仓库</span>
-                                                <select id="robot-warehouse-location"></select>
-                                            </label>
+                                            <div id="robot-warehouse-body"
+                                                 class="settings-detail" hidden>
+                                                <label id="robot-warehouse-location-field"
+                                                       class="move-field">
+                                                    <span>溢出存放仓库</span>
+                                                    <select id="robot-warehouse-location"
+                                                            data-option-description=
+                                                            "储存区满后，将物品装盒存入此仓库">
+                                                    </select>
+                                                </label>
+                                            </div>
                                         </section>
                                         <section id="auto-follow-up-field"
                                                  class="auto-config-section" hidden>

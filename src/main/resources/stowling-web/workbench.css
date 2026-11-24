@@ -593,7 +593,7 @@ body[data-page] .auto-phase-switch input:checked + .auto-switch-track::after {
     transform: translateX(18px);
 }
 
-body[data-page] .auto-classification-area {
+body[data-page] .auto-task-form[data-kind="COMBINED"] .auto-classification-area {
     margin: 10px 0;
     padding: 12px 16px;
     border: 1px solid var(--theme-border, #3b3c42);
@@ -1404,7 +1404,8 @@ body[data-page] .backpack-editor {
 }
 
 body[data-page] :is(.category-layout-section,
-    .task-cleanup-section:not(:where(.auto-task-form[data-kind="PICKUP"] *))) {
+    .task-cleanup-section:not(:where(.auto-task-form[data-kind="PICKUP"] *,
+        .auto-task-form[data-kind="CLASSIFICATION"] *))) {
     margin: 12px 0;
     padding: 0 16px;
     border: 1px solid var(--theme-border, #3b3c42);
@@ -1573,7 +1574,7 @@ body[data-page] .auto-classification-area > .settings-detail {
     padding: 0 0 12px;
 }
 
-body[data-page] .auto-storage-policy {
+body[data-page] .auto-task-form[data-kind="COMBINED"] .auto-storage-policy {
     margin: 12px 0 0;
     padding: 0 14px;
     border: 1px solid var(--theme-border, #383a40);

@@ -182,14 +182,15 @@ def test_robot_warehouse_has_a_switch_and_location_inside_the_classification_tas
     assert 'id="robot-warehouse-enabled"' in warehouse
     assert 'role="switch"' in warehouse
     assert 'id="robot-warehouse-location"' in warehouse
-    assert "<button" not in warehouse
-    assert 'id="robot-warehouse-body"' not in html
+    assert 'id="robot-warehouse-toggle"' in warehouse
+    assert 'aria-controls="robot-warehouse-body"' in warehouse
+    assert 'id="robot-warehouse-body"' in warehouse
     assert 'id="auto-overflow-destination"' not in html
     assert 'id="add-robot-warehouse-location"' not in html
     assert form.index('id="auto-sort-body"') < form.index('id="robot-warehouse-settings"')
 
     javascript = read("auto-classify-ui.js")
-    assert "overflowEnabled: elements.warehouseEnabled.checked" in javascript
+    assert 'overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked' in javascript
 
 
 def test_recognition_is_configured_only_in_the_storage_layout() -> None:

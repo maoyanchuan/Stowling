@@ -1,4 +1,4 @@
-/* Approved task template shared by pickup, coordinate, auto-eat and refresh. */
+/* Approved task template shared by pickup, classification, coordinate, auto-eat and refresh. */
 body[data-page="tasks"] .pickup-task-module {
     --pickup-padding: 20px;
     --pickup-control-height: 42px;
@@ -29,6 +29,7 @@ body[data-page="tasks"] .pickup-task-module::before {
 }
 
 .pickup-task-module[hidden],
+.pickup-task-header > [hidden],
 .pickup-task-body[hidden],
 :is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form)[hidden],
 :is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) [hidden],
@@ -159,14 +160,14 @@ body[data-page] .pickup-task-body {
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) {
     padding: 4px 20px 14px;
     font-size: 16px;
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form)
     :is(.move-field, .auto-phase-header, .settings-row) {
     position: relative;
@@ -184,7 +185,7 @@ body[data-page]
     background: transparent;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form)
     :is(.move-field, .auto-phase-header, .settings-row)::before {
     content: "";
@@ -199,7 +200,7 @@ body[data-page]
 }
 
 @media (hover: hover) {
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form)
         :is(.move-field, .auto-phase-header, .settings-row):hover::before {
         opacity: 1;
@@ -207,7 +208,7 @@ body[data-page]
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form)
     :is(.move-field > span:first-child, .auto-phase-toggle, .settings-copy > strong) {
     min-width: 0;
@@ -217,20 +218,20 @@ body[data-page]
     overflow-wrap: anywhere;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .move-field > span:first-child {
     flex: 1;
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-toggle {
     gap: 12px;
     min-height: 82px;
     padding: 10px 0;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-toggle > strong {
     flex: 1;
     font-size: inherit;
@@ -238,18 +239,23 @@ body[data-page]
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-copy strong {
     color: var(--text);
     font-size: 16px;
     font-weight: 400;
 }
 
+.auto-task-form:not([data-kind="COMBINED"]) .auto-phase-copy :is(strong, small) {
+    overflow: visible;
+    white-space: normal;
+}
+
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .auto-phase-body,
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .settings-detail {
     min-width: 0;
     margin: 0;
@@ -257,13 +263,28 @@ body[data-page]
     border: 0;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .task-settings-inner {
     padding: 2px 0 18px 20px;
 }
 
+.auto-task-form[data-kind="CLASSIFICATION"] #auto-sort-body > .task-settings-inner {
+    padding: 0;
+}
+
+body[data-page] .auto-task-form:not([data-kind="COMBINED"]) .storage-slot-counter {
+    flex: 0 0 56%;
+    width: 56%;
+    min-width: 0;
+}
+
+body[data-page] .auto-task-form:not([data-kind="COMBINED"]) .storage-slot-counter input {
+    flex: 1;
+    width: 100%;
+}
+
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form)
     :is(.auto-config-note, .settings-description, .auto-phase-copy small) {
     color: var(--muted);
@@ -272,13 +293,13 @@ body[data-page]
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .settings-disclosure {
     border: 0;
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .settings-detail
     .move-field:has(> small) {
     display: grid;
@@ -287,7 +308,7 @@ body[data-page]
     padding: 14px 0;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .move-field:has(> small)
     > span:first-child {
     grid-column: 1;
@@ -295,7 +316,7 @@ body[data-page]
     align-self: end;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .move-field:has(> small)
     > .task-select-wrap {
     grid-column: 2;
@@ -303,7 +324,7 @@ body[data-page]
     align-self: center;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .move-field > small {
     grid-column: 1;
     grid-row: 2;
@@ -316,7 +337,7 @@ body[data-page]
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) input[type="number"],
 body[data-page] .auto-eat-task-form input[type="text"],
 body[data-page] .refresh-cache-task-form input[type="time"] {
@@ -333,7 +354,7 @@ body[data-page] .refresh-cache-task-form input[type="time"] {
 }
 
 body[data-page] .pickup-task-module input.settings-switch,
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .auto-switch-track {
     flex: 0 0 56px;
     width: 56px;
@@ -349,7 +370,7 @@ body[data-page] .pickup-task-module input.settings-switch {
         radial-gradient(circle, var(--theme-switch-thumb, #f6f6f8) 0 11px, transparent 11.5px);
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .auto-switch-track::after {
     top: 5px;
     left: 5px;
@@ -358,7 +379,7 @@ body[data-page] .pickup-task-module input.settings-switch {
 }
 
 body[data-page]
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form)
     .auto-phase-switch input:checked + .auto-switch-track::after {
     transform: translateX(24px);
@@ -368,7 +389,7 @@ body[data-page]
     display: contents;
 }
 
-:is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+:is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
     .auto-eat-task-form, .refresh-cache-task-form) .move-field > .task-select-wrap {
     flex: 0 0 38%;
     min-width: min(240px, 100%);
@@ -509,24 +530,29 @@ body[data-page] .task-select-option:focus-visible {
 
 @media (max-width: 600px) {
     body[data-page]
-        :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
             .auto-eat-task-form, .refresh-cache-task-form) .move-field {
         flex-wrap: wrap;
         padding: 14px 0;
     }
 
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .move-field > span:first-child,
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .move-field > .task-select-wrap,
     body[data-page]
-        :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
             .auto-eat-task-form, .refresh-cache-task-form) input[type="number"],
     body[data-page] .auto-eat-task-form input[type="text"],
     body[data-page] .refresh-cache-task-form input[type="time"] {
         flex-basis: 100%;
         width: 100%;
         min-width: 0;
+    }
+
+    body[data-page] .auto-task-form:not([data-kind="COMBINED"]) .storage-slot-counter {
+        flex-basis: 100%;
+        width: 100%;
     }
 
     body[data-page] :is(.auto-eat-task-form, .refresh-cache-task-form)
@@ -545,13 +571,13 @@ body[data-page] .task-select-option:focus-visible {
     }
 
     body[data-page]
-        :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+        :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
             .auto-eat-task-form, .refresh-cache-task-form) .settings-detail
         .move-field:has(> small) {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    :is(.auto-task-form[data-kind="PICKUP"], .coordinate-task-form,
+    :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .move-field:has(> small)
         > .task-select-wrap {
         grid-column: 1;
@@ -568,7 +594,8 @@ body[data-page] .task-select-option:focus-visible {
 }
 
 @media (max-width: 480px) {
-    .refresh-cache-task-form .task-settings-inner {
+    :is(.refresh-cache-task-form, .auto-task-form[data-kind="CLASSIFICATION"])
+        .task-settings-inner {
         padding-left: 0;
     }
 }

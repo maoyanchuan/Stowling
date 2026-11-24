@@ -4541,7 +4541,7 @@ button:active:not(:disabled) {
     background: rgba(255, 255, 255, 0.48);
 }
 
-:where(.auto-task-form:not([data-kind="PICKUP"])) .auto-config-section {
+:where(.auto-task-form[data-kind="COMBINED"]) .auto-config-section {
     overflow: hidden;
 }
 
@@ -4726,10 +4726,14 @@ button:active:not(:disabled) {
 
 .auto-classification-area-list {
     display: grid;
+    gap: 0;
+}
+
+:where(.auto-task-form[data-kind="COMBINED"]) .auto-classification-area-list {
     gap: 0.7rem;
 }
 
-.auto-classification-area {
+:where(.auto-task-form[data-kind="COMBINED"]) .auto-classification-area {
     display: grid;
     gap: 0.8rem;
     padding: 0.85rem;

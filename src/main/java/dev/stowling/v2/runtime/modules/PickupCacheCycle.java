@@ -19,6 +19,7 @@ final class PickupCacheCycle implements TaskModuleExecutor {
     private final TaskStep step;
     private final ResourceReference cache;
     private final Set<ContainerTarget> unavailable = new HashSet<>();
+    private final Set<ContainerTarget> fullCaches = new HashSet<>();
     private DroppedItemCollectionEngine collection;
     private List<ContainerTarget> containers;
     private ContainerTarget target;
@@ -53,13 +54,15 @@ final class PickupCacheCycle implements TaskModuleExecutor {
             return TaskModuleResult.running("本轮未保护物品已存完，重新检测掉落物");
         }
         if (target == null) {
-            target = containers.stream().filter(candidate -> !unavailable.contains(candidate))
+            target = containers.stream().filter(candidate -> !unavailable.contains(candidate)
+                            && !fullCaches.contains(candidate))
                     .min(Comparator.<ContainerTarget>comparingInt(candidate ->
                             context.navigation().isWithinInteractionRange(candidate.position(),
                                     candidate.standingArea(), false) ? 0 : 1)
                             .thenComparing(context.storageAutomation().pickupCacheOrder()))
                     .orElse(null);
             if (target == null) {
+                if (allCachesFull()) return failFullCaches();
                 return finish("缓存容量不足或容器不可用，未存物品保留在背包，已停止继续拾取", true);
             }
         }
@@ -70,6 +73,9 @@ final class PickupCacheCycle implements TaskModuleExecutor {
     }
 
     private TaskModuleResult collect() {
+        if (!stopping && allCachesFull() && collection.hasRemainingDrops()) {
+            return failFullCaches();
+        }
         TaskModuleResult result = collection.tick();
         if (stopping && collection.safeToStop()) {
             return finish("拾取已停止，交由任务收尾处理背包", false);
@@ -95,6 +101,14 @@ final class PickupCacheCycle implements TaskModuleExecutor {
         return TaskModuleResult.running("本轮拾取结束，准备存入全部未保护物品");
     }
 
+    private boolean allCachesFull() {
+        return containers != null && !containers.isEmpty() && fullCaches.containsAll(containers);
+    }
+
+    private TaskModuleResult failFullCaches() {
+        return finish("所有缓存均已满，已停止继续拾取；未存物品保留在背包", true);
+    }
+
     private boolean refreshCargo() {
         if (context.inventory().observe().isEmpty()) return false;
         context.inventory().claimAllUnprotectedForCollection(context.workspace().inventoryAccount());
@@ -110,6 +124,8 @@ final class PickupCacheCycle implements TaskModuleExecutor {
             return TaskModuleResult.waiting(result.message());
         }
         inFlight = false;
+        boolean full = context.containerTransfers().isPickupCacheFull(target);
+        if (full) fullCaches.add(target);
         Map<String, Integer> deposited = new LinkedHashMap<>();
         requested.forEach((key, count) -> {
             int moved = count - result.remaining().getOrDefault(key, 0);
@@ -123,7 +139,7 @@ final class PickupCacheCycle implements TaskModuleExecutor {
                     deposited.values().stream().mapToInt(Integer::intValue).sum());
         }
         if (result.state() == ContainerTransferState.FAILED || !result.remaining().isEmpty()
-                || deposited.isEmpty()) {
+                || deposited.isEmpty() || full) {
             unavailable.add(target);
             target = null;
         }

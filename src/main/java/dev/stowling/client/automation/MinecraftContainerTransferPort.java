@@ -79,6 +79,23 @@ public final class MinecraftContainerTransferPort
         return startDeposit(target, items, false, true);
     }
 
+    @Override
+    public boolean isPickupCacheFull(ContainerTarget target) {
+        if (!scheduler.isClientThread() || active != null || !target.equals(retainedTarget)) {
+            return false;
+        }
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        if (screen == null || !MinecraftContainerInteractions.ready(screen.getMenu())) return false;
+        AbstractContainerMenu menu = screen.getMenu();
+        List<Integer> slots = containerSlots(menu);
+        for (int index : slots) {
+            Slot slot = menu.getSlot(index);
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty() || stack.getCount() < slot.getMaxStackSize(stack)) return false;
+        }
+        return !slots.isEmpty();
+    }
+
     private ContainerTransferResult startDeposit(ContainerTarget target, Map<String, Integer> items,
             boolean avoidPickups, boolean keepOpen) {
         Objects.requireNonNull(target, "target");
@@ -233,16 +250,6 @@ public final class MinecraftContainerTransferPort
             }
             return fail("当前容器没有可安全转移的物品");
         }
-        if (unsafeSplitAtPickup(candidate)) {
-            // A refilled source slot can trap the protected remainder on the cursor.
-            closeContainer();
-            active.avoidPickups = true;
-            active.phase = Phase.OPENING;
-            active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target, true);
-            active.deadline = Instant.now().plus(OPEN_TIMEOUT);
-            return ContainerTransferResult.pending("原地无法安全拆分物品，换到安全站位继续存入",
-                    remaining());
-        }
         active.phase = Phase.CONFIRMING;
         active.batch = new DepositBatchConfirmation();
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
@@ -251,7 +258,6 @@ public final class MinecraftContainerTransferPort
         var before = inventoryCounts(menu);
         Map<String, Integer> request = new LinkedHashMap<>(active.remaining);
         while (candidate != null) {
-            if (unsafeSplitAtPickup(candidate)) break;
             int clicks = candidate.plan().usesQuickMove() ? 1
                     : ContainerClickPlan.exact(menu.getSlot(candidate.slot()).getItem().getCount(),
                             candidate.plan().moveCount()).size();
@@ -274,13 +280,6 @@ public final class MinecraftContainerTransferPort
                 "等待服务器确认存入",
                 remaining()
         );
-    }
-
-    private boolean unsafeSplitAtPickup(TransferCandidate candidate) {
-        return !active.avoidPickups && !candidate.plan().usesQuickMove()
-                && minecraft.player != null
-                && !MinecraftPickupSafety.safe(minecraft.player.getBoundingBox(),
-                        MinecraftPickupSafety.hazards(minecraft.player, active.target.position()));
     }
 
     private ContainerTransferResult pollConfirmation() {

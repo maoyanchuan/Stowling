@@ -99,6 +99,7 @@ class PickupCacheCycleTest {
 
         assertEquals(List.of(NEAR, FAR), scenario.targets);
         assertEquals(List.of(3, 1), scenario.discDeposits());
+        assertEquals(1, scenario.containerMoves);
         assertEquals(1, scenario.scans);
         assertEquals(Map.of(DISC, 2, TOOL, 1), scenario.items);
     }
@@ -112,11 +113,58 @@ class PickupCacheCycleTest {
         TaskModuleResult result = scenario.run();
 
         assertEquals(TaskModuleState.FAILED, result.state());
-        assertTrue(result.message().contains("缓存容量不足"));
+        assertTrue(result.message().contains("所有缓存均已满"));
         assertEquals(7, scenario.remaining);
         assertEquals(Map.of(DISC, 4), scenario.workspace.managedItems());
         assertEquals(2, scenario.targets.size());
         assertEquals(1, scenario.scans);
+    }
+
+    @Test
+    void exactlyFilledCacheIsSkippedOnEveryFollowingUnloadInTheSameTask() {
+        Scenario scenario = new Scenario(11);
+        scenario.inPlace = true;
+        scenario.capacity.put(NEAR, 4);
+
+        assertEquals(TaskModuleState.SUCCEEDED, scenario.run().state());
+
+        assertEquals(List.of(NEAR, FAR, FAR), scenario.targets);
+        assertEquals(List.of(4, 4, 3), scenario.discDeposits());
+        assertEquals(1, scenario.scans);
+        assertEquals(Map.of(DISC, 2, TOOL, 1), scenario.items);
+    }
+
+    @Test
+    void fillingAllCachesStopsBeforeCollectingAnotherBatch() {
+        Scenario scenario = new Scenario(11);
+        scenario.inPlace = true;
+        scenario.capacity.put(NEAR, 4);
+        scenario.capacity.put(FAR, 4);
+
+        TaskModuleResult result = scenario.run();
+
+        assertEquals(TaskModuleState.FAILED, result.state());
+        assertTrue(result.message().contains("所有缓存均已满"));
+        assertEquals(List.of(NEAR, FAR), scenario.targets);
+        assertEquals(List.of(4, 4), scenario.discDeposits());
+        assertEquals(3, scenario.remaining);
+        assertEquals(Map.of(DISC, 2, TOOL, 1), scenario.items);
+        assertTrue(scenario.workspace.managedItems().isEmpty());
+        assertFalse(scenario.open);
+    }
+
+    @Test
+    void fillingTheLastCacheWithTheLastDropCompletesInsteadOfReportingFull() {
+        Scenario scenario = new Scenario(8);
+        scenario.inPlace = true;
+        scenario.capacity.put(NEAR, 4);
+        scenario.capacity.put(FAR, 4);
+
+        assertEquals(TaskModuleState.SUCCEEDED, scenario.run().state());
+
+        assertEquals(List.of(NEAR, FAR), scenario.targets);
+        assertEquals(0, scenario.remaining);
+        assertEquals(Map.of(DISC, 2, TOOL, 1), scenario.items);
     }
 
     @Test
@@ -299,6 +347,12 @@ class PickupCacheCycleTest {
                 return ContainerTransferResult.pending("server confirmation", pending);
             }
             return completeDeposit();
+        }
+
+        @Override
+        public boolean isPickupCacheFull(ContainerTarget target) {
+            return pending == null && open && target.equals(opened)
+                    && capacity.getOrDefault(target, 10000) == 0;
         }
 
         private ContainerTransferResult completeDeposit() {

@@ -274,6 +274,10 @@ final class DroppedItemCollectionEngine {
                 .toList();
     }
 
+    boolean hasRemainingDrops() {
+        return !matches().isEmpty();
+    }
+
     private void recordDropProgress(List<DroppedItem> drops) {
         Set<DroppedItem> observed = Set.copyOf(drops);
         if (observed.equals(observedDrops)) {

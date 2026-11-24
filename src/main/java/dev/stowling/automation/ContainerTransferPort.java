@@ -23,6 +23,11 @@ public interface ContainerTransferPort {
         cancelDeposit();
     }
 
+    /** Reads capacity from the confirmed open cache, without opening another container. */
+    default boolean isPickupCacheFull(ContainerTarget target) {
+        return false;
+    }
+
     ContainerTransferResult pollDeposit();
 
     void cancelDeposit();

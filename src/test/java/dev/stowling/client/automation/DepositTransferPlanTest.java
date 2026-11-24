@@ -41,6 +41,23 @@ class DepositTransferPlanTest {
     }
 
     @Test
+    void partialCacheConfirmsAnExactDepositWhileTheProtectedStackKeepsReceivingPickups() {
+        var plan = DepositTransferPlan.create(14, 64,
+                List.of(new DepositTransferPlan.Destination(0, 10)));
+
+        assertFalse(plan.usesQuickMove());
+        assertEquals(10, plan.moveCount());
+        assertEquals(54, plan.sourceRemainderAfterMove());
+        assertEquals(4, plan.remainingAfterConfirmed());
+        int outgoing = DepositTransferPlan.outgoingCount(64, 60, 100, 106);
+        var first = DepositTransferPlan.observeConfirmation(plan.moveCount(), -1, 0, outgoing, 10);
+        var confirmed = DepositTransferPlan.observeConfirmation(plan.moveCount(), first.delta(),
+                first.observations(), outgoing, 10);
+        assertTrue(confirmed.stable());
+        assertEquals(10, confirmed.delta());
+    }
+
+    @Test
     void continuedDiscPickupsDoNotEraseTheOutgoingReceipt() {
         int outgoing = DepositTransferPlan.outgoingCount(36, 36, 100, 108);
         assertEquals(8, outgoing);

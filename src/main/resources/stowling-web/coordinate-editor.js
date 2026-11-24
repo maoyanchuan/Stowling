@@ -136,6 +136,19 @@
     /** @param {HTMLElement} content @param {boolean} expanded
      * @param {boolean} animate @param {string} [kind] @returns {void} */
     function reveal(content, expanded, animate, kind = "panel") {
+        if (kind === "panel" && content.classList.contains("category-option-sub")) {
+            content.dataset.collapsed = String(!expanded);
+            let panel = content.parentElement;
+            if (!panel.classList.contains("category-option-reveal")) {
+                panel = document.createElement("div");
+                panel.className = "category-option-reveal";
+                panel.hidden = content.hidden;
+                content.before(panel);
+                panel.append(content);
+                content.hidden = false;
+            }
+            content = panel;
+        }
         const previous = reveals.get(content);
         if (previous?.expanded === expanded) return;
         const height = content.hidden ? 0 : content.getBoundingClientRect().height;

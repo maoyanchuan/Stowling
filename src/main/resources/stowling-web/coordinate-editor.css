@@ -855,8 +855,12 @@
 
 :root body[data-coordinate-editor] .category-binding-content {
     display: grid;
-    gap: 12px;
+    gap: 0;
     padding: 0 12px 12px;
+}
+
+:root body[data-coordinate-editor] .category-binding-content > .coordinate-region-grid {
+    padding-bottom: 12px;
 }
 
 :root body[data-coordinate-editor] .category-binding-actions {
@@ -871,7 +875,7 @@
 }
 
 :root body[data-coordinate-editor] .category-binding-options .category-options {
-    padding: 0 0 12px;
+    padding: 0 0 24px;
     border: 0;
     background: transparent;
 }
@@ -891,6 +895,11 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     background: var(--theme-subtle, var(--panel-solid));
+}
+
+:root body[data-coordinate-editor] .category-option-reveal {
+    min-width: 0;
+    min-height: 0;
 }
 
 :root body[data-coordinate-editor] .category-option-row,

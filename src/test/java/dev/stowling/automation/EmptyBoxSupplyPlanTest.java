@@ -12,6 +12,25 @@ import org.junit.jupiter.api.Test;
 
 class EmptyBoxSupplyPlanTest {
     @Test
+    void aReturnBatchIncludesAllOwnedEmptyColorsAndRespectsTheRemainingCacheQuota() {
+        String plain = "minecraft:shulker_box#plain";
+        String black = "minecraft:black_shulker_box#black";
+        String filled = "minecraft:shulker_box#filled@minecraft:stone";
+        var owned = new java.util.LinkedHashMap<String, Integer>();
+        owned.put(plain, 16);
+        owned.put(black, 2);
+        owned.put(filled, 1);
+        owned.put("minecraft:stone", 64);
+
+        assertEquals(Map.of(plain, 16, black, 2),
+                EmptyBoxSupplyPlan.returnBatch(owned, Integer.MAX_VALUE));
+        assertEquals(Map.of(plain, 3), EmptyBoxSupplyPlan.returnBatch(owned, 3));
+        assertEquals(Map.of(), EmptyBoxSupplyPlan.returnBatch(owned, 0));
+        assertEquals(16, owned.get(plain));
+        assertEquals(1, owned.get(filled));
+    }
+
+    @Test
     void warehouseAndRetentionSwitchesSelectTheExpectedReturnLocations() {
         var caches = List.of(target(1), target(2));
         var warehouse = List.of(target(3));

@@ -11,6 +11,29 @@ import org.junit.jupiter.api.Test;
 
 class StorageTransferBatchConfirmationTest {
     @Test
+    void twentySevenEmptyBoxesUseOneServerReceiptEvenWhenTheHopperDrainsEveryColor() {
+        Map<String, StorageTransferBatchConfirmation.Before> before = new LinkedHashMap<>();
+        Map<String, Integer> moved = new LinkedHashMap<>();
+        var batch = new dev.stowling.automation.ContainerInteractionBatch("", true);
+        for (int box = 0; box < 27; box++) {
+            String key = (box % 2 == 0 ? "minecraft:shulker_box" : "minecraft:black_shulker_box")
+                    + "#empty-" + box;
+            assertTrue(batch.accepts(key, 1));
+            batch.record(1, 1);
+            before.put(key, new StorageTransferBatchConfirmation.Before(1, 0, 0));
+            moved.put(key, 1);
+        }
+        var receipt = new StorageTransferBatchConfirmation(before, moved, false, false, true);
+
+        assertEquals(27, batch.count());
+        assertTrue(receipt.requiresServerSnapshot(false));
+        assertFalse(receipt.matches(key -> 0, key -> 0, key -> 0, true));
+        assertEquals(moved, receipt.acceptedServerPlayerSnapshot(
+                key -> 0, key -> 0, true, true).orElseThrow());
+        assertFalse(receipt.requiresServerSnapshot(true));
+    }
+
+    @Test
     void emptyBoxReturnUsesFreshServerPlayerCountsWhenAHopperDrainsTheDestination() {
         String key = "minecraft:black_shulker_box";
         var before = Map.of(key, new StorageTransferBatchConfirmation.Before(2, 0, 2));

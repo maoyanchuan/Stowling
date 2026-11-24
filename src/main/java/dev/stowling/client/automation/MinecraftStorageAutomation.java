@@ -824,12 +824,44 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         final void returnEmptyBoxes(List<ContainerTarget> destinations, Runnable after) {
-            ItemStack empty = ownedEmptyBox(owned());
-            if (empty.isEmpty()) {
+            returnEmptyBoxBatch(destinations, 0, after);
+        }
+
+        private void returnEmptyBoxBatch(List<ContainerTarget> destinations, int index,
+                Runnable after) {
+            if (EmptyBoxSupplyPlan.emptyCount(owned()) == 0) {
                 after.run();
-            } else {
-                storeEmptyBox(empty, destinations, 0, () -> returnEmptyBoxes(destinations, after));
+                return;
             }
+            var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
+            if (policy != null && index == 0) destinations = emptyBoxReturns(null);
+            if (index >= destinations.size()) {
+                throw new IllegalStateException("配置的空盒存放位置无法接收空潜影盒，等待收尾");
+            }
+            var candidates = destinations;
+            var target = candidates.get(index);
+            int maximum = Integer.MAX_VALUE;
+            if (policy != null && policy.enabled() && classificationCaches(context).stream()
+                    .anyMatch(cache -> sameContainer(cache, target))) {
+                int cached = classificationCaches(context).stream().mapToInt(cache -> context
+                        .workspace().cacheContents(cache).map(EmptyBoxSupplyPlan::emptyCount)
+                        .orElse(0)).sum();
+                maximum = Math.max(0, policy.retainedLimit() - cached);
+            }
+            var batch = EmptyBoxSupplyPlan.returnBatch(owned(), maximum);
+            if (batch.isEmpty()) {
+                returnEmptyBoxBatch(candidates, index + 1, after);
+                return;
+            }
+            int before = EmptyBoxSupplyPlan.emptyCount(owned());
+            var access = MinecraftStorageAccess.returnEmptyBoxes(minecraft, context, target, batch);
+            Runnable confirmed = () -> {
+                boolean progress = EmptyBoxSupplyPlan.emptyCount(owned()) < before;
+                if (progress) refreshCacheSnapshot(access);
+                boolean complete = access.remaining().values().stream().allMatch(count -> count == 0);
+                returnEmptyBoxBatch(candidates, progress && complete ? 0 : index + 1, after);
+            };
+            steps.add(new Step(access, confirmed, confirmed));
         }
 
         final void storeEmptyBox(ItemStack empty, List<ContainerTarget> destinations, int index,

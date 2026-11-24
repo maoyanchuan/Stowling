@@ -37,6 +37,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final boolean inspect;
     private final boolean emptyBoxSupply;
     private final boolean emptyBoxReturn;
+    private final MinecraftContainerOpenHand returnHand;
     private final Runnable warehouseConfirmation;
     private List<ItemStack> contents = List.of();
     private boolean opened;
@@ -75,10 +76,16 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
 
     static MinecraftStorageAccess returnEmptyBox(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget destination, String key) {
-        if (!ItemIdentity.isEmptyBox(key)) {
+        return returnEmptyBoxes(minecraft, context, destination, Map.of(key, 1));
+    }
+
+    static MinecraftStorageAccess returnEmptyBoxes(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget destination, Map<String, Integer> requested) {
+        if (requested.entrySet().stream().anyMatch(entry -> !ItemIdentity.isEmptyBox(entry.getKey())
+                || entry.getValue() <= 0)) {
             throw new IllegalArgumentException("空盒归还只能存入空潜影盒");
         }
-        return new MinecraftStorageAccess(minecraft, context, destination, Map.of(key, 1),
+        return new MinecraftStorageAccess(minecraft, context, destination, requested,
                 false, false, false, null, null, true);
     }
 
@@ -111,16 +118,23 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         this.minecraft = minecraft;
         this.context = context;
         this.target = target;
-        this.visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
+        this.emptyBoxReturn = emptyBoxReturn;
+        this.returnHand = emptyBoxReturn ? new MinecraftContainerOpenHand(minecraft) : null;
+        this.visit = newVisit();
         this.remaining = new LinkedHashMap<>(requested);
         this.requestedBases = itemBases(requested);
         this.withdraw = withdraw;
         this.inspect = inspect;
         this.emptyBoxSupply = emptyBoxSupply;
-        this.emptyBoxReturn = emptyBoxReturn;
         this.withdrawalPlan = withdrawalPlan;
         this.quickWithdrawal = withdrawalPlan != null;
         this.warehouseConfirmation = warehouseConfirmation;
+    }
+
+    private MinecraftContainerVisit newVisit() {
+        return returnHand == null
+                ? new MinecraftContainerVisit(minecraft, context.navigation(), target)
+                : new MinecraftContainerVisit(minecraft, context.navigation(), target, returnHand);
     }
 
     List<ItemStack> contents() {
@@ -213,7 +227,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 dev.stowling.v2.runtime.TaskTrace.event("RESYNC", "storage.reopen",
                         "读取服务器快照确认容器存取; items=" + pendingMoves, 0, false);
                 minecraft.player.closeContainer();
-                visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
+                visit = newVisit();
                 opened = false;
                 rereading = true;
                 settle = 0;
@@ -253,6 +267,10 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             pendingMoves.clear();
             pendingBefore.clear();
             age = 0;
+            if (emptyBoxReturn) {
+                contents = slots(menu, false).stream()
+                        .map(index -> menu.getSlot(index).getItem().copy()).toList();
+            }
             if (warehouseConfirmation != null && !accepted.isEmpty()) {
                 warehouseConfirmation.run();
             }
@@ -267,7 +285,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 return TaskModuleResult.waiting("等待鼠标物品归位后离开投料范围");
             }
             minecraft.player.closeContainer();
-            visit = new MinecraftContainerVisit(minecraft, context.navigation(), target);
+            visit = newVisit();
             opened = false;
             return TaskModuleResult.waiting("离开掉落物拾取范围后继续存取");
         }
@@ -388,7 +406,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     @Override
     public void cancel() {
         requestStop();
-        visit.cancelNavigation();
+        if (!emptyBoxReturn || safeToStop()) visit.cancelNavigation();
         if (safeToStop() && minecraft.player != null) {
             minecraft.player.closeContainer();
         }

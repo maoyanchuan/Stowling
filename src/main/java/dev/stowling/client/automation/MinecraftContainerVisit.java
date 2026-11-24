@@ -30,6 +30,7 @@ final class MinecraftContainerVisit {
     private int openTicks;
     private int visitTicks;
     private final MinecraftContainerOpenHand hand;
+    private final boolean restoreHandOnOpen;
 
     MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target) {
         this(minecraft, navigation, target, true);
@@ -37,12 +38,25 @@ final class MinecraftContainerVisit {
 
     MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target,
             boolean avoidPickups) {
+        this(minecraft, navigation, target, avoidPickups,
+                new MinecraftContainerOpenHand(minecraft), true);
+    }
+
+    MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target,
+            MinecraftContainerOpenHand hand) {
+        this(minecraft, navigation, target, true, hand, false);
+    }
+
+    private MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation,
+            ContainerTarget target, boolean avoidPickups, MinecraftContainerOpenHand hand,
+            boolean restoreHandOnOpen) {
         this.minecraft = minecraft;
         this.navigation = dev.stowling.v2.runtime.TaskTracePorts.wrap(NavigationPort.class,
                 navigation);
         this.target = target;
         this.avoidPickups = avoidPickups;
-        hand = new MinecraftContainerOpenHand(minecraft);
+        this.hand = hand;
+        this.restoreHandOnOpen = restoreHandOnOpen;
         entrances = new ArrayList<>(target.entrances());
         approach = new ContainerApproach(this.navigation, target.standingArea(), entrances,
                 avoidPickups);
@@ -59,7 +73,7 @@ final class MinecraftContainerVisit {
                 if (!MinecraftContainerInteractions.ready(minecraft.player.containerMenu)) {
                     return TaskModuleResult.waiting("等待容器槽位同步后还原手持槽位");
                 }
-                hand.restore();
+                if (restoreHandOnOpen) hand.restore();
                 return TaskModuleResult.succeeded("已打开容器 " + target.position());
             }
             if (++openTicks <= OPEN_TIMEOUT_TICKS) {

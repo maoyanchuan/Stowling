@@ -17,6 +17,10 @@ public final class EmptyBoxSupplyPlan {
                 .mapToInt(Map.Entry::getValue).sum();
     }
 
+    public static Map<String, Integer> returnBatch(Map<String, Integer> owned, int maximum) {
+        return surplus(owned, 0, maximum);
+    }
+
     public static List<ContainerTarget> classificationReturns(List<ContainerTarget> caches,
             List<ContainerTarget> warehouse, boolean enabled, int cachedCount, int retainedLimit) {
         List<ContainerTarget> candidates = new ArrayList<>();

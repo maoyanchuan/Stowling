@@ -37,6 +37,68 @@ def selected(root: Any, key: str) -> str:
     return root.locator(f'[data-category-select="{key}"] select').input_value()
 
 
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_directory_fills_the_left_column_beside_a_long_editor(sample_page: Any, theme: str) -> None:
+    page = sample_page
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    bounds = page.locator("#coordinate-list").evaluate("""list => {
+        const library = list.closest('.coordinate-library').getBoundingClientRect();
+        const editor = document.querySelector('.coordinate-editor').getBoundingClientRect();
+        const footer = document.querySelector('#library-footer').getBoundingClientRect();
+        const rect = list.getBoundingClientRect();
+        return {height: rect.height, footerGap: footer.top - rect.bottom,
+            libraryBottom: library.bottom, editorBottom: editor.bottom};
+    }""")
+    assert bounds["height"] > 360
+    assert bounds["footerGap"] == pytest.approx(16, abs=1)
+    assert bounds["libraryBottom"] == pytest.approx(bounds["editorBottom"], abs=1)
+
+
+def test_long_directory_scrolls_without_enlarging_the_editor(sample_page: Any) -> None:
+    page = sample_page
+    library = page.locator(".coordinate-library")
+    original_height = library.evaluate("node => node.getBoundingClientRect().height")
+    listing = page.locator("#coordinate-list")
+    listing.evaluate("""list => {
+        const root = list.querySelector('.coordinate-root-list');
+        const item = root.querySelector('.coordinate-item');
+        for (let index = 0; index < 60; index += 1) {
+            const copy = item.cloneNode(true);
+            copy.removeAttribute('id');
+            copy.removeAttribute('aria-current');
+            root.append(copy);
+        }
+    }""")
+    assert library.evaluate("node => node.getBoundingClientRect().height") == pytest.approx(
+        original_height, abs=1,
+    )
+    assert listing.evaluate("node => node.scrollHeight > node.clientHeight")
+    listing.locator(".coordinate-item").last.scroll_into_view_if_needed()
+    assert listing.evaluate("""list => {
+        const item = list.querySelector('.coordinate-root-list').lastElementChild;
+        const rect = item.getBoundingClientRect();
+        const viewport = list.getBoundingClientRect();
+        return list.scrollTop > 0 && rect.top >= viewport.top - 1
+            && rect.bottom <= viewport.bottom + 1;
+    }""")
+
+
+def test_narrow_directory_expands_above_the_editor(sample_page: Any) -> None:
+    page = sample_page
+    page.set_viewport_size({"width": 390, "height": 844})
+    bounds = page.locator("#coordinate-list").evaluate("""list => {
+        const library = list.closest('.coordinate-library').getBoundingClientRect();
+        const editor = document.querySelector('.coordinate-editor').getBoundingClientRect();
+        return {height: list.clientHeight, contentHeight: list.scrollHeight,
+            libraryBottom: library.bottom, editorTop: editor.top,
+            pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth};
+    }""")
+    assert bounds["height"] > 250
+    assert bounds["height"] == pytest.approx(bounds["contentHeight"], abs=1)
+    assert bounds["editorTop"] >= bounds["libraryBottom"]
+    assert bounds["pageWidth"] <= bounds["viewportWidth"]
+
+
 def test_binding_defaults_to_global_with_editable_regions(sample_page: Any) -> None:
     card = sample_page.locator(".category-binding-card").first
     assert not card.locator(".category-binding-enabled").is_checked()

@@ -18,6 +18,10 @@
 已有测试只能证明其实际覆盖的行为，不能据此宣称界面已与模板视觉一致。
 
 正式坐标页面 `coordinates.html` 直接使用 `coordinate-management-standard.html` 的双栏结构。
+坐标模板的左栏整条用于坐标展示：列表填满标题、操作按钮与底部统计之间的剩余高度，
+随右侧编辑区拉伸到底，不再限制为 360px 的小展示区；内容超出时仅在列表内滚动。
+列表条目保持自然高度并从顶部排列，不能为填满左栏而拉高单个文件夹或坐标项。
+760px 及以下继续上下排列，列表随内容自然展开，不恢复 250px 的高度上限。
 其生效样式与脚本为 `coordinate-editor.css`、`coordinate-editor.js` 和
 `coordinate-editor-model.js`；维护坐标页面时也必须读取这些文件。
 通过 `common.js` 的鉴权请求连接 `/v1/coordinate-resources` 和已有资源接口，

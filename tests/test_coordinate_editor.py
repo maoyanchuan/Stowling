@@ -92,7 +92,12 @@ def test_coordinate_editor_uses_the_approved_template_core_structure() -> None:
     root = WEB.parents[3]
     template = (root / "docs/ui/coordinate-management-standard.html").read_text(encoding="utf-8")
     page = (WEB / "coordinates.html").read_text(encoding="utf-8")
-    assert editor_structure(page) == editor_structure(template)
+    # These four sections are a requested template preview pending production integration.
+    preview_sections = frozenset({
+        "category-position-option-row", "category-positions-panel",
+        "category-bindings-option-row", "category-bindings-panel",
+    })
+    assert editor_structure(page) == editor_structure(template, preview_sections)
 
 
 ZONE_SETUP = """

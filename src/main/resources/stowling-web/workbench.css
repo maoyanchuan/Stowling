@@ -340,6 +340,10 @@ body[data-page] :is(.move-task-list, .editor-list) {
     gap: 12px;
 }
 
+.task-display-placeholder > .pickup-task-module {
+    margin-top: 12px;
+}
+
 body[data-page] :is(.move-saved-task, .coordinate-point-editor) {
     padding: 0;
     overflow: hidden;

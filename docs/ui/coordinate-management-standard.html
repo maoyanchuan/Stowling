@@ -963,6 +963,15 @@ select {
     overflow-wrap: anywhere;
 }
 
+.category-option-label small {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
 .category-option-row .field-label,
 .category-option-sub .field-label {
     margin: 0;
@@ -1870,6 +1879,7 @@ select {
                                             <label class="category-option-label"
                                                    for="category-specify-standing">
                                                 指定站立位置
+                                                <small>填写站立脚下方块坐标</small>
                                             </label>
                                             <div class="category-option-actions">
                                                 <button id="category-standing-expand"

@@ -202,9 +202,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
         previous.warehouses().stream().filter(warehouse -> catalog.warehouses().stream()
                 .noneMatch(value -> value.id().equals(warehouse.id()))).forEach(warehouse -> {
                     var ref = ResourceReference.of(ResourceType.WAREHOUSE, warehouse.id());
-                    var names = snapshot.config().tasks().stream()
+                    var names = new ArrayList<>(snapshot.config().tasks().stream()
                             .filter(task -> TaskFlowNormalizer.references(task, ref))
-                            .map(TaskDefinition::name).toList();
+                            .map(TaskDefinition::name).toList());
+                    names.addAll(remainderReferences(snapshot.config(), ref.encode()));
                     if (!names.isEmpty()) {
                         throw new V2ValidationException("仓库正在被引用：" + String.join("、", names));
                     }
@@ -254,6 +255,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             names.addAll(partialBoxReferences(config, ref.encode()));
         }
         names.addAll(warehouseReferences(config, ref));
+        names.addAll(remainderReferences(config, ref.encode()));
         if (!names.isEmpty()) values.put(ref.encode(), names.stream().distinct().toList());
     }
 
@@ -261,6 +263,14 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return config.coordinateCatalog().warehouses().stream()
                 .filter(warehouse -> warehouse.members().contains(ref.encode()))
                 .map(CoordinateCatalog.Warehouse::name).toList();
+    }
+
+    private static List<String> remainderReferences(AppConfig config, String ref) {
+        return config.autoClassifyTasks().stream().filter(task -> {
+            var policy = task.remainderPolicy();
+            return ref.equals(policy.unclassifiableDestinationRef())
+                    || ref.equals(policy.overflowDestinationRef());
+        }).map(AutoClassifyDefinition::name).toList();
     }
 
     @Override
@@ -352,6 +362,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         String coordinateId = id.toString();
         List<String> references = new ArrayList<>();
         references.addAll(partialBoxReferences(current.config(), "coordinate:" + id));
+        references.addAll(remainderReferences(current.config(), "coordinate:" + id));
         ResourceReference reference = ResourceReference.of(
                 ResourceType.COORDINATE,
                 id
@@ -495,6 +506,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         .toList()
         );
         references.addAll(partialBoxReferences(current.config(), "region:" + id));
+        references.addAll(remainderReferences(current.config(), "region:" + id));
         references.addAll(current.config().triggers().stream()
                 .filter(trigger -> id.equals(trigger.cacheRegionId()))
                 .map(TaskTriggerDefinition::name)
@@ -894,7 +906,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         false),
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
                 request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds(),
-                request.followUpEnabled()
+                request.followUpEnabled(), request.remainderPolicy()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -984,7 +996,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.followUpDelaySeconds() == null ? existing.followUpDelaySeconds()
                         : request.followUpDelaySeconds(),
                 request.followUpEnabled() == null ? existing.followUpEnabled()
-                        : request.followUpEnabled()
+                        : request.followUpEnabled(),
+                request.remainderPolicy() == null ? existing.remainderPolicy()
+                        : request.remainderPolicy()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1585,7 +1599,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             Kind kind,
             String followUpTaskRef,
             Integer followUpDelaySeconds,
-            Boolean followUpEnabled
+            Boolean followUpEnabled,
+            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1612,7 +1627,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 overflowEnabled,
                 cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
                 detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds,
-                followUpEnabled
+                followUpEnabled, remainderPolicy
         );
     }
 
@@ -1635,7 +1650,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
-                definition.followUpEnabled()
+                definition.followUpEnabled(), definition.remainderPolicy()
         );
     }
 
@@ -1674,7 +1689,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.overflowEnabled(),
                 definition.cleanupPolicy(), definition.overflowDestinationRef(),
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
-                definition.followUpDelaySeconds(), definition.followUpEnabled()
+                definition.followUpDelaySeconds(), definition.followUpEnabled(),
+                definition.remainderPolicy()
         );
     }
 

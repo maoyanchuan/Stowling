@@ -64,7 +64,7 @@ public final class TaskFlowNormalizer {
                     definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
                     definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                     definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
-                    definition.followUpEnabled());
+                    definition.followUpEnabled(), definition.remainderPolicy());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -449,8 +449,7 @@ public final class TaskFlowNormalizer {
     }
 
     private static List<TaskStep> normalizeStep(TaskStep step, boolean autoClassify) {
-        boolean overflow = ConfigValidator.PACK_OVERFLOW.equals(step.moduleId())
-                || ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId());
+        boolean overflow = ConfigValidator.PACK_OVERFLOW.equals(step.moduleId());
         if (autoClassify && overflow && !step.parameters().containsKey(ConfigValidator.REGION_REF)) {
             return List.of();
         }

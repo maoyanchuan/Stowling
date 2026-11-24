@@ -992,7 +992,8 @@ public final class V2ControlServer implements AutoCloseable {
                 autoClassifyKind(json),
                 optionalString(json, "followUpTaskRef"),
                 optionalInteger(json, "followUpDelaySeconds"),
-                optionalBooleanValue(json, "followUpEnabled")
+                optionalBooleanValue(json, "followUpEnabled"),
+                remainderPolicy(json)
         );
     }
 
@@ -1017,7 +1018,8 @@ public final class V2ControlServer implements AutoCloseable {
                 autoClassifyKind(json),
                 optionalString(json, "followUpTaskRef"),
                 optionalInteger(json, "followUpDelaySeconds"),
-                optionalBooleanValue(json, "followUpEnabled")
+                optionalBooleanValue(json, "followUpEnabled"),
+                remainderPolicy(json)
         );
     }
 
@@ -1033,6 +1035,19 @@ public final class V2ControlServer implements AutoCloseable {
             result.add(new AutoClassifyAreaRequest(string(area, "categoryZoneRef")));
         }
         return List.copyOf(result);
+    }
+
+    private static dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy(
+            JsonObject json) {
+        if (!json.has("remainderPolicy") || json.get("remainderPolicy").isJsonNull()) return null;
+        var policy = jsonObject(json.get("remainderPolicy"), "remainderPolicy");
+        requireFieldsAny(policy, Set.of("unclassifiableEnabled", "unclassifiableDestinationRef",
+                "overflowEnabled", "overflowDestinationRef"), Set.of());
+        return new dev.stowling.v2.model.ClassificationRemainderPolicy(
+                optionalBoolean(policy, "unclassifiableEnabled"),
+                optionalString(policy, "unclassifiableDestinationRef"),
+                optionalBoolean(policy, "overflowEnabled"),
+                optionalString(policy, "overflowDestinationRef"));
     }
 
     private static dev.stowling.v2.model.CacheIntakePolicy cachePolicy(JsonObject json) {
@@ -1086,6 +1101,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "overflowDestinationRef",
                 "cleanupPolicy",
                 "cachePolicy",
+                "remainderPolicy",
                 "kind",
                 "followUpTaskRef",
                 "followUpDelaySeconds",
@@ -1973,6 +1989,8 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/task-cleanup-settings.js",
                         read("stowling-web/task-cleanup-settings.js", js)),
                 Map.entry("/empty-box-settings.js", read("stowling-web/empty-box-settings.js", js)),
+                Map.entry("/classification-remainder-settings.js",
+                        read("stowling-web/classification-remainder-settings.js", js)),
                 Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),
                 Map.entry(
                         "/task-monitor-model.js",

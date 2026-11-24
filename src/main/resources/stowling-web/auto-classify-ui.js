@@ -11,6 +11,9 @@
         {allowContinue: false, facilities: true, defaultLabel: "使用本任务缓存位置"});
     const boxSettings = window.StowlingEmptyBoxSettings?.create(
         document.querySelector("#auto-empty-box-settings"));
+    const remainderSettings = window.StowlingClassificationRemainders?.create(
+        document.querySelector("#auto-remainder-settings"),
+        document.querySelector("#robot-warehouse-settings"));
     const state = {
         revision: "",
         draftRevision: "",
@@ -257,6 +260,8 @@
             resumeMode: "RESTART"});
         boxSettings?.resources(state.resources.coordinates, state.resources.regions);
         boxSettings?.set(draft.facilities.emptyBoxWarehouse);
+        remainderSettings?.resources(Auto.cacheLocations(state.resources));
+        remainderSettings?.set(draft.remainderPolicy);
         renderClassificationTargets();
         updateControls();
     }
@@ -297,6 +302,7 @@
                 followUpDelaySeconds: elements.followUpDelay.value} : {}),
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
+            remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
             cleanupDestinationRef: cleanup.read().destinationRef || ""
@@ -435,6 +441,9 @@
         if (boxHost) boxHost.hidden = !classification;
         cleanup.setSupplyVisible?.(!classification);
         boxSettings?.refresh();
+        const remainderHost = document.querySelector("#auto-remainder-settings");
+        if (remainderHost) remainderHost.hidden = pickup;
+        remainderSettings?.refresh();
         elements.form.dataset.kind = kind || "COMBINED";
         elements.draft.classList.toggle("pickup-task-module", pickup || classification);
         elements.draftBody.classList.toggle("pickup-task-body", pickup || classification);

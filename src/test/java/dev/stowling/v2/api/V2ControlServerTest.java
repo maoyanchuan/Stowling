@@ -505,8 +505,11 @@ class V2ControlServerTest {
                 "collectionPriority":"NORMAL",
                 "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65},
                 "cleanupPolicy":{"emptyBoxWarehouse":{"enabled":true,"warehouseRef":
-                "coordinate:%s","retainInCache":true,"cacheLimit":9}}}
-                """.formatted(point.id(), region.id(), zone.id(), point.id());
+                "coordinate:%s","retainInCache":true,"cacheLimit":9}},
+                "remainderPolicy":{"unclassifiableEnabled":true,
+                "unclassifiableDestinationRef":"coordinate:%s","overflowEnabled":true,
+                "overflowDestinationRef":"coordinate:%s"}}
+                """.formatted(point.id(), region.id(), zone.id(), point.id(), point.id(), point.id());
         try (Fixture fixture = new Fixture(service)) {
             assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST", body, false)
                     .statusCode());
@@ -523,6 +526,20 @@ class V2ControlServerTest {
             var boxes = item.getAsJsonObject("cleanupPolicy").getAsJsonObject("emptyBoxWarehouse");
             assertEquals("coordinate:" + point.id(), boxes.get("warehouseRef").getAsString());
             assertEquals(9, boxes.get("cacheLimit").getAsInt());
+            var remainders = item.getAsJsonObject("remainderPolicy");
+            assertTrue(remainders.get("unclassifiableEnabled").getAsBoolean());
+            assertEquals("coordinate:" + point.id(),
+                    remainders.get("overflowDestinationRef").getAsString());
+            assertEquals(remainders, new Gson().toJsonTree(
+                    new ConfigStore(directory.resolve("layout-recognition.json"))
+                            .loadOrReset().config().autoClassifyTasks().getFirst().remainderPolicy()));
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"unclassifiableEnabled\":true",
+                            "\"unclassifiableEnabled\":\"true\""), true).statusCode());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"unclassifiableDestinationRef\":\"coordinate:" + point.id(),
+                            "\"unclassifiableDestinationRef\":\"region:" + region.id()), true)
+                    .statusCode());
             assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
                     body.replace("\"cacheLimit\":9", "\"cacheLimit\":1.5"), true).statusCode());
             assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
@@ -543,6 +560,16 @@ class V2ControlServerTest {
                     .getFirst().bindings().getFirst().storagePolicy());
             assertTrue(!area.has("ruleId"));
             assertTrue(!area.has("markerSources"));
+            var update = JsonParser.parseString(body).getAsJsonObject();
+            update.add("revision", object(response).get("revision"));
+            update.getAsJsonObject("remainderPolicy").addProperty("unclassifiableEnabled", false);
+            update.getAsJsonObject("remainderPolicy").addProperty("overflowEnabled", false);
+            String path = "/v1/auto-classify-tasks/" + item.get("id").getAsString();
+            assertEquals(401, fixture.send(path, "PUT", update.toString(), false).statusCode());
+            var updated = fixture.send(path, "PUT", update.toString(), true);
+            assertEquals(200, updated.statusCode());
+            assertEquals(update.getAsJsonObject("remainderPolicy"),
+                    object(updated).getAsJsonObject("item").getAsJsonObject("remainderPolicy"));
         }
     }
 

@@ -10,6 +10,13 @@ final class OverflowItemsModule {
     }
 
     static TaskModuleExecutor create(TaskExecutionContext context, TaskStep step) {
+        if (dev.stowling.v2.model.ClassificationRemainderPolicy.MODULE.equals(step.moduleId())) {
+            return context.storageAutomation().routeClassificationRemainders(context,
+                    ResourceReference.parse(step.parameters().get(
+                            ConfigValidator.CACHE_LOCATION_REF)),
+                    ResourceReference.parse(step.parameters().get(ConfigValidator.TARGET_REF)),
+                    step.parameters().get(dev.stowling.v2.model.ClassificationRemainderPolicy.KIND));
+        }
         var reference = ResourceReferenceSupport.optionalReference(step, TaskModuleIds.REGION_REF,
                 ResourceType.REGION);
         String cache = step.parameters().get(ConfigValidator.CACHE_LOCATION_REF);

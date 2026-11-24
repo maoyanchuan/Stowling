@@ -9,6 +9,10 @@
         "URGENT"
     ]);
     const INTEGER_PATTERN = /^\d+$/;
+    const DEFAULT_REMAINDER_POLICY = Object.freeze({
+        unclassifiableEnabled: false, unclassifiableDestinationRef: null,
+        overflowEnabled: false, overflowDestinationRef: null
+    });
 
     /**
      * @param {string} type
@@ -49,6 +53,7 @@
             enabled: false,
             overflowEnabled: false,
             overflowDestinationRef: "",
+            remainderPolicy: {...DEFAULT_REMAINDER_POLICY},
             cleanupDestinationRef: "",
             facilities: {},
             collectionEnabled: kind !== "CLASSIFICATION",
@@ -89,6 +94,7 @@
             enabled: item?.enabled === true,
             overflowEnabled: item?.overflowEnabled === true,
             overflowDestinationRef: String(item?.overflowDestinationRef || ""),
+            remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...item?.remainderPolicy},
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
             facilities: item?.cleanupPolicy || {},
@@ -190,6 +196,7 @@
 
         const cache = String(draft?.cacheLocationRef || "");
         const sourceLabel = draft?.kind === "CLASSIFICATION" ? "物品来源" : "缓存位置";
+        validateRemainders(draft, resources, errors);
         const boxes = draft?.facilities?.emptyBoxWarehouse;
         if (draft?.kind === "CLASSIFICATION" && boxes?.enabled) {
             const places = [...(resources?.coordinates || []).map(item => "coordinate:" + item.id),
@@ -242,6 +249,7 @@
             enabled: draft.enabled,
             overflowEnabled: draft.overflowEnabled === true,
             overflowDestinationRef: draft.overflowEnabled ? draft.overflowDestinationRef || "" : "",
+            remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy},
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},
             collectionEnabled: draft.collectionEnabled,
@@ -278,6 +286,25 @@
         ].flatMap(([key, type, name]) => resourceList(resources, key).map(item => ({
             id: reference(type, item.id), name: name + " · " + item.name
         })));
+    }
+
+    /** @param {object} draft @param {object} resources @param {Array<string>} errors
+     * @returns {void} */
+    function validateRemainders(draft, resources, errors) {
+        const policy = {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy};
+        const places = cacheLocations(resources);
+        for (const [key, label] of [["unclassifiable", "不可分类"], ["overflow", "溢出"]]) {
+            if (typeof policy[`${key}Enabled`] !== "boolean") {
+                errors.push(label + "开关需为布尔值");
+            }
+            if (!policy[`${key}Enabled`]) continue;
+            const ref = policy[`${key}DestinationRef`];
+            if (!places.some(item => item.id === ref)) {
+                errors.push(`请选择有效的${label}存放位置`);
+            } else if (ref === draft.cacheLocationRef) {
+                errors.push(`${label}存放位置必须与物品来源分开`);
+            }
+        }
     }
 
     /**

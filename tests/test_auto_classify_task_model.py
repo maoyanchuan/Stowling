@@ -40,6 +40,37 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_remainder_destinations_survive_save_and_reload(enabled: bool) -> None:
+    policy = {"unclassifiableEnabled": enabled,
+              "unclassifiableDestinationRef": "coordinate:unmatched",
+              "overflowEnabled": enabled, "overflowDestinationRef": "region:overflow"}
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}], remainderPolicy: """
+        + json.dumps(policy) + """};
+        const saved = model.payload(draft, {coordinates: [{id: "unmatched"}],
+            regions: [{id: "cache"}, {id: "overflow"}], categoryZones: [{id: "zone"}]});
+        return model.draftFromTask(saved).remainderPolicy;
+    })()""")
+    assert result == policy
+
+
+@pytest.mark.parametrize("ref", [None, "region:deleted", "region:cache"])
+def test_remainder_destinations_reject_missing_or_source_locations(ref: str | None) -> None:
+    errors = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
+            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
+            remainderPolicy: {unclassifiableEnabled: true,
+                unclassifiableDestinationRef: """ + json.dumps(ref) + """}},
+            {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
+    })()""")
+    assert len(errors) == 1
+    assert "不可分类" in errors[0]
+
+
 @pytest.mark.parametrize("enabled,retain", [(False, True), (True, False), (True, True)])
 def test_empty_box_warehouse_round_trip_preserves_switches_and_drafts(
     enabled: bool, retain: bool,

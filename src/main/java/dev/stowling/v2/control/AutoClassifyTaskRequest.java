@@ -22,8 +22,33 @@ public record AutoClassifyTaskRequest(
         Kind kind,
         String followUpTaskRef,
         Integer followUpDelaySeconds,
-        Boolean followUpEnabled
+        Boolean followUpEnabled,
+        dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy
 ) {
+    public AutoClassifyTaskRequest(
+            String name,
+            Boolean enabled,
+            Boolean collectionEnabled,
+            Boolean classificationEnabled,
+            AutoClassifyDetectionRequest detection,
+            String cacheLocationRef,
+            List<AutoClassifyAreaRequest> classificationAreas,
+            TaskPriority collectionPriority,
+            Boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String overflowDestinationRef,
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled
+    ) {
+        this(name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheLocationRef, classificationAreas, collectionPriority, overflowEnabled,
+                cleanupPolicy, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                followUpDelaySeconds, followUpEnabled, null);
+    }
+
     public AutoClassifyTaskRequest(String name, Boolean enabled,
             Boolean collectionEnabled, Boolean classificationEnabled,
             AutoClassifyDetectionRequest detection, String cacheLocationRef,

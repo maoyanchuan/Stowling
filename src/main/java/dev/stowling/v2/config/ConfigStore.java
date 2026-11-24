@@ -21,6 +21,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -314,6 +315,7 @@ public final class ConfigStore {
         allowed.add("cleanupPolicy");
         allowed.add("unstackableRegionRef");
         allowed.add("cachePolicy");
+        allowed.add("remainderPolicy");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -321,6 +323,7 @@ public final class ConfigStore {
             requireFields(definition, path, allowed, fields);
             requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireCachePolicy(definition.get("cachePolicy"));
+            requireRemainderPolicy(definition.get("remainderPolicy"));
             requireAutoClassifyAreas(
                     definition.get("classificationAreas"), path + ".classificationAreas");
         }
@@ -336,6 +339,28 @@ public final class ConfigStore {
                     "categoryZoneRef",
                     "storagePolicy"
             ), Set.of("categoryZoneRef"));
+        }
+    }
+
+    private static void requireRemainderPolicy(JsonElement value) {
+        if (value == null || value.isJsonNull()) return;
+        var policy = requireObject(value, "remainderPolicy");
+        requireFields(policy, "remainderPolicy", Set.of("unclassifiableEnabled",
+                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef"),
+                Set.of());
+        for (String key : List.of("unclassifiableEnabled", "overflowEnabled")) {
+            var enabled = policy.get(key);
+            if (enabled != null && (!enabled.isJsonPrimitive()
+                    || !enabled.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("remainderPolicy." + key + " 必须是布尔值");
+            }
+        }
+        for (String key : List.of("unclassifiableDestinationRef", "overflowDestinationRef")) {
+            var ref = policy.get(key);
+            if (ref != null && !ref.isJsonNull() && (!ref.isJsonPrimitive()
+                    || !ref.getAsJsonPrimitive().isString())) {
+                throw new V2ValidationException("remainderPolicy." + key + " 必须是位置引用");
+            }
         }
     }
 

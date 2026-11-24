@@ -35,6 +35,11 @@ public interface StorageAutomationPort {
         throw new IllegalStateException("当前环境不支持空盒仓库归还");
     }
 
+    default TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination, String kind) {
+        throw new IllegalStateException("当前环境不支持不可分类和溢出存放");
+    }
+
     default TaskModuleExecutor refreshContainerCache(TaskExecutionContext context, TaskStep step) {
         throw new IllegalStateException("当前环境不支持刷新容器缓存");
     }

@@ -266,6 +266,9 @@ public final class ConfigValidator {
         }
         for (AutoClassifyDefinition definition : definitions) {
             requireCleanupDestination(definition.cleanupPolicy(), coordinates, regions);
+            var remainders = definition.remainderPolicy();
+            requireSpatialReference(remainders.unclassifiableDestinationRef(), coordinates, regions);
+            requireSpatialReference(remainders.overflowDestinationRef(), coordinates, regions);
             requireWarehouseDestination(definition.overflowDestinationRef(), coordinates, regions);
             if (!ids.add(definition.id())) {
                 throw new V2ValidationException(
@@ -437,6 +440,9 @@ public final class ConfigValidator {
             requireStepWarehouses(task.steps(), warehouses);
         }
         for (var task : config.autoClassifyTasks()) {
+            requireWarehouseReference(task.remainderPolicy().unclassifiableDestinationRef(),
+                    warehouses);
+            requireWarehouseReference(task.remainderPolicy().overflowDestinationRef(), warehouses);
             requireWarehouseReference(task.cacheLocationRef(), warehouses);
             requireWarehouseReference(task.overflowDestinationRef(), warehouses);
             requireWarehouseReference(task.cleanupPolicy().destinationRef(), warehouses);
@@ -794,6 +800,21 @@ public final class ConfigValidator {
                 if (taskRef != null && !taskRef.isBlank()
                         && ResourceReference.parse(taskRef).type() != ResourceType.TASK) {
                     throw new V2ValidationException("缓存分类需要引用任务");
+                }
+            }
+            case dev.stowling.v2.model.ClassificationRemainderPolicy.MODULE -> {
+                requireParameters(step, Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind"),
+                        Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind"));
+                requireSpatialReference(step.parameters().get(CACHE_LOCATION_REF),
+                        coordinates, regions);
+                requireSpatialReference(step.parameters().get(TARGET_REF), coordinates, regions);
+                if (!Set.of("UNCLASSIFIABLE", "OVERFLOW").contains(
+                        step.parameters().get("remainderKind"))) {
+                    throw new V2ValidationException("请选择不可分类或溢出物品");
+                }
+                if (step.parameters().get(CACHE_LOCATION_REF).equals(
+                        step.parameters().get(TARGET_REF))) {
+                    throw new V2ValidationException("存放位置必须与物品来源分开");
                 }
             }
             case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {

@@ -22,6 +22,8 @@ public final class StandardTaskModuleFactories {
                                 .collectMaterials(context, step)),
                 factory(ConfigValidator.PACK_OVERFLOW, OverflowItemsModule::create),
                 factory(ConfigValidator.ROBOT_WAREHOUSE, OverflowItemsModule::create),
+                factory(dev.stowling.v2.model.ClassificationRemainderPolicy.MODULE,
+                        OverflowItemsModule::create),
                 factory("GLOBAL_INVENTORY_CLEANUP",
                         (context, step) -> context.storageAutomation().cleanup(context,
                                 TaskModuleSupport.booleanParameter(step, "overflowEnabled", false))),

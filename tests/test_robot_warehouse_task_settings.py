@@ -18,6 +18,8 @@ vm.runInThisContext(fs.readFileSync(process.argv[1] + "/auto-classify-task-model
 const Auto = window.StowlingAutoClassifyTaskModel;
 const requests = [];
 const messages = [];
+const remainderSettings = null;
+const boxSettings = null;
 let failure = false;
 let connected = true;
 const state = {
@@ -30,6 +32,8 @@ const state = {
 };
 const elements = {
     name: {value: "全物品"}, point: {value: "pickup"}, radius: {value: "8"},
+    detectionInterval: {value: "1"},
+    targets: {selectedOptions: [{value: "all-items-zone"}]},
     cache: {value: "region:cache"}, priority: {value: "NORMAL"},
     cacheMode: {value: "PACK_FIRST"}, cacheThreshold: {value: "80"},
     collectEnabled: {checked: true}, classifyEnabled: {checked: true},

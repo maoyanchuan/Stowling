@@ -25,8 +25,38 @@ public record AutoClassifyDefinition(
         String followUpTaskRef,
         Integer detectionIntervalSeconds,
         Integer followUpDelaySeconds,
-        Boolean followUpEnabled
+        Boolean followUpEnabled,
+        ClassificationRemainderPolicy remainderPolicy
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef,
+            String overflowDestinationRef,
+            CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer detectionIntervalSeconds,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
+                collectionPriority, overflowEnabled, cleanupPolicy, unstackableRegionRef,
+                overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                detectionIntervalSeconds, followUpDelaySeconds, followUpEnabled, null);
+    }
+
     public enum Kind {
         COMBINED,
         PICKUP,
@@ -164,6 +194,8 @@ public record AutoClassifyDefinition(
             throw new IllegalArgumentException("创建任务倒计时需为 0 至 86400 秒");
         }
         kind = kind == null ? Kind.COMBINED : kind;
+        remainderPolicy = remainderPolicy == null
+                ? ClassificationRemainderPolicy.DEFAULT : remainderPolicy;
         if (kind != Kind.COMBINED) {
             collectionEnabled = kind == Kind.PICKUP;
             classificationEnabled = kind == Kind.CLASSIFICATION;
@@ -223,6 +255,7 @@ public record AutoClassifyDefinition(
             );
         }
         cacheLocationRef = ResourceReference.parse(cacheLocationRef).encode();
+        remainderPolicy.requireSeparateSource(cacheLocationRef);
         if (!overflowEnabled) {
             overflowDestinationRef = null;
         } else {

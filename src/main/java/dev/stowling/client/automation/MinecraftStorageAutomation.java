@@ -291,6 +291,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         return new Overflow(context, cache, true, destination);
     }
 
+    @Override
+    public TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination, String kind) {
+        return new Overflow(context, cache, false, destination, kind);
+    }
+
     private String robotWarehouseScope() {
         if (minecraft.level == null || minecraft.player == null) {
             throw new IllegalStateException("进入世界后才能使用机器人仓库");
@@ -3330,6 +3336,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private final ResourceReference cacheLocation;
         private final boolean boxedOnly;
         private final ResourceReference destination;
+        private final String remainderKind;
         private String skipMessage;
         private boolean warehouseReady;
         private String warehouseScope;
@@ -3355,10 +3362,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
                 ResourceReference destination) {
+            this(context, cacheLocation, boxedOnly, destination, null);
+        }
+
+        Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
+                ResourceReference destination, String remainderKind) {
             super(context);
             this.cacheLocation = cacheLocation;
             this.boxedOnly = boxedOnly;
             this.destination = destination;
+            this.remainderKind = remainderKind;
         }
 
         @Override
@@ -3369,14 +3382,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             if (cacheLocation == null && owned().isEmpty()) return;
-            warehouseScope = robotWarehouseScope();
-            destinations = boxedOnly ? robotWarehouseContainers(context, destination)
+            if (remainderKind == null) warehouseScope = robotWarehouseScope();
+            destinations = boxedOnly || remainderKind != null
+                    ? robotWarehouseContainers(context, destination)
                     : overflowContainers(destination);
             if (destination != null && destinations.isEmpty()) {
                 skipMessage = "所选仓库位置在当前维度无可用容器，溢出物品留在缓存";
                 return;
             }
-            unstackableRegion = boxedOnly ? null : settings.unstackableOverflowRegion();
+            unstackableRegion = boxedOnly || remainderKind != null
+                    ? null : settings.unstackableOverflowRegion();
             if (unstackableRegion != null) {
                 reservedPositions.addAll(configuration.emptyBoxContainers());
                 destinations.forEach(target -> reservedPositions.addAll(target.entrances()));
@@ -3393,7 +3408,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 if (!scan.succeeded()) throw new IllegalStateException(scan.message());
                 destinations = destinations.stream().filter(target -> scan.containers().stream()
                         .noneMatch(cache -> sameContainer(target, cache))).toList();
-                if (boxedOnly && destinations.isEmpty()) {
+                if ((boxedOnly || remainderKind != null) && destinations.isEmpty()) {
                     skipMessage = "溢出仓库没有独立于缓存的容器，物品留在缓存";
                     return;
                 }
@@ -3421,6 +3436,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void prepareWarehouse() {
+            if (remainderKind != null) return;
             if (warehouseReady) return;
             if (!cleanupAvailable()) {
                 throw new IllegalStateException("溢出打包前请配置任务中断存放位置");
@@ -3434,6 +3450,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void packOwned() {
+            if (remainderKind != null) {
+                storeRoutedItems(0);
+                return;
+            }
             if (!rawOwned().isEmpty()) {
                 prepareWarehouse();
                 Map<String, Integer> items = unstackableOwned();
@@ -3476,6 +3496,52 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             } else {
                 visitSource();
             }
+        }
+
+        private Map<String, Integer> routedOwned() {
+            Map<String, Integer> result = new LinkedHashMap<>(rawOwned());
+            for (ItemStack stack : inventoryStacks()) {
+                if (!MinecraftItemIdentity.isBox(stack) || isEmptyBox(stack)
+                        || !eligibleBox(stack)) continue;
+                String key = MinecraftItemIdentity.key(stack);
+                int count = owned().getOrDefault(key, 0);
+                if (count > 0) result.put(key, count);
+            }
+            return result;
+        }
+
+        private void storeRoutedItems(int index) {
+            Map<String, Integer> batch = routedOwned();
+            if (batch.isEmpty()) {
+                if (currentSource == null) visitSource();
+                else drainSource();
+                return;
+            }
+            if (index >= destinations.size()) {
+                returnRoutedItems(0);
+                return;
+            }
+            int before = sum(batch);
+            transfer(destinations.get(index), batch, false, () -> {
+                storedOrdinary |= sum(routedOwned()) < before;
+                storeRoutedItems(index + 1);
+            });
+        }
+
+        private void returnRoutedItems(int index) {
+            Map<String, Integer> batch = routedOwned();
+            if (batch.isEmpty()) {
+                currentSource = null;
+                visitSource();
+                return;
+            }
+            List<ContainerTarget> returns = new ArrayList<>();
+            if (currentSource != null) returns.add(currentSource);
+            returns.addAll(cacheSources);
+            if (index >= returns.size()) {
+                throw new IllegalStateException("存放位置已满且余料无法归还物品来源，等待收尾");
+            }
+            transfer(returns.get(index), batch, false, () -> returnRoutedItems(index + 1));
         }
 
         private Map<String, Integer> unstackableOwned() {
@@ -3757,6 +3823,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Set<ContainerTarget> toCheck = new LinkedHashSet<>();
             for (String key : candidates.keySet()) {
                 List<ContainerTarget> targets = context.workspace().resolvedStorageTargets(key);
+                if ("UNCLASSIFIABLE".equals(remainderKind)) {
+                    routes.put(key, targets);
+                    continue;
+                }
                 if (targets.isEmpty() || source != null && targets.stream()
                         .anyMatch(target -> sameContainer(source, target))) continue;
                 routes.put(key, targets);
@@ -3770,14 +3840,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             toCheck.removeAll(checkedStorage.keySet());
             readStorageCapacity(toCheck.iterator(), () -> {
-                Set<String> verified = new LinkedHashSet<>();
-                routes.forEach((key, targets) -> {
-                    if (targets.stream().allMatch(target -> storageIsFull(target, key,
-                            candidates.get(key).getMaxStackSize()))) {
-                        verified.add(key);
-                    }
-                });
-                eligibleItems = Set.copyOf(verified);
+                eligibleItems = dev.stowling.automation.ClassificationRemainderPlan.select(routes,
+                        "UNCLASSIFIABLE".equals(remainderKind),
+                        (target, key) -> storageIsFull(target, key,
+                                candidates.get(key).getMaxStackSize()));
                 after.run();
             });
         }
@@ -3895,6 +3961,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         String completionMessage() {
             if (skipMessage != null) return skipMessage;
+            if (remainderKind != null) {
+                String label = "UNCLASSIFIABLE".equals(remainderKind) ? "不可分类" : "溢出";
+                return label + "物品存放结束，未能存入的物品保留在物品来源";
+            }
             if (boxedOnly) return storedOrdinary ? "储存区溢出物品已装盒存入机器人仓库"
                     : "没有确认需要存入机器人仓库的储存区溢出物品";
             if (unstackableFull && storedUnstackable == 0) {

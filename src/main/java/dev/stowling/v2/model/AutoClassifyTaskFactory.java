@@ -98,6 +98,16 @@ public final class AutoClassifyTaskFactory {
                     )
             );
         }
+        var remainders = definition.remainderPolicy();
+        if (remainders.unclassifiableEnabled()) {
+            classificationSteps.add(routeRemainder(definition.cacheLocationRef(),
+                    remainders.unclassifiableDestinationRef(),
+                    ClassificationRemainderPolicy.UNCLASSIFIABLE));
+        }
+        if (remainders.overflowEnabled()) {
+            classificationSteps.add(routeRemainder(definition.cacheLocationRef(),
+                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW));
+        }
         if (definition.overflowEnabled()) {
             classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheLocationRef(),
                     definition.overflowDestinationRef()));
@@ -129,6 +139,13 @@ public final class AutoClassifyTaskFactory {
                         definition.cacheLocationRef()), TaskInterruptionMode.NONE, null,
                 false, false, null, definition.cleanupPolicy()));
         return List.copyOf(result);
+    }
+
+    private static TaskStep routeRemainder(String source, String destination, String kind) {
+        return TaskStep.action(UUID.randomUUID(), ClassificationRemainderPolicy.MODULE,
+                Map.of(ConfigValidator.CACHE_LOCATION_REF, source,
+                        ConfigValidator.TARGET_REF, destination,
+                        ClassificationRemainderPolicy.KIND, kind));
     }
 
     public static List<TaskTriggerDefinition> triggers(

@@ -91,6 +91,7 @@ def classification_page() -> Iterator[Any]:
             "settings-ui.js", "task-select-ui.js", "v2-task-model.js",
             "auto-classify-task-model.js",
             "task-cleanup-settings.js", "empty-box-settings.js", "task-autosave.js",
+            "classification-remainder-settings.js",
             "auto-classify-ui.js",
         ):
             page.add_script_tag(content=(WEB / name).read_text(encoding="utf-8"))
@@ -218,6 +219,8 @@ def test_classification_uses_coordinate_storage_settings_without_a_task_editor(
 def test_warehouse_switch_and_disclosure_keep_the_selected_resource(classification_page: Any) -> None:
     page = classification_page
     open_settings(page)
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
     page.locator("#robot-warehouse-enabled").check()
     assert page.locator("#robot-warehouse-body").is_hidden()
     page.locator("#robot-warehouse-toggle").click()
@@ -229,6 +232,71 @@ def test_warehouse_switch_and_disclosure_keep_the_selected_resource(classificati
     page.locator("#robot-warehouse-toggle").click()
     settle(page)
     assert page.locator("#robot-warehouse-location").input_value() == "warehouse:warehouse"
+
+
+def test_remainder_destinations_save_and_keep_drafts_when_disabled(classification_page: Any) -> None:
+    page = classification_page
+    open_settings(page)
+    enabled = page.locator("#auto-unclassifiable-enabled")
+    enabled.check()
+    settle(page)
+    location = page.locator(".move-field:has(#auto-unclassifiable-location)")
+    location.locator(".task-select-trigger").click()
+    page.get_by_role("option", name="备用缓存").click()
+    page.wait_for_function(
+        "backend.item.remainderPolicy?.unclassifiableDestinationRef === 'region:reserve'"
+    )
+    enabled.uncheck()
+    page.wait_for_function("backend.item.remainderPolicy.unclassifiableEnabled === false")
+    assert page.evaluate("backend.item.remainderPolicy.unclassifiableDestinationRef") == (
+        "region:reserve"
+    )
+    enabled.check()
+    settle(page)
+    assert page.locator("#auto-unclassifiable-location").input_value() == "region:reserve"
+    page.locator("#auto-unclassifiable-toggle").click()
+    settle(page)
+    assert enabled.is_checked()
+    assert page.locator("#auto-unclassifiable-location").is_hidden()
+    assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == []
+
+
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_overflow_contains_robot_and_keeps_independent_switches_and_keyboard_selection(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    section = page.locator("#auto-overflow-settings")
+    assert section.locator("#robot-warehouse-settings").count() == 1
+    assert page.locator("#robot-warehouse-enabled").is_hidden()
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    page.locator("#auto-overflow-storage-enabled").check()
+    settle(page)
+    trigger = page.locator(".move-field:has(#auto-overflow-storage-location) .task-select-trigger")
+    trigger.press("ArrowDown")
+    menu = page.locator(".task-select-menu:not([hidden])")
+    menu.get_by_role("option", name="备用缓存").press("Enter")
+    assert trigger.evaluate("node => node === document.activeElement")
+    page.wait_for_function(
+        "backend.item.remainderPolicy?.overflowDestinationRef === 'region:reserve'"
+    )
+    assert not page.locator("#robot-warehouse-enabled").is_checked()
+    page.locator("#robot-warehouse-enabled").check()
+    page.wait_for_function("backend.item.overflowEnabled === true")
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    assert page.locator("#robot-warehouse-enabled").is_checked()
+    assert page.locator("#auto-overflow-storage-enabled").is_checked()
+    assert page.locator("#robot-warehouse-enabled").is_hidden()
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    assert page.locator("#auto-overflow-storage-location").input_value() == "region:reserve"
+    assert page.locator("#robot-warehouse-location").input_value() == "warehouse:warehouse"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])

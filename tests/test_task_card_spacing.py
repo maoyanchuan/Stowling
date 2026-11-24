@@ -1,4 +1,5 @@
 import re
+from io import BytesIO
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -76,3 +77,63 @@ def test_new_move_card_keeps_gap_after_any_saved_task(
         assert bounds["y"] - saved["y"] - saved["height"] == pytest.approx(12, abs=0.5)
         assert bounds["x"] == pytest.approx(saved["x"])
         assert bounds["width"] == pytest.approx(saved["width"])
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("saved", [False, True])
+def test_expanded_pickup_keeps_bottom_corners_without_clipping_menus(
+    task_page: Any, width: int, theme: str, saved: bool,
+) -> None:
+    image = pytest.importorskip("PIL.Image")
+    page = task_page
+    page.set_viewport_size({"width": width, "height": 1400})
+    page.evaluate("""({theme, saved}) => {
+        document.documentElement.dataset.theme = theme;
+        const display = document.querySelector('#task-display-area');
+        const card = document.querySelector('#auto-task-draft');
+        display.replaceChildren(card);
+        display.style.background = 'rgb(245, 113, 80)';
+        card.className = saved ? 'pickup-task-module'
+            : 'move-saved-task is-draft pickup-task-module';
+        card.hidden = false;
+        const body = card.querySelector('#auto-draft-body');
+        body.classList.add('pickup-task-body');
+        if (saved) body.classList.remove('move-task-body');
+        body.hidden = false;
+        const form = body.querySelector('form');
+        form.hidden = false;
+        form.dataset.kind = 'PICKUP';
+        card.querySelector('#toggle-auto-draft').setAttribute('aria-expanded', 'true');
+    }""", {"theme": theme, "saved": saved})
+    card = page.locator("#auto-task-draft")
+    body = page.locator("#auto-draft-body")
+    styles = body.evaluate("""node => {
+        const style = getComputedStyle(node);
+        return {left: parseFloat(style.borderBottomLeftRadius),
+            right: parseFloat(style.borderBottomRightRadius),
+            background: style.backgroundColor,
+            overflow: getComputedStyle(node.parentElement).overflow};
+    }""")
+    expected_radius = 17 if theme == "green" else 13
+    assert styles == {
+        "left": expected_radius,
+        "right": expected_radius,
+        "background": "rgba(0, 0, 0, 0)",
+        "overflow": "visible",
+    }
+    pixels = image.open(BytesIO(card.screenshot())).convert("RGB")
+    assert pixels.getpixel((pixels.width - 3, pixels.height - 3)) == (245, 113, 80)
+
+    # A menu extending past the card must remain visible in its bottom-right corner.
+    body.evaluate("""node => {
+        const menu = document.createElement('div');
+        menu.id = 'corner-menu';
+        menu.style.cssText = 'position:absolute;right:0;bottom:-24px;width:48px;height:48px;'
+            + 'z-index:10;background:rgb(20,80,160)';
+        node.append(menu);
+    }""")
+    assert page.locator("#corner-menu").evaluate("""node => {
+        const bounds = node.getBoundingClientRect();
+        return document.elementFromPoint(bounds.right - 4, bounds.bottom - 4) === node;
+    }""")

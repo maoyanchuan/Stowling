@@ -224,7 +224,15 @@
             result.ruleId = options.recognitionMode === "container-item"
                 ? "MARKER_CONTAINER_CONTENTS" : options.recognitionMode === "unstackable"
                     ? "UNSTACKABLE_ITEMS" : "DIRECT_BLOCK_ID";
-            if (result.ruleId !== "MARKER_CONTAINER_CONTENTS") result.wholeStorage = false;
+            // Rotated marker chests cannot share a column with their wider storage slice.
+            const separateBounds = ["X", "Z"].every(axis => {
+                const marker = [result[`markerFirst${axis}`], result[`markerSecond${axis}`]];
+                const storage = [result[`storageFirst${axis}`], result[`storageSecond${axis}`]];
+                return Math.min(...marker) !== Math.min(...storage)
+                    || Math.max(...marker) !== Math.max(...storage);
+            });
+            result.wholeStorage = result.ruleId === "MARKER_CONTAINER_CONTENTS"
+                && (result.wholeStorage || (options.scopeMode === "single" && separateBounds));
             result.storagePolicy.mode = {bulk: "NORMAL", mixed: "MIXED", box: "BOX_ONLY"}[
                 options.storageMethod];
             result.storagePolicy.looseSlots = optionsPayload(options).bulkStacks;

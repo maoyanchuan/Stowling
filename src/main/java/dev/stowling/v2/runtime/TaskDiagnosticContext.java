@@ -21,7 +21,7 @@ public record TaskDiagnosticContext(
         TaskDefinition interruptionTask,
         AutoClassifyDefinition taskSettings,
         StorageAutomationSettings storageSettings,
-        Map<String, Integer> protectedItems,
+        java.util.Set<Integer> lockedSlots,
         List<TaskTriggerDefinition> triggers,
         List<CoordinatePoint> coordinates,
         List<RegionDefinition> regions,
@@ -30,7 +30,7 @@ public record TaskDiagnosticContext(
 ) {
     public TaskDiagnosticContext {
         versions = Map.copyOf(versions);
-        protectedItems = Map.copyOf(protectedItems);
+        lockedSlots = java.util.Set.copyOf(lockedSlots);
         triggers = List.copyOf(triggers);
         coordinates = List.copyOf(coordinates);
         regions = List.copyOf(regions);

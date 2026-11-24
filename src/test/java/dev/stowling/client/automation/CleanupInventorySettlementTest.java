@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.automation.InventorySlotFixture;
 import dev.stowling.v2.runtime.modules.PlayerInventoryManager;
 import dev.stowling.v2.runtime.modules.TaskModuleState;
 import java.util.Map;
@@ -78,15 +79,17 @@ class CleanupInventorySettlementTest {
 
     @Test
     void stableInventorySettlesEarlyAndReservesProtectedAndOtherTaskStock() {
-        var actual = new AtomicReference<>(new PlayerInventorySnapshot(Map.of(TOOL, 1)));
+        var layout = new InventorySlotFixture();
+        var actual = new AtomicReference<>(layout.snapshot(Map.of(TOOL, 1)));
         var inventory = new PlayerInventoryManager(() -> Optional.of(actual.get()));
         inventory.observe();
-        inventory.allocate(inventory.view(false, true, Map.of()).revision(), TOOL, 1);
+        InventorySlotFixture.lockFirst(inventory,
+                inventory.view(false, true, Map.of()).revision(), TOOL, true);
         var account = inventory.account(UUID.randomUUID());
         account.recordWithdrawn(STONE, 128);
         var other = inventory.account(UUID.randomUUID());
         other.recordWithdrawn(STONE, 32);
-        actual.set(new PlayerInventorySnapshot(Map.of(TOOL, 1, STONE, 96)));
+        actual.set(layout.snapshot(Map.of(TOOL, 1, STONE, 96)));
         var settlement = new CleanupInventorySettlement(inventory, account);
 
         for (int tick = 0; tick < 4; tick++) {
@@ -95,7 +98,8 @@ class CleanupInventorySettlementTest {
         assertEquals(TaskModuleState.SUCCEEDED, settlement.tick().state());
         assertEquals(Map.of(STONE, 64), account.managedItems());
         assertEquals(Map.of(STONE, 32), other.managedItems());
-        assertEquals(actual.get(), inventory.expectedInventory().orElseThrow());
+        assertEquals(actual.get().itemCounts(),
+                inventory.expectedInventory().orElseThrow().itemCounts());
         assertEquals(1, inventory.view(false, true, Map.of()).items().stream()
                 .filter(item -> TOOL.equals(item.itemId())).findFirst().orElseThrow()
                 .protectedCount());

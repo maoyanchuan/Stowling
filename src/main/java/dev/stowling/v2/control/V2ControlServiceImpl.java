@@ -177,9 +177,9 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     @Override
-    public PlayerInventoryResponse allocatePlayerInventory(String revision, String key,
-            int keepCount) {
-        return runs.allocatePlayerInventory(revision, key, keepCount);
+    public PlayerInventoryResponse setPlayerInventoryLocked(String revision, int slotIndex,
+            boolean locked) {
+        return runs.setPlayerInventoryLocked(revision, slotIndex, locked);
     }
 
     @Override

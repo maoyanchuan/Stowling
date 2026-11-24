@@ -127,7 +127,8 @@ final class DroppedItemCollectionEngine {
             context.navigation().cancel();
             current = null;
             if (cacheCycle) inventory.claimAllUnprotectedForCollection(account);
-            if (!context.workspace().collectedItems().isEmpty()) {
+            if (cacheCycle ? !inventory.unlockedItems().isEmpty()
+                    : !context.workspace().collectedItems().isEmpty()) {
                 return TaskModuleResult.succeeded("背包已满，先将本批物品存入缓存后继续拾取");
             }
             if (account.collectionTask() != null) {
@@ -135,7 +136,7 @@ final class DroppedItemCollectionEngine {
                     return TaskModuleResult.waiting("背包已满，正在核对收集点拾取回执");
                 }
                 return TaskModuleResult.failed("背包已满，未认领到可存入缓存的投料；"
-                        + "可在背包管理中分配已有物品或腾出空间");
+                        + "可在背包管理中解锁已有栏位或腾出空间");
             }
             return TaskModuleResult.failed("背包空间不足，没有可先存入缓存的任务物品，请腾出空间");
         }
@@ -312,7 +313,8 @@ final class DroppedItemCollectionEngine {
     }
 
     private TaskModuleResult confirmEmpty() {
-        if (inventory.pendingPickupCount(context.workspace().inventoryAccount()) > 0) {
+        if (!cacheCycle
+                && inventory.pendingPickupCount(context.workspace().inventoryAccount()) > 0) {
             resetStableConfirmation();
             return TaskModuleResult.waiting("等待拾取回执与背包同步");
         }

@@ -13,6 +13,60 @@ import org.junit.jupiter.api.Test;
 
 class DepositBatchConfirmationTest {
     @Test
+    void clientPredictionNeverConfirmsAnOrdinaryBatch() {
+        Object menu = new Object();
+        var batch = new DepositBatchConfirmation();
+        batch.record("stone", 64, key -> new Counts(64, 0, 0));
+        batch.awaitServer(menu, 1);
+        for (int tick = 0; tick < 100; tick++) {
+            assertFalse(batch.observeServer(menu, 1, key -> new Counts(0, 64, 0)));
+        }
+        assertFalse(batch.settled());
+        assertTrue(batch.accepted().isEmpty());
+    }
+
+    @Test
+    void sameMenuServerSnapshotConfirmsDespiteRefillAndDelayedReceipts() {
+        Object menu = new Object();
+        var batch = new DepositBatchConfirmation();
+        batch.record("stone", 64, key -> new Counts(64, 20, 0));
+        batch.awaitServer(menu, 3);
+        assertTrue(batch.observeServer(menu, 4, key -> new Counts(128, 84, 0)));
+        assertTrue(batch.fullyAccepted());
+        assertEquals(Map.of("stone", 64), batch.accepted());
+    }
+
+    @Test
+    void reusedWindowOrOldGenerationCannotConfirmAnotherBatch() {
+        Object first = new Object();
+        Object second = new Object();
+        var batch = new DepositBatchConfirmation();
+        batch.record("stone", 64, key -> new Counts(64, 0, 0));
+        batch.awaitServer(second, 2);
+        assertFalse(batch.observeServer(first, 99, key -> new Counts(0, 64, 0)));
+        assertFalse(batch.observeServer(second, 2, key -> new Counts(0, 64, 0)));
+        assertTrue(batch.accepted().isEmpty());
+    }
+
+    @Test
+    void authoritativePartialAcceptanceAndRollbackPreserveRemainingCargo() {
+        Object menu = new Object();
+        var partial = new DepositBatchConfirmation();
+        partial.record("stone", 64, key -> new Counts(64, 20, 0));
+        partial.awaitServer(menu, 1);
+        partial.observeServer(menu, 2, key -> new Counts(61, 23, 0));
+        assertTrue(partial.settled());
+        assertFalse(partial.fullyAccepted());
+        assertEquals(Map.of("stone", 3), partial.accepted());
+        var rejected = new DepositBatchConfirmation();
+        rejected.record("stone", 64, key -> new Counts(64, 23, 0));
+        rejected.awaitServer(menu, 2);
+        rejected.observeServer(menu, 3, key -> new Counts(64, 23, 0));
+        assertTrue(rejected.settled());
+        assertTrue(rejected.accepted().isEmpty());
+    }
+
+    @Test
     void continuousRefillsConfirmOnlyTheOriginalBatchWithoutWaitingForAnEmptyBackpack() {
         var batch = new DepositBatchConfirmation();
         batch.record("stone", 64, key -> new Counts(64, 0, 0));
@@ -27,7 +81,7 @@ class DepositBatchConfirmationTest {
     }
 
     @Test
-    void anUnconfirmedInPlaceBatchRequestsASafePositionAfterTwoSeconds() {
+    void legacyBusinessBatchCanRequestAnAuthoritativeRereadAfterTwoSeconds() {
         var batch = new DepositBatchConfirmation();
         batch.record("stone", 64, key -> new Counts(64, 0, 0));
         batch.observe(LIVE, key -> new Counts(64, 0, 0));

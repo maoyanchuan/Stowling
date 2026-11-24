@@ -100,7 +100,7 @@ final class WithdrawFoodModule implements TaskModuleExecutor {
         }
         inFlight = false;
         if (reserveFood) {
-            context.inventory().reserveAcquiredFood(result.items());
+            context.inventory().reserveAcquiredFood(result.acquiredSlots());
             return result.state() == ContainerTransferState.FAILED
                     ? TaskModuleResult.failed(result.message())
                     : TaskModuleResult.succeeded(result.message());

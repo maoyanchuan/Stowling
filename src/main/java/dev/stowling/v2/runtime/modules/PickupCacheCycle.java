@@ -47,11 +47,10 @@ final class PickupCacheCycle implements TaskModuleExecutor {
         if (inFlight) return confirmDeposit(context.containerTransfers().pollDeposit());
         if (stopping) return finish("拾取与缓存存放已安全停止", false);
         if (!refreshCargo()) return finish("无法读取缓存存入前的真实背包", true);
-        if (context.workspace().managedItems().isEmpty()) {
-            if (pendingPickups()) return TaskModuleResult.waiting("等待最后的拾取回执与背包同步");
+        if (context.inventory().unlockedItems().isEmpty()) {
             context.containerTransfers().finishPickupCacheDeposit();
             collection = CollectDroppedItemsModule.createEngine(context, step, true);
-            return TaskModuleResult.running("本轮未保护物品已存完，重新检测掉落物");
+            return TaskModuleResult.running("本轮未锁定物品已存完，重新检测掉落物");
         }
         if (target == null) {
             target = containers.stream().filter(candidate -> !unavailable.contains(candidate)
@@ -66,7 +65,7 @@ final class PickupCacheCycle implements TaskModuleExecutor {
                 return finish("缓存容量不足或容器不可用，未存物品保留在背包，已停止继续拾取", true);
             }
         }
-        requested = context.workspace().managedItems();
+        requested = context.inventory().unlockedItems();
         dev.stowling.v2.runtime.TaskTrace.event("DECISION", "pickup.cache.select",
                 "target=" + target.position() + "; standingArea=" + target.standingArea()
                         + "; knownFull=" + fullCaches.size() + "; unavailable=" + unavailable.size()
@@ -87,9 +86,8 @@ final class PickupCacheCycle implements TaskModuleExecutor {
         if (result.state() == TaskModuleState.FAILED) return finish(result.message(), true);
         if (result.state() != TaskModuleState.SUCCEEDED) return result;
         if (!refreshCargo()) return finish("无法读取拾取后的真实背包", true);
-        if (context.workspace().managedItems().isEmpty()) {
-            if (pendingPickups()) return TaskModuleResult.waiting("等待拾取回执与背包同步");
-            return finish("掉落物已全部消失，未保护物品已全部存入缓存", false);
+        if (context.inventory().unlockedItems().isEmpty()) {
+            return finish("掉落物已全部消失，未锁定物品已全部存入缓存", false);
         }
         collection = null;
         if (containers == null) {
@@ -102,7 +100,7 @@ final class PickupCacheCycle implements TaskModuleExecutor {
         }
         unavailable.clear();
         target = null;
-        return TaskModuleResult.running("本轮拾取结束，准备存入全部未保护物品");
+        return TaskModuleResult.running("本轮拾取结束，准备存入全部未锁定物品");
     }
 
     private boolean allCachesFull() {
@@ -119,10 +117,6 @@ final class PickupCacheCycle implements TaskModuleExecutor {
         return true;
     }
 
-    private boolean pendingPickups() {
-        return context.inventory().pendingPickupCount(context.workspace().inventoryAccount()) > 0;
-    }
-
     private TaskModuleResult confirmDeposit(ContainerTransferResult result) {
         if (result.state() == ContainerTransferState.PENDING) {
             return TaskModuleResult.waiting(result.message());
@@ -135,7 +129,11 @@ final class PickupCacheCycle implements TaskModuleExecutor {
             int moved = count - result.remaining().getOrDefault(key, 0);
             if (moved > 0) deposited.put(key, moved);
         });
-        context.workspace().consumeDeposit("managed", requested, result.remaining());
+        if (!result.transferred().isEmpty()) {
+            deposited.clear();
+            deposited.putAll(result.transferred());
+        }
+        context.workspace().consumeDeposit("managed", deposited, Map.of());
         dev.stowling.v2.runtime.TaskTrace.event("DECISION", "pickup.cache.result",
                 "target=" + target.position() + "; state=" + result.state()
                         + "; reason=" + result.message() + "; full=" + full
@@ -147,17 +145,20 @@ final class PickupCacheCycle implements TaskModuleExecutor {
             context.workspace().recordCacheUpdate(cache.uuid(),
                     deposited.values().stream().mapToInt(Integer::intValue).sum());
         }
-        if (result.state() == ContainerTransferState.FAILED || !result.remaining().isEmpty()
-                || deposited.isEmpty() || full) {
+        if (result.state() == ContainerTransferState.FAILED || deposited.isEmpty() || full) {
             unavailable.add(target);
             target = null;
         }
-        return TaskModuleResult.running("本批存入已确认，继续核对新增拾取与剩余未保护物品");
+        if (result.state() == ContainerTransferState.FAILED) {
+            return finish(result.message() + "；已停止继续拾取，余物保留在背包", true);
+        }
+        return TaskModuleResult.running("本批存入已确认，继续核对新增拾取与剩余未锁定物品");
     }
 
     private TaskModuleResult finish(String message, boolean failed) {
         context.navigation().cancel();
         context.containerTransfers().finishPickupCacheDeposit();
+        if (failed) context.workspace().retainPickupCargoOnFailure();
         terminal = failed ? TaskModuleResult.failed(message) : TaskModuleResult.succeeded(message);
         return terminal;
     }

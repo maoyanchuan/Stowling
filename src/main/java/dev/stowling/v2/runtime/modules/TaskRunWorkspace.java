@@ -18,6 +18,16 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
+    private boolean retainPickupCargo;
+
+    public synchronized void retainPickupCargoOnFailure() {
+        retainPickupCargo = true;
+    }
+
+    public synchronized boolean retainsPickupCargoOnFailure() {
+        return retainPickupCargo;
+    }
+
     private dev.stowling.v2.runtime.TaskDiagnosticLog diagnostics;
 
     public synchronized void setDiagnostics(dev.stowling.v2.runtime.TaskDiagnosticLog value) {

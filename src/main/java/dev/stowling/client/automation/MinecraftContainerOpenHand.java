@@ -30,8 +30,13 @@ final class MinecraftContainerOpenHand {
         var inventory = minecraft.player.getInventory();
         original = inventory.getSelectedSlot();
         List<ItemStack> slots = inventory.getNonEquipmentItems();
+        boolean canSwap = java.util.stream.IntStream.range(0, 9)
+                .anyMatch(index -> !MinecraftContainerInteractions.locked(index));
         int chosen = ContainerOpenHandPlan.select(original,
-                slots.stream().map(MinecraftContainerOpenHand::safe).toList());
+                java.util.stream.IntStream.range(0, slots.size())
+                        .mapToObj(index -> safe(slots.get(index)) && (index < 9
+                                || !MinecraftContainerInteractions.locked(index)
+                                && canSwap)).toList());
         if (chosen < 0) {
             original = -1;
             throw new IllegalStateException("打开容器需要一个空背包槽位或镐，避免误放任务物品");
@@ -40,6 +45,12 @@ final class MinecraftContainerOpenHand {
         if (chosen < 9) {
             select(chosen);
         } else {
+            if (MinecraftContainerInteractions.locked(original)) {
+                int target = java.util.stream.IntStream.range(0, 9)
+                        .filter(index -> !MinecraftContainerInteractions.locked(index))
+                        .findFirst().orElseThrow();
+                select(target);
+            }
             swapped = chosen;
             swap(chosen);
         }

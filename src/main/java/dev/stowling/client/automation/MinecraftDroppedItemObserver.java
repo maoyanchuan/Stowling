@@ -168,7 +168,7 @@ public final class MinecraftDroppedItemObserver
         }
         if (player != inventoryPlayer) {
             // Avoid reconciling persisted locks against the empty inventory during login.
-            if (player.inventoryMenu.getStateId() == 0) return Optional.empty();
+            if (!MinecraftContainerInteractions.ready(player.inventoryMenu)) return Optional.empty();
             inventoryPlayer = player;
             Arrays.fill(presentation, null);
             inventorySlots = List.of();
@@ -183,8 +183,9 @@ public final class MinecraftDroppedItemObserver
         for (int index = 0; index < stacks.size(); index++) {
             ItemStack stack = stacks.get(index);
             if (stack.isEmpty() || stack.getCount() <= 0) {
-                if (includeIdentities && presentation[index] != null) {
-                    presentation[index] = null;
+                if (includeIdentities && (presentation[index] == null
+                        || presentation[index].count() > 0)) {
+                    presentation[index] = PlayerInventorySlot.empty(index);
                     slotsChanged = true;
                 }
                 continue;
@@ -213,7 +214,8 @@ public final class MinecraftDroppedItemObserver
             inventorySlots = List.copyOf(occupied);
         }
         itemNames = Map.copyOf(names);
-        return Optional.of(new PlayerInventorySnapshot(counts, pickaxes, persistent));
+        return Optional.of(new PlayerInventorySnapshot(counts, pickaxes, persistent,
+                includeIdentities ? inventorySlots : List.of()));
     }
 
     private boolean updateSlot(int index, String key, ItemStack stack, LocalPlayer player) {

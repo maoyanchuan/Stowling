@@ -386,7 +386,7 @@ public final class MinecraftContainerWithdrawalPort
     }
 
     private static List<Integer> playerSlots(AbstractContainerMenu menu) {
-        return MinecraftContainerInteractions.slots(menu, true);
+        return MinecraftContainerInteractions.transferSlots(menu, true);
     }
 
     private static List<Integer> containerSlots(AbstractContainerMenu menu) {

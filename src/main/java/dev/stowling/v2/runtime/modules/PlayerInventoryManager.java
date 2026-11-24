@@ -29,7 +29,7 @@ public final class PlayerInventoryManager {
     private final Map<UUID, PlayerInventoryAccount> inputs = new LinkedHashMap<>();
     private final CollectionPickupReceipts receipts;
     private Set<UUID> collectionTasks = Set.of();
-    private PlayerInventorySnapshot savedProtection = new PlayerInventorySnapshot(Map.of());
+    private PlayerInventorySnapshot savedProtection = PlayerInventorySnapshot.locks(Set.of());
     private Consumer<PlayerInventorySnapshot> saveProtection = snapshot -> {};
     private PlayerInventorySnapshot protectedInventory;
     private final Set<UUID> abandonedAccounts = new LinkedHashSet<>();
@@ -72,8 +72,12 @@ public final class PlayerInventoryManager {
         available = true;
         PlayerInventorySnapshot current = observed.orElseThrow();
         if (!previous.equals(observed)) revision++;
-        if (protectedInventory == null) restoreProtection(current);
-        reconcilePickaxeWear(current);
+        if (protectedInventory == null || savedProtection.schemaVersion() < 2) {
+            restoreProtection(current);
+        }
+        if (savedProtection.schemaVersion() >= 2 && current.slots().size() == 36) {
+            protectedInventory = lockedSnapshot(current);
+        }
         boolean baseline = previous.isEmpty();
         PlayerInventoryDelta delta = previous
                 .map(prior -> PlayerInventoryDelta.between(prior, current))
@@ -154,45 +158,27 @@ public final class PlayerInventoryManager {
         return inputs.computeIfAbsent(task, ignored -> account(UUID.randomUUID()));
     }
 
-    private void reconcilePickaxeWear(PlayerInventorySnapshot observed) {
-        var protectedPickaxes = protectedInventory.pickaxeIdentities();
-        var observedPickaxes = observed.pickaxeIdentities();
-        if (observedPickaxes.isEmpty()) return;
-        boolean missing = protectedPickaxes.keySet().stream()
-                .anyMatch(key -> protectedInventory.count(key) > observed.count(key));
-        boolean newIdentity = observedPickaxes.keySet().stream().anyMatch(key ->
-                protectedInventory.count(key) > 0 && !protectedPickaxes.containsKey(key));
-        if (!missing) {
-            if (newIdentity) {
-                updateProtection(protectedSnapshot(protectedInventory.itemCounts(), observed));
-            }
-            return;
-        }
-        var expected = expectedInventory().orElseThrow();
-        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
-        boolean changed = newIdentity;
-        for (var pickaxe : observedPickaxes.entrySet()) {
-            String after = pickaxe.getKey();
-            // Only unassigned excess can replace a missing protected pickaxe.
-            int extra = observed.count(after) - expected.count(after);
-            for (var original : protectedPickaxes.entrySet()) {
-                if (extra <= 0) break;
-                if (!pickaxe.getValue().equals(original.getValue())) continue;
-                String before = original.getKey();
-                int count = kept.getOrDefault(before, 0);
-                int moved = Math.min(extra, count - observed.count(before));
-                if (moved <= 0) continue;
-                if (count == moved) kept.remove(before);
-                else kept.put(before, count - moved);
-                kept.merge(after, moved, Math::addExact);
-                extra -= moved;
-                changed = true;
+    public synchronized Set<Integer> lockedSlots() {
+        return savedProtection.lockedSlots();
+    }
+
+    public synchronized Map<String, Integer> unlockedItems() {
+        if (previous.isEmpty()) return Map.of();
+        return slotCounts(previous.orElseThrow(), false);
+    }
+
+    private Map<String, Integer> slotCounts(PlayerInventorySnapshot observed, boolean locked) {
+        Map<String, Integer> items = new LinkedHashMap<>();
+        for (var slot : observed.slots()) {
+            if (slot.count() > 0 && lockedSlots().contains(slot.index()) == locked) {
+                items.merge(slot.key(), slot.count(), Math::addExact);
             }
         }
-        if (changed) {
-            updateProtection(protectedSnapshot(kept, observed));
-            revision++;
-        }
+        return Map.copyOf(items);
+    }
+
+    private PlayerInventorySnapshot lockedSnapshot(PlayerInventorySnapshot observed) {
+        return protectedSnapshot(slotCounts(observed, true), observed);
     }
 
     private PlayerInventorySnapshot protectedSnapshot(Map<String, Integer> items,
@@ -215,40 +201,27 @@ public final class PlayerInventoryManager {
     }
 
     private void restoreProtection(PlayerInventorySnapshot observed) {
-        Map<String, Integer> kept = new LinkedHashMap<>();
-        Map<String, Integer> stored = new LinkedHashMap<>(savedProtection.itemCounts());
-        Map<String, Integer> remaining = new LinkedHashMap<>(stored);
-        Map<String, String> pickaxes = new LinkedHashMap<>(savedProtection.pickaxeIdentities());
+        if (savedProtection.schemaVersion() >= 2) {
+            initialize(lockedSnapshot(observed));
+            return;
+        }
+        if (observed.slots().size() != 36) {
+            initialize(new PlayerInventorySnapshot(Map.of()));
+            return;
+        }
         Set<String> matched = new LinkedHashSet<>();
         for (String key : observed.itemCounts().keySet()) {
-            String stableKey = observed.persistentKey(key);
-            int count = remaining.getOrDefault(stableKey, 0);
-            int reserved = Math.min(observed.count(key), count);
-            if (reserved == 0) continue;
-            matched.add(stableKey);
-            kept.put(key, reserved);
-            remaining.put(stableKey, count - reserved);
+            boolean saved = savedProtection.itemCounts().keySet().stream().anyMatch(old ->
+                    old.equals(key) || old.equals(observed.persistentKey(key))
+                            || matchesSavedVariant(old, savedProtection.pickaxeIdentities().get(old),
+                                    key, observed));
+            if (saved) matched.add(key);
         }
-        for (String oldKey : savedProtection.itemCounts().keySet()) {
-            if (matched.contains(oldKey)) continue;
-            String wearIdentity = pickaxes.get(oldKey);
-            var candidates = observed.itemCounts().keySet().stream()
-                    .filter(key -> !kept.containsKey(key))
-                    .filter(key -> !stored.containsKey(observed.persistentKey(key)))
-                    .filter(key -> matchesSavedVariant(oldKey, wearIdentity, key, observed))
-                    .limit(2).toList();
-            if (candidates.size() != 1) continue;
-            String key = candidates.getFirst();
-            String stableKey = observed.persistentKey(key);
-            int count = stored.remove(oldKey);
-            kept.put(key, Math.min(count, observed.count(key)));
-            stored.put(stableKey, count);
-            pickaxes.remove(oldKey);
-            String newWearIdentity = observed.pickaxeIdentities().get(key);
-            if (newWearIdentity != null) pickaxes.put(stableKey, newWearIdentity);
-        }
-        persistProtection(stored, pickaxes);
-        initialize(protectedSnapshot(kept, observed));
+        Set<Integer> migrated = new LinkedHashSet<>();
+        observed.slots().stream().filter(slot -> matched.contains(slot.key()))
+                .forEach(slot -> migrated.add(slot.index()));
+        persistLocks(migrated);
+        protectedInventory = lockedSnapshot(observed);
     }
 
     private static boolean matchesSavedVariant(String oldKey, String wearIdentity, String key,
@@ -273,30 +246,14 @@ public final class PlayerInventoryManager {
     }
 
     private void updateProtection(PlayerInventorySnapshot next) {
-        if (next.equals(protectedInventory)) return;
-        Map<String, Integer> stored = new LinkedHashMap<>(savedProtection.itemCounts());
-        Map<String, String> pickaxes = new LinkedHashMap<>(savedProtection.pickaxeIdentities());
-        for (String key : protectedInventory.itemCounts().keySet()) {
-            String stableKey = protectedInventory.persistentKey(key);
-            stored.remove(stableKey);
-            pickaxes.remove(stableKey);
-        }
-        Map<String, Integer> reserved = new LinkedHashMap<>();
-        next.itemCounts().forEach((key, count) ->
-                reserved.merge(next.persistentKey(key), count, Math::addExact));
-        stored.putAll(reserved);
-        next.pickaxeIdentities().forEach((key, identity) ->
-                pickaxes.put(next.persistentKey(key), identity));
-        persistProtection(stored, pickaxes);
-        protectedInventory = next;
+        protectedInventory = previous.filter(snapshot -> snapshot.slots().size() == 36)
+                .map(this::lockedSnapshot).orElse(next);
     }
 
-    private void persistProtection(Map<String, Integer> stored, Map<String, String> pickaxes) {
-        var snapshot = new PlayerInventorySnapshot(stored, pickaxes);
-        if (!snapshot.equals(savedProtection)) {
-            saveProtection.accept(snapshot);
-            savedProtection = snapshot;
-        }
+    private void persistLocks(Set<Integer> slots) {
+        var next = PlayerInventorySnapshot.locks(slots);
+        saveProtection.accept(next);
+        savedProtection = next;
     }
 
     public synchronized PlayerInventoryAccount account(UUID ownerId) {
@@ -325,41 +282,23 @@ public final class PlayerInventoryManager {
         if (!available || protectedInventory == null) {
             return Set.of();
         }
-        var actual = previous.orElseThrow();
-        var managed = managedCounts();
-        Set<String> keys = new LinkedHashSet<>();
-        for (String key : protectedInventory.itemCounts().keySet()) {
-            if (itemId.equals(ItemIdentity.base(key))
-                    && actual.count(key) > managed.getOrDefault(key, 0)) {
-                keys.add(key);
-            }
-        }
-        return Set.copyOf(keys);
+        return protectedInventory.itemCounts().keySet().stream()
+                .filter(key -> itemId.equals(ItemIdentity.base(key)))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
-    synchronized void reserveAcquiredFood(Map<String, Integer> items) {
-        if (items.isEmpty()) {
-            return;
-        }
-        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
-        items.forEach((key, count) -> kept.merge(key, count, Math::addExact));
-        updateProtection(protectedSnapshot(kept, previous.orElseThrow()));
+    synchronized void reserveAcquiredFood(Set<Integer> acquiredSlots) {
+        if (acquiredSlots.isEmpty()) return;
+        Set<Integer> slots = new LinkedHashSet<>(lockedSlots());
+        slots.addAll(acquiredSlots);
+        persistLocks(slots);
+        observe();
         revision++;
     }
 
     synchronized void consumeProtectedFood(String key, int count) {
-        if (protectedInventory == null || protectedInventory.count(key) == 0 || count <= 0) {
-            return;
-        }
-        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
-        int remaining = protectedInventory.count(key) - count;
-        if (remaining > 0) {
-            kept.put(key, remaining);
-        } else {
-            kept.remove(key);
-        }
-        updateProtection(protectedSnapshot(kept, previous.orElseThrow()));
-        revision++;
+        // Consumption changes the contents, never the position's lock.
+        observe();
     }
 
     public synchronized Optional<PlayerInventorySnapshot> expectedInventory() {
@@ -561,8 +500,7 @@ public final class PlayerInventoryManager {
             int count = actual.getOrDefault(key, 0);
             int owned = managed.getOrDefault(key, 0);
             // Never use protected stock to hide a missing confirmed task receipt.
-            int reserved = owned > 0 ? before.getOrDefault(key, 0)
-                    : Math.min(count, before.getOrDefault(key, 0));
+            int reserved = Math.min(count, before.getOrDefault(key, 0));
             int queued = Math.max(0, count - owned - reserved);
             if (queued > 0) queuedItems.put(key, queued);
             if (reserved > 0) protectedItems.put(key, reserved);
@@ -617,8 +555,8 @@ public final class PlayerInventoryManager {
                 .sorted(Map.Entry.comparingByKey()).map(entry -> {
                     String key = entry.getKey();
                     int count = entry.getValue();
-                    int taskCount = Math.min(count, managed.getOrDefault(key, 0));
-                    int kept = Math.min(count - taskCount, protectedItems.getOrDefault(key, 0));
+                    int kept = Math.min(count, protectedItems.getOrDefault(key, 0));
+                    int taskCount = Math.min(count - kept, managed.getOrDefault(key, 0));
                     int queued = Math.min(count - taskCount - kept,
                             classificationItems.getOrDefault(key, 0));
                     return new PlayerInventoryResponse.Item(key, ItemIdentity.base(key),
@@ -626,29 +564,26 @@ public final class PlayerInventoryManager {
                             kept, taskCount, queued);
                 }).toList();
         return new PlayerInventoryResponse(Long.toString(revision), available, busy,
-                classificationAvailable, items, available ? slots : List.of());
+                classificationAvailable, items,
+                available ? previous.orElseThrow().slots() : List.of(), lockedSlots());
     }
 
-    public synchronized void allocate(String expectedRevision, String key, int keepCount) {
+    public synchronized void setLocked(String expectedRevision, int slotIndex, boolean locked) {
+        if (slotIndex < 0 || slotIndex >= 36) {
+            throw new IllegalArgumentException("栏位索引必须在 0 到 35 之间");
+        }
         if (!Long.toString(revision).equals(expectedRevision)) {
-            throw new IllegalStateException("背包已变化，请刷新后重新分配");
+            throw new IllegalStateException("背包已变化，请刷新后重新锁定");
         }
-        if (!available || previous.isEmpty()
-                || !previous.orElseThrow().itemCounts().containsKey(key)) {
-            throw new IllegalArgumentException("背包中没有这个物品，请刷新");
+        if (!available || previous.isEmpty() || previous.orElseThrow().slots().size() != 36) {
+            throw new IllegalStateException("等待完整背包同步后修改锁定");
         }
-        int count = previous.orElseThrow().itemCounts().get(key);
-        int free = Math.max(0, count - managedCounts().getOrDefault(key, 0));
-        if (keepCount < 0 || keepCount > free) {
-            throw new IllegalArgumentException("保留数量必须在 0 与可分配数量之间");
-        }
-        Map<String, Integer> kept = new LinkedHashMap<>(protectedInventory.itemCounts());
-        if (keepCount > 0) kept.put(key, keepCount);
-        else kept.remove(key);
-        updateProtection(protectedSnapshot(kept, previous.orElseThrow()));
-        receipts.forgetQueuedGain(key);
-        if (free > keepCount) classificationItems.put(key, free - keepCount);
-        else classificationItems.remove(key);
+        Set<Integer> slots = new LinkedHashSet<>(lockedSlots());
+        if (locked) slots.add(slotIndex);
+        else slots.remove(slotIndex);
+        persistLocks(slots);
+        protectedInventory = lockedSnapshot(previous.orElseThrow());
+        reconcileUnassignedItems();
         revision++;
     }
 

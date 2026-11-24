@@ -1,6 +1,7 @@
 package dev.stowling.client.automation;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ContainerTransferState;
 import dev.stowling.automation.FoodConsumptionPort;
 import dev.stowling.automation.FoodConsumptionResult;
 import dev.stowling.automation.FoodStatus;
@@ -475,6 +476,8 @@ public final class MinecraftFoodConsumptionPort
                 && confirmed
                 && menu.getCarried().isEmpty()) {
             acquiring.acquiredItems.merge(acquiring.itemKey, acquiring.takeCount, Integer::sum);
+            acquiring.acquiredSlots.add(MinecraftContainerInteractions.inventoryIndex(
+                    menu, acquiring.destinationSlot));
             acquiring.remainingCount -= acquiring.takeCount;
             acquiring.placementSent = false;
             return acquiring.remainingCount > 0 ? prepareFoodTransfer(menu) : closeAcquisition();
@@ -495,11 +498,10 @@ public final class MinecraftFoodConsumptionPort
         }
         Map<String, Integer> items = Map.copyOf(acquiring.acquiredItems);
         int acquired = items.values().stream().mapToInt(Integer::intValue).sum();
+        var acquiredSlots = Set.copyOf(acquiring.acquiredSlots);
         acquiring = null;
-        return FoodConsumptionResult.succeeded(
-                "已从食物箱取出 " + acquired + " 个食物",
-                items
-        );
+        return new FoodConsumptionResult(ContainerTransferState.SUCCEEDED,
+                "已从食物箱取出 " + acquired + " 个食物", items, acquiredSlots);
     }
 
     private FoodConsumptionResult failAcquiring(String message) {
@@ -518,11 +520,10 @@ public final class MinecraftFoodConsumptionPort
         if (requireContainerScreen() != null) {
             closeContainer();
         }
+        var acquiredSlots = Set.copyOf(acquiring.acquiredSlots);
         acquiring = null;
-        return FoodConsumptionResult.failed(
-                message,
-                items
-        );
+        return new FoodConsumptionResult(ContainerTransferState.FAILED,
+                message, items, acquiredSlots);
     }
 
     private void returnCarriedToSource() {
@@ -550,11 +551,13 @@ public final class MinecraftFoodConsumptionPort
     ) {
         Inventory inventory = player.getInventory();
         for (int slot = 0; slot < Inventory.getSelectionSize(); slot++) {
-            if (foodMatches(inventory.getItem(slot), itemId, allowedKeys)) {
+            if ((allowedKeys == null || MinecraftContainerInteractions.locked(slot))
+                    && foodMatches(inventory.getItem(slot), itemId, allowedKeys)) {
                 return new FoodSlot(slot, true, InteractionHand.MAIN_HAND, -1);
             }
         }
-        if (foodMatches(inventory.getItem(Inventory.SLOT_OFFHAND), itemId, allowedKeys)) {
+        if (allowedKeys == null
+                && foodMatches(inventory.getItem(Inventory.SLOT_OFFHAND), itemId, allowedKeys)) {
             return new FoodSlot(Inventory.SLOT_OFFHAND, false, InteractionHand.OFF_HAND, -1);
         }
         if (player.containerMenu != player.inventoryMenu) {
@@ -564,9 +567,13 @@ public final class MinecraftFoodConsumptionPort
             Slot slot = player.inventoryMenu.getSlot(index);
             int inventoryIndex = slot.getContainerSlot();
             if (inventoryIndex >= Inventory.getSelectionSize() && inventoryIndex < 36
+                    && (allowedKeys == null || MinecraftContainerInteractions.locked(inventoryIndex))
                     && foodMatches(slot.getItem(), itemId, allowedKeys)) {
-                return new FoodSlot(inventory.getSelectedSlot(), true,
-                        InteractionHand.MAIN_HAND, index);
+                int target = java.util.stream.IntStream.range(0, 9)
+                        .filter(candidate -> !MinecraftContainerInteractions.locked(candidate))
+                        .findFirst().orElse(-1);
+                if (target < 0) return null;
+                return new FoodSlot(target, true, InteractionHand.MAIN_HAND, index);
             }
         }
         return null;
@@ -594,7 +601,7 @@ public final class MinecraftFoodConsumptionPort
         int backpackSlot = -1;
         for (int slotIndex : playerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
-            if (!slot.mayPlace(food)) {
+            if (!MinecraftContainerInteractions.movable(menu, slotIndex) || !slot.mayPlace(food)) {
                 continue;
             }
             int containerSlot = slot.getContainerSlot();
@@ -741,7 +748,8 @@ public final class MinecraftFoodConsumptionPort
 
     private void swapFoodSlot(LocalPlayer player, FoodSlot slot) {
         if (slot.swapIndex() >= 0 && player.containerMenu == player.inventoryMenu) {
-            click(player.inventoryMenu, slot.swapIndex(), slot.index(), ContainerInput.SWAP);
+            MinecraftContainerInteractions.clickForUse(minecraft, player.inventoryMenu,
+                    slot.swapIndex(), slot.index(), ContainerInput.SWAP);
         }
     }
 
@@ -784,17 +792,7 @@ public final class MinecraftFoodConsumptionPort
             int button,
             ContainerInput input
     ) {
-        LocalPlayer player = minecraft.player;
-        MultiPlayerGameMode gameMode = minecraft.gameMode;
-        if (player != null && gameMode != null) {
-            gameMode.handleContainerInput(
-                    menu.containerId,
-                    slot,
-                    button,
-                    input,
-                    player
-            );
-        }
+        MinecraftContainerInteractions.click(minecraft, menu, slot, button, input);
     }
 
     private void closeContainer() {
@@ -870,6 +868,7 @@ public final class MinecraftFoodConsumptionPort
         private final ContainerTarget target;
         private final String itemId;
         private final Map<String, Integer> acquiredItems = new LinkedHashMap<>();
+        private final Set<Integer> acquiredSlots = new java.util.LinkedHashSet<>();
         private int remainingCount;
         private AbstractContainerMenu menu;
         private String itemKey;

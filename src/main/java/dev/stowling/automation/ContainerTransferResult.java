@@ -6,9 +6,16 @@ import java.util.Objects;
 public record ContainerTransferResult(
         ContainerTransferState state,
         String message,
-        Map<String, Integer> remaining
+        Map<String, Integer> remaining,
+        Map<String, Integer> transferred
 ) {
+    public ContainerTransferResult(ContainerTransferState state, String message,
+            Map<String, Integer> remaining) {
+        this(state, message, remaining, Map.of());
+    }
+
     public ContainerTransferResult {
+        transferred = Map.copyOf(transferred);
         state = Objects.requireNonNull(state, "state");
         message = Objects.requireNonNull(message, "message");
         remaining = Map.copyOf(Objects.requireNonNull(remaining, "remaining"));

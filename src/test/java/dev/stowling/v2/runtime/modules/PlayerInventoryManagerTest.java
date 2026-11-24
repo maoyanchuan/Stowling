@@ -420,243 +420,123 @@ class PlayerInventoryManagerTest {
     }
 
     @Test
-    void movingStacksDoesNotMoveTheProtectionToASeparateItemOrChangeItsRevision() {
-        String pearl = "minecraft:ender_pearl";
-        String sword = "minecraft:diamond_sword#named";
-        PlayerInventoryManager manager = manager(Map.of(pearl, 20, sword, 1));
+    void sameItemInLockedAndUnlockedPositionsIsHandledSeparately() {
+        var source = new AtomicReference<>(slots(Map.of(0, 16, 12, 48)));
+        var manager = new PlayerInventoryManager(() -> Optional.of(source.get()));
         manager.observe();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), pearl, 18);
-        var partial = new PlayerInventorySlot(10, pearl, pearl, 4, 16, List.of(), 0, 0);
-        var full = new PlayerInventorySlot(13, pearl, pearl, 16, 16, List.of(), 0, 0);
-        var tool = new PlayerInventorySlot(0, sword, "minecraft:diamond_sword",
-                1, 1, List.of("Sharpness V"), 100, 1561);
-        var before = manager.view(false, true, Map.of(), List.of(tool, partial, full));
-
-        var moved = new PlayerInventorySlot(8, pearl, pearl, 16, 16, List.of(), 0, 0);
-        manager.observe();
-        var after = manager.view(false, true, Map.of(), List.of(tool, moved, partial));
-
-        assertEquals(before.revision(), after.revision());
-        assertEquals(before.items(), after.items());
-        assertEquals(List.of(tool, moved, partial), after.slots());
-        assertEquals(18, after.items().stream().filter(item -> item.key().equals(pearl))
-                .findFirst().orElseThrow().protectedCount());
-        assertEquals(0, after.items().stream().filter(item -> item.key().equals(sword))
-                .findFirst().orElseThrow().protectedCount());
-    }
-
-    @Test
-    void browserKeepsRequestedQuantityAndOnlyClassifiesTheRemainderOnce() {
-        PlayerInventoryManager manager = manager(Map.of("minecraft:stone", 64));
-        manager.observe();
-        var before = manager.view(false, true, Map.of());
-        manager.allocate(before.revision(), "minecraft:stone", 16);
-        manager.reconcileUnassignedItems();
-        var item = manager.view(false, true, Map.of()).items().getFirst();
-        assertEquals(16, item.protectedCount());
-        assertEquals(48, item.classificationCount());
-        assertTrue(manager.needsRecovery());
-
-        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
-        assertEquals(48, manager.claimUnexpected(task, Set.of()));
+        manager.setLocked(manager.view(false, true, Map.of()).revision(), 0, true);
+        assertEquals(Map.of("minecraft:stone", 48), manager.unlockedItems());
+        assertEquals(Map.of("minecraft:stone", 16), manager.protectedItemCounts());
+        var task = manager.account(UUID.randomUUID());
+        manager.claimAllUnprotectedForCollection(task);
         assertEquals(Map.of("minecraft:stone", 48), task.managedItems());
-        assertEquals(0, manager.claimUnexpected(task, Set.of()));
-        assertThrows(IllegalStateException.class,
-                () -> manager.allocate(before.revision(), "minecraft:stone", 0));
+        assertEquals(36, manager.view(false, true, Map.of()).slots().size());
     }
 
     @Test
-    void onlyWebLocksSurviveRestartAndNewPickupsOfTheSameKindStayQueued(@TempDir Path directory)
+    void movingContentsLeavesTheLockOnItsOriginalEmptyPosition() {
+        var source = new AtomicReference<>(slots(Map.of(0, 16)));
+        var manager = new PlayerInventoryManager(() -> Optional.of(source.get()));
+        manager.observe();
+        manager.setLocked(manager.view(false, true, Map.of()).revision(), 0, true);
+        String revision = manager.view(false, true, Map.of()).revision();
+        source.set(slots(Map.of(12, 16)));
+        manager.observe();
+        assertEquals(Set.of(0), manager.lockedSlots());
+        assertEquals(Map.of("minecraft:stone", 16), manager.unlockedItems());
+        assertTrue(manager.protectedItemCounts().isEmpty());
+        assertThrows(IllegalStateException.class, () -> manager.setLocked(revision, 12, true));
+    }
+
+    @Test
+    void emptyLocksSurviveRestartReloginAndNewItemIdentity(@TempDir Path directory)
             throws IOException {
-        String slime = "minecraft:slime_ball";
-        String pickaxe = "minecraft:netherite_pickaxe";
         var store = new PlayerInventoryProtectionStore(directory.resolve("locks.json"));
-        var inventory = new MutableInventory();
-        inventory.set(Map.of(pickaxe, 1, slime, 15));
-        var first = new PlayerInventoryManager(inventory);
+        var source = new AtomicReference<>(slots(Map.of()));
+        var first = new PlayerInventoryManager(() -> Optional.of(source.get()));
         first.configureProtection(store.load(), store::save);
         first.observe();
-        first.reconcileUnassignedItems();
-        assertTrue(first.view(false, false, Map.of()).items().stream()
-                .allMatch(item -> item.protectedCount() == 0));
-        first.allocate(first.view(false, false, Map.of()).revision(), pickaxe, 1);
-        first.allocate(first.view(false, false, Map.of()).revision(), slime, 5);
-
-        inventory.set(Map.of(pickaxe, 1, slime, 20));
-        var restarted = new PlayerInventoryManager(inventory);
+        first.setLocked(first.view(false, false, Map.of()).revision(), 8, true);
+        var restarted = new PlayerInventoryManager(() -> Optional.of(source.get()));
         restarted.configureProtection(store.load(), store::save);
         restarted.observe();
-        restarted.reconcileUnassignedItems();
-
-        var classification = restarted.account(UUID.randomUUID());
-        assertEquals(15, restarted.claimUnexpected(classification, Set.of()));
-        assertEquals(Map.of(slime, 15), classification.managedItems());
-        assertEquals(Map.of(pickaxe, 1, slime, 5), store.load().itemCounts());
+        restarted.reset();
+        source.set(slots(Map.of(8, 64, 9, 2)));
+        restarted.observe();
+        assertEquals(Set.of(8), restarted.lockedSlots());
+        assertEquals(Map.of("minecraft:stone", 2), restarted.unlockedItems());
+        assertEquals(2, store.load().schemaVersion());
+        assertTrue(store.load().itemCounts().isEmpty());
     }
 
     @Test
-    void componentLockUsesTheSameIdentityAcrossRuntimeSessions(@TempDir Path directory)
-            throws IOException {
-        String before = "minecraft:netherite_pickaxe#sfirst-1";
-        String after = "minecraft:netherite_pickaxe#ssecond-7";
-        String other = "minecraft:netherite_pickaxe#ssecond-8";
-        String exact = "minecraft:netherite_pickaxe#p1-original";
-        String wearIdentity = "minecraft:netherite_pickaxe#p1-undamaged";
-        var store = new PlayerInventoryProtectionStore(directory.resolve("locks.json"));
-        var inventory = new MutableInventory();
-        inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, wearIdentity),
-                Map.of(before, exact)));
-        var first = new PlayerInventoryManager(inventory);
-        first.configureProtection(store.load(), store::save);
-        first.observe();
-        first.allocate(first.view(false, false, Map.of()).revision(), before, 1);
-
-        assertEquals(Map.of(exact, 1), store.load().itemCounts());
-        inventory.set(new PlayerInventorySnapshot(Map.of(after, 1, other, 1),
-                Map.of(after, wearIdentity, other, wearIdentity),
-                Map.of(after, exact, other, "minecraft:netherite_pickaxe#p1-other")));
-        var restarted = new PlayerInventoryManager(inventory);
-        restarted.configureProtection(store.load(), store::save);
-        restarted.observe();
-        restarted.reconcileUnassignedItems();
-
-        var classification = restarted.account(UUID.randomUUID());
-        assertEquals(1, restarted.claimUnexpected(classification, Set.of()));
-        assertEquals(Map.of(other, 1), classification.managedItems());
-        assertEquals(Map.of(exact, 1), store.load().itemCounts());
-    }
-
-    @Test
-    void migratesAUniqueLegacyLockFromThePreviousFileFormat(@TempDir Path directory)
+    void migrationWaitsForCompleteSnapshotAndLocksEveryMatchingStack(@TempDir Path directory)
             throws IOException {
         Path file = directory.resolve("locks.json");
-        Files.writeString(file, """
-                {"itemCounts":{"minecraft:netherite_pickaxe#sold-1":1},
-                 "pickaxeIdentities":{"minecraft:netherite_pickaxe#sold-1":
-                 "minecraft:netherite_pickaxe#sold-2"}}
-                """);
+        String legacy = "{\"itemCounts\":{\"minecraft:stone\":4}}";
+        Files.writeString(file, legacy);
         var store = new PlayerInventoryProtectionStore(file);
-        String current = "minecraft:netherite_pickaxe#snew-5";
-        String stable = "minecraft:netherite_pickaxe#p1-current";
-        var inventory = new MutableInventory();
-        inventory.set(new PlayerInventorySnapshot(Map.of(current, 1),
-                Map.of(current, "minecraft:netherite_pickaxe#p1-undamaged"),
-                Map.of(current, stable)));
-        var manager = new PlayerInventoryManager(inventory);
+        var source = new AtomicReference<>(new PlayerInventorySnapshot(Map.of()));
+        var manager = new PlayerInventoryManager(() -> Optional.of(source.get()));
         manager.configureProtection(store.load(), store::save);
-
         manager.observe();
-        manager.reconcileUnassignedItems();
-
-        assertEquals(1, manager.view(false, true, Map.of()).items().getFirst().protectedCount());
-        assertFalse(manager.needsRecovery());
-        assertEquals(Map.of(stable, 1), store.load().itemCounts());
+        assertEquals(legacy, Files.readString(file));
+        source.set(slots(Map.of(0, 32, 12, 64)));
+        manager.observe();
+        assertEquals(Set.of(0, 12), manager.lockedSlots());
+        assertEquals(Map.of("minecraft:stone", 96), manager.protectedItemCounts());
+        assertEquals(legacy, Files.readString(directory.resolve("locks.json.v1.bak")));
+        assertTrue(store.load().itemCounts().isEmpty());
     }
 
     @Test
-    void returningPendingClassificationItemsToPersonalUseCancelsTheirRecoveryRequest() {
-        PlayerInventoryManager manager = manager(Map.of("minecraft:iron_pickaxe", 1));
+    void changingCountOrDurabilityDoesNotMoveOrRemoveTheLock() {
+        var source = new AtomicReference<>(slots(Map.of(3, 64)));
+        var manager = new PlayerInventoryManager(() -> Optional.of(source.get()));
         manager.observe();
-        manager.allocate(manager.view(false, false, Map.of()).revision(),
-                "minecraft:iron_pickaxe", 0);
-        assertTrue(manager.needsRecovery());
-
-        manager.allocate(manager.view(false, false, Map.of()).revision(),
-                "minecraft:iron_pickaxe", 1);
-        manager.reconcileUnassignedItems();
-
-        assertFalse(manager.needsRecovery());
-        assertEquals(1, manager.view(false, false, Map.of()).items().getFirst().protectedCount());
-    }
-
-    @Test
-    void delayedPickaxeWearRemainsProtectedDuringCleanup() {
-        MutableInventory inventory = new MutableInventory();
-        String before = "minecraft:netherite_pickaxe#before";
-        String after = "minecraft:netherite_pickaxe#after";
-        String identity = "minecraft:netherite_pickaxe#undamaged";
-        inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, identity)));
-        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
-        inventory.snapshot().ifPresent(manager::initialize);
+        manager.setLocked(manager.view(false, true, Map.of()).revision(), 3, true);
+        source.set(slots(Map.of(3, 1)));
         manager.observe();
-        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
-        manager.recordWithdrawn(task, Map.of("minecraft:moss_block", 16));
+        manager.consumeProtectedFood("minecraft:stone", 63);
+        assertEquals(Set.of(3), manager.lockedSlots());
+        var changed = new java.util.ArrayList<>(slots(Map.of()).slots());
+        String worn = "minecraft:diamond_pickaxe#worn";
+        changed.set(3, new PlayerInventorySlot(3, worn, "minecraft:diamond_pickaxe", 1, 1,
+                List.of(), 10, 100));
+        source.set(new PlayerInventorySnapshot(Map.of(worn, 1), Map.of(), Map.of(), changed));
         manager.observe();
-        inventory.set(new PlayerInventorySnapshot(Map.of(after, 1, "minecraft:moss_block", 16),
-                Map.of(after, identity)));
+        assertEquals(Map.of(worn, 1), manager.protectedItemCounts());
+        source.set(slots(Map.of()));
         manager.observe();
-
-        assertEquals(0, manager.claimUnprotectedItems(task));
-        assertEquals(Map.of("minecraft:moss_block", 16), task.managedItems());
-        assertEquals(Map.of(after, 1, "minecraft:moss_block", 16),
-                manager.expectedInventory().orElseThrow().itemCounts());
-    }
-
-    @Test
-    void wearMatchingDoesNotAbsorbConfirmedTaskPickaxesOrOtherTools() {
-        MutableInventory inventory = new MutableInventory();
-        String before = "minecraft:diamond_pickaxe#before";
-        String after = "minecraft:diamond_pickaxe#after";
-        String other = "minecraft:diamond_pickaxe#other";
-        String identity = "minecraft:diamond_pickaxe#same_enchantments";
-        inventory.set(new PlayerInventorySnapshot(Map.of(before, 1), Map.of(before, identity)));
-        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
-        inventory.snapshot().ifPresent(manager::initialize);
-        manager.observe();
-        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
-        manager.recordWithdrawn(task, Map.of(after, 1));
-        inventory.set(new PlayerInventorySnapshot(Map.of(after, 1, other, 1),
-                Map.of(after, identity, other, "minecraft:diamond_pickaxe#other_enchantments")));
-        manager.observe();
-
-        assertEquals(1, manager.claimUnprotectedItems(task));
-        assertEquals(Map.of(after, 1, other, 1), task.managedItems());
-        assertEquals(1, manager.expectedInventory().orElseThrow().count(before));
-    }
-
-    @Test
-    void idleProtectionDoesNotHideMissingTaskItemsByUsingPersonalStock() {
-        PlayerInventoryManager manager = manager(Map.of("minecraft:stone", 16));
-        manager.observe();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), "minecraft:stone", 16);
-        PlayerInventoryAccount task = manager.account(UUID.randomUUID());
-        manager.recordWithdrawn(task, Map.of("minecraft:stone", 8));
-        manager.closeAccount(task);
-        manager.reconcileUnassignedItems();
-
-        assertEquals(Map.of("minecraft:stone", 24),
-                manager.expectedInventory().orElseThrow().itemCounts());
-        assertTrue(manager.needsRecovery());
-        var before = manager.view(false, true, Map.of());
+        assertEquals(Set.of(3), manager.lockedSlots());
         assertThrows(IllegalArgumentException.class,
-                () -> manager.allocate(before.revision(), "minecraft:stone", 9));
-        PlayerInventoryAccount recovery = manager.account(UUID.randomUUID());
-        assertEquals(8, manager.claimUnexpected(recovery, Set.of()));
-        assertEquals(Map.of("minecraft:stone", 8), recovery.managedItems());
+                () -> manager.setLocked(manager.view(false, true, Map.of()).revision(), 36, true));
     }
 
     @Test
-    void newGiftsJoinTheQueueAndKeepAbandonedReceiptsAndManualLocks() {
-        MutableInventory inventory = new MutableInventory();
-        inventory.set(Map.of("minecraft:stone", 16));
-        PlayerInventoryManager manager = new PlayerInventoryManager(inventory);
+    void refillLocksOnlyTheReportedFoodDestinationsAndConsumptionKeepsThemLocked() {
+        var source = new AtomicReference<>(slots(Map.of(2, 5, 12, 20)));
+        var manager = new PlayerInventoryManager(() -> Optional.of(source.get()));
         manager.observe();
-        var task = manager.account(UUID.randomUUID());
-        manager.recordWithdrawn(task, Map.of("minecraft:stone", 8));
-        manager.closeAccount(task);
-        inventory.set(Map.of("minecraft:stone", 24, "minecraft:iron_pickaxe", 1));
-        manager.observe();
-        manager.reconcileUnassignedItems();
-        var view = manager.view(false, true, Map.of());
-        manager.allocate(view.revision(), "minecraft:stone", 12);
-        manager.reconcileUnassignedItems();
+        manager.reserveAcquiredFood(Set.of(2));
+        assertEquals(Set.of(2), manager.lockedSlots());
+        assertEquals(Map.of("minecraft:stone", 20), manager.unlockedItems());
+        source.set(slots(Map.of(12, 20)));
+        manager.consumeProtectedFood("minecraft:stone", 5);
+        assertEquals(Set.of(2), manager.lockedSlots());
+    }
 
-        var recovery = manager.account(UUID.randomUUID());
-        assertEquals(12, manager.claimUnexpected(recovery, Set.of("minecraft:stone")));
-        assertEquals(Map.of("minecraft:stone", 12), recovery.managedItems());
-        assertEquals(1, manager.view(false, true, Map.of()).items().stream()
-                .filter(item -> item.itemId().equals("minecraft:iron_pickaxe"))
-                .findFirst().orElseThrow().classificationCount());
+    private static PlayerInventorySnapshot slots(Map<Integer, Integer> contents) {
+        List<PlayerInventorySlot> slots = new java.util.ArrayList<>();
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < 36; index++) {
+            int count = contents.getOrDefault(index, 0);
+            slots.add(count == 0 ? PlayerInventorySlot.empty(index)
+                    : new PlayerInventorySlot(index, "minecraft:stone", "minecraft:stone", count,
+                            64, List.of(), 0, 0));
+            if (count > 0) counts.merge("minecraft:stone", count, Integer::sum);
+        }
+        return new PlayerInventorySnapshot(counts, Map.of(), Map.of(), slots);
     }
 
     @Test

@@ -13,6 +13,27 @@ final class DepositBatchConfirmation {
     record Counts(int player, int container, long pickups) {
     }
 
+    private Object batchMenu;
+    private long batchGeneration;
+
+    void awaitServer(Object menu, long generation) {
+        batchMenu = menu;
+        batchGeneration = generation;
+    }
+
+    boolean observeServer(Object menu, long generation, Function<String, Counts> counts) {
+        if (menu != batchMenu || generation <= batchGeneration) return false;
+        for (var entry : moves.entrySet()) {
+            var move = entry.getValue();
+            int delta = counts.apply(entry.getKey()).container() - move.before.container();
+            if (delta < 0 || delta > move.count) {
+                throw new IllegalStateException("服务器容器变化超出本批范围，停止存入以免错误记账");
+            }
+            move.observation = new DepositTransferPlan.TransferObservation(delta, 1, true);
+        }
+        return true;
+    }
+
     private final Map<String, PendingMove> moves = new LinkedHashMap<>();
 
     void record(String key, int count, Function<String, Counts> before) {

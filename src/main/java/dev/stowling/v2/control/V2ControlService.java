@@ -51,8 +51,8 @@ public interface V2ControlService {
         return "";
     }
 
-    default PlayerInventoryResponse allocatePlayerInventory(String revision, String key,
-            int keepCount) {
+    default PlayerInventoryResponse setPlayerInventoryLocked(String revision, int slotIndex,
+            boolean locked) {
         throw new UnsupportedOperationException("player inventory unavailable");
     }
 

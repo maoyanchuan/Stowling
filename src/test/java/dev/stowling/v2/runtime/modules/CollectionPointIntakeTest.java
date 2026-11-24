@@ -14,6 +14,7 @@ import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.automation.PickupReceipt;
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.automation.InventorySlotFixture;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
@@ -84,15 +85,15 @@ class CollectionPointIntakeTest {
     @Test
     void cleanupAndRestartOnlyTransferTheOwningPointsReceiptsOnce() {
         Map<String, Integer> backpack = new LinkedHashMap<>(PERSONAL);
-        var manager = new PlayerInventoryManager(
-                () -> Optional.of(new PlayerInventorySnapshot(backpack)));
+        var layout = new InventorySlotFixture();
+        var manager = new PlayerInventoryManager(() -> Optional.of(layout.snapshot(backpack)));
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();
         manager.retainCollectionTasks(Set.of(first, second));
         manager.observe();
         for (var entry : PERSONAL.entrySet()) {
-            manager.allocate(manager.view(false, false, Map.of()).revision(),
-                    entry.getKey(), entry.getValue());
+            InventorySlotFixture.lockFirst(manager,
+                manager.view(false, false, Map.of()).revision(), entry.getKey(), true);
         }
         manager.recordPickup(first, box(0), 1);
         manager.recordPickup(second, box(0), 1);
@@ -145,6 +146,8 @@ class CollectionPointIntakeTest {
             implements DroppedItemObserverPort, NavigationPort, ContainerTransferPort {
         private final TaskRunManager runs;
         private final Map<String, Integer> backpack = new LinkedHashMap<>(PERSONAL);
+        private final InventorySlotFixture slots =
+                new InventorySlotFixture();
         private final Map<String, Integer> cached = new LinkedHashMap<>();
         private final List<Integer> deposits = new ArrayList<>();
         private final int total;
@@ -171,8 +174,8 @@ class CollectionPointIntakeTest {
                     AutoClassifyTaskFactory.triggers(task, List.of()), List.of(), List.of(task)));
             registry.inventory().observe();
             for (var entry : PERSONAL.entrySet()) {
-                registry.inventory().allocate(runs.playerInventory().revision(),
-                        entry.getKey(), entry.getValue());
+                InventorySlotFixture.lockFirst(registry.inventory(),
+                        runs.playerInventory().revision(), entry.getKey(), true);
             }
         }
 
@@ -210,6 +213,11 @@ class CollectionPointIntakeTest {
         @Override
         public List<DroppedItem> observe(RegionDefinition region) {
             return observe(POINT, 2);
+        }
+
+        @Override
+        public Optional<PlayerInventorySnapshot> playerInventorySnapshot() {
+            return Optional.of(slots.snapshot(backpack));
         }
 
         @Override

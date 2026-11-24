@@ -241,7 +241,7 @@ def test_export_includes_start_configuration_versions_and_full_navigation_calls(
                 versions: { stowling: "0.1.0-alpha.302", minecraft: "26.2", java: "25" },
                 task: { parameters: { cacheLocationRef: "region:cache" } },
                 taskSettings: { pickupRadius: 8, cachePolicy: { enabled: false } },
-                protectedItems: { "minecraft:diamond_pickaxe": 1 },
+                lockedSlots: [0, 8, 12],
                 coordinates: [{ id: "pickup", x: 5, y: -43, z: 32 }],
                 regions: [{ id: "cache", firstX: 3, firstY: -44, firstZ: 32 }],
                 categoryZones: [{ bindings: [{ standingArea: { minX: 4, maxX: 4 } }] }],
@@ -276,7 +276,7 @@ def test_export_includes_start_configuration_versions_and_full_navigation_calls(
     assert context["coordinates"][0]["y"] == -43
     assert context["taskSettings"]["pickupRadius"] == 8
     assert context["warehouses"][0]["members"] == ["region:cache"]
-    assert context["protectedItems"]["minecraft:diamond_pickaxe"] == 1
+    assert context["lockedSlots"] == [0, 8, 12]
     assert "NavigationPort" not in result["visible"]
     assert "cacheLocationRef" not in result["visible"]
 

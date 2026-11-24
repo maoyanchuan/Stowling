@@ -168,17 +168,11 @@ class PickupCacheCycleTest {
     }
 
     @Test
-    void emptyAreaWaitsForAPendingReceiptAndThenStoresTheSynchronizedItem() {
+    void staleReceiptBalanceDoesNotKeepAnEmptyAreaRunning() {
         Scenario scenario = new Scenario(0);
         scenario.inventory.recordPickup(scenario.taskId, DISC, 1);
-        for (int tick = 0; tick < 15; tick++) {
-            assertEquals(TaskModuleState.WAITING, scenario.tick().state());
-        }
-        assertEquals(0, scenario.opens);
-        scenario.items.put(DISC, 3);
-
         assertEquals(TaskModuleState.SUCCEEDED, scenario.run().state());
-        assertEquals(List.of(1), scenario.discDeposits());
+        assertEquals(0, scenario.opens);
         assertEquals(Map.of(DISC, 2, TOOL, 1), scenario.items);
     }
 
@@ -227,7 +221,7 @@ class PickupCacheCycleTest {
         private Scenario(int remaining) {
             this.remaining = remaining;
             inventory = new PlayerInventoryManager(this::playerInventorySnapshot);
-            inventory.initialize(new PlayerInventorySnapshot(items));
+            inventory.configureProtection(PlayerInventorySnapshot.locks(Set.of(0, 1)), ignored -> {});
             inventory.observe();
             inventory.retainCollectionTasks(Set.of(taskId));
             var account = inventory.account(UUID.randomUUID());
@@ -309,6 +303,26 @@ class PickupCacheCycleTest {
         @Override
         public boolean canPickUp(DroppedItem item) {
             return items.get(DISC) < 6;
+        }
+
+        @Override
+        public Optional<PlayerInventorySnapshot> playerInventorySnapshot() {
+            List<dev.stowling.automation.PlayerInventorySlot> slots = new ArrayList<>();
+            for (int index = 0; index < 36; index++) {
+                slots.add(dev.stowling.automation.PlayerInventorySlot.empty(index));
+            }
+            slots.set(0, slot(0, DISC, 2));
+            slots.set(1, slot(1, TOOL, 1));
+            int unlocked = items.getOrDefault(DISC, 0) - 2;
+            if (unlocked > 0) slots.set(2, slot(2, DISC, unlocked));
+            if (items.containsKey(STONE)) slots.set(3, slot(3, STONE, items.get(STONE)));
+            return Optional.of(new PlayerInventorySnapshot(items, Map.of(), Map.of(), slots));
+        }
+
+        private static dev.stowling.automation.PlayerInventorySlot slot(int index, String key,
+                int count) {
+            return new dev.stowling.automation.PlayerInventorySlot(index, key, key, count,
+                    64, List.of(), 0, 0);
         }
 
         @Override

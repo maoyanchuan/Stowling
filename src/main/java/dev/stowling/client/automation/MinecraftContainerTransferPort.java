@@ -43,6 +43,7 @@ public final class MinecraftContainerTransferPort
     private final NavigationPort navigation;
     private ActiveDeposit active;
     private ContainerTarget retainedTarget;
+    private long nextBatch;
 
     public MinecraftContainerTransferPort(
             Minecraft minecraft,
@@ -250,6 +251,7 @@ public final class MinecraftContainerTransferPort
             }
             return fail("当前容器没有可安全转移的物品");
         }
+        if (active.keepOpen) return beginOrdinaryBatch(menu, candidate);
         active.phase = Phase.CONFIRMING;
         active.batch = new DepositBatchConfirmation();
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
@@ -282,12 +284,61 @@ public final class MinecraftContainerTransferPort
         );
     }
 
+    private ContainerTransferResult beginOrdinaryBatch(AbstractContainerMenu menu,
+            TransferCandidate candidate) {
+        active.phase = Phase.CONFIRMING;
+        active.batch = new DepositBatchConfirmation();
+        active.batch.awaitServer(menu, MinecraftContainerInteractions.generation(menu));
+        active.batchMenu = menu;
+        active.batchId = ++nextBatch;
+        active.sourceSlot = candidate.slot();
+        active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
+        active.pendingStartedAt = System.nanoTime();
+        var before = MinecraftContainerInteractions.serverCounts(menu, containerSlots(menu));
+        String key = candidate.itemId();
+        active.batch.record(key, candidate.plan().moveCount(), item ->
+                new DepositBatchConfirmation.Counts(0, before.getOrDefault(item, 0), 0));
+        TaskTrace.event("CALL", "deposit.batch", "batch=" + active.batchId
+                + "; menu=" + menu.containerId + "; sourceSlot=" + candidate.slot()
+                + "; inventoryIndex=" + MinecraftContainerInteractions.inventoryIndex(
+                        menu, candidate.slot()) + "; planned=" + candidate.plan().moveCount(),
+                0, false);
+        MinecraftContainerInteractions.quickMoveConfirmed(minecraft, menu, candidate.slot());
+        return ContainerTransferResult.pending("等待本批服务器槽位快照", remaining());
+    }
+
+    private ContainerTransferResult confirmOrdinaryBatch(AbstractContainerMenu menu) {
+        if (menu != active.batchMenu) {
+            return finishFailure("存入菜单已失效，本批未确认，剩余物品保留在背包");
+        }
+        var counts = MinecraftContainerInteractions.serverCounts(menu, containerSlots(menu));
+        try {
+            active.batch.observeServer(menu, MinecraftContainerInteractions.generation(menu),
+                    key -> new DepositBatchConfirmation.Counts(0, counts.getOrDefault(key, 0), 0));
+        } catch (IllegalStateException failure) {
+            return finishFailure(failure.getMessage());
+        }
+        if (!active.batch.settled()) {
+            return ContainerTransferResult.pending("原地等待服务器处理本批存入", remaining());
+        }
+        TaskTrace.event("RETURN", "deposit.batch", "batch=" + active.batchId
+                + "; generation=" + MinecraftContainerInteractions.generation(menu)
+                + "; accepted=" + active.batch.accepted(), 0, false);
+        if (!menu.getCarried().isEmpty()) return beginRollback("服务器确认后鼠标仍有物品");
+        if (active.batch.accepted().isEmpty()) {
+            return ContainerTransferResult.pending("服务器尚未接受本格存入，原地等待确认", remaining());
+        }
+        applyConfirmed();
+        return succeed("本格实际存入已由服务器确认，继续核对背包");
+    }
+
     private ContainerTransferResult pollConfirmation() {
         AbstractContainerScreen<?> screen = currentContainerScreen();
         if (screen == null) {
             return awaitResolution("容器已关闭，等待恢复后确认在途物品");
         }
         AbstractContainerMenu menu = screen.getMenu();
+        if (active.keepOpen) return confirmOrdinaryBatch(menu);
         if (!menu.getCarried().isEmpty()) {
             restoreCarried(menu);
             if (!menu.getCarried().isEmpty()) {
@@ -302,7 +353,7 @@ public final class MinecraftContainerTransferPort
         }
         if (!active.avoidPickups && active.batch.stalled(
                 Duration.ofNanos(System.nanoTime() - active.pendingStartedAt))) {
-            return beginResynchronization("原地存入确认停滞，换到不吸取掉落物的站位继续核对");
+            return beginResynchronization("原地存入确认停滞，保持原站位规则重新核对");
         }
         return ContainerTransferResult.pending(
                 "等待服务器确认实际存入数量",
@@ -429,6 +480,12 @@ public final class MinecraftContainerTransferPort
         if (active.batch == null) {
             return finishFailure(message);
         }
+        if (active.keepOpen) {
+            if (Instant.now().isAfter(active.deadline)) {
+                return finishFailure("服务器未在期限内确认存入，停止任务；未确认数量不记为已存入");
+            }
+            return confirmOrdinaryBatch(menu);
+        }
         observeBatch(menu, DepositBatchConfirmation.Mode.SETTLEMENT);
         if (active.batch.settled()) {
             return settleConfirmed(message);
@@ -471,8 +528,7 @@ public final class MinecraftContainerTransferPort
         active.phase = Phase.RESYNCHRONIZING;
         active.rollbackMessage = message;
         active.batch.resetUnsettled();
-        // Retry the same fixed batch outside pickup range after an in-place stall.
-        active.avoidPickups = true;
+        // Reopening must preserve the caller's standing and pickup policy.
         active.visit = new MinecraftContainerVisit(minecraft, navigation, active.target,
                 active.avoidPickups);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
@@ -519,8 +575,10 @@ public final class MinecraftContainerTransferPort
         Map<String, Integer> remaining = remaining();
         if (active.keepOpen) retainedTarget = active.target;
         else closeContainer();
+        var transferred = Map.copyOf(active.transferred);
         active = null;
-        return ContainerTransferResult.succeeded(message, remaining);
+        return new ContainerTransferResult(dev.stowling.automation.ContainerTransferState.SUCCEEDED,
+                message, remaining, transferred);
     }
 
     private ContainerTransferResult fail(String message) {
@@ -555,6 +613,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private ContainerTransferResult awaitResolution(String message) {
+        if (active.keepOpen) return finishFailure("存入界面已关闭，服务器批次未确认，停止继续拾取");
         if (active.batch != null) return beginResynchronization(message);
         active.phase = Phase.ROLLBACK;
         if (active.rollbackMessage.isEmpty()) {
@@ -572,13 +631,18 @@ public final class MinecraftContainerTransferPort
         applyConfirmed();
         Map<String, Integer> remaining = remaining();
         closeContainer();
+        var transferred = Map.copyOf(active.transferred);
         active = null;
-        return ContainerTransferResult.failed(message, remaining);
+        return new ContainerTransferResult(dev.stowling.automation.ContainerTransferState.FAILED,
+                message, remaining, transferred);
     }
 
     private void applyConfirmed() {
         if (active.batch != null) {
-            active.batch.accepted().forEach((key, count) -> decrement(active.remaining, key, count));
+            active.batch.accepted().forEach((key, count) -> {
+                decrement(active.remaining, key, count);
+                active.transferred.merge(key, count, Math::addExact);
+            });
             active.batch = null;
             active.sourceSlot = -1;
         }
@@ -596,9 +660,9 @@ public final class MinecraftContainerTransferPort
         for (int slotIndex : playerSlots(menu)) {
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
-            if (stack.isEmpty()) continue;
+            if (stack.isEmpty() || !slot.mayPickup(minecraft.player)) continue;
             String key = itemId(stack);
-            int wanted = remaining.getOrDefault(key, 0);
+            int wanted = active.keepOpen ? stack.getCount() : remaining.getOrDefault(key, 0);
             if (wanted <= 0) continue;
             DepositTransferPlan plan = DepositTransferPlan.create(
                     wanted,
@@ -608,7 +672,7 @@ public final class MinecraftContainerTransferPort
             if (!plan.hasMovement()) {
                 continue;
             }
-            if (!plan.usesQuickMove() && plan.placements().size() > 1) {
+            if (!active.keepOpen && !plan.usesQuickMove() && plan.placements().size() > 1) {
                 var first = plan.placements().getFirst();
                 plan = DepositTransferPlan.create(wanted, stack.getCount(),
                         List.of(new DepositTransferPlan.Destination(first.slot(), first.count())));
@@ -663,7 +727,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private static List<Integer> playerSlots(AbstractContainerMenu menu) {
-        return MinecraftContainerInteractions.slots(menu, true);
+        return MinecraftContainerInteractions.transferSlots(menu, true);
     }
 
     private static List<Integer> containerSlots(AbstractContainerMenu menu) {
@@ -782,12 +846,15 @@ public final class MinecraftContainerTransferPort
         private MinecraftContainerVisit visit;
         private final ContainerTarget target;
         private final Map<String, Integer> remaining;
+        private final Map<String, Integer> transferred = new LinkedHashMap<>();
         private boolean avoidPickups;
         private final boolean keepOpen;
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;
         private DepositBatchConfirmation batch;
+        private AbstractContainerMenu batchMenu;
+        private long batchId;
         private int sourceSlot = -1;
         private long pendingStartedAt;
         private String rollbackMessage = "";

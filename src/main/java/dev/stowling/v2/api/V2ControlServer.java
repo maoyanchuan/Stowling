@@ -289,9 +289,9 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.playerInventory());
             } else if ("PUT".equals(method)) {
                 JsonObject json = object(body);
-                requireFields(json, Set.of("revision", "key", "keepCount"));
-                sendJson(exchange, 200, service.allocatePlayerInventory(
-                        string(json, "revision"), string(json, "key"), integer(json, "keepCount")));
+                requireFields(json, Set.of("revision", "slotIndex", "locked"));
+                sendJson(exchange, 200, service.setPlayerInventoryLocked(
+                        string(json, "revision"), integer(json, "slotIndex"), requiredBoolean(json, "locked")));
             } else {
                 throw methodNotAllowed("GET, PUT");
             }
@@ -1648,6 +1648,11 @@ public final class V2ControlServer implements AutoCloseable {
     private static UUID optionalUuid(JsonObject json, String key) {
         String value = optionalString(json, key);
         return value == null ? null : uuid(value);
+    }
+
+    private static boolean requiredBoolean(JsonObject json, String key) {
+        if (!json.has(key) || json.get(key).isJsonNull()) throw invalid(key + " is required");
+        return optionalBoolean(json, key);
     }
 
     private static boolean optionalBoolean(JsonObject json, String key) {

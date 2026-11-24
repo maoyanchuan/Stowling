@@ -82,6 +82,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private int ticks;
     private int swapSlot = -1;
     private int selected;
+    private int originalSelection = -1;
     private boolean swapping;
     private TaskModuleResult terminal;
     private BlockPosition placementFeet;
@@ -237,6 +238,7 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
 
     private TaskModuleResult prepareHand(BlockPos position) {
         selected = minecraft.player.getInventory().getSelectedSlot();
+        originalSelection = selected;
         if (place) {
             int source = findBoxSlot(MinecraftItemIdentity.key(resource.original));
             if (source < 0) {
@@ -536,10 +538,13 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
     private int findMiningToolSlot() {
         var menu = minecraft.player.inventoryMenu;
         var pickaxes = new LinkedHashMap<Integer, String>();
-        for (int index : MinecraftStorageAccess.slots(menu, true)) {
+        for (int index : MinecraftContainerInteractions.slots(menu, true)) {
             Slot slot = menu.getSlot(index);
             ItemStack stack = slot.getItem();
-            if (slot.getContainerSlot() < 36 && !stack.isEmpty() && stack.is(ItemTags.PICKAXES)) {
+            if (slot.getContainerSlot() < 36
+                    && (slot.getContainerSlot() < 9
+                            || !MinecraftContainerInteractions.locked(slot.getContainerSlot()))
+                    && !stack.isEmpty() && stack.is(ItemTags.PICKAXES)) {
                 pickaxes.put(index, MinecraftItemIdentity.key(stack));
             }
         }
@@ -554,22 +559,39 @@ final class MinecraftShulkerAction implements TaskModuleExecutor {
         return pickaxes.isEmpty() ? -1 : pickaxes.firstEntry().getKey();
     }
 
+    private void selectHand(int index) {
+        minecraft.player.getInventory().setSelectedSlot(index);
+        minecraft.player.connection.send(
+                new net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket(index));
+    }
+
     private void swap(int source) {
-        if (minecraft.player.inventoryMenu.getSlot(source).getContainerSlot() == selected) {
+        int index = minecraft.player.inventoryMenu.getSlot(source).getContainerSlot();
+        if (index < 9) {
+            selectHand(index);
             return;
         }
+        if (MinecraftContainerInteractions.locked(selected)) {
+            selected = java.util.stream.IntStream.range(0, 9)
+                    .filter(slot -> !MinecraftContainerInteractions.locked(slot)).findFirst()
+                    .orElseThrow(() -> new IllegalStateException("没有可用于自动换手的未锁定快捷栏"));
+            selectHand(selected);
+        }
         swapSlot = source;
-        minecraft.gameMode.handleContainerInput(minecraft.player.inventoryMenu.containerId,
-                source, selected, ContainerInput.SWAP, minecraft.player);
+        MinecraftContainerInteractions.click(minecraft, minecraft.player.inventoryMenu,
+                source, selected, ContainerInput.SWAP);
         swapping = true;
     }
 
     private void restore() {
-        if (swapping && minecraft.player != null && minecraft.gameMode != null) {
-            minecraft.gameMode.handleContainerInput(minecraft.player.inventoryMenu.containerId,
-                    swapSlot, selected, ContainerInput.SWAP, minecraft.player);
+        if (minecraft.player == null || minecraft.gameMode == null) return;
+        if (swapping) {
+            MinecraftContainerInteractions.click(minecraft, minecraft.player.inventoryMenu,
+                    swapSlot, selected, ContainerInput.SWAP);
             swapping = false;
         }
+        if (originalSelection >= 0) selectHand(originalSelection);
+        originalSelection = -1;
     }
 
     private int inventoryCount(String key) {

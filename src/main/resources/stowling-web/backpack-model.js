@@ -1,20 +1,17 @@
 (() => {
     "use strict";
 
-    /** @param {object} item @returns {number} */
-    function freeCount(item) {
-        return Math.max(0, Number(item.count) - Number(item.taskCount));
-    }
-
-    /** @param {object} snapshot @param {object} item @param {number} keep @returns {object} */
-    function allocation(snapshot, item, keep) {
+    /** @param {object} snapshot @param {number} slotIndex @param {boolean} locked
+     * @returns {object} */
+    function lockChange(snapshot, slotIndex, locked) {
         if (!snapshot.available || snapshot.busy) {
-            throw new RangeError("请等待任务和收尾结束后调整背包归属");
+            throw new RangeError("请等待任务和收尾结束后调整栏位锁定");
         }
-        if (!Number.isInteger(keep) || keep < 0 || keep > freeCount(item)) {
-            throw new RangeError("请填写有效的保留数量");
+        if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 36
+                || typeof locked !== "boolean") {
+            throw new RangeError("请选择有效的背包栏位");
         }
-        return {revision: String(snapshot.revision), key: String(item.key), keepCount: keep};
+        return {revision: String(snapshot.revision), slotIndex, locked};
     }
 
     /** @returns {number[]} */
@@ -22,18 +19,15 @@
         return Array.from({length: 36}, (_, index) => (index + 9) % 36);
     }
 
-    /** @param {object} slot @param {object} item @returns {string[]} */
-    function slotDetails(slot, item) {
-        const details = [...slot.tooltip];
+    /** @param {object} slot @param {boolean} locked @returns {string[]} */
+    function slotDetails(slot, locked) {
+        const details = [...(slot.tooltip || [])];
         if (slot.maxDurability > 0) {
             details.push(`耐久 ${slot.remainingDurability} / ${slot.maxDurability}`);
         }
-        details.push(
-            `保留自用 ${item.protectedCount} · 任务 ${item.taskCount}`
-                + ` · 待分类 ${item.classificationCount}`
-        );
+        details.push(locked ? "栏位已锁定 · 自动搬运跳过此格" : "栏位未锁定 · 物品可自动存入");
         return details;
     }
 
-    window.StowlingBackpackModel = Object.freeze({freeCount, allocation, slotOrder, slotDetails});
+    window.StowlingBackpackModel = Object.freeze({lockChange, slotOrder, slotDetails});
 })();

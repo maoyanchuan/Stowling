@@ -413,7 +413,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     }
 
     static List<Integer> slots(AbstractContainerMenu menu, boolean player) {
-        return MinecraftContainerInteractions.slots(menu, player);
+        return MinecraftContainerInteractions.transferSlots(menu, player);
     }
 
     private static int count(AbstractContainerMenu menu, boolean player, String key) {

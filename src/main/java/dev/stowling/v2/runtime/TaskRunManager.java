@@ -580,12 +580,12 @@ public final class TaskRunManager {
                         definition.enabled() && definition.classificationEnabled());
     }
 
-    public synchronized dev.stowling.v2.control.PlayerInventoryResponse allocatePlayerInventory(
-            String revision, String key, int keepCount) {
+    public synchronized dev.stowling.v2.control.PlayerInventoryResponse setPlayerInventoryLocked(
+            String revision, int slotIndex, boolean locked) {
         if (active != null || !queue.isEmpty()) {
-            throw new IllegalStateException("请等待任务和收尾结束后调整背包归属");
+            throw new IllegalStateException("请等待任务和收尾结束后调整栏位锁定");
         }
-        registry.inventory().allocate(revision, key, keepCount);
+        registry.inventory().setLocked(revision, slotIndex, locked);
         nextInventoryRecoveryTick = ticks;
         return playerInventory();
     }
@@ -797,6 +797,12 @@ public final class TaskRunManager {
     }
 
     private void beginInterruption() {
+        if (active.workspace.retainsPickupCargoOnFailure()
+                && !registry.storageAutomation().hasTemporaryResources(
+                        active.workspace.inventoryAccount().ownerId())) {
+            finishTerminated();
+            return;
+        }
         if (requiresGlobalCleanup()) {
             registry.inventory().observe();
             if (!registry.storageAutomation().hasTemporaryResources(
@@ -1284,7 +1290,7 @@ public final class TaskRunManager {
         diagnostics.captureContext(running.runId(), new TaskDiagnosticContext(clock.instant(),
                 diagnosticVersions, running, prepared.task, prepared.interruptionTask,
                 prepared.taskSettings, diagnosticStorageSettings.get(),
-                registry.inventory().protectedItemCounts(), prepared.triggers,
+                registry.inventory().lockedSlots(), prepared.triggers,
                 List.copyOf(prepared.coordinates.values()), List.copyOf(prepared.regions.values()),
                 List.copyOf(prepared.categoryZones.values()),
                 List.copyOf(prepared.warehouses.values())));

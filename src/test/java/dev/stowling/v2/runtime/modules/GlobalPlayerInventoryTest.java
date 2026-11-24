@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.PlayerInventorySnapshot;
+import dev.stowling.automation.InventorySlotFixture;
 import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.DroppedItemObserverPort;
@@ -50,7 +51,7 @@ class GlobalPlayerInventoryTest {
         TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
         runs.tick();
         var view = registry.inventory().view(false, true, Map.of());
-        registry.inventory().allocate(view.revision(), BREAD, 1);
+        InventorySlotFixture.lockFirst(registry.inventory(), view.revision(), BREAD, true);
         var chest = new CoordinatePoint(UUID.randomUUID(), "Food chest", 0, 64, 0);
         var task = new TaskDefinition(UUID.randomUUID(), "Meal", TaskPriority.URGENT, false,
                 TaskFlowTemplates.scheduledEating("coordinate:" + chest.id(), BREAD, 18));
@@ -79,7 +80,7 @@ class GlobalPlayerInventoryTest {
         TaskRunManager runs = new TaskRunManager(registry.navigation(), registry);
         runs.tick();
         var view = registry.inventory().view(false, true, Map.of());
-        registry.inventory().allocate(view.revision(), BREAD, 1);
+        InventorySlotFixture.lockFirst(registry.inventory(), view.revision(), BREAD, true);
         var chest = new CoordinatePoint(UUID.randomUUID(), "Food chest", 0, 64, 0);
         var task = new TaskDefinition(UUID.randomUUID(), "Meal", TaskPriority.NORMAL, false,
                 TaskFlowTemplates.scheduledEating("coordinate:" + chest.id(), BREAD, 18, 12, false));
@@ -202,18 +203,18 @@ class GlobalPlayerInventoryTest {
                 AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(cache),
                 List.of(zone), List.of(), List.of(), List.of(definition));
         runs.tick();
-        runs.allocatePlayerInventory(runs.playerInventory().revision(), IRON, 2);
+        runs.setPlayerInventoryLocked(runs.playerInventory().revision(), 35, true);
         runs.refreshTriggers(config);
         assertTrue(runs.playerInventory().classificationAvailable());
         runs.tick();
 
         assertTrue(runs.busy());
         var item = runs.playerInventory().items().getFirst();
-        assertEquals(2, item.protectedCount());
-        assertEquals(3, item.taskCount());
+        assertEquals(0, item.protectedCount());
+        assertEquals(5, item.taskCount());
         assertEquals(0, item.classificationCount());
         assertThrows(IllegalStateException.class,
-                () -> runs.allocatePlayerInventory(runs.playerInventory().revision(), IRON, 0));
+                () -> runs.setPlayerInventoryLocked(runs.playerInventory().revision(), 35, false));
     }
 
     @Test
@@ -253,7 +254,8 @@ class GlobalPlayerInventoryTest {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
+        InventorySlotFixture.lockFirst(manager,
+                manager.view(false, true, Map.of()).revision(), IRON, true);
         PlayerInventoryAccount collection = manager.account(UUID.randomUUID());
         manager.closeAccount(collection);
         source.set(Map.of(IRON, 5, GOLD, 3));
@@ -276,23 +278,18 @@ class GlobalPlayerInventoryTest {
     }
 
     @Test
-    void confirmedTaskWithdrawalsStaySeparateFromUntrackedSameItemAdditions() {
+    void sameSlotAdditionsStayLockedInsteadOfCreatingQuantityProtection() {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
-        PlayerInventoryAccount account = manager.account(UUID.randomUUID());
+        InventorySlotFixture.lockFirst(manager,
+                manager.view(false, true, Map.of()).revision(), IRON, true);
         source.set(Map.of(IRON, 15));
         manager.observe();
-        manager.recordWithdrawn(account, Map.of(IRON, 10));
-        account.confirmDeposit("carried", Map.of(IRON, 10), Map.of());
-        source.set(Map.of(IRON, 8));
-        manager.observe();
-
-        assertEquals(3, manager.claimUnexpected(account, Set.of()));
-        assertEquals(Map.of(IRON, 3), account.managedItems());
-        assertEquals(Map.of(IRON, 8), manager.expectedInventory().orElseThrow().itemCounts());
-        assertEquals(0, manager.claimUnexpected(account, Set.of()));
+        manager.reconcileUnassignedItems();
+        assertEquals(Map.of(IRON, 15), manager.protectedItemCounts());
+        assertTrue(manager.unlockedItems().isEmpty());
+        assertFalse(manager.needsRecovery());
     }
 
     @Test
@@ -300,7 +297,8 @@ class GlobalPlayerInventoryTest {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
+        InventorySlotFixture.lockFirst(manager,
+                manager.view(false, true, Map.of()).revision(), IRON, true);
         PlayerInventoryAccount retrieval = manager.account(UUID.randomUUID());
         PlayerInventoryAccount cleanup = manager.account(UUID.randomUUID());
         source.set(Map.of(IRON, 5, GOLD, 8));
@@ -317,7 +315,8 @@ class GlobalPlayerInventoryTest {
         InventorySource source = new InventorySource(Map.of(IRON, 5));
         PlayerInventoryManager manager = new PlayerInventoryManager(source);
         manager.observe();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 5);
+        InventorySlotFixture.lockFirst(manager,
+                manager.view(false, true, Map.of()).revision(), IRON, true);
         PlayerInventoryAccount failed = manager.account(UUID.randomUUID());
         manager.recordWithdrawn(failed, Map.of(GOLD, 3));
         source.set(Map.of(IRON, 5, GOLD, 3));
@@ -340,8 +339,10 @@ class GlobalPlayerInventoryTest {
         source.set(Map.of(IRON, 5, GOLD, 3));
         manager.observe();
         manager.reconcileUnassignedItems();
-        manager.allocate(manager.view(false, true, Map.of()).revision(), IRON, 0);
-        manager.allocate(manager.view(false, true, Map.of()).revision(), GOLD, 0);
+        InventorySlotFixture.lockFirst(manager,
+                manager.view(false, true, Map.of()).revision(), IRON, false);
+        InventorySlotFixture.lockFirst(manager,
+                manager.view(false, true, Map.of()).revision(), GOLD, false);
 
         assertEquals(5, manager.claimUnexpected(manager.account(UUID.randomUUID()), Set.of(IRON)));
         assertEquals(3, manager.view(false, true, Map.of()).items().stream()
@@ -395,6 +396,11 @@ class GlobalPlayerInventoryTest {
             }
 
             @Override
+            public Optional<PlayerInventorySnapshot> playerInventorySnapshot() {
+                return source.snapshot();
+            }
+
+            @Override
             public Optional<Map<String, Integer>> playerItemCounts() {
                 return source.snapshot().map(PlayerInventorySnapshot::itemCounts);
             }
@@ -434,7 +440,11 @@ class GlobalPlayerInventoryTest {
 
         @Override
         public FoodConsumptionResult pollAcquiringFood() {
-            return FoodConsumptionResult.succeeded("withdrawn", Map.of(BREAD, 5));
+            var indices = source.current.slots().stream().filter(slot -> slot.key().equals(BREAD))
+                    .map(dev.stowling.automation.PlayerInventorySlot::index)
+                    .collect(java.util.stream.Collectors.toSet());
+            return new FoodConsumptionResult(dev.stowling.automation.ContainerTransferState.SUCCEEDED,
+                    "withdrawn", Map.of(BREAD, 5), indices);
         }
 
         @Override
@@ -464,6 +474,8 @@ class GlobalPlayerInventoryTest {
     }
 
     private static final class InventorySource implements PlayerInventoryManager.Source {
+        private final InventorySlotFixture slots =
+                new InventorySlotFixture();
         private PlayerInventorySnapshot current;
 
         private InventorySource(Map<String, Integer> counts) {
@@ -471,7 +483,7 @@ class GlobalPlayerInventoryTest {
         }
 
         private void set(Map<String, Integer> counts) {
-            current = new PlayerInventorySnapshot(counts);
+            current = slots.snapshot(counts);
         }
 
         @Override

@@ -704,6 +704,12 @@ class V2ControlServerTest {
             }
 
             @Override
+            public Optional<dev.stowling.automation.PlayerInventorySnapshot> playerInventorySnapshot() {
+                return Optional.of(new dev.stowling.automation.InventorySlotFixture()
+                        .snapshot(Map.of("minecraft:stone", 64)));
+            }
+
+            @Override
             public Optional<Map<String, Integer>> playerItemCounts() {
                 return Optional.of(Map.of("minecraft:stone", 64));
             }
@@ -733,23 +739,29 @@ class V2ControlServerTest {
             JsonObject view = object(fixture.send("/v1/player-inventory", "GET", null, true));
             JsonObject allocation = new JsonObject();
             allocation.addProperty("revision", view.get("revision").getAsString());
-            allocation.addProperty("key", "minecraft:stone");
-            allocation.addProperty("keepCount", 16);
+            allocation.addProperty("slotIndex", 0);
+            allocation.addProperty("locked", true);
             assertEquals(401, fixture.send("/v1/player-inventory", "PUT",
                     allocation.toString(), false).statusCode());
             HttpResponse<String> saved = fixture.send("/v1/player-inventory", "PUT",
                     allocation.toString(), true);
             assertEquals(200, saved.statusCode());
+            assertEquals(36, object(saved).getAsJsonArray("slots").size());
+            assertEquals(0, object(saved).getAsJsonArray("lockedSlots").get(0).getAsInt());
             JsonObject item = object(saved).getAsJsonArray("items").get(0).getAsJsonObject();
-            assertEquals(16, item.get("protectedCount").getAsInt());
-            assertEquals(48, item.get("classificationCount").getAsInt());
+            assertEquals(64, item.get("protectedCount").getAsInt());
+            assertEquals(0, item.get("classificationCount").getAsInt());
             assertEquals(409, fixture.send("/v1/player-inventory", "PUT",
                     allocation.toString(), true).statusCode());
             allocation.addProperty("revision", object(saved).get("revision").getAsString());
-            allocation.addProperty("keepCount", -1);
+            allocation.addProperty("slotIndex", -1);
             assertEquals(400, fixture.send("/v1/player-inventory", "PUT",
                     allocation.toString(), true).statusCode());
-            allocation.addProperty("keepCount", 0);
+            allocation.addProperty("slotIndex", 0);
+            allocation.addProperty("locked", "true");
+            assertEquals(400, fixture.send("/v1/player-inventory", "PUT",
+                    allocation.toString(), true).statusCode());
+            allocation.addProperty("locked", false);
             runs.start(new TaskDefinition(UUID.randomUUID(), "Busy", List.of(TaskStep.action(
                     UUID.randomUUID(), "SYNC_PLAYER_INVENTORY", Map.of()))), List.of());
             assertEquals(409, fixture.send("/v1/player-inventory", "PUT",

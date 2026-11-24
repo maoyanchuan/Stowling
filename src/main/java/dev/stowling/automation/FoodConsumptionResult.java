@@ -6,9 +6,19 @@ import java.util.Objects;
 public record FoodConsumptionResult(
         ContainerTransferState state,
         String message,
-        Map<String, Integer> items
+        Map<String, Integer> items,
+        java.util.Set<Integer> acquiredSlots
 ) {
+    public FoodConsumptionResult(ContainerTransferState state, String message,
+            Map<String, Integer> items) {
+        this(state, message, items, java.util.Set.of());
+    }
+
     public FoodConsumptionResult {
+        acquiredSlots = java.util.Set.copyOf(acquiredSlots);
+        if (acquiredSlots.stream().anyMatch(index -> index < 0 || index >= 36)) {
+            throw new IllegalArgumentException("食物落点必须为主背包或快捷栏索引");
+        }
         state = Objects.requireNonNull(state, "state");
         message = Objects.requireNonNull(message, "message");
         items = Map.copyOf(Objects.requireNonNull(items, "items"));

@@ -16,7 +16,7 @@
     <header class="topbar">
         <div class="brand">
             <img class="brand-mark" src="/icon.png" width="36" height="36" alt="">
-            <div><h1>Stowling 控制台</h1><p>背包管理 · 自用与任务物品</p></div>
+            <div><h1>Stowling 控制台</h1><p>背包管理 · 栏位锁定</p></div>
         </div>
         <div class="connection-state">
             <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
@@ -32,12 +32,12 @@
             <section class="panel wide" aria-labelledby="backpack-title">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">全局物品归属</p>
+                        <p class="eyebrow">固定栏位锁定</p>
                         <h2 id="backpack-title">当前背包</h2>
                         <p class="muted compact-help">
-                            在已启用的自动收集点捡到的投料会送往该点的缓存，任务启动前捡到的也算。
-                            自用物品换格后仍受保护。其余物品进入待分类，
-                            包括原有物品、寻路时捡到的杂物和空闲时收到的投料。
+                            点击背包或快捷栏格子设置锁定，空格也可锁定。
+                            自动存入跳过锁定格，其余格中的物品全部尝试存入缓存。
+                            锁定只跟随位置；移走物品不会移动锁，物品仍可正常使用或消耗。
                         </p>
                     </div>
                     <button id="backpack-refresh" class="secondary" type="button">刷新背包</button>
@@ -53,23 +53,16 @@
                         <h3 id="backpack-item-name"></h3>
                         <p id="backpack-item-id" class="muted compact-help"></p>
                         <p id="backpack-counts"></p>
-                        <label class="move-field">
-                            <span>保留自用数量</span>
-                            <input id="backpack-keep" type="number" min="0" step="1" required>
-                        </label>
                         <p id="backpack-preview" class="muted compact-help" aria-live="polite"></p>
                         <div class="move-form-actions">
-                            <button id="backpack-keep-all" class="secondary" type="button">
-                                全部保留自用
+                            <button id="backpack-lock" class="primary" type="button">锁定此格</button>
+                            <button id="backpack-unlock" class="secondary" type="button">
+                                解锁此格
                             </button>
-                            <button id="backpack-classify-all" class="secondary" type="button">
-                                全部交给分类
-                            </button>
-                            <button id="backpack-save" class="primary" type="submit">保存分配</button>
                         </div>
                         <p class="muted compact-help">
-                            任务和收尾运行时可以查看背包，结束后可调整归属。
-                            分类物品先放入已启用自动分类任务的缓存，再按仓储排版入库。
+                            任务和收尾运行时可以查看背包，安全停止后可调整锁定。
+                            旧保护配置迁移后可能锁定多个同类物品格，请按实际需要调整。
                         </p>
                     </form>
                 </div>

@@ -118,6 +118,8 @@ public final class StowlingRuntime implements AutoCloseable {
         var protection = new PlayerInventoryProtectionStore(
                 configDirectory.resolve("stowling-player-inventory.json"));
         moduleRuntime.inventory().configureProtection(protection.load(), protection::save);
+        dev.stowling.client.automation.MinecraftContainerInteractions.configureLocks(
+                moduleRuntime.inventory()::lockedSlots);
         var warehouse = new dev.stowling.client.automation.ChestTrackerInventorySource(
                 minecraft, scheduler, configs, storageSettings, categoryMarkerCache);
         moduleRuntime.setStorageAutomation(

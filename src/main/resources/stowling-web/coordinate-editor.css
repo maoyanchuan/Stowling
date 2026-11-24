@@ -949,6 +949,15 @@
     overflow-wrap: anywhere;
 }
 
+:root body[data-coordinate-editor] .category-option-label small {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
 :root body[data-coordinate-editor] .category-option-row .field-label,
 :root body[data-coordinate-editor] .category-option-sub .field-label {
     margin: 0;

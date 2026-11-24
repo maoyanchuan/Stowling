@@ -39,6 +39,65 @@ import org.junit.jupiter.api.Test;
 
 class TaskRunManagerTest {
     @Test
+    void pickupDiagnosticsIncludeItsUserSettingsAndThePreparedCacheRegion() {
+        var point = new CoordinatePoint(UUID.randomUUID(), "Drops", 5, -43, 32);
+        var cache = new RegionDefinition(UUID.randomUUID(), "Cache", 3, -44, 32, 7, -43, 32);
+        var definition = new AutoClassifyDefinition(UUID.randomUUID(), "Pickup settings", true,
+                true, false, "coordinate:" + point.id(), 8, "region:" + cache.id(), List.of(),
+                TaskPriority.URGENT);
+        var tasks = dev.stowling.v2.model.AutoClassifyTaskFactory.tasks(definition, List.of());
+        var manager = new TaskRunManager(new RecordingNavigation());
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point), tasks,
+                List.of(cache), List.of(), List.of(), List.of(), List.of(definition));
+
+        var run = manager.start(tasks.getFirst(), config, null);
+        var context = manager.diagnostics().readRun(run.runId()).context();
+
+        assertEquals(definition, context.taskSettings());
+        assertEquals(8, context.taskSettings().pickupRadius());
+        assertEquals("region:" + cache.id(), context.taskSettings().cacheLocationRef());
+        assertEquals(List.of(cache), context.regions());
+        assertEquals(List.of(point), context.coordinates());
+        assertEquals(tasks.getLast().id(), context.interruptionTask().id());
+    }
+
+    @Test
+    void exportedConfigurationIsFrozenForEachRunAfterSettingsAndCoordinatesChange() {
+        UUID point = UUID.randomUUID();
+        var task = task(step(point));
+        var manager = new TaskRunManager(new RecordingNavigation(
+                NavigationStatus.ARRIVED, NavigationStatus.ARRIVED));
+        var settings = new java.util.concurrent.atomic.AtomicReference<>(
+                dev.stowling.v2.model.StorageAutomationSettings.DEFAULT);
+        manager.configureDiagnostics(Map.of("stowling", "first-version"), settings::get);
+        var original = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, coordinates(point),
+                List.of(task));
+        var first = manager.start(task, original, TaskPriority.URGENT);
+        for (int tick = 0; tick < 4; tick++) manager.tick();
+        var firstContext = manager.diagnostics().readRun(first.runId()).context();
+
+        settings.set(new dev.stowling.v2.model.StorageAutomationSettings(
+                true, List.of(), List.of(), null));
+        manager.configureDiagnostics(Map.of("stowling", "second-version"), settings::get);
+        var edited = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(new CoordinatePoint(point, "Edited", 40, 70, 20)), List.of(task));
+        manager.refreshTriggers(edited);
+        var second = manager.start(task, edited, TaskPriority.NORMAL);
+        var secondContext = manager.diagnostics().readRun(second.runId()).context();
+
+        assertEquals("first-version", firstContext.versions().get("stowling"));
+        assertEquals(0, firstContext.coordinates().getFirst().x());
+        assertFalse(firstContext.storageSettings().cleanupEnabled());
+        assertEquals(TaskPriority.URGENT, firstContext.run().priority());
+        assertEquals(task.id(), firstContext.task().id());
+        assertEquals("second-version", secondContext.versions().get("stowling"));
+        assertEquals(40, secondContext.coordinates().getFirst().x());
+        assertTrue(secondContext.storageSettings().cleanupEnabled());
+        assertEquals(firstContext, manager.diagnostics().readRun(first.runId()).context());
+        assertEquals(null, manager.diagnostics().read(0, 100).context());
+    }
+
+    @Test
     void classificationUsesCurrentCoordinatePoliciesForEveryBinding() {
         var navigation = new RecordingNavigation();
         var unavailable = TaskModuleRuntimeRegistry.unavailablePorts(navigation);

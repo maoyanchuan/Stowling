@@ -317,6 +317,10 @@ public final class PlayerInventoryManager {
         return protectedInventory == null ? Set.of() : protectedInventory.itemCounts().keySet();
     }
 
+    public synchronized Map<String, Integer> protectedItemCounts() {
+        return protectedInventory == null ? Map.of() : protectedInventory.itemCounts();
+    }
+
     public synchronized Set<String> availableProtectedFoodKeys(String itemId) {
         if (!available || protectedInventory == null) {
             return Set.of();

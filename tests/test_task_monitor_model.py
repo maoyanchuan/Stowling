@@ -49,7 +49,7 @@ def _run_model(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
-def test_default_export_keeps_latest_classification_cycle_with_readable_counts() -> None:
+def test_default_export_keeps_all_cycles_and_raw_quantities_for_the_selected_run() -> None:
     result = _run_model(
         """
         (() => {
@@ -72,12 +72,11 @@ def test_default_export_keeps_latest_classification_cycle_with_readable_counts()
         })()
         """
     )
-    assert "PREVIOUS_CYCLE" not in result
+    assert "PREVIOUS_CYCLE" in result
     assert "OTHER_RUN" not in result
     assert "boxItems=979; nextLoad=0" in result
     assert "收尾失败" in result
-    assert "任务背包：1 件" in result
-    assert "managed={" not in result
+    assert "managed={minecraft:shulker_box#" in result
     assert "全物品" in result
 
 
@@ -224,9 +223,101 @@ def test_single_run_download_includes_diagnostics_after_clearing_progress() -> N
     assert result["entries"] == []
     assert "deposit.confirm" in result["exported"]
     assert "planned=64; pickedUp=64" in result["exported"]
-    assert "已等待 8 秒" in result["exported"]
+    assert "8000\t19\tplanned=64" in result["exported"]
     assert "物品数量变化" in result["exported"]
     assert "nextLoad=64" in result["exported"]
+
+
+def test_export_includes_start_configuration_versions_and_full_navigation_calls() -> None:
+    result = _run_model(
+        """
+        (() => {
+            const model = window.StowlingTaskMonitorModel;
+            const run = { runId: "selected", taskName: "拾取", state: "SUCCEEDED" };
+            const event = { runId: "selected", phase: "TASK", step: "1", module: "PICKUP",
+                sequence: 1, time: "2026-11-25T00:00:00Z", elapsedMillis: 0, repeated: 0 };
+            const context = {
+                capturedAt: "2026-11-24T23:59:00Z",
+                versions: { stowling: "0.1.0-alpha.302", minecraft: "26.2", java: "25" },
+                task: { parameters: { cacheLocationRef: "region:cache" } },
+                taskSettings: { pickupRadius: 8, cachePolicy: { enabled: false } },
+                protectedItems: { "minecraft:diamond_pickaxe": 1 },
+                coordinates: [{ id: "pickup", x: 5, y: -43, z: 32 }],
+                regions: [{ id: "cache", firstX: 3, firstY: -44, firstZ: 32 }],
+                categoryZones: [{ bindings: [{ standingArea: { minX: 4, maxX: 4 } }] }],
+                warehouses: [{ members: ["region:cache"] }],
+                storageSettings: { cleanupEnabled: false }
+            };
+            const batch = { context, events: [
+                { ...event, kind: "CALL", operation: "NavigationPort.startInteraction",
+                    details: "target=5,-43,32; avoidPickups=false" },
+                { ...event, sequence: 2, kind: "RETURN", operation: "NavigationPort.startInteraction",
+                    details: "ARRIVED" },
+                { ...event, sequence: 3, kind: "DECISION", operation: "navigation.reach",
+                    details: "player=(5.5,-45,34.5); inRange=true; pathActive=true" },
+                { ...event, sequence: 4, runId: "other", kind: "ERROR", details: "OTHER_RUN" }
+            ] };
+            const log = model.createLogBuffer(10);
+            log.ingest([run]);
+            return { text: model.exportCurrentRun(batch, "selected", run),
+                visible: JSON.stringify(log.entries()) };
+        })()
+        """
+    )
+    text = result["text"]
+    assert "Stowling 版本：0.1.0-alpha.302" in text
+    assert "NavigationPort.startInteraction" in text
+    assert "ARRIVED" in text
+    assert "player=(5.5,-45,34.5)" in text
+    assert "OTHER_RUN" not in text
+    snapshot = text.split("任务启动时配置快照\n", 1)[1].split("\n\n完整事件记录", 1)[0]
+    context = json.loads(snapshot)
+    assert context["capturedAt"] == "2026-11-24T23:59:00Z"
+    assert context["coordinates"][0]["y"] == -43
+    assert context["taskSettings"]["pickupRadius"] == 8
+    assert context["warehouses"][0]["members"] == ["region:cache"]
+    assert context["protectedItems"]["minecraft:diamond_pickaxe"] == 1
+    assert "NavigationPort" not in result["visible"]
+    assert "cacheLocationRef" not in result["visible"]
+
+
+def test_download_fetches_complete_run_data_and_names_the_file_with_the_mod_version() -> None:
+    source = MODEL.with_name("tasks.js").read_text(encoding="utf-8")
+    start = source.index("    async function exportMonitorLogs()")
+    end = source.index("\n    }", start) + len("\n    }")
+    handler = source[start:end]
+    result = _run_model(
+        f"""
+        (async () => {{
+            const Monitor = window.StowlingTaskMonitorModel;
+            const state = {{ runs: [{{ runId: "selected", state: "SUCCEEDED" }}] }};
+            const requests = [];
+            let download;
+            const Stowling = {{ request: async path => {{
+                requests.push(path);
+                return {{ context: {{ versions: {{ stowling: "0.1.0-alpha.302" }} }},
+                    events: [] }};
+            }}, handleError: error => {{ throw error; }} }};
+            const downloadLog = (blob, name) => {{ download = {{ blob, name }}; }};
+            {handler}
+            await exportMonitorLogs();
+            return {{ requests, name: download.name, text: await download.blob.text() }};
+        }})()
+        """
+    )
+    assert result["requests"] == ["/v1/task-diagnostics/run/selected"]
+    assert "0.1.0-alpha.302" in result["name"]
+    assert "Stowling 版本：0.1.0-alpha.302" in result["text"]
+
+
+def test_old_runs_report_missing_metadata_without_using_current_configuration() -> None:
+    result = _run_model(
+        """
+        window.StowlingTaskMonitorModel.exportCurrentRun({ events: [] }, "old-run")
+        """
+    )
+    assert "Stowling 版本：未记录" in result
+    assert "该运行未记录启动配置快照" in result
 
 
 def test_full_diagnostic_export_is_independent_of_the_small_visible_log_buffer() -> None:

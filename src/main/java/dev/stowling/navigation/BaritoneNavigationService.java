@@ -11,6 +11,7 @@ import baritone.api.pathing.goals.GoalComposite;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.client.automation.MinecraftPickupSafety;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.runtime.TaskTrace;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -69,11 +70,19 @@ public final class BaritoneNavigationService implements NavigationService {
     public boolean isWithinInteractionRange(BlockPosition target, boolean avoidPickups) {
         Objects.requireNonNull(target, "target");
         LocalPlayer player = primaryBaritone().getPlayerContext().player();
-        return player != null && player.isWithinBlockInteractionRange(
+        boolean inRange = player != null && player.isWithinBlockInteractionRange(
                 new BlockPos(target.x(), target.y(), target.z()),
                 0.0D
         ) && (!avoidPickups || MinecraftPickupSafety.safe(player.getBoundingBox(),
                 MinecraftPickupSafety.hazards(player, target)));
+        if (TaskTrace.active()) {
+            TaskTrace.event("DECISION", "navigation.reach", "target=" + target
+                    + "; player=" + playerPosition(player) + "; reach="
+                    + (player == null ? 0 : player.blockInteractionRange())
+                    + "; avoidPickups=" + avoidPickups + "; inRange=" + inRange
+                    + "; pathActive=" + isNavigatingOrCalculating());
+        }
+        return inRange;
     }
 
     @Override
@@ -100,6 +109,10 @@ public final class BaritoneNavigationService implements NavigationService {
             goal = interactionGoal(target, standingArea, player.blockInteractionRange(),
                     player.getEyeHeight(), rejectedStances);
         }
+        TaskTrace.event("DECISION", "navigation.path.start", "target=" + target
+                + "; player=" + playerPosition(player) + "; standingArea=" + standingArea
+                + "; avoidPickups=" + avoidPickups + "; goalAvailable=" + goal.isPresent()
+                + "; rejectedStances=" + rejectedStances);
         goal.ifPresent(baritone.getCustomGoalProcess()::setGoalAndPath);
         return goal.isPresent();
     }
@@ -175,7 +188,21 @@ public final class BaritoneNavigationService implements NavigationService {
 
     @Override
     public void cancel() {
+        if (TaskTrace.active()) {
+            TaskTrace.event("CALL", "navigation.cancelEverything", "player="
+                    + playerPosition(primaryBaritone().getPlayerContext().player())
+                    + "; pathActive=" + isNavigatingOrCalculating(), 0, false);
+        }
         primaryBaritone().getPathingBehavior().cancelEverything();
+        if (TaskTrace.active()) {
+            TaskTrace.event("RETURN", "navigation.cancelEverything",
+                    "pathActive=" + isNavigatingOrCalculating(), 0, false);
+        }
+    }
+
+    private static String playerPosition(LocalPlayer player) {
+        return player == null ? "unavailable"
+                : "(" + player.getX() + "," + player.getY() + "," + player.getZ() + ")";
     }
 
     @Override

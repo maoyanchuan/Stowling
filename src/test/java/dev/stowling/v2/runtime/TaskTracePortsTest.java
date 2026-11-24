@@ -18,6 +18,26 @@ import org.junit.jupiter.api.Test;
 
 class TaskTracePortsTest {
     @Test
+    void interactionCallsIncludeTheActualStandingBoundsAndPickupPolicy() {
+        TaskDiagnosticLog log = new TaskDiagnosticLog();
+        var navigation = TaskTracePorts.wrap(NavigationPort.class, new Navigation());
+        var target = new BlockPosition(5, -43, 32);
+        var standing = new dev.stowling.v2.model.AreaBounds(4, -45, 34, 6, -45, 34);
+        TaskTrace.within(log, UUID.randomUUID(), "TASK", "1", "PICKUP", () ->
+                navigation.startInteraction(target, standing, false));
+
+        var call = log.read(0, 10).events().getFirst();
+        assertEquals("NavigationPort.startInteraction", call.operation());
+        assertTrue(call.details().contains("minX=4"));
+        assertTrue(call.details().contains("minY=-45"));
+        assertTrue(call.details().contains("maxX=6"));
+        assertTrue(call.details().contains("false"));
+        var container = new dev.stowling.automation.ContainerTarget(target, "minecraft:chest",
+                standing);
+        assertTrue(TaskTraceValues.describe(container).contains("standingArea=AreaBounds"));
+    }
+
+    @Test
     void capacityProbesDoNotFloodTheLogBeforeTheCollectionBatchSummary() {
         TaskDiagnosticLog log = new TaskDiagnosticLog();
         DroppedItemObserverPort port = TaskTracePorts.wrap(DroppedItemObserverPort.class,

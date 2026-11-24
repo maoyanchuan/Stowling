@@ -753,29 +753,21 @@
      * @returns {string}
      */
     function exportCurrentRun(batch, runId, run = {}) {
-        const events = asObjects(batch.events).filter((event) => event.runId === runId);
-        const withdrawal = events.findLast((event) => event.module === "WITHDRAW_ITEMS"
-            && event.kind === "STEP");
-        const parent = withdrawal?.step.slice(0, withdrawal.step.lastIndexOf("."));
-        const cycle = withdrawal && events.findLast((event) => event.kind === "LOOP"
-            && event.step === parent && event.sequence <= withdrawal.sequence);
-        const selected = cycle ? events.filter((event) => event.sequence >= cycle.sequence) : events;
-        const lines = ["Stowling 本次运行日志", `任务：${run.taskName || "未命名任务"}`,
-            `运行编号：${runId}`, `状态：${RUN_STATE_LABELS[run.state] || run.state || "未知"}`,
-            cycle ? "仅导出最近一轮分类及其收尾，更早循环未附带。"
-                : "仅包含本次运行及其收尾；历史运行未导出。"];
-        if (batch.truncated) lines.push("较早记录可能已轮换，以下为当前保留记录。");
-        const previous = new Map();
-        for (const event of selected) {
-            if (["CALL", "RETURN"].includes(event.kind)) continue;
-            const key = [event.phase, event.step, event.module, event.kind, event.operation].join(":");
-            if (["WAIT", "STATE", "INVENTORY"].includes(event.kind)
-                    && previous.get(key) === event.details) continue;
-            previous.set(key, event.details);
-            const time = new Date(event.time).toLocaleString("zh-CN", { hour12: false });
-            lines.push("", `${time}  ${diagnosticLabel(event.kind)}`,
-                diagnosticMessage(event), `记录 ${event.sequence} · ${event.operation}`);
+        const context = batch.context;
+        const snapshot = { ...context?.run, ...run, runId };
+        const version = context?.versions?.stowling || "未记录";
+        const lines = ["Stowling 本次运行完整诊断 · 格式 3", `Stowling 版本：${version}`,
+            `导出时间：${new Date().toISOString()}`, `任务：${snapshot.taskName || "未命名任务"}`,
+            `运行编号：${runId}`,
+            `状态：${RUN_STATE_LABELS[snapshot.state] || snapshot.state || "未知"}`,
+            "包含本次运行的全部保留循环、接口调用、接口返回和收尾记录。",
+            "", "运行摘要", JSON.stringify(snapshot, null, 4), "", "任务启动时配置快照"];
+        if (context) {
+            lines.push(JSON.stringify(context, null, 4));
+        } else {
+            lines.push("该运行未记录启动配置快照（旧版或记录已轮换）。");
         }
+        lines.push("", "完整事件记录", exportDiagnostics(batch, runId, true));
         return lines.join("\n");
     }
 
@@ -785,7 +777,7 @@
      * @returns {Promise<Blob>}
      */
     async function compressRunDiagnostics(batch, runId) {
-        const text = exportDiagnostics(batch, runId, true);
+        const text = exportCurrentRun(batch, runId);
         const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
         return new Response(stream).blob();
     }

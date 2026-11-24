@@ -16,6 +16,30 @@ import org.junit.jupiter.api.Test;
 
 class BaritoneAutomationNavigationTest {
     @Test
+    void arrivalDiagnosticsExplainWhetherTheExistingPathWasCancelledWithoutChangingBehavior() {
+        RecordingNavigationService service = new RecordingNavigationService();
+        service.withinInteractionRange = true;
+        service.navigating = true;
+        var navigation = navigationAt(service,
+                new AtomicReference<>(new BlockPosition(5, -45, 34)));
+        var log = new dev.stowling.v2.runtime.TaskDiagnosticLog();
+        var result = dev.stowling.v2.runtime.TaskTrace.within(log, java.util.UUID.randomUUID(),
+                "TASK", "1", "PICKUP", () -> navigation.startInteraction(
+                        new BlockPosition(5, -43, 32), null, false));
+
+        assertEquals(NavigationStatus.ARRIVED, result);
+        assertEquals(0, service.cancellations);
+        var events = log.read(0, 10).events();
+        assertEquals(true, events.stream().anyMatch(event ->
+                event.operation().equals("navigation.interaction")
+                        && event.details().contains("action=arrive")
+                        && event.details().contains("avoidPickups=false")));
+        assertEquals(true, events.stream().anyMatch(event ->
+                event.operation().equals("navigation.arrive")
+                        && event.details().contains("cancelIssued=false")));
+    }
+
+    @Test
     void supportBlockConfigurationArrivesOnlyAboveTheBlockAndWithinContainerReach() {
         var options = new CategoryZoneOptions("selection", "marker", "bulk", "inside-box",
                 "", false, "", true, new BlockPosition(1, 64, 0));

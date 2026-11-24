@@ -129,6 +129,12 @@ public final class StowlingRuntime implements AutoCloseable {
                 moduleRuntime,
                 worldObserver::observeWorld
         );
+        var versions = new java.util.TreeMap<String, String>();
+        net.fabricmc.loader.api.FabricLoader.getInstance().getAllMods().forEach(mod ->
+                versions.put(mod.getMetadata().getId(),
+                        mod.getMetadata().getVersion().getFriendlyString()));
+        versions.put("java", System.getProperty("java.version"));
+        taskRuns.configureDiagnostics(versions, () -> storageSettings.read().settings());
         V2ControlService service = new V2ControlServiceImpl(
                 configs,
                 taskRuns,

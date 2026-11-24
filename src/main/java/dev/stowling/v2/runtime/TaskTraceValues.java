@@ -4,6 +4,7 @@ import dev.stowling.automation.ContainerTarget;
 import dev.stowling.automation.DroppedItem;
 import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.runtime.modules.TaskModuleResult;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collection;
@@ -30,8 +31,11 @@ public final class TaskTraceValues {
                     ? text : "text(omitted)";
         }
         if (value instanceof BlockPosition position) return position.toString();
+        if (value instanceof AreaBounds area) return area.toString();
         if (value instanceof ContainerTarget target) {
-            return "container(" + target.position() + "," + describe(target.type()) + ")";
+            return "container(" + target.position() + "," + describe(target.type())
+                    + ",standingArea=" + target.standingArea() + ",partner=" + target.partner()
+                    + ",storageMode=" + target.storagePolicy().mode() + ")";
         }
         if (value instanceof DroppedItem item) {
             return ItemIdentity.base(item.itemId()) + " x" + item.count() + "@" + item.position();

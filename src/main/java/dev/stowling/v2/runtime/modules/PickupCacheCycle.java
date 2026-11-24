@@ -67,6 +67,10 @@ final class PickupCacheCycle implements TaskModuleExecutor {
             }
         }
         requested = context.workspace().managedItems();
+        dev.stowling.v2.runtime.TaskTrace.event("DECISION", "pickup.cache.select",
+                "target=" + target.position() + "; standingArea=" + target.standingArea()
+                        + "; knownFull=" + fullCaches.size() + "; unavailable=" + unavailable.size()
+                        + "; requested=" + requested, 0, false);
         inFlight = true;
         return confirmDeposit(context.containerTransfers().startPickupCacheDeposit(
                 target, requested));
@@ -132,6 +136,11 @@ final class PickupCacheCycle implements TaskModuleExecutor {
             if (moved > 0) deposited.put(key, moved);
         });
         context.workspace().consumeDeposit("managed", requested, result.remaining());
+        dev.stowling.v2.runtime.TaskTrace.event("DECISION", "pickup.cache.result",
+                "target=" + target.position() + "; state=" + result.state()
+                        + "; reason=" + result.message() + "; full=" + full
+                        + "; deposited=" + deposited + "; remaining=" + result.remaining(),
+                0, false);
         context.workspace().recordCacheTransfer(target, deposited, false);
         context.workspace().progress().recordDelivery(target.position(), deposited);
         if (!deposited.isEmpty()) {

@@ -21,6 +21,7 @@ public final class TaskDiagnosticLog {
     private final String session = UUID.randomUUID().toString();
     private final Deque<Event> events = new ArrayDeque<>();
     private final Map<String, Repetition> repetitions = new LinkedHashMap<>();
+    private final Map<UUID, TaskDiagnosticContext> contexts = new LinkedHashMap<>();
     private final Clock clock;
     private final int capacity;
     private long sequence;
@@ -33,6 +34,11 @@ public final class TaskDiagnosticLog {
         if (capacity <= 0) throw new IllegalArgumentException("capacity must be positive");
         this.capacity = capacity;
         this.clock = java.util.Objects.requireNonNull(clock);
+    }
+
+    public synchronized void captureContext(UUID runId, TaskDiagnosticContext context) {
+        contexts.putIfAbsent(runId, context);
+        while (contexts.size() > 50) contexts.remove(contexts.keySet().iterator().next());
     }
 
     public synchronized void append(UUID runId, String phase, String step, String module,
@@ -77,7 +83,7 @@ public final class TaskDiagnosticLog {
         long first = selected.isEmpty() ? sequence + 1 : selected.getFirst().sequence();
         long last = selected.isEmpty() ? sequence : selected.getLast().sequence();
         boolean truncated = !events.isEmpty() && events.getFirst().sequence() > 1;
-        return new Batch(session, first, last, last, truncated, selected);
+        return new Batch(session, first, last, last, truncated, selected, contexts.get(runId));
     }
 
     public record Event(long sequence, Instant time, UUID runId, String phase, String step,
@@ -86,7 +92,12 @@ public final class TaskDiagnosticLog {
     }
 
     public record Batch(String session, long firstAvailable, long nextSequence, long latestSequence,
-            boolean truncated, List<Event> events) {
+            boolean truncated, List<Event> events, TaskDiagnosticContext context) {
+        public Batch(String session, long firstAvailable, long nextSequence, long latestSequence,
+                boolean truncated, List<Event> events) {
+            this(session, firstAvailable, nextSequence, latestSequence, truncated, events, null);
+        }
+
         public Batch {
             events = List.copyOf(events);
         }

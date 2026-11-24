@@ -916,7 +916,9 @@
         }
         const output = Monitor.exportCurrentRun(batch, runId, run);
         const date = new Date().toISOString().replace(/[:.]/g, "-");
-        const name = `stowling-task-log-${runId}-${date}`;
+        const version = String(batch.context?.versions?.stowling || "unknown")
+            .replace(/[^a-zA-Z0-9._-]/g, "_");
+        const name = `stowling-task-log-${runId}-${version}-${date}`;
         downloadLog(new Blob([output], { type: "text/plain;charset=utf-8" }), `${name}.txt`);
     }
 

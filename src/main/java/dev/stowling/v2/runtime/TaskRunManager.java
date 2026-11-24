@@ -41,6 +41,16 @@ import java.util.UUID;
 
 public final class TaskRunManager {
     private final TaskDiagnosticLog diagnostics = new TaskDiagnosticLog();
+    private Map<String, String> diagnosticVersions = Map.of("stowling", "unknown",
+            "java", System.getProperty("java.version"));
+    private java.util.function.Supplier<dev.stowling.v2.model.StorageAutomationSettings>
+            diagnosticStorageSettings = () -> null;
+
+    public synchronized void configureDiagnostics(Map<String, String> versions,
+            java.util.function.Supplier<dev.stowling.v2.model.StorageAutomationSettings> settings) {
+        diagnosticVersions = Map.copyOf(versions);
+        diagnosticStorageSettings = Objects.requireNonNull(settings);
+    }
 
     public TaskDiagnosticLog diagnostics() {
         return diagnostics;
@@ -173,6 +183,7 @@ public final class TaskRunManager {
                 Map.of(),
                 knownTasks,
                 knownTriggers,
+                List.of(),
                 priorityOverride,
                 true,
                 true
@@ -208,6 +219,7 @@ public final class TaskRunManager {
                                 CoordinateCatalog.Warehouse::id, warehouse -> warehouse)),
                 indexTasks(config.tasks()),
                 config.triggers(),
+                config.autoClassifyTasks(),
                 priorityOverride,
                 allowRepeat,
                 true
@@ -222,6 +234,7 @@ public final class TaskRunManager {
             Map<UUID, CoordinateCatalog.Warehouse> warehouses,
             Map<UUID, TaskDefinition> tasks,
             List<TaskTriggerDefinition> triggerDefinitions,
+            List<AutoClassifyDefinition> taskSettings,
             TaskPriority priorityOverride,
             boolean allowRepeat,
             boolean deduplicate
@@ -234,6 +247,7 @@ public final class TaskRunManager {
                 warehouses,
                 tasks,
                 triggerDefinitions,
+                taskSettings,
                 priorityOverride,
                 allowRepeat
         );
@@ -1105,6 +1119,9 @@ public final class TaskRunManager {
         if (isTaskPending(task.id())) {
             return;
         }
+        List<AutoClassifyDefinition> taskSettings = inventoryConfig == null
+                ? java.util.stream.Stream.ofNullable(source.taskSettings).toList()
+                : inventoryConfig.autoClassifyTasks();
         PreparedRun prepared = prepare(
                 task,
                 List.copyOf(source.coordinates.values()),
@@ -1114,6 +1131,7 @@ public final class TaskRunManager {
                 source.warehouses,
                 source.tasks,
                 source.triggers,
+                taskSettings,
                 priority,
                 false
         );
@@ -1149,6 +1167,7 @@ public final class TaskRunManager {
             Map<UUID, CoordinateCatalog.Warehouse> warehouses,
             Map<UUID, TaskDefinition> tasks,
             List<TaskTriggerDefinition> triggerDefinitions,
+            List<AutoClassifyDefinition> taskSettings,
             TaskPriority priorityOverride,
             boolean allowRepeat
     ) {
@@ -1189,7 +1208,11 @@ public final class TaskRunManager {
                 frozenTriggers,
                 priority,
                 repeating,
-                interruptionTask
+                interruptionTask,
+                taskSettings.stream().filter(definition -> definition.id().equals(task.id())
+                        || definition.classificationTaskId().equals(task.id())
+                        || definition.interruptionTaskId().equals(task.id()))
+                        .findFirst().orElse(null)
         );
     }
 
@@ -1257,6 +1280,14 @@ public final class TaskRunManager {
         }
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
         workspace.setDiagnostics(diagnostics);
+        PreparedRun prepared = queued.prepared;
+        diagnostics.captureContext(running.runId(), new TaskDiagnosticContext(clock.instant(),
+                diagnosticVersions, running, prepared.task, prepared.interruptionTask,
+                prepared.taskSettings, diagnosticStorageSettings.get(),
+                registry.inventory().protectedItemCounts(), prepared.triggers,
+                List.copyOf(prepared.coordinates.values()), List.copyOf(prepared.regions.values()),
+                List.copyOf(prepared.categoryZones.values()),
+                List.copyOf(prepared.warehouses.values())));
         diagnostics.append(running.runId(), "TASK", "", "RUN", "STATE", "RUNNING",
                 "priority=" + running.priority() + "; resumeStep=" + running.completedSteps(),
                 0, false);
@@ -1552,7 +1583,8 @@ public final class TaskRunManager {
             List<TaskTriggerDefinition> triggers,
             TaskPriority priority,
             boolean repeating,
-            TaskDefinition interruptionTask
+            TaskDefinition interruptionTask,
+            AutoClassifyDefinition taskSettings
     ) {
     }
 

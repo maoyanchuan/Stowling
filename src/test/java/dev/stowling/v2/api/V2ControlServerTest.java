@@ -652,6 +652,39 @@ class V2ControlServerTest {
                     .statusCode());
         }
     }
+
+    @Test
+    void runConfigurationExportRequiresAuthenticationAndIncludesVersionAndCoordinateSnapshots()
+            throws Exception {
+        ConfigStore store = new ConfigStore(directory.resolve("export.json"));
+        store.loadOrReset();
+        var runs = new TaskRunManager(new FailedNavigation());
+        runs.configureDiagnostics(Map.of("stowling", "0.1.0-alpha.302", "minecraft", "26.2"),
+                () -> dev.stowling.v2.model.StorageAutomationSettings.DEFAULT);
+        var point = new dev.stowling.v2.model.CoordinatePoint(UUID.randomUUID(),
+                "Cache position", 5, -43, 32);
+        var task = new TaskDefinition(UUID.randomUUID(), "Exported task", List.of(TaskStep.action(
+                UUID.randomUUID(), "MOVE_TO_COORDINATE", Map.of("targetRef",
+                        "coordinate:" + point.id()))));
+        var run = runs.start(task, new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(point), List.of(task)), null);
+        try (Fixture fixture = new Fixture(new V2ControlServiceImpl(store, runs, List::of))) {
+            String path = "/v1/task-diagnostics/run/" + run.runId();
+            assertEquals(401, fixture.send(path, "GET", null, false).statusCode());
+            var response = object(fixture.send(path, "GET", null, true));
+            var context = response.getAsJsonObject("context");
+            assertEquals("0.1.0-alpha.302", context.getAsJsonObject("versions")
+                    .get("stowling").getAsString());
+            assertEquals(task.id().toString(), context.getAsJsonObject("task")
+                    .get("id").getAsString());
+            assertEquals(-43, context.getAsJsonArray("coordinates").get(0).getAsJsonObject()
+                    .get("y").getAsInt());
+            assertEquals(run.runId().toString(), context.getAsJsonObject("run")
+                    .get("runId").getAsString());
+            String otherPath = "/v1/task-diagnostics/run/" + UUID.randomUUID();
+            assertFalse(object(fixture.send(otherPath, "GET", null, true)).has("context"));
+        }
+    }
     @Test
     void backpackAllocationRequiresAuthenticationAndRejectsStaleOrRunningChanges()
             throws Exception {

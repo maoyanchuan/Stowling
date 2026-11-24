@@ -9,6 +9,7 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.runtime.TaskTrace;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -106,7 +107,12 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea,
             boolean avoidPickups) {
-        if (isWithinInteractionRange(target, standingArea, avoidPickups)) {
+        boolean inRange = isWithinInteractionRange(target, standingArea, avoidPickups);
+        TaskTrace.event("DECISION", "navigation.interaction", "target=" + target
+                + "; standingArea=" + standingArea + "; avoidPickups=" + avoidPickups
+                + "; inRange=" + inRange + "; active=" + active
+                + "; action=" + (inRange ? "arrive" : "start-path"));
+        if (inRange) {
             return arrive();
         }
         this.avoidPickups = avoidPickups;
@@ -193,6 +199,8 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     }
 
     private NavigationStatus arrive() {
+        TaskTrace.event("DECISION", "navigation.arrive", "active=" + active
+                + "; cancelIssued=" + active);
         if (active) {
             active = false;
             navigationService.cancel();
@@ -224,9 +232,12 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public boolean isWithinInteractionRange(BlockPosition target, AreaBounds area,
             boolean avoidPickups) {
-        if (area != null && worldObserver.observeWorld().playerPosition()
-                .filter(area::contains).isEmpty()) {
-            return false;
+        if (area != null) {
+            var position = worldObserver.observeWorld().playerPosition();
+            boolean inside = position.filter(area::contains).isPresent();
+            TaskTrace.event("DECISION", "navigation.standingArea", "player="
+                    + position.orElse(null) + "; standingArea=" + area + "; inside=" + inside);
+            if (!inside) return false;
         }
         return navigationService.isWithinInteractionRange(target, avoidPickups);
     }

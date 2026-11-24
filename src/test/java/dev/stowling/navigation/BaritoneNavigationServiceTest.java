@@ -10,12 +10,29 @@ import baritone.api.pathing.goals.GoalNear;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.client.automation.MinecraftPickupSafety;
 import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.CategoryZoneOptions;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.world.phys.AABB;
 import org.junit.jupiter.api.Test;
 
 class BaritoneNavigationServiceTest {
+    @Test
+    void configuredSupportBlockTargetsTheFeetAboveItIncludingNegativeHeights() {
+        for (int supportY : List.of(-44, 0, 64)) {
+            var options = new CategoryZoneOptions("selection", "marker", "bulk", "inside-box",
+                    "", false, "", true, new BlockPosition(1, supportY, 0));
+            Goal goal = BaritoneNavigationService.interactionGoal(
+                    new BlockPosition(0, supportY + 4, 0), options.standingArea(null),
+                    4.5, 1.62, Set.of()).orElseThrow();
+
+            assertTrue(goal.isInGoal(1, supportY + 1, 0));
+            assertFalse(goal.isInGoal(1, supportY, 0));
+            assertFalse(goal.isInGoal(1, supportY + 2, 0));
+            assertFalse(goal.isInGoal(2, supportY + 1, 0));
+        }
+    }
+
     @Test
     void storageLeavesThePickupPointEvenWhenItAlreadyReachesTheCache() {
         BlockPosition chest = new BlockPosition(5, -43, 32);

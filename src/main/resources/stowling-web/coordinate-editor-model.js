@@ -188,7 +188,8 @@
                             || position[axis] > 2147483647)) {
                         throw new Error("请填写站立位置的 X、Y、Z 整数坐标。");
                     }
-                    result.standingArea = area({first: position, second: position});
+                    const feet = {...position, y: position.y + 1};
+                    result.standingArea = area({first: feet, second: feet});
                 }
             }
             return result;

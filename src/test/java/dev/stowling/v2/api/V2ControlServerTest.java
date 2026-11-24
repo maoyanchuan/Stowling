@@ -134,7 +134,10 @@ class V2ControlServerTest {
                 var standing = binding.getAsJsonObject("standingArea");
                 assertEquals(enabled ? 4 : 1, standing.get("firstX").getAsInt());
                 assertEquals(standing.get("firstX"), standing.get("secondX"));
-                assertEquals(enabled ? 66 : 65, standing.get("firstY").getAsInt());
+                assertEquals(enabled ? 67 : 66, standing.get("firstY").getAsInt());
+                assertEquals(standing.get("firstY"), standing.get("secondY"));
+                assertEquals(66, binding.getAsJsonObject("categoryOptions")
+                        .getAsJsonObject("standingPosition").get("y").getAsInt());
                 assertEquals(enabled ? -5 : -2, standing.get("firstZ").getAsInt());
                 assertEquals(4, binding.getAsJsonObject("categoryOptions")
                         .getAsJsonObject("standingPosition").get("x").getAsInt());
@@ -153,7 +156,8 @@ class V2ControlServerTest {
             assertEquals(401, fixture.send(path, "PUT", payload.toString(), false).statusCode());
             local.addProperty("specifyStanding", true);
             for (String point : List.of("null", "{}", "{\"x\":0.5,\"y\":64,\"z\":0}",
-                    "{\"x\":2147483648,\"y\":64,\"z\":0}")) {
+                    "{\"x\":2147483648,\"y\":64,\"z\":0}",
+                    "{\"x\":0,\"y\":2147483647,\"z\":0}")) {
                 local.add("standingPosition", JsonParser.parseString(point));
                 assertEquals(400, fixture.send(path, "PUT", payload.toString(), true).statusCode());
             }

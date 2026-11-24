@@ -302,11 +302,14 @@ def test_standing_position_uses_effective_options_and_keeps_disabled_group_draft
             originalX: group.categoryOptions.standingPosition.x}));
     """)
     assert result["local"]["bindings"][0]["standingArea"] == {
-        "firstX": 8, "firstY": 66, "firstZ": -9,
-        "secondX": 8, "secondY": 66, "secondZ": -9,
+        "firstX": 8, "firstY": 67, "firstZ": -9,
+        "secondX": 8, "secondY": 67, "secondZ": -9,
     }
+    assert result["local"]["bindings"][0]["categoryOptions"]["standingPosition"]["y"] == 66
     inherited = result["inherited"]["bindings"][0]
     assert inherited["standingArea"]["firstX"] == -3
+    assert inherited["standingArea"]["firstY"] == 66
+    assert result["inherited"]["categoryOptions"]["standingPosition"]["y"] == 65
     assert inherited["categoryOptions"]["standingPosition"]["x"] == 8
     disabled = result["disabled"]["bindings"][0]
     assert disabled["standingArea"] is None

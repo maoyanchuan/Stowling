@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParser;
+import dev.stowling.domain.BlockPosition;
 import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.AutoClassifyAreaDefinition;
@@ -14,8 +15,13 @@ import dev.stowling.v2.model.AutoClassifyDefinition;
 import dev.stowling.v2.model.AutoClassifyTaskFactory;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.CategoryZoneExpansionAxis;
+import dev.stowling.v2.model.CategoryZoneExpansionDefinition;
+import dev.stowling.v2.model.CategoryZoneOptions;
+import dev.stowling.v2.model.CategoryZoneTiler;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.StoragePolicy;
 import dev.stowling.v2.model.TaskPriority;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +34,50 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigStoreTest {
     @TempDir
     Path directory;
+
+    @Test
+    void repairsSavedSupportBlockHeightsWithoutLosingSliceOffsetsOrShiftingTwice()
+            throws Exception {
+        for (boolean independent : List.of(false, true)) {
+            var global = new CategoryZoneOptions("single", "marker", "bulk", "inside-box",
+                    "", false, "", true, new BlockPosition(-8, -45, 2));
+            var local = new CategoryZoneOptions("single", "marker", "bulk", "inside-box",
+                    "", false, "", true, new BlockPosition(-8, -44, 2));
+            var effective = independent ? local : global;
+            var marker = new AreaBounds(0, 64, 0, 0, 64, 0);
+            var storage = new AreaBounds(0, 65, 0, 0, 65, 0);
+            var template = new CategoryBindingDefinition(UUID.randomUUID(), marker, storage,
+                    "DIRECT_BLOCK_ID", List.of(), List.of(), effective.standingArea(null),
+                    StoragePolicy.DEFAULT, false, "A", independent, local);
+            var expansion = new CategoryZoneExpansionDefinition(
+                    new AreaBounds(0, 64, 0, 2, 65, 0),
+                    CategoryZoneExpansionAxis.X_POSITIVE, 1, 1);
+            var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Standing",
+                    CategoryZoneTiler.expand(expansion, List.of(template), global),
+                    expansion, global);
+            var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                    List.of(), List.of(), List.of(), List.of(zone));
+            var saved = new Gson().toJsonTree(config).getAsJsonObject();
+            var savedZone = saved.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            for (var element : savedZone.getAsJsonArray("bindings")) {
+                var standing = element.getAsJsonObject().getAsJsonObject("standingArea");
+                standing.addProperty("firstY", effective.standingPosition().y());
+                standing.addProperty("secondY", effective.standingPosition().y());
+            }
+            Path path = directory.resolve("standing-" + independent + ".json");
+            String original = saved.toString();
+            Files.writeString(path, original);
+            var store = new ConfigStore(path);
+            var restored = store.read();
+            assertEquals(config, restored.config());
+            assertEquals(new AreaBounds(-6, effective.standingPosition().y() + 1, 2,
+                    -6, effective.standingPosition().y() + 1, 2),
+                    restored.config().categoryZones().getFirst().bindings().get(2).standingArea());
+            assertEquals(original, Files.readString(path));
+            store.save(restored.revision(), restored.config());
+            assertEquals(config, new ConfigStore(path).read().config());
+        }
+    }
 
     @Test
     void preservesGlobalSettingsAndDisabledIndependentDraftsAfterRestart() throws Exception {

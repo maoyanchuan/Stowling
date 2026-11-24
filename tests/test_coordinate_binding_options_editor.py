@@ -228,8 +228,8 @@ def test_standing_switch_and_arrow_preserve_saved_and_copied_drafts(
     assert binding["categoryOptions"]["standingPosition"]["x"] == 8
     assert saved["categoryOptions"]["standingPosition"]["x"] == -3
     assert binding["standingArea"] == ({
-        "firstX": 8, "firstY": 65, "firstZ": 7,
-        "secondX": 8, "secondY": 65, "secondZ": 7,
+        "firstX": 8, "firstY": 66, "firstZ": 7,
+        "secondX": 8, "secondY": 66, "secondZ": 7,
     } if enabled else None)
     page.locator("#duplicate-coordinate").click()
     card = page.locator(".category-binding-card").first

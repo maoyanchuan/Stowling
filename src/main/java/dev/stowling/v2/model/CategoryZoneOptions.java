@@ -27,6 +27,9 @@ public record CategoryZoneOptions(
         if (Boolean.TRUE.equals(specifyStanding) && standingPosition == null) {
             throw new IllegalArgumentException("请填写站立位置的 X、Y、Z 整数坐标");
         }
+        if (Boolean.TRUE.equals(specifyStanding) && standingPosition.y() == Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("站立脚下方块 Y 坐标过大");
+        }
     }
 
     public CategoryZoneOptions(
@@ -41,8 +44,10 @@ public record CategoryZoneOptions(
     public AreaBounds standingArea(AreaBounds previous) {
         if (specifyStanding == null) return previous;
         if (!specifyStanding) return null;
-        return new AreaBounds(standingPosition.x(), standingPosition.y(), standingPosition.z(),
-                standingPosition.x(), standingPosition.y(), standingPosition.z());
+        // The editable position is the support block; navigation uses the player's feet.
+        int feetY = standingPosition.y() + 1;
+        return new AreaBounds(standingPosition.x(), feetY, standingPosition.z(),
+                standingPosition.x(), feetY, standingPosition.z());
     }
 
     public String ruleId() {

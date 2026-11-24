@@ -778,7 +778,7 @@
     /** @param {HTMLElement} group @param {boolean} enabled @returns {void} */
     function setFieldGroupEnabled(group, enabled) {
         group.hidden = !enabled;
-        group.querySelectorAll("input, select, button").forEach(control => {
+        group.querySelectorAll("input, select, textarea, button").forEach(control => {
             control.disabled = !enabled;
         });
     }

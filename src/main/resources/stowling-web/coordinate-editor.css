@@ -47,7 +47,8 @@
 
 :root body[data-coordinate-editor] button,
 :root body[data-coordinate-editor] input,
-:root body[data-coordinate-editor] select {
+:root body[data-coordinate-editor] select,
+:root body[data-coordinate-editor] textarea {
     font: inherit;
 }
 
@@ -59,14 +60,16 @@
 
 :root body[data-coordinate-editor] button:focus-visible,
 :root body[data-coordinate-editor] input:focus-visible,
-:root body[data-coordinate-editor] select:focus-visible {
+:root body[data-coordinate-editor] select:focus-visible,
+:root body[data-coordinate-editor] textarea:focus-visible {
     outline: 2px solid var(--theme-focus, #a6bbb0);
     outline-offset: 3px;
 }
 
 :root body[data-coordinate-editor] button:disabled,
 :root body[data-coordinate-editor] input:disabled,
-:root body[data-coordinate-editor] select:disabled {
+:root body[data-coordinate-editor] select:disabled,
+:root body[data-coordinate-editor] textarea:disabled {
     cursor: not-allowed;
     opacity: 0.55;
 }
@@ -439,7 +442,8 @@
 }
 
 :root body[data-coordinate-editor] input,
-:root body[data-coordinate-editor] select {
+:root body[data-coordinate-editor] select,
+:root body[data-coordinate-editor] textarea {
     width: 100%;
     min-height: 42px;
     padding: 8px 12px;
@@ -1182,7 +1186,11 @@
 }
 
 :root body[data-coordinate-editor] .category-support-block-input {
+    min-width: 0;
+    min-height: 86px;
     margin: 0;
+    line-height: 1.5;
+    resize: vertical;
 }
 
 :root body[data-coordinate-editor] .category-bulk-ratio {

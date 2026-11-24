@@ -412,6 +412,25 @@ def test_expanded_zone_edits_only_the_original_templates() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_legacy_support_block_ids_display_on_separate_lines_and_round_trip() -> None:
+    result = run_model(ZONE_SETUP + """
+        binding.ignoredMarkerBlockIds = ['minecraft:stone', 'minecraft:dirt',
+            'minecraft:polished_deepslate', 'minecraft:oak_planks', 'minecraft:obsidian'];
+        const value = model.resources(directory)[0];
+        process.stdout.write(JSON.stringify({draft: value.categoryOptions.supportBlock,
+            saved: model.payload(value)}));
+    """)
+    ids = [
+        "minecraft:stone", "minecraft:dirt", "minecraft:polished_deepslate",
+        "minecraft:oak_planks", "minecraft:obsidian",
+    ]
+    draft = "\n".join(ids)
+    assert result["draft"] == draft
+    assert result["saved"]["categoryOptions"]["supportBlock"] == draft
+    assert result["saved"]["bindings"][0]["ignoredMarkerBlockIds"] == ids
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
 def test_category_controls_update_real_rules_storage_and_cache_references() -> None:
     result = run_model(ZONE_SETUP + """
         const value = model.resources(directory)[0];

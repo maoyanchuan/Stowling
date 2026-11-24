@@ -100,6 +100,99 @@ def selected(root: Any, key: str) -> str:
     return root.locator(f'[data-category-select="{key}"] select').input_value()
 
 
+@pytest.mark.parametrize("scope", ["global", "binding"])
+@pytest.mark.parametrize("width", [1440, 390])
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_support_blocks_accept_multiline_input_without_submitting(
+    editor_page: Any, scope: str, width: int, theme: str,
+) -> None:
+    page = editor_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    root = page.locator(".category-options").first
+    if scope == "binding":
+        root = page.locator(".category-binding-card").first
+        root.locator(".category-binding-enabled").check()
+    enabled = root.locator('[id$="category-ignore-support"]')
+    expand = root.locator('[id$="category-support-expand"]')
+    field = root.locator('[id$="category-support-block"]')
+    draft = (
+        "minecraft:stone\nminecraft:dirt\nminecraft:polished_deepslate\n"
+        "minecraft:oak_planks\nminecraft:obsidian"
+    )
+    enabled.check()
+    field.fill("minecraft:stone")
+    field.press("End")
+    field.press("Enter")
+    page.keyboard.insert_text(draft.split("\n", 1)[1])
+    assert field.input_value() == draft
+    assert page.evaluate("window.__editorState.categoryZones.length") == 0
+    assert field.evaluate("node => node.labels[0].textContent.includes('每行填写一个方块 ID')")
+    bounds = field.bounding_box()
+    assert bounds is not None and bounds["height"] >= 86
+    assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+    expand.click()
+    assert field.is_hidden()
+    assert enabled.is_checked()
+    expand.click()
+    assert field.input_value() == draft
+    enabled.uncheck()
+    assert field.is_disabled()
+    enabled.check()
+    assert field.input_value() == draft
+
+
+@pytest.mark.parametrize("independent", [False, True])
+@pytest.mark.parametrize("ignore_support", [False, True])
+def test_support_block_lines_keep_inherited_saved_and_copied_drafts(
+    editor_page: Any, independent: bool, ignore_support: bool,
+) -> None:
+    page = editor_page
+    global_options = page.locator(".category-options").first
+    global_draft = "minecraft:stone\nminecraft:dirt"
+    local_draft = (
+        "minecraft:glass\nminecraft:oak_planks\nminecraft:polished_deepslate\n"
+        "minecraft:obsidian\nminecraft:granite"
+    )
+    global_options.locator('[id$="category-ignore-support"]').check()
+    global_options.locator('[id$="category-support-block"]').fill(global_draft)
+    card = page.locator(".category-binding-card").first
+    override = card.locator(".category-binding-enabled")
+    override.check()
+    local_field = card.locator('[id$="category-support-block"]')
+    assert local_field.input_value() == global_draft
+    local_field.fill(local_draft)
+    card.locator(".category-binding-toggle").click()
+    card.locator(".category-binding-toggle").click()
+    assert local_field.input_value() == local_draft
+    card.locator('[id$="category-ignore-support"]').set_checked(ignore_support)
+    override.uncheck()
+    override.check()
+    assert local_field.input_value() == local_draft
+    override.set_checked(independent)
+    global_options.locator('[id$="category-ignore-support"]').set_checked(ignore_support)
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones.length === 1")
+    saved = page.evaluate("window.__editorState.categoryZones[0]")
+    assert saved["categoryOptions"]["supportBlock"] == global_draft
+    binding = saved["bindings"][0]
+    assert binding["categoryOptions"]["supportBlock"] == local_draft
+    assert binding["optionsEnabled"] is independent
+    effective_draft = local_draft if independent else global_draft
+    assert binding["ignoredMarkerBlockIds"] == (
+        effective_draft.splitlines() if ignore_support else []
+    )
+    page.locator("#duplicate-coordinate").click()
+    global_options.locator('[id$="category-ignore-support"]').check()
+    assert global_options.locator('[id$="category-support-block"]').input_value() == global_draft
+    card = page.locator(".category-binding-card").first
+    assert card.locator(".category-binding-enabled").is_checked() is independent
+    card.locator(".category-binding-toggle").click()
+    card.locator(".category-binding-enabled").check()
+    card.locator('[id$="category-ignore-support"]').check()
+    assert card.locator('[id$="category-support-block"]').input_value() == local_draft
+
+
 @pytest.mark.parametrize("width", [1440, 900, 761])
 @pytest.mark.parametrize("theme", ["green", "gray"])
 def test_directory_fills_the_left_column_without_stretching_rows(

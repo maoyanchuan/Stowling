@@ -56,7 +56,7 @@
             noCacheLocation: policy.partialBoxDestinationRef ? "specified" : "inside-box",
             cacheDestination: policy.partialBoxDestinationRef || "",
             ignoreSupportBlock: Boolean(binding.ignoredMarkerBlockIds?.length),
-            supportBlock: (binding.ignoredMarkerBlockIds || []).join(", "),
+            supportBlock: (binding.ignoredMarkerBlockIds || []).join("\n"),
             expansionDirection: zone.expansion?.direction || "AUTO",
             expansionStep: zone.expansion?.step || 1
         };

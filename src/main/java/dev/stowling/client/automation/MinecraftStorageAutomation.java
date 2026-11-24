@@ -400,7 +400,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         if (snapshot == null) {
             throw new IllegalStateException("请先盘点缓存容器库存");
         }
-        return snapshot.stacks().stream().flatMap(stack -> MinecraftItemIdentity.isBox(stack)
+        return snapshot.stacks().stream().filter(stack -> !stack.has(DataComponents.CUSTOM_NAME))
+                .flatMap(stack -> MinecraftItemIdentity.isBox(stack)
                         ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
                         : java.util.stream.Stream.of(stack))
                 .filter(MinecraftStorageAutomation::isUnstackableItem)
@@ -410,6 +411,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private static boolean isUnstackableItem(ItemStack stack) {
         return !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
+                && !stack.has(DataComponents.CUSTOM_NAME)
                 && stack.getMaxStackSize() == 1;
     }
 
@@ -1927,7 +1929,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             stackSize = snapshots().stream().flatMap(stack -> MinecraftItemIdentity.isBox(stack)
                     ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
                     : java.util.stream.Stream.of(stack))
-                    .filter(stack -> category.equals(MinecraftItemIdentity.base(stack)))
+                    .filter(stack -> category.equals(MinecraftItemIdentity.category(stack)))
                     .findFirst().map(ItemStack::getMaxStackSize).orElse(64);
             looseDeficit = targetLooseDeficit();
             existingBoxSpace = recordedBoxSpace();
@@ -1947,7 +1949,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private List<ItemStack> snapshots() {
             return cacheSnapshots.values().stream()
-                    .flatMap(snapshot -> snapshot.stacks().stream()).toList();
+                    .flatMap(snapshot -> snapshot.stacks().stream())
+                    .filter(stack -> !stack.has(DataComponents.CUSTOM_NAME)).toList();
         }
 
         private int fullCount() {
@@ -1963,7 +1966,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private Map<String, Integer> raw(List<ItemStack> contents) {
             Map<String, Integer> items = new LinkedHashMap<>();
             contents.stream().filter(stack -> !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
-                    && category.equals(MinecraftItemIdentity.base(stack))).forEach(stack ->
+                    && category.equals(MinecraftItemIdentity.category(stack))).forEach(stack ->
                             items.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
                                     Math::addExact));
             return items;
@@ -1986,13 +1989,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Map<String, Integer> available = new LinkedHashMap<>(loose);
             Map<String, Integer> withoutKeeper = new LinkedHashMap<>(loose);
             Map<String, Integer> sizes = new LinkedHashMap<>();
-            stock.stream().filter(stack -> category.equals(MinecraftItemIdentity.base(stack)))
+            stock.stream().filter(stack -> category.equals(MinecraftItemIdentity.category(stack)))
                     .forEach(stack -> sizes.put(MinecraftItemIdentity.key(stack),
                             stack.getMaxStackSize()));
             for (ItemStack box : partials) {
                 boolean mixed = ItemIdentity.isMixedBox(MinecraftItemIdentity.key(box));
                 MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream().forEach(stack -> {
-                    if (!category.equals(MinecraftItemIdentity.base(stack))) return;
+                    if (!category.equals(MinecraftItemIdentity.category(stack))) return;
                     String key = MinecraftItemIdentity.key(stack);
                     available.merge(key, stack.getCount() * box.getCount(), Math::addExact);
                     sizes.put(key, stack.getMaxStackSize());
@@ -2335,10 +2338,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .findFirst().orElse(null);
             int slots = stock == null || stock.slots() <= 0 ? 54 : stock.slots();
             long present = stock == null ? 0 : stock.items().stream()
-                    .filter(item -> category.equals(ItemIdentity.base(item.key())))
+                    .filter(item -> category.equals(ItemIdentity.category(item.key())))
                     .mapToLong(WarehouseInventory.Entry::loose).sum();
             long otherSlots = stock == null ? 0 : stock.items().stream()
-                    .filter(item -> !category.equals(ItemIdentity.base(item.key())) && item.loose() > 0)
+                    .filter(item -> !category.equals(ItemIdentity.category(item.key()))
+                            && item.loose() > 0)
                     .mapToLong(item -> (item.loose() + Math.max(1, item.stackSize()) - 1)
                             / Math.max(1, item.stackSize())).sum();
             return Math.toIntExact(Math.max(0,
@@ -2564,6 +2568,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private boolean shouldUnpack(ItemStack candidate) {
+            if (candidate.has(DataComponents.CUSTOM_NAME)) return false;
             if (context.workspace().unstackableClassification()) return true;
             if (packingCategory == null && MinecraftItemIdentity.contents(candidate)
                     .nonEmptyItemCopyStream().map(MinecraftItemIdentity::key)
@@ -2873,7 +2878,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             ItemStack representative = inventory.stream().filter(stack ->
                     !MinecraftItemIdentity.isBox(stack)
-                            && category.equals(MinecraftItemIdentity.base(stack)))
+                            && category.equals(MinecraftItemIdentity.category(stack)))
                     .findFirst().orElseGet(() -> carriedBoxes.stream()
                             .flatMap(stack -> MinecraftItemIdentity.contents(stack)
                                     .nonEmptyItemCopyStream())
@@ -2889,17 +2894,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private void inspectContents(List<ItemStack> contents) {
             targetContents = contents;
             ItemStack representative = inventoryStacks().stream()
-                    .filter(stack -> MinecraftItemIdentity.base(stack).equals(category))
+                    .filter(stack -> MinecraftItemIdentity.category(stack).equals(category))
                     .findFirst().orElseGet(() -> contents.stream()
                             .filter(stack -> !stack.isEmpty()
-                                    && MinecraftItemIdentity.base(stack).equals(category))
+                                    && MinecraftItemIdentity.category(stack).equals(category))
                             .findFirst().orElse(ItemStack.EMPTY));
             stackSize = representative.isEmpty() ? 64 : representative.getMaxStackSize();
             looseLimit = StoragePackingPlanner.looseLimit(policy, contents.size(), stackSize);
             if (policy.mode() == StorageMode.MIXED) {
                 long otherSlots = contents.stream().filter(stack -> !stack.isEmpty()
                         && !MinecraftItemIdentity.isBox(stack)
-                        && !MinecraftItemIdentity.base(stack).equals(category)).count();
+                        && !MinecraftItemIdentity.category(stack).equals(category)).count();
                 looseLimit = Math.max(0, looseLimit - Math.toIntExact(otherSlots) * stackSize);
             }
             List<ItemStack> boxes = inventoryStacks().stream().filter(stack ->
@@ -3151,7 +3156,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Map<String, Integer> items = new LinkedHashMap<>();
             contents.stream().filter(stack -> !stack.isEmpty()
                     && !MinecraftItemIdentity.isBox(stack)
-                    && MinecraftItemIdentity.base(stack).equals(category)).forEach(stack ->
+                    && MinecraftItemIdentity.category(stack).equals(category)).forEach(stack ->
                             items.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
                                     Math::addExact));
             return items;
@@ -3207,7 +3212,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (stackSize == 0) {
                 stackSize = contents.stream().filter(stack -> !stack.isEmpty()
                         && !MinecraftItemIdentity.isBox(stack)
-                        && category.equals(MinecraftItemIdentity.base(stack)))
+                        && category.equals(MinecraftItemIdentity.category(stack)))
                         .findFirst().map(ItemStack::getMaxStackSize).orElse(0);
             }
             if (StoragePackingPlanner.looseLimit(target.storagePolicy(), contents.size(), 1) == 0) {
@@ -3321,7 +3326,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int refillAmount(List<ItemStack> contents, int available) {
             int otherSlots = (int) contents.stream().filter(stack -> !stack.isEmpty()
                     && !MinecraftItemIdentity.isBox(stack)
-                    && !category.equals(MinecraftItemIdentity.base(stack))).count();
+                    && !category.equals(MinecraftItemIdentity.category(stack))).count();
             return StoragePackingPlanner.refillCount(target.storagePolicy(), contents.size(),
                     stackSize, sum(categoryItems(contents)), otherSlots, available);
         }
@@ -3330,7 +3335,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Map<String, Integer> items = new LinkedHashMap<>();
             contents.stream().filter(stack -> !stack.isEmpty()
                     && !MinecraftItemIdentity.isBox(stack)
-                    && category.equals(MinecraftItemIdentity.base(stack))).forEach(stack ->
+                    && category.equals(MinecraftItemIdentity.category(stack))).forEach(stack ->
                             items.merge(MinecraftItemIdentity.key(stack), stack.getCount(),
                                     Math::addExact));
             return items;
@@ -3839,7 +3844,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Map<String, ItemStack> candidates = new LinkedHashMap<>();
             for (ItemStack stack : contents) {
                 if (stack.isEmpty()) continue;
-                if (MinecraftItemIdentity.isBox(stack)) {
+                if (MinecraftItemIdentity.isBox(stack) && !stack.has(DataComponents.CUSTOM_NAME)) {
                     MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream().forEach(item ->
                             candidates.putIfAbsent(MinecraftItemIdentity.key(item), item));
                 } else {
@@ -3920,6 +3925,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private boolean eligibleBox(ItemStack stack) {
+            if (stack.has(DataComponents.CUSTOM_NAME)) {
+                return eligibleItems.contains(MinecraftItemIdentity.key(stack));
+            }
             return MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
                     .map(MinecraftItemIdentity::key).allMatch(eligibleItems::contains);
         }
@@ -4243,6 +4251,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private static boolean isEmptyBox(ItemStack stack) {
         return MinecraftItemIdentity.isBox(stack)
+                && !stack.has(DataComponents.CUSTOM_NAME)
                 && MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream().findAny()
                         .isEmpty();
     }

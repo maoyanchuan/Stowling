@@ -66,7 +66,7 @@ public final class RecordedStorageCapacity {
                 if (ItemIdentity.isBox(entry.key())) {
                     continue;
                 }
-                if (category.equals(entry.itemId())) {
+                if (category.equals(ItemIdentity.category(entry.key()))) {
                     loose += entry.loose();
                     long remainder = entry.loose() % entry.stackSize();
                     if (remainder > 0 && items.containsKey(entry.key())) {

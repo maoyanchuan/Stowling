@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.ContainerTarget;
+import dev.stowling.automation.ClassificationRemainderPlan;
+import dev.stowling.automation.ItemIdentity;
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +64,21 @@ class MixedBoxSelectionTest {
         String variant = STONE + "#variant";
         assertEquals(Set.of(variant), workspace().mixedBoxWithdrawalItems(CACHE,
                 Set.of(variant, UNKNOWN + "#variant")));
+    }
+
+    @Test
+    void namedItemsHaveNoClassificationRouteAndStayForTheUnclassifiableDestination() {
+        String named = STONE + "#variant@" + ItemIdentity.NAMED_ITEM_CATEGORY;
+        TaskRunWorkspace workspace = workspace();
+
+        assertEquals(Set.of(STONE), workspace.mixedBoxWithdrawalItems(CACHE,
+                Set.of(STONE, named)));
+        assertTrue(workspace.classificationTargets(named).isEmpty());
+        assertTrue(workspace.resolvedStorageTargets(named).isEmpty());
+        assertEquals(Set.of(named), ClassificationRemainderPlan.select(
+                Map.of(STONE, workspace.resolvedStorageTargets(STONE),
+                        named, workspace.resolvedStorageTargets(named)),
+                true, (target, key) -> false));
     }
 
     @Test

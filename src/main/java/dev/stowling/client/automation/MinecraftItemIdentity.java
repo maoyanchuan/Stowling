@@ -50,7 +50,8 @@ public final class MinecraftItemIdentity {
         DataComponentPatch patch = normalizedPatch(stack, box);
         if (patch.isEmpty()) return base;
         return VARIANT_KEYS.computeIfAbsent(new Variant(base, patch), variant -> {
-            String category = box ? boxCategory(stack) : "";
+            String category = stack.has(DataComponents.CUSTOM_NAME)
+                    ? ItemIdentity.NAMED_ITEM_CATEGORY : box ? boxCategory(stack) : "";
             return variant.base() + "#s" + SESSION + "-" + Long.toString(NEXT_ID.incrementAndGet(), 36)
                     + (category.isEmpty() ? "" : "@" + category);
         });
@@ -66,7 +67,10 @@ public final class MinecraftItemIdentity {
                     RegistryOps.create(NbtOps.INSTANCE, registries), variant.patch()).result()
                     .orElseThrow(() -> new IllegalStateException("无法生成背包锁定的物品身份"));
             // SNBT preserves tag types and sorts compound keys, including nested compounds.
-            String category = box ? boxCategory(stack) : "";
+            // Keep persisted backpack locks stable when classification rules change.
+            String category = box ? ItemIdentity.boxContentsCategory(contents(stack)
+                    .nonEmptyItemCopyStream().map(MinecraftItemIdentity::base)
+                    .collect(Collectors.toSet())) : "";
             return base + "#p1-" + digest(nbt.toString())
                     + (category.isEmpty() ? "" : "@" + category);
         });
@@ -102,9 +106,15 @@ public final class MinecraftItemIdentity {
         if (!isBox(stack)) {
             return "";
         }
+        if (stack.has(DataComponents.CUSTOM_NAME)) return ItemIdentity.NAMED_ITEM_CATEGORY;
         Set<String> categories = contents(stack).nonEmptyItemCopyStream()
-                .map(MinecraftItemIdentity::base).collect(Collectors.toSet());
+                .map(MinecraftItemIdentity::category).collect(Collectors.toSet());
         return ItemIdentity.boxContentsCategory(categories);
+    }
+
+    /** Custom names bypass ordinary classification and use the unclassifiable destination. */
+    public static String category(ItemStack stack) {
+        return stack.has(DataComponents.CUSTOM_NAME) ? ItemIdentity.NAMED_ITEM_CATEGORY : base(stack);
     }
 
     public static ItemContainerContents contents(ItemStack stack) {

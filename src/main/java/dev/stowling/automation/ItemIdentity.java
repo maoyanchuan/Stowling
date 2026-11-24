@@ -2,9 +2,10 @@ package dev.stowling.automation;
 
 import java.util.Set;
 
-/** Exact inventory keys retain a readable base ID and, for boxes, their category. */
+/** Exact inventory keys retain a readable base ID and an optional routing category. */
 public final class ItemIdentity {
     public static final String MIXED_BOX_CATEGORY = "stowling:mixed_contents";
+    public static final String NAMED_ITEM_CATEGORY = "stowling:named_item";
 
     private ItemIdentity() {
     }

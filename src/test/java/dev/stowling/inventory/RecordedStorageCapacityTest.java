@@ -15,6 +15,22 @@ import org.junit.jupiter.api.Test;
 
 class RecordedStorageCapacityTest {
     @Test
+    void namedItemsOccupySeparateLooseSlotsInsteadOfReducingTheOrdinaryItemCount() {
+        String stone = "minecraft:stone";
+        String named = stone + "#variant@stowling:named_item";
+        var entry = new WarehouseInventory.Entry(named, stone, "Named stone", 32, 0, 64);
+        var stock = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                List.of(new BlockPosition(1, 64, 0)), Instant.ofEpochSecond(1),
+                54, 1, 0, 0, 0, List.of(entry), List.of());
+        var policy = new StoragePolicy(StorageMode.MIXED, 50, true, null, false, 27, null);
+
+        assertTrue(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(stone, 1696), Map.of(stone, 64)));
+        assertFalse(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(stone, 1664), Map.of(stone, 64)));
+    }
+
+    @Test
     void threeFullBoxesAndOnePartialNeedNoSpareForTwoExcessItemsAndOneIncomingItem() {
         String item = "minecraft:oak_sapling";
         var loose = new WarehouseInventory.Entry(item, item, "Loose", 27 * 64 + 2, 0, 64);

@@ -206,7 +206,7 @@ public record AutoClassifyDefinition(
         var boxWarehouse = cleanupPolicy.emptyBoxWarehouse();
         if (boxWarehouse != null && boxWarehouse.enabled()
                 && boxWarehouse.warehouseRef().equals(cacheLocationRef)) {
-            throw new IllegalArgumentException("空盒仓库和来源缓存必须使用不同的位置");
+            throw new IllegalArgumentException("空盒仓库和物品来源必须使用不同的位置");
         }
         id = Objects.requireNonNull(id, "id");
         name = requireName(name);
@@ -245,7 +245,7 @@ public record AutoClassifyDefinition(
                 )
         );
         if (classificationEnabled && classificationAreas.isEmpty() && unstackableRegionRef == null) {
-            throw new IllegalArgumentException("请至少添加一个分类选区");
+            throw new IllegalArgumentException("请至少添加一个目标分类区");
         }
         long uniqueZones = classificationAreas.stream()
                 .map(AutoClassifyAreaDefinition::categoryZoneRef)

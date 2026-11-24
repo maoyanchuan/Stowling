@@ -198,19 +198,20 @@
         }
 
         const cache = String(draft?.cacheLocationRef || "");
+        const sourceLabel = draft?.kind === "CLASSIFICATION" ? "物品来源" : "缓存位置";
         const boxes = draft?.facilities?.emptyBoxWarehouse;
         if (draft?.kind === "CLASSIFICATION" && boxes?.enabled) {
             const places = [...(resources?.coordinates || []).map(item => "coordinate:" + item.id),
                 ...(resources?.regions || []).map(item => "region:" + item.id)];
             if (!places.includes(boxes.warehouseRef)) errors.push("请选择有效的空盒仓库");
-            if (boxes.warehouseRef === cache) errors.push("空盒仓库和来源缓存必须使用不同的位置");
+            if (boxes.warehouseRef === cache) errors.push("空盒仓库和物品来源必须使用不同的位置");
             if (!Number.isInteger(boxes.cacheLimit) || boxes.cacheLimit < 0
                 || boxes.cacheLimit > 3456) errors.push("缓存空盒保留数量必须为 0 到 3456 的整数");
         }
         if (!cache) {
-            errors.push("请选择缓存位置");
+            errors.push(`请选择${sourceLabel}`);
         } else if (!cacheLocations(resources).some(item => item.id === cache)) {
-            errors.push("所选缓存位置不存在，请重新选择");
+            errors.push(`所选${sourceLabel}不存在，请重新选择`);
         }
         if (draft?.overflowEnabled && !resourceExists(resources, "warehouses",
                 referencedId(draft.overflowDestinationRef, "warehouse"))) {
@@ -298,7 +299,7 @@
         if (!draft?.classificationEnabled) return;
         const areas = draft?.classificationAreas;
         if (!Array.isArray(areas) || areas.length === 0) {
-            errors.push("请至少添加一个分类选区");
+            errors.push("请至少添加一个目标分类区");
             return;
         }
         const zoneIds = new Set();
@@ -307,11 +308,11 @@
             const zone = resourceList(resources, "categoryZones")
                 .find((value) => String(value?.id ?? "") === zoneId);
             if (!zone) {
-                errors.push("分类选区引用的分类区不存在，请刷新后重试");
+                errors.push("所选目标分类区不存在，请重新选择");
                 continue;
             }
             if (zoneIds.has(zoneId)) {
-                errors.push("同一个分类选区不能重复添加");
+                errors.push("同一个目标分类区不能重复添加");
             }
             zoneIds.add(zoneId);
         }

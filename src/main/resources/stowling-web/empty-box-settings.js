@@ -28,7 +28,7 @@
         const limitBody = S.element("div", "");
         limitBody.append(limitRow);
         const retained = Settings.optionalSection("缓存留存空盒",
-            "整个来源缓存合计保留至上限，超出归还仓库；不足时不主动补足。", retain, limitBody);
+            "物品来源内的空盒合计保留至上限，超出归还仓库；不足时不主动补足。", retain, limitBody);
         const body = S.element("div", "");
         body.append(locationRow, retained.root);
         const section = Settings.optionalSection("空盒仓库",

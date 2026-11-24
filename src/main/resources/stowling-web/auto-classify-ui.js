@@ -205,7 +205,7 @@
     function appendClassificationArea(area, index) {
         const range = document.createElement("select");
         range.required = true;
-        const empty = new Option("请选择分类选区", "");
+        const empty = new Option("请选择目标分类区", "");
         range.append(empty);
         for (const zone of state.resources.categoryZones) {
             const option = new Option(
@@ -218,7 +218,7 @@
             (zone) => zone.id === area.categoryZoneId
         );
         if (!selectedZone && area.categoryZoneId) {
-            const missing = new Option("原分类选区已删除，请重新选择", "");
+            const missing = new Option("原目标分类区已删除，请重新选择", "");
             missing.disabled = true;
             range.append(missing);
         }
@@ -226,15 +226,14 @@
 
         const fields = Stowling.element("div", "auto-area-fields");
         fields.append(
-            labeledControl(state.draft.kind === "CLASSIFICATION" ? "分类储存区" : "分类范围",
-                range),
+            labeledControl("目标分类区", range),
             Stowling.element("p", "settings-description compact-help",
                 "储存模式和识别方式使用坐标页面中所选分类区及绑定组的设置。")
         );
         wrapSettingsContent(fields);
         const disclosure = window.StowlingSettings.disclosure(
-            `分类选区 ${index + 1}`,
-            selectedZone?.name || "请选择分类范围", fields);
+            `目标分类区 ${index + 1}`,
+            selectedZone?.name || "请选择目标分类区", fields);
         disclosure.root.classList.add("auto-classification-area");
         const remove = Stowling.element("button", "ghost compact danger-action", "移除");
         remove.type = "button";
@@ -312,7 +311,8 @@
             "请选择坐标页面的检测点");
         Picker.group(elements.point, "coordinate");
         populateSelect(elements.cache, Auto.cacheLocations(state.resources),
-            draft.cacheLocationRef, "请选择缓存位置");
+            draft.cacheLocationRef,
+            draft.kind === "CLASSIFICATION" ? "请选择物品来源" : "请选择缓存位置");
         Picker.group(elements.cache);
         populateSelect(elements.warehouse, state.resources.warehouses.map(item => ({
             ...item, id: "warehouse:" + item.id
@@ -404,7 +404,8 @@
                     .categoryZones.find((zone) => zone.id === area.categoryZoneId)
                     ?.name || "分类区已删除")
             )];
-            const source = cache?.name || "缓存位置已删除";
+            const source = cache?.name || (item.kind === "CLASSIFICATION"
+                ? "物品来源已删除" : "缓存位置已删除");
             let description = source;
             if (item.kind === "PICKUP") {
                 description = "缓存 · " + source;
@@ -515,7 +516,7 @@
             : "M12 3 3 7.5v9L12 21l9-4.5v-9L12 3ZM3 7.5l9 4.5 9-4.5M12 12v9");
         elements.draftRun.hidden = !classification;
         elements.combinedPreview.hidden = Boolean(kind);
-        elements.cacheLabel.textContent = classification ? "来源缓存" : "缓存位置";
+        elements.cacheLabel.textContent = classification ? "物品来源" : "缓存位置";
         elements.followUpField.hidden = !pickup;
         elements.followUpDescription.textContent = !elements.followUpEnabled.checked
             ? "不创建任务" : elements.followUp.value

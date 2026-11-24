@@ -188,7 +188,7 @@ def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     assert result == {
         "areas": [{"categoryZoneRef": "category-zone:tools"}],
         "hasLegacyField": False,
-        "missingLayout": ["请至少添加一个分类选区"],
+        "missingLayout": ["请至少添加一个目标分类区"],
     }
 
 
@@ -554,7 +554,7 @@ def test_deleted_resource_references_are_reported_per_resource() -> None:
     assert result == [
         "所选掉落物检测点不存在，请刷新后重试",
         "所选缓存位置不存在，请重新选择",
-        "分类选区引用的分类区不存在，请刷新后重试",
+        "所选目标分类区不存在，请重新选择",
     ]
 
 
@@ -753,7 +753,7 @@ def test_classification_areas_reject_duplicate_zones() -> None:
         """
     )
 
-    assert result == ["同一个分类选区不能重复添加"]
+    assert result == ["同一个目标分类区不能重复添加"]
 
 
 def test_cache_policy_defaults_and_selected_settings_survive_payload_round_trip() -> None:

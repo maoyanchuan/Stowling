@@ -187,7 +187,7 @@ def test_task_areas_keep_collapsed_disclosures_without_a_storage_editor() -> Non
     html = (WEB / "tasks.html").read_text(encoding="utf-8")
     css = (WEB / "workbench.css").read_text(encoding="utf-8")
     assert 'StowlingSettings.disclosure(' in source
-    assert 'selectedZone?.name || "请选择分类范围", fields)' in source
+    assert 'selectedZone?.name || "请选择目标分类区", fields)' in source
     assert 'areaReaders.forEach(reader => reader.collapse())' in source
     assert '.auto-config-section[data-enabled="false"] .move-task-chevron' in css
     assert 'transform: rotate(-45deg)' in css

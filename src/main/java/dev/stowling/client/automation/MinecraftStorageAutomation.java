@@ -3926,7 +3926,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             var warehouseTargets = emptyBoxWarehouse(context);
             if (caches.stream().anyMatch(cache -> warehouseTargets.stream()
                     .anyMatch(target -> sameContainer(cache, target)))) {
-                throw new IllegalStateException("空盒仓库不能与来源缓存重叠，请调整区域");
+                throw new IllegalStateException("空盒仓库不能与物品来源重叠，请调整区域");
             }
             inspectCaches(0);
         }

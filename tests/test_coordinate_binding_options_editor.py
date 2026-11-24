@@ -100,6 +100,90 @@ def selected(root: Any, key: str) -> str:
     return root.locator(f'[data-category-select="{key}"] select').input_value()
 
 
+@pytest.mark.parametrize("width", [1440, 900, 761])
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_directory_fills_the_left_column_without_stretching_rows(
+    editor_page: Any, width: int, theme: str,
+) -> None:
+    page = editor_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    bounds = page.locator("#coordinate-list").evaluate("""list => {
+        const library = list.closest('.coordinate-library').getBoundingClientRect();
+        const editor = document.querySelector('.coordinate-editor').getBoundingClientRect();
+        const footer = document.querySelector('#library-footer').getBoundingClientRect();
+        const rect = list.getBoundingClientRect();
+        const root = list.querySelector('.coordinate-root-list').getBoundingClientRect();
+        return {height: rect.height, footerGap: footer.top - rect.bottom,
+            unusedSpace: rect.bottom - root.bottom,
+            rowHeights: Array.from(list.querySelectorAll('.coordinate-item'),
+                item => item.getBoundingClientRect().height),
+            libraryBottom: library.bottom, editorBottom: editor.bottom};
+    }""")
+    assert bounds["height"] > 360
+    assert bounds["footerGap"] == pytest.approx(16, abs=1)
+    assert bounds["unusedSpace"] > 100
+    assert bounds["rowHeights"] and all(height < 100 for height in bounds["rowHeights"])
+    assert bounds["libraryBottom"] == pytest.approx(bounds["editorBottom"], abs=1)
+
+
+def extend_directory(page: Any, count: int) -> None:
+    page.locator("#coordinate-list").evaluate("""(list, count) => {
+        const root = list.querySelector('.coordinate-root-list');
+        const item = root.querySelector('.coordinate-item');
+        for (let index = 0; index < count; index += 1) {
+            const copy = item.cloneNode(true);
+            copy.removeAttribute('id');
+            copy.removeAttribute('aria-current');
+            root.append(copy);
+        }
+    }""", count)
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_long_directory_scrolls_inside_the_full_column(editor_page: Any, theme: str) -> None:
+    page = editor_page
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    library = page.locator(".coordinate-library")
+    original_height = library.evaluate("node => node.getBoundingClientRect().height")
+    listing = page.locator("#coordinate-list")
+    extend_directory(page, 60)
+    assert library.evaluate("node => node.getBoundingClientRect().height") == pytest.approx(
+        original_height, abs=1,
+    )
+    assert listing.evaluate("node => node.scrollHeight > node.clientHeight")
+    listing.locator(".coordinate-item").last.scroll_into_view_if_needed()
+    assert listing.evaluate("""list => {
+        const item = list.querySelector('.coordinate-root-list').lastElementChild;
+        const rect = item.getBoundingClientRect();
+        const viewport = list.getBoundingClientRect();
+        return list.scrollTop > 0 && rect.top >= viewport.top - 1
+            && rect.bottom <= viewport.bottom + 1;
+    }""")
+
+
+@pytest.mark.parametrize("width", [760, 390])
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_narrow_directory_expands_with_its_content_above_the_editor(
+    editor_page: Any, width: int, theme: str,
+) -> None:
+    page = editor_page
+    page.set_viewport_size({"width": width, "height": 844})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    extend_directory(page, 15)
+    bounds = page.locator("#coordinate-list").evaluate("""list => {
+        const library = list.closest('.coordinate-library').getBoundingClientRect();
+        const editor = document.querySelector('.coordinate-editor').getBoundingClientRect();
+        return {height: list.clientHeight, contentHeight: list.scrollHeight,
+            libraryBottom: library.bottom, editorTop: editor.top,
+            pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth};
+    }""")
+    assert bounds["height"] > 250
+    assert bounds["height"] == pytest.approx(bounds["contentHeight"], abs=1)
+    assert bounds["editorTop"] >= bounds["libraryBottom"]
+    assert bounds["pageWidth"] <= bounds["viewportWidth"]
+
+
 @pytest.mark.parametrize("independent", [False, True])
 def test_bulk_ratio_inherits_and_keeps_saved_and_copied_drafts(
     editor_page: Any, independent: bool,

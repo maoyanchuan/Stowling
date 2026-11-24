@@ -27,7 +27,8 @@
     display: none !important;
 }
 
-:root body[data-coordinate-editor] .coordinate-shell input {
+:root body[data-coordinate-editor] .coordinate-shell input[type="text"]:enabled,
+:root body[data-coordinate-editor] .coordinate-shell input[type="number"]:enabled {
     cursor: text;
 }
 

@@ -1177,6 +1177,22 @@ select {
     margin: 0;
 }
 
+.category-bulk-ratio {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.category-bulk-ratio input {
+    min-width: 0;
+}
+
+.category-bulk-ratio span {
+    flex: 0 0 auto;
+    color: var(--muted);
+}
+
 .category-binding-remove {
     min-height: 32px;
     padding: 5px 10px;
@@ -1750,6 +1766,16 @@ select {
                                                 </div>
                                             </div>
                                         </div>
+                                        <div id="category-bulk-ratio-row" class="category-option-sub"
+                                             data-collapsed="true" hidden>
+                                            <label class="category-option-label"
+                                                   for="category-bulk-stacks">散货占比</label>
+                                            <div class="category-bulk-ratio">
+                                                <input id="category-bulk-stacks" type="number"
+                                                       min="0" max="54" step="1" value="27">
+                                                <span>/54 组</span>
+                                            </div>
+                                        </div>
                                         <div id="category-no-cache-row" class="category-option-sub"
                                              data-collapsed="true">
                                             <span class="category-option-label">不满盒存储位置</span>
@@ -1830,6 +1856,54 @@ select {
                                                        maxlength="80" placeholder="例如：minecraft:stone">
                                             </label>
                                         </div>
+                                        <div id="category-standing-option-row"
+                                             class="category-option-row">
+                                            <label class="category-option-label"
+                                                   for="category-specify-standing">
+                                                指定站立位置
+                                            </label>
+                                            <div class="category-option-actions">
+                                                <button id="category-standing-expand"
+                                                        class="category-option-expand" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="category-standing-row"
+                                                        aria-label="展开站立坐标设置" hidden>
+                                                    <svg aria-hidden="true" width="18" height="18"
+                                                         viewBox="0 0 24 24" fill="none"
+                                                         stroke="currentColor" stroke-width="1.8">
+                                                        <path d="m9 18 6-6-6-6"/>
+                                                    </svg>
+                                                </button>
+                                                <label class="category-option-switch"
+                                                       for="category-specify-standing">
+                                                    <input id="category-specify-standing"
+                                                           type="checkbox" role="switch"
+                                                           aria-controls="category-standing-row"
+                                                           aria-expanded="false">
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div id="category-standing-row"
+                                             class="category-option-sub" data-collapsed="true" hidden>
+                                            <span class="category-option-label">站立坐标</span>
+                                            <div class="coordinate-corner-fields">
+                                                <label class="field-label" for="category-standing-x">
+                                                    X
+                                                    <input id="category-standing-x" type="number"
+                                                           step="1" value="0">
+                                                </label>
+                                                <label class="field-label" for="category-standing-y">
+                                                    Y
+                                                    <input id="category-standing-y" type="number"
+                                                           step="1" value="64">
+                                                </label>
+                                                <label class="field-label" for="category-standing-z">
+                                                    Z
+                                                    <input id="category-standing-z" type="number"
+                                                           step="1" value="0">
+                                                </label>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="category-binding-section">
                                         <div class="category-binding-heading">
@@ -1886,7 +1960,8 @@ select {
 
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
-     * supportBlock: string}} CategoryOptions */
+     * supportBlock: string, bulkStacks: number, specifyStanding: boolean,
+     * standingPosition: CoordinateCorner}} CategoryOptions */
 
     /** @typedef {{key: string, select: HTMLSelectElement, wrap: HTMLElement,
      * trigger: HTMLButtonElement, current: HTMLElement, menu: HTMLElement,
@@ -1982,8 +2057,8 @@ select {
     };
 
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
-     * selects: CategorySelect[], supportExpanded: boolean,
-     * initialized?: boolean}} CategoryOptionsContext */
+     * selects: CategorySelect[], supportExpanded: boolean, standingExpanded: boolean,
+     * initialized?: boolean, active?: boolean}} CategoryOptionsContext */
 
     const globalCategoryContext = createCategoryOptionsContext(
         document.querySelector(".category-options")
@@ -1994,7 +2069,8 @@ select {
         const fields = {};
         for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
             "no-cache-location", "ignore-support", "support-expand", "support-block-row",
-            "support-block"]) {
+            "support-block", "bulk-ratio-row", "bulk-stacks", "specify-standing",
+            "standing-expand", "standing-row", "standing-x", "standing-y", "standing-z"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
@@ -2007,7 +2083,7 @@ select {
                 menu: wrap.querySelector(".category-select-menu"),
                 options: Array.from(wrap.querySelectorAll(".category-select-option"))
             }));
-        return {root, fields, selects, supportExpanded: false};
+        return {root, fields, selects, supportExpanded: false, standingExpanded: false};
     }
 
     /** @param {HTMLElement} content @param {boolean} expanded
@@ -2230,7 +2306,10 @@ select {
             storageMethod: "bulk",
             noCacheLocation: "inside-box",
             ignoreSupportBlock: false,
-            supportBlock: ""
+            supportBlock: "",
+            bulkStacks: 27,
+            specifyStanding: false,
+            standingPosition: emptyCorner()
         };
     }
 
@@ -2258,7 +2337,13 @@ select {
         fields["no-cache-location"].value = values.noCacheLocation;
         fields["ignore-support"].checked = values.ignoreSupportBlock;
         fields["support-block"].value = values.supportBlock;
+        fields["bulk-stacks"].value = String(values.bulkStacks);
+        fields["specify-standing"].checked = values.specifyStanding;
+        writeCornerFields({
+            x: fields["standing-x"], y: fields["standing-y"], z: fields["standing-z"]
+        }, values.standingPosition);
         context.supportExpanded = values.ignoreSupportBlock;
+        context.standingExpanded = values.specifyStanding;
         updateCategoryOptionState(context, false);
     }
 
@@ -2271,14 +2356,43 @@ select {
             storageMethod: fields["storage-method"].value,
             noCacheLocation: fields["no-cache-location"].value,
             ignoreSupportBlock: fields["ignore-support"].checked,
-            supportBlock: fields["support-block"].value.trim()
+            supportBlock: fields["support-block"].value.trim(),
+            bulkStacks: fields["bulk-stacks"].valueAsNumber,
+            specifyStanding: fields["specify-standing"].checked,
+            standingPosition: {
+                x: fields["standing-x"].valueAsNumber,
+                y: fields["standing-y"].valueAsNumber,
+                z: fields["standing-z"].valueAsNumber
+            }
         };
+    }
+
+    /** @param {CategoryOptionsContext} context @returns {boolean} */
+    function validateCategoryOptions(context) {
+        if (context.active === false) return true;
+        const fields = context.fields;
+        if (fields["storage-method"].value === "mixed") {
+            const stacks = fields["bulk-stacks"].valueAsNumber;
+            if (!Number.isInteger(stacks) || stacks < 0 || stacks > 54) {
+                setStatus("散货占比请填写 0 到 54 之间的整数组数。", "error");
+                return false;
+            }
+        }
+        if (fields["specify-standing"].checked && ["x", "y", "z"].some(axis =>
+            !Number.isInteger(fields[`standing-${axis}`].valueAsNumber))) {
+            setStatus("请填写站立位置的 X、Y、Z 整数坐标。", "error");
+            return false;
+        }
+        return true;
     }
 
     /** @param {CategoryOptionsContext} [context] @param {boolean} [animate]
      * @returns {void} */
     function updateCategoryOptionState(context = globalCategoryContext, animate = true) {
         const fields = context.fields;
+        const mixedStorage = fields["storage-method"].value === "mixed";
+        fields["bulk-stacks"].disabled = !mixedStorage || context.active === false;
+        reveal(fields["bulk-ratio-row"], mixedStorage, animate);
         const hasStorageLocation = ["mixed", "box"].includes(fields["storage-method"].value);
         fields["no-cache-location"].disabled = !hasStorageLocation;
         context.selects.forEach(syncCategorySelect);
@@ -2293,6 +2407,20 @@ select {
         );
         reveal(fields["support-block-row"], expanded, animate);
         fields["support-block"].disabled = !ignoreSupport;
+        const specifyStanding = fields["specify-standing"].checked;
+        const standingExpanded = specifyStanding && context.standingExpanded;
+        fields["standing-expand"].hidden = !specifyStanding;
+        fields["standing-expand"].disabled = !specifyStanding;
+        for (const control of [fields["standing-expand"], fields["specify-standing"]]) {
+            control.setAttribute("aria-expanded", String(standingExpanded));
+        }
+        fields["standing-expand"].setAttribute(
+            "aria-label", `${standingExpanded ? "收起" : "展开"}站立坐标设置`
+        );
+        reveal(fields["standing-row"], standingExpanded, animate);
+        for (const axis of ["x", "y", "z"]) {
+            fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
+        }
     }
 
     /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
@@ -2437,6 +2565,8 @@ select {
                 writeCategoryOptions(readCategoryOptions(), context);
                 context.initialized = true;
             }
+            context.active = enabled.checked;
+            updateCategoryOptionState(context, false);
             enabled.setAttribute("aria-expanded", String(enabled.checked));
             if (!enabled.checked && categoryMenuOpen
                     && context.root.contains(categoryMenuOpen.wrap)) {
@@ -2704,7 +2834,12 @@ select {
         const copy = {...source, id: nextId(), name: `${source.name} 副本`};
         if (source.region) copy.region = cloneRegion(source.region);
         if (source.overallRegion) copy.overallRegion = cloneRegion(source.overallRegion);
-        if (source.categoryOptions) copy.categoryOptions = {...source.categoryOptions};
+        if (source.categoryOptions) {
+            copy.categoryOptions = {
+                ...source.categoryOptions,
+                standingPosition: {...source.categoryOptions.standingPosition}
+            };
+        }
         if (source.bindings) {
             copy.bindings = source.bindings.map(binding => ({
                 id: nextId(),
@@ -2712,7 +2847,10 @@ select {
                 markerRegion: cloneRegion(binding.markerRegion),
                 storageRegion: cloneRegion(binding.storageRegion),
                 optionsEnabled: Boolean(binding.optionsEnabled),
-                categoryOptions: binding.categoryOptions ? {...binding.categoryOptions} : undefined
+                categoryOptions: binding.categoryOptions ? {
+                    ...binding.categoryOptions,
+                    standingPosition: {...binding.categoryOptions.standingPosition}
+                } : undefined
             }));
         }
         return copy;
@@ -3054,6 +3192,10 @@ select {
             delete coordinate.bindings;
             delete coordinate.categoryOptions;
         } else {
+            const contexts = [globalCategoryContext, ...Array.from(
+                nodes.categoryBindings.children, card => bindingOptions.get(card)
+            )];
+            if (!contexts.every(validateCategoryOptions)) return;
             const overallRegion = readRegionFields(nodes.categoryOverall);
             const bindings = readCategoryBindings();
             if (!overallRegion || !bindings) {
@@ -3213,6 +3355,15 @@ select {
         });
         fields["ignore-support"].addEventListener("change", () => {
             context.supportExpanded = fields["ignore-support"].checked;
+            updateCategoryOptionState(context);
+        });
+        fields["standing-expand"].addEventListener("click", () => {
+            if (!fields["specify-standing"].checked) return;
+            context.standingExpanded = !context.standingExpanded;
+            updateCategoryOptionState(context);
+        });
+        fields["specify-standing"].addEventListener("change", () => {
+            context.standingExpanded = fields["specify-standing"].checked;
             updateCategoryOptionState(context);
         });
     }

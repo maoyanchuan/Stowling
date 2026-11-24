@@ -54,13 +54,15 @@ def test_category_highlights_leave_space_around_labels_and_controls(
     page.set_viewport_size({"width": width, "height": 1000})
     page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
     rows = page.locator(".category-option-row, .category-option-sub")
-    assert rows.count() == 6
+    template_fields = page.locator("#category-standing-option-row").count()
+    assert rows.count() == 6 + 3 * template_fields
     for row in rows.all():
         bounds = row.bounding_box()
         label = row.locator(".category-option-label").bounding_box()
         control = row.locator(
             ":scope > .category-select-wrap, :scope > .category-option-actions, "
-            ":scope > .field-label"
+            ":scope > .field-label, :scope > .category-bulk-ratio, "
+            ":scope > .coordinate-corner-fields"
         ).bounding_box()
         assert bounds is not None and label is not None and control is not None
         inset = row.evaluate("""row => {

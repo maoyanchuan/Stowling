@@ -127,6 +127,7 @@ def test_template_header_separates_disclosure_and_listening(eat_page: Any) -> No
     toggle.press("Enter")
     settle(page)
     assert page.locator("#auto-eat-threshold").is_enabled()
+    assert page.locator("#auto-eat-interval").input_value() == "1"
     assert not card.locator(".pickup-task-header").get_by_role("switch").is_checked()
     assert page.evaluate("backend.requests.filter(item => item.method !== 'GET')") == []
 
@@ -277,12 +278,18 @@ def test_new_draft_keeps_template_and_becomes_a_paused_saved_task(eat_page: Any)
     page.locator("#new-auto-eat").click()
     assert page.locator("#auto-eat-draft").is_visible()
     assert page.locator("#auto-eat-draft .pickup-task-header h3").count() == 1
+    assert page.locator("#auto-eat-interval").input_value() == "60"
     page.wait_for_function("backend.tasks.length === 2")
     assert page.locator("#auto-eat-draft").is_hidden()
     card = page.locator('#auto-eat-list article[data-task-id="eat/new"]')
     assert card.locator("h3").inner_text() == "自动进食 2"
     assert not card.locator(".pickup-task-header").get_by_role("switch").is_checked()
     assert card.locator("#auto-eat-form").is_visible()
+    assert card.locator("#auto-eat-interval").input_value() == "60"
+    assert page.evaluate("backend.tasks[1].settings.intervalSeconds") == 60
+    writes = page.evaluate("backend.requests.filter(item => item.method === 'POST')")
+    assert len(writes) == 1
+    assert writes[0]["body"]["intervalSeconds"] == 60
 
 
 @pytest.mark.parametrize("theme", ["green", "gray"])

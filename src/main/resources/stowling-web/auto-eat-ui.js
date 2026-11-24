@@ -207,7 +207,7 @@
     function fillForm(settings) {
         $("auto-eat-food").value = settings?.foodItemId ?? "minecraft:bread";
         $("auto-eat-threshold").value = settings?.foodLevelThreshold ?? 18;
-        $("auto-eat-interval").value = settings?.intervalSeconds ?? 1;
+        $("auto-eat-interval").value = settings?.intervalSeconds ?? 60;
         $("auto-eat-priority").value = settings?.priority ?? "URGENT";
         source.checked = settings?.autoRefill ?? Boolean(settings?.coordinateId);
         refillCount.value = settings?.refillCount ?? 64;

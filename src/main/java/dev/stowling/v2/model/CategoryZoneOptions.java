@@ -14,7 +14,8 @@ public record CategoryZoneOptions(
         boolean ignoreSupportBlock,
         String supportBlock,
         Boolean specifyStanding,
-        BlockPosition standingPosition
+        BlockPosition standingPosition,
+        Integer bulkStacks
 ) {
     public CategoryZoneOptions {
         scopeMode = choice(scopeMode, "single", Set.of("single", "selection"));
@@ -24,12 +25,24 @@ public record CategoryZoneOptions(
         noCacheLocation = choice(noCacheLocation, "inside-box", Set.of("inside-box", "specified"));
         cacheDestination = cacheDestination == null ? "" : cacheDestination.trim();
         supportBlock = supportBlock == null ? "" : supportBlock.trim();
+        if (bulkStacks != null && (bulkStacks < 0 || bulkStacks > 54)) {
+            throw new IllegalArgumentException("散货占比请填写 0 到 54 之间的整数组数");
+        }
         if (Boolean.TRUE.equals(specifyStanding) && standingPosition == null) {
             throw new IllegalArgumentException("请填写站立位置的 X、Y、Z 整数坐标");
         }
         if (Boolean.TRUE.equals(specifyStanding) && standingPosition.y() == Integer.MAX_VALUE) {
             throw new IllegalArgumentException("站立脚下方块 Y 坐标过大");
         }
+    }
+
+    public CategoryZoneOptions(
+            String scopeMode, String recognitionMode, String storageMethod,
+            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
+            String supportBlock, Boolean specifyStanding, BlockPosition standingPosition
+    ) {
+        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
+                ignoreSupportBlock, supportBlock, specifyStanding, standingPosition, null);
     }
 
     public CategoryZoneOptions(
@@ -77,7 +90,8 @@ public record CategoryZoneOptions(
             throw new IllegalArgumentException("请选择指定缓存位置");
         }
         return new StoragePolicy(mode, base.loosePercent(), base.allowPartialBoxes(),
-                base.packingArea(), base.refillLoose(), base.looseSlots(),
+                base.packingArea(), base.refillLoose(),
+                bulkStacks == null ? base.looseSlots() : bulkStacks,
                 "specified".equals(noCacheLocation) ? cacheDestination : null);
     }
 

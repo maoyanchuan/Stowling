@@ -465,7 +465,18 @@ public final class ConfigStore {
         JsonObject options = requireObject(value, path);
         requireFields(options, path, Set.of("scopeMode", "recognitionMode",
                 "storageMethod", "noCacheLocation", "cacheDestination", "ignoreSupportBlock",
-                "supportBlock", "specifyStanding", "standingPosition"), Set.of());
+                "supportBlock", "specifyStanding", "standingPosition", "bulkStacks"), Set.of());
+        JsonElement stacks = options.get("bulkStacks");
+        if (stacks != null && !stacks.isJsonNull()) {
+            if (!stacks.isJsonPrimitive() || !stacks.getAsJsonPrimitive().isNumber()) {
+                throw new V2ValidationException("散货占比必须使用整数");
+            }
+            try {
+                stacks.getAsBigDecimal().intValueExact();
+            } catch (ArithmeticException | NumberFormatException exception) {
+                throw new V2ValidationException("散货占比必须使用整数", exception);
+            }
+        }
         JsonElement position = options.get("standingPosition");
         if (position != null && !position.isJsonNull()) {
             JsonObject coordinates = requireObject(position, path + ".standingPosition");

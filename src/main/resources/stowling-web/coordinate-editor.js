@@ -12,7 +12,7 @@
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
      * supportBlock: string, cacheDestination: string, expansionDirection: string,
-     * expansionStep: number, specifyStanding: boolean|null,
+     * expansionStep: number, bulkStacks: number, specifyStanding: boolean|null,
      * standingPosition: CoordinateCorner|null}} CategoryOptions */
 
     /** @typedef {{key: string, select: HTMLSelectElement, wrap: HTMLElement,
@@ -119,7 +119,8 @@
         const fields = {};
         for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
             "no-cache-location", "ignore-support", "support-expand", "support-block-row",
-            "support-block", "specify-standing", "standing-expand", "standing-row",
+            "support-block", "bulk-ratio-row", "bulk-stacks", "specify-standing",
+            "standing-expand", "standing-row",
             "standing-x", "standing-y", "standing-z"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
@@ -373,6 +374,7 @@
             cacheDestination: "",
             expansionDirection: "AUTO",
             expansionStep: 1,
+            bulkStacks: 27,
             specifyStanding: false,
             standingPosition: emptyCorner()
         };
@@ -397,6 +399,7 @@
         const values = {...defaultCategoryOptions(), ...options};
         // Missing fields belong to older clients whose standing areas must survive editing.
         values.specifyStanding = options.specifyStanding ?? null;
+        values.bulkStacks = options.bulkStacks ?? 27;
         context.values = values;
         populateCacheOptions(context);
         const fields = context.fields;
@@ -417,6 +420,7 @@
             ? values.cacheDestination : "inside-box";
         fields["ignore-support"].checked = values.ignoreSupportBlock;
         fields["support-block"].value = values.supportBlock;
+        fields["bulk-stacks"].value = String(values.bulkStacks);
         fields["specify-standing"].checked = Boolean(values.specifyStanding);
         writeCornerFields({
             x: fields["standing-x"], y: fields["standing-y"], z: fields["standing-z"]
@@ -440,6 +444,7 @@
                 ? "" : fields["no-cache-location"].value,
             ignoreSupportBlock: fields["ignore-support"].checked,
             supportBlock: fields["support-block"].value.trim(),
+            bulkStacks: fields["bulk-stacks"].valueAsNumber,
             specifyStanding: context.values.specifyStanding === null
                 ? null : fields["specify-standing"].checked,
             standingPosition: {
@@ -453,6 +458,9 @@
     /** @param {CategoryOptionsContext} [context] @param {boolean} [animate] @returns {void} */
     function updateCategoryOptionState(context = globalCategoryContext, animate = true) {
         const fields = context.fields;
+        const mixedStorage = fields["storage-method"].value === "mixed";
+        fields["bulk-stacks"].disabled = !mixedStorage || context.active === false;
+        reveal(fields["bulk-ratio-row"], mixedStorage, animate);
         const hasStorageLocation = ["mixed", "box"].includes(fields["storage-method"].value);
         fields["no-cache-location"].disabled = !hasStorageLocation;
         context.selects.forEach(syncCategorySelect);

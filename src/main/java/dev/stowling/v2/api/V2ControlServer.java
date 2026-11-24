@@ -1312,7 +1312,7 @@ public final class V2ControlServer implements AutoCloseable {
         JsonObject options = jsonObject(value, "categoryOptions");
         requireFieldsAny(options, Set.of("scopeMode", "recognitionMode", "storageMethod",
                 "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock",
-                "specifyStanding", "standingPosition"),
+                "specifyStanding", "standingPosition", "bulkStacks"),
                 Set.of());
         dev.stowling.domain.BlockPosition position = null;
         JsonElement point = options.get("standingPosition");
@@ -1328,7 +1328,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalString(options, "cacheDestination"),
                 optionalBoolean(options, "ignoreSupportBlock"),
                 optionalString(options, "supportBlock"),
-                optionalBooleanValue(options, "specifyStanding"), position);
+                optionalBooleanValue(options, "specifyStanding"), position,
+                optionalInteger(options, "bulkStacks"));
     }
 
     private static dev.stowling.v2.model.StoragePolicy storagePolicy(JsonObject binding) {

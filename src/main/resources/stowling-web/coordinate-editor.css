@@ -1182,6 +1182,22 @@
     margin: 0;
 }
 
+:root body[data-coordinate-editor] .category-bulk-ratio {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+:root body[data-coordinate-editor] .category-bulk-ratio input {
+    min-width: 0;
+}
+
+:root body[data-coordinate-editor] .category-bulk-ratio span {
+    flex: 0 0 auto;
+    color: var(--muted);
+}
+
 :root body[data-coordinate-editor] .category-binding-remove {
     min-height: 32px;
     padding: 5px 10px;

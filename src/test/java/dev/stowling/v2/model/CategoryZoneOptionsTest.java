@@ -11,6 +11,29 @@ import org.junit.jupiter.api.Test;
 
 class CategoryZoneOptionsTest {
     @Test
+    void bulkStacksControlMixedPackingAndKeepLegacyAllocationWithoutTheField() {
+        var previous = new StoragePolicy(StorageMode.MIXED, 25, true, null, true, 4, null);
+        for (int stacks : List.of(0, 9, 27, 54)) {
+            var options = bulkOptions(stacks);
+            var policy = options.storagePolicy(previous);
+            assertEquals(stacks, policy.looseSlots());
+            assertEquals(stacks * 64, StoragePackingPlanner.looseLimit(policy, 54, 64));
+            assertEquals(Math.min(27, stacks) * 16,
+                    StoragePackingPlanner.looseLimit(policy, 27, 16));
+            assertEquals(previous.refillLoose(), policy.refillLoose());
+            assertEquals(previous.allowPartialBoxes(), policy.allowPartialBoxes());
+        }
+        assertEquals(previous, bulkOptions(null).storagePolicy(previous));
+        assertThrows(IllegalArgumentException.class, () -> bulkOptions(-1));
+        assertThrows(IllegalArgumentException.class, () -> bulkOptions(55));
+    }
+
+    private static CategoryZoneOptions bulkOptions(Integer stacks) {
+        return new CategoryZoneOptions("selection", "marker", "mixed", "inside-box", "",
+                false, "", null, null, stacks);
+    }
+
+    @Test
     void standingSwitchControlsExecutionAndPreservesTheDraft() {
         var position = new BlockPosition(-8, 65, 12);
         var enabled = options(true, position);

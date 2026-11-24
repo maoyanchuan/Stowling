@@ -52,6 +52,7 @@
                 ? "container-item" : binding.ruleId === "UNSTACKABLE_ITEMS"
                     ? "unstackable" : "marker",
             storageMethod: {NORMAL: "bulk", MIXED: "mixed", BOX_ONLY: "box"}[policy.mode] || "bulk",
+            bulkStacks: policy.looseSlots ?? Math.floor(54 * (policy.loosePercent ?? 50) / 100),
             noCacheLocation: policy.partialBoxDestinationRef ? "specified" : "inside-box",
             cacheDestination: policy.partialBoxDestinationRef || "",
             ignoreSupportBlock: Boolean(binding.ignoredMarkerBlockIds?.length),
@@ -63,9 +64,14 @@
 
     /** @param {object} value @returns {object} */
     function optionsPayload(value) {
+        const bulkStacks = value.bulkStacks === undefined ? 27 : value.bulkStacks;
+        if (!Number.isInteger(bulkStacks) || bulkStacks < 0 || bulkStacks > 54) {
+            throw new Error("散货占比请填写 0 到 54 之间的整数组数。");
+        }
         return {scopeMode: value.scopeMode || "single",
             recognitionMode: value.recognitionMode || "marker",
             storageMethod: value.storageMethod || "bulk",
+            bulkStacks,
             noCacheLocation: value.noCacheLocation || "inside-box",
             cacheDestination: value.cacheDestination || "",
             ignoreSupportBlock: Boolean(value.ignoreSupportBlock),
@@ -79,7 +85,9 @@
     function bindingSettings(binding, globalOptions, zone) {
         if (binding.categoryOptions) {
             return {optionsEnabled: Boolean(binding.optionsEnabled),
-                categoryOptions: copy(binding.categoryOptions)};
+                categoryOptions: {...copy(binding.categoryOptions),
+                    bulkStacks: binding.categoryOptions.bulkStacks
+                        ?? categoryOptions({bindings: [binding]}).bulkStacks}};
         }
         if (zone.categoryOptions) return {optionsEnabled: Boolean(binding.optionsEnabled)};
         const local = categoryOptions({bindings: [binding], expansion: zone.expansion});
@@ -102,6 +110,7 @@
                 .categoryZones[0];
             const count = raw.expansion?.templateCount || raw.bindings.length;
             const options = {...categoryOptions(raw), ...raw.categoryOptions};
+            options.bulkStacks ??= categoryOptions(raw).bulkStacks;
             values.push({id: raw.id, name: raw.name, kind: "category-zone",
                 overallRegion: raw.overallArea ? region(raw.overallArea)
                     : raw.expansion ? region(raw.expansion.area)
@@ -147,7 +156,7 @@
                 dimension: value.dimension || null, radius: value.radius ?? null};
         }
         if (value.kind === "region") return {name, ...area(value.region)};
-        const globalOptions = value.categoryOptions;
+        const globalOptions = {...value.categoryOptions, ...optionsPayload(value.categoryOptions)};
         const bindings = value.bindings.map(binding => {
             const options = binding.optionsEnabled ? binding.categoryOptions || globalOptions
                 : globalOptions;
@@ -169,6 +178,7 @@
             if (result.ruleId !== "MARKER_CONTAINER_CONTENTS") result.wholeStorage = false;
             result.storagePolicy.mode = {bulk: "NORMAL", mixed: "MIXED", box: "BOX_ONLY"}[
                 options.storageMethod];
+            result.storagePolicy.looseSlots = optionsPayload(options).bulkStacks;
             if (options.noCacheLocation === "specified" && !options.cacheDestination) {
                 throw new Error("请选择指定缓存位置。");
             }

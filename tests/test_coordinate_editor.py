@@ -92,11 +92,7 @@ def test_coordinate_editor_uses_the_approved_template_core_structure() -> None:
     root = WEB.parents[3]
     template = (root / "docs/ui/coordinate-management-standard.html").read_text(encoding="utf-8")
     page = (WEB / "coordinates.html").read_text(encoding="utf-8")
-    # Storage allocation remains an offline template feature.
-    template_only_rows = frozenset({
-        "category-bulk-ratio-row",
-    })
-    assert editor_structure(page) == editor_structure(template, template_only_rows)
+    assert editor_structure(page) == editor_structure(template)
 
 
 ZONE_SETUP = """
@@ -113,6 +109,64 @@ ZONE_SETUP = """
     const raw = {id: 'z', name: 'Zone', bindings: [binding]};
     const directory = {categoryZones: [raw], catalog: {}};
 """
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+@pytest.mark.parametrize("stacks", [0, 9, 27, 54])
+def test_bulk_stacks_apply_effective_profile_and_survive_copying(stacks: int) -> None:
+    result = run_model(ZONE_SETUP + """
+        const value = model.resources(directory)[0];
+        value.categoryOptions.bulkStacks = 13;
+        const group = value.bindings[0];
+        group.optionsEnabled = true;
+        group.categoryOptions = {...value.categoryOptions, bulkStacks: """ + str(stacks) + """};
+        const independent = model.payload(value);
+        group.optionsEnabled = false;
+        const inherited = model.payload(value);
+        const copied = model.copy(value);
+        copied.bindings[0].optionsEnabled = true;
+        copied.categoryOptions.storageMethod = 'bulk';
+        const restored = model.payload(copied);
+        process.stdout.write(JSON.stringify({independent, inherited, restored}));
+    """)
+    assert result["independent"]["bindings"][0]["storagePolicy"]["looseSlots"] == stacks
+    assert result["inherited"]["bindings"][0]["storagePolicy"]["looseSlots"] == 13
+    assert result["inherited"]["bindings"][0]["categoryOptions"]["bulkStacks"] == stacks
+    assert result["restored"]["bindings"][0]["storagePolicy"]["looseSlots"] == stacks
+    assert result["restored"]["categoryOptions"]["bulkStacks"] == 13
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+@pytest.mark.parametrize("stacks", [None, -1, 55, 1.5, "12"])
+def test_bulk_stacks_reject_invalid_values(stacks: int | float | str | None) -> None:
+    result = run_model(ZONE_SETUP + """
+        const value = model.resources(directory)[0];
+        value.categoryOptions.bulkStacks = """ + json.dumps(stacks) + """;
+        try { model.payload(value); process.stdout.write('{}'); }
+        catch (error) { process.stdout.write(JSON.stringify({error: error.message})); }
+    """)
+    assert "散货占比" in result["error"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_legacy_bulk_stacks_prefer_slots_then_percent_then_default() -> None:
+    result = run_model(ZONE_SETUP + """
+        const explicit = model.resources(directory)[0];
+        delete binding.storagePolicy.looseSlots;
+        const percent = model.resources(directory)[0];
+        delete binding.storagePolicy.loosePercent;
+        const fallback = model.resources(directory)[0];
+        raw.categoryOptions = {storageMethod: 'mixed'};
+        binding.categoryOptions = {storageMethod: 'mixed'};
+        binding.storagePolicy.looseSlots = 7;
+        const oldProfiles = model.resources(directory)[0];
+        process.stdout.write(JSON.stringify({explicit: explicit.categoryOptions.bulkStacks,
+            percent: percent.categoryOptions.bulkStacks,
+            fallback: fallback.categoryOptions.bulkStacks,
+            global: oldProfiles.categoryOptions.bulkStacks,
+            local: oldProfiles.bindings[0].categoryOptions.bulkStacks}));
+    """)
+    assert result == {"explicit": 4, "percent": 13, "fallback": 27, "global": 7, "local": 7}
 
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")

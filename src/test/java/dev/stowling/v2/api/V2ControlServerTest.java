@@ -88,6 +88,55 @@ class V2ControlServerTest {
     }
 
     @Test
+    void savesMixedBulkStackLimitsAndRejectsInvalidAllocations() throws Exception {
+        try (var fixture = fixture()) {
+            var payload = JsonParser.parseString(categoryZone("Bulk")).getAsJsonObject();
+            var options = JsonParser.parseString("""
+                    {"scopeMode":"selection","storageMethod":"mixed","bulkStacks":27}
+                    """).getAsJsonObject();
+            payload.add("categoryOptions", options);
+            assertEquals(401, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), false).statusCode());
+            var created = fixture.send("/v1/category-zones", "POST", payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            var response = object(created);
+            var zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            String path = "/v1/category-zones/" + zone.get("id").getAsString();
+            assertEquals(27, zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .getAsJsonObject("storagePolicy").get("looseSlots").getAsInt());
+            for (int stacks : List.of(0, 54)) {
+                options.addProperty("bulkStacks", stacks);
+                payload.add("revision", response.get("revision"));
+                var updated = fixture.send(path, "PUT", payload.toString(), true);
+                assertEquals(200, updated.statusCode());
+                response = object(updated);
+                zone = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+                assertEquals(stacks, zone.getAsJsonObject("categoryOptions")
+                        .get("bulkStacks").getAsInt());
+                var policy = zone.getAsJsonArray("bindings").get(0).getAsJsonObject()
+                        .getAsJsonObject("storagePolicy");
+                assertEquals("MIXED", policy.get("mode").getAsString());
+                assertEquals(stacks, policy.get("looseSlots").getAsInt());
+            }
+            payload.add("revision", response.get("revision"));
+            var binding = payload.getAsJsonArray("bindings").get(0).getAsJsonObject();
+            var local = options.deepCopy();
+            binding.addProperty("optionsEnabled", true);
+            binding.add("categoryOptions", local);
+            for (boolean independent : List.of(false, true)) {
+                for (String invalid : List.of("-1", "55", "1.5", "\"12\"", "true")) {
+                    options.addProperty("bulkStacks", 27);
+                    local.addProperty("bulkStacks", 9);
+                    (independent ? local : options)
+                            .add("bulkStacks", JsonParser.parseString(invalid));
+                    assertEquals(400, fixture.send(path, "PUT",
+                            payload.toString(), true).statusCode());
+                }
+            }
+        }
+    }
+
+    @Test
     void togglesIndependentBindingsWithoutDiscardingTheirStoredOptions() throws Exception {
         try (var fixture = fixture()) {
             var payload = JsonParser.parseString(categoryZone("Independent")).getAsJsonObject();
@@ -99,6 +148,8 @@ class V2ControlServerTest {
             var local = global.deepCopy();
             local.addProperty("recognitionMode", "container-item");
             local.addProperty("storageMethod", "box");
+            global.addProperty("bulkStacks", 13);
+            local.addProperty("bulkStacks", 9);
             global.addProperty("specifyStanding", true);
             global.add("standingPosition", JsonParser.parseString("{\"x\":1,\"y\":65,\"z\":-2}"));
             local.addProperty("specifyStanding", true);
@@ -131,6 +182,12 @@ class V2ControlServerTest {
                         .get("storageMethod").getAsString());
                 assertEquals("bulk", zone.getAsJsonObject("categoryOptions")
                         .get("storageMethod").getAsString());
+                assertEquals(9, binding.getAsJsonObject("categoryOptions")
+                        .get("bulkStacks").getAsInt());
+                assertEquals(13, zone.getAsJsonObject("categoryOptions")
+                        .get("bulkStacks").getAsInt());
+                assertEquals(enabled ? 9 : 13, binding.getAsJsonObject("storagePolicy")
+                        .get("looseSlots").getAsInt());
                 var standing = binding.getAsJsonObject("standingArea");
                 assertEquals(enabled ? 4 : 1, standing.get("firstX").getAsInt());
                 assertEquals(standing.get("firstX"), standing.get("secondX"));

@@ -85,10 +85,10 @@ class ConfigStoreTest {
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);
         var global = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker", "bulk",
                 "inside-box", "", false, "", false,
-                new dev.stowling.domain.BlockPosition(1, 65, -2));
+                new dev.stowling.domain.BlockPosition(1, 65, -2), 13);
         var local = new dev.stowling.v2.model.CategoryZoneOptions("selection", "container-item",
                 "box", "inside-box", "", true, "minecraft:stone", true,
-                new dev.stowling.domain.BlockPosition(4, 66, -5));
+                new dev.stowling.domain.BlockPosition(4, 66, -5), 9);
         var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
                 "DIRECT_BLOCK_ID", List.of(), List.of(), null,
                 dev.stowling.v2.model.StoragePolicy.DEFAULT, false, "A1", false, local);
@@ -103,6 +103,8 @@ class ConfigStoreTest {
         assertEquals(false, restored.bindings().getFirst().optionsEnabled());
         assertEquals("box", restored.bindings().getFirst().categoryOptions().storageMethod());
         assertEquals("bulk", restored.categoryOptions().storageMethod());
+        assertEquals(13, restored.categoryOptions().bulkStacks());
+        assertEquals(9, restored.bindings().getFirst().categoryOptions().bulkStacks());
         assertEquals(new dev.stowling.domain.BlockPosition(4, 66, -5),
                 restored.bindings().getFirst().categoryOptions().standingPosition());
         var invalid = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
@@ -111,6 +113,33 @@ class ConfigStoreTest {
                 .addProperty("x", 0.5);
         Files.writeString(path, invalid.toString());
         assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+    }
+
+    @Test
+    void rejectsFractionalAndOutOfRangeBulkStacksInSavedProfiles() throws Exception {
+        Path path = directory.resolve("bulk-stacks.json");
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var options = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
+                "", false, "", null, null, 27);
+        var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "DIRECT_BLOCK_ID", List.of(), List.of(), null, StoragePolicy.DEFAULT,
+                false, "A", false, options);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Bulk", List.of(binding),
+                null, options);
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(), List.of(), List.of(), List.of(zone));
+        for (String field : List.of("global", "local")) {
+            for (String number : List.of("-1", "55", "1.5", "\"12\"", "true", "2147483648")) {
+                var json = new Gson().toJsonTree(config).getAsJsonObject();
+                var savedZone = json.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+                var parent = field.equals("global") ? savedZone
+                        : savedZone.getAsJsonArray("bindings").get(0).getAsJsonObject();
+                parent.getAsJsonObject("categoryOptions")
+                        .add("bulkStacks", JsonParser.parseString(number));
+                Files.writeString(path, json.toString());
+                assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+            }
+        }
     }
 
     @Test

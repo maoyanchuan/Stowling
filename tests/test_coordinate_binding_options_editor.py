@@ -100,6 +100,69 @@ def selected(root: Any, key: str) -> str:
     return root.locator(f'[data-category-select="{key}"] select').input_value()
 
 
+@pytest.mark.parametrize("independent", [False, True])
+def test_bulk_ratio_inherits_and_keeps_saved_and_copied_drafts(
+    editor_page: Any, independent: bool,
+) -> None:
+    page = editor_page
+    global_options = page.locator(".category-options").first
+    global_input = page.locator("#category-bulk-stacks")
+    assert global_input.input_value() == "27"
+    assert global_input.is_hidden()
+    assert global_input.is_disabled()
+    choose(global_options, "storageMethod", "mixed")
+    assert global_input.is_visible()
+    global_input.fill("13")
+    card = page.locator(".category-binding-card").first
+    card.locator(".category-binding-enabled").check()
+    local_input = card.locator('[id$="category-bulk-stacks"]')
+    assert local_input.input_value() == "13"
+    local_input.fill("9")
+    for method in ("box", "bulk", "mixed"):
+        choose(card, "storageMethod", method)
+        assert local_input.input_value() == "9"
+        assert local_input.is_visible() is (method == "mixed")
+        assert local_input.is_disabled() is (method != "mixed")
+    card.locator(".category-binding-enabled").set_checked(independent)
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones.length === 1")
+    saved = page.evaluate("window.__editorState.categoryZones[0]")
+    assert saved["categoryOptions"]["bulkStacks"] == 13
+    assert saved["bindings"][0]["categoryOptions"]["bulkStacks"] == 9
+    assert saved["bindings"][0]["storagePolicy"]["looseSlots"] == (9 if independent else 13)
+    page.locator("#duplicate-coordinate").click()
+    card = page.locator(".category-binding-card").first
+    card.locator(".category-binding-toggle").click()
+    card.locator(".category-binding-enabled").check()
+    assert card.locator('[id$="category-bulk-stacks"]').input_value() == "9"
+    assert page.locator("#category-bulk-stacks").input_value() == "13"
+
+
+@pytest.mark.parametrize("stacks", ["0", "54"])
+def test_bulk_ratio_accepts_boundary_values(editor_page: Any, stacks: str) -> None:
+    page = editor_page
+    choose(page.locator(".category-options").first, "storageMethod", "mixed")
+    page.locator("#category-bulk-stacks").fill(stacks)
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones.length === 1")
+    assert page.evaluate(
+        "window.__editorState.categoryZones[0].bindings[0].storagePolicy.looseSlots"
+    ) == int(stacks)
+
+
+@pytest.mark.parametrize("stacks", ["", "-1", "55", "1.5"])
+def test_bulk_ratio_blocks_invalid_input_without_saving(editor_page: Any, stacks: str) -> None:
+    page = editor_page
+    choose(page.locator(".category-options").first, "storageMethod", "mixed")
+    page.locator("#category-bulk-stacks").fill(stacks)
+    page.locator('#coordinate-form button[type="submit"]').click()
+    assert page.evaluate("window.__editorState.categoryZones.length") == 0
+    if not stacks:
+        assert "散货占比" in page.locator("#editor-status").inner_text()
+    else:
+        assert not page.locator("#category-bulk-stacks").evaluate("node => node.validity.valid")
+
+
 def test_first_enable_uses_global_values_and_groups_stay_independent(editor_page: Any) -> None:
     page = editor_page
     global_options = page.locator(".category-options").first

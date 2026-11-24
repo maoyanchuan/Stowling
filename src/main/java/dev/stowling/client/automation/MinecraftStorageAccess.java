@@ -36,6 +36,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final boolean withdraw;
     private final boolean inspect;
     private final boolean emptyBoxSupply;
+    private final boolean emptyBoxReturn;
     private final Runnable warehouseConfirmation;
     private List<ItemStack> contents = List.of();
     private boolean opened;
@@ -72,6 +73,15 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 true, false, true);
     }
 
+    static MinecraftStorageAccess returnEmptyBox(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget destination, String key) {
+        if (!ItemIdentity.isEmptyBox(key)) {
+            throw new IllegalArgumentException("空盒归还只能存入空潜影盒");
+        }
+        return new MinecraftStorageAccess(minecraft, context, destination, Map.of(key, 1),
+                false, false, false, null, null, true);
+    }
+
     static MinecraftStorageAccess warehouseBox(Minecraft minecraft, TaskExecutionContext context,
             ContainerTarget target, String key, boolean withdraw, Runnable confirmation) {
         return new MinecraftStorageAccess(minecraft, context, target, Map.of(key, 1), withdraw,
@@ -89,6 +99,15 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             boolean inspect, boolean emptyBoxSupply,
             Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan,
             Runnable warehouseConfirmation) {
+        this(minecraft, context, target, requested, withdraw, inspect, emptyBoxSupply,
+                withdrawalPlan, warehouseConfirmation, false);
+    }
+
+    private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
+            boolean inspect, boolean emptyBoxSupply,
+            Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan,
+            Runnable warehouseConfirmation, boolean emptyBoxReturn) {
         this.minecraft = minecraft;
         this.context = context;
         this.target = target;
@@ -98,6 +117,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         this.withdraw = withdraw;
         this.inspect = inspect;
         this.emptyBoxSupply = emptyBoxSupply;
+        this.emptyBoxReturn = emptyBoxReturn;
         this.withdrawalPlan = withdrawalPlan;
         this.quickWithdrawal = withdrawalPlan != null;
         this.warehouseConfirmation = warehouseConfirmation;
@@ -186,7 +206,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             boolean destinationConfirmed = pendingConfirmation.matchesServerContainer(
                     key -> count(menu, false, key), menu.getCarried().isEmpty());
             if (!serverReread && menu.getCarried().isEmpty()
-                    && (warehouseConfirmation != null || !confirmed
+                    && (warehouseConfirmation != null
+                            || pendingConfirmation.requiresServerSnapshot(serverReread) || !confirmed
                             && pendingConfirmation.hasContainerProgress(
                                     key -> count(menu, false, key)))) {
                 dev.stowling.v2.runtime.TaskTrace.event("RESYNC", "storage.reopen",
@@ -200,9 +221,15 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
                 return TaskModuleResult.waiting("立即读取原容器服务器快照，核对整批存取");
             }
             Map<String, Integer> accepted = Map.copyOf(pendingMoves);
-            if (!confirmed && !(serverReread && destinationConfirmed)) {
-                var observed = serverReread ? pendingConfirmation.acceptedServerSnapshot(
-                        key -> count(menu, false, key), menu.getCarried().isEmpty())
+            boolean sourceSnapshot = emptyBoxReturn && serverReread;
+            if (sourceSnapshot || !confirmed && !(serverReread && destinationConfirmed)) {
+                var observed = sourceSnapshot
+                        ? pendingConfirmation.acceptedServerPlayerSnapshot(
+                                key -> count(menu, true, key),
+                                key -> MinecraftInventoryPickups.count(minecraft, key),
+                                menu.getCarried().isEmpty(), serverReread)
+                        : serverReread ? pendingConfirmation.acceptedServerSnapshot(
+                                key -> count(menu, false, key), menu.getCarried().isEmpty())
                         : java.util.Optional.<Map<String, Integer>>empty();
                 if (observed.isEmpty()) {
                     return TaskModuleResult.waiting(emptyBoxSupply
@@ -280,7 +307,7 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             candidate = findMove(menu, pendingMoves);
         }
         pendingConfirmation = new StorageTransferBatchConfirmation(pendingBefore, pendingMoves,
-                withdraw, emptyBoxSupply);
+                withdraw, emptyBoxSupply, emptyBoxReturn);
         settle = 0;
         return TaskModuleResult.waiting("正在批量" + (withdraw ? "取出" : "存入"));
     }

@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
@@ -9,6 +10,73 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class StorageTransferBatchConfirmationTest {
+    @Test
+    void emptyBoxReturnUsesFreshServerPlayerCountsWhenAHopperDrainsTheDestination() {
+        String key = "minecraft:black_shulker_box";
+        var before = Map.of(key, new StorageTransferBatchConfirmation.Before(2, 0, 2));
+        var receipt = new StorageTransferBatchConfirmation(before, Map.of(key, 1),
+                false, false, true);
+
+        assertFalse(receipt.matches(item -> 1, item -> 0, item -> 2, true));
+        assertFalse(receipt.hasContainerProgress(item -> 0));
+        assertTrue(receipt.requiresServerSnapshot(false));
+        assertFalse(receipt.requiresServerSnapshot(true));
+        assertTrue(receipt.acceptedServerPlayerSnapshot(item -> 1, item -> 2, true, false)
+                .isEmpty());
+        assertEquals(Map.of(key, 1), receipt.acceptedServerPlayerSnapshot(
+                item -> 1, item -> 2, true, true).orElseThrow());
+    }
+
+    @Test
+    void rejectedPredictedReturnsDoNotConsumeBoxesAndAnOccupiedCursorDoesNotConfirm() {
+        String key = "minecraft:shulker_box";
+        var before = Map.of(key, new StorageTransferBatchConfirmation.Before(2, 0, 0));
+        var receipt = new StorageTransferBatchConfirmation(before, Map.of(key, 1),
+                false, false, true);
+
+        assertTrue(receipt.matches(item -> 1, item -> 1, item -> 0, true));
+        assertTrue(receipt.requiresServerSnapshot(false));
+        assertEquals(Map.of(), receipt.acceptedServerPlayerSnapshot(
+                item -> 2, item -> 0, true, true).orElseThrow());
+        assertTrue(receipt.acceptedServerPlayerSnapshot(item -> 1, item -> 0, false, true)
+                .isEmpty());
+        assertTrue(receipt.acceptedServerPlayerSnapshot(item -> 0, item -> 0, true, true)
+                .isEmpty());
+    }
+
+    @Test
+    void freshPlayerSnapshotsAccountForPickupsAndPartialAcceptancePerEmptyBoxKey() {
+        String plain = "minecraft:shulker_box#plain";
+        String black = "minecraft:black_shulker_box#black";
+        var before = Map.of(plain, new StorageTransferBatchConfirmation.Before(3, 0, 10),
+                black, new StorageTransferBatchConfirmation.Before(2, 4, 5));
+        var receipt = new StorageTransferBatchConfirmation(before, Map.of(plain, 2, black, 1),
+                false, false, true);
+        Map<String, Integer> player = Map.of(plain, 3, black, 2);
+        Map<String, Long> pickups = Map.of(plain, 11L, black, 5L);
+
+        assertEquals(Map.of(plain, 1), receipt.acceptedServerPlayerSnapshot(
+                player::get, pickups::get, true, true).orElseThrow());
+        assertTrue(receipt.acceptedServerPlayerSnapshot(player::get,
+                item -> before.get(item).pickups() - 1, true, true).isEmpty());
+    }
+
+    @Test
+    void playerOnlyReceiptsRemainRestrictedToEmptyBoxReturns() {
+        String box = "minecraft:shulker_box";
+        var before = Map.of(box, new StorageTransferBatchConfirmation.Before(2, 0, 0));
+        var ordinary = new StorageTransferBatchConfirmation(before, Map.of(box, 1), false, false);
+        assertFalse(ordinary.requiresServerSnapshot(false));
+        assertTrue(ordinary.acceptedServerPlayerSnapshot(item -> 1, item -> 0, true, true)
+                .isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> new StorageTransferBatchConfirmation(
+                before, Map.of(box, 1), true, false, true));
+        String filled = "minecraft:shulker_box#box@minecraft:stone";
+        assertThrows(IllegalArgumentException.class, () -> new StorageTransferBatchConfirmation(
+                Map.of(filled, new StorageTransferBatchConfirmation.Before(1, 0, 0)),
+                Map.of(filled, 1), false, false, true));
+    }
+
     @Test
     void twentySevenDifferentBoxKeysShareOneConfirmationBarrier() {
         Map<String, StorageTransferBatchConfirmation.Before> before = new LinkedHashMap<>();

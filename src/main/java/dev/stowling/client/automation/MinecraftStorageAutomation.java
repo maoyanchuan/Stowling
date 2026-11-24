@@ -842,8 +842,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             final List<ContainerTarget> candidates = destinations;
             String key = MinecraftItemIdentity.key(empty);
             int before = owned().getOrDefault(key, 0);
-            var access = new MinecraftStorageAccess(minecraft, context, destinations.get(index),
-                    Map.of(key, 1), false, false);
+            var access = MinecraftStorageAccess.returnEmptyBox(minecraft, context,
+                    destinations.get(index), key);
             Runnable confirmed = () -> {
                 if (owned().getOrDefault(key, 0) == before - 1) after.run();
                 else storeEmptyBox(empty, candidates, index + 1, after);

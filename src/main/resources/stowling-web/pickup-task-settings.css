@@ -296,7 +296,8 @@ body[data-page]
 
 body[data-page]
     :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
-        .auto-eat-task-form, .refresh-cache-task-form) .settings-disclosure {
+        .auto-eat-task-form, .refresh-cache-task-form) .settings-disclosure,
+body[data-page="tasks"] #auto-empty-box-settings .settings-option {
     border: 0;
 }
 

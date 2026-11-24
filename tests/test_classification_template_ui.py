@@ -313,6 +313,10 @@ def test_empty_box_warehouse_dropdown_supports_keyboard_and_fits_the_window(
     open_settings(page)
     page.locator("#auto-empty-warehouse-enabled").check()
     settle(page)
+    sections = page.locator("#auto-empty-box-settings .settings-option")
+    assert sections.count() == 2
+    for section in sections.all():
+        assert section.evaluate("node => getComputedStyle(node).borderBottomWidth") == "0px"
     row = page.locator(".move-field:has(#auto-empty-warehouse-location)")
     trigger = row.locator(".task-select-trigger")
     trigger.press("ArrowDown")

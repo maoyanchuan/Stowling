@@ -251,6 +251,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     @Override
+    public Comparator<ContainerTarget> pickupCacheOrder() {
+        return Comparator.comparingDouble(this::storageDistance);
+    }
+
+    @Override
     public TaskModuleExecutor cleanup(TaskExecutionContext context) {
         return cleanup(context, false);
     }

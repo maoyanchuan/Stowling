@@ -33,7 +33,10 @@ public final class StandardTaskModuleFactories {
                 ),
                 factory(
                         TaskModuleIds.COLLECT_DROPPED_ITEMS,
-                        CollectDroppedItemsModule::new
+                        (context, step) -> step.parameters()
+                                .containsKey(ConfigValidator.CACHE_LOCATION_REF)
+                                ? new PickupCacheCycle(context, step)
+                                : new CollectDroppedItemsModule(context, step)
                 ),
                 factory(
                         TaskModuleIds.SCAN_CONTAINERS_IN_REGION,

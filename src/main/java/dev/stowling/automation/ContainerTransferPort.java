@@ -13,6 +13,16 @@ public interface ContainerTransferPort {
         return startDeposit(target, items);
     }
 
+    /** Allows consecutive fixed batches to reuse the same open pickup cache. */
+    default ContainerTransferResult startPickupCacheDeposit(ContainerTarget target,
+            Map<String, Integer> items) {
+        return startCollectedCacheDeposit(target, items);
+    }
+
+    default void finishPickupCacheDeposit() {
+        cancelDeposit();
+    }
+
     ContainerTransferResult pollDeposit();
 
     void cancelDeposit();

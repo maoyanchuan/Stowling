@@ -475,6 +475,50 @@ public final class PlayerInventoryManager {
         return claimUnassigned(account, key -> true);
     }
 
+    /** Pickup unloading owns every physically present unprotected item at a settled boundary. */
+    synchronized int claimAllUnprotectedForCollection(PlayerInventoryAccount account) {
+        register(account);
+        reconcileMissingItems(account);
+        int claimed = claimCollectionItems(account, Set.of());
+        reconcileUnassignedItems();
+        for (var entry : Map.copyOf(classificationItems).entrySet()) {
+            account.recordCollected(entry.getKey(), entry.getValue());
+            classificationItems.remove(entry.getKey());
+            receipts.claimQueuedGain(entry.getKey(), entry.getValue());
+            claimed = Math.addExact(claimed, entry.getValue());
+        }
+        Map<String, Integer> available = new LinkedHashMap<>();
+        previous.orElseThrow().itemCounts().forEach((key, count) -> available.put(key,
+                Math.max(0, count - protectedInventory.count(key)
+                        - account.managedItems().getOrDefault(key, 0))));
+        for (PlayerInventoryAccount other : List.copyOf(accounts.values())) {
+            if (other == account) continue;
+            for (var entry : other.managedItems().entrySet()) {
+                String key = entry.getKey();
+                int count = Math.min(entry.getValue(), available.getOrDefault(key, 0));
+                if (count <= 0) continue;
+                other.confirmDeposit("managed", Map.of(key, count), Map.of());
+                account.recordCollected(key, count);
+                available.put(key, available.get(key) - count);
+                claimed = Math.addExact(claimed, count);
+            }
+        }
+        inputs.entrySet().removeIf(entry -> {
+            PlayerInventoryAccount input = entry.getValue();
+            if (!input.managedItems().isEmpty()) return false;
+            accounts.remove(input.ownerId(), input);
+            return true;
+        });
+        for (UUID owner : Set.copyOf(abandonedAccounts)) {
+            PlayerInventoryAccount abandoned = accounts.get(owner);
+            if (abandoned != null && !abandoned.managedItems().isEmpty()) continue;
+            abandonedAccounts.remove(owner);
+            if (abandoned != null) accounts.remove(owner, abandoned);
+        }
+        if (claimed > 0) revision++;
+        return claimed;
+    }
+
     public synchronized void claimForCleanup(PlayerInventoryAccount account) {
         if (account.collectionTask() == null) claimUnprotectedItems(account);
         claimUnexpected(account, Set.of());

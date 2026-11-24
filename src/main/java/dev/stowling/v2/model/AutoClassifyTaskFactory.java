@@ -59,7 +59,10 @@ public final class AutoClassifyTaskFactory {
         }
         List<TaskStep> collectionSteps = definition.kind() == Kind.CLASSIFICATION
                 ? new ArrayList<>() : new ArrayList<>(
-                TaskFlowTemplates.collect(
+                definition.kind() == Kind.PICKUP && !definition.cachePolicy().enabled()
+                        ? TaskFlowTemplates.pickupToCache(definition.detectionCoordinateRef(),
+                                definition.cacheLocationRef(), collectionParameters)
+                        : TaskFlowTemplates.collect(
                         definition.detectionCoordinateRef(),
                         definition.cacheLocationRef(),
                         collectionParameters

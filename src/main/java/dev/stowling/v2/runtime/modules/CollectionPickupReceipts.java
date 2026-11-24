@@ -16,6 +16,7 @@ final class CollectionPickupReceipts {
     private final Clock clock;
     private final List<Receipt> incoming = new ArrayList<>();
     private final Map<String, QueuedGain> recentGains = new LinkedHashMap<>();
+    private final Map<String, QueuedGain> claimedGains = new LinkedHashMap<>();
 
     CollectionPickupReceipts(Clock clock) {
         this.clock = clock;
@@ -45,10 +46,31 @@ final class CollectionPickupReceipts {
     void retain(Set<UUID> collectionTasks) {
         incoming.removeIf(receipt -> !collectionTasks.contains(receipt.collectionTask()));
         if (collectionTasks.isEmpty()) recentGains.clear();
+        if (collectionTasks.isEmpty()) claimedGains.clear();
     }
 
     void forgetQueuedGain(String key) {
         recentGains.remove(key);
+    }
+
+    /** A late take packet must not book an already claimed physical stack a second time. */
+    void claimQueuedGain(String key, int count) {
+        QueuedGain gain = recentGains.get(key);
+        if (gain == null || clock.instant().isAfter(gain.expires())) return;
+        int claimed = Math.min(count, gain.count());
+        int before = claimedGains.getOrDefault(key, new QueuedGain(0, gain.expires())).count();
+        claimedGains.put(key, new QueuedGain(before + claimed, gain.expires()));
+        if (claimed == gain.count()) recentGains.remove(key);
+        else recentGains.put(key, new QueuedGain(gain.count() - claimed, gain.expires()));
+    }
+
+    private int consumeClaimedGain(String key, int count, Instant now) {
+        QueuedGain gain = claimedGains.get(key);
+        if (gain == null || now.isAfter(gain.expires())) return 0;
+        int consumed = Math.min(count, gain.count());
+        if (consumed == gain.count()) claimedGains.remove(key);
+        else claimedGains.put(key, new QueuedGain(gain.count() - consumed, gain.expires()));
+        return consumed;
     }
 
     void automaticQueueChange(String key, int change, Instant now) {
@@ -62,6 +84,7 @@ final class CollectionPickupReceipts {
 
     void expireQueuedGains(Instant now) {
         recentGains.values().removeIf(gain -> now.isAfter(gain.expires()));
+        claimedGains.values().removeIf(gain -> now.isAfter(gain.expires()));
     }
 
     void settle(PlayerInventoryDelta difference, Map<String, Integer> queued,
@@ -72,15 +95,17 @@ final class CollectionPickupReceipts {
         while (iterator.hasNext()) {
             Receipt receipt = iterator.next();
             String key = receipt.key();
+            int claimed = consumeClaimedGain(key, receipt.count(), now);
             int available = free.getOrDefault(key, 0);
-            int matched = Math.min(receipt.count(), available);
+            int matched = Math.min(receipt.count() - claimed, available);
             free.put(key, available - matched);
-            matched += releaseQueuedGain(key, receipt.count() - matched,
+            matched += releaseQueuedGain(key, receipt.count() - claimed - matched,
                     difference.removed().getOrDefault(key, 0), queued, now);
             if (matched > 0) confirm.record(receipt.collectionTask(), key, matched);
-            if (matched == receipt.count() || now.isAfter(receipt.expires())) iterator.remove();
-            else if (matched > 0) iterator.set(new Receipt(receipt.collectionTask(), key,
-                    receipt.count() - matched, receipt.expires()));
+            int settled = claimed + matched;
+            if (settled == receipt.count() || now.isAfter(receipt.expires())) iterator.remove();
+            else if (settled > 0) iterator.set(new Receipt(receipt.collectionTask(), key,
+                    receipt.count() - settled, receipt.expires()));
         }
     }
 

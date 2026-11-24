@@ -23,6 +23,70 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PlayerInventoryManagerTest {
     @Test
+    void pickupUnloadingAdoptsAllPhysicalUnprotectedItemsWithoutChangingGlobalCounts() {
+        var source = new MutableInventory();
+        var manager = new PlayerInventoryManager(source);
+        manager.initialize(new PlayerInventorySnapshot(Map.of("minecraft:gold_ingot", 2)));
+        source.set(Map.of("minecraft:gold_ingot", 5, "minecraft:iron_ingot", 4,
+                "minecraft:stone", 7));
+        manager.observe();
+        var previousTask = manager.account(UUID.randomUUID());
+        manager.recordWithdrawn(previousTask, Map.of("minecraft:iron_ingot", 4));
+        UUID task = UUID.randomUUID();
+        manager.retainCollectionTasks(Set.of(task));
+        var pickup = manager.account(UUID.randomUUID());
+        pickup.usePickupReceipts(task);
+        pickup.setAcceptsClassification(false);
+
+        assertEquals(14, manager.claimAllUnprotectedForCollection(pickup));
+
+        assertEquals(Map.of("minecraft:gold_ingot", 3, "minecraft:iron_ingot", 4,
+                "minecraft:stone", 7), pickup.managedItems());
+        assertTrue(previousTask.managedItems().isEmpty());
+        assertEquals(source.snapshot().orElseThrow(), manager.expectedInventory().orElseThrow());
+        assertEquals(0, manager.claimAllUnprotectedForCollection(pickup));
+    }
+
+    @Test
+    void aLateReceiptForAlreadyClaimedPhysicalCargoDoesNotBlockOrDoubleBookUnloading() {
+        var source = new MutableInventory();
+        var manager = new PlayerInventoryManager(source);
+        manager.observe();
+        UUID task = UUID.randomUUID();
+        manager.retainCollectionTasks(Set.of(task));
+        var pickup = manager.account(UUID.randomUUID());
+        pickup.usePickupReceipts(task);
+        source.set(Map.of("minecraft:gold_ingot", 5));
+        manager.observe();
+        assertEquals(5, manager.claimAllUnprotectedForCollection(pickup));
+
+        manager.recordPickup(task, "minecraft:gold_ingot", 5);
+        manager.observe();
+
+        assertEquals(0, manager.pendingPickupCount(pickup));
+        assertEquals(0, manager.claimAllUnprotectedForCollection(pickup));
+        assertEquals(Map.of("minecraft:gold_ingot", 5), pickup.managedItems());
+        assertEquals(source.snapshot().orElseThrow(), manager.expectedInventory().orElseThrow());
+    }
+
+    @Test
+    void unloadingNeverUsesProtectedStockToReplaceMissingTaskCargo() {
+        var source = new MutableInventory();
+        var manager = new PlayerInventoryManager(source);
+        manager.initialize(new PlayerInventorySnapshot(Map.of("minecraft:gold_ingot", 2)));
+        source.set(Map.of("minecraft:gold_ingot", 2));
+        manager.observe();
+        var pickup = manager.account(UUID.randomUUID());
+        pickup.recordCollected("minecraft:gold_ingot", 3);
+
+        manager.claimAllUnprotectedForCollection(pickup);
+
+        assertTrue(pickup.managedItems().isEmpty());
+        assertEquals(Map.of("minecraft:gold_ingot", 2),
+                manager.expectedInventory().orElseThrow().itemCounts());
+    }
+
+    @Test
     void recoveryBorrowsOneStackFromItsOwnInputWithoutClaimingTheWholeFullBackpack() {
         String wood = "minecraft:oak_slab";
         var source = new MutableInventory();

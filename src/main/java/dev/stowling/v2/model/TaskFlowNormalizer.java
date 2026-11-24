@@ -117,7 +117,12 @@ public final class TaskFlowNormalizer {
     private static AppConfig normalizeTasks(AppConfig config) {
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
+        Map<UUID, AutoClassifyDefinition> pickups = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
+            if (definition.kind() == AutoClassifyDefinition.Kind.PICKUP
+                    && !definition.cachePolicy().enabled()) {
+                pickups.put(definition.id(), definition);
+            }
             if (definition.kind() == AutoClassifyDefinition.Kind.COMBINED) {
                 autoCollections.put(definition.id(), definition);
                 autoClassifications.put(definition.classificationTaskId(), definition);
@@ -134,6 +139,7 @@ public final class TaskFlowNormalizer {
                 .map(task -> inheritLayoutRecognition(task, autoClassifications.get(task.id())))
                 .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
                 .map(task -> autoCleanupPolicy(task, config.autoClassifyTasks()))
+                .map(task -> upgradePickupCycle(task, pickups.get(task.id())))
                 .map(task -> pickupFollowUpDelay(task, config.autoClassifyTasks()))
                 .toList();
         List<TaskDefinition> tasks = new ArrayList<>(baseTasks);
@@ -334,6 +340,27 @@ public final class TaskFlowNormalizer {
                 task.steps(), task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
                 owner.cleanupPolicy(), task.autoEatOptions());
+    }
+
+    private static TaskDefinition upgradePickupCycle(TaskDefinition task,
+            AutoClassifyDefinition definition) {
+        if (definition == null) return task;
+        TaskStep generated = AutoClassifyTaskFactory.tasks(definition, List.of()).getFirst()
+                .steps().getFirst();
+        if (!task.steps().isEmpty() && task.steps().getFirst().moduleId().equals(generated.moduleId())
+                && task.steps().getFirst().parameters().equals(generated.parameters())
+                && task.steps().stream().skip(1)
+                        .allMatch(step -> step.kind() == TaskStepKind.CREATE_TASK)) return task;
+        UUID firstId = task.steps().isEmpty() ? definition.derivedId("pickup-cycle")
+                : task.steps().getFirst().id();
+        List<TaskStep> steps = new ArrayList<>(List.of(TaskStep.action(firstId,
+                generated.moduleId(), generated.parameters())));
+        task.steps().stream().filter(step -> step.kind() == TaskStepKind.CREATE_TASK)
+                .forEach(steps::add);
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                steps, task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy(), task.autoEatOptions());
     }
 
     private static TaskDefinition upgradeAutoCollection(

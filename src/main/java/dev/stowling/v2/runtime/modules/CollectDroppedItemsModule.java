@@ -15,6 +15,11 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
     private final DroppedItemCollectionEngine engine;
 
     CollectDroppedItemsModule(TaskExecutionContext context, TaskStep step) {
+        this.engine = createEngine(context, step, false);
+    }
+
+    static DroppedItemCollectionEngine createEngine(TaskExecutionContext context, TaskStep step,
+            boolean cacheCycle) {
         int timeoutSeconds = TaskModuleSupport.integerParameter(
                 step,
                 TaskModuleIds.TIMEOUT_SECONDS,
@@ -33,13 +38,14 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                 TaskModuleIds.AREA_REFERENCE,
                 TaskModuleIds.COORDINATE_ID
         );
-        this.engine = reference.type() == ResourceType.REGION
+        return reference.type() == ResourceType.REGION
                 ? regionEngine(
                         context,
                         ResourceReferenceSupport.region(context, reference),
                         timeoutSeconds,
                         itemFilter,
-                        pickupRadius
+                        pickupRadius,
+                        cacheCycle
                 )
                 : coordinateEngine(
                         context,
@@ -49,7 +55,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                         pickupRadius,
                         TaskModuleSupport.integerParameter(step,
                                 ConfigValidator.DEFAULT_PICKUP_RADIUS,
-                                TaskModuleSupport.DEFAULT_DROP_RADIUS)
+                                TaskModuleSupport.DEFAULT_DROP_RADIUS),
+                        cacheCycle
                 );
     }
 
@@ -84,7 +91,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
             int timeoutSeconds,
             Set<String> itemFilter,
             int pickupRadius,
-            int defaultRadius
+            int defaultRadius,
+            boolean cacheCycle
     ) {
         BlockPosition center = new BlockPosition(
                 coordinate.x(),
@@ -116,7 +124,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                     }
                 },
                 timeoutSeconds,
-                itemFilter
+                itemFilter,
+                cacheCycle
         );
     }
 
@@ -125,7 +134,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
             RegionDefinition region,
             int timeoutSeconds,
             Set<String> itemFilter,
-            int pickupRadius
+            int pickupRadius,
+            boolean cacheCycle
     ) {
         return new DroppedItemCollectionEngine(
                 context,
@@ -146,7 +156,8 @@ final class CollectDroppedItemsModule implements TaskModuleExecutor {
                     }
                 },
                 timeoutSeconds,
-                itemFilter
+                itemFilter,
+                cacheCycle
         );
     }
 }

@@ -42,6 +42,7 @@ public final class MinecraftContainerTransferPort
     private final ClientActionScheduler scheduler;
     private final NavigationPort navigation;
     private ActiveDeposit active;
+    private ContainerTarget retainedTarget;
 
     public MinecraftContainerTransferPort(
             Minecraft minecraft,
@@ -69,6 +70,17 @@ public final class MinecraftContainerTransferPort
 
     private ContainerTransferResult startDeposit(ContainerTarget target, Map<String, Integer> items,
             boolean avoidPickups) {
+        return startDeposit(target, items, avoidPickups, false);
+    }
+
+    @Override
+    public ContainerTransferResult startPickupCacheDeposit(ContainerTarget target,
+            Map<String, Integer> items) {
+        return startDeposit(target, items, false, true);
+    }
+
+    private ContainerTransferResult startDeposit(ContainerTarget target, Map<String, Integer> items,
+            boolean avoidPickups, boolean keepOpen) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(items, "items");
         Map<String, Integer> remaining = checkedItems(items);
@@ -87,7 +99,14 @@ public final class MinecraftContainerTransferPort
                     remaining
             );
         }
-        active = new ActiveDeposit(target, remaining, avoidPickups);
+        active = new ActiveDeposit(target, remaining, avoidPickups, keepOpen);
+        AbstractContainerScreen<?> screen = currentContainerScreen();
+        if (keepOpen && target.equals(retainedTarget) && screen != null
+                && MinecraftContainerInteractions.ready(screen.getMenu())) {
+            active.phase = Phase.READY;
+            active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
+            return pollReady();
+        }
         active.visit = new MinecraftContainerVisit(minecraft, navigation, target, avoidPickups);
         active.deadline = Instant.now().plus(OPEN_TIMEOUT);
         return ContainerTransferResult.pending("正在打开容器", remaining);
@@ -499,7 +518,8 @@ public final class MinecraftContainerTransferPort
             }
         }
         Map<String, Integer> remaining = remaining();
-        closeContainer();
+        if (active.keepOpen) retainedTarget = active.target;
+        else closeContainer();
         active = null;
         return ContainerTransferResult.succeeded(message, remaining);
     }
@@ -696,6 +716,7 @@ public final class MinecraftContainerTransferPort
     }
 
     private void closeContainer() {
+        retainedTarget = null;
         LocalPlayer player = minecraft.player;
         if (player != null) {
             TaskTrace.event("CALL", "game.closeContainer", "", 0, false);
@@ -763,6 +784,7 @@ public final class MinecraftContainerTransferPort
         private final ContainerTarget target;
         private final Map<String, Integer> remaining;
         private boolean avoidPickups;
+        private final boolean keepOpen;
         private Phase phase = Phase.OPENING;
         private Instant deadline;
         private boolean openSent;
@@ -774,11 +796,13 @@ public final class MinecraftContainerTransferPort
         private ActiveDeposit(
                 ContainerTarget target,
                 Map<String, Integer> remaining,
-                boolean avoidPickups
+                boolean avoidPickups,
+                boolean keepOpen
         ) {
             this.target = target;
             this.remaining = remaining;
             this.avoidPickups = avoidPickups;
+            this.keepOpen = keepOpen;
         }
     }
 }

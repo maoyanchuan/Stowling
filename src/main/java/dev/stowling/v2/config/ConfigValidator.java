@@ -1242,12 +1242,17 @@ public final class ConfigValidator {
                         REGION_ID,
                         ITEM_FILTER,
                         TIMEOUT_SECONDS,
-                        PICKUP_RADIUS, DEFAULT_PICKUP_RADIUS
+                        PICKUP_RADIUS, DEFAULT_PICKUP_RADIUS, CACHE_LOCATION_REF,
+                        CONTAINER_TYPES, MAX_VOLUME
                 ),
                 Set.of()
         );
         ResourceReference area = areaReference(step);
         requireAreaExists(area, coordinates, regions);
+        if (step.parameters().containsKey(CACHE_LOCATION_REF)) {
+            requireSpatialReference(step.parameters().get(CACHE_LOCATION_REF), coordinates, regions);
+            requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
+        }
         requireOptionalInteger(step, DEFAULT_PICKUP_RADIUS, 1,
                 AutoClassifyDefinition.MAX_PICKUP_RADIUS);
         requireOptionalInteger(step, TIMEOUT_SECONDS, 0, 86_400);

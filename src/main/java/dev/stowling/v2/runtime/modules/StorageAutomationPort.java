@@ -99,6 +99,10 @@ public interface StorageAutomationPort {
         return (first, second) -> 0;
     }
 
+    default Comparator<ContainerTarget> pickupCacheOrder() {
+        return storageOrder(Map.of());
+    }
+
     default java.util.Optional<TaskModuleExecutor> prepareDeposit(
             TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items) {
         return java.util.Optional.empty();

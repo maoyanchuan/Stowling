@@ -164,6 +164,15 @@ public final class TaskFlowTemplates {
         );
     }
 
+    public static List<TaskStep> pickupToCache(String areaRef, String cacheRef,
+            Map<String, String> parameters) {
+        Map<String, String> pickup = new LinkedHashMap<>(parameters);
+        pickup.put(ConfigValidator.AREA_REF, areaRef);
+        pickup.put(ConfigValidator.CACHE_LOCATION_REF, cacheRef);
+        return List.of(TaskStep.action(UUID.randomUUID(), ConfigValidator.COLLECT_DROPPED_ITEMS,
+                pickup));
+    }
+
     public static List<TaskStep> collect(String areaRef, String regionRef,
             Map<String, String> collectParameters) {
         Map<String, String> collect = new LinkedHashMap<>(collectParameters);

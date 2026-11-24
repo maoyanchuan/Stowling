@@ -33,6 +33,7 @@ final class DroppedItemCollectionEngine {
     private final int timeoutSeconds;
     private final PlayerInventoryManager inventory;
     private final Clock clock;
+    private final boolean cacheCycle;
     private Instant lastProgressAt;
     private Instant stopRequestedAt;
     private PlayerInventorySnapshot currentInventory;
@@ -54,13 +55,19 @@ final class DroppedItemCollectionEngine {
             int timeoutSeconds,
             Set<String> itemFilter
     ) {
+        this(context, source, timeoutSeconds, itemFilter, false);
+    }
+
+    DroppedItemCollectionEngine(TaskExecutionContext context, Source source, int timeoutSeconds,
+            Set<String> itemFilter, boolean cacheCycle) {
         this(
                 context,
                 source,
                 timeoutSeconds,
                 itemFilter,
                 context.inventory(),
-                Clock.systemUTC()
+                Clock.systemUTC(),
+                cacheCycle
         );
     }
 
@@ -72,12 +79,19 @@ final class DroppedItemCollectionEngine {
             PlayerInventoryManager inventory,
             Clock clock
     ) {
+        this(context, source, timeoutSeconds, itemFilter, inventory, clock, false);
+    }
+
+    private DroppedItemCollectionEngine(TaskExecutionContext context, Source source,
+            int timeoutSeconds, Set<String> itemFilter, PlayerInventoryManager inventory,
+            Clock clock, boolean cacheCycle) {
         this.context = context;
         this.source = source;
         this.timeoutSeconds = timeoutSeconds;
         this.itemFilter = Set.copyOf(itemFilter);
         this.inventory = inventory;
         this.clock = clock;
+        this.cacheCycle = cacheCycle;
         this.lastProgressAt = clock.instant();
         context.workspace().inventoryAccount().beginCollection(itemFilter);
     }
@@ -112,6 +126,7 @@ final class DroppedItemCollectionEngine {
         if (!drops.isEmpty() && available.isEmpty()) {
             context.navigation().cancel();
             current = null;
+            if (cacheCycle) inventory.claimAllUnprotectedForCollection(account);
             if (!context.workspace().collectedItems().isEmpty()) {
                 return TaskModuleResult.succeeded("背包已满，先将本批物品存入缓存后继续拾取");
             }
@@ -297,11 +312,12 @@ final class DroppedItemCollectionEngine {
             resetStableConfirmation();
             return TaskModuleResult.waiting("等待拾取回执与背包同步");
         }
-        if (stableTicks < INVENTORY_SETTLE_TICKS) {
+        int settleTicks = cacheCycle ? 2 : INVENTORY_SETTLE_TICKS;
+        if (stableTicks < settleTicks) {
             stableTicks++;
             return TaskModuleResult.running(
                     "等待拾取区域和背包稳定 " + stableTicks + "/"
-                            + INVENTORY_SETTLE_TICKS
+                            + settleTicks
             );
         }
         if (!drainChecked) {

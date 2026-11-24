@@ -278,6 +278,74 @@ def options_root(page: Any, scope: str) -> Any:
 
 
 @pytest.mark.parametrize("scope", ["global", "binding"])
+@pytest.mark.parametrize("width", [1552, 390])
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_support_blocks_accept_one_id_per_line_and_keep_the_draft(
+    sample_page: Any, scope: str, width: int, theme: str,
+) -> None:
+    page = sample_page
+    page.set_viewport_size({"width": width, "height": 1253})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    root = options_root(page, scope)
+    enabled = root.locator('[id$="category-ignore-support"]')
+    expand = root.locator('[id$="category-support-expand"]')
+    field = root.locator('[id$="category-support-block"]')
+    draft = (
+        "minecraft:stone\nminecraft:dirt\nminecraft:polished_deepslate\n"
+        "minecraft:oak_planks\nminecraft:obsidian"
+    )
+    enabled.check()
+    field.fill("minecraft:stone")
+    field.press("End")
+    field.press("Enter")
+    page.keyboard.insert_text(draft.split("\n", 1)[1])
+    assert field.input_value() == draft
+    assert page.locator("#editor-status").inner_text() != "已保存分类区。"
+    assert field.evaluate("node => node.labels[0].textContent.includes('每行填写一个方块 ID')")
+    bounds = field.bounding_box()
+    assert bounds is not None and bounds["height"] >= 86
+    assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+    expand.click()
+    assert field.is_hidden()
+    assert enabled.is_checked()
+    expand.click()
+    assert field.input_value() == draft
+    enabled.uncheck()
+    assert field.is_disabled()
+    enabled.check()
+    assert field.input_value() == draft
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_support_block_lines_survive_inheritance_save_and_copy(
+    sample_page: Any, enabled: bool,
+) -> None:
+    page = sample_page
+    global_options = options_root(page, "global")
+    global_draft = "minecraft:stone\nminecraft:dirt"
+    local_draft = "minecraft:glass\nminecraft:oak_planks\nminecraft:polished_deepslate"
+    global_options.locator('[id$="category-ignore-support"]').check()
+    global_options.locator('[id$="category-support-block"]').fill(global_draft)
+    card = options_root(page, "binding")
+    assert card.locator('[id$="category-support-block"]').input_value() == global_draft
+    card.locator('[id$="category-support-block"]').fill(local_draft)
+    card.locator('[id$="category-ignore-support"]').set_checked(enabled)
+    card.locator(".category-binding-enabled").set_checked(enabled)
+    global_options.locator('[id$="category-ignore-support"]').set_checked(enabled)
+    page.locator('button[type="submit"]').filter(has_text="保存坐标").click()
+    assert page.locator("#editor-status").inner_text() == "已保存分类区。"
+    page.locator("#duplicate-coordinate").click()
+    global_options.locator('[id$="category-ignore-support"]').check()
+    assert global_options.locator('[id$="category-support-block"]').input_value() == global_draft
+    card = page.locator(".category-binding-card").first
+    assert card.locator(".category-binding-enabled").is_checked() is enabled
+    card.locator(".category-binding-toggle").click()
+    card.locator(".category-binding-enabled").check()
+    card.locator('[id$="category-ignore-support"]').check()
+    assert card.locator('[id$="category-support-block"]').input_value() == local_draft
+
+
+@pytest.mark.parametrize("scope", ["global", "binding"])
 def test_standing_switch_keyboard_disclosure_and_coordinate_draft(
     sample_page: Any, scope: str,
 ) -> None:

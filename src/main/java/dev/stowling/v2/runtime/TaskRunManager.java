@@ -202,7 +202,7 @@ public final class TaskRunManager {
                 task,
                 config.coordinates(),
                 config.regions(),
-                taskCategoryZones(task, config),
+                config.categoryZones(),
                 config.coordinateCatalog().warehouses().stream().collect(
                         java.util.stream.Collectors.toUnmodifiableMap(
                                 CoordinateCatalog.Warehouse::id, warehouse -> warehouse)),
@@ -212,33 +212,6 @@ public final class TaskRunManager {
                 allowRepeat,
                 true
         );
-    }
-
-    private static List<CategoryZoneDefinition> taskCategoryZones(TaskDefinition task,
-            AppConfig config) {
-        var owner = config.autoClassifyTasks().stream().filter(definition ->
-                definition.classificationTaskId().equals(task.id())).findFirst().orElse(null);
-        if (owner == null) return config.categoryZones();
-        return config.categoryZones().stream().map(zone -> {
-            var policy = owner.classificationAreas().stream().filter(area ->
-                    area.categoryZoneRef().equals("category-zone:" + zone.id()))
-                    .map(dev.stowling.v2.model.AutoClassifyAreaDefinition::storagePolicy)
-                    .filter(Objects::nonNull).findFirst().orElse(null);
-            if (policy == null) return zone;
-            return new CategoryZoneDefinition(zone.id(), zone.name(), zone.bindings().stream()
-                    .map(binding -> binding.optionsEnabled() ? binding
-                            : new dev.stowling.v2.model.CategoryBindingDefinition(
-                            binding.id(), binding.markerArea(), binding.storageArea(),
-                            binding.ruleId(), binding.ignoredMarkerBlockIds(),
-                            binding.containerOverrides(), binding.standingArea(),
-                            new dev.stowling.v2.model.StoragePolicy(policy.mode(),
-                                    policy.loosePercent(), policy.allowPartialBoxes(),
-                                    binding.storagePolicy().packingArea(), policy.refillLoose(),
-                                    policy.looseSlots(), policy.partialBoxDestinationRef()),
-                            binding.wholeStorage(), binding.name(), binding.optionsEnabled(),
-                            binding.categoryOptions()))
-                    .toList());
-        }).toList();
     }
 
     private TaskRunSnapshot enqueueStart(
@@ -1137,7 +1110,7 @@ public final class TaskRunManager {
                 List.copyOf(source.coordinates.values()),
                 List.copyOf(source.regions.values()),
                 inventoryConfig == null ? List.copyOf(source.categoryZones.values())
-                        : taskCategoryZones(task, inventoryConfig),
+                        : inventoryConfig.categoryZones(),
                 source.warehouses,
                 source.tasks,
                 source.triggers,

@@ -173,31 +173,63 @@ class ConfigStoreTest {
     void storesExactLooseSlotsAndChecksThePartialBoxDestinationOnRestart() throws Exception {
         AppConfig initial = automaticConfiguration(false);
         var original = initial.autoClassifyTasks().getFirst();
-        var originalArea = original.classificationAreas().getFirst();
         var policy = new dev.stowling.v2.model.StoragePolicy(
                 dev.stowling.v2.model.StorageMode.MIXED, 35, true, null, true, 19,
                 original.detectionCoordinateRef());
-        var automatic = new AutoClassifyDefinition(original.id(), original.name(), false,
-                true, true, original.detectionCoordinateRef(), 8, original.cacheLocationRef(),
-                List.of(new AutoClassifyAreaDefinition(originalArea.categoryZoneRef(), policy)),
-                TaskPriority.NORMAL);
+        var originalZone = initial.categoryZones().getFirst();
+        var binding = originalZone.bindings().getFirst();
+        var updatedBinding = new CategoryBindingDefinition(binding.id(), binding.markerArea(),
+                binding.storageArea(), binding.ruleId(), binding.ignoredMarkerBlockIds(),
+                binding.containerOverrides(), binding.standingArea(), policy);
+        var zone = new CategoryZoneDefinition(originalZone.id(), originalZone.name(),
+                List.of(updatedBinding));
         var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
-                AutoClassifyTaskFactory.tasks(automatic, List.of()), initial.regions(),
-                initial.categoryZones(), List.of(), List.of(), List.of(automatic));
+                initial.tasks(), initial.regions(), List.of(zone), List.of(), List.of(),
+                initial.autoClassifyTasks());
         Path path = directory.resolve("partial-boxes.json");
         var store = new ConfigStore(path);
         store.save(store.loadOrReset().revision(), config);
-        assertEquals(policy, new ConfigStore(path).loadOrReset().config().autoClassifyTasks()
-                .getFirst().classificationAreas().getFirst().storagePolicy());
+        assertEquals(policy, new ConfigStore(path).loadOrReset().config().categoryZones()
+                .getFirst().bindings().getFirst().storagePolicy());
         var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
-        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
-                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject()
+        json.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                .getAsJsonArray("bindings").get(0).getAsJsonObject()
                 .getAsJsonObject("storagePolicy").addProperty("partialBoxDestinationRef",
                         "coordinate:" + UUID.randomUUID());
         String invalid = json.toString();
         Files.writeString(path, invalid);
         assertThrows(V2ValidationException.class, () -> new ConfigStore(path).loadOrReset());
         assertEquals(invalid, Files.readString(path));
+    }
+
+    @Test
+    void discardsLegacyTaskStoragePoliciesWithoutChangingCoordinateSettings() throws Exception {
+        Path path = directory.resolve("legacy-task-policy.json");
+        var store = new ConfigStore(path);
+        AppConfig initial = automaticConfiguration(false);
+        store.save(store.loadOrReset().revision(), initial);
+        var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        var retired = JsonParser.parseString("""
+                {"mode":"BOX_ONLY","loosePercent":25,"allowPartialBoxes":true}
+                """).getAsJsonObject();
+        retired.addProperty("partialBoxDestinationRef", "coordinate:" + UUID.randomUUID());
+        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject()
+                .add("storagePolicy", retired);
+        Files.writeString(path, json.toString());
+
+        var restarted = new ConfigStore(path);
+        var loaded = restarted.loadOrReset();
+        assertEquals(initial.autoClassifyTasks(), loaded.config().autoClassifyTasks());
+        assertEquals(initial.categoryZones(), loaded.config().categoryZones());
+        CoordinateResourceMigration.migrate(restarted,
+                dev.stowling.v2.model.StorageAutomationSettings.DEFAULT);
+        restarted.save(loaded.revision(), loaded.config());
+        var saved = JsonParser.parseString(Files.readString(path)).getAsJsonObject()
+                .getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
+        assertEquals(java.util.Set.of("categoryZoneRef"), saved.keySet());
+        assertEquals(initial.categoryZones(), restarted.read().config().categoryZones());
     }
 
     @Test

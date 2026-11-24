@@ -377,7 +377,7 @@ class V2ControlServerTest {
     }
 
     @Test
-    void automaticTaskAreaUsesLayoutRecognitionWithoutTaskLevelFields() throws Exception {
+    void automaticTaskAreaUsesCoordinateSettingsWithoutTaskLevelFields() throws Exception {
         var store = new ConfigStore(directory.resolve("layout-recognition.json"));
         var point = new dev.stowling.v2.model.CoordinatePoint(UUID.randomUUID(), "Drops", 0, 64, 0);
         var region = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 1);
@@ -395,7 +395,8 @@ class V2ControlServerTest {
                 {"name":"Automatic","collectionEnabled":true,
                 "classificationEnabled":true,"detection":{"coordinateRef":"coordinate:%s",
                 "pickupRadius":8,"intervalSeconds":6},"cacheLocationRef":"region:%s",
-                "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
+                "classificationAreas":[{"categoryZoneRef":"category-zone:%s",
+                "storagePolicy":{"mode":"BOX_ONLY","loosePercent":25}}],
                 "collectionPriority":"NORMAL",
                 "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65}}
                 """.formatted(point.id(), region.id(), zone.id());
@@ -422,6 +423,9 @@ class V2ControlServerTest {
                     body.replace("\"enabled\":true", "\"enabled\":\"true\""), true).statusCode());
             var area = item.getAsJsonArray("classificationAreas").get(0).getAsJsonObject();
             assertEquals("category-zone:" + zone.id(), area.get("categoryZoneRef").getAsString());
+            assertFalse(area.has("storagePolicy"));
+            assertEquals(binding.storagePolicy(), store.read().config().categoryZones()
+                    .getFirst().bindings().getFirst().storagePolicy());
             assertTrue(!area.has("ruleId"));
             assertTrue(!area.has("markerSources"));
         }

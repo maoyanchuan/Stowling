@@ -35,7 +35,8 @@ def classification_page() -> Iterator[Any]:
                     id: 'classification/1', kind: 'CLASSIFICATION', name: '分类 · 主仓库',
                     enabled: false, collectionEnabled: false, classificationEnabled: true,
                     cacheLocationRef: 'region:cache', collectionPriority: 'NORMAL',
-                    classificationAreas: [{categoryZoneRef: 'category-zone:zone'}],
+                    classificationAreas: [{categoryZoneRef: 'category-zone:zone',
+                        storagePolicy: {mode: 'BOX_ONLY', loosePercent: 25}}],
                     overflowEnabled: false, overflowDestinationRef: 'warehouse:warehouse'
                 }};
             window.Stowling = {
@@ -77,7 +78,9 @@ def classification_page() -> Iterator[Any]:
                 async load() {
                     return {coordinates: [{id: 'box', name: '供应箱'}],
                         regions: [{id: 'cache', name: '主仓缓存'}, {id: 'reserve', name: '备用缓存'}],
-                        categoryZones: [{id: 'zone', name: '主仓分类区'}],
+                        categoryZones: [{id: 'zone', name: '主仓分类区', bindings: [
+                            {storagePolicy: {mode: 'NORMAL'}},
+                            {storagePolicy: {mode: 'MIXED', looseSlots: 19}}]}],
                         catalog: {warehouses: [{id: 'warehouse', name: '溢出仓库'}]}};
                 },
                 /** @returns {void} */
@@ -86,7 +89,7 @@ def classification_page() -> Iterator[Any]:
         """)
         for name in (
             "settings-ui.js", "task-select-ui.js", "v2-task-model.js",
-            "auto-classify-task-model.js", "storage-policy-editor.js",
+            "auto-classify-task-model.js",
             "task-cleanup-settings.js", "task-autosave.js", "auto-classify-ui.js",
         ):
             page.add_script_tag(content=(WEB / name).read_text(encoding="utf-8"))
@@ -184,6 +187,31 @@ def test_paused_classification_autosaves_without_starting(classification_page: A
     assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == []
     writes = page.evaluate("backend.requests.filter(item => item.method === 'PUT')")
     assert writes and all("enabled" not in item["body"] for item in writes)
+
+
+def test_classification_uses_coordinate_storage_settings_without_a_task_editor(
+    classification_page: Any,
+) -> None:
+    page = classification_page
+    open_settings(page)
+    area = page.locator("#auto-classification-areas .auto-classification-area")
+    area.locator(":scope > summary").click()
+    settle(page)
+    assert area.get_by_text(
+        "储存模式和识别方式使用坐标页面中所选分类区及绑定组的设置。"
+    ).is_visible()
+    assert area.locator("select").count() == 1
+    assert area.locator("select").input_value() == "zone"
+    assert area.locator(".storage-policy-editor").count() == 0
+    assert area.locator("details").count() == 0
+    assert page.evaluate("typeof window.StowlingStoragePolicyEditor") == "undefined"
+    page.locator(".move-field:has(#auto-cache-location) .task-select-trigger").click()
+    page.get_by_role("option", name="备用缓存").click()
+    page.wait_for_function("backend.item.cacheLocationRef === 'region:reserve'")
+    writes = page.evaluate("backend.requests.filter(item => item.method === 'PUT')")
+    assert writes and all(item["body"]["classificationAreas"] == [
+        {"categoryZoneRef": "category-zone:zone"},
+    ] for item in writes)
 
 
 def test_warehouse_switch_and_disclosure_keep_the_selected_resource(classification_page: Any) -> None:

@@ -295,7 +295,6 @@ public final class ConfigValidator {
             Set<UUID> selectedZones = new HashSet<>();
             for (AutoClassifyAreaDefinition area
                     : definition.classificationAreas()) {
-                requirePartialDestination(area.storagePolicy(), coordinates, regions);
                 ResourceReference zoneReference = ResourceReference.parse(
                         area.categoryZoneRef()
                 );

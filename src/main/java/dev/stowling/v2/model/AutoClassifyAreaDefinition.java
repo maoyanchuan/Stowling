@@ -1,13 +1,8 @@
 package dev.stowling.v2.model;
 
 public record AutoClassifyAreaDefinition(
-        String categoryZoneRef,
-        dev.stowling.v2.model.StoragePolicy storagePolicy
+        String categoryZoneRef
 ) {
-    public AutoClassifyAreaDefinition(String categoryZoneRef) {
-        this(categoryZoneRef, null);
-    }
-
     public AutoClassifyAreaDefinition {
         categoryZoneRef = requireZoneReference(categoryZoneRef);
     }

@@ -33,10 +33,11 @@ def test_storage_policy_round_trip_keeps_tail_switch_and_external_packing_area()
     assert json.loads(result.stdout) == policy
 
 
-def test_task_editor_loads_and_saves_the_optional_refill_switch() -> None:
+def test_storage_policy_editor_keeps_refill_support_outside_classification_tasks() -> None:
     source = (WEB / "storage-policy-editor.js").read_text(encoding="utf-8")
     assert "refill.checked = Boolean(policy.refillLoose)" in source
     assert 'refillLoose: mode.value === "MIXED" && refill.checked' in source
     assert "散货不足设定槽位时拆盒补足" in source
     task = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
-    assert "StowlingStoragePolicyEditor.create(policy, state.resources)" in task
+    assert "StowlingStoragePolicyEditor" not in task
+    assert '/storage-policy-editor.js' not in (WEB / "tasks.html").read_text(encoding="utf-8")

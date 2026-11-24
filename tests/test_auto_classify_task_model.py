@@ -149,7 +149,7 @@ def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     )
 
     assert result == {
-        "areas": [{"categoryZoneRef": "category-zone:tools", "storagePolicy": None}],
+        "areas": [{"categoryZoneRef": "category-zone:tools"}],
         "hasLegacyField": False,
         "missingLayout": ["请至少添加一个分类选区"],
     }
@@ -224,10 +224,8 @@ def test_draft_from_task_reads_only_flat_business_fields() -> None:
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "ore-zone",
-            "storagePolicy": None,
         }, {
             "categoryZoneId": "storage-zone",
-            "storagePolicy": None,
         }],
         "collectionPriority": "URGENT",
         "enabled": True,
@@ -275,7 +273,6 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "",
-            "storagePolicy": None,
         }],
         "collectionPriority": "NORMAL",
         "enabled": False,
@@ -376,10 +373,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneRef": "category-zone:zone-1",
-            "storagePolicy": None,
         }, {
             "categoryZoneRef": "category-zone:zone-2",
-            "storagePolicy": None,
         }],
         "collectionPriority": "URGENT",
     }
@@ -410,10 +405,8 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
         "classificationAreas": [{
             "categoryZoneId": "zone-1",
-            "storagePolicy": None,
         }, {
             "categoryZoneId": "zone-2",
-            "storagePolicy": None,
         }],
         "collectionPriority": "URGENT",
         "enabled": False,
@@ -466,8 +459,8 @@ def test_legacy_recognition_is_discarded_without_requiring_category_rules() -> N
 
     assert result == {
         "errors": [],
-        "areas": [{"categoryZoneRef": "category-zone:zone-1", "storagePolicy": None}],
-        "restored": [{"categoryZoneId": "zone-1", "storagePolicy": None}],
+        "areas": [{"categoryZoneRef": "category-zone:zone-1"}],
+        "restored": [{"categoryZoneId": "zone-1"}],
     }
 
 

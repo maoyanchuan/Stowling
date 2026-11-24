@@ -538,12 +538,6 @@ public final class V2ControlServiceImpl implements V2ControlService {
 
     private static List<String> partialBoxReferences(AppConfig config, String reference) {
         List<String> names = new ArrayList<>();
-        for (var task : config.autoClassifyTasks()) {
-            if (task.classificationAreas().stream().anyMatch(area -> area.storagePolicy() != null
-                    && reference.equals(area.storagePolicy().partialBoxDestinationRef()))) {
-                names.add(task.name() + "·未满盒储存");
-            }
-        }
         for (var zone : config.categoryZones()) {
             if (zone.bindings().stream().anyMatch(binding -> reference.equals(
                     binding.storagePolicy().partialBoxDestinationRef()))) {
@@ -1600,10 +1594,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
         String coordinateRef = detection == null ? null : detection.coordinateRef();
         Integer pickupRadius = detection == null ? null : detection.pickupRadius();
         List<AutoClassifyAreaDefinition> areas = requestedAreas.stream()
-                .map(area -> new AutoClassifyAreaDefinition(
-                        area.categoryZoneRef(),
-                        area.storagePolicy()
-                ))
+                .map(area -> new AutoClassifyAreaDefinition(area.categoryZoneRef()))
                 .toList();
         return new AutoClassifyDefinition(
                 id,

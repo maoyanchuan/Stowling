@@ -1,6 +1,7 @@
 package dev.stowling.v2.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,7 +11,15 @@ import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.AppConfig;
+import dev.stowling.v2.model.AreaBounds;
+import dev.stowling.v2.model.AutoClassifyAreaDefinition;
+import dev.stowling.v2.model.AutoClassifyDefinition;
+import dev.stowling.v2.model.CategoryBindingDefinition;
+import dev.stowling.v2.model.CategoryZoneDefinition;
 import dev.stowling.v2.model.CoordinatePoint;
+import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.StorageMode;
+import dev.stowling.v2.model.StoragePolicy;
 import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
@@ -29,6 +38,53 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class TaskRunManagerTest {
+    @Test
+    void classificationUsesCurrentCoordinatePoliciesForEveryBinding() {
+        var navigation = new RecordingNavigation();
+        var unavailable = TaskModuleRuntimeRegistry.unavailablePorts(navigation);
+        List<CategoryZoneDefinition> resolved = new ArrayList<>();
+        var registry = new TaskModuleRuntimeRegistry(navigation, unavailable.droppedItems(),
+                unavailable.containerRegions(), unavailable.containerTransfers(),
+                unavailable.containerWithdrawals(), (zone, types, volume) -> {
+                    resolved.add(zone);
+                    return dev.stowling.automation.CategoryZoneResult.failure("Captured layout");
+                }, dev.stowling.v2.runtime.modules.StandardTaskModuleFactories.create());
+        var point = new CoordinatePoint(UUID.randomUUID(), "Drops", 0, 64, 0);
+        var cache = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 1);
+        UUID zoneId = UUID.randomUUID();
+        String zoneRef = "category-zone:" + zoneId;
+        var owner = new AutoClassifyDefinition(UUID.randomUUID(), "Classification", false,
+                true, true, "coordinate:" + point.id(), 8, "region:" + cache.id(),
+                List.of(new AutoClassifyAreaDefinition(zoneRef)), TaskPriority.NORMAL);
+        var task = new TaskDefinition(owner.classificationTaskId(), "Resolve coordinates",
+                List.of(TaskStep.action(UUID.randomUUID(),
+                        ConfigValidator.RESOLVE_CONTAINER_CATEGORIES,
+                        Map.of(ConfigValidator.CATEGORY_ZONE_REF, zoneRef,
+                                ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true"))));
+        var area = new AreaBounds(5, 64, 0, 5, 64, 0);
+        var independent = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker",
+                "box", "inside-box", "", false, "");
+        var local = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                "DIRECT_BLOCK_ID", List.of(), List.of(), null, independent.storagePolicy(null),
+                false, "Independent", true, independent);
+        for (StorageMode mode : StorageMode.values()) {
+            var manager = new TaskRunManager(navigation, registry);
+            var shared = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                    "DIRECT_BLOCK_ID", List.of(), List.of(), null,
+                    new StoragePolicy(mode, 50, true, null));
+            var zone = new CategoryZoneDefinition(zoneId, "Storage", List.of(shared, local));
+            var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
+                    List.of(task), List.of(cache), List.of(zone), List.of(), List.of(),
+                    List.of(owner));
+            manager.start(task, config, null);
+            for (int tick = 0; tick < 4; tick++) manager.tick();
+            assertEquals(zone, resolved.getLast());
+            assertEquals(mode, resolved.getLast().bindings().getFirst().storagePolicy().mode());
+            assertEquals(local, resolved.getLast().bindings().getLast());
+        }
+        assertEquals(StorageMode.values().length, resolved.size());
+    }
+
     @Test
     void followUpCountdownStartsAfterSuccessAndDoesNotOccupyTheRobot() {
         UUID point = UUID.randomUUID();

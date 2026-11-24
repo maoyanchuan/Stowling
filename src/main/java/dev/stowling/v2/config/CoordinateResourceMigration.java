@@ -35,38 +35,16 @@ public final class CoordinateResourceMigration {
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
                 task.cleanupPolicy(), task.autoEatOptions()))
                 .toList();
-        List<AutoClassifyDefinition> automatic = config.autoClassifyTasks().stream().map(definition ->
-                new AutoClassifyDefinition(definition.id(), definition.name(), definition.enabled(),
-                        definition.collectionEnabled(), definition.classificationEnabled(),
-                        definition.detectionCoordinateRef(), definition.pickupRadius(),
-                        definition.cacheLocationRef(), definition.classificationAreas().stream()
-                                .map(area -> new AutoClassifyAreaDefinition(area.categoryZoneRef(),
-                                        area.storagePolicy() != null ? area.storagePolicy()
-                                                : config.categoryZones().stream().filter(zone ->
-                                                        area.categoryZoneRef().equals(
-                                                                "category-zone:" + zone.id()))
-                                                        .flatMap(zone -> zone.bindings().stream())
-                                                        .map(CategoryBindingDefinition::storagePolicy)
-                                                        .findFirst().orElse(StoragePolicy.DEFAULT)))
-                        .toList(), definition.collectionPriority(),
-                        definition.overflowEnabled(), definition.cleanupPolicy(),
-                        definition.unstackableRegionRef(),
-                        definition.overflowDestinationRef(), definition.cachePolicy(),
-                        definition.kind(), definition.followUpTaskRef(),
-                        definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
-                        definition.followUpEnabled()))
-                .toList();
         var migrated = new StorageAutomationSettings(settings.cleanupEnabled(), List.of(),
                 List.of(), null, temporary.stream().distinct().toList(),
                 empty.stream().distinct().toList(), fallback, settings.temporaryRegionIds(),
                 settings.overflowCoordinateIds(), settings.overflowRegionIds(),
                 settings.unstackableOverflowRegionId(), settings.robotWarehouseEnabled(),
                 settings.robotWarehouseCoordinateIds(), settings.robotWarehouseRegionIds());
-        if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())
-                || !automatic.equals(config.autoClassifyTasks())) {
+        if (!points.equals(config.coordinates()) || !tasks.equals(config.tasks())) {
             store.save(snapshot.revision(), new AppConfig(config.schemaVersion(), points, tasks,
                     config.regions(), config.categoryZones(), config.triggers(), config.taskFolders(),
-                    automatic));
+                    config.autoClassifyTasks()));
         }
         return migrated;
     }

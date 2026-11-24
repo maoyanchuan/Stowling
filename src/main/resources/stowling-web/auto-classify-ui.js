@@ -222,17 +222,13 @@
         }
         range.value = area.categoryZoneId;
 
-        const policy = area.storagePolicy || selectedZone?.bindings?.[0]?.storagePolicy || {};
-        const storage = window.StowlingStoragePolicyEditor.create(policy, state.resources);
         const fields = Stowling.element("div", "auto-area-fields");
         fields.append(
             labeledControl(state.draft.kind === "CLASSIFICATION" ? "分类储存区" : "分类范围",
                 range),
             Stowling.element("p", "settings-description compact-help",
-                "识别方式使用仓储布局中各分类物的设置。"),
-            storage.root
+                "储存模式和识别方式使用坐标页面中所选分类区及绑定组的设置。")
         );
-        wrapSettingsContent(storage.root.querySelector(".settings-detail"));
         wrapSettingsContent(fields);
         const disclosure = window.StowlingSettings.disclosure(
             `分类选区 ${index + 1}`,
@@ -252,14 +248,8 @@
         elements.areas.append(disclosure.root);
         Picker.group(range, "category-zone", "category-zones");
         return {
-            collapse: () => {
-                disclosure.setExpanded(false);
-                storage.collapse();
-            },
-            read: () => ({
-                categoryZoneId: range.value,
-                storagePolicy: storage.read()
-            })
+            collapse: () => disclosure.setExpanded(false),
+            read: () => ({categoryZoneId: range.value})
         };
     }
 

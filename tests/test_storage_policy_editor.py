@@ -182,7 +182,7 @@ void main();
     }
 
 
-def test_task_areas_and_storage_are_nested_collapsed_disclosures() -> None:
+def test_task_areas_keep_collapsed_disclosures_without_a_storage_editor() -> None:
     source = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
     html = (WEB / "tasks.html").read_text(encoding="utf-8")
     css = (WEB / "workbench.css").read_text(encoding="utf-8")
@@ -192,4 +192,4 @@ def test_task_areas_and_storage_are_nested_collapsed_disclosures() -> None:
     assert '.auto-config-section[data-enabled="false"] .move-task-chevron' in css
     assert 'transform: rotate(-45deg)' in css
     assert 'transform: rotate(45deg)' in css
-    assert html.index('/storage-policy-editor.js') < html.index('/auto-classify-ui.js')
+    assert '/storage-policy-editor.js' not in html

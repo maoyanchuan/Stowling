@@ -91,8 +91,7 @@
                     categoryZoneId: referencedId(
                         area?.categoryZoneRef,
                         "category-zone"
-                    ),
-                    storagePolicy: area?.storagePolicy || null
+                    )
                 }))
                 : [],
             collectionPriority: String(item?.collectionPriority ?? ""),
@@ -258,8 +257,7 @@
                 categoryZoneRef: reference(
                     "category-zone",
                     area.categoryZoneId
-                ),
-                storagePolicy: area.storagePolicy || null
+                )
             })),
             collectionPriority: draft.collectionPriority,
             ...(draft.kind ? {kind: draft.kind} : {}),

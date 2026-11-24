@@ -1015,12 +1015,10 @@ public final class V2ControlServer implements AutoCloseable {
         List<AutoClassifyAreaRequest> result = new ArrayList<>();
         for (JsonElement value : array(json, "classificationAreas")) {
             JsonObject area = jsonObject(value, "classification area");
+            // Accept the retired field from older clients without using a task-level policy.
             requireFieldsAny(area, Set.of("categoryZoneRef", "storagePolicy"),
                     Set.of("categoryZoneRef"));
-            result.add(new AutoClassifyAreaRequest(
-                    string(area, "categoryZoneRef"),
-                    area.has("storagePolicy") ? storagePolicy(area) : null
-            ));
+            result.add(new AutoClassifyAreaRequest(string(area, "categoryZoneRef")));
         }
         return List.copyOf(result);
     }

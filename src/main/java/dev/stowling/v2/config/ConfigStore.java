@@ -311,6 +311,7 @@ public final class ConfigStore {
         for (int index = 0; index < areas.size(); index++) {
             String areaPath = path + "[" + index + "]";
             JsonObject area = requireObject(areas.get(index), areaPath);
+            // Gson discards the retired task policy while retaining the shared zone reference.
             requireFields(area, areaPath, Set.of(
                     "categoryZoneRef",
                     "storagePolicy"

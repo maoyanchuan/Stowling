@@ -175,6 +175,8 @@
 `unclassifiableDestinationRef`、`overflowEnabled` 和 `overflowDestinationRef`。
 关闭、收起、保存和重新打开时保留存放位置；功能开关、菜单展开和任务运行分别维护。
 原有任务级 `overflowEnabled` 和 `overflowDestinationRef` 继续表示机器人仓库配置。
+不可分类、溢出存放和机器人仓库的存放位置行只显示选择框，不插入“去坐标页添加”链接。
+机器人仓库标题行沿用整行圆角高亮，展开和收起时按钮自身均保持透明，避免叠出矩形背景。
 沿用共用主题、选中勾号、键盘导航与 200／150ms reveal，不修改通用模板规范。
 
 “售卖弹性物资”“四号谷地”“武陵”及模板数值只是排版示例。

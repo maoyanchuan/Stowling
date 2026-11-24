@@ -4583,8 +4583,8 @@ button:active:not(:disabled) {
     text-align: left;
 }
 
-:where(.auto-task-form:not([data-kind="PICKUP"])) .auto-phase-toggle:hover:not(:disabled),
-:where(.auto-task-form:not([data-kind="PICKUP"])) .auto-phase-toggle[aria-expanded="true"] {
+:where(.auto-task-form[data-kind="COMBINED"]) .auto-phase-toggle:hover:not(:disabled),
+:where(.auto-task-form[data-kind="COMBINED"]) .auto-phase-toggle[aria-expanded="true"] {
     background: var(--accent-soft);
     transform: none;
 }

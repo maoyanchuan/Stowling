@@ -246,7 +246,7 @@
         populateSelect(elements.warehouse, state.resources.warehouses.map(item => ({
             ...item, id: "warehouse:" + item.id
         })), draft.overflowDestinationRef, "请选择溢出仓库");
-        Picker.group(elements.warehouse, undefined, "warehouses");
+        Picker.group(elements.warehouse, undefined, "warehouses", false);
         const available = [...state.regularTasks, ...state.items]
             .filter(task => task.id !== draft.id)
             .map(task => ({id: "task:" + task.id, name: task.name}));

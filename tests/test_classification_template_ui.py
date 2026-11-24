@@ -1,5 +1,6 @@
 import re
 from collections.abc import Iterator
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,9 @@ def classification_page() -> Iterator[Any]:
                     const method = options.method || 'GET';
                     const body = options.body ? JSON.parse(options.body) : null;
                     backend.requests.push({path, method, body});
+                    if (path === '/v1/coordinate-resources') {
+                        return structuredClone(window.coordinateResources);
+                    }
                     if (path === '/v1/tasks') return {tasks: []};
                     if (method === 'GET') {
                         return structuredClone({revision: backend.revision, items: [backend.item]});
@@ -73,22 +77,15 @@ def classification_page() -> Iterator[Any]:
                     return structuredClone({revision: backend.revision, item: backend.item});
                 }
             };
-            window.StowlingResourcePicker = {
-                /** @returns {Promise<object>} */
-                async load() {
-                    return {coordinates: [{id: 'box', name: '供应箱'}],
-                        regions: [{id: 'cache', name: '主仓缓存'}, {id: 'reserve', name: '备用缓存'}],
-                        categoryZones: [{id: 'zone', name: '主仓分类区', bindings: [
-                            {storagePolicy: {mode: 'NORMAL'}},
-                            {storagePolicy: {mode: 'MIXED', looseSlots: 19}}]}],
-                        catalog: {warehouses: [{id: 'warehouse', name: '溢出仓库'}]}};
-                },
-                /** @returns {void} */
-                group() {}
-            };
+            window.coordinateResources = {coordinates: [{id: 'box', name: '供应箱'}],
+                regions: [{id: 'cache', name: '主仓缓存'}, {id: 'reserve', name: '备用缓存'}],
+                categoryZones: [{id: 'zone', name: '主仓分类区', bindings: [
+                    {storagePolicy: {mode: 'NORMAL'}},
+                    {storagePolicy: {mode: 'MIXED', looseSlots: 19}}]}],
+                catalog: {warehouses: [{id: 'warehouse', name: '溢出仓库'}]}};
         """)
         for name in (
-            "settings-ui.js", "task-select-ui.js", "v2-task-model.js",
+            "settings-ui.js", "task-select-ui.js", "resource-picker.js", "v2-task-model.js",
             "auto-classify-task-model.js",
             "task-cleanup-settings.js", "empty-box-settings.js", "task-autosave.js",
             "classification-remainder-settings.js",
@@ -232,6 +229,77 @@ def test_warehouse_switch_and_disclosure_keep_the_selected_resource(classificati
     page.locator("#robot-warehouse-toggle").click()
     settle(page)
     assert page.locator("#robot-warehouse-location").input_value() == "warehouse:warehouse"
+
+
+@pytest.mark.parametrize("available", [True, False])
+@pytest.mark.parametrize("width", [1000, 390])
+def test_remainder_pickers_have_no_create_link_and_warehouse_control_fits_its_row(
+    classification_page: Any, available: bool, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    if not available:
+        page.evaluate("coordinateResources.catalog.warehouses = []")
+        page.locator("#refresh-move-tasks").click()
+        page.wait_for_function("""() => {
+            const options = document.querySelector('#robot-warehouse-location').options;
+            return !Array.from(options).some(option => option.value && !option.disabled);
+        }""")
+    open_settings(page)
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    page.locator("#robot-warehouse-enabled").check()
+    page.locator("#robot-warehouse-toggle").click()
+    settle(page)
+    host = page.locator("#auto-remainder-settings")
+    assert host.get_by_role("link", name="去坐标页添加").count() == 0
+    assert host.locator(".resource-picker-controls").count() == 0
+    row = page.locator("#robot-warehouse-location-field")
+    bounds = row.bounding_box()
+    control = row.locator(".task-select-trigger").bounding_box()
+    assert bounds is not None and control is not None
+    assert control["y"] >= bounds["y"] + 8
+    assert control["y"] + control["height"] <= bounds["y"] + bounds["height"] - 8
+    assert control["x"] + control["width"] <= bounds["x"] + bounds["width"] + 1
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width", [1000, 390])
+def test_closed_robot_submenu_keeps_one_rounded_hover_background(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    pixels = pytest.importorskip("PIL.Image")
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    page.locator("#robot-warehouse-enabled").check()
+    toggle = page.locator("#robot-warehouse-toggle")
+    toggle.click()
+    settle(page)
+    toggle.click()
+    settle(page)
+    assert page.locator("#robot-warehouse-body").is_hidden()
+    assert page.locator("#robot-warehouse-enabled").is_checked()
+    row = page.locator("#robot-warehouse-settings > .auto-phase-header")
+    row.scroll_into_view_if_needed()
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(180)
+    baseline = pixels.open(BytesIO(row.screenshot())).convert("RGB")
+    toggle.hover()
+    page.wait_for_function("""() => Number(getComputedStyle(document.querySelector(
+        '#robot-warehouse-settings > .auto-phase-header'), '::before').opacity) > 0.99""")
+    hovered = pixels.open(BytesIO(row.screenshot())).convert("RGB")
+    # The row's highlight is inset vertically; a button background would fill these pixels.
+    for y in (1, hovered.height - 2):
+        assert hovered.getpixel((20, y)) == baseline.getpixel((20, y))
+    assert hovered.getpixel((20, hovered.height // 2)) != baseline.getpixel(
+        (20, baseline.height // 2)
+    )
+    assert toggle.evaluate("node => getComputedStyle(node).backgroundColor") == "rgba(0, 0, 0, 0)"
+    assert row.evaluate("node => getComputedStyle(node, '::before').borderRadius") == "10px"
 
 
 def test_remainder_destinations_save_and_keep_drafts_when_disabled(classification_page: Any) -> None:

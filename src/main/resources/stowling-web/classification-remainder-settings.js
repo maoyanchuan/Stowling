@@ -66,7 +66,8 @@
                     setting.location.append(new Option(location.name, location.id));
                 }
                 setting.location.value = previous;
-                window.StowlingResourcePicker?.group(setting.location);
+                window.StowlingResourcePicker?.group(setting.location, undefined,
+                    "coordinate-points", false);
             }
         }
 

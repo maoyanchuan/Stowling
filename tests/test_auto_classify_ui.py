@@ -45,8 +45,7 @@ def test_task_page_places_auto_tasks_above_the_single_template() -> None:
         "auto-pickup-radius",
         "auto-cache-location",
         "auto-collect-priority",
-        "auto-classification-areas",
-        "add-auto-classification-area",
+        "auto-classification-targets",
         "auto-collect-toggle",
         "auto-collect-body",
         "auto-collect-enabled",
@@ -97,7 +96,7 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     sort_body = between(
         form,
         'id="auto-sort-body"',
-        'id="add-auto-classification-area"',
+        'id="combined-classification-help"',
     )
 
     assert 'aria-expanded="false"' in collect_header
@@ -124,7 +123,7 @@ def test_auto_phases_are_collapsed_submenus_with_switches() -> None:
     assert 'togglePhase("classification")' in javascript
     assert "reveal(body, expanded)" in javascript
     assert "header.disabled = disabled || !enabled" in javascript
-    assert "areaReaders.forEach(reader => reader.collapse())" in javascript
+    assert 'id="auto-classification-targets"' in sort_body
 
 
 def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
@@ -199,18 +198,18 @@ def test_recognition_is_configured_only_in_the_storage_layout() -> None:
     layout = read("category-zones.js")
 
     assert "分类物识别方式" not in javascript
-    assert "识别方式使用仓储布局中各分类物的设置。" in javascript
+    assert "沿用坐标页的分类规则和储存设置" in read("tasks.html")
     assert "ruleId" not in javascript
     assert "markerSources" not in javascript
     assert "ruleId" not in model
     assert "markerSources" not in model
     assert 'field("分类物识别方式", rule)' in layout
     assert "ruleId: rule.value" in layout
-    assert "classificationAreas: [newArea()]" in model
-    assert "function addClassificationArea()" in javascript
-    assert "function removeClassificationArea(index)" in javascript
-    assert 'labeledControl("分类范围", range)' in javascript
-    assert "elements.addArea.addEventListener" in javascript
+    assert "classificationAreas: []" in model
+    assert "function renderClassificationTargets()" in javascript
+    assert "function addClassificationArea()" not in javascript
+    assert "function removeClassificationArea(index)" not in javascript
+    assert "elements.addArea" not in javascript
 
 
 def test_auto_ui_loads_independent_api_and_expected_array_properties() -> None:
@@ -272,9 +271,8 @@ def test_auto_ui_delegates_flat_business_rules_to_the_model() -> None:
         "function renderList()",
     )
     assert "...state.draft" in form_reader
-    assert "classificationAreas: areaReaders.map((reader) => reader.read())" in (
-        form_reader
-    )
+    assert "classificationAreas: Auto.classificationAreasFromSelection(" in form_reader
+    assert "elements.targets.selectedOptions" in form_reader
     assert "collectionEnabled: elements.collectEnabled.checked" in form_reader
     assert "classificationEnabled: elements.classifyEnabled.checked" in form_reader
     assert "length ?" not in form_reader
@@ -379,6 +377,10 @@ class Element extends EventTarget {
     prepend(...nodes) { this.children.unshift(...nodes); }
     /** @returns {Element} */
     get firstElementChild() { return this.children[0]; }
+    /** @returns {Element[]} */
+    get options() { return this.children; }
+    /** @returns {Element[]} */
+    get selectedOptions() { return this.options.filter(option => option.selected); }
     /** @param {...Element} nodes @returns {void} */
     replaceChildren(...nodes) { this.children = nodes; }
     /** @param {string} key @param {string} value @returns {void} */
@@ -547,6 +549,10 @@ class Element extends EventTarget {
     setAttribute(key, value) { this.attributes.set(key, value); }
     /** @returns {Element} */
     closest() { return this; }
+    /** @returns {Element[]} */
+    get options() { return this.children; }
+    /** @returns {Element[]} */
+    get selectedOptions() { return this.options.filter(option => option.selected); }
     /** @param {Element} node @returns {boolean} */
     contains(node) { return this.children.includes(node); }
     /** @returns {Element[]} */

@@ -188,7 +188,7 @@ def test_task_configures_unstackable_sorting_through_a_layout() -> None:
     assert result == {
         "areas": [{"categoryZoneRef": "category-zone:tools"}],
         "hasLegacyField": False,
-        "missingLayout": ["请至少添加一个目标分类区"],
+        "missingLayout": ["请至少选择一个目标分类区"],
     }
 
 
@@ -202,9 +202,7 @@ def test_new_draft_has_contract_defaults_without_a_name() -> None:
         "detectionIntervalSeconds": "1",
         "cacheLocationRef": "",
         "cachePolicy": {"enabled": False, "mode": "PACK_FIRST", "thresholdPercent": 80},
-        "classificationAreas": [{
-            "categoryZoneId": "",
-        }],
+        "classificationAreas": [],
         "collectionPriority": "NORMAL",
         "enabled": False,
         "collectionEnabled": True,
@@ -753,7 +751,7 @@ def test_classification_areas_reject_duplicate_zones() -> None:
         """
     )
 
-    assert result == ["同一个目标分类区不能重复添加"]
+    assert result == ["同一个目标分类区不能重复选择"]
 
 
 def test_cache_policy_defaults_and_selected_settings_survive_payload_round_trip() -> None:
@@ -864,3 +862,39 @@ def test_independent_tasks_use_separate_settings_and_keep_the_selected_follow_up
     assert "detection" not in output["sort"]
     assert "followUpTaskRef" not in output["sort"]
     assert output["sort"]["classificationAreas"][0]["categoryZoneRef"] == "category-zone:sorting"
+
+
+@pytest.mark.parametrize("saved,selected,expected", [
+    (["b", "a"], ["a", "b"], ["b", "a"]),
+    (["b", "a"], ["a", "c", "b"], ["b", "a", "c"]),
+    (["b", "a"], ["a", "c"], ["a", "c"]),
+    (["b", "a"], [], []),
+    ([], ["", "a", "a", "b"], ["a", "b"]),
+])
+def test_target_multiselect_preserves_saved_order_and_appends_new_choices(
+    saved: list[str], selected: list[str], expected: list[str],
+) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const ids = """ + json.dumps(saved) + """;
+        const areas = ids.map(categoryZoneId => ({categoryZoneId}));
+        const choices = """ + json.dumps(selected) + """;
+        const selectedAreas = model.classificationAreasFromSelection(areas, choices);
+        return {selected: selectedAreas.map(area => area.categoryZoneId),
+            original: areas.map(area => area.categoryZoneId)};
+    })()""")
+    assert result == {"selected": expected, "original": saved}
+
+
+def test_target_selection_order_survives_payload_save_and_reload() -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "b"}, {categoryZoneId: "a"}]};
+        draft.classificationAreas = model.classificationAreasFromSelection(
+            draft.classificationAreas, ["a", "c", "b"]);
+        const payload = model.payload(draft, {regions: [{id: "cache"}],
+            categoryZones: [{id: "c"}, {id: "a"}, {id: "b"}]});
+        return model.draftFromTask(payload).classificationAreas.map(area => area.categoryZoneId);
+    })()""")
+    assert result == ["b", "a", "c"]

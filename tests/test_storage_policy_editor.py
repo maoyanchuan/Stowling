@@ -182,13 +182,14 @@ void main();
     }
 
 
-def test_task_areas_keep_collapsed_disclosures_without_a_storage_editor() -> None:
+def test_task_targets_use_one_multiselect_without_a_storage_editor() -> None:
     source = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
     html = (WEB / "tasks.html").read_text(encoding="utf-8")
     css = (WEB / "workbench.css").read_text(encoding="utf-8")
-    assert 'StowlingSettings.disclosure(' in source
-    assert 'selectedZone?.name || "请选择目标分类区", fields)' in source
-    assert 'areaReaders.forEach(reader => reader.collapse())' in source
+    assert 'id="auto-classification-targets"' in html
+    assert 'multiple required' in html
+    assert 'appendClassificationArea' not in source
+    assert 'id="add-auto-classification-area"' not in html
     assert '.auto-config-section[data-enabled="false"] .move-task-chevron' in css
     assert 'transform: rotate(-45deg)' in css
     assert 'transform: rotate(45deg)' in css

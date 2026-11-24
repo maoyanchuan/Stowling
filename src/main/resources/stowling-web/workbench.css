@@ -483,7 +483,7 @@ body[data-page] .material-switch-field {
     overflow-wrap: anywhere;
 }
 
-body[data-page] :is(.auto-field-grid, .auto-area-fields) {
+body[data-page] .auto-field-grid {
     display: block;
 }
 
@@ -591,20 +591,6 @@ body[data-page] .auto-phase-switch input:checked + .auto-switch-track {
 
 body[data-page] .auto-phase-switch input:checked + .auto-switch-track::after {
     transform: translateX(18px);
-}
-
-body[data-page] .auto-task-form[data-kind="COMBINED"] .auto-classification-area {
-    margin: 10px 0;
-    padding: 12px 16px;
-    border: 1px solid var(--theme-border, #3b3c42);
-    border-radius: 10px;
-    background: var(--theme-subtle, #202124);
-}
-
-body[data-page] .auto-classification-area-heading {
-    padding: 0;
-    border: 0;
-    background: transparent;
 }
 
 body[data-page] :is(.auto-config-note, .auto-interruption-note, .move-target-note) {
@@ -1552,7 +1538,6 @@ body[data-page] .settings-chevron[hidden] {
     display: none;
 }
 
-body[data-page] .auto-classification-area > summary,
 body[data-page] .auto-storage-policy > summary {
     display: flex;
     align-items: center;
@@ -1562,16 +1547,8 @@ body[data-page] .auto-storage-policy > summary {
     cursor: pointer;
 }
 
-body[data-page] :is(.auto-classification-area, .auto-storage-policy) .settings-copy {
+body[data-page] .auto-storage-policy .settings-copy {
     flex: 1;
-}
-
-body[data-page] .auto-classification-area > summary > button {
-    flex: 0 0 auto;
-}
-
-body[data-page] .auto-classification-area > .settings-detail {
-    padding: 0 0 12px;
 }
 
 body[data-page] .auto-task-form[data-kind="COMBINED"] .auto-storage-policy {

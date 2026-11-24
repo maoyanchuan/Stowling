@@ -11,15 +11,6 @@
     const INTEGER_PATTERN = /^\d+$/;
 
     /**
-     * @returns {object}
-     */
-    function newArea() {
-        return {
-            categoryZoneId: ""
-        };
-    }
-
-    /**
      * @param {string} type
      * @param {unknown} id
      * @returns {string}
@@ -53,7 +44,7 @@
             detectionIntervalSeconds: "1",
             cacheLocationRef: "",
             cachePolicy: {...DEFAULT_CACHE_POLICY},
-            classificationAreas: kind === "PICKUP" ? [] : [newArea()],
+            classificationAreas: [],
             collectionPriority: "NORMAL",
             enabled: false,
             overflowEnabled: false,
@@ -290,6 +281,22 @@
     }
 
     /**
+     * @param {Array<{categoryZoneId: string}>} areas
+     * @param {Array<string>} selectedIds
+     * @returns {Array<{categoryZoneId: string}>}
+     */
+    function classificationAreasFromSelection(areas, selectedIds) {
+        const remaining = new Set(selectedIds.filter(Boolean));
+        const result = [];
+        for (const area of areas) {
+            if (!remaining.delete(area.categoryZoneId)) continue;
+            result.push({categoryZoneId: area.categoryZoneId});
+        }
+        for (const id of remaining) result.push({categoryZoneId: id});
+        return result;
+    }
+
+    /**
      * @param {object} draft
      * @param {unknown} resources
      * @param {Array<string>} errors
@@ -299,7 +306,7 @@
         if (!draft?.classificationEnabled) return;
         const areas = draft?.classificationAreas;
         if (!Array.isArray(areas) || areas.length === 0) {
-            errors.push("请至少添加一个目标分类区");
+            errors.push("请至少选择一个目标分类区");
             return;
         }
         const zoneIds = new Set();
@@ -312,7 +319,7 @@
                 continue;
             }
             if (zoneIds.has(zoneId)) {
-                errors.push("同一个目标分类区不能重复添加");
+                errors.push("同一个目标分类区不能重复选择");
             }
             zoneIds.add(zoneId);
         }
@@ -320,11 +327,11 @@
 
     window.StowlingAutoClassifyTaskModel = Object.freeze({
         draftFromTask,
-        newArea,
         newDraft,
         payload,
         validateDraft,
-        cacheLocations
+        cacheLocations,
+        classificationAreasFromSelection
     });
 })();
 

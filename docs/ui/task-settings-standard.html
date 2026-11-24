@@ -3116,6 +3116,66 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 </div>
             </div>
 
+            <!-- Multi-select references use the same row and menu as single selects.
+                 Select existing resources directly; keep saved order and append new choices. -->
+            <div class="sample-row sample-strategy-row">
+                <div class="sample-setting-copy">
+                    <label id="sample-target-label" for="sample-target-trigger">目标分类区</label>
+                    <p class="sample-description">可多选，沿用坐标页的分类规则和储存设置。</p>
+                </div>
+                <div class="sample-actions sample-select-actions">
+                    <div class="sample-select-wrap">
+                        <select id="sample-targets" multiple hidden aria-hidden="true">
+                            <option id="sample-target-option-a" value="a">分类区 A</option>
+                            <option id="sample-target-option-b" value="b">分类区 B</option>
+                            <option id="sample-target-option-c" value="c">分类区 C</option>
+                        </select>
+                        <button id="sample-target-trigger" class="sample-select" type="button"
+                            aria-haspopup="listbox" aria-expanded="false"
+                            aria-controls="sample-target-menu"
+                            aria-labelledby="sample-target-label sample-target-current">
+                            <span id="sample-target-current" class="sample-select-current">
+                                请选择目标分类区
+                            </span>
+                            <svg class="sample-select-chevron" aria-hidden="true"
+                                width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="1.8">
+                                <path d="m6 9 6 6 6-6"/>
+                            </svg>
+                        </button>
+                        <div id="sample-target-menu" class="sample-select-menu" role="listbox"
+                            aria-multiselectable="true"
+                            aria-labelledby="sample-target-label" hidden>
+                            <button id="sample-target-a" class="sample-select-option" type="button"
+                                role="option" aria-selected="false" tabindex="-1">
+                                <span>分类区 A<small>示例分类区</small></span>
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="m5 12 4 4L19 6"/>
+                                </svg>
+                            </button>
+                            <button id="sample-target-b" class="sample-select-option" type="button"
+                                role="option" aria-selected="false" tabindex="-1">
+                                <span>分类区 B<small>示例分类区</small></span>
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="m5 12 4 4L19 6"/>
+                                </svg>
+                            </button>
+                            <button id="sample-target-c" class="sample-select-option" type="button"
+                                role="option" aria-selected="false" tabindex="-1">
+                                <span>分类区 C<small>示例分类区</small></span>
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="m5 12 4 4L19 6"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p id="sample-target-order" class="sample-description" aria-live="polite" hidden></p>
+
             <h3 class="sample-section-title">单个物品最大售卖数量</h3>
             <div class="sample-row sample-number-row">
                 <label class="sample-row-label" for="sample-maximum">最大售卖数量</label>
@@ -3140,19 +3200,25 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     const strategyTrigger = root.querySelector("#sample-strategy-trigger");
     const strategyMenu = root.querySelector("#sample-strategy-menu");
     const strategyWrap = root.querySelector(".sample-select-wrap");
+    const targetTrigger = root.querySelector("#sample-target-trigger");
+    const targetMenu = root.querySelector("#sample-target-menu");
+    const targetIds = ["a", "b", "c"];
+    const targetChoices = targetIds.map(id => root.querySelector(`#sample-target-${id}`));
+    const targetLabels = {a: "分类区 A", b: "分类区 B", c: "分类区 C"};
     const choices = Array.from(strategyMenu.querySelectorAll("[data-strategy]"));
     const choiceLabels = {
         price: "按价格波动设置", stock: "按库存数量设置", all: "直接售卖"
     };
     const reveals = new WeakMap();
     let menuOpen = false;
+    let targetMenuOpen = false;
     const stateKey = "stowling.task-settings-sample.state";
     const themeKey = "stowling.task-settings-sample.theme";
     const ui = {
         running: false, expanded: true, valley: false, wuling: true,
         valleyExpanded: false, wulingExpanded: false, strategyExpanded: false,
         strategy: "price", maximum: "320", valleyReserve: "64", wulingReserve: "64",
-        priceThreshold: "10", stockThreshold: "640"
+        priceThreshold: "10", stockThreshold: "640", targetZones: []
     };
 
     /**
@@ -3290,6 +3356,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 if (typeof stored.ui[key] === typeof ui[key]) ui[key] = stored.ui[key];
             }
             if (!["price", "stock", "all"].includes(ui.strategy)) ui.strategy = "price";
+            ui.targetZones = Array.isArray(ui.targetZones)
+                ? [...new Set(ui.targetZones.filter(id => targetIds.includes(id)))] : [];
         }
     } catch {
         // Missing or malformed sample data falls back to the visible initial state.
@@ -3299,6 +3367,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     function setMenuOpen(open, focus = false, animate = true) {
         menuOpen = open;
         if (open) {
+            setTargetMenuOpen(false, false, false);
             strategyMenu.hidden = false;
             const bounds = strategyTrigger.getBoundingClientRect();
             const height = strategyMenu.scrollHeight;
@@ -3324,6 +3393,78 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         remember();
     }
 
+    /** @returns {void} */
+    function renderTargets() {
+        const labels = ui.targetZones.map(id => targetLabels[id]);
+        root.querySelector("#sample-target-current").textContent = labels.length > 2
+            ? `已选 ${labels.length} 个分类区` : labels.join("、") || "请选择目标分类区";
+        targetTrigger.title = labels.join(" → ") || "请选择目标分类区";
+        const order = root.querySelector("#sample-target-order");
+        order.textContent = labels.length > 1 ? "执行顺序：" + labels.join(" → ") : "";
+        order.hidden = labels.length < 2;
+        for (const [index, id] of targetIds.entries()) {
+            const selected = ui.targetZones.includes(id);
+            targetChoices[index].setAttribute("aria-selected", String(selected));
+            root.querySelector(`#sample-target-option-${id}`).selected = selected;
+        }
+    }
+
+    /** @param {boolean} open @param {boolean} [focus] @param {boolean} [animate] @returns {void} */
+    function setTargetMenuOpen(open, focus = false, animate = true) {
+        targetMenuOpen = open;
+        if (open) {
+            setMenuOpen(false, false, false);
+            targetMenu.hidden = false;
+            const bounds = targetTrigger.getBoundingClientRect();
+            const height = targetMenu.scrollHeight;
+            const below = window.innerHeight - bounds.bottom - 12;
+            targetMenu.dataset.placement = below < height && bounds.top > height + 12
+                ? "above" : "below";
+        }
+        targetTrigger.setAttribute("aria-expanded", String(open));
+        reveal(targetMenu, open, animate, "menu");
+        if (!focus) return;
+        if (open) {
+            const index = targetIds.indexOf(ui.targetZones[0]);
+            targetChoices[Math.max(0, index)].focus();
+        } else {
+            targetTrigger.focus();
+        }
+    }
+
+    targetTrigger.addEventListener("click", () => setTargetMenuOpen(!targetMenuOpen));
+    targetTrigger.addEventListener("keydown", event => {
+        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+        event.preventDefault();
+        setTargetMenuOpen(true, true);
+    });
+    for (const [index, choice] of targetChoices.entries()) {
+        choice.addEventListener("click", () => {
+            const id = targetIds[index];
+            ui.targetZones = ui.targetZones.includes(id)
+                ? ui.targetZones.filter(value => value !== id) : [...ui.targetZones, id];
+            renderTargets();
+            remember();
+        });
+    }
+    targetMenu.addEventListener("keydown", event => {
+        if (["Escape", "Tab"].includes(event.key)) {
+            if (event.key === "Escape") event.preventDefault();
+            setTargetMenuOpen(false, true);
+            return;
+        }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        let index = targetChoices.indexOf(document.activeElement);
+        if (event.key === "Home") index = 0;
+        if (event.key === "End") index = targetChoices.length - 1;
+        if (event.key === "ArrowDown") index = (index + 1) % targetChoices.length;
+        if (event.key === "ArrowUp") {
+            index = (index - 1 + targetChoices.length) % targetChoices.length;
+        }
+        targetChoices[index].focus();
+    });
+
     runSwitch.addEventListener("change", () => {
         ui.running = runSwitch.checked;
         renderRunState();
@@ -3331,6 +3472,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     });
     collapse.addEventListener("click", () => {
         setMenuOpen(false, false, false);
+        setTargetMenuOpen(false, false, false);
         ui.expanded = !ui.expanded;
         renderUI(true);
         remember();
@@ -3382,11 +3524,17 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     });
     document.addEventListener("pointerdown", event => {
         if (menuOpen && !strategyWrap.contains(event.target)) setMenuOpen(false);
+        if (targetMenuOpen && !targetMenu.contains(event.target)
+            && !targetTrigger.contains(event.target)) setTargetMenuOpen(false);
     });
     document.addEventListener("keydown", event => {
         if (menuOpen && event.key === "Escape") {
             event.preventDefault();
             setMenuOpen(false, true);
+        }
+        if (targetMenuOpen && event.key === "Escape") {
+            event.preventDefault();
+            setTargetMenuOpen(false, true);
         }
     });
     root.querySelector("#sample-strategy-expand").addEventListener("click", () => {
@@ -3406,7 +3554,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         button.addEventListener("click", () => setTheme(button.dataset.themeChoice, true));
     }
     renderUI();
+    renderTargets();
     setMenuOpen(false, false, false);
+    setTargetMenuOpen(false, false, false);
     setTheme(document.documentElement.dataset.theme);
 })();
 

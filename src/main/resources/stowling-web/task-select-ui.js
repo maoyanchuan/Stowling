@@ -27,9 +27,15 @@
             select.hidden = active;
             trigger.hidden = !active;
             trigger.disabled = select.matches(":disabled");
-            const labels = Array.from(select.selectedOptions, option => option.textContent);
-            current.textContent = labels.join("、") || "请选择";
-            trigger.title = current.textContent;
+            const labels = Array.from(select.selectedOptions)
+                .sort((left, right) => Number(left.dataset.selectionOrder || 0)
+                    - Number(right.dataset.selectionOrder || 0))
+                .map(option => option.textContent);
+            const limit = Number(select.dataset.summaryLimit);
+            current.textContent = select.multiple && limit > 0 && labels.length > limit
+                ? `已选 ${labels.length} 个${select.dataset.selectionNoun || "选项"}`
+                : labels.join("、") || select.dataset.placeholder || "请选择";
+            trigger.title = labels.join(" → ") || current.textContent;
             if (opened === view && (!active || trigger.disabled
                 || trigger.closest("[hidden], [inert]"))) close();
             if (opened === view) renderOptions(view);
@@ -72,7 +78,8 @@
                 if (!button.disabled) view.choices.push(button);
             }
             if (!items.length) {
-                items.push(S.element("p", "task-select-empty", "暂无可选项，请先添加对应资源。"));
+                items.push(S.element("p", "task-select-empty",
+                    select.dataset.emptyMessage || "暂无可选项，请先添加对应资源。"));
             }
             menu.replaceChildren(...items);
             if (focused !== null) {
@@ -135,6 +142,8 @@
             trigger.setAttribute("aria-haspopup", "listbox");
             trigger.setAttribute("aria-expanded", "false");
             trigger.setAttribute("aria-controls", `${id}-menu`);
+            const description = select.getAttribute("aria-describedby");
+            if (description) trigger.setAttribute("aria-describedby", description);
             const label = wrap.parentElement.querySelector("span");
             if (label) {
                 label.id ||= `${id}-label`;
@@ -187,7 +196,7 @@
             view.observer = new MutationObserver(() => sync(view));
             view.observer.observe(select, {
                 childList: true, subtree: true, attributes: true,
-                attributeFilter: ["disabled", "label", "selected"]
+                attributeFilter: ["disabled", "label", "selected", "data-selection-order"]
             });
             return view;
         }

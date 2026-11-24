@@ -53,8 +53,8 @@
         pickupBody: document.querySelector("#auto-pickup-body"),
         packingHeader: document.querySelector("#auto-packing-toggle"),
         packingBody: document.querySelector("#auto-packing-body"),
-        areas: document.querySelector("#auto-classification-areas"),
-        addArea: document.querySelector("#add-auto-classification-area"),
+        targets: document.querySelector("#auto-classification-targets"),
+        targetOrder: document.querySelector("#auto-classification-order"),
         collectHeader: document.querySelector("#auto-collect-toggle"),
         collectBody: document.querySelector("#auto-collect-body"),
         collectEnabled: document.querySelector("#auto-collect-enabled"),
@@ -92,7 +92,6 @@
     }
     const selectView = window.StowlingTaskSelect?.create(elements.form);
     const phaseDisabledControls = new Map();
-    let areaReaders = [];
     const autosave = Autosave.create(elements.form, saveTask, () => state.busy || state.loading);
 
     /** @param {HTMLElement} content @returns {void} */
@@ -186,114 +185,41 @@
     }
 
     /** @returns {void} */
-    function renderClassificationAreas() {
-        for (const control of phaseDisabledControls.keys()) {
-            if (elements.areas.contains(control)) phaseDisabledControls.delete(control);
-        }
-        elements.areas.replaceChildren();
-        areaReaders = [];
-        state.draft.classificationAreas.forEach((area, index) => {
-            areaReaders.push(appendClassificationArea(area, index));
-        });
-    }
-
-    /**
-     * @param {object} area
-     * @param {number} index
-     * @returns {{read: () => object, collapse: () => void}}
-     */
-    function appendClassificationArea(area, index) {
-        const range = document.createElement("select");
-        range.required = true;
-        const empty = new Option("请选择目标分类区", "");
-        range.append(empty);
+    function renderClassificationTargets() {
+        const selected = new Set(state.draft.classificationAreas.map(area => area.categoryZoneId));
+        elements.targets.replaceChildren();
         for (const zone of state.resources.categoryZones) {
-            const option = new Option(
-                zone.name || "未命名分类区",
-                zone.id
-            );
-            range.append(option);
+            const option = new Option(zone.name || "未命名分类区", zone.id);
+            option.selected = selected.has(zone.id);
+            elements.targets.append(option);
+            selected.delete(zone.id);
         }
-        const selectedZone = state.resources.categoryZones.find(
-            (zone) => zone.id === area.categoryZoneId
-        );
-        if (!selectedZone && area.categoryZoneId) {
-            const missing = new Option("原目标分类区已删除，请重新选择", "");
-            missing.disabled = true;
-            range.append(missing);
+        for (const id of selected) {
+            if (!id) continue;
+            const missing = new Option("已删除的分类区", id);
+            missing.selected = true;
+            missing.dataset.description = "请取消选择，再选择已有的分类区";
+            elements.targets.append(missing);
         }
-        range.value = area.categoryZoneId;
-
-        const fields = Stowling.element("div", "auto-area-fields");
-        fields.append(
-            labeledControl("目标分类区", range),
-            Stowling.element("p", "settings-description compact-help",
-                "储存模式和识别方式使用坐标页面中所选分类区及绑定组的设置。")
-        );
-        wrapSettingsContent(fields);
-        const disclosure = window.StowlingSettings.disclosure(
-            `目标分类区 ${index + 1}`,
-            selectedZone?.name || "请选择目标分类区", fields);
-        disclosure.root.classList.add("auto-classification-area");
-        const remove = Stowling.element("button", "ghost compact danger-action", "移除");
-        remove.type = "button";
-        remove.addEventListener("click", event => {
-            event.preventDefault();
-            event.stopPropagation();
-            removeClassificationArea(index);
-        });
-        fields.firstElementChild.append(remove);
-        range.addEventListener("input", () => {
-            disclosure.description.textContent = range.selectedOptions[0]?.textContent || "";
-        });
-        elements.areas.append(disclosure.root);
-        Picker.group(range, "category-zone", "category-zones");
-        return {
-            collapse: () => disclosure.setExpanded(false),
-            read: () => ({categoryZoneId: range.value})
-        };
-    }
-
-    /**
-     * @param {string} label
-     * @param {HTMLElement} control
-     * @returns {HTMLElement}
-     */
-    function labeledControl(label, control) {
-        const wrapper = Stowling.element("label", "move-field");
-        wrapper.append(Stowling.element("span", "", label), control);
-        return wrapper;
+        renderClassificationOrder();
+        Picker.group(elements.targets, "category-zone", "category-zones", false);
     }
 
     /** @returns {void} */
-    function addClassificationArea() {
-        if (unavailable()) {
-            return;
+    function renderClassificationOrder() {
+        const ids = state.draft.classificationAreas.map(area => area.categoryZoneId).filter(Boolean);
+        const names = [];
+        for (const option of elements.targets.options) {
+            const index = ids.indexOf(option.value);
+            option.dataset.selectionOrder = String(index < 0 ? ids.length : index);
         }
-        readForm();
-        state.draft.classificationAreas.push(Auto.newArea());
-        state.dirty = true;
-        showMessage("未保存修改");
-        renderClassificationAreas();
-        updateControls();
-        autosave.schedule();
-    }
-
-    /**
-     * @param {number} index
-     * @returns {void}
-     */
-    function removeClassificationArea(index) {
-        if (unavailable()) {
-            return;
+        for (const id of ids) {
+            const option = Array.from(elements.targets.options).find(item => item.value === id);
+            names.push(option?.textContent || "已删除的分类区");
         }
-        readForm();
-        state.draft.classificationAreas.splice(index, 1);
-        state.dirty = true;
-        showMessage("未保存修改");
-        renderClassificationAreas();
-        updateControls();
-        autosave.schedule();
+        elements.targetOrder.textContent = names.length > 1
+            ? "执行顺序：" + names.join(" → ") : "";
+        elements.targetOrder.hidden = names.length < 2;
     }
 
     /** @returns {void} */
@@ -331,7 +257,7 @@
             resumeMode: "RESTART"});
         boxSettings?.resources(state.resources.coordinates, state.resources.regions);
         boxSettings?.set(draft.facilities.emptyBoxWarehouse);
-        renderClassificationAreas();
+        renderClassificationTargets();
         updateControls();
     }
 
@@ -359,7 +285,9 @@
                 mode: kind === "PICKUP" ? "PACK_FIRST" : elements.cacheMode.value,
                 thresholdPercent: Number(elements.cacheThreshold.value)
             },
-            classificationAreas: areaReaders.map((reader) => reader.read()),
+            classificationAreas: Auto.classificationAreasFromSelection(
+                state.draft.classificationAreas,
+                Array.from(elements.targets.selectedOptions, option => option.value)),
             collectionPriority: elements.priority.value,
             collectionEnabled: kind ? kind === "PICKUP" : elements.collectEnabled.checked,
             classificationEnabled: kind ? kind === "CLASSIFICATION"
@@ -607,7 +535,7 @@
         }
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
-        selectView?.refresh(pickup || classification);
+        selectView?.refresh(true);
     }
 
     /**
@@ -669,9 +597,6 @@
         }
         const enabled = phaseEnabled(phase);
         if (!enabled) return;
-        if (phase === "classification" && !state.phase[phase]) {
-            areaReaders.forEach(reader => reader.collapse());
-        }
         state.phase[phase] = !state.phase[phase];
         updateControls();
     }
@@ -876,14 +801,12 @@
         state.phase.classification = true;
         updateControls();
     }, true);
-    elements.addArea.addEventListener("click", addClassificationArea);
     elements.refresh.addEventListener("click", () => void loadResources());
     elements.form.addEventListener("input", (event) => {
         if (event.target === elements.point) syncRadiusHint();
         if (!state.draft.kind && event.target === elements.classifyEnabled) {
             state.phase.classification = elements.classifyEnabled.checked;
             if (elements.classifyEnabled.checked) {
-                areaReaders.forEach(reader => reader.collapse());
                 elements.collectEnabled.checked = true;
             }
         }
@@ -905,6 +828,7 @@
             state.phase.warehouse = false;
         }
         readForm();
+        if (event.target === elements.targets) renderClassificationOrder();
         state.dirty = true;
         showMessage("未保存修改");
         updateControls();

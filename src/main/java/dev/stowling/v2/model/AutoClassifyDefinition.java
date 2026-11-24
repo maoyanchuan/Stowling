@@ -245,7 +245,7 @@ public record AutoClassifyDefinition(
                 )
         );
         if (classificationEnabled && classificationAreas.isEmpty() && unstackableRegionRef == null) {
-            throw new IllegalArgumentException("请至少添加一个目标分类区");
+            throw new IllegalArgumentException("请至少选择一个目标分类区");
         }
         long uniqueZones = classificationAreas.stream()
                 .map(AutoClassifyAreaDefinition::categoryZoneRef)

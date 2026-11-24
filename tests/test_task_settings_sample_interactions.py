@@ -57,7 +57,10 @@ class Element {
     /** @returns {{height: number, top: number, bottom: number}} */
     getBoundingClientRect() {return {height: 50, top: 400, bottom: 450};}
     /** @param {Element} target @returns {boolean} */
-    contains(target) {return target === this || choices.includes(target);}
+    contains(target) {
+        return target === this || (this.id === "sample-target-menu"
+            ? targetChoices.includes(target) : choices.includes(target));
+    }
     /** @param {Array<object>} frames @param {object} options @returns {object} */
     animate(frames, options) {
         let finish;
@@ -77,6 +80,7 @@ const choices = ["price", "stock", "all"].map(value => {
     node.dataset.strategy = value;
     return node;
 });
+const targetChoices = ["a", "b", "c"].map(value => nodes.get(`sample-target-${value}`));
 const themes = ["green", "gray"].map(value => {
     const node = new Element(value);
     node.dataset.themeChoice = value;
@@ -125,6 +129,32 @@ def run_sample(expression: str) -> Any:
         encoding="utf-8",
     )
     return json.loads(result.stdout)
+
+
+def test_target_multiselect_keeps_order_and_persists_choices_without_extra_panels() -> None:
+    result = run_sample("""(() => {
+        load();
+        node('target-trigger').emit('click');
+        for (const id of ['c', 'a', 'b']) node(`target-${id}`).emit('click');
+        const count = node('target-current').textContent;
+        node('target-a').emit('click');
+        const open = node('target-trigger').attributes['aria-expanded'];
+        node('target-menu').emit('keydown', {key:'Escape'});
+        const focus = document.activeElement.id;
+        node('enabled').checked = true;
+        node('enabled').emit('change');
+        node('collapse').emit('click');
+        node('collapse').emit('click');
+        load();
+        return {count, open, focus, label:node('target-current').textContent,
+            order:node('target-order').textContent,
+            saved:JSON.parse(saved.get('stowling.task-settings-sample.state')).ui.targetZones};
+    })()""")
+    assert result == {
+        "count": "已选 3 个分类区", "open": "true", "focus": "sample-target-trigger",
+        "label": "分类区 C、分类区 B", "order": "执行顺序：分类区 C → 分类区 B",
+        "saved": ["c", "b"],
+    }
 
 
 def test_stopping_task_preserves_editable_settings_and_open_submenu() -> None:

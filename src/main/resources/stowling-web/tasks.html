@@ -960,14 +960,25 @@
                                             </div>
                                             <div id="auto-sort-body"
                                                  class="auto-phase-body" hidden>
-                                                <div id="auto-classification-areas"
-                                                     class="auto-classification-area-list">
-                                                </div>
-                                                <button id="add-auto-classification-area"
-                                                        class="secondary compact"
-                                                        type="button">
-                                                    ＋ 添加分类区
-                                                </button>
+                                                <label class="move-field"
+                                                       for="auto-classification-targets">
+                                                    <span>目标分类区</span>
+                                                    <select id="auto-classification-targets"
+                                                            multiple required
+                                                            data-placeholder="请选择目标分类区"
+                                                            data-summary-limit="2"
+                                                            data-selection-noun="分类区"
+                                                            data-empty-message="暂无分类区，请先到坐标页配置。"
+                                                            aria-describedby="auto-target-help">
+                                                    </select>
+                                                </label>
+                                                <p id="auto-target-help"
+                                                   class="settings-description compact-help">
+                                                    可多选，沿用坐标页的分类规则和储存设置。
+                                                </p>
+                                                <p id="auto-classification-order"
+                                                   class="settings-description compact-help"
+                                                   aria-live="polite" hidden></p>
                                                 <p id="combined-classification-help" class="auto-config-note">
                                                     在「坐标 → 区域 → 分类区」设置分类方式与储存范围。
                                                     拾取物存入缓存后才创建后台分类任务。

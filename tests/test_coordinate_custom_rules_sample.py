@@ -36,7 +36,14 @@ def field(root: Any, key: str) -> Any:
     return root.locator(f'[id$="category-{key}"]')
 
 
+def open_rule(rule: Any) -> None:
+    toggle = rule.locator(".category-rule-toggle")
+    if toggle.get_attribute("aria-expanded") == "false":
+        toggle.click()
+
+
 def choose_target(rule: Any, value: str) -> None:
+    open_rule(rule)
     control = rule.locator('[data-category-select="bindingTarget"]')
     control.locator(".category-select-trigger").click()
     control.locator(f'[data-category-value="{value}"]').click()
@@ -56,6 +63,9 @@ def test_demo_exposes_support_exclusion_and_both_routing_examples(rules_page: An
     assert [node.input_value() for node in position.all()] == ["44", "-41", "39"]
     rules = field(root, "rules-list").locator(".category-rule-form")
     assert rules.count() == 2
+    assert rules.first.locator(".category-rule-count").inner_text() == "5 项物品"
+    assert rules.first.locator(".category-rule-body").is_hidden()
+    assert rules.last.locator(".category-rule-body").is_hidden()
     assert rules.first.locator('[data-rule-field="markerId"]').input_value() == "minecraft:sculk"
     assert "minecraft:sculk_shrieker" in rules.first.locator("textarea").input_value()
     assert rules.last.locator('[data-rule-field="targetType"]').input_value() == "container"
@@ -77,6 +87,7 @@ def test_controls_keep_drafts_and_fit_both_themes_and_widths(
     panel = field(root, "bindings-panel")
     toggle = field(root, "multi-bindings")
     expand = field(root, "bindings-expand")
+    open_rule(panel.locator(".category-rule-form").first)
     draft = "minecraft:sculk_sensor\nminecraft:sculk_catalyst\nminecraft:sculk_shrieker"
     items = panel.locator("textarea").first
     items.fill("minecraft:sculk_sensor")
@@ -114,6 +125,7 @@ def test_controls_keep_drafts_and_fit_both_themes_and_widths(
 def test_target_keyboard_and_hidden_target_drafts(rules_page: Any, scope: str) -> None:
     root = options_root(rules_page, scope)
     rule = field(root, "rules-list").locator(".category-rule-form").first
+    open_rule(rule)
     trigger = rule.locator(".category-select-trigger")
     marker = rule.locator('[data-rule-field="markerId"]')
     trigger.focus()
@@ -156,9 +168,12 @@ def test_inheritance_save_copy_and_resource_selection_keep_independent_drafts(
     page = rules_page
     global_options = options_root(page)
     local_options = options_root(page, "binding")
+    open_rule(field(local_options, "rules-list").locator(".category-rule-form").first)
     global_items = field(global_options, "rules-list").locator("textarea").first
     local_items = field(local_options, "rules-list").locator("textarea").first
     assert local_items.input_value() == global_items.input_value()
+    assert field(local_options, "ignore-repeated").is_checked()
+    field(local_options, "ignore-repeated").uncheck()
     local_items.fill("minecraft:stone\nminecraft:dirt")
     field(local_options, "positions-list").locator('[data-position-axis="x"]').fill("123")
     field(local_options, "multi-bindings").set_checked(enabled)
@@ -170,12 +185,14 @@ def test_inheritance_save_copy_and_resource_selection_keep_independent_drafts(
     assert page.locator("#coordinate-name").input_value().endswith("副本")
     root = options_root(page)
     original = field(root, "rules-list").locator("textarea").first.input_value()
+    open_rule(field(root, "rules-list").locator(".category-rule-form").first)
     field(root, "rules-list").locator("textarea").first.fill("minecraft:diamond")
     save(page)
     card = page.locator(".category-binding-card").first
     assert card.locator(".category-binding-enabled").is_checked() is enabled
     card.locator(".category-binding-toggle").click()
     card.locator(".category-binding-enabled").check()
+    assert not field(card, "ignore-repeated").is_checked()
     field(card, "multi-bindings").check()
     assert field(card, "rules-list").locator("textarea").first.input_value() == (
         "minecraft:stone\nminecraft:dirt"
@@ -185,6 +202,7 @@ def test_inheritance_save_copy_and_resource_selection_keep_independent_drafts(
         '[data-position-axis="x"]',
     ).input_value() == "123"
     page.locator('[data-coordinate-id="custom-rules-demo"]').click()
+    assert field(options_root(page), "ignore-repeated").is_checked()
     assert field(options_root(page), "rules-list").locator(
         "textarea",
     ).first.input_value() == original
@@ -215,6 +233,7 @@ def test_incomplete_active_rules_prevent_save_but_disabled_drafts_are_kept(
     save(page)
     assert "请添加排除位置" in page.locator("#editor-status").inner_text()
     field(root, "ignore-positions").uncheck()
+    open_rule(field(root, "rules-list").locator(".category-rule-form").first)
     field(root, "rules-list").locator("textarea").first.fill("不是物品 ID")
     save(page)
     assert "请每行填写一个完整物品 ID" in page.locator("#editor-status").inner_text()
@@ -224,3 +243,95 @@ def test_incomplete_active_rules_prevent_save_but_disabled_drafts_are_kept(
     root = options_root(page)
     field(root, "multi-bindings").check()
     assert field(root, "rules-list").locator("textarea").first.input_value() == "不是物品 ID"
+
+
+@pytest.mark.parametrize("scope", ["global", "binding"])
+def test_rule_submenus_keep_their_drafts_and_do_not_toggle_siblings(
+    rules_page: Any, scope: str,
+) -> None:
+    page = rules_page
+    root = options_root(page, scope)
+    rules = field(root, "rules-list").locator(".category-rule-form")
+    first = rules.first
+    second = rules.last
+    toggle = first.locator(".category-rule-toggle")
+    assert toggle.get_attribute("aria-expanded") == "false"
+    assert first.get_by_role("button", name="删除规则").is_hidden()
+    first.locator('[data-rule-field="name"]').fill("幽匿收藏")
+    assert toggle.get_attribute("aria-expanded") == "false"
+    toggle.focus()
+    toggle.press("Space")
+    assert first.locator(".category-rule-body").is_visible()
+    assert toggle.get_attribute("aria-label") == "收起物品绑定：幽匿收藏"
+    assert second.locator(".category-rule-body").is_hidden()
+    items = first.locator("textarea")
+    items.fill("minecraft:sculk\nminecraft:sculk_sensor\nminecraft:sculk")
+    assert first.locator(".category-rule-count").inner_text() == "2 项物品"
+    first.locator(".category-select-trigger").click()
+    toggle.click()
+    assert first.locator(".category-select-menu").is_hidden()
+    assert first.locator(".category-rule-body").is_hidden()
+    assert field(root, "multi-bindings").is_checked()
+    assert second.locator(".category-rule-body").is_hidden()
+    toggle.press("Enter")
+    assert items.input_value() == "minecraft:sculk\nminecraft:sculk_sensor\nminecraft:sculk"
+    assert first.get_by_role("button", name="删除规则").is_visible()
+
+
+@pytest.mark.parametrize("scope", ["global", "binding"])
+def test_repeated_block_switch_and_explanation_have_independent_states(
+    rules_page: Any, scope: str,
+) -> None:
+    root = options_root(rules_page, scope)
+    toggle = field(root, "ignore-repeated")
+    expand = field(root, "repeats-expand")
+    panel = field(root, "repeats-panel")
+    assert toggle.is_checked()
+    assert panel.is_hidden()
+    expand.click()
+    assert panel.is_visible()
+    assert "珊瑚扇＋平滑石英台阶 → 仅识别珊瑚扇" in panel.inner_text()
+    assert "继续提示冲突" in panel.inner_text()
+    assert "没有独立参照时不自动排除" in panel.inner_text()
+    expand.click()
+    assert panel.is_hidden()
+    assert toggle.is_checked()
+    toggle.focus()
+    toggle.press("Space")
+    assert not toggle.is_checked()
+    assert expand.is_hidden()
+    assert field(root, "ignore-positions").is_checked()
+    assert field(root, "multi-bindings").is_checked()
+    toggle.press("Space")
+    assert panel.is_visible()
+    assert toggle.get_attribute("aria-expanded") == "true"
+
+
+def test_new_categories_leave_repeated_block_handling_off_and_new_rules_open(
+    rules_page: Any,
+) -> None:
+    page = rules_page
+    page.locator("#add-coordinate").click()
+    page.locator("#coordinate-kind-trigger").click()
+    page.locator('[data-coordinate-kind="category-zone"]').click()
+    root = options_root(page)
+    assert not field(root, "ignore-repeated").is_checked()
+    assert field(root, "repeats-panel").is_hidden()
+    field(root, "multi-bindings").check()
+    rule = field(root, "rules-list").locator(".category-rule-form")
+    assert rule.count() == 1
+    assert rule.locator(".category-rule-body").is_visible()
+    assert rule.locator(".category-rule-count").inner_text() == "0 项物品"
+
+
+def test_invalid_collapsed_rule_is_opened_when_saving(rules_page: Any) -> None:
+    page = rules_page
+    root = options_root(page)
+    rule = field(root, "rules-list").locator(".category-rule-form").first
+    open_rule(rule)
+    rule.locator("textarea").fill("")
+    rule.locator(".category-rule-toggle").click()
+    assert rule.locator(".category-rule-body").is_hidden()
+    save(page)
+    assert "请每行填写一个完整物品 ID" in page.locator("#editor-status").inner_text()
+    assert rule.locator(".category-rule-body").is_visible()

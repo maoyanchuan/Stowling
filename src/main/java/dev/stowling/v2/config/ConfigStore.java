@@ -238,7 +238,27 @@ public final class ConfigStore {
         if (value == null || value.isJsonNull()) return;
         JsonObject policy = requireObject(value, "cleanupPolicy");
         requireFields(policy, "cleanupPolicy",
-                Set.of("destinationRef", "resumeMode", "emptyBoxRefs", "packingPositionRef"), Set.of());
+                Set.of("destinationRef", "resumeMode", "emptyBoxRefs", "packingPositionRef",
+                        "emptyBoxWarehouse"), Set.of());
+        JsonElement boxValue = policy.get("emptyBoxWarehouse");
+        if (boxValue != null && !boxValue.isJsonNull()) {
+            var boxes = requireObject(boxValue, "emptyBoxWarehouse");
+            requireFields(boxes, "emptyBoxWarehouse",
+                    Set.of("enabled", "warehouseRef", "retainInCache", "cacheLimit"),
+                    Set.of("enabled", "retainInCache"));
+            for (String key : Set.of("enabled", "retainInCache")) {
+                var flag = boxes.get(key);
+                if (!flag.isJsonPrimitive() || !flag.getAsJsonPrimitive().isBoolean()) {
+                    throw new V2ValidationException("emptyBoxWarehouse." + key + " 必须是布尔值");
+                }
+            }
+            var limit = boxes.get("cacheLimit");
+            if (limit != null && !limit.isJsonNull() && (!limit.isJsonPrimitive()
+                    || !limit.getAsJsonPrimitive().isNumber()
+                    || !limit.getAsString().matches("[0-9]+"))) {
+                throw new V2ValidationException("缓存空盒保留数量必须是整数");
+            }
+        }
         JsonElement mode = policy.get("resumeMode");
         if (mode != null && !mode.isJsonNull() && (!mode.isJsonPrimitive()
                 || !mode.getAsJsonPrimitive().isString()

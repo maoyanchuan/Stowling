@@ -381,6 +381,9 @@ public final class ConfigValidator {
         requireSpatialReference(policy.destinationRef(), coordinates, regions);
         requireSpatialReference(policy.packingPositionRef(), coordinates, regions);
         policy.emptyBoxRefs().forEach(ref -> requireSpatialReference(ref, coordinates, regions));
+        if (policy.emptyBoxWarehouse() != null) {
+            requireSpatialReference(policy.emptyBoxWarehouse().warehouseRef(), coordinates, regions);
+        }
     }
 
     private static void requireSpatialReference(String value, Map<UUID, CoordinatePoint> points,
@@ -778,6 +781,7 @@ public final class ConfigValidator {
             );
         }
         switch (step.moduleId()) {
+            case "SETTLE_EMPTY_BOXES" -> requireParameters(step, Set.of(), Set.of());
             case "MANAGE_CACHE_INTAKE" -> {
                 requireParameters(step, Set.of("cacheIntakeMode", "cacheThresholdPercent",
                         "classificationTaskRef"), Set.of("cacheIntakeMode",

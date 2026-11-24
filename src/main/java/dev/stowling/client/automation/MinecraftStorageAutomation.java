@@ -75,6 +75,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final Map<UUID, IntakeStash> intakeStashes = new LinkedHashMap<>();
     private final Map<TaskRunWorkspace, Map<BlockPosition, CacheSnapshot>> cacheSnapshotsByRun =
             new WeakHashMap<>();
+    private final Map<TaskRunWorkspace, List<ContainerTarget>> boxWarehouses = new WeakHashMap<>();
 
     public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings) {
         this(minecraft, settings, (region, types, volume) ->
@@ -302,12 +303,45 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     }
 
     private List<ContainerTarget> emptyBoxSources(TaskExecutionContext context) {
+        var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
+        if (policy != null) {
+            List<ContainerTarget> sources = new ArrayList<>(classificationCaches(context));
+            sources.addAll(emptyBoxWarehouse(context));
+            return EmptyBoxSupplyPlan.sources(sources,
+                    context.workspace().selectedContainer().orElse(null), List.of());
+        }
         List<ContainerTarget> caches = new ArrayList<>();
         context.workspace().containerScan().ifPresent(scan -> caches.addAll(scan.containers()));
         caches.addAll(context.workspace().cacheContainers());
         return EmptyBoxSupplyPlan.sources(caches,
                 context.workspace().selectedContainer().orElse(null),
                 taskStorage(context).emptyBoxContainers());
+    }
+
+    private List<ContainerTarget> classificationCaches(TaskExecutionContext context) {
+        List<ContainerTarget> caches = new ArrayList<>();
+        context.workspace().containerScan().ifPresent(scan -> caches.addAll(scan.containers()));
+        caches.addAll(context.workspace().cacheContainers());
+        return EmptyBoxSupplyPlan.sources(caches, null, List.of());
+    }
+
+    private List<ContainerTarget> emptyBoxWarehouse(TaskExecutionContext context) {
+        var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
+        if (policy == null || !policy.enabled()) return List.of();
+        return boxWarehouses.computeIfAbsent(context.workspace(), ignored -> {
+            var scan = CacheLocations.scan(context, ResourceReference.parse(policy.warehouseRef()),
+                    TemporaryContainerResolver.TYPES, 1_000_000, true);
+            if (!scan.succeeded()) throw new IllegalStateException(scan.message());
+            if (scan.containers().isEmpty()) {
+                throw new IllegalStateException("空盒仓库中没有可用的箱子或木桶");
+            }
+            return scan.containers();
+        });
+    }
+
+    @Override
+    public TaskModuleExecutor settleEmptyBoxes(TaskExecutionContext context) {
+        return new EmptyBoxSettlement(context);
     }
 
     private List<ContainerTarget> overflowContainers(ResourceReference destination) {
@@ -374,8 +408,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private StorageAutomationSettings taskStorage(TaskExecutionContext context) {
         var policy = context.workspace().cleanupPolicy();
-        var empty = policy.emptyBoxRefs().stream().map(ref -> taskPoint(context, ref))
-                .filter(Objects::nonNull).toList();
+        var empty = policy.emptyBoxWarehouse() == null
+                ? policy.emptyBoxRefs().stream().map(ref -> taskPoint(context, ref))
+                        .filter(Objects::nonNull).toList()
+                : emptyBoxWarehouse(context).stream().flatMap(target -> target.entrances().stream())
+                        .distinct().toList();
         var fallback = policy.packingPositionRef() == null ? null
                 : taskPoint(context, policy.packingPositionRef());
         return new StorageAutomationSettings(false, List.of(), empty, fallback);
@@ -430,6 +467,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             Map<String, Integer> stackSizes, Set<String> fullBoxKeys) {
         private static final CacheSnapshot EMPTY = new CacheSnapshot(
                 0, Map.of(), List.of(), Map.of(), Set.of());
+    }
+
+    private static Map<String, Integer> emptyBoxCounts(List<ItemStack> stacks) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        stacks.stream().filter(MinecraftStorageAutomation::isEmptyBox).forEach(stack ->
+                counts.merge(MinecraftItemIdentity.key(stack), stack.getCount(), Integer::sum));
+        return counts;
     }
 
     private CacheSnapshot recordCacheContents(TaskExecutionContext context, ContainerTarget target,
@@ -579,7 +623,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             boolean inPackingPlan = cacheSnapshots != null
                     && cacheSnapshots.containsKey(target.position());
             List<ItemStack> contents = access.contents();
-            if (contents.isEmpty()) return;
             if (!inPackingPlan && context.workspace().cacheContents(target).isEmpty()
                     && context.workspace().containerScan().stream()
                             .flatMap(scan -> scan.containers().stream())
@@ -758,6 +801,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .keySet().stream().flatMap(target -> target.entrances().stream())
                     .collect(java.util.stream.Collectors.toSet());
             List<ContainerTarget> sources = new ArrayList<>(preferred);
+            var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
+            if (policy != null) {
+                sources.clear();
+                var caches = classificationCaches(context);
+                int existing = caches.stream().mapToInt(target -> context.workspace()
+                        .cacheContents(target).map(EmptyBoxSupplyPlan::emptyCount).orElse(0)).sum();
+                sources.addAll(EmptyBoxSupplyPlan.classificationReturns(caches,
+                        emptyBoxWarehouse(context), policy.enabled(), existing,
+                        policy.retainedLimit()));
+                return EmptyBoxSupplyPlan.returns(null, sources, List.of(), storagePositions,
+                        context.workspace().partialBoxStoragePositions());
+            }
             sources.addAll(emptyBoxSources(context));
             return EmptyBoxSupplyPlan.returns(null, sources,
                     taskCleanupContainers(context, configuration), storagePositions,
@@ -779,16 +834,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         final void storeEmptyBox(ItemStack empty, List<ContainerTarget> destinations, int index,
                 Runnable after) {
+            var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
+            if (policy != null && index == 0) destinations = emptyBoxReturns(null);
             if (index >= destinations.size()) {
-                throw new IllegalStateException("缓存和空盒供应箱无法接收空潜影盒，等待收尾");
+                throw new IllegalStateException("配置的空盒存放位置无法接收空潜影盒，等待收尾");
             }
+            final List<ContainerTarget> candidates = destinations;
             String key = MinecraftItemIdentity.key(empty);
             int before = owned().getOrDefault(key, 0);
             var access = new MinecraftStorageAccess(minecraft, context, destinations.get(index),
                     Map.of(key, 1), false, false);
             Runnable confirmed = () -> {
                 if (owned().getOrDefault(key, 0) == before - 1) after.run();
-                else storeEmptyBox(empty, destinations, index + 1, after);
+                else storeEmptyBox(empty, candidates, index + 1, after);
             };
             steps.add(new Step(access, confirmed, confirmed));
         }
@@ -2714,7 +2772,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         @Override
         void initialize() {
             if (!cleanupAvailable() || emptyBoxSources(context).isEmpty()) {
-                throw new IllegalStateException("请配置任务中断存放位置，并在缓存或公共供应箱准备空盒");
+                throw new IllegalStateException("请配置任务中断存放位置，并在缓存或任务空盒仓库准备空盒");
             }
             if (ItemIdentity.isBox(target.type())) {
                 throw new IllegalStateException("潜影盒储存模式需要普通箱子或木桶作为目标");
@@ -3819,6 +3877,77 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
     }
 
+    private final class EmptyBoxSettlement extends Session {
+        private List<ContainerTarget> caches;
+        private int limit;
+
+        EmptyBoxSettlement(TaskExecutionContext context) {
+            super(context);
+        }
+
+        @Override
+        void initialize() {
+            var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
+            if (policy == null || !policy.enabled()) return;
+            limit = policy.retainedLimit();
+            caches = classificationCaches(context);
+            var warehouseTargets = emptyBoxWarehouse(context);
+            if (caches.stream().anyMatch(cache -> warehouseTargets.stream()
+                    .anyMatch(target -> sameContainer(cache, target)))) {
+                throw new IllegalStateException("空盒仓库不能与来源缓存重叠，请调整区域");
+            }
+            inspectCaches(0);
+        }
+
+        private void inspectCaches(int index) {
+            if (index >= caches.size()) {
+                returnEmptyBoxes(() -> settleCache(0, limit));
+                return;
+            }
+            var cache = caches.get(index);
+            read(cache, contents -> {
+                recordCacheContents(context, cache, contents);
+                inspectCaches(index + 1);
+            });
+        }
+
+        private void settleCache(int index, int remainingKeep) {
+            if (index >= caches.size()) return;
+            var cache = caches.get(index);
+            read(cache, contents -> {
+                var snapshot = recordCacheContents(context, cache, contents);
+                int count = EmptyBoxSupplyPlan.emptyCount(snapshot.counts());
+                int keep = Math.min(remainingKeep, count);
+                if (count <= keep) {
+                    settleCache(index + 1, remainingKeep - keep);
+                    return;
+                }
+                int capacity = (int) minecraft.player.getInventory().getNonEquipmentItems().stream()
+                        .filter(ItemStack::isEmpty).count();
+                if (capacity == 0) {
+                    throw new IllegalStateException("背包没有空位搬运缓存空盒，请腾出空间后重试");
+                }
+                var access = MinecraftStorageAccess.collect(minecraft, context, cache, current ->
+                        EmptyBoxSupplyPlan.surplus(emptyBoxCounts(current),
+                                keep, capacity));
+                int before = count;
+                steps.add(new Step(access, () -> {
+                    int after = EmptyBoxSupplyPlan.emptyCount(
+                            emptyBoxCounts(access.contents()));
+                    if (after >= before) {
+                        throw new IllegalStateException("缓存空盒取出未确认，停止归还");
+                    }
+                    returnEmptyBoxes(() -> settleCache(index, remainingKeep));
+                }));
+            });
+        }
+
+        @Override
+        String completionMessage() {
+            return "缓存多余空盒已归还空盒仓库";
+        }
+    }
+
     private final class Cleanup extends Session {
         private List<ContainerTarget> targets;
         private final boolean overflowEnabled;
@@ -3837,6 +3966,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void resolveDestinations() {
+            if (context.workspace().cleanupPolicy().emptyBoxWarehouse() != null
+                    && owned().keySet().stream().anyMatch(ItemIdentity::isEmptyBox)) {
+                returnEmptyBoxes(this::resolveDestinations);
+                return;
+            }
             List<ContainerTarget> destinations = taskCleanupContainers(context, configuration);
             targets = destinations.stream()
                     .sorted(Comparator.comparingDouble(target -> distance(target.position())))

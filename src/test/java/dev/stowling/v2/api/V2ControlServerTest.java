@@ -460,8 +460,10 @@ class V2ControlServerTest {
                 "classificationAreas":[{"categoryZoneRef":"category-zone:%s",
                 "storagePolicy":{"mode":"BOX_ONLY","loosePercent":25}}],
                 "collectionPriority":"NORMAL",
-                "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65}}
-                """.formatted(point.id(), region.id(), zone.id());
+                "cachePolicy":{"enabled":true,"mode":"CLASSIFY_FIRST","thresholdPercent":65},
+                "cleanupPolicy":{"emptyBoxWarehouse":{"enabled":true,"warehouseRef":
+                "coordinate:%s","retainInCache":true,"cacheLimit":9}}}
+                """.formatted(point.id(), region.id(), zone.id(), point.id());
         try (Fixture fixture = new Fixture(service)) {
             assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST", body, false)
                     .statusCode());
@@ -475,6 +477,14 @@ class V2ControlServerTest {
                     item.getAsJsonObject("cachePolicy").get("mode").getAsString());
             assertEquals(65,
                     item.getAsJsonObject("cachePolicy").get("thresholdPercent").getAsInt());
+            var boxes = item.getAsJsonObject("cleanupPolicy").getAsJsonObject("emptyBoxWarehouse");
+            assertEquals("coordinate:" + point.id(), boxes.get("warehouseRef").getAsString());
+            assertEquals(9, boxes.get("cacheLimit").getAsInt());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"cacheLimit\":9", "\"cacheLimit\":1.5"), true).statusCode());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"retainInCache\":true", "\"retainInCache\":\"true\""), true)
+                    .statusCode());
             assertEquals(65, new ConfigStore(directory.resolve("layout-recognition.json"))
                     .loadOrReset().config().autoClassifyTasks().getFirst()
                     .cachePolicy().thresholdPercent());

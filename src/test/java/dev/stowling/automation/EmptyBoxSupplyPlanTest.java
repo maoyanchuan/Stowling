@@ -12,6 +12,34 @@ import org.junit.jupiter.api.Test;
 
 class EmptyBoxSupplyPlanTest {
     @Test
+    void warehouseAndRetentionSwitchesSelectTheExpectedReturnLocations() {
+        var caches = List.of(target(1), target(2));
+        var warehouse = List.of(target(3));
+        assertEquals(caches, EmptyBoxSupplyPlan.classificationReturns(
+                caches, warehouse, false, 20, 9));
+        assertEquals(warehouse, EmptyBoxSupplyPlan.classificationReturns(
+                caches, warehouse, true, 0, 0));
+        assertEquals(List.of(target(1), target(2), target(3)),
+                EmptyBoxSupplyPlan.classificationReturns(caches, warehouse, true, 8, 9));
+        assertEquals(warehouse, EmptyBoxSupplyPlan.classificationReturns(
+                caches, warehouse, true, 9, 9));
+    }
+
+    @Test
+    void surplusCountsAllColorsAndMovesOnlyEmptyShellsThatFitTheInventory() {
+        var stock = new java.util.LinkedHashMap<String, Integer>();
+        stock.put("minecraft:shulker_box#splain", 7);
+        stock.put("minecraft:red_shulker_box#sred", 8);
+        stock.put("minecraft:shulker_box#sfilled@minecraft:stone", 4);
+        stock.put("minecraft:stone", 64);
+        assertEquals(15, EmptyBoxSupplyPlan.emptyCount(stock));
+        assertEquals(Map.of("minecraft:red_shulker_box#sred", 3),
+                EmptyBoxSupplyPlan.surplus(stock, 9, 3));
+        assertEquals(Map.of(), EmptyBoxSupplyPlan.surplus(stock, 20, 9));
+        assertEquals(Map.of(), EmptyBoxSupplyPlan.surplus(stock, 0, 0));
+    }
+
+    @Test
     void emptiedRefillBoxesReturnToCachesOrSupplyAndNeverToClassificationStorage() {
         ContainerTarget cache = target(1);
         ContainerTarget supply = target(2);

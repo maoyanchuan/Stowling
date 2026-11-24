@@ -90,7 +90,8 @@ def classification_page() -> Iterator[Any]:
         for name in (
             "settings-ui.js", "task-select-ui.js", "v2-task-model.js",
             "auto-classify-task-model.js",
-            "task-cleanup-settings.js", "task-autosave.js", "auto-classify-ui.js",
+            "task-cleanup-settings.js", "empty-box-settings.js", "task-autosave.js",
+            "auto-classify-ui.js",
         ):
             page.add_script_tag(content=(WEB / name).read_text(encoding="utf-8"))
         page.evaluate("async () => {for (const handler of backend.handlers) await handler();}")
@@ -264,3 +265,60 @@ def test_area_removal_is_inside_expanded_settings(classification_page: Any) -> N
     settle(page)
     assert area.get_by_role("button", name="移除").is_visible()
     assert area.locator("select").first.input_value() == "zone"
+
+
+def test_empty_box_warehouse_retains_drafts_when_each_switch_is_disabled(
+    classification_page: Any,
+) -> None:
+    page = classification_page
+    open_settings(page)
+    host = page.locator("#auto-empty-box-settings")
+    enabled = host.locator("#auto-empty-warehouse-enabled")
+    enabled.check()
+    settle(page)
+    row = host.locator(".move-field:has(#auto-empty-warehouse-location)")
+    row.locator(".task-select-trigger").click()
+    page.get_by_role("option", name="备用缓存").click()
+    retain = host.locator("#auto-empty-cache-retain")
+    retain.uncheck()
+    retain.check()
+    settle(page)
+    limit = host.locator("#auto-empty-cache-limit")
+    limit.fill("12")
+    limit.blur()
+    page.wait_for_function("backend.item.cleanupPolicy?.emptyBoxWarehouse?.cacheLimit === 12")
+    retain.uncheck()
+    page.wait_for_function("backend.item.cleanupPolicy.emptyBoxWarehouse.retainInCache === false")
+    enabled.uncheck()
+    page.wait_for_function("backend.item.cleanupPolicy.emptyBoxWarehouse.enabled === false")
+    assert page.evaluate("backend.item.cleanupPolicy.emptyBoxWarehouse.warehouseRef") == (
+        "region:reserve"
+    )
+    enabled.check()
+    settle(page)
+    retain.check()
+    settle(page)
+    assert limit.input_value() == "12"
+    assert host.locator("#auto-empty-warehouse-location").input_value() == "region:reserve"
+    assert page.locator("#auto-task-list .pickup-task-header [role=switch]").is_checked() is False
+
+
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_empty_box_warehouse_dropdown_supports_keyboard_and_fits_the_window(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    page.locator("#auto-empty-warehouse-enabled").check()
+    settle(page)
+    row = page.locator(".move-field:has(#auto-empty-warehouse-location)")
+    trigger = row.locator(".task-select-trigger")
+    trigger.press("ArrowDown")
+    menu = page.locator(".task-select-menu:not([hidden])")
+    assert menu.get_by_role("option").count() == 3
+    menu.get_by_role("option", name="备用缓存").press("Enter")
+    assert page.locator("#auto-empty-warehouse-location").input_value() == "region:reserve"
+    assert trigger.evaluate("node => node === document.activeElement")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

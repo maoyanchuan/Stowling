@@ -4,10 +4,41 @@ import dev.stowling.domain.BlockPosition;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 public final class EmptyBoxSupplyPlan {
     private EmptyBoxSupplyPlan() {
+    }
+
+    public static int emptyCount(Map<String, Integer> contents) {
+        return contents.entrySet().stream().filter(entry -> ItemIdentity.isEmptyBox(entry.getKey()))
+                .mapToInt(Map.Entry::getValue).sum();
+    }
+
+    public static List<ContainerTarget> classificationReturns(List<ContainerTarget> caches,
+            List<ContainerTarget> warehouse, boolean enabled, int cachedCount, int retainedLimit) {
+        List<ContainerTarget> candidates = new ArrayList<>();
+        if (!enabled || cachedCount < retainedLimit) candidates.addAll(caches);
+        if (enabled) candidates.addAll(warehouse);
+        return sources(candidates, null, List.of());
+    }
+
+    public static Map<String, Integer> surplus(Map<String, Integer> contents,
+            int retained, int capacity) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        int keep = Math.max(0, retained);
+        int room = Math.max(0, capacity);
+        for (var entry : contents.entrySet()) {
+            if (!ItemIdentity.isEmptyBox(entry.getKey())) continue;
+            int reserve = Math.min(keep, entry.getValue());
+            keep -= reserve;
+            int move = Math.min(room, entry.getValue() - reserve);
+            if (move > 0) result.put(entry.getKey(), move);
+            room -= move;
+        }
+        return Map.copyOf(result);
     }
 
     public static boolean canReturnUnusedBoxes(java.util.Map<String, Integer> owned,

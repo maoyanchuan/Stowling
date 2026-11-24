@@ -9,6 +9,8 @@
     const cleanup = window.StowlingTaskCleanupSettings.create(
         document.querySelector("#auto-cleanup-settings"),
         {allowContinue: false, facilities: true, defaultLabel: "使用本任务缓存位置"});
+    const boxSettings = window.StowlingEmptyBoxSettings?.create(
+        document.querySelector("#auto-empty-box-settings"));
     const state = {
         revision: "",
         draftRevision: "",
@@ -327,6 +329,8 @@
         cleanup.resources(state.resources.coordinates, state.resources.regions);
         cleanup.set({...draft.facilities, destinationRef: draft.cleanupDestinationRef,
             resumeMode: "RESTART"});
+        boxSettings?.resources(state.resources.coordinates, state.resources.regions);
+        boxSettings?.set(draft.facilities.emptyBoxWarehouse);
         renderClassificationAreas();
         updateControls();
     }
@@ -365,7 +369,8 @@
                 followUpDelaySeconds: elements.followUpDelay.value} : {}),
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
-            facilities: cleanup.read(),
+            facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
+                ? {emptyBoxWarehouse: boxSettings.read()} : {})},
             cleanupDestinationRef: cleanup.read().destinationRef || ""
         };
     }
@@ -497,6 +502,10 @@
         const kind = state.draft.kind;
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
+        const boxHost = document.querySelector("#auto-empty-box-settings");
+        if (boxHost) boxHost.hidden = !classification;
+        cleanup.setSupplyVisible?.(!classification);
+        boxSettings?.refresh();
         elements.form.dataset.kind = kind || "COMBINED";
         elements.draft.classList.toggle("pickup-task-module", pickup || classification);
         elements.draftBody.classList.toggle("pickup-task-body", pickup || classification);

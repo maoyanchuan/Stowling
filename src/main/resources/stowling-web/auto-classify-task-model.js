@@ -198,6 +198,15 @@
         }
 
         const cache = String(draft?.cacheLocationRef || "");
+        const boxes = draft?.facilities?.emptyBoxWarehouse;
+        if (draft?.kind === "CLASSIFICATION" && boxes?.enabled) {
+            const places = [...(resources?.coordinates || []).map(item => "coordinate:" + item.id),
+                ...(resources?.regions || []).map(item => "region:" + item.id)];
+            if (!places.includes(boxes.warehouseRef)) errors.push("请选择有效的空盒仓库");
+            if (boxes.warehouseRef === cache) errors.push("空盒仓库和来源缓存必须使用不同的位置");
+            if (!Number.isInteger(boxes.cacheLimit) || boxes.cacheLimit < 0
+                || boxes.cacheLimit > 3456) errors.push("缓存空盒保留数量必须为 0 到 3456 的整数");
+        }
         if (!cache) {
             errors.push("请选择缓存位置");
         } else if (!cacheLocations(resources).some(item => item.id === cache)) {

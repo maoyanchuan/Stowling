@@ -203,6 +203,11 @@ public record AutoClassifyDefinition(
         if (cleanupPolicy.resumeMode() != TaskResumeMode.RESTART) {
             throw new IllegalArgumentException("自动分类中断后需要重新扫描分类");
         }
+        var boxWarehouse = cleanupPolicy.emptyBoxWarehouse();
+        if (boxWarehouse != null && boxWarehouse.enabled()
+                && boxWarehouse.warehouseRef().equals(cacheLocationRef)) {
+            throw new IllegalArgumentException("空盒仓库和来源缓存必须使用不同的位置");
+        }
         id = Objects.requireNonNull(id, "id");
         name = requireName(name);
         detectionCoordinateRef = kind == Kind.CLASSIFICATION ? null : requireReference(

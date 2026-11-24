@@ -31,6 +31,10 @@ public interface StorageAutomationPort {
 
     TaskModuleExecutor cleanup(TaskExecutionContext context);
 
+    default TaskModuleExecutor settleEmptyBoxes(TaskExecutionContext context) {
+        throw new IllegalStateException("当前环境不支持空盒仓库归还");
+    }
+
     default TaskModuleExecutor refreshContainerCache(TaskExecutionContext context, TaskStep step) {
         throw new IllegalStateException("当前环境不支持刷新容器缓存");
     }

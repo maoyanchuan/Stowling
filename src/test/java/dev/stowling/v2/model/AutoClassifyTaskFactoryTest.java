@@ -585,6 +585,28 @@ class AutoClassifyTaskFactoryTest {
         return definition(enabled, true, true);
     }
 
+    @Test
+    void enabledEmptyBoxWarehouseSettlesSurplusAfterOrdinaryInventoryIsReturned() {
+        var original = definition(true);
+        var boxes = new EmptyBoxWarehousePolicy(true, "region:" + UUID.randomUUID(), true, 9);
+        var cleanup = new TaskCleanupPolicy(original.cacheLocationRef(), TaskResumeMode.RESTART,
+                List.of(), null, boxes);
+        var configured = new AutoClassifyDefinition(original.id(), original.name(),
+                original.enabled(), original.collectionEnabled(), original.classificationEnabled(),
+                original.detectionCoordinateRef(), original.pickupRadius(),
+                original.cacheLocationRef(), original.classificationAreas(),
+                original.collectionPriority(), false, cleanup);
+        var sorting = AutoClassifyTaskFactory.tasks(configured, List.of()).stream()
+                .filter(task -> task.id().equals(original.classificationTaskId()))
+                .findFirst().orElseThrow();
+        assertEquals(EmptyBoxWarehousePolicy.SETTLE_MODULE, sorting.steps().getLast().moduleId());
+        assertEquals(ConfigValidator.ASSERT_PLAYER_INVENTORY_RESTORED,
+                sorting.steps().get(sorting.steps().size() - 2).moduleId());
+        assertTrue(TaskFlowNormalizer.references(sorting,
+                ResourceReference.parse(boxes.warehouseRef())));
+        assertEquals(boxes, sorting.cleanupPolicy().emptyBoxWarehouse());
+    }
+
     private static AutoClassifyDefinition definition(
             boolean enabled,
             boolean collectionEnabled,

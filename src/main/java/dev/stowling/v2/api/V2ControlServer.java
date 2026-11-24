@@ -899,17 +899,29 @@ public final class V2ControlServer implements AutoCloseable {
         if (!json.has("cleanupPolicy") || json.get("cleanupPolicy").isJsonNull()) return null;
         JsonObject policy = jsonObject(json.get("cleanupPolicy"), "cleanupPolicy");
         requireFieldsAny(policy, Set.of("destinationRef", "resumeMode", "emptyBoxRefs",
-                "packingPositionRef"), Set.of());
+                "packingPositionRef", "emptyBoxWarehouse"), Set.of());
         String mode = optionalString(policy, "resumeMode");
         try {
             return new dev.stowling.v2.model.TaskCleanupPolicy(
                     optionalString(policy, "destinationRef"), mode == null || mode.isBlank() ? null
                             : dev.stowling.v2.model.TaskResumeMode.valueOf(mode),
                     policy.has("emptyBoxRefs") ? stringArray(policy, "emptyBoxRefs") : List.of(),
-                    optionalString(policy, "packingPositionRef"));
+                    optionalString(policy, "packingPositionRef"), emptyBoxWarehousePolicy(policy));
         } catch (IllegalArgumentException exception) {
             throw invalid("cleanupPolicy: " + exception.getMessage());
         }
+    }
+
+    private static dev.stowling.v2.model.EmptyBoxWarehousePolicy emptyBoxWarehousePolicy(
+            JsonObject policy) {
+        var value = policy.get("emptyBoxWarehouse");
+        if (value == null || value.isJsonNull()) return null;
+        var boxes = jsonObject(value, "emptyBoxWarehouse");
+        requireFieldsAny(boxes, Set.of("enabled", "warehouseRef", "retainInCache", "cacheLimit"),
+                Set.of("enabled", "retainInCache"));
+        return new dev.stowling.v2.model.EmptyBoxWarehousePolicy(
+                optionalBoolean(boxes, "enabled"), optionalString(boxes, "warehouseRef"),
+                optionalBoolean(boxes, "retainInCache"), optionalInteger(boxes, "cacheLimit"));
     }
 
     private static TaskRequest taskRequest(JsonObject json) {
@@ -1974,6 +1986,7 @@ public final class V2ControlServer implements AutoCloseable {
                 ),
                 Map.entry("/task-cleanup-settings.js",
                         read("stowling-web/task-cleanup-settings.js", js)),
+                Map.entry("/empty-box-settings.js", read("stowling-web/empty-box-settings.js", js)),
                 Map.entry("/resource-browser.js", read("stowling-web/resource-browser.js", js)),
                 Map.entry(
                         "/task-monitor-model.js",

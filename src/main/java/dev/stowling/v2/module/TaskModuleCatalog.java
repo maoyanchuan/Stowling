@@ -10,6 +10,8 @@ import java.util.List;
 
 public final class TaskModuleCatalog {
     private static final List<ModuleDefinition> MODULES = List.of(
+            action(dev.stowling.v2.model.EmptyBoxWarehousePolicy.SETTLE_MODULE,
+                    "归还分类空盒", "按来源缓存的保留上限，将多余空盒归还空盒仓库。", List.of()),
             listener(
                     TaskTriggerType.DROPPED_ITEMS.name(),
                     "掉落物监听器",

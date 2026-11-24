@@ -105,6 +105,11 @@ public final class AutoClassifyTaskFactory {
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
                 definition.cacheLocationRef(), Map.of()
         ));
+        var boxWarehouse = definition.cleanupPolicy().emptyBoxWarehouse();
+        if (boxWarehouse != null && boxWarehouse.enabled()) {
+            classificationSteps.add(TaskStep.action(UUID.randomUUID(),
+                    EmptyBoxWarehousePolicy.SETTLE_MODULE, Map.of()));
+        }
         List<TaskDefinition> result = new ArrayList<>();
         if (definition.kind() != Kind.CLASSIFICATION) {
             result.add(new TaskDefinition(definition.id(), definition.name(),

@@ -10,6 +10,7 @@
         supply.multiple = true;
         supply.size = 4;
         const packing = document.createElement("select");
+        let supplyRow = null;
         const row = document.createElement("label");
         row.className = "move-field";
         row.append(S.element("span", "", "中断存放位置"), destination);
@@ -23,7 +24,7 @@
             content.append(mode);
         }
         if (options.facilities) {
-            const supplyRow = S.element("label", "move-field");
+            supplyRow = S.element("label", "move-field");
             supplyRow.append(S.element("span", "", "空潜影盒供应箱"), supply,
                 S.element("small", "muted", "可选择多个箱子点位"));
             const packingRow = S.element("label", "move-field");
@@ -99,7 +100,12 @@
             }
             return policy;
         }
-        return {resources, set, read};
+        /** @param {boolean} visible @returns {void} */
+        function setSupplyVisible(visible) {
+            const row = supply.closest?.(".move-field") || supplyRow;
+            if (row) row.hidden = !visible;
+        }
+        return {resources, set, read, setSupplyVisible};
     }
     window.StowlingTaskCleanupSettings = Object.freeze({create});
 })();

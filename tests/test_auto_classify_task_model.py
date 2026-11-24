@@ -40,6 +40,43 @@ def _run(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+@pytest.mark.parametrize("enabled,retain", [(False, True), (True, False), (True, True)])
+def test_empty_box_warehouse_round_trip_preserves_switches_and_drafts(
+    enabled: bool, retain: bool,
+) -> None:
+    value = {"enabled": enabled, "warehouseRef": "region:boxes",
+             "retainInCache": retain, "cacheLimit": 12}
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const boxes = """ + json.dumps(value) + """;
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}],
+            facilities: {emptyBoxWarehouse: boxes}};
+        const saved = model.payload(draft, {regions: [{id: "cache"}, {id: "boxes"}],
+            categoryZones: [{id: "zone"}]});
+        return model.draftFromTask(saved).facilities.emptyBoxWarehouse;
+    })()""")
+    assert result == value
+
+
+@pytest.mark.parametrize("ref,count", [("", 9), ("region:cache", 9),
+                                      ("region:boxes", -1), ("region:boxes", 1.5)])
+def test_empty_box_warehouse_rejects_missing_source_overlap_and_invalid_limit(
+    ref: str, count: int | float,
+) -> None:
+    settings = json.dumps({"enabled": True, "warehouseRef": ref,
+                           "retainInCache": True, "cacheLimit": count})
+    errors = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
+            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
+            facilities: {emptyBoxWarehouse: """ + settings + """}},
+            {regions: [{id: "cache"}, {id: "boxes"}], categoryZones: [{id: "zone"}]});
+    })()""")
+    assert len(errors) == 1
+    assert "空盒" in errors[0]
+
+
 @pytest.mark.parametrize("interval,delay", [(1, 30), (6, 45), (60, 0)])
 def test_pickup_timing_settings_survive_save_and_reload(interval: int, delay: int) -> None:
     result = _run(f"""(() => {{

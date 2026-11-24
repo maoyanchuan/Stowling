@@ -357,7 +357,9 @@ class ConfigStoreTest {
         AppConfig initial = automaticConfiguration(false);
         var original = initial.autoClassifyTasks().getFirst();
         var policy = new dev.stowling.v2.model.TaskCleanupPolicy(original.detectionCoordinateRef(),
-                dev.stowling.v2.model.TaskResumeMode.RESTART);
+                dev.stowling.v2.model.TaskResumeMode.RESTART, List.of(), null,
+                new dev.stowling.v2.model.EmptyBoxWarehousePolicy(
+                        true, original.detectionCoordinateRef(), true, 9));
         var automatic = new AutoClassifyDefinition(original.id(), original.name(), original.enabled(),
                 original.collectionEnabled(), original.classificationEnabled(),
                 original.detectionCoordinateRef(), original.pickupRadius(), original.cacheLocationRef(),

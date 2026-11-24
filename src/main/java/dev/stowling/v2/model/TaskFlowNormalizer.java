@@ -1111,6 +1111,9 @@ public final class TaskFlowNormalizer {
             ResourceReference reference
     ) {
         if (reference.encode().equals(task.cleanupPolicy().destinationRef())
+                || task.cleanupPolicy().emptyBoxWarehouse() != null
+                        && reference.encode().equals(
+                                task.cleanupPolicy().emptyBoxWarehouse().warehouseRef())
                 || reference.encode().equals(task.cleanupPolicy().packingPositionRef())
                 || task.cleanupPolicy().emptyBoxRefs().contains(reference.encode())) return true;
         if (reference.type() == ResourceType.TASK

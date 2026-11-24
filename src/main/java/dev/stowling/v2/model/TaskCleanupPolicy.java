@@ -3,11 +3,17 @@ package dev.stowling.v2.model;
 import java.util.List;
 
 public record TaskCleanupPolicy(String destinationRef, TaskResumeMode resumeMode,
-        List<String> emptyBoxRefs, String packingPositionRef) {
+        List<String> emptyBoxRefs, String packingPositionRef,
+        EmptyBoxWarehousePolicy emptyBoxWarehouse) {
     public static final TaskCleanupPolicy DEFAULT = new TaskCleanupPolicy(null, TaskResumeMode.RESTART);
 
     public TaskCleanupPolicy(String destinationRef, TaskResumeMode resumeMode) {
         this(destinationRef, resumeMode, List.of(), null);
+    }
+
+    public TaskCleanupPolicy(String destinationRef, TaskResumeMode resumeMode,
+            List<String> emptyBoxRefs, String packingPositionRef) {
+        this(destinationRef, resumeMode, emptyBoxRefs, packingPositionRef, null);
     }
 
     public TaskCleanupPolicy {
@@ -32,7 +38,8 @@ public record TaskCleanupPolicy(String destinationRef, TaskResumeMode resumeMode
     }
 
     public TaskCleanupPolicy withDestination(String ref) {
-        return new TaskCleanupPolicy(ref, resumeMode, emptyBoxRefs, packingPositionRef);
+        return new TaskCleanupPolicy(ref, resumeMode, emptyBoxRefs, packingPositionRef,
+                emptyBoxWarehouse);
     }
 
     private static String pointReference(String value) {

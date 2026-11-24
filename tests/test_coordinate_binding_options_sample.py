@@ -115,6 +115,7 @@ def test_each_binding_has_its_own_options_and_unique_menu_ids(sample_page: Any) 
     choose(first, "scopeMode", "selection")
     choose(first, "recognitionMode", "container-item")
     choose(first, "storageMethod", "box")
+    open_recognition(first)
     first.locator('[id$="category-ignore-support"]').check()
     first.locator('[id$="category-support-block"]').fill("minecraft:stone")
     page.locator("#add-category-binding").click()
@@ -157,6 +158,7 @@ def test_disabling_overrides_preserves_draft_and_binding_expansion(sample_page: 
     assert card.locator(".category-binding-override-status").inner_text() == "独立设置"
     choose(card, "storageMethod", "box")
     choose(card, "noCacheLocation", "specified")
+    open_recognition(card)
     card.locator('[id$="category-ignore-support"]').check()
     card.locator('[id$="category-support-block"]').fill("minecraft:stone")
     enabled.uncheck()
@@ -269,12 +271,20 @@ def test_binding_submenus_are_not_clipped_or_offset(
     }""")
 
 
+def open_recognition(root: Any) -> None:
+    toggle = root.locator('[id$="category-recognition-expand"]')
+    if toggle.get_attribute("aria-expanded") == "false":
+        toggle.click()
+
+
 def options_root(page: Any, scope: str) -> Any:
     if scope == "global":
-        return page.locator(".category-options").first
-    card = page.locator(".category-binding-card").first
-    card.locator(".category-binding-enabled").check()
-    return card
+        root = page.locator(".category-options").first
+    else:
+        root = page.locator(".category-binding-card").first
+        root.locator(".category-binding-enabled").check()
+    open_recognition(root)
+    return root
 
 
 @pytest.mark.parametrize("scope", ["global", "binding"])
@@ -335,12 +345,14 @@ def test_support_block_lines_survive_inheritance_save_and_copy(
     page.locator('button[type="submit"]').filter(has_text="保存坐标").click()
     assert page.locator("#editor-status").inner_text() == "已保存分类区。"
     page.locator("#duplicate-coordinate").click()
+    open_recognition(global_options)
     global_options.locator('[id$="category-ignore-support"]').check()
     assert global_options.locator('[id$="category-support-block"]').input_value() == global_draft
     card = page.locator(".category-binding-card").first
     assert card.locator(".category-binding-enabled").is_checked() is enabled
     card.locator(".category-binding-toggle").click()
     card.locator(".category-binding-enabled").check()
+    open_recognition(card)
     card.locator('[id$="category-ignore-support"]').check()
     assert card.locator('[id$="category-support-block"]').input_value() == local_draft
 

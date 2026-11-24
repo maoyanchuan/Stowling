@@ -46,12 +46,16 @@ def test_directory_restores_order_placements_and_optional_point_values() -> None
     assert result["region"]["secondZ"] == 6
 
 
-def editor_structure(source: str, omitted_ids: frozenset[str] = frozenset()) -> list[tuple]:
+def editor_structure(
+    source: str, omitted_ids: frozenset[str] = frozenset(),
+    unwrapped_ids: frozenset[str] = frozenset(),
+) -> list[tuple]:
     class EditorParser(HTMLParser):
         def __init__(self) -> None:
             super().__init__()
             self.depth = 0
             self.skipped_depth = 0
+            self.unwrapped_depths: set[int] = set()
             self.structure: list[tuple] = []
 
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -60,6 +64,10 @@ def editor_structure(source: str, omitted_ids: frozenset[str] = frozenset()) -> 
                     self.skipped_depth += 1
                 return
             if not self.depth and dict(attrs).get("class") != "coordinate-shell":
+                return
+            if dict(attrs).get("id") in unwrapped_ids:
+                self.depth += 1
+                self.unwrapped_depths.add(self.depth)
                 return
             normalized = [(key, " ".join(value.split()) if value is not None else None)
                           for key, value in attrs]
@@ -76,6 +84,10 @@ def editor_structure(source: str, omitted_ids: frozenset[str] = frozenset()) -> 
                 self.skipped_depth -= 1
                 return
             if self.depth:
+                if self.depth in self.unwrapped_depths:
+                    self.unwrapped_depths.remove(self.depth)
+                    self.depth -= 1
+                    return
                 self.structure.append(("end", tag))
                 self.depth -= 1
 
@@ -94,11 +106,14 @@ def test_coordinate_editor_uses_the_approved_template_core_structure() -> None:
     page = (WEB / "coordinates.html").read_text(encoding="utf-8")
     # These sections are a requested template preview pending production integration.
     preview_sections = frozenset({
+        "category-recognition-expand",
         "category-position-option-row", "category-positions-panel",
         "category-repeat-option-row", "category-repeats-panel",
         "category-bindings-option-row", "category-bindings-panel",
     })
-    assert editor_structure(page) == editor_structure(template, preview_sections)
+    assert editor_structure(page) == editor_structure(
+        template, preview_sections, frozenset({"category-recognition-panel"}),
+    )
 
 
 ZONE_SETUP = """

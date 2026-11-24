@@ -25,15 +25,26 @@ def rules_page() -> Iterator[Any]:
 
 def options_root(page: Any, scope: str = "global") -> Any:
     if scope == "global":
-        return page.locator(".category-options").first
-    card = page.locator(".category-binding-card").first
-    card.locator(".category-binding-toggle").click()
-    card.locator(".category-binding-enabled").check()
-    return card.locator(".category-options")
+        root = page.locator(".category-options").first
+    else:
+        card = page.locator(".category-binding-card").first
+        card.locator(".category-binding-toggle").click()
+        card.locator(".category-binding-enabled").check()
+        root = card.locator(".category-options")
+    open_settings(root)
+    return root
 
 
 def field(root: Any, key: str) -> Any:
     return root.locator(f'[id$="category-{key}"]')
+
+
+def open_settings(root: Any) -> None:
+    if field(root, "recognition-expand").get_attribute("aria-expanded") == "false":
+        field(root, "recognition-expand").click()
+    if (field(root, "multi-bindings").is_checked()
+            and field(root, "bindings-expand").get_attribute("aria-expanded") == "false"):
+        field(root, "bindings-expand").click()
 
 
 def open_rule(rule: Any) -> None:
@@ -192,6 +203,7 @@ def test_inheritance_save_copy_and_resource_selection_keep_independent_drafts(
     assert card.locator(".category-binding-enabled").is_checked() is enabled
     card.locator(".category-binding-toggle").click()
     card.locator(".category-binding-enabled").check()
+    open_settings(card)
     assert not field(card, "ignore-repeated").is_checked()
     field(card, "multi-bindings").check()
     assert field(card, "rules-list").locator("textarea").first.input_value() == (
@@ -335,3 +347,107 @@ def test_invalid_collapsed_rule_is_opened_when_saving(rules_page: Any) -> None:
     save(page)
     assert "请每行填写一个完整物品 ID" in page.locator("#editor-status").inner_text()
     assert rule.locator(".category-rule-body").is_visible()
+
+
+@pytest.mark.parametrize("width", [1552, 390])
+@pytest.mark.parametrize("theme", ["green", "gray"])
+def test_main_settings_stay_compact_and_aligned_in_both_themes(
+    rules_page: Any, width: int, theme: str,
+) -> None:
+    page = rules_page
+    page.set_viewport_size({"width": width, "height": 1253})
+    page.locator(f'[data-theme-choice="{theme}"]').click()
+    root = page.locator(".category-options").first
+    assert field(root, "recognition-panel").is_hidden()
+    assert field(root, "bindings-panel").is_hidden()
+    assert root.locator(".category-select-trigger:visible").count() == 3
+    assert field(root, "recognition-summary").inner_text() == "已启用 2 项"
+    assert field(root, "bindings-summary").inner_text() == "2 条规则"
+    group = field(root, "recognition-expand")
+    group.scroll_into_view_if_needed()
+    bounds = group.bounding_box()
+    assert bounds is not None and bounds["x"] >= 0
+    assert bounds["x"] + bounds["width"] <= width
+    actions = group.locator(".category-option-actions").bounding_box()
+    standing = field(root, "standing-option-row").locator(
+        ".category-option-actions",
+    ).bounding_box()
+    assert actions is not None and standing is not None
+    assert actions["x"] + actions["width"] == pytest.approx(
+        standing["x"] + standing["width"], abs=1,
+    )
+    group.hover()
+    assert group.bounding_box() == bounds
+
+
+@pytest.mark.parametrize("scope", ["global", "binding"])
+def test_recognition_disclosure_changes_visibility_without_disabling_rules(
+    rules_page: Any, scope: str,
+) -> None:
+    page = rules_page
+    if scope == "global":
+        root = page.locator(".category-options").first
+    else:
+        card = page.locator(".category-binding-card").first
+        card.locator(".category-binding-toggle").click()
+        card.locator(".category-binding-enabled").check()
+        root = card.locator(".category-options")
+    panel = field(root, "recognition-panel")
+    toggle = field(root, "recognition-expand")
+    assert panel.is_hidden()
+    assert panel.get_by_role("switch").count() == 3
+    toggle.focus()
+    toggle.press("Space")
+    assert panel.is_visible()
+    assert toggle.get_attribute("aria-expanded") == "true"
+    field(root, "ignore-repeated").uncheck()
+    assert field(root, "recognition-summary").inner_text() == "已启用 1 项"
+    field(root, "ignore-support").check()
+    field(root, "support-block").fill("minecraft:stone")
+    assert field(root, "recognition-summary").inner_text() == "已启用 2 项"
+    toggle.click()
+    assert panel.is_hidden()
+    assert field(root, "ignore-support").is_checked()
+    assert field(root, "ignore-positions").is_checked()
+    assert not field(root, "ignore-repeated").is_checked()
+    assert field(root, "multi-bindings").is_checked()
+    toggle.press("Enter")
+    assert field(root, "support-block").input_value() == "minecraft:stone"
+    assert field(root, "positions-list").locator(
+        '[data-position-axis="x"]',
+    ).input_value() == "44"
+
+
+def test_binding_summary_tracks_enabled_and_saved_draft_counts(rules_page: Any) -> None:
+    page = rules_page
+    root = options_root(page)
+    summary = field(root, "bindings-summary")
+    field(root, "add-rule").click()
+    assert summary.inner_text() == "3 条规则"
+    field(root, "rules-list").locator(".category-rule-form").last.get_by_role(
+        "button", name="删除规则",
+    ).click()
+    assert summary.inner_text() == "2 条规则"
+    field(root, "multi-bindings").uncheck()
+    assert summary.inner_text() == "已关闭 · 2 条规则"
+    save(page)
+    page.locator("#duplicate-coordinate").click()
+    root = page.locator(".category-options").first
+    assert field(root, "bindings-summary").inner_text() == "已关闭 · 2 条规则"
+    assert field(root, "recognition-summary").inner_text() == "已启用 2 项"
+    assert field(root, "recognition-panel").is_hidden()
+    assert field(root, "bindings-panel").is_hidden()
+    field(root, "multi-bindings").check()
+    assert field(root, "bindings-summary").inner_text() == "2 条规则"
+
+
+def test_invalid_hidden_coordinates_open_the_recognition_group(rules_page: Any) -> None:
+    page = rules_page
+    root = options_root(page)
+    field(root, "positions-list").locator('[data-position-axis="y"]').fill("")
+    field(root, "recognition-expand").click()
+    assert field(root, "recognition-panel").is_hidden()
+    save(page)
+    assert "请添加排除位置" in page.locator("#editor-status").inner_text()
+    assert field(root, "recognition-panel").is_visible()
+    assert field(root, "positions-panel").is_visible()

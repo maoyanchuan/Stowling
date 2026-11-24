@@ -979,6 +979,36 @@ textarea {
     line-height: 1.5;
 }
 
+.category-group-trigger.category-option-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+}
+
+.category-group-trigger svg {
+    flex: 0 0 auto;
+    color: var(--muted);
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.category-group-trigger[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+}
+
+.category-option-summary {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.category-recognition-panel {
+    min-width: 0;
+    min-height: 0;
+    padding-left: 18px;
+}
+
 .category-option-row .field-label,
 .category-option-sub .field-label {
     margin: 0;
@@ -1525,6 +1555,10 @@ textarea {
         padding-left: 0;
     }
 
+    .category-recognition-panel {
+        padding-left: 0;
+    }
+
     .editor-fields .field-label:first-child {
         grid-column: auto;
     }
@@ -2002,147 +2036,173 @@ textarea {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="category-option-row">
-                                            <span class="category-option-label">忽略支撑方块</span>
-                                            <div class="category-option-actions">
-                                                <button id="category-support-expand"
-                                                        class="category-option-expand" type="button"
-                                                        aria-expanded="false"
-                                                        aria-controls="category-support-block-row"
-                                                        aria-label="展开支撑方块设置" hidden>
-                                                    <svg aria-hidden="true" width="18" height="18"
-                                                         viewBox="0 0 24 24" fill="none"
-                                                         stroke="currentColor" stroke-width="1.8">
-                                                        <path d="m9 18 6-6-6-6"/>
-                                                    </svg>
-                                                </button>
-                                                <label class="category-option-switch" for="category-ignore-support">
-                                                    <input id="category-ignore-support" type="checkbox"
-                                                           role="switch">
+                                        <button id="category-recognition-expand" type="button"
+                                                class="category-option-row category-group-trigger"
+                                                aria-expanded="false"
+                                                aria-controls="category-recognition-panel">
+                                            <span class="category-option-label">识别规则</span>
+                                            <span class="category-option-actions">
+                                                <span id="category-recognition-summary"
+                                                      class="category-option-summary"
+                                                      aria-live="polite">未启用</span>
+                                                <svg aria-hidden="true" width="18" height="18"
+                                                     viewBox="0 0 24 24" fill="none"
+                                                     stroke="currentColor" stroke-width="1.8">
+                                                    <path d="m9 18 6-6-6-6"/>
+                                                </svg>
+                                            </span>
+                                        </button>
+                                        <div id="category-recognition-panel"
+                                             class="category-recognition-panel" hidden>
+                                            <div class="category-option-row">
+                                                <span class="category-option-label">忽略支撑方块</span>
+                                                <div class="category-option-actions">
+                                                    <button id="category-support-expand"
+                                                            class="category-option-expand"
+                                                            type="button"
+                                                            aria-expanded="false"
+                                                            aria-controls="category-support-block-row"
+                                                            aria-label="展开支撑方块设置" hidden>
+                                                        <svg aria-hidden="true" width="18" height="18"
+                                                             viewBox="0 0 24 24" fill="none"
+                                                             stroke="currentColor" stroke-width="1.8">
+                                                            <path d="m9 18 6-6-6-6"/>
+                                                        </svg>
+                                                    </button>
+                                                    <label class="category-option-switch"
+                                                           for="category-ignore-support">
+                                                        <input id="category-ignore-support"
+                                                               type="checkbox"
+                                                               role="switch">
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div id="category-support-block-row"
+                                                 class="category-option-sub"
+                                                 data-collapsed="true">
+                                                <label class="category-option-label"
+                                                       for="category-support-block">
+                                                    支撑方块
+                                                    <small>每行填写一个方块 ID</small>
                                                 </label>
+                                                <div class="field-label">
+                                                    <textarea id="category-support-block"
+                                                              class="category-support-block-input"
+                                                              rows="3" spellcheck="false"
+                                                              placeholder="例如：minecraft:stone"
+                                                    ></textarea>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div id="category-support-block-row" class="category-option-sub"
-                                             data-collapsed="true">
-                                            <label class="category-option-label"
-                                                   for="category-support-block">
-                                                支撑方块
-                                                <small>每行填写一个方块 ID</small>
-                                            </label>
-                                            <div class="field-label">
-                                                <textarea id="category-support-block"
-                                                          class="category-support-block-input"
-                                                          rows="3" spellcheck="false"
-                                                          placeholder="例如：minecraft:stone"
-                                                ></textarea>
-                                            </div>
-                                        </div>
-                                        <div id="category-position-option-row"
-                                             class="category-option-row">
-                                            <label class="category-option-label"
-                                                   for="category-ignore-positions">
-                                                按坐标排除标记
-                                                <small>只忽略指定位置，保留其他同类方块</small>
-                                            </label>
-                                            <div class="category-option-actions">
-                                                <button id="category-positions-expand"
-                                                        class="category-option-expand" type="button"
-                                                        aria-expanded="false"
-                                                        aria-controls="category-positions-panel"
-                                                        aria-label="展开排除坐标设置" hidden>
-                                                    <svg aria-hidden="true" width="18" height="18"
-                                                         viewBox="0 0 24 24" fill="none"
-                                                         stroke="currentColor" stroke-width="1.8">
-                                                        <path d="m9 18 6-6-6-6"/>
-                                                    </svg>
-                                                </button>
-                                                <label class="category-option-switch"
+                                            <div id="category-position-option-row"
+                                                 class="category-option-row">
+                                                <label class="category-option-label"
                                                        for="category-ignore-positions">
-                                                    <input id="category-ignore-positions"
-                                                           type="checkbox" role="switch"
-                                                           aria-label="按坐标排除标记"
-                                                           aria-controls="category-positions-panel"
-                                                           aria-expanded="false">
+                                                    按坐标排除标记
+                                                    <small>只忽略指定位置，保留其他同类方块</small>
                                                 </label>
+                                                <div class="category-option-actions">
+                                                    <button id="category-positions-expand"
+                                                            class="category-option-expand"
+                                                            type="button"
+                                                            aria-expanded="false"
+                                                            aria-controls="category-positions-panel"
+                                                            aria-label="展开排除坐标设置" hidden>
+                                                        <svg aria-hidden="true" width="18" height="18"
+                                                             viewBox="0 0 24 24" fill="none"
+                                                             stroke="currentColor" stroke-width="1.8">
+                                                            <path d="m9 18 6-6-6-6"/>
+                                                        </svg>
+                                                    </button>
+                                                    <label class="category-option-switch"
+                                                           for="category-ignore-positions">
+                                                        <input id="category-ignore-positions"
+                                                               type="checkbox" role="switch"
+                                                               aria-label="按坐标排除标记"
+                                                               aria-controls="category-positions-panel"
+                                                               aria-expanded="false">
+                                                    </label>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div id="category-positions-panel"
-                                             class="category-option-sub category-rule-panel"
-                                             data-collapsed="true" hidden>
-                                            <p class="category-rule-help">
-                                                填写支撑方块的坐标。仅跳过该位置的自动标记识别，
-                                                不影响同类物品入库或指定容器绑定。
-                                            </p>
-                                            <div id="category-positions-list"
-                                                 class="category-rule-list"></div>
-                                            <div class="category-rule-toolbar">
-                                                <button id="category-add-position" type="button">
-                                                    添加排除坐标
-                                                </button>
+                                            <div id="category-positions-panel"
+                                                 class="category-option-sub category-rule-panel"
+                                                 data-collapsed="true" hidden>
+                                                <p class="category-rule-help">
+                                                    填写支撑方块的坐标。仅跳过该位置的自动标记识别，
+                                                    不影响同类物品入库或指定容器绑定。
+                                                </p>
+                                                <div id="category-positions-list"
+                                                     class="category-rule-list"></div>
+                                                <div class="category-rule-toolbar">
+                                                    <button id="category-add-position" type="button">
+                                                        添加排除坐标
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div id="category-repeat-option-row"
-                                             class="category-option-row">
-                                            <label class="category-option-label"
-                                                   for="category-ignore-repeated">
-                                                忽略重复方块
-                                                <small>用其他单片的独立标记排除重复支撑</small>
-                                            </label>
-                                            <div class="category-option-actions">
-                                                <button id="category-repeats-expand"
-                                                        class="category-option-expand" type="button"
-                                                        aria-expanded="false"
-                                                        aria-controls="category-repeats-panel"
-                                                        aria-label="展开重复方块判定说明" hidden>
-                                                    <svg aria-hidden="true" width="18" height="18"
-                                                         viewBox="0 0 24 24" fill="none"
-                                                         stroke="currentColor" stroke-width="1.8">
-                                                        <path d="m9 18 6-6-6-6"/>
-                                                    </svg>
-                                                </button>
-                                                <label class="category-option-switch"
+                                            <div id="category-repeat-option-row"
+                                                 class="category-option-row">
+                                                <label class="category-option-label"
                                                        for="category-ignore-repeated">
-                                                    <input id="category-ignore-repeated"
-                                                           type="checkbox" role="switch"
-                                                           aria-label="忽略重复方块"
-                                                           aria-controls="category-repeats-panel"
-                                                           aria-expanded="false">
+                                                    忽略重复方块
+                                                    <small>用其他单片的独立标记排除重复支撑</small>
                                                 </label>
+                                                <div class="category-option-actions">
+                                                    <button id="category-repeats-expand"
+                                                            class="category-option-expand"
+                                                            type="button"
+                                                            aria-expanded="false"
+                                                            aria-controls="category-repeats-panel"
+                                                            aria-label="展开重复方块判定说明" hidden>
+                                                        <svg aria-hidden="true" width="18" height="18"
+                                                             viewBox="0 0 24 24" fill="none"
+                                                             stroke="currentColor" stroke-width="1.8">
+                                                            <path d="m9 18 6-6-6-6"/>
+                                                        </svg>
+                                                    </button>
+                                                    <label class="category-option-switch"
+                                                           for="category-ignore-repeated">
+                                                        <input id="category-ignore-repeated"
+                                                               type="checkbox" role="switch"
+                                                               aria-label="忽略重复方块"
+                                                               aria-controls="category-repeats-panel"
+                                                               aria-expanded="false">
+                                                    </label>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div id="category-repeats-panel"
-                                             class="category-option-sub category-rule-panel"
-                                             data-collapsed="true" hidden>
-                                            <p class="category-rule-help">
-                                                先从当前分类区收集原本只识别到一种物品的单片作为参照，
-                                                再从多物品冲突的单片中排除这些重复方块。
-                                                独立分类保留，排除结果不作为新的参照。
-                                            </p>
-                                            <dl class="category-repeat-example">
-                                                <div>
-                                                    <dt>独立单片</dt>
-                                                    <dd>平滑石英台阶 → 保留台阶分类</dd>
-                                                </div>
-                                                <div>
-                                                    <dt>冲突单片</dt>
-                                                    <dd>珊瑚扇＋平滑石英台阶 → 仅识别珊瑚扇</dd>
-                                                </div>
-                                                <div>
-                                                    <dt>仍有歧义</dt>
-                                                    <dd>排除后没有物品或仍有多种物品 → 继续提示冲突</dd>
-                                                </div>
-                                            </dl>
-                                            <p class="category-rule-help">
-                                                先应用支撑方块与坐标排除，再判定重复方块，最后追加物品绑定。
-                                                没有独立参照时不自动排除。
-                                            </p>
+                                            <div id="category-repeats-panel"
+                                                 class="category-option-sub category-rule-panel"
+                                                 data-collapsed="true" hidden>
+                                                <p class="category-rule-help">
+                                                    先从当前分类区收集原本只识别到一种物品的单片作为参照，
+                                                    再从多物品冲突的单片中排除这些重复方块。
+                                                    独立分类保留，排除结果不作为新的参照。
+                                                </p>
+                                                <dl class="category-repeat-example">
+                                                    <div>
+                                                        <dt>独立单片</dt>
+                                                        <dd>平滑石英台阶 → 保留台阶分类</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt>冲突单片</dt>
+                                                        <dd>珊瑚扇＋平滑石英台阶 → 仅识别珊瑚扇</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt>仍有歧义</dt>
+                                                        <dd>排除后没有物品或仍有多种物品 → 继续提示冲突</dd>
+                                                    </div>
+                                                </dl>
+                                                <p class="category-rule-help">
+                                                    先应用支撑方块与坐标排除，再判定重复方块，最后追加物品绑定。
+                                                    没有独立参照时不自动排除。
+                                                </p>
+                                            </div>
                                         </div>
                                         <div id="category-bindings-option-row"
                                              class="category-option-row">
                                             <label class="category-option-label"
                                                    for="category-multi-bindings">
                                                 多物品绑定
-                                                <small>让一组物品共用识别物或指定容器</small>
+                                                <small id="category-bindings-summary"
+                                                       aria-live="polite">未启用</small>
                                             </label>
                                             <div class="category-option-actions">
                                                 <button id="category-bindings-expand"
@@ -2413,7 +2473,7 @@ textarea {
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
      * selects: CategorySelect[], supportExpanded: boolean, standingExpanded: boolean,
      * positionsExpanded: boolean, bindingsExpanded: boolean, ruleSelects: CategorySelect[],
-     * repeatsExpanded: boolean,
+     * repeatsExpanded: boolean, recognitionExpanded: boolean,
      * initialized?: boolean, active?: boolean}} CategoryOptionsContext */
 
     const globalCategoryContext = createCategoryOptionsContext(
@@ -2429,7 +2489,9 @@ textarea {
             "standing-expand", "standing-row", "standing-x", "standing-y", "standing-z",
             "ignore-positions", "positions-expand", "positions-panel", "positions-list",
             "add-position", "multi-bindings", "bindings-expand", "bindings-panel",
-            "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel"]) {
+            "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel",
+            "recognition-expand", "recognition-panel", "recognition-summary",
+            "bindings-summary"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
@@ -2444,7 +2506,7 @@ textarea {
             }));
         return {root, fields, selects, supportExpanded: false, standingExpanded: false,
             positionsExpanded: false, bindingsExpanded: false, repeatsExpanded: false,
-            ruleSelects: []};
+            recognitionExpanded: false, ruleSelects: []};
     }
 
     /** @param {HTMLElement} content @param {boolean} expanded
@@ -2732,8 +2794,9 @@ textarea {
         values.ignoredMarkerPositions.forEach(position => appendExcludedPosition(context, position));
         values.multiItemBindings.forEach(rule => appendItemBinding(context, rule));
         context.positionsExpanded = values.ignoreMarkerPositions;
-        context.bindingsExpanded = values.multiItemBindingsEnabled;
+        context.bindingsExpanded = false;
         context.repeatsExpanded = false;
+        context.recognitionExpanded = false;
         updateCategoryOptionState(context, false);
     }
 
@@ -2817,6 +2880,25 @@ textarea {
             fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
         }
         updateCustomRuleState(context, animate);
+    }
+
+    /** @param {CategoryOptionsContext} context @returns {void} */
+    function syncCategoryOptionSummaries(context) {
+        const fields = context.fields;
+        const enabled = ["ignore-support", "ignore-positions", "ignore-repeated"]
+            .filter(key => fields[key].checked).length;
+        fields["recognition-summary"].textContent = enabled ? `已启用 ${enabled} 项` : "未启用";
+        const rules = fields["rules-list"].children.length;
+        fields["bindings-summary"].textContent = fields["multi-bindings"].checked
+            ? `${rules} 条规则` : (rules ? `已关闭 · ${rules} 条规则` : "未启用");
+    }
+
+    /** @param {CategoryOptionsContext} context @param {boolean} open
+     * @param {boolean} [animate] @returns {void} */
+    function setRecognitionGroupOpen(context, open, animate = true) {
+        context.recognitionExpanded = open;
+        context.fields["recognition-expand"].setAttribute("aria-expanded", String(open));
+        reveal(context.fields["recognition-panel"], open, animate);
     }
 
     /** @param {HTMLElement} host @param {string} title @param {HTMLElement} control
@@ -3051,6 +3133,7 @@ textarea {
             if (categoryMenuOpen === control) setCategoryMenuOpen(control, false, false, false);
             context.ruleSelects = context.ruleSelects.filter(value => value !== control);
             form.remove();
+            syncCategoryOptionSummaries(context);
             context.fields["add-rule"].focus();
         });
         context.fields["rules-list"].append(form);
@@ -3111,6 +3194,8 @@ textarea {
             reveal(positionRow, type !== "marker-id", showMotion);
             syncCategorySelect(control);
         }
+        setRecognitionGroupOpen(context, context.recognitionExpanded, animate);
+        syncCategoryOptionSummaries(context);
     }
 
     /** @param {CoordinateCorner} position @returns {boolean} */
@@ -3124,8 +3209,10 @@ textarea {
         const options = readCategoryOptions(context);
         let message = "";
         let invalidRule = null;
-        if (options.ignoreMarkerPositions && (!options.ignoredMarkerPositions.length
-                || !options.ignoredMarkerPositions.every(validRulePosition))) {
+        const invalidPositions = options.ignoreMarkerPositions
+            && (!options.ignoredMarkerPositions.length
+                || !options.ignoredMarkerPositions.every(validRulePosition));
+        if (invalidPositions) {
             message = "请添加排除位置，并填写完整的 X、Y、Z 整数坐标。";
         }
         if (options.multiItemBindingsEnabled) {
@@ -3163,6 +3250,10 @@ textarea {
             context.bindingsExpanded = true;
             updateCustomRuleState(context, false);
             setItemBindingOpen(context.fields["rules-list"].children[invalidRule], true, false);
+        } else if (invalidPositions) {
+            context.recognitionExpanded = true;
+            context.positionsExpanded = true;
+            updateCustomRuleState(context, false);
         }
         setStatus(message, "error");
         return false;
@@ -4101,6 +4192,9 @@ textarea {
             });
         }
         const fields = context.fields;
+        fields["recognition-expand"].addEventListener("click", () => {
+            setRecognitionGroupOpen(context, !context.recognitionExpanded);
+        });
         for (const [key, toggle, stateKey] of [
             ["positions", "ignore-positions", "positionsExpanded"],
             ["repeats", "ignore-repeated", "repeatsExpanded"],

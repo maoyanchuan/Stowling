@@ -46,6 +46,8 @@ def animation_page(request: pytest.FixtureRequest) -> Iterator[Any]:
             document.body.replaceChildren(shell);
             shell.style.display = 'block';
             shell.style.maxWidth = '700px';
+            const recognition = options.querySelector('.category-recognition-panel');
+            if (recognition) recognition.replaceWith(...recognition.children);
             const tail = document.createElement('div');
             tail.className = 'category-option-row';
             tail.textContent = '后续设置';

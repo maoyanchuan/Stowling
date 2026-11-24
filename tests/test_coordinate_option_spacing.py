@@ -32,6 +32,8 @@ def category_page(request: pytest.FixtureRequest) -> Iterator[Any]:
         page.evaluate("""() => {
             const options = document.querySelector('.category-options');
             document.body.replaceChildren(options);
+            const recognition = options.querySelector('.category-recognition-panel');
+            if (recognition) recognition.hidden = false;
             options.querySelectorAll('.category-option-sub').forEach(row => {
                 row.hidden = false;
                 row.dataset.collapsed = 'false';
@@ -53,9 +55,11 @@ def test_category_highlights_leave_space_around_labels_and_controls(
     page = category_page
     page.set_viewport_size({"width": width, "height": 1000})
     page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
-    rows = page.locator(".category-option-row, .category-option-sub")
-    template_fields = page.locator("#category-standing-option-row").count()
-    assert rows.count() == 6 + 3 * template_fields
+    rows = page.locator(
+        ".category-option-row, .category-option-sub:not(.category-rule-panel)",
+    )
+    grouped_template = page.locator("#category-recognition-expand").count()
+    assert rows.count() == 9 + 4 * grouped_template
     for row in rows.all():
         bounds = row.bounding_box()
         label = row.locator(".category-option-label").bounding_box()

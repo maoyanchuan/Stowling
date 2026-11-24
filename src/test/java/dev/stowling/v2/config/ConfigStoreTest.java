@@ -36,6 +36,46 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void upgradesSavedMixedAllocationWithoutResavingOrLosingIndependentDrafts() throws Exception {
+        var global = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
+                "", false, "", false, null, 27);
+        var local = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
+                "", false, "", false, null, 9);
+        var area = new AreaBounds(0, 64, 0, 0, 64, 0);
+        var packing = new AreaBounds(4, 64, 2, 4, 64, 2);
+        for (boolean independent : List.of(false, true)) {
+            var oldPolicy = new StoragePolicy(dev.stowling.v2.model.StorageMode.MIXED,
+                    50, false, packing, false, independent ? 9 : 27, null);
+            var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
+                    "DIRECT_BLOCK_ID", List.of(), List.of(), null, oldPolicy,
+                    false, "A", independent, local);
+            var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Mixed", List.of(binding),
+                    null, global);
+            var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                    List.of(), List.of(), List.of(), List.of(zone));
+            var saved = new Gson().toJsonTree(config).getAsJsonObject();
+            saved.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                    .getAsJsonArray("bindings").get(0).getAsJsonObject()
+                    .getAsJsonObject("storagePolicy").addProperty("allowPartialBoxes", false);
+            Path path = directory.resolve("mixed-" + independent + ".json");
+            String original = saved.toString();
+            Files.writeString(path, original);
+            var store = new ConfigStore(path);
+            var snapshot = store.read();
+            var restored = snapshot.config().categoryZones().getFirst();
+            var effective = restored.bindings().getFirst().storagePolicy();
+            assertTrue(effective.allowPartialBoxes());
+            assertEquals(independent ? 9 : 27, effective.looseSlots());
+            assertEquals(packing, effective.packingArea());
+            assertEquals(global, restored.categoryOptions());
+            assertEquals(local, restored.bindings().getFirst().categoryOptions());
+            assertEquals(original, Files.readString(path));
+            store.save(snapshot.revision(), snapshot.config());
+            assertEquals(snapshot.config(), new ConfigStore(path).read().config());
+        }
+    }
+
+    @Test
     void repairsSavedSupportBlockHeightsWithoutLosingSliceOffsetsOrShiftingTwice()
             throws Exception {
         for (boolean independent : List.of(false, true)) {

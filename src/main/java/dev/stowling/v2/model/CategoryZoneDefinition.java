@@ -25,7 +25,7 @@ public record CategoryZoneDefinition(
         }
         CategoryZoneOptions globalOptions = categoryOptions;
         bindings = bindings.stream()
-                .map(binding -> withStandingHeight(binding, globalOptions))
+                .map(binding -> withEffectiveSettings(binding, globalOptions))
                 .toList();
     }
 
@@ -49,25 +49,31 @@ public record CategoryZoneDefinition(
         this(id, name, bindings, null);
     }
 
-    private static CategoryBindingDefinition withStandingHeight(
+    private static CategoryBindingDefinition withEffectiveSettings(
             CategoryBindingDefinition binding, CategoryZoneOptions globalOptions
     ) {
         CategoryZoneOptions effective = binding.optionsEnabled()
                 ? binding.categoryOptions() : globalOptions;
-        if (effective == null || !Boolean.TRUE.equals(effective.specifyStanding())) {
-            return binding;
+        if (effective == null) return binding;
+        StoragePolicy policy = binding.storagePolicy();
+        if (effective.bulkStacks() != null && "mixed".equals(effective.storageMethod())) {
+            // Apply saved UI allocation on load, including alpha.282's full-box-only policies.
+            policy = effective.storagePolicy(policy);
         }
-        AreaBounds feet = effective.standingArea(null);
         AreaBounds previous = binding.standingArea();
-        if (previous != null) {
-            // Repair saved support-block heights without undoing horizontal slice expansion.
-            feet = new AreaBounds(previous.firstX(), feet.firstY(), previous.firstZ(),
-                    previous.secondX(), feet.secondY(), previous.secondZ());
+        AreaBounds feet = previous;
+        if (Boolean.TRUE.equals(effective.specifyStanding())) {
+            feet = effective.standingArea(null);
+            if (previous != null) {
+                // Repair saved heights without undoing horizontal slice expansion.
+                feet = new AreaBounds(previous.firstX(), feet.firstY(), previous.firstZ(),
+                        previous.secondX(), feet.secondY(), previous.secondZ());
+            }
         }
-        if (feet.equals(previous)) return binding;
+        if (Objects.equals(feet, previous) && policy.equals(binding.storagePolicy())) return binding;
         return new CategoryBindingDefinition(binding.id(), binding.markerArea(),
                 binding.storageArea(), binding.ruleId(), binding.ignoredMarkerBlockIds(),
-                binding.containerOverrides(), feet, binding.storagePolicy(),
+                binding.containerOverrides(), feet, policy,
                 binding.wholeStorage(), binding.name(), binding.optionsEnabled(),
                 binding.categoryOptions());
     }

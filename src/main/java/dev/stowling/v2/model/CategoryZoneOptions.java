@@ -89,7 +89,10 @@ public record CategoryZoneOptions(
         if ("specified".equals(noCacheLocation) && cacheDestination.isBlank()) {
             throw new IllegalArgumentException("请选择指定缓存位置");
         }
-        return new StoragePolicy(mode, base.loosePercent(), base.allowPartialBoxes(),
+        // An explicit mixed reserve must not be borrowed to satisfy the legacy full-box rule.
+        boolean allowPartial = mode == StorageMode.MIXED && bulkStacks != null
+                || base.allowPartialBoxes();
+        return new StoragePolicy(mode, base.loosePercent(), allowPartial,
                 base.packingArea(), base.refillLoose(),
                 bulkStacks == null ? base.looseSlots() : bulkStacks,
                 "specified".equals(noCacheLocation) ? cacheDestination : null);

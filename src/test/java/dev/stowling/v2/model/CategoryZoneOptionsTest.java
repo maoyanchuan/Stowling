@@ -3,6 +3,7 @@ package dev.stowling.v2.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.domain.BlockPosition;
 import java.util.List;
@@ -10,6 +11,40 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class CategoryZoneOptionsTest {
+    @Test
+    void explicitMixedReservePacksOnlyTheTwoExcessItemsAndOneIncomingItem() {
+        var previous = new StoragePolicy(StorageMode.MIXED, 50, false, null, false, 27, null);
+        var policy = bulkOptions(27).storagePolicy(previous);
+        assertTrue(policy.allowPartialBoxes());
+        for (int size : List.of(16, 64)) {
+            int reserve = StoragePackingPlanner.looseLimit(policy, 54, size);
+            int loose = 27 * size + 2;
+            int incoming = 1;
+            int inside = 26 * size;
+            int taken = StoragePackingPlanner.targetItemsForPacking(policy, incoming, loose,
+                    reserve, inside, size);
+            assertEquals(2, taken);
+            assertEquals(27 * size, loose - taken);
+            assertTrue(StoragePackingPlanner.canPack(policy.allowPartialBoxes(),
+                    incoming + taken, inside, size));
+            assertEquals(26 * size + 3, inside + incoming + taken);
+            assertTrue(inside + incoming + taken < 27 * size);
+            assertNull(policy.partialBoxDestinationRef());
+        }
+    }
+
+    @Test
+    void explicitMixedReserveAllowsANewPartialBoxWhenNoExistingBoxHasRoom() {
+        var previous = new StoragePolicy(StorageMode.MIXED, 50, false, null, false, 27, null);
+        var policy = bulkOptions(27).storagePolicy(previous);
+        assertTrue(StoragePackingPlanner.shouldBringBox(policy, 1, 0, 64, 2, 0, 27 * 64 + 2));
+        int taken = StoragePackingPlanner.targetItemsForPacking(policy, 1, 27 * 64 + 2,
+                27 * 64, 0, 64);
+        assertEquals(2, taken);
+        assertTrue(StoragePackingPlanner.canPack(policy.allowPartialBoxes(), 1 + taken, 0, 64));
+        assertEquals(27 * 64, 27 * 64 + 2 - taken);
+    }
+
     @Test
     void bulkStacksControlMixedPackingAndKeepLegacyAllocationWithoutTheField() {
         var previous = new StoragePolicy(StorageMode.MIXED, 25, true, null, true, 4, null);

@@ -15,6 +15,26 @@ import org.junit.jupiter.api.Test;
 
 class RecordedStorageCapacityTest {
     @Test
+    void threeFullBoxesAndOnePartialNeedNoSpareForTwoExcessItemsAndOneIncomingItem() {
+        String item = "minecraft:oak_sapling";
+        var loose = new WarehouseInventory.Entry(item, item, "Loose", 27 * 64 + 2, 0, 64);
+        var full = new WarehouseInventory.Box(item, 27,
+                List.of(new WarehouseInventory.Entry(item, item, "Full", 27 * 64, 0, 64)));
+        var partial = new WarehouseInventory.Box(item, 26,
+                List.of(new WarehouseInventory.Entry(item, item, "Partial", 26 * 64, 0, 64)));
+        var stock = new WarehouseInventory.Container("chest", "Chest", "minecraft:overworld",
+                List.of(new BlockPosition(1, 64, 0)), Instant.ofEpochSecond(1),
+                54, 32, 3, 1, 0, List.of(loose), List.of(full, full, full, partial));
+        var options = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker",
+                "mixed", "inside-box", "", false, "", false, null, 27);
+        var oldPolicy = new StoragePolicy(StorageMode.MIXED, 50, false, null, false, 27, null);
+        var policy = options.storagePolicy(oldPolicy);
+        assertEquals(64, RecordedStorageCapacity.existingBoxSpace(stock, item, Set.of(item), 64));
+        assertFalse(RecordedStorageCapacity.shouldReserveBox(stock, policy,
+                Map.of(item, 1), Map.of(item, 64)));
+    }
+
+    @Test
     void partialBoxesAtTheSelectedLocationAreReservedBeforeEmptySupply() {
         String item = "minecraft:birch_leaves";
         var inside = new WarehouseInventory.Entry(item, item, "Inside", 26 * 64, 0, 64);

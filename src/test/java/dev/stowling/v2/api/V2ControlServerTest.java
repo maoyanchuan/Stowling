@@ -117,6 +117,7 @@ class V2ControlServerTest {
                         .getAsJsonObject("storagePolicy");
                 assertEquals("MIXED", policy.get("mode").getAsString());
                 assertEquals(stacks, policy.get("looseSlots").getAsInt());
+                assertTrue(policy.get("allowPartialBoxes").getAsBoolean());
             }
             payload.add("revision", response.get("revision"));
             var binding = payload.getAsJsonArray("bindings").get(0).getAsJsonObject();

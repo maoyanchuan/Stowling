@@ -69,7 +69,9 @@
             noCacheLocation: value.noCacheLocation || "inside-box",
             cacheDestination: value.cacheDestination || "",
             ignoreSupportBlock: Boolean(value.ignoreSupportBlock),
-            supportBlock: value.supportBlock || ""};
+            supportBlock: value.supportBlock || "",
+            specifyStanding: value.specifyStanding ?? null,
+            standingPosition: value.standingPosition ? copy(value.standingPosition) : null};
     }
 
     /** @param {object} binding @param {object} globalOptions @param {object} zone
@@ -176,6 +178,18 @@
                 ? options.supportBlock.split(/[\s,，;；]+/).filter(Boolean) : [];
             if (options.ignoreSupportBlock && !result.ignoredMarkerBlockIds.length) {
                 throw new Error("请填写要忽略的支撑方块 ID。");
+            }
+            if (options.specifyStanding != null) {
+                result.standingArea = null;
+                if (options.specifyStanding) {
+                    const position = options.standingPosition;
+                    if (!position || ["x", "y", "z"].some(axis =>
+                        !Number.isInteger(position[axis]) || position[axis] < -2147483648
+                            || position[axis] > 2147483647)) {
+                        throw new Error("请填写站立位置的 X、Y、Z 整数坐标。");
+                    }
+                    result.standingArea = area({first: position, second: position});
+                }
             }
             return result;
         });

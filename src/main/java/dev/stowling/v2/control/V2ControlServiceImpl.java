@@ -2104,7 +2104,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                             binding.containerOverrides(),
                             existingBinding
                     ),
-                    binding.standingArea(),
+                    effective == null ? binding.standingArea()
+                            : effective.standingArea(binding.standingArea()),
                     policy,
                     binding.wholeStorage() && "MARKER_CONTAINER_CONTENTS".equals(ruleId),
                     name,

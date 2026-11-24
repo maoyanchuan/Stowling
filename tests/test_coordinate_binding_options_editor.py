@@ -190,3 +190,82 @@ def test_saved_and_copied_bindings_retain_profiles(editor_page: Any, enabled: bo
     assert selected(card, "storageMethod") == "box"
     assert selected(card, "scopeMode") == "selection"
     assert page.locator("#category-storage-method").input_value() == "bulk"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_standing_switch_and_arrow_preserve_saved_and_copied_drafts(
+    editor_page: Any, enabled: bool,
+) -> None:
+    page = editor_page
+    global_options = page.locator(".category-options").first
+    toggle = global_options.locator('[id$="category-specify-standing"]')
+    assert not toggle.is_checked()
+    toggle.check()
+    for axis, value in {"x": "-3", "y": "65", "z": "7"}.items():
+        global_options.locator(f'[id$="category-standing-{axis}"]').fill(value)
+    arrow = global_options.locator('[id$="category-standing-expand"]')
+    arrow.click()
+    assert toggle.is_checked()
+    assert global_options.locator('[id$="category-standing-x"]').is_hidden()
+    arrow.click()
+    assert global_options.locator('[id$="category-standing-x"]').input_value() == "-3"
+
+    card = page.locator(".category-binding-card").first
+    card.locator(".category-binding-enabled").check()
+    local_x = card.locator('[id$="category-standing-x"]')
+    assert local_x.input_value() == "-3"
+    local_x.fill("8")
+    card.locator('[id$="category-specify-standing"]').set_checked(enabled)
+    card.locator(".category-binding-enabled").uncheck()
+    card.locator(".category-binding-enabled").check()
+    assert card.locator('[id$="category-specify-standing"]').is_checked() is enabled
+    if enabled:
+        card.locator('[id$="category-standing-expand"]').click()
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones.length === 1")
+    saved = page.evaluate("window.__editorState.categoryZones[0]")
+    binding = saved["bindings"][0]
+    assert binding["categoryOptions"]["standingPosition"]["x"] == 8
+    assert saved["categoryOptions"]["standingPosition"]["x"] == -3
+    assert binding["standingArea"] == ({
+        "firstX": 8, "firstY": 65, "firstZ": 7,
+        "secondX": 8, "secondY": 65, "secondZ": 7,
+    } if enabled else None)
+    page.locator("#duplicate-coordinate").click()
+    card = page.locator(".category-binding-card").first
+    card.locator(".category-binding-toggle").click()
+    assert card.locator('[id$="category-specify-standing"]').is_checked() is enabled
+    assert card.locator('[id$="category-standing-x"]').input_value() == "8"
+
+
+def test_standing_submenu_reverses_without_losing_values_or_wrapping_twice(
+    editor_page: Any,
+) -> None:
+    page = editor_page
+    page.locator("#category-specify-standing").check()
+    page.locator("#category-standing-x").fill("23")
+    page.emulate_media(reduced_motion="no-preference")
+    result = page.locator("#category-standing-row").evaluate("""async row => {
+        const arrow = document.querySelector('#category-standing-expand');
+        const panel = row.parentElement;
+        arrow.click();
+        const close = document.getAnimations().find(a => a.effect.target === panel);
+        close.pause();
+        close.currentTime = 40;
+        const before = panel.getBoundingClientRect().height;
+        arrow.click();
+        const open = document.getAnimations().find(a => a.effect.target === panel);
+        open.pause();
+        open.currentTime = 0;
+        const after = panel.getBoundingClientRect().height;
+        open.finish();
+        await Promise.resolve();
+        return {before, after, hidden: panel.hidden, inert: panel.inert,
+            nested: row.closest('.category-options')
+                .querySelectorAll('.category-option-reveal .category-option-reveal').length};
+    }""")
+    assert result["after"] == pytest.approx(result["before"], abs=0.1)
+    assert not result["hidden"]
+    assert not result["inert"]
+    assert result["nested"] == 0
+    assert page.locator("#category-standing-x").input_value() == "23"

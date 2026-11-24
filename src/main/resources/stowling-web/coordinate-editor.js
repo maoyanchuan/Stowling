@@ -12,7 +12,8 @@
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
      * supportBlock: string, cacheDestination: string, expansionDirection: string,
-     * expansionStep: number}} CategoryOptions */
+     * expansionStep: number, specifyStanding: boolean|null,
+     * standingPosition: CoordinateCorner|null}} CategoryOptions */
 
     /** @typedef {{key: string, select: HTMLSelectElement, wrap: HTMLElement,
      * trigger: HTMLButtonElement, current: HTMLElement, menu: HTMLElement,
@@ -105,7 +106,8 @@
     };
 
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
-     * selects: CategorySelect[], supportExpanded: boolean, values?: CategoryOptions,
+     * selects: CategorySelect[], supportExpanded: boolean, standingExpanded: boolean,
+     * values?: CategoryOptions, active?: boolean,
      * initialized?: boolean}} CategoryOptionsContext */
     const bindingOptions = new WeakMap();
     const globalCategoryContext = createCategoryOptionsContext(
@@ -117,7 +119,8 @@
         const fields = {};
         for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
             "no-cache-location", "ignore-support", "support-expand", "support-block-row",
-            "support-block"]) {
+            "support-block", "specify-standing", "standing-expand", "standing-row",
+            "standing-x", "standing-y", "standing-z"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
@@ -130,7 +133,7 @@
                 menu: wrap.querySelector(".category-select-menu"),
                 options: Array.from(wrap.querySelectorAll(".category-select-option"))
             }));
-        return {root, fields, selects, supportExpanded: false};
+        return {root, fields, selects, supportExpanded: false, standingExpanded: false};
     }
 
     /** @param {HTMLElement} content @param {boolean} expanded
@@ -369,7 +372,9 @@
             supportBlock: "",
             cacheDestination: "",
             expansionDirection: "AUTO",
-            expansionStep: 1
+            expansionStep: 1,
+            specifyStanding: false,
+            standingPosition: emptyCorner()
         };
     }
 
@@ -390,6 +395,8 @@
      * @returns {void} */
     function writeCategoryOptions(options, context = globalCategoryContext) {
         const values = {...defaultCategoryOptions(), ...options};
+        // Missing fields belong to older clients whose standing areas must survive editing.
+        values.specifyStanding = options.specifyStanding ?? null;
         context.values = values;
         populateCacheOptions(context);
         const fields = context.fields;
@@ -410,7 +417,12 @@
             ? values.cacheDestination : "inside-box";
         fields["ignore-support"].checked = values.ignoreSupportBlock;
         fields["support-block"].value = values.supportBlock;
+        fields["specify-standing"].checked = Boolean(values.specifyStanding);
+        writeCornerFields({
+            x: fields["standing-x"], y: fields["standing-y"], z: fields["standing-z"]
+        }, values.standingPosition || emptyCorner());
         context.supportExpanded = values.ignoreSupportBlock;
+        context.standingExpanded = Boolean(values.specifyStanding);
         updateCategoryOptionState(context, false);
     }
 
@@ -427,7 +439,14 @@
             cacheDestination: fields["no-cache-location"].value === "inside-box"
                 ? "" : fields["no-cache-location"].value,
             ignoreSupportBlock: fields["ignore-support"].checked,
-            supportBlock: fields["support-block"].value.trim()
+            supportBlock: fields["support-block"].value.trim(),
+            specifyStanding: context.values.specifyStanding === null
+                ? null : fields["specify-standing"].checked,
+            standingPosition: {
+                x: integerValue(fields["standing-x"].value),
+                y: integerValue(fields["standing-y"].value),
+                z: integerValue(fields["standing-z"].value)
+            }
         };
     }
 
@@ -448,6 +467,20 @@
         );
         reveal(fields["support-block-row"], expanded, animate);
         fields["support-block"].disabled = !ignoreSupport;
+        const specifyStanding = fields["specify-standing"].checked;
+        const standingExpanded = specifyStanding && context.standingExpanded;
+        fields["standing-expand"].hidden = !specifyStanding;
+        fields["standing-expand"].disabled = !specifyStanding;
+        for (const control of [fields["standing-expand"], fields["specify-standing"]]) {
+            control.setAttribute("aria-expanded", String(standingExpanded));
+        }
+        fields["standing-expand"].setAttribute(
+            "aria-label", `${standingExpanded ? "收起" : "展开"}站立坐标设置`
+        );
+        reveal(fields["standing-row"], standingExpanded, animate);
+        for (const axis of ["x", "y", "z"]) {
+            fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
+        }
     }
 
     /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
@@ -599,6 +632,8 @@
                 context.initialized = true;
             }
             enabled.setAttribute("aria-expanded", String(enabled.checked));
+            context.active = enabled.checked;
+            updateCategoryOptionState(context, false);
             if (!enabled.checked && categoryMenuOpen
                     && context.root.contains(categoryMenuOpen.wrap)) {
                 setCategoryMenuOpen(categoryMenuOpen, false, false, false);
@@ -1539,6 +1574,16 @@
         });
         fields["ignore-support"].addEventListener("change", () => {
             context.supportExpanded = fields["ignore-support"].checked;
+            updateCategoryOptionState(context);
+        });
+        fields["standing-expand"].addEventListener("click", () => {
+            if (!fields["specify-standing"].checked) return;
+            context.standingExpanded = !context.standingExpanded;
+            updateCategoryOptionState(context);
+        });
+        fields["specify-standing"].addEventListener("change", () => {
+            context.values.specifyStanding = fields["specify-standing"].checked;
+            context.standingExpanded = fields["specify-standing"].checked;
             updateCategoryOptionState(context);
         });
     }

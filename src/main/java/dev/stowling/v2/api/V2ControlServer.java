@@ -1313,14 +1313,24 @@ public final class V2ControlServer implements AutoCloseable {
         if (value == null || value.isJsonNull()) return null;
         JsonObject options = jsonObject(value, "categoryOptions");
         requireFieldsAny(options, Set.of("scopeMode", "recognitionMode", "storageMethod",
-                "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock"),
+                "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock",
+                "specifyStanding", "standingPosition"),
                 Set.of());
+        dev.stowling.domain.BlockPosition position = null;
+        JsonElement point = options.get("standingPosition");
+        if (point != null && !point.isJsonNull()) {
+            JsonObject coordinates = jsonObject(point, "standingPosition");
+            requireFields(coordinates, Set.of("x", "y", "z"));
+            position = new dev.stowling.domain.BlockPosition(integer(coordinates, "x"),
+                    integer(coordinates, "y"), integer(coordinates, "z"));
+        }
         return new dev.stowling.v2.model.CategoryZoneOptions(
                 optionalString(options, "scopeMode"), optionalString(options, "recognitionMode"),
                 optionalString(options, "storageMethod"), optionalString(options, "noCacheLocation"),
                 optionalString(options, "cacheDestination"),
                 optionalBoolean(options, "ignoreSupportBlock"),
-                optionalString(options, "supportBlock"));
+                optionalString(options, "supportBlock"),
+                optionalBooleanValue(options, "specifyStanding"), position);
     }
 
     private static dev.stowling.v2.model.StoragePolicy storagePolicy(JsonObject binding) {

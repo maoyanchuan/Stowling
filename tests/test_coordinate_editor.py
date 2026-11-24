@@ -92,11 +92,9 @@ def test_coordinate_editor_uses_the_approved_template_core_structure() -> None:
     root = WEB.parents[3]
     template = (root / "docs/ui/coordinate-management-standard.html").read_text(encoding="utf-8")
     page = (WEB / "coordinates.html").read_text(encoding="utf-8")
-    # These additions are currently requested for the offline template only.
+    # Storage allocation remains an offline template feature.
     template_only_rows = frozenset({
         "category-bulk-ratio-row",
-        "category-standing-option-row",
-        "category-standing-row",
     })
     assert editor_structure(page) == editor_structure(template, template_only_rows)
 
@@ -221,6 +219,7 @@ def test_binding_name_accepts_focus_and_edits_without_toggling_the_card() -> Non
         let toggles = 0;
         const context = {document, dirty: false, appendBindingRegion() {},
             bindingOptions: new WeakMap(), categoryMenuOpen: null,
+            updateCategoryOptionState() {},
             createBindingOptions: () => ({root: {}}), reveal() {},
             setCategoryBindingOpen() { toggles++; }};
         vm.createContext(context);
@@ -279,6 +278,57 @@ def test_renaming_keeps_unshown_category_settings_and_per_binding_policies() -> 
     assert second["storagePolicy"]["mode"] == "BOX_ONLY"
     assert second["storagePolicy"]["loosePercent"] == 70
     assert "expansion" not in saved
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_standing_position_uses_effective_options_and_keeps_disabled_group_drafts() -> None:
+    result = run_model(ZONE_SETUP + """
+        const value = model.resources(directory)[0];
+        value.categoryOptions = {...value.categoryOptions, specifyStanding: true,
+            standingPosition: {x: -3, y: 65, z: 7}};
+        const group = value.bindings[0];
+        group.optionsEnabled = true;
+        group.categoryOptions = {...value.categoryOptions,
+            standingPosition: {x: 8, y: 66, z: -9}};
+        const local = model.payload(value);
+        group.optionsEnabled = false;
+        const inherited = model.payload(value);
+        group.optionsEnabled = true;
+        group.categoryOptions.specifyStanding = false;
+        const disabled = model.payload(value);
+        const clone = model.copy(value);
+        clone.bindings[0].categoryOptions.standingPosition.x = 99;
+        process.stdout.write(JSON.stringify({local, inherited, disabled,
+            originalX: group.categoryOptions.standingPosition.x}));
+    """)
+    assert result["local"]["bindings"][0]["standingArea"] == {
+        "firstX": 8, "firstY": 66, "firstZ": -9,
+        "secondX": 8, "secondY": 66, "secondZ": -9,
+    }
+    inherited = result["inherited"]["bindings"][0]
+    assert inherited["standingArea"]["firstX"] == -3
+    assert inherited["categoryOptions"]["standingPosition"]["x"] == 8
+    disabled = result["disabled"]["bindings"][0]
+    assert disabled["standingArea"] is None
+    assert disabled["categoryOptions"]["standingPosition"]["x"] == 8
+    assert result["originalX"] == 8
+
+
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+@pytest.mark.parametrize("position", [None, {"x": None, "y": 64, "z": 0},
+                                    {"x": 0.5, "y": 64, "z": 0},
+                                    {"x": 2147483648, "y": 64, "z": 0}])
+def test_standing_position_rejects_missing_fractional_and_overflow_coordinates(
+    position: dict[str, int | float | None] | None,
+) -> None:
+    result = run_model(ZONE_SETUP + """
+        const value = model.resources(directory)[0];
+        value.categoryOptions.specifyStanding = true;
+        value.categoryOptions.standingPosition = """ + json.dumps(position) + """;
+        try { model.payload(value); process.stdout.write('{}'); }
+        catch (error) { process.stdout.write(JSON.stringify({error: error.message})); }
+    """)
+    assert "整数坐标" in result["error"]
 
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")

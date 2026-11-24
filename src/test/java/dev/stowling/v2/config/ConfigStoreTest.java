@@ -34,9 +34,11 @@ class ConfigStoreTest {
         Path path = directory.resolve("independent-settings.json");
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);
         var global = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker", "bulk",
-                "inside-box", "", false, "");
+                "inside-box", "", false, "", false,
+                new dev.stowling.domain.BlockPosition(1, 65, -2));
         var local = new dev.stowling.v2.model.CategoryZoneOptions("selection", "container-item",
-                "box", "inside-box", "", true, "minecraft:stone");
+                "box", "inside-box", "", true, "minecraft:stone", true,
+                new dev.stowling.domain.BlockPosition(4, 66, -5));
         var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
                 "DIRECT_BLOCK_ID", List.of(), List.of(), null,
                 dev.stowling.v2.model.StoragePolicy.DEFAULT, false, "A1", false, local);
@@ -51,6 +53,14 @@ class ConfigStoreTest {
         assertEquals(false, restored.bindings().getFirst().optionsEnabled());
         assertEquals("box", restored.bindings().getFirst().categoryOptions().storageMethod());
         assertEquals("bulk", restored.categoryOptions().storageMethod());
+        assertEquals(new dev.stowling.domain.BlockPosition(4, 66, -5),
+                restored.bindings().getFirst().categoryOptions().standingPosition());
+        var invalid = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+        invalid.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                .getAsJsonObject("categoryOptions").getAsJsonObject("standingPosition")
+                .addProperty("x", 0.5);
+        Files.writeString(path, invalid.toString());
+        assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
     }
 
     @Test

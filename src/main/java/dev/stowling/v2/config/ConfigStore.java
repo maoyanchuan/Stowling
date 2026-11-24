@@ -461,9 +461,31 @@ public final class ConfigStore {
 
     private static void requireCategoryOptions(JsonElement value, String path) {
         if (value == null || value.isJsonNull()) return;
-        requireFields(requireObject(value, path), path, Set.of("scopeMode", "recognitionMode",
+        JsonObject options = requireObject(value, path);
+        requireFields(options, path, Set.of("scopeMode", "recognitionMode",
                 "storageMethod", "noCacheLocation", "cacheDestination", "ignoreSupportBlock",
-                "supportBlock"), Set.of());
+                "supportBlock", "specifyStanding", "standingPosition"), Set.of());
+        JsonElement position = options.get("standingPosition");
+        if (position != null && !position.isJsonNull()) {
+            JsonObject coordinates = requireObject(position, path + ".standingPosition");
+            requireExactFields(coordinates, path + ".standingPosition", Set.of("x", "y", "z"));
+            for (String axis : Set.of("x", "y", "z")) {
+                JsonElement number = coordinates.get(axis);
+                if (!number.isJsonPrimitive() || !number.getAsJsonPrimitive().isNumber()) {
+                    throw new V2ValidationException("站立位置必须使用整数坐标");
+                }
+                try {
+                    number.getAsBigDecimal().intValueExact();
+                } catch (ArithmeticException | NumberFormatException exception) {
+                    throw new V2ValidationException("站立位置必须使用 32 位整数坐标", exception);
+                }
+            }
+        }
+        JsonElement enabled = options.get("specifyStanding");
+        if (enabled != null && !enabled.isJsonNull()
+                && (!enabled.isJsonPrimitive() || !enabled.getAsJsonPrimitive().isBoolean())) {
+            throw new V2ValidationException("指定站立位置必须使用布尔值");
+        }
     }
 
     private static void requireContainerOverrides(JsonElement value) {

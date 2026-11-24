@@ -99,6 +99,10 @@ class V2ControlServerTest {
             var local = global.deepCopy();
             local.addProperty("recognitionMode", "container-item");
             local.addProperty("storageMethod", "box");
+            global.addProperty("specifyStanding", true);
+            global.add("standingPosition", JsonParser.parseString("{\"x\":1,\"y\":65,\"z\":-2}"));
+            local.addProperty("specifyStanding", true);
+            local.add("standingPosition", JsonParser.parseString("{\"x\":4,\"y\":66,\"z\":-5}"));
             payload.add("categoryOptions", global);
             var input = payload.getAsJsonArray("bindings").get(0).getAsJsonObject();
             input.addProperty("optionsEnabled", true);
@@ -127,6 +131,31 @@ class V2ControlServerTest {
                         .get("storageMethod").getAsString());
                 assertEquals("bulk", zone.getAsJsonObject("categoryOptions")
                         .get("storageMethod").getAsString());
+                var standing = binding.getAsJsonObject("standingArea");
+                assertEquals(enabled ? 4 : 1, standing.get("firstX").getAsInt());
+                assertEquals(standing.get("firstX"), standing.get("secondX"));
+                assertEquals(enabled ? 66 : 65, standing.get("firstY").getAsInt());
+                assertEquals(enabled ? -5 : -2, standing.get("firstZ").getAsInt());
+                assertEquals(4, binding.getAsJsonObject("categoryOptions")
+                        .getAsJsonObject("standingPosition").get("x").getAsInt());
+            }
+            local.addProperty("specifyStanding", false);
+            payload.add("revision", response.get("revision"));
+            var disabled = fixture.send(path, "PUT", payload.toString(), true);
+            assertEquals(200, disabled.statusCode());
+            response = object(disabled);
+            binding = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
+                    .getAsJsonArray("bindings").get(0).getAsJsonObject();
+            assertTrue(!binding.has("standingArea") || binding.get("standingArea").isJsonNull());
+            assertEquals(4, binding.getAsJsonObject("categoryOptions")
+                    .getAsJsonObject("standingPosition").get("x").getAsInt());
+            payload.add("revision", response.get("revision"));
+            assertEquals(401, fixture.send(path, "PUT", payload.toString(), false).statusCode());
+            local.addProperty("specifyStanding", true);
+            for (String point : List.of("null", "{}", "{\"x\":0.5,\"y\":64,\"z\":0}",
+                    "{\"x\":2147483648,\"y\":64,\"z\":0}")) {
+                local.add("standingPosition", JsonParser.parseString(point));
+                assertEquals(400, fixture.send(path, "PUT", payload.toString(), true).statusCode());
             }
         }
     }

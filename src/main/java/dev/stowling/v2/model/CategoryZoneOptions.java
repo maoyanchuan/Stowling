@@ -1,5 +1,6 @@
 package dev.stowling.v2.model;
 
+import dev.stowling.domain.BlockPosition;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -11,7 +12,9 @@ public record CategoryZoneOptions(
         String noCacheLocation,
         String cacheDestination,
         boolean ignoreSupportBlock,
-        String supportBlock
+        String supportBlock,
+        Boolean specifyStanding,
+        BlockPosition standingPosition
 ) {
     public CategoryZoneOptions {
         scopeMode = choice(scopeMode, "single", Set.of("single", "selection"));
@@ -21,6 +24,25 @@ public record CategoryZoneOptions(
         noCacheLocation = choice(noCacheLocation, "inside-box", Set.of("inside-box", "specified"));
         cacheDestination = cacheDestination == null ? "" : cacheDestination.trim();
         supportBlock = supportBlock == null ? "" : supportBlock.trim();
+        if (Boolean.TRUE.equals(specifyStanding) && standingPosition == null) {
+            throw new IllegalArgumentException("请填写站立位置的 X、Y、Z 整数坐标");
+        }
+    }
+
+    public CategoryZoneOptions(
+            String scopeMode, String recognitionMode, String storageMethod,
+            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
+            String supportBlock
+    ) {
+        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
+                ignoreSupportBlock, supportBlock, null, null);
+    }
+
+    public AreaBounds standingArea(AreaBounds previous) {
+        if (specifyStanding == null) return previous;
+        if (!specifyStanding) return null;
+        return new AreaBounds(standingPosition.x(), standingPosition.y(), standingPosition.z(),
+                standingPosition.x(), standingPosition.y(), standingPosition.z());
     }
 
     public String ruleId() {

@@ -507,6 +507,61 @@
                                                            maxlength="80" placeholder="例如：minecraft:stone">
                                                 </label>
                                             </div>
+                                            <div id="category-standing-option-row"
+                                                 class="category-option-row">
+                                                <label class="category-option-label"
+                                                       for="category-specify-standing">
+                                                    指定站立位置
+                                                </label>
+                                                <div class="category-option-actions">
+                                                    <button id="category-standing-expand"
+                                                            class="category-option-expand"
+                                                            type="button"
+                                                            aria-expanded="false"
+                                                            aria-controls="category-standing-row"
+                                                            aria-label="展开站立坐标设置" hidden>
+                                                        <svg aria-hidden="true" width="18"
+                                                             height="18"
+                                                             viewBox="0 0 24 24" fill="none"
+                                                             stroke="currentColor"
+                                                             stroke-width="1.8">
+                                                            <path d="m9 18 6-6-6-6"/>
+                                                        </svg>
+                                                    </button>
+                                                    <label class="category-option-switch"
+                                                           for="category-specify-standing">
+                                                        <input id="category-specify-standing"
+                                                               type="checkbox" role="switch"
+                                                               aria-controls="category-standing-row"
+                                                               aria-expanded="false">
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div id="category-standing-row"
+                                                 class="category-option-sub"
+                                                 data-collapsed="true" hidden>
+                                                <span class="category-option-label">站立坐标</span>
+                                                <div class="coordinate-corner-fields">
+                                                    <label class="field-label"
+                                                           for="category-standing-x">
+                                                        X
+                                                        <input id="category-standing-x" type="number"
+                                                               step="1" value="0">
+                                                    </label>
+                                                    <label class="field-label"
+                                                           for="category-standing-y">
+                                                        Y
+                                                        <input id="category-standing-y" type="number"
+                                                               step="1" value="64">
+                                                    </label>
+                                                    <label class="field-label"
+                                                           for="category-standing-z">
+                                                        Z
+                                                        <input id="category-standing-z" type="number"
+                                                               step="1" value="0">
+                                                    </label>
+                                                </div>
+                                            </div>
                                         </div>
                                         <div class="category-binding-section">
                                             <div class="category-binding-heading">

@@ -75,6 +75,12 @@ public interface StorageAutomationPort {
         return robotWarehouse(context, region, destination);
     }
 
+    default TaskModuleExecutor robotWarehouseForCache(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination, boolean mixedBoxes) {
+        if (!mixedBoxes) throw new IllegalStateException("当前环境不支持机器人仓库纯盒储存");
+        return robotWarehouseForCache(context, cache, destination);
+    }
+
     default TaskModuleExecutor scanCacheContents(TaskExecutionContext context,
             List<ContainerTarget> containers) {
         throw new IllegalStateException("当前环境不支持缓存库存盘点");

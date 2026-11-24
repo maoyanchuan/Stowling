@@ -25,7 +25,7 @@ let connected = true;
 const state = {
     revision: "task-revision", draftRevision: "task-revision", items: [], allTasks: [], ready: true, loading: false,
     busy: false, dirty: true, expanded: true, active: false,
-    resources: {coordinates: [{id: "pickup"}], regions: [{id: "cache"}],
+    resources: {coordinates: [{id: "pickup"}], regions: [{id: "cache"}, {id: "robot"}],
         categoryZones: [{id: "all-items-zone"}], warehouses: [{id: "warehouse"}]},
     draft: {...Auto.newDraft(), id: "all-items", name: "全物品",
         overflowDestinationRef: "warehouse:warehouse"}
@@ -38,6 +38,7 @@ const elements = {
     cacheMode: {value: "PACK_FIRST"}, cacheThreshold: {value: "80"},
     collectEnabled: {checked: true}, classifyEnabled: {checked: true},
     warehouseEnabled: {checked: true}, warehouse: {value: "warehouse:warehouse"},
+    warehouseMixed: {checked: true},
     cacheEnabled: {checked: false}
 };
 const cleanup = {
@@ -119,7 +120,7 @@ def test_task_switch_saves_only_the_task_and_uses_its_selected_warehouse(enabled
     task = result["requests"][0]
     assert task["url"] == "/v1/auto-classify-tasks/all-items"
     assert task["body"]["overflowEnabled"] is enabled
-    assert task["body"]["overflowDestinationRef"] == ("warehouse:warehouse" if enabled else "")
+    assert task["body"]["overflowDestinationRef"] == "warehouse:warehouse"
     assert "enabled" not in task["body"]
     assert result["state"]["dirty"] is False
 
@@ -136,7 +137,33 @@ def test_overflow_boxes_are_not_used_when_the_robot_warehouse_is_unconfigured() 
     assert result["requests"] == []
     assert result["dirty"] is True
     assert result["messages"][-1]["error"] is True
-    assert "请选择溢出仓库" in result["messages"][-1]["text"]
+    assert "请选择有效的机器人仓库区域" in result["messages"][-1]["text"]
+
+
+@pytest.mark.parametrize("mixed", [True, False])
+def test_robot_warehouse_saves_a_region_and_the_box_mode(mixed: bool) -> None:
+    result = run_settings("""(async () => {
+        elements.warehouse.value = "region:robot";
+        elements.warehouseMixed.checked = MIXED;
+        await saveTask();
+        return {requests, state};
+    })()""".replace("MIXED", json.dumps(mixed)))
+    assert len(result["requests"]) == 1
+    body = result["requests"][0]["body"]
+    assert body["overflowDestinationRef"] == "region:robot"
+    assert body["robotWarehouseMixedBoxes"] is mixed
+    assert result["state"]["draft"]["robotWarehouseMixedBoxes"] is mixed
+
+
+@pytest.mark.parametrize("ref", ["region:cache", "region:deleted", "category-zone:all-items-zone"])
+def test_robot_warehouse_rejects_source_missing_and_category_zone_references(ref: str) -> None:
+    result = run_settings("""(async () => {
+        elements.warehouse.value = REF;
+        await saveTask();
+        return {requests, messages};
+    })()""".replace("REF", json.dumps(ref)))
+    assert result["requests"] == []
+    assert result["messages"][-1]["error"] is True
 
 
 def test_disabling_a_task_does_not_require_a_configured_warehouse() -> None:

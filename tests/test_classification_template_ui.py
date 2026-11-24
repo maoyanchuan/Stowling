@@ -239,7 +239,10 @@ def test_remainder_pickers_have_no_create_link_and_warehouse_control_fits_its_ro
     page = classification_page
     page.set_viewport_size({"width": width, "height": 1000})
     if not available:
-        page.evaluate("coordinateResources.catalog.warehouses = []")
+        page.evaluate("""() => {
+            coordinateResources.catalog.warehouses = [];
+            coordinateResources.regions = [];
+        }""")
         page.locator("#refresh-move-tasks").click()
         page.wait_for_function("""() => {
             const options = document.querySelector('#robot-warehouse-location').options;
@@ -261,6 +264,40 @@ def test_remainder_pickers_have_no_create_link_and_warehouse_control_fits_its_ro
     assert control["y"] >= bounds["y"] + 8
     assert control["y"] + control["height"] <= bounds["y"] + bounds["height"] - 8
     assert control["x"] + control["width"] <= bounds["x"] + bounds["width"] + 1
+
+
+def test_robot_warehouse_region_and_box_mode_survive_disabling_and_reload(
+    classification_page: Any,
+) -> None:
+    page = classification_page
+    open_settings(page)
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    page.locator("#robot-warehouse-enabled").check()
+    page.locator("#robot-warehouse-toggle").click()
+    settle(page)
+    row = page.locator("#robot-warehouse-location-field")
+    row.locator(".task-select-trigger").click()
+    page.get_by_role("option", name="容器区域 · 备用缓存").click()
+    page.wait_for_function("backend.item.overflowDestinationRef === 'region:reserve'")
+    mode = page.get_by_role("switch", name="允许杂盒储存")
+    assert mode.is_checked()
+    mode.uncheck()
+    page.wait_for_function("backend.item.robotWarehouseMixedBoxes === false")
+    page.locator("#robot-warehouse-enabled").uncheck()
+    page.wait_for_function("backend.item.overflowEnabled === false")
+    assert page.evaluate("backend.item.overflowDestinationRef") == "region:reserve"
+    page.locator("#refresh-move-tasks").click()
+    page.wait_for_function("document.querySelector('#robot-warehouse-enabled').disabled === false")
+    page.locator("#robot-warehouse-enabled").check()
+    page.locator("#robot-warehouse-toggle").click()
+    settle(page)
+    assert not mode.is_checked()
+    assert page.locator("#robot-warehouse-location").input_value() == "region:reserve"
+    page.locator("#robot-warehouse-toggle").click()
+    settle(page)
+    assert not mode.is_checked()
+    assert page.locator("#robot-warehouse-body").is_hidden()
 
 
 @pytest.mark.parametrize("theme", ["green", "gray"])

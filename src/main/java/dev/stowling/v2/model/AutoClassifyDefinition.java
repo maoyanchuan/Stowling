@@ -26,8 +26,40 @@ public record AutoClassifyDefinition(
         Integer detectionIntervalSeconds,
         Integer followUpDelaySeconds,
         Boolean followUpEnabled,
-        ClassificationRemainderPolicy remainderPolicy
+        ClassificationRemainderPolicy remainderPolicy,
+        Boolean robotWarehouseMixedBoxes
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef,
+            String overflowDestinationRef,
+            CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer detectionIntervalSeconds,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled,
+            ClassificationRemainderPolicy remainderPolicy
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
+                collectionPriority, overflowEnabled, cleanupPolicy, unstackableRegionRef,
+                overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                detectionIntervalSeconds, followUpDelaySeconds, followUpEnabled,
+                remainderPolicy, null);
+    }
+
     public AutoClassifyDefinition(
             UUID id,
             String name,
@@ -193,6 +225,8 @@ public record AutoClassifyDefinition(
         if (followUpDelaySeconds < 0 || followUpDelaySeconds > MAX_FOLLOW_UP_DELAY_SECONDS) {
             throw new IllegalArgumentException("创建任务倒计时需为 0 至 86400 秒");
         }
+        robotWarehouseMixedBoxes = robotWarehouseMixedBoxes == null
+                || robotWarehouseMixedBoxes;
         kind = kind == null ? Kind.COMBINED : kind;
         remainderPolicy = remainderPolicy == null
                 ? ClassificationRemainderPolicy.DEFAULT : remainderPolicy;
@@ -256,13 +290,20 @@ public record AutoClassifyDefinition(
         }
         cacheLocationRef = ResourceReference.parse(cacheLocationRef).encode();
         remainderPolicy.requireSeparateSource(cacheLocationRef);
-        if (!overflowEnabled) {
+        if (overflowDestinationRef == null || overflowDestinationRef.isBlank()) {
+            if (overflowEnabled) {
+                throw new IllegalArgumentException("请选择机器人仓库区域");
+            }
             overflowDestinationRef = null;
         } else {
-            overflowDestinationRef = requireReference(overflowDestinationRef, ResourceType.WAREHOUSE,
-                    "overflowDestinationRef");
+            var destination = ResourceReference.parse(overflowDestinationRef);
+            if (destination.type() != ResourceType.REGION
+                    && destination.type() != ResourceType.WAREHOUSE) {
+                throw new IllegalArgumentException("机器人仓库必须引用容器区域或已有仓库");
+            }
+            overflowDestinationRef = destination.encode();
             if (cacheLocationRef.equals(overflowDestinationRef)) {
-                throw new IllegalArgumentException("缓存和溢出存放需要使用不同的仓库");
+                throw new IllegalArgumentException("机器人仓库与物品来源必须使用不同的位置");
             }
         }
         unstackableRegionRef = unstackableRegionRef == null || unstackableRegionRef.isBlank()

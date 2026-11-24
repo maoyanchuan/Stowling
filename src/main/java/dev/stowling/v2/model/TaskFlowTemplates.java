@@ -244,11 +244,17 @@ public final class TaskFlowTemplates {
     }
 
     public static TaskStep overflow(String cacheRegionRef, String destinationRef) {
+        return overflow(cacheRegionRef, destinationRef, true);
+    }
+
+    public static TaskStep overflow(String cacheRegionRef, String destinationRef,
+            boolean mixedBoxes) {
         Map<String, String> parameters = new LinkedHashMap<>();
         if (cacheRegionRef != null) {
             parameters.put(cacheLocationKey(cacheRegionRef), cacheRegionRef);
         }
         if (destinationRef != null) parameters.put(ConfigValidator.TARGET_REF, destinationRef);
+        parameters.put("mixedBoxes", Boolean.toString(mixedBoxes));
         return TaskStep.action(UUID.randomUUID(), ConfigValidator.ROBOT_WAREHOUSE, parameters);
     }
 

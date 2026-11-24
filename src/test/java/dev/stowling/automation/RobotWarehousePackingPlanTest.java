@@ -12,6 +12,39 @@ import org.junit.jupiter.api.Test;
 
 class RobotWarehousePackingPlanTest {
     @Test
+    void pureModeOnlyReusesABoxWithMatchingContents() {
+        var mixed = new Box("mixed", List.of(new Slot("minecraft:stone", 64, 64),
+                new Slot("minecraft:dirt", 64, 64)));
+        var stone = new Box("stone", List.of(new Slot("minecraft:stone", 64, 64)));
+        assertEquals("stone", RobotWarehousePackingPlan.select(List.of(mixed, stone),
+                Map.of("minecraft:stone", 64, "minecraft:dirt", 128), Map.of(), false)
+                .orElseThrow());
+        assertTrue(RobotWarehousePackingPlan.select(List.of(mixed),
+                Map.of("minecraft:stone", 64), Map.of(), false).isEmpty());
+    }
+
+    @Test
+    void pureModeUsesOnlyOneCategoryWhenFillingAnEmptyBox() {
+        var incoming = Map.of("minecraft:stone", 64, "minecraft:dirt", 128);
+        assertEquals(Map.of("minecraft:dirt", 128), RobotWarehousePackingPlan.fitting(
+                List.of(), 27, incoming, Map.of(), false));
+        assertEquals(incoming, RobotWarehousePackingPlan.fitting(
+                List.of(), 27, incoming, Map.of(), true));
+    }
+
+    @Test
+    void pureModePreservesExactVariantKeysAndNeverAcceptsNestedBoxes() {
+        String first = "minecraft:stone#variant-a";
+        String second = "minecraft:stone#variant-b";
+        var incoming = Map.of(first, 20, second, 30, "minecraft:dirt", 10);
+        assertEquals(Map.of(first, 20, second, 30), RobotWarehousePackingPlan.fitting(
+                List.of(new Slot(first, 64, 64)), 27, incoming, Map.of(), false));
+        assertTrue(RobotWarehousePackingPlan.fitting(List.of(), 27,
+                Map.of("minecraft:shulker_box#packed@minecraft:stone", 1), Map.of(), false)
+                .isEmpty());
+    }
+
+    @Test
     void unrelatedMixedContentsCanReceiveANewOverflowCategoryWithoutAMarker() {
         var mixed = new Box("mixed", List.of(new Slot("minecraft:stone", 64, 64),
                 new Slot("minecraft:dirt", 64, 64)));

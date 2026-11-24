@@ -316,11 +316,17 @@ public final class ConfigStore {
         allowed.add("unstackableRegionRef");
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
+        allowed.add("robotWarehouseMixedBoxes");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
             JsonObject definition = requireObject(definitions.get(index), path);
             requireFields(definition, path, allowed, fields);
+            var mixed = definition.get("robotWarehouseMixedBoxes");
+            if (mixed != null && (!mixed.isJsonPrimitive()
+                    || !mixed.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("robotWarehouseMixedBoxes 必须是布尔值");
+            }
             requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireCachePolicy(definition.get("cachePolicy"));
             requireRemainderPolicy(definition.get("remainderPolicy"));

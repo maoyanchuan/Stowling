@@ -64,7 +64,8 @@ public final class TaskFlowNormalizer {
                     definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
                     definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                     definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
-                    definition.followUpEnabled(), definition.remainderPolicy());
+                    definition.followUpEnabled(), definition.remainderPolicy(),
+                    definition.robotWarehouseMixedBoxes());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -310,7 +311,8 @@ public final class TaskFlowNormalizer {
         if (definition.overflowEnabled() && steps.stream().noneMatch(step ->
                 ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId()))) {
             steps.addAll(remapStepIds(List.of(TaskFlowTemplates.overflow(
-                    definition.cacheLocationRef(), definition.overflowDestinationRef())),
+                    definition.cacheLocationRef(), definition.overflowDestinationRef(),
+                    definition.robotWarehouseMixedBoxes())),
                     definition.derivedId("overflow")));
         }
         steps.addAll(remapStepIds(TaskFlowTemplates.reconcileInventory(

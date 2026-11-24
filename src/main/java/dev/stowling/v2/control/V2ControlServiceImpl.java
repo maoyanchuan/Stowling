@@ -269,7 +269,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
         return config.autoClassifyTasks().stream().filter(task -> {
             var policy = task.remainderPolicy();
             return ref.equals(policy.unclassifiableDestinationRef())
-                    || ref.equals(policy.overflowDestinationRef());
+                    || ref.equals(policy.overflowDestinationRef())
+                    || ref.equals(task.overflowDestinationRef());
         }).map(AutoClassifyDefinition::name).toList();
     }
 
@@ -906,7 +907,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         false),
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
                 request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds(),
-                request.followUpEnabled(), request.remainderPolicy()
+                request.followUpEnabled(), request.remainderPolicy(),
+                request.robotWarehouseMixedBoxes()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -998,7 +1000,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.followUpEnabled() == null ? existing.followUpEnabled()
                         : request.followUpEnabled(),
                 request.remainderPolicy() == null ? existing.remainderPolicy()
-                        : request.remainderPolicy()
+                        : request.remainderPolicy(),
+                request.robotWarehouseMixedBoxes() == null
+                        ? existing.robotWarehouseMixedBoxes()
+                        : request.robotWarehouseMixedBoxes()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1600,7 +1605,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             String followUpTaskRef,
             Integer followUpDelaySeconds,
             Boolean followUpEnabled,
-            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy
+            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
+            Boolean robotWarehouseMixedBoxes
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1627,7 +1633,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 overflowEnabled,
                 cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
                 detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds,
-                followUpEnabled, remainderPolicy
+                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes
         );
     }
 
@@ -1650,7 +1656,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cleanupPolicy(), null, definition.overflowDestinationRef(),
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
-                definition.followUpEnabled(), definition.remainderPolicy()
+                definition.followUpEnabled(), definition.remainderPolicy(),
+                definition.robotWarehouseMixedBoxes()
         );
     }
 
@@ -1690,7 +1697,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cleanupPolicy(), definition.overflowDestinationRef(),
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.followUpDelaySeconds(), definition.followUpEnabled(),
-                definition.remainderPolicy()
+                definition.remainderPolicy(), definition.robotWarehouseMixedBoxes()
         );
     }
 

@@ -53,6 +53,7 @@
             enabled: false,
             overflowEnabled: false,
             overflowDestinationRef: "",
+            robotWarehouseMixedBoxes: true,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY},
             cleanupDestinationRef: "",
             facilities: {},
@@ -94,6 +95,7 @@
             enabled: item?.enabled === true,
             overflowEnabled: item?.overflowEnabled === true,
             overflowDestinationRef: String(item?.overflowDestinationRef || ""),
+            robotWarehouseMixedBoxes: item?.robotWarehouseMixedBoxes !== false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...item?.remainderPolicy},
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
@@ -211,12 +213,16 @@
         } else if (!cacheLocations(resources).some(item => item.id === cache)) {
             errors.push(`所选${sourceLabel}不存在，请重新选择`);
         }
-        if (draft?.overflowEnabled && !resourceExists(resources, "warehouses",
-                referencedId(draft.overflowDestinationRef, "warehouse"))) {
-            errors.push("请选择溢出仓库");
+        if (typeof draft?.robotWarehouseMixedBoxes !== "boolean"
+            && draft?.robotWarehouseMixedBoxes !== undefined) {
+            errors.push("机器人仓库储存方式需为布尔值");
+        }
+        if (draft?.overflowEnabled && !robotWarehouseLocations(resources)
+                .some(item => item.id === draft.overflowDestinationRef)) {
+            errors.push("请选择有效的机器人仓库区域");
         }
         if (draft?.overflowEnabled && draft.overflowDestinationRef === cache) {
-            errors.push("缓存和溢出存放需要使用不同的仓库");
+            errors.push("机器人仓库与物品来源必须使用不同的位置");
         }
         validateAreas(draft, resources, errors);
 
@@ -248,7 +254,8 @@
         return {
             enabled: draft.enabled,
             overflowEnabled: draft.overflowEnabled === true,
-            overflowDestinationRef: draft.overflowEnabled ? draft.overflowDestinationRef || "" : "",
+            overflowDestinationRef: draft.overflowDestinationRef || "",
+            robotWarehouseMixedBoxes: draft.robotWarehouseMixedBoxes !== false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy},
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},
@@ -286,6 +293,18 @@
         ].flatMap(([key, type, name]) => resourceList(resources, key).map(item => ({
             id: reference(type, item.id), name: name + " · " + item.name
         })));
+    }
+
+    /** @param {unknown} resources @returns {Array<{id: string, name: string}>} */
+    function robotWarehouseLocations(resources) {
+        return [
+            ...resourceList(resources, "regions").map(item => ({
+                id: reference("region", item.id), name: "容器区域 · " + item.name
+            })),
+            ...resourceList(resources, "warehouses").map(item => ({
+                id: reference("warehouse", item.id), name: "已有仓库 · " + item.name
+            }))
+        ];
     }
 
     /** @param {object} draft @param {object} resources @param {Array<string>} errors
@@ -358,6 +377,7 @@
         payload,
         validateDraft,
         cacheLocations,
+        robotWarehouseLocations,
         classificationAreasFromSelection
     });
 })();

@@ -486,6 +486,7 @@ class V2ControlServerTest {
         var store = new ConfigStore(directory.resolve("layout-recognition.json"));
         var point = new dev.stowling.v2.model.CoordinatePoint(UUID.randomUUID(), "Drops", 0, 64, 0);
         var region = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 1);
+        var robotRegion = new RegionDefinition(UUID.randomUUID(), "Robot", 10, 64, 0, 11, 64, 1);
         var binding = new dev.stowling.v2.model.CategoryBindingDefinition(UUID.randomUUID(),
                 new dev.stowling.v2.model.AreaBounds(5, 64, 0, 5, 64, 0),
                 new dev.stowling.v2.model.AreaBounds(5, 64, 1, 5, 64, 1), "DIRECT_BLOCK_ID");
@@ -493,7 +494,7 @@ class V2ControlServerTest {
                 List.of(binding));
         store.save(store.loadOrReset().revision(), new dev.stowling.v2.model.AppConfig(
                 dev.stowling.v2.model.AppConfig.CURRENT_SCHEMA_VERSION, List.of(point),
-                List.of(), List.of(region), List.of(zone)));
+                List.of(), List.of(region, robotRegion), List.of(zone)));
         var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
                 List::of);
         String body = """
@@ -508,8 +509,11 @@ class V2ControlServerTest {
                 "coordinate:%s","retainInCache":true,"cacheLimit":9}},
                 "remainderPolicy":{"unclassifiableEnabled":true,
                 "unclassifiableDestinationRef":"coordinate:%s","overflowEnabled":true,
-                "overflowDestinationRef":"coordinate:%s"}}
-                """.formatted(point.id(), region.id(), zone.id(), point.id(), point.id(), point.id());
+                "overflowDestinationRef":"coordinate:%s"},
+                "overflowEnabled":true,"overflowDestinationRef":"region:%s",
+                "robotWarehouseMixedBoxes":false}
+                """.formatted(point.id(), region.id(), zone.id(), point.id(), point.id(), point.id(),
+                        robotRegion.id());
         try (Fixture fixture = new Fixture(service)) {
             assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST", body, false)
                     .statusCode());
@@ -526,6 +530,12 @@ class V2ControlServerTest {
             var boxes = item.getAsJsonObject("cleanupPolicy").getAsJsonObject("emptyBoxWarehouse");
             assertEquals("coordinate:" + point.id(), boxes.get("warehouseRef").getAsString());
             assertEquals(9, boxes.get("cacheLimit").getAsInt());
+            assertEquals("region:" + robotRegion.id(),
+                    item.get("overflowDestinationRef").getAsString());
+            assertFalse(item.get("robotWarehouseMixedBoxes").getAsBoolean());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"robotWarehouseMixedBoxes\":false",
+                            "\"robotWarehouseMixedBoxes\":\"false\""), true).statusCode());
             var remainders = item.getAsJsonObject("remainderPolicy");
             assertTrue(remainders.get("unclassifiableEnabled").getAsBoolean());
             assertEquals("coordinate:" + point.id(),

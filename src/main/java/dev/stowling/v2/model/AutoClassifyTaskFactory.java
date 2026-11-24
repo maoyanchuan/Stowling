@@ -110,7 +110,7 @@ public final class AutoClassifyTaskFactory {
         }
         if (definition.overflowEnabled()) {
             classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheLocationRef(),
-                    definition.overflowDestinationRef()));
+                    definition.overflowDestinationRef(), definition.robotWarehouseMixedBoxes()));
         }
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
                 definition.cacheLocationRef(), Map.of()

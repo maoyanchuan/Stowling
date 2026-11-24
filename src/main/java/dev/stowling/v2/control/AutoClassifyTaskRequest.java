@@ -23,8 +23,34 @@ public record AutoClassifyTaskRequest(
         String followUpTaskRef,
         Integer followUpDelaySeconds,
         Boolean followUpEnabled,
-        dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy
+        dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
+        Boolean robotWarehouseMixedBoxes
 ) {
+    public AutoClassifyTaskRequest(
+            String name,
+            Boolean enabled,
+            Boolean collectionEnabled,
+            Boolean classificationEnabled,
+            AutoClassifyDetectionRequest detection,
+            String cacheLocationRef,
+            List<AutoClassifyAreaRequest> classificationAreas,
+            TaskPriority collectionPriority,
+            Boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String overflowDestinationRef,
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled,
+            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy
+    ) {
+        this(name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheLocationRef, classificationAreas, collectionPriority, overflowEnabled,
+                cleanupPolicy, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                followUpDelaySeconds, followUpEnabled, remainderPolicy, null);
+    }
+
     public AutoClassifyTaskRequest(
             String name,
             Boolean enabled,

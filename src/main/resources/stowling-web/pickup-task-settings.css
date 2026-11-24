@@ -116,6 +116,15 @@ body[data-page="tasks"] .pickup-task-module::before {
     gap: 12px;
 }
 
+.auto-task-form .robot-warehouse-mode {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex: 0 0 38%;
+    min-width: min(240px, 100%);
+}
+
 body[data-page] .auto-eat-task-form .move-field .pickup-task-expand {
     background: transparent;
 }
@@ -543,6 +552,7 @@ body[data-page] .task-select-option:focus-visible {
         .auto-eat-task-form, .refresh-cache-task-form) .move-field > span:first-child,
     :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
         .auto-eat-task-form, .refresh-cache-task-form) .move-field > .task-select-wrap,
+    .auto-task-form .robot-warehouse-mode,
     body[data-page]
         :is(.auto-task-form:not([data-kind="COMBINED"]), .coordinate-task-form,
             .auto-eat-task-form, .refresh-cache-task-form) input[type="number"],

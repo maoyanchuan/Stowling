@@ -85,6 +85,7 @@
         remove: document.querySelector("#delete-auto-task"),
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
+        warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
         warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
         warehouseBody: document.querySelector("#robot-warehouse-body")
     };
@@ -243,10 +244,10 @@
             draft.cacheLocationRef,
             draft.kind === "CLASSIFICATION" ? "请选择物品来源" : "请选择缓存位置");
         Picker.group(elements.cache);
-        populateSelect(elements.warehouse, state.resources.warehouses.map(item => ({
-            ...item, id: "warehouse:" + item.id
-        })), draft.overflowDestinationRef, "请选择溢出仓库");
-        Picker.group(elements.warehouse, undefined, "warehouses", false);
+        populateSelect(elements.warehouse, Auto.robotWarehouseLocations(state.resources),
+            draft.overflowDestinationRef, "请选择机器人仓库区域");
+        Picker.group(elements.warehouse, undefined, "regions", false);
+        elements.warehouseMixed.checked = draft.robotWarehouseMixedBoxes;
         const available = [...state.regularTasks, ...state.items]
             .filter(task => task.id !== draft.id)
             .map(task => ({id: "task:" + task.id, name: task.name}));
@@ -302,6 +303,7 @@
                 followUpDelaySeconds: elements.followUpDelay.value} : {}),
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
+            robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},

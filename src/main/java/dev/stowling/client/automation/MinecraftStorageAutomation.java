@@ -288,7 +288,13 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor robotWarehouseForCache(TaskExecutionContext context,
             ResourceReference cache, ResourceReference destination) {
-        return new Overflow(context, cache, true, destination);
+        return robotWarehouseForCache(context, cache, destination, true);
+    }
+
+    @Override
+    public TaskModuleExecutor robotWarehouseForCache(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination, boolean mixedBoxes) {
+        return new Overflow(context, cache, true, destination, null, mixedBoxes);
     }
 
     @Override
@@ -3337,6 +3343,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private final boolean boxedOnly;
         private final ResourceReference destination;
         private final String remainderKind;
+        private final boolean mixedBoxes;
         private String skipMessage;
         private boolean warehouseReady;
         private String warehouseScope;
@@ -3367,11 +3374,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
                 ResourceReference destination, String remainderKind) {
+            this(context, cacheLocation, boxedOnly, destination, remainderKind, true);
+        }
+
+        Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
+                ResourceReference destination, String remainderKind, boolean mixedBoxes) {
             super(context);
             this.cacheLocation = cacheLocation;
             this.boxedOnly = boxedOnly;
             this.destination = destination;
             this.remainderKind = remainderKind;
+            this.mixedBoxes = mixedBoxes;
         }
 
         @Override
@@ -3473,6 +3486,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 prepareWarehouse();
                 box = filled;
                 reusedFrom = null;
+                if (!mixedBoxes && ItemIdentity.MIXED_BOX_CATEGORY.equals(
+                        MinecraftItemIdentity.boxCategory(box))) {
+                    String category = MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
+                            .map(MinecraftItemIdentity::base).sorted().findFirst().orElseThrow();
+                    Set<String> selectors = MinecraftItemIdentity.contents(box)
+                            .nonEmptyItemCopyStream()
+                            .filter(item -> category.equals(MinecraftItemIdentity.base(item)))
+                            .map(MinecraftItemIdentity::key).map(ItemIdentity::exact)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                    unpackOverflowBox(selectors, true);
+                    return;
+                }
                 Set<String> unstackable = unstackableRegion == null ? Set.of()
                         : MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
                                 .filter(MinecraftStorageAutomation::isUnstackableItem)
@@ -3628,7 +3653,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .map(stack -> new RobotWarehousePackingPlan.Box(MinecraftItemIdentity.key(stack),
                             boxSlots(stack))).toList();
             var selected = RobotWarehousePackingPlan.select(candidates, rawOwned(),
-                    inventoryStackSizes());
+                    inventoryStackSizes(), mixedBoxes);
             if (selected.isEmpty()) {
                 findReusableOverflowBox(following);
                 return;
@@ -3675,7 +3700,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             box = inventoryStacks().stream().filter(MinecraftItemIdentity::isBox)
                     .filter(stack -> owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
                     .filter(this::eligibleBox)
-                    .filter(stack -> !fittingBoxItems(stack, rawOwned()).isEmpty())
+                    .filter(stack -> !RobotWarehousePackingPlan.fitting(boxSlots(stack),
+                            StoragePackingPlanner.BOX_SLOTS, rawOwned(), inventoryStackSizes(),
+                            mixedBoxes).isEmpty())
                     .max(Comparator.comparingInt(MinecraftStorageAutomation::insideCount))
                     .map(ItemStack::copy).orElse(ItemStack.EMPTY);
             if (!box.isEmpty()) {
@@ -3692,7 +3719,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             unpackOverflowBox(items, drain -> {
                 if (drain.withdrawn().isEmpty()) {
                     if (requireItems) {
-                        throw new IllegalStateException("未能取出潜影盒中的不可堆叠物品");
+                        throw new IllegalStateException("未能取出潜影盒中的目标物品");
                     }
                     undrainableBoxes.add(MinecraftItemIdentity.key(box));
                 }
@@ -3745,8 +3772,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         .filter(stack -> !stack.isEmpty()).map(stack ->
                                 new ShulkerTransferPlanner.Slot(MinecraftItemIdentity.key(stack),
                                         stack.getCount(), stack.getMaxStackSize())).toList();
-                Map<String, Integer> requested = ShulkerTransferPlanner.fitting(slots,
-                        contents.size(), rawOwned(), inventoryStackSizes());
+                Map<String, Integer> requested = RobotWarehousePackingPlan.fitting(slots,
+                        contents.size(), rawOwned(), inventoryStackSizes(), mixedBoxes);
                 int before = sum(rawOwned());
                 transfer(boxTarget, requested, false, () -> {
                     boolean progressed = sum(rawOwned()) < before;

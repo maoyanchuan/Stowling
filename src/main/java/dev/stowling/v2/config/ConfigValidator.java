@@ -819,7 +819,11 @@ public final class ConfigValidator {
             }
             case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {
                 requireParameters(step, ROBOT_WAREHOUSE.equals(step.moduleId())
-                        ? Set.of(REGION_REF, CACHE_LOCATION_REF, TARGET_REF) : Set.of(REGION_REF), Set.of());
+                        ? Set.of(REGION_REF, CACHE_LOCATION_REF, TARGET_REF, "mixedBoxes")
+                        : Set.of(REGION_REF), Set.of());
+                if (ROBOT_WAREHOUSE.equals(step.moduleId())) {
+                    requireOptionalBoolean(step, "mixedBoxes");
+                }
                 if (step.parameters().containsKey(REGION_REF)) {
                     requireRegionReference(step, regions, REGION_REF);
                 }

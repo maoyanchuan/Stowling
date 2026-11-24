@@ -1004,7 +1004,8 @@
                                                                 机器人仓库
                                                             </strong>
                                                             <small>
-                                                                储存区满后装盒存入所选仓库
+                                                                盒装物品无序混放，由机器人记录位置，
+                                                                无需人工分类整理
                                                             </small>
                                                         </span>
                                                     </span>
@@ -1026,12 +1027,31 @@
                                                  class="settings-detail" hidden>
                                                 <label id="robot-warehouse-location-field"
                                                        class="move-field">
-                                                    <span>溢出存放仓库</span>
+                                                    <span>仓库区域</span>
                                                     <select id="robot-warehouse-location"
                                                             data-option-description=
-                                                            "储存区满后，将物品装盒存入此仓库">
+                                                            "普通容器区域，无需分类标记，只存入盒装物品">
                                                     </select>
                                                 </label>
+                                                <div class="move-field">
+                                                    <span id="robot-warehouse-mode-label">
+                                                        储存方式
+                                                    </span>
+                                                    <div class="robot-warehouse-mode" role="group"
+                                                         aria-labelledby=
+                                                         "robot-warehouse-mode-label">
+                                                        <span>纯盒</span>
+                                                        <input id="robot-warehouse-mixed-boxes"
+                                                               class="settings-switch"
+                                                               type="checkbox" role="switch"
+                                                               aria-label="允许杂盒储存" checked>
+                                                        <span>杂盒</span>
+                                                    </div>
+                                                </div>
+                                                <p class="settings-description compact-help">
+                                                    纯盒：每盒只存一种物品；杂盒：允许多种物品混装。
+                                                    两种方式都只向仓库内存入潜影盒。
+                                                </p>
                                             </div>
                                         </section>
                                         <section id="auto-follow-up-field"

@@ -993,7 +993,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalString(json, "followUpTaskRef"),
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
-                remainderPolicy(json)
+                remainderPolicy(json),
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1019,7 +1020,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalString(json, "followUpTaskRef"),
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
-                remainderPolicy(json)
+                remainderPolicy(json),
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1102,6 +1104,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "cleanupPolicy",
                 "cachePolicy",
                 "remainderPolicy",
+                "robotWarehouseMixedBoxes",
                 "kind",
                 "followUpTaskRef",
                 "followUpDelaySeconds",

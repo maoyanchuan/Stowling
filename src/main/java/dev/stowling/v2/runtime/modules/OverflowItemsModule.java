@@ -25,7 +25,7 @@ final class OverflowItemsModule {
                 ResourceType.WAREHOUSE);
         if (ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId())) {
             return context.storageAutomation().robotWarehouseForCache(context, reference,
-                    destination);
+                    destination, TaskModuleSupport.booleanParameter(step, "mixedBoxes", true));
         }
         var region = reference == null ? null : ResourceReferenceSupport.region(context, reference);
         return context.storageAutomation().overflow(context, region);

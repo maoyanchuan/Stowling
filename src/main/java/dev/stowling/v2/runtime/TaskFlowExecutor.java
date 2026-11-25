@@ -47,6 +47,8 @@ public final class TaskFlowExecutor {
     private final int totalTopLevelSteps;
     private ActionState action;
     private boolean stopRequested;
+    private boolean pauseRequested;
+    private boolean pausedAtSafeNode;
     private int completedTopLevelSteps;
 
     public TaskFlowExecutor(
@@ -122,6 +124,10 @@ public final class TaskFlowExecutor {
                 continue;
             }
             TaskStep step = frame.steps.get(frame.index);
+            if (action == null && pauseRequested && safePauseNode(frame, step)) {
+                pausedAtSafeNode = true;
+                return TaskModuleResult.waiting("分类已到进食安全节点");
+            }
             TaskModuleResult result = switch (step.kind()) {
                 case ACTION -> tickAction(frame, step);
                 case IF -> enterConditional(frame, step);
@@ -152,6 +158,7 @@ public final class TaskFlowExecutor {
     }
 
     public synchronized void requestStop() {
+        resumeFromPause();
         stopRequested = true;
         if (action != null) {
             traced(action.frame, () -> {
@@ -160,6 +167,29 @@ public final class TaskFlowExecutor {
                 return null;
             });
         }
+    }
+
+    public synchronized void requestPauseAtSafeNode() {
+        pauseRequested = true;
+    }
+
+    public synchronized boolean pausedAtSafeNode() {
+        return pausedAtSafeNode;
+    }
+
+    public synchronized void resumeFromPause() {
+        pauseRequested = false;
+        pausedAtSafeNode = false;
+    }
+
+    private boolean safePauseNode(Frame frame, TaskStep step) {
+        // Resume through a fresh navigation action, never between arrival and transfer.
+        boolean beforeNavigation = step.kind() == TaskStepKind.ACTION
+                && TaskModuleIds.MOVE_TO_COORDINATE.equals(step.moduleId());
+        boolean beforeFirstModule = frame.isRoot() && frame.index == 0;
+        return (beforeNavigation || beforeFirstModule)
+                && !context.storageAutomation().hasTemporaryResources(
+                        context.workspace().inventoryAccount().ownerId());
     }
 
     public synchronized boolean safeToStop() {

@@ -69,6 +69,7 @@ public final class TaskRunManager {
     private Map<UUID, TaskDefinition> knownTasks = Map.of();
     private List<TaskTriggerDefinition> knownTriggers = List.of();
     private ActiveRun active;
+    private ActiveRun foodPausedClassification;
     private long nextSequence;
     private long ticks;
     private AppConfig inventoryConfig;
@@ -253,6 +254,10 @@ public final class TaskRunManager {
                 allowRepeat
         );
         if (deduplicate) {
+            if (foodPausedClassification != null
+                    && foodPausedClassification.prepared.task.id().equals(task.id())) {
+                return foodPausedClassification.snapshot;
+            }
             if (active != null && active.prepared.task.id().equals(task.id())) {
                 return active.snapshot;
             }
@@ -281,7 +286,9 @@ public final class TaskRunManager {
         ticks++;
         createDueCompletionTasks();
         boolean inventoryAvailable = registry.inventory().observe().isPresent();
-        if (inventoryAvailable && active == null) registry.inventory().reconcileUnassignedItems();
+        if (inventoryAvailable && active == null && foodPausedClassification == null) {
+            registry.inventory().reconcileUnassignedItems();
+        }
         triggers.tick();
         if (inventoryAvailable) {
             queueInventoryClassification();
@@ -308,6 +315,12 @@ public final class TaskRunManager {
     }
 
     public synchronized void cancel(UUID runId) {
+        if (foodPausedClassification != null
+                && foodPausedClassification.snapshot.runId().equals(runId)) {
+            foodPausedClassification.userCancelRequested = true;
+            updateFoodPausedSnapshot("分类已取消，等待进食释放槽位后收尾");
+            return;
+        }
         if (active != null && active.snapshot.runId().equals(runId)) {
             if (active.forceStopRequested) {
                 return;
@@ -352,6 +365,10 @@ public final class TaskRunManager {
     }
 
     public synchronized void cancelTask(UUID taskId) {
+        if (foodPausedClassification != null
+                && foodPausedClassification.prepared.task.id().equals(taskId)) {
+            cancel(foodPausedClassification.snapshot.runId());
+        }
         if (active != null && active.prepared.task.id().equals(taskId)
                 && !active.interruptionFailed) {
             cancel(active.snapshot.runId());
@@ -364,6 +381,13 @@ public final class TaskRunManager {
     }
 
     public synchronized void forceStop(UUID runId) {
+        if (foodPausedClassification != null
+                && foodPausedClassification.snapshot.runId().equals(runId)) {
+            foodPausedClassification.forceStopRequested = true;
+            foodPausedClassification.userCancelRequested = true;
+            updateFoodPausedSnapshot("分类等待进食释放槽位后强制停止");
+            return;
+        }
         if (active == null || !active.snapshot.runId().equals(runId)) {
             throw new TaskRunNotFoundException();
         }
@@ -441,6 +465,9 @@ public final class TaskRunManager {
         if (active != null) {
             return Optional.of(active.snapshot);
         }
+        if (foodPausedClassification != null) {
+            return Optional.of(foodPausedClassification.snapshot);
+        }
         return queue.stream()
                 .sorted(queueOrder())
                 .findFirst()
@@ -460,7 +487,7 @@ public final class TaskRunManager {
     }
 
     public synchronized List<TaskRunSnapshot> queued() {
-        return queue.stream()
+        List<TaskRunSnapshot> pending = new ArrayList<>(queue.stream()
                 .sorted(queueOrder())
                 .map(run -> snapshot(
                         run,
@@ -471,10 +498,16 @@ public final class TaskRunManager {
                                 : "等待后台任务冷却",
                         run.snapshot.updatedAt()
                 ))
-                .toList();
+                .toList());
+        if (foodPausedClassification != null) pending.add(foodPausedClassification.snapshot);
+        return List.copyOf(pending);
     }
 
     public synchronized Optional<TaskRunSnapshot> pendingTask(UUID taskId) {
+        if (foodPausedClassification != null
+                && foodPausedClassification.prepared.task.id().equals(taskId)) {
+            return Optional.of(foodPausedClassification.snapshot);
+        }
         if (active != null && active.prepared.task.id().equals(taskId)) {
             return Optional.of(active.snapshot);
         }
@@ -502,7 +535,8 @@ public final class TaskRunManager {
     }
 
     private void recoverUnassignedInventory() {
-        if (active != null || !queue.isEmpty() || inventoryConfig == null
+        if (active != null || foodPausedClassification != null
+                || !queue.isEmpty() || inventoryConfig == null
                 || ticks < nextInventoryRecoveryTick
                 || !registry.inventory().needsRecovery()) {
             return;
@@ -592,6 +626,9 @@ public final class TaskRunManager {
     }
 
     public synchronized void cancelAll() {
+        if (foodPausedClassification != null) {
+            cancel(foodPausedClassification.snapshot.runId());
+        }
         for (QueuedRun queued : List.copyOf(queue)) {
             TaskRunSnapshot cancelled = snapshot(
                     queued,
@@ -612,9 +649,22 @@ public final class TaskRunManager {
     private void tickFlow() {
         try {
             TaskFlowExecutor currentFlow = flow();
+            if (active.foodPauseRunId != null && queue.stream().noneMatch(
+                    run -> run.runId.equals(active.foodPauseRunId))) {
+                if (currentFlow.pausedAtSafeNode()) {
+                    pauseClassificationForFood();
+                    return;
+                }
+                active.foodPauseRunId = null;
+                currentFlow.resumeFromPause();
+            }
             TaskModuleResult result = currentFlow.tick();
             syncCompletedSteps();
             if (active.stopRequested) {
+                return;
+            }
+            if (active.foodPauseRunId != null && currentFlow.pausedAtSafeNode()) {
+                pauseClassificationForFood();
                 return;
             }
             switch (result.state()) {
@@ -622,7 +672,8 @@ public final class TaskRunManager {
                         result.state() == TaskModuleState.WAITING
                                 ? TaskRunState.WAITING
                                 : TaskRunState.RUNNING,
-                        result.message()
+                        active.foodPauseRunId == null ? result.message()
+                                : "等待安全节点进食：" + result.message()
                 );
                 case FAILED -> {
                     if (active.prepared.interruptionTask == null && !requiresGlobalCleanup()) {
@@ -675,6 +726,7 @@ public final class TaskRunManager {
         active.terminalState = state;
         active.terminalMessage = message;
         active.stopRequested = true;
+        active.foodPauseRunId = null;
         active.navigationStopConfirmed = false;
         if (active.flow != null) {
             active.completedSteps = active.flow.completedTopLevelSteps();
@@ -1151,12 +1203,62 @@ public final class TaskRunManager {
         if (!queued.prepared.priority.preempts(active.prepared.priority)) {
             return;
         }
+        if (!active.stopRequested && foodPausedClassification == null
+                && active.prepared.taskSettings != null
+                && active.prepared.taskSettings.foodPauseResumeEnabled()
+                && active.prepared.taskSettings.classificationTaskId()
+                        .equals(active.prepared.task.id())
+                && isAutomaticEating(queued.prepared)) {
+            active.foodPauseRunId = queued.runId;
+            flow().requestPauseAtSafeNode();
+            update(TaskRunState.WAITING, "等待安全节点进食");
+            return;
+        }
         active.preemptedByRunId = queued.snapshot.runId();
         String message = "被“" + queued.prepared.task.name()
                 + "”中断，正在安全停止";
         if (!active.stopRequested) {
             startTermination(TaskRunState.PREEMPTED, message);
         }
+    }
+
+    private static boolean isAutomaticEating(PreparedRun run) {
+        return run.tasks.getOrDefault(run.task.id(), run.task).autoEatOptions() != null
+                || run.triggers.stream().anyMatch(trigger ->
+                        trigger.targetTaskId().equals(run.task.id())
+                        && trigger.type()
+                                == dev.stowling.v2.model.TaskTriggerType.FOOD_LEVEL_AT_OR_BELOW)
+                && containsEating(run.steps);
+    }
+
+    private static boolean containsEating(List<TaskStep> steps) {
+        return steps.stream().anyMatch(step -> ConfigValidator.EAT_FOOD.equals(step.moduleId())
+                || containsEating(step.steps()) || containsEating(step.otherwise()));
+    }
+
+    private void pauseClassificationForFood() {
+        StopOutcome outcome = requestOrPollNavigationStop();
+        if (outcome == StopOutcome.PENDING) {
+            active.navigationStopRequested = true;
+            update(TaskRunState.WAITING, "分类已到安全节点，等待导航停止后进食");
+            return;
+        }
+        if (outcome == StopOutcome.UNSAFE) {
+            startTermination(TaskRunState.FAILED, "进食暂停时无法确认导航停止");
+            markInterruptionFailed("导航停止状态未知，已保留执行槽位", true);
+            return;
+        }
+        update(TaskRunState.WAITING, "分类已暂停：正在进食（classification-food-safe-pause）");
+        foodPausedClassification = active;
+        active = null;
+    }
+
+    private void updateFoodPausedSnapshot(String message) {
+        TaskRunSnapshot old = foodPausedClassification.snapshot;
+        foodPausedClassification.snapshot = new TaskRunSnapshot(old.runId(), old.taskId(),
+                old.taskName(), old.priority(), old.repeating(), TaskRunState.WAITING,
+                old.completedSteps(), old.totalSteps(), message, old.startedAt(), clock.instant());
+        replaceRetained(foodPausedClassification.snapshot);
     }
 
     private PreparedRun prepare(
@@ -1310,6 +1412,30 @@ public final class TaskRunManager {
         if (active != null) {
             return null;
         }
+        if (foodPausedClassification != null) {
+            QueuedRun meal = queue.stream().filter(run -> run.runId.equals(
+                    foodPausedClassification.foodPauseRunId)).findFirst().orElse(null);
+            if (meal != null) return startQueued(meal);
+            if (!foodPausedClassification.userCancelRequested
+                    && registry.inventory().observe().isEmpty()) {
+                updateFoodPausedSnapshot("进食已结束，等待背包可用后恢复分类");
+                return null;
+            }
+            active = foodPausedClassification;
+            foodPausedClassification = null;
+            active.foodPauseRunId = null;
+            active.navigationStopRequested = false;
+            active.navigationStopConfirmed = false;
+            active.flow.resumeFromPause();
+            if (active.userCancelRequested) {
+                startTermination(TaskRunState.CANCELLED, "任务已取消");
+            } else {
+                update(TaskRunState.RUNNING, "进食已结束，从安全节点恢复分类");
+                queue.stream().filter(run -> run.readyAtTick <= ticks).min(queueOrder())
+                        .ifPresent(this::requestPreemptionIfNeeded);
+            }
+            return active.snapshot;
+        }
         QueuedRun next = queue.stream()
                 .filter(run -> run.readyAtTick <= ticks)
                 .min(queueOrder())
@@ -1329,6 +1455,10 @@ public final class TaskRunManager {
     private void enqueuePrepared(PreparedRun prepared, int delayTicks, String message,
             boolean deduplicate, Continuation continuation) {
         if (deduplicate) {
+            if (foodPausedClassification != null
+                    && foodPausedClassification.prepared.task.id().equals(prepared.task.id())) {
+                return;
+            }
             if (active != null
                     && active.prepared.task.id().equals(prepared.task.id())) {
                 return;
@@ -1446,6 +1576,10 @@ public final class TaskRunManager {
     }
 
     private boolean isTaskPending(UUID taskId) {
+        if (foodPausedClassification != null
+                && foodPausedClassification.prepared.task.id().equals(taskId)) {
+            return true;
+        }
         if (active != null && active.prepared.task.id().equals(taskId)) {
             return true;
         }
@@ -1627,6 +1761,7 @@ public final class TaskRunManager {
     }
 
     private static final class ActiveRun {
+        private UUID foodPauseRunId;
         private int startStep;
         private TaskRunSnapshot snapshot;
         private final PreparedRun prepared;

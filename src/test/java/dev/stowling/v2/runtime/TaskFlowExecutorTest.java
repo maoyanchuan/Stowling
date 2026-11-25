@@ -33,6 +33,53 @@ import org.junit.jupiter.api.Test;
 
 class TaskFlowExecutorTest {
     @Test
+    void foodPausePreservesNestedRepeatAndWaitsUntilAfterArrivalAndTransfer() {
+        var workspace = new TaskRunWorkspace();
+        workspace.setCacheHasMore(true);
+        var moves = new AtomicInteger();
+        var transfers = new AtomicInteger();
+        var flow = flow(workspace, Map.of(
+                "MOVE_TO_COORDINATE", (context, step) -> action(() -> {
+                    moves.incrementAndGet();
+                    return TaskModuleResult.running("moving");
+                }, () -> TaskModuleResult.succeeded("arrived")),
+                "WITHDRAW_ITEMS", (context, step) -> action(() -> {
+                    transfers.incrementAndGet();
+                    context.workspace().setCacheHasMore(false);
+                    return TaskModuleResult.succeeded("confirmed");
+                })
+        ), List.of(TaskStep.repeat(UUID.randomUUID(),
+                Map.of(TaskModuleIds.CONDITION, "CACHE_HAS_MORE"),
+                List.of(actionStep("MOVE_TO_COORDINATE"), actionStep("WITHDRAW_ITEMS"))),
+                actionStep("MOVE_TO_COORDINATE")));
+        flow.tick();
+        flow.requestPauseAtSafeNode();
+        assertEquals(TaskModuleState.WAITING, flow.tick().state());
+        assertTrue(flow.pausedAtSafeNode());
+        assertEquals(1, moves.get());
+        assertEquals(1, transfers.get());
+        flow.resumeFromPause();
+        flow.tick();
+        assertEquals(TaskModuleState.SUCCEEDED, flow.tick().state());
+        assertEquals(2, moves.get());
+        assertEquals(1, transfers.get());
+    }
+
+    @Test
+    void foodPauseBeforeFirstModuleDoesNotCreateOrCancelAnAction() {
+        var calls = new AtomicInteger();
+        var flow = flow(new TaskRunWorkspace(), Map.of("COUNT", (context, step) ->
+                action(() -> success("counted", calls.incrementAndGet()))),
+                List.of(actionStep("COUNT")));
+        flow.requestPauseAtSafeNode();
+        assertEquals(TaskModuleState.WAITING, flow.tick().state());
+        assertEquals(0, calls.get());
+        flow.resumeFromPause();
+        assertEquals(TaskModuleState.SUCCEEDED, flow.tick().state());
+        assertEquals(1, calls.get());
+    }
+
+    @Test
     void fastStepsAreRecordedEvenWhenBothCompleteDuringOneMonitorTick() {
         TaskRunWorkspace workspace = new TaskRunWorkspace();
         TaskDiagnosticLog log = new TaskDiagnosticLog();

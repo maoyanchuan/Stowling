@@ -78,6 +78,7 @@ class V2ControlServerTest {
             task.addProperty("cacheLocationRef", "region:" + source.id());
             task.addProperty("collectionPriority", "NORMAL");
             task.addProperty("unstackableZoneRoutingEnabled", true);
+            task.addProperty("foodPauseResumeEnabled", true);
             task.add("classificationAreas", JsonParser.parseString(
                     "[{\"categoryZoneRef\":\"category-zone:" + zone.get("id").getAsString()
                             + "\"}]"));
@@ -89,6 +90,31 @@ class V2ControlServerTest {
                     .get("unstackableZoneRoutingEnabled").getAsBoolean());
             assertTrue(new ConfigStore(file).read().config().autoClassifyTasks().getFirst()
                     .unstackableZoneRoutingEnabled());
+            assertTrue(object(saved).getAsJsonObject("item")
+                    .get("foodPauseResumeEnabled").getAsBoolean());
+            assertTrue(new ConfigStore(file).read().config().autoClassifyTasks().getFirst()
+                    .foodPauseResumeEnabled());
+            var update = task.deepCopy();
+            update.remove("foodPauseResumeEnabled");
+            update.add("revision", object(saved).get("revision"));
+            update.addProperty("name", "Renamed sorting");
+            String path = "/v1/auto-classify-tasks/"
+                    + object(saved).getAsJsonObject("item").get("id").getAsString();
+            var renamed = fixture.send(path, "PUT", update.toString(), true);
+            assertEquals(200, renamed.statusCode());
+            assertTrue(object(renamed).getAsJsonObject("item")
+                    .get("foodPauseResumeEnabled").getAsBoolean());
+            update.add("revision", object(renamed).get("revision"));
+            update.addProperty("foodPauseResumeEnabled", false);
+            assertEquals(401, fixture.send(path, "PUT", update.toString(), false).statusCode());
+            var disabled = fixture.send(path, "PUT", update.toString(), true);
+            assertEquals(200, disabled.statusCode());
+            assertFalse(object(disabled).getAsJsonObject("item")
+                    .get("foodPauseResumeEnabled").getAsBoolean());
+            task.addProperty("foodPauseResumeEnabled", "true");
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    task.toString(), true).statusCode());
+            task.addProperty("foodPauseResumeEnabled", true);
             task.addProperty("unstackableZoneRoutingEnabled", "true");
             assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
                     task.toString(), true).statusCode());

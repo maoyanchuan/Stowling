@@ -318,6 +318,7 @@ public final class ConfigStore {
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
         allowed.add("unstackableZoneRoutingEnabled");
+        allowed.add("foodPauseResumeEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -332,6 +333,11 @@ public final class ConfigStore {
             }
 
             requireFields(definition, path, allowed, fields);
+            var foodPause = definition.get("foodPauseResumeEnabled");
+            if (foodPause != null && (!foodPause.isJsonPrimitive()
+                    || !foodPause.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("foodPauseResumeEnabled 必须是布尔值");
+            }
             var routing = definition.get("unstackableZoneRoutingEnabled");
             if (routing != null && (!routing.isJsonPrimitive()
                     || !routing.getAsJsonPrimitive().isBoolean())) {

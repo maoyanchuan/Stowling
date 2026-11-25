@@ -87,6 +87,7 @@
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
         unstackableRouting: document.querySelector("#auto-unstackable-zone-routing"),
+        foodPause: document.querySelector("#auto-food-pause-resume"),
         experimentsRoot: document.querySelector("#auto-experiments-settings"),
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
@@ -250,6 +251,7 @@
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
         elements.cacheEnabled.checked = draft.cachePolicy.enabled;
         elements.unstackableRouting.checked = draft.unstackableZoneRoutingEnabled;
+        elements.foodPause.checked = draft.foodPauseResumeEnabled;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         Picker.group(elements.point, "coordinate");
@@ -319,6 +321,7 @@
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
             unstackableZoneRoutingEnabled: kind === "CLASSIFICATION"
                 && elements.unstackableRouting.checked,
+            foodPauseResumeEnabled: kind === "CLASSIFICATION" && elements.foodPause.checked,
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
@@ -414,6 +417,10 @@
                     "生效改动：不可堆叠区统一识别与专属溢出"
                     + "（classification-unstackable-zone-routing）"));
             }
+            if (draft.foodPauseResumeEnabled) {
+                card.append(Stowling.element("p", "auto-config-note",
+                    "生效改动：分类安全暂停进食后续接（classification-food-safe-pause）"));
+            }
             elements.list.append(card);
             rows.set(item.id, row);
         }
@@ -464,6 +471,10 @@
         routingRow.hidden = !classification;
         routingRow.inert = !classification;
         elements.unstackableRouting.disabled = !classification;
+        const foodPauseRow = document.querySelector("#auto-food-pause-row");
+        foodPauseRow.hidden = !classification;
+        foodPauseRow.inert = !classification;
+        elements.foodPause.disabled = !classification;
         const packing = elements.cacheEnabled.closest("section");
         packing.hidden = classification;
         packing.inert = classification;
@@ -582,6 +593,9 @@
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
         const activeExperiments = [];
+        if (classification && elements.foodPause.checked) {
+            activeExperiments.push("分类安全暂停进食后续接（classification-food-safe-pause）");
+        }
         if (classification && elements.unstackableRouting.checked) {
             activeExperiments.push("不可堆叠区统一识别与专属溢出"
                 + "（classification-unstackable-zone-routing）");

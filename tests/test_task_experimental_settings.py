@@ -51,6 +51,16 @@ def test_task_experiments_are_after_cleanup_and_before_delete_actions() -> None:
     assert "inert" in page.attrs[menu]
 
 
+def test_classification_food_pause_uses_existing_experimental_submenu() -> None:
+    page = markup(WEB / "tasks.html")
+    control = "auto-food-pause-resume"
+    assert page.order.count(control) == 1
+    assert "auto-experiments-body" in page.parents[control]
+    assert page.attrs[control]["role"] == "switch"
+    assert "checked" not in page.attrs[control]
+    assert page.attrs[control]["aria-describedby"] == "auto-food-pause-hint"
+
+
 def test_classification_experiments_are_removed_and_pickup_packing_remains_in_the_footer() -> None:
     page = markup(WEB / "tasks.html")
     for removed in ("auto-classification-baseline", "auto-full-handoff", "auto-partial-demand",

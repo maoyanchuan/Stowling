@@ -4,14 +4,87 @@ import static dev.stowling.client.automation.DepositBatchConfirmation.Mode.LIVE;
 import static dev.stowling.client.automation.DepositBatchConfirmation.Mode.SERVER_SNAPSHOT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.stowling.automation.ContainerInteractionBatch;
 import dev.stowling.client.automation.DepositBatchConfirmation.Counts;
 import java.time.Duration;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class DepositBatchConfirmationTest {
+    @Test
+    void aFullUnlockedBackpackSharesOneBatchAndWaitsForItsLastServerSnapshot() {
+        Object menu = new Object();
+        var batch = new DepositBatchConfirmation();
+        var budget = new ContainerInteractionBatch("oak_log", true);
+        for (int slot = 0; slot < 34; slot++) {
+            assertTrue(budget.accepts("oak_log", 1));
+            budget.record(64, 1);
+            batch.record("oak_log", 64, key -> new Counts(2176, 128, 0));
+        }
+        assertEquals(2176, budget.count());
+        batch.awaitServer(menu, 10, 34);
+
+        for (int response = 1; response < 34; response++) {
+            int containerCount = 128 + response * 64;
+            assertFalse(batch.observeServer(menu, 10 + response,
+                    key -> new Counts(2176, containerCount, 0)));
+            assertFalse(batch.settled());
+            assertTrue(batch.accepted().isEmpty());
+        }
+
+        assertTrue(batch.observeServer(menu, 44, key -> new Counts(2176, 2304, 0)));
+        assertTrue(batch.fullyAccepted());
+        assertEquals(Map.of("oak_log", 2176), batch.accepted());
+    }
+
+    @Test
+    void mixedItemWaveConfirmsPartialAndRejectedStacksOnlyAfterAllResponses() {
+        Object menu = new Object();
+        var batch = new DepositBatchConfirmation();
+        var before = Map.of("stone", new Counts(128, 20, 0),
+                "disc#a", new Counts(1, 0, 0), "disc#b", new Counts(1, 0, 0));
+        batch.record("stone", 64, before::get);
+        batch.record("disc#a", 1, before::get);
+        batch.record("stone", 64, before::get);
+        batch.record("disc#b", 1, before::get);
+        batch.awaitServer(menu, 5, 4);
+        var after = Map.of("stone", new Counts(63, 85, 0),
+                "disc#a", new Counts(0, 1, 0), "disc#b", new Counts(1, 0, 0));
+
+        assertFalse(batch.observeServer(menu, 8, after::get));
+        assertFalse(batch.settled());
+        assertTrue(batch.accepted().isEmpty());
+        assertTrue(batch.observeServer(menu, 9, after::get));
+        assertTrue(batch.settled());
+        assertFalse(batch.fullyAccepted());
+        assertEquals(Map.of("stone", 65, "disc#a", 1), batch.accepted());
+    }
+
+    @Test
+    void laterWavesCannotUseAnEarlierResponseOrAReplacementMenu() {
+        Object menu = new Object();
+        var batch = new DepositBatchConfirmation();
+        batch.record("stone", 128, key -> new Counts(128, 2176, 0));
+        batch.awaitServer(menu, 44, 2);
+
+        assertFalse(batch.observeServer(menu, 44, key -> new Counts(0, 2304, 0)));
+        assertFalse(batch.observeServer(menu, 45, key -> new Counts(0, 2304, 0)));
+        assertFalse(batch.observeServer(new Object(), 100, key -> new Counts(0, 2304, 0)));
+        assertTrue(batch.accepted().isEmpty());
+        assertTrue(batch.observeServer(menu, 46, key -> new Counts(0, 2304, 0)));
+        assertEquals(Map.of("stone", 128), batch.accepted());
+    }
+
+    @Test
+    void aServerWaveMustIncludeAtLeastOneResponse() {
+        var batch = new DepositBatchConfirmation();
+        assertThrows(IllegalArgumentException.class,
+                () -> batch.awaitServer(new Object(), 1, 0));
+    }
+
     @Test
     void clientPredictionNeverConfirmsAnOrdinaryBatch() {
         Object menu = new Object();

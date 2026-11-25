@@ -14,15 +14,23 @@ final class DepositBatchConfirmation {
     }
 
     private Object batchMenu;
-    private long batchGeneration;
+    private long expectedServerGeneration;
 
     void awaitServer(Object menu, long generation) {
+        awaitServer(menu, generation, 1);
+    }
+
+    void awaitServer(Object menu, long generation, int snapshots) {
+        if (snapshots <= 0) {
+            throw new IllegalArgumentException("a server batch must expect at least one snapshot");
+        }
         batchMenu = menu;
-        batchGeneration = generation;
+        // Each forced-state quick move produces one ordered full server response.
+        expectedServerGeneration = Math.addExact(generation, snapshots);
     }
 
     boolean observeServer(Object menu, long generation, Function<String, Counts> counts) {
-        if (menu != batchMenu || generation <= batchGeneration) return false;
+        if (menu != batchMenu || generation < expectedServerGeneration) return false;
         for (var entry : moves.entrySet()) {
             var move = entry.getValue();
             int delta = counts.apply(entry.getKey()).container() - move.before.container();

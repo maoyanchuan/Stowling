@@ -14,9 +14,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -288,22 +290,29 @@ public final class MinecraftContainerTransferPort
             TransferCandidate candidate) {
         active.phase = Phase.CONFIRMING;
         active.batch = new DepositBatchConfirmation();
-        active.batch.awaitServer(menu, MinecraftContainerInteractions.generation(menu));
         active.batchMenu = menu;
         active.batchId = ++nextBatch;
-        active.sourceSlot = candidate.slot();
         active.deadline = Instant.now().plus(TRANSFER_TIMEOUT);
         active.pendingStartedAt = System.nanoTime();
+        long generation = MinecraftContainerInteractions.generation(menu);
         var before = MinecraftContainerInteractions.serverCounts(menu, containerSlots(menu));
-        String key = candidate.itemId();
-        active.batch.record(key, candidate.plan().moveCount(), item ->
-                new DepositBatchConfirmation.Counts(0, before.getOrDefault(item, 0), 0));
+        var budget = new ContainerInteractionBatch(candidate.itemId(), true);
+        Set<Integer> sources = new LinkedHashSet<>();
+        while (candidate != null && budget.accepts(candidate.itemId(), 1)) {
+            active.sourceSlot = candidate.slot();
+            int moved = candidate.plan().moveCount();
+            active.batch.record(candidate.itemId(), moved, item ->
+                    new DepositBatchConfirmation.Counts(0, before.getOrDefault(item, 0), 0));
+            MinecraftContainerInteractions.quickMoveConfirmed(minecraft, menu, candidate.slot());
+            sources.add(candidate.slot());
+            budget.record(moved, 1);
+            candidate = findCandidate(menu, active.remaining, sources);
+        }
+        active.batch.awaitServer(menu, generation, sources.size());
         TaskTrace.event("CALL", "deposit.batch", "batch=" + active.batchId
-                + "; menu=" + menu.containerId + "; sourceSlot=" + candidate.slot()
-                + "; inventoryIndex=" + MinecraftContainerInteractions.inventoryIndex(
-                        menu, candidate.slot()) + "; planned=" + candidate.plan().moveCount(),
-                0, false);
-        MinecraftContainerInteractions.quickMoveConfirmed(minecraft, menu, candidate.slot());
+                + "; menu=" + menu.containerId + "; sourceSlots=" + sources
+                + "; transfers=" + sources.size() + "; planned=" + budget.count()
+                + "; expectedGeneration=" + (generation + sources.size()), 0, false);
         return ContainerTransferResult.pending("等待本批服务器槽位快照", remaining());
     }
 
@@ -326,10 +335,10 @@ public final class MinecraftContainerTransferPort
                 + "; accepted=" + active.batch.accepted(), 0, false);
         if (!menu.getCarried().isEmpty()) return beginRollback("服务器确认后鼠标仍有物品");
         if (active.batch.accepted().isEmpty()) {
-            return ContainerTransferResult.pending("服务器尚未接受本格存入，原地等待确认", remaining());
+            return ContainerTransferResult.pending("服务器尚未接受本批存入，原地等待确认", remaining());
         }
         applyConfirmed();
-        return succeed("本格实际存入已由服务器确认，继续核对背包");
+        return succeed("本批实际存入已由服务器确认，继续核对背包");
     }
 
     private ContainerTransferResult pollConfirmation() {
@@ -656,8 +665,17 @@ public final class MinecraftContainerTransferPort
             AbstractContainerMenu menu,
             Map<String, Integer> remaining
     ) {
+        return findCandidate(menu, remaining, Set.of());
+    }
+
+    private TransferCandidate findCandidate(
+            AbstractContainerMenu menu,
+            Map<String, Integer> remaining,
+            Set<Integer> transferredSlots
+    ) {
         if (remaining.isEmpty()) return null;
         for (int slotIndex : playerSlots(menu)) {
+            if (transferredSlots.contains(slotIndex)) continue;
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
             if (stack.isEmpty() || !slot.mayPickup(minecraft.player)) continue;

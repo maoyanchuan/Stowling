@@ -224,7 +224,7 @@
                 }
             }
             if (!unstackable && options.recognitionMode === "unstackable") {
-                throw new Error("不可堆叠大类分类需要在整个分类区选择。");
+                throw new Error("不可堆叠分类需要在整个分类区选择。");
             }
             result.ruleId = unstackable ? "UNSTACKABLE_ITEMS"
                 : options.recognitionMode === "container-item"

@@ -2109,7 +2109,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     : effective == null ? binding.ruleId() : effective.ruleId();
             if (!unstackable && globalOptions != null
                     && UnstackableCategoryRule.ID.equals(ruleId)) {
-                throw new V2ValidationException("不可堆叠大类分类需要在整个分类区选择");
+                throw new V2ValidationException("不可堆叠分类需要在整个分类区选择");
             }
             var policy = effective == null ? binding.storagePolicy()
                     : effective.storagePolicy(binding.storagePolicy());

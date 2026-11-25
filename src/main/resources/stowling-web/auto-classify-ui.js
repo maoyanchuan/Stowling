@@ -202,7 +202,7 @@
             const unstackable = zone.bindings?.length
                 && zone.bindings.every(binding => binding.ruleId === "UNSTACKABLE_ITEMS");
             if (unstackable) {
-                option.dataset.description = "不可堆叠大类分类 · "
+                option.dataset.description = "不可堆叠分类 · "
                     + (zone.categoryOptions?.unstackableOverflowRef
                         ? "已配置专属溢出" : "余物保留来源");
             }

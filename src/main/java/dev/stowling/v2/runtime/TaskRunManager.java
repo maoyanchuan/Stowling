@@ -1205,7 +1205,8 @@ public final class TaskRunManager {
         }
         if (!active.stopRequested && foodPausedClassification == null
                 && active.prepared.taskSettings != null
-                && active.prepared.taskSettings.foodPauseResumeEnabled()
+                && active.prepared.taskSettings.kind()
+                        == AutoClassifyDefinition.Kind.CLASSIFICATION
                 && active.prepared.taskSettings.classificationTaskId()
                         .equals(active.prepared.task.id())
                 && isAutomaticEating(queued.prepared)) {
@@ -1248,7 +1249,7 @@ public final class TaskRunManager {
             markInterruptionFailed("导航停止状态未知，已保留执行槽位", true);
             return;
         }
-        update(TaskRunState.WAITING, "分类已暂停：正在进食（classification-food-safe-pause）");
+        update(TaskRunState.WAITING, "分类已暂停：正在进食");
         foodPausedClassification = active;
         active = null;
     }

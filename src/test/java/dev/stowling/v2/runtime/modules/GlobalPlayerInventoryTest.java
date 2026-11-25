@@ -44,6 +44,27 @@ class GlobalPlayerInventoryTest {
     private static final String BREAD = "minecraft:bread";
 
     @Test
+    void optInIsPassedToEveryMealWhileBaselineKeepsUsingTheOriginalPort() {
+        for (boolean enabled : List.of(false, true)) {
+            var source = new InventorySource(Map.of(BREAD, 5));
+            var food = new MealFoodPort(source);
+            var registry = registry(source, food);
+            var runs = new TaskRunManager(registry.navigation(), registry);
+            runs.tick();
+            var view = registry.inventory().view(false, true, Map.of());
+            InventorySlotFixture.lockFirst(registry.inventory(), view.revision(), BREAD, true);
+            var task = new TaskDefinition(UUID.randomUUID(), "Meal", TaskPriority.URGENT, false,
+                    TaskFlowTemplates.scheduledEating(null, BREAD, 18, 64, true, enabled));
+            runs.start(task, List.of());
+            for (int tick = 0; tick < 10 && runs.busy(); tick++) runs.tick();
+            assertFalse(runs.busy());
+            assertEquals(20, food.level);
+            assertEquals(List.of("eat", "eat"), food.actions);
+            assertEquals(enabled ? 2 : 0, food.guardedMeals);
+        }
+    }
+
+    @Test
     void scheduledMealUsesProtectedStockBeforeWithdrawingAndProtectsTheRefill() {
         InventorySource source = new InventorySource(Map.of(BREAD, 1));
         MealFoodPort food = new MealFoodPort(source);
@@ -412,6 +433,7 @@ class GlobalPlayerInventoryTest {
     }
 
     private static final class MealFoodPort implements FoodConsumptionPort {
+        private int guardedMeals;
         private final InventorySource source;
         private final List<String> actions = new ArrayList<>();
         private int level = 12;
@@ -461,6 +483,14 @@ class GlobalPlayerInventoryTest {
             source.set(remaining == 0 ? Map.of() : Map.of(BREAD, remaining));
             level += 4;
             return FoodConsumptionResult.succeeded("eaten", Map.of(BREAD, 1));
+        }
+
+        @Override
+        public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys,
+                boolean worldUseGuardEnabled) {
+            assertTrue(worldUseGuardEnabled);
+            guardedMeals++;
+            return startEating(itemId, allowedKeys);
         }
 
         @Override

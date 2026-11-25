@@ -1170,8 +1170,7 @@ public final class ConfigValidator {
                         CONTAINER_TYPES,
                         MAX_VOLUME,
                         ALLOW_EMPTY_CONTAINER_SCAN,
-                        MARKER_SOURCES,
-                        dev.stowling.v2.model.UnstackableZoneRouting.ENABLED
+                        MARKER_SOURCES
                 ),
                 Set.of()
         );
@@ -1180,7 +1179,6 @@ public final class ConfigValidator {
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
         requireOptionalBoolean(step, ALLOW_EMPTY_CONTAINER_SCAN);
         requireOptionalMarkerSources(step);
-        requireOptionalBoolean(step, dev.stowling.v2.model.UnstackableZoneRouting.ENABLED);
     }
 
     private static void requireCoordinateStep(
@@ -1437,10 +1435,17 @@ public final class ConfigValidator {
     private static void requireEatFoodStep(TaskStep step) {
         requireParameters(
                 step,
-                Set.of(FOOD_ITEM_ID, ITEM_SOURCE),
+                Set.of(FOOD_ITEM_ID, ITEM_SOURCE,
+                        dev.stowling.v2.model.AutoEatOptions.WORLD_USE_GUARD),
                 Set.of(FOOD_ITEM_ID)
         );
         requireFoodItemId(step);
+        requireOptionalBoolean(step, dev.stowling.v2.model.AutoEatOptions.WORLD_USE_GUARD);
+        if (Boolean.parseBoolean(step.parameters().get(
+                dev.stowling.v2.model.AutoEatOptions.WORLD_USE_GUARD))
+                && !"protected".equals(step.parameters().get(ITEM_SOURCE))) {
+            throw new V2ValidationException("进食交互保护仅用于锁定的自动进食食物");
+        }
         String source = step.parameters().get(ITEM_SOURCE);
         if (source != null && !Set.of("protected", "managed").contains(source)) {
             throw new V2ValidationException("food itemSource must be protected or managed");

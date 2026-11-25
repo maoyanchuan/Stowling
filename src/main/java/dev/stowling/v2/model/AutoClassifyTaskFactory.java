@@ -90,9 +90,6 @@ public final class AutoClassifyTaskFactory {
         for (AutoClassifyAreaDefinition area : definition.classificationAreas()) {
             Map<String, String> scan = new LinkedHashMap<>();
             scan.put(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN, "true");
-            if (definition.unstackableZoneRoutingEnabled()) {
-                scan.put(UnstackableZoneRouting.ENABLED, "true");
-            }
             List<TaskStep> preResolveSteps = List.of(TaskFlowTemplates.refreshMarkerContainers(
                     UUID.randomUUID(), area.categoryZoneRef()));
             classificationSteps.addAll(
@@ -104,7 +101,7 @@ public final class AutoClassifyTaskFactory {
                             definition.kind() == Kind.CLASSIFICATION
                     )
             );
-            if (definition.unstackableZoneRoutingEnabled()) {
+            if (definition.kind() == Kind.CLASSIFICATION) {
                 classificationSteps.add(TaskStep.action(UUID.randomUUID(),
                         UnstackableZoneRouting.MODULE, Map.of(
                                 ConfigValidator.CACHE_LOCATION_REF, definition.cacheLocationRef(),

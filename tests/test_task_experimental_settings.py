@@ -51,14 +51,21 @@ def test_task_experiments_are_after_cleanup_and_before_delete_actions() -> None:
     assert "inert" in page.attrs[menu]
 
 
-def test_classification_food_pause_uses_existing_experimental_submenu() -> None:
+def test_merged_classification_controls_are_removed() -> None:
     page = markup(WEB / "tasks.html")
-    control = "auto-food-pause-resume"
-    assert page.order.count(control) == 1
-    assert "auto-experiments-body" in page.parents[control]
-    assert page.attrs[control]["role"] == "switch"
+    for control in ("auto-food-pause-resume", "auto-unstackable-zone-routing"):
+        assert control not in page.attrs
+
+
+def test_eating_guard_uses_existing_footer_structure() -> None:
+    page = markup(WEB / "tasks.html")
+    control = "auto-eat-world-use-guard"
+    assert "auto-eat-experiments-body" in page.parents[control]
+    assert page.order.index("auto-eat-prefer-inventory") < page.order.index(control)
+    assert page.order.index(control) < page.order.index("delete-auto-eat")
     assert "checked" not in page.attrs[control]
-    assert page.attrs[control]["aria-describedby"] == "auto-food-pause-hint"
+    assert "inert" in page.attrs["auto-eat-experiments"]
+    assert page.attrs["auto-eat-experiments-toggle"]["aria-expanded"] == "false"
 
 
 def test_classification_experiments_are_removed_and_pickup_packing_remains_in_the_footer() -> None:

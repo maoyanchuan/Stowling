@@ -957,7 +957,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "intervalSeconds");
         requireFieldsAny(json, Set.of("revision", "name", "foodItemId", "coordinateId",
                 "foodLevelThreshold", "intervalSeconds", "enabled", "priority", "autoRefill",
-                "refillCount", "preferInventory"), required);
+                "refillCount", "preferInventory", "worldUseGuardEnabled"), required);
         UUID coordinate = optionalUuid(json, "coordinateId");
         Boolean autoRefill = optionalBooleanValue(json, "autoRefill");
         Integer refillCount = optionalInteger(json, "refillCount");
@@ -969,7 +969,8 @@ public final class V2ControlServer implements AutoCloseable {
                         : autoRefill,
                 refillCount == null
                         ? dev.stowling.v2.model.AutoEatOptions.DEFAULT_REFILL_COUNT : refillCount,
-                preferInventory == null || preferInventory);
+                preferInventory == null || preferInventory,
+                Boolean.TRUE.equals(optionalBooleanValue(json, "worldUseGuardEnabled")));
     }
 
     private static AutoClassifyTaskRequest autoClassifyRequest(
@@ -994,9 +995,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "unstackableZoneRoutingEnabled"),
-                optionalBooleanValue(json, "foodPauseResumeEnabled")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1023,9 +1022,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "unstackableZoneRoutingEnabled"),
-                optionalBooleanValue(json, "foodPauseResumeEnabled")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1111,8 +1108,6 @@ public final class V2ControlServer implements AutoCloseable {
                 "cachePolicy",
                 "remainderPolicy",
                 "robotWarehouseMixedBoxes",
-                "unstackableZoneRoutingEnabled",
-                "foodPauseResumeEnabled",
 
                 "kind",
                 "followUpTaskRef",

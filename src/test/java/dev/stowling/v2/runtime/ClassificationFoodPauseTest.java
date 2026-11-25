@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 class ClassificationFoodPauseTest {
     @Test
     void finishesTransferThenResumesSameRunAndLedgerBeforeFreshNavigation() {
-        var fixture = new Fixture(true, true);
+        var fixture = new Fixture(true);
         var run = fixture.beginTransfer();
         var workspace = fixture.workspace;
         var meal = fixture.manager.start(fixture.meal, fixture.config, null);
@@ -70,7 +70,7 @@ class ClassificationFoodPauseTest {
 
     @Test
     void cancellationWhileEatingOnlyRunsCleanupWithoutResumingTransfers() {
-        var fixture = new Fixture(true, true);
+        var fixture = new Fixture(true);
         var run = fixture.beginTransfer();
         fixture.manager.start(fixture.meal, fixture.config, null);
         fixture.transferConfirmed = true;
@@ -84,8 +84,8 @@ class ClassificationFoodPauseTest {
     }
 
     @Test
-    void disabledExperimentAndUnrelatedTasksKeepOriginalPreemption() {
-        for (var fixture : List.of(new Fixture(false, true), new Fixture(true, false))) {
+    void unrelatedTasksKeepOriginalPreemption() {
+        for (var fixture : List.of(new Fixture(false))) {
             var run = fixture.beginTransfer();
             fixture.manager.start(fixture.meal, fixture.config, null);
             for (int tick = 0; tick < 8; tick++) fixture.manager.tick();
@@ -96,7 +96,7 @@ class ClassificationFoodPauseTest {
 
     @Test
     void cancellingQueuedMealBeforeBoundaryLetsClassificationContinue() {
-        var fixture = new Fixture(true, true);
+        var fixture = new Fixture(true);
         var run = fixture.beginTransfer();
         var meal = fixture.manager.start(fixture.meal, fixture.config, null);
         fixture.manager.cancel(meal.runId());
@@ -108,7 +108,7 @@ class ClassificationFoodPauseTest {
 
     @Test
     void waitsForNavigationStopConfirmationBeforeGivingEatingTheSlot() {
-        var fixture = new Fixture(true, true);
+        var fixture = new Fixture(true);
         fixture.beginTransfer();
         var meal = fixture.manager.start(fixture.meal, fixture.config, null);
         fixture.transferConfirmed = true;
@@ -133,14 +133,14 @@ class ClassificationFoodPauseTest {
         private boolean transferConfirmed;
         private int cleanups;
 
-        private Fixture(boolean enabled, boolean classification) {
+        private Fixture(boolean classification) {
             var source = new RegionDefinition(UUID.randomUUID(), "Source", 0, 64, 0, 1, 64, 0);
             var definition = new Gson().fromJson("""
                     {"id":"%s","name":"Sort","kind":"CLASSIFICATION",
                      "cacheLocationRef":"region:%s",
                      "classificationAreas":[{"categoryZoneRef":"category-zone:%s"}],
-                     "collectionPriority":"NORMAL","foodPauseResumeEnabled":%s}
-                    """.formatted(UUID.randomUUID(), source.id(), UUID.randomUUID(), enabled),
+                     "collectionPriority":"NORMAL"}
+                    """.formatted(UUID.randomUUID(), source.id(), UUID.randomUUID()),
                     AutoClassifyDefinition.class);
             task = new TaskDefinition(classification ? definition.id() : UUID.randomUUID(),
                     "Sort", TaskPriority.BACKGROUND, false,

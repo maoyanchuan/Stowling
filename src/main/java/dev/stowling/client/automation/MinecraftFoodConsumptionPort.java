@@ -42,6 +42,7 @@ public final class MinecraftFoodConsumptionPort
 
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
+    private final dev.stowling.automation.FoodUseGuard useGuard;
     private ActiveEating active;
     private ActiveAcquiringFood acquiring;
 
@@ -51,6 +52,7 @@ public final class MinecraftFoodConsumptionPort
     ) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.useGuard = ((MinecraftFoodUseAccess) minecraft).stowling$foodUseGuard();
     }
 
     @Override
@@ -71,15 +73,22 @@ public final class MinecraftFoodConsumptionPort
 
     @Override
     public FoodConsumptionResult startEating(String itemId) {
-        return beginEating(itemId, null);
+        return beginEating(itemId, null, false);
     }
 
     @Override
     public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys) {
-        return beginEating(itemId, Set.copyOf(allowedKeys));
+        return beginEating(itemId, Set.copyOf(allowedKeys), false);
     }
 
-    private FoodConsumptionResult beginEating(String itemId, Set<String> allowedKeys) {
+    @Override
+    public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys,
+            boolean worldUseGuardEnabled) {
+        return beginEating(itemId, Set.copyOf(allowedKeys), worldUseGuardEnabled);
+    }
+
+    private FoodConsumptionResult beginEating(String itemId, Set<String> allowedKeys,
+            boolean worldUseGuardEnabled) {
         Objects.requireNonNull(itemId, "itemId");
         if (!scheduler.isClientThread()) {
             return FoodConsumptionResult.failed(
@@ -149,6 +158,7 @@ public final class MinecraftFoodConsumptionPort
                 allowedKeys != null,
                 !useKeyWasDown
         );
+        useGuard.begin(worldUseGuardEnabled);
         return FoodConsumptionResult.pending("正在进食 " + itemId);
     }
 
@@ -231,6 +241,10 @@ public final class MinecraftFoodConsumptionPort
 
     @Override
     public void cancelEating() {
+        if (!scheduler.isClientThread() && useGuard.blocksWorldUse()) {
+            scheduler.execute(this::cancelEating);
+            return;
+        }
         if (scheduler.isClientThread()) {
             LocalPlayer player = minecraft.player;
             if (player != null) {
@@ -744,6 +758,7 @@ public final class MinecraftFoodConsumptionPort
             minecraft.options.keyUse.setDown(false);
             active.releaseUseKey = false;
         }
+        useGuard.end();
     }
 
     private void swapFoodSlot(LocalPlayer player, FoodSlot slot) {

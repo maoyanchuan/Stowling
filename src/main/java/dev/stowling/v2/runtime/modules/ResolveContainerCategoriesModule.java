@@ -45,8 +45,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 ResourceReferenceSupport.categoryZone(context, reference);
         this.zone = dev.stowling.v2.model.UnstackableZoneRouting.forExecution(
                 TaskModuleSupport.categoryZoneSelection(step, configuredZone),
-                TaskModuleSupport.booleanParameter(step,
-                        dev.stowling.v2.model.UnstackableZoneRouting.ENABLED, false));
+                context.workspace().classificationTask());
         this.containerTypes = TaskModuleSupport.containerTypes(step);
         this.maxVolume = TaskModuleSupport.integerParameter(
                 step,

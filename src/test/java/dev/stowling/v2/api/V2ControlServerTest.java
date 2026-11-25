@@ -77,8 +77,6 @@ class V2ControlServerTest {
             task.addProperty("kind", "CLASSIFICATION");
             task.addProperty("cacheLocationRef", "region:" + source.id());
             task.addProperty("collectionPriority", "NORMAL");
-            task.addProperty("unstackableZoneRoutingEnabled", true);
-            task.addProperty("foodPauseResumeEnabled", true);
             task.add("classificationAreas", JsonParser.parseString(
                     "[{\"categoryZoneRef\":\"category-zone:" + zone.get("id").getAsString()
                             + "\"}]"));
@@ -86,38 +84,12 @@ class V2ControlServerTest {
                     task.toString(), false).statusCode());
             var saved = fixture.send("/v1/auto-classify-tasks", "POST", task.toString(), true);
             assertEquals(201, saved.statusCode());
-            assertTrue(object(saved).getAsJsonObject("item")
-                    .get("unstackableZoneRoutingEnabled").getAsBoolean());
-            assertTrue(new ConfigStore(file).read().config().autoClassifyTasks().getFirst()
-                    .unstackableZoneRoutingEnabled());
-            assertTrue(object(saved).getAsJsonObject("item")
-                    .get("foodPauseResumeEnabled").getAsBoolean());
-            assertTrue(new ConfigStore(file).read().config().autoClassifyTasks().getFirst()
-                    .foodPauseResumeEnabled());
-            var update = task.deepCopy();
-            update.remove("foodPauseResumeEnabled");
-            update.add("revision", object(saved).get("revision"));
-            update.addProperty("name", "Renamed sorting");
-            String path = "/v1/auto-classify-tasks/"
-                    + object(saved).getAsJsonObject("item").get("id").getAsString();
-            var renamed = fixture.send(path, "PUT", update.toString(), true);
-            assertEquals(200, renamed.statusCode());
-            assertTrue(object(renamed).getAsJsonObject("item")
-                    .get("foodPauseResumeEnabled").getAsBoolean());
-            update.add("revision", object(renamed).get("revision"));
-            update.addProperty("foodPauseResumeEnabled", false);
-            assertEquals(401, fixture.send(path, "PUT", update.toString(), false).statusCode());
-            var disabled = fixture.send(path, "PUT", update.toString(), true);
-            assertEquals(200, disabled.statusCode());
-            assertFalse(object(disabled).getAsJsonObject("item")
-                    .get("foodPauseResumeEnabled").getAsBoolean());
-            task.addProperty("foodPauseResumeEnabled", "true");
-            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
-                    task.toString(), true).statusCode());
-            task.addProperty("foodPauseResumeEnabled", true);
-            task.addProperty("unstackableZoneRoutingEnabled", "true");
-            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
-                    task.toString(), true).statusCode());
+            var item = object(saved).getAsJsonObject("item");
+            assertFalse(item.has("unstackableZoneRoutingEnabled"));
+            assertFalse(item.has("foodPauseResumeEnabled"));
+            assertTrue(new ConfigStore(file).read().config().tasks().stream()
+                    .flatMap(definition -> definition.steps().stream()).anyMatch(step ->
+                            "ROUTE_UNSTACKABLE_ZONE_REMAINDERS".equals(step.moduleId())));
         }
     }
 
@@ -134,11 +106,14 @@ class V2ControlServerTest {
             payload.addProperty("autoRefill", false);
             payload.addProperty("refillCount", 23);
             payload.addProperty("preferInventory", false);
+            payload.addProperty("worldUseGuardEnabled", true);
             assertEquals(401, fixture.send("/v1/auto-eat-tasks", "POST",
                     payload.toString(), false).statusCode());
             var created = fixture.send("/v1/auto-eat-tasks", "POST", payload.toString(), true);
             assertEquals(201, created.statusCode());
             response = object(created);
+            assertTrue(response.getAsJsonArray("items").get(0).getAsJsonObject()
+                    .getAsJsonObject("settings").get("worldUseGuardEnabled").getAsBoolean());
             var settings = response.getAsJsonArray("items").get(0).getAsJsonObject()
                     .getAsJsonObject("settings");
             assertEquals("NORMAL", settings.get("priority").getAsString());
@@ -146,6 +121,10 @@ class V2ControlServerTest {
             assertFalse(settings.get("autoRefill").getAsBoolean());
             assertFalse(settings.get("preferInventory").getAsBoolean());
             payload.add("revision", response.get("revision"));
+            payload.addProperty("worldUseGuardEnabled", "true");
+            assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",
+                    payload.toString(), true).statusCode());
+            payload.addProperty("worldUseGuardEnabled", true);
             for (int count : List.of(0, 2305)) {
                 payload.addProperty("refillCount", count);
                 assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",

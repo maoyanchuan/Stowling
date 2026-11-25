@@ -73,7 +73,8 @@ def eat_page() -> Iterator[Any]:
                             foodLevelThreshold: body.foodLevelThreshold,
                             intervalSeconds: body.intervalSeconds, priority: body.priority,
                             autoRefill: body.autoRefill, refillCount: body.refillCount,
-                            preferInventory: body.preferInventory
+                            preferInventory: body.preferInventory,
+                            worldUseGuardEnabled: body.worldUseGuardEnabled
                         });
                         taskId = backend.tasks[0].id;
                     } else if (method === 'POST') {
@@ -328,3 +329,35 @@ def test_template_layout_and_dropdown_fit_both_themes(
     assert bounds["x"] + bounds["width"] <= width
     assert menu.get_by_role("option", selected=True).count() == 1
     assert menu.evaluate("node => getComputedStyle(node).gap") == "6px"
+
+
+
+def test_world_use_guard_retains_saved_value_when_debug_is_hidden(eat_page: Any) -> None:
+    page = eat_page
+    open_settings(page)
+    assert page.locator("#auto-eat-experiments").is_hidden()
+    assert not page.locator("#auto-eat-world-use-guard").is_checked()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => true};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    assert page.locator("#auto-eat-experiments-body").is_hidden()
+    page.locator("#auto-eat-experiments-toggle").click()
+    settle(page)
+    page.locator("#auto-eat-world-use-guard").check()
+    page.wait_for_function("backend.tasks[0].settings.worldUseGuardEnabled === true")
+    assert page.locator("#auto-eat-experiment-active").is_visible()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => false};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    assert page.locator("#auto-eat-experiments").is_hidden()
+    assert page.locator("#auto-eat-experiments").evaluate("node => node.inert")
+    assert page.locator("#auto-eat-world-use-guard").is_checked()
+    assert page.locator("#auto-eat-experiment-active").is_visible()
+    page.locator("#auto-eat-threshold").fill("15")
+    page.wait_for_function("backend.tasks[0].settings.foodLevelThreshold === 15")
+    assert page.evaluate("backend.tasks[0].settings.worldUseGuardEnabled")
+    assert "auto-eat-world-use-guard" in page.locator(
+        "#auto-eat-list .auto-config-note"
+    ).first.inner_text()

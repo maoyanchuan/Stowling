@@ -65,8 +65,7 @@ public final class TaskFlowNormalizer {
                     definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                     definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                     definition.followUpEnabled(), definition.remainderPolicy(),
-                    definition.robotWarehouseMixedBoxes(),
-                    definition.unstackableZoneRoutingEnabled(), definition.foodPauseResumeEnabled());
+                    definition.robotWarehouseMixedBoxes());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -540,6 +539,10 @@ public final class TaskFlowNormalizer {
                 step.kind(),
                 step.parameters()
         );
+        if (parameters.containsKey("unstackableZoneRoutingEnabled")) {
+            parameters = new LinkedHashMap<>(parameters);
+            parameters.remove("unstackableZoneRoutingEnabled");
+        }
         if (autoClassify && overflow) {
             parameters = new LinkedHashMap<>(parameters);
             parameters.remove(ConfigValidator.TARGET_REF);

@@ -915,8 +915,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
                 request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds(),
                 request.followUpEnabled(), request.remainderPolicy(),
-                request.robotWarehouseMixedBoxes(), request.unstackableZoneRoutingEnabled(),
-                request.foodPauseResumeEnabled()
+                request.robotWarehouseMixedBoxes()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -1011,13 +1010,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.remainderPolicy(),
                 request.robotWarehouseMixedBoxes() == null
                         ? existing.robotWarehouseMixedBoxes()
-                        : request.robotWarehouseMixedBoxes(),
-                request.unstackableZoneRoutingEnabled() == null
-                        ? existing.unstackableZoneRoutingEnabled()
-                        : request.unstackableZoneRoutingEnabled(),
-                request.foodPauseResumeEnabled() == null
-                        ? existing.foodPauseResumeEnabled()
-                        : request.foodPauseResumeEnabled()
+                        : request.robotWarehouseMixedBoxes()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1620,9 +1613,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             Integer followUpDelaySeconds,
             Boolean followUpEnabled,
             dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
-            Boolean robotWarehouseMixedBoxes,
-            Boolean unstackableZoneRoutingEnabled,
-            Boolean foodPauseResumeEnabled
+            Boolean robotWarehouseMixedBoxes
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1649,8 +1640,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 overflowEnabled,
                 cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
                 detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds,
-                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes,
-                unstackableZoneRoutingEnabled, foodPauseResumeEnabled
+                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes
         );
     }
 
@@ -1674,8 +1664,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                 definition.followUpEnabled(), definition.remainderPolicy(),
-                definition.robotWarehouseMixedBoxes(), definition.unstackableZoneRoutingEnabled(),
-                definition.foodPauseResumeEnabled()
+                definition.robotWarehouseMixedBoxes()
         );
     }
 
@@ -1715,9 +1704,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cleanupPolicy(), definition.overflowDestinationRef(),
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.followUpDelaySeconds(), definition.followUpEnabled(),
-                definition.remainderPolicy(), definition.robotWarehouseMixedBoxes(),
-                definition.unstackableZoneRoutingEnabled(),
-                definition.foodPauseResumeEnabled()
+                definition.remainderPolicy(), definition.robotWarehouseMixedBoxes()
         );
     }
 

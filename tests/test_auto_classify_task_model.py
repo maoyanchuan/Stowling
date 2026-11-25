@@ -41,29 +41,20 @@ def _run(expression: str) -> Any:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_food_pause_survives_save_and_reload(enabled: bool) -> None:
+def test_merged_classification_switches_are_not_saved_or_returned(enabled: bool) -> None:
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
-        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:source",
-            classificationAreas: [{categoryZoneId: "zone"}], foodPauseResumeEnabled: """
-        + json.dumps(enabled) + """};
+        const draft = model.draftFromTask({kind: "CLASSIFICATION",
+            cacheLocationRef: "region:source", classificationAreas: [
+                {categoryZoneRef: "category-zone:zone"}], collectionPriority: "NORMAL",
+            foodPauseResumeEnabled: """ + json.dumps(enabled) + """,
+            unstackableZoneRoutingEnabled: """ + json.dumps(enabled) + """});
         const saved = model.payload(draft, {regions: [{id: "source"}],
             categoryZones: [{id: "zone"}]});
-        return [model.newDraft("CLASSIFICATION").foodPauseResumeEnabled,
-            model.draftFromTask({kind: "CLASSIFICATION"}).foodPauseResumeEnabled,
-            saved.foodPauseResumeEnabled, model.draftFromTask(saved).foodPauseResumeEnabled];
+        return [draft, saved].map(value => [Object.hasOwn(value, "foodPauseResumeEnabled"),
+            Object.hasOwn(value, "unstackableZoneRoutingEnabled")]);
     })()""")
-    assert result == [False, False, enabled, enabled]
-
-
-def test_pickup_cannot_enable_classification_food_pause() -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        return model.payload({...model.newDraft("PICKUP"), coordinateId: "point",
-            cacheLocationRef: "coordinate:point", foodPauseResumeEnabled: true},
-            {coordinates: [{id: "point"}]}).foodPauseResumeEnabled;
-    })()""")
-    assert result is False
+    assert result == [[False, False], [False, False]]
 
 
 @pytest.mark.parametrize("enabled", [True, False])

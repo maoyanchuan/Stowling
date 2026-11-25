@@ -6,8 +6,16 @@ public record AutoEatOptions(
         boolean autoRefill,
         UUID coordinateId,
         int refillCount,
-        boolean preferInventory
+        boolean preferInventory,
+        boolean worldUseGuardEnabled
 ) {
+    public static final String WORLD_USE_GUARD = "worldUseGuardEnabled";
+
+    public AutoEatOptions(boolean autoRefill, UUID coordinateId, int refillCount,
+            boolean preferInventory) {
+        this(autoRefill, coordinateId, refillCount, preferInventory, false);
+    }
+
     public static final int DEFAULT_REFILL_COUNT = 64;
     public static final int MAX_REFILL_COUNT = 2304;
 

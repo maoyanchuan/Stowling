@@ -643,6 +643,47 @@
                                                 </div>
                                             </div>
                                         </div>
+                                        <section id="auto-eat-experiments"
+                                                 class="auto-config-section" hidden inert>
+                                            <div class="auto-phase-header">
+                                                <button id="auto-eat-experiments-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="auto-eat-experiments-body">
+                                                    <span class="auto-phase-copy">
+                                                        <strong>实验性设置</strong>
+                                                        <small id="auto-eat-experiments-summary">
+                                                            未启用实验性设置
+                                                        </small>
+                                                    </span>
+                                                    <span class="settings-chevron"
+                                                          aria-hidden="true"></span>
+                                                </button>
+                                            </div>
+                                            <div id="auto-eat-experiments-body"
+                                                 class="auto-phase-body" hidden>
+                                                <div class="settings-row">
+                                                    <div class="settings-copy">
+                                                        <label for="auto-eat-world-use-guard">
+                                                            进食期间阻止额外右键交互
+                                                        </label>
+                                                        <p id="auto-eat-world-use-hint"
+                                                           class="settings-description">
+                                                            默认关闭。防止吃完后误开准星所指容器。
+                                                            标识 auto-eat-world-use-guard。
+                                                        </p>
+                                                    </div>
+                                                    <input id="auto-eat-world-use-guard"
+                                                           type="checkbox" role="switch"
+                                                           aria-describedby="auto-eat-world-use-hint">
+                                                </div>
+                                            </div>
+                                        </section>
+                                        <p id="auto-eat-experiment-active" class="auto-config-note"
+                                           hidden>
+                                            生效改动：进食期间阻止额外右键交互
+                                            （auto-eat-world-use-guard）
+                                        </p>
                                         <p id="auto-eat-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="coordinate-task-actions">
@@ -1063,45 +1104,6 @@
                                             </div>
                                             <div id="auto-experiments-body"
                                                  class="auto-phase-body" hidden>
-                                                <div id="auto-food-pause-row"
-                                                     class="settings-row" hidden>
-                                                    <div class="settings-copy">
-                                                        <strong>
-                                                            <label for="auto-food-pause-resume">
-                                                                分类安全暂停进食后续接
-                                                            </label>
-                                                        </strong>
-                                                        <p id="auto-food-pause-hint"
-                                                           class="settings-description">
-                                                            默认关闭。在下一次导航前暂停，
-                                                            进食结束后继续同一次分类。
-                                                            标识 classification-food-safe-pause。
-                                                        </p>
-                                                    </div>
-                                                    <input id="auto-food-pause-resume"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch"
-                                                           aria-describedby="auto-food-pause-hint">
-                                                </div>
-                                                <div id="auto-unstackable-routing-row"
-                                                     class="settings-row" hidden>
-                                                    <div class="settings-copy">
-                                                        <strong>
-                                                            <label for="auto-unstackable-zone-routing">
-                                                                不可堆叠区统一识别与专属溢出
-                                                            </label>
-                                                        </strong>
-                                                        <p id="auto-unstackable-hint"
-                                                           class="settings-description">
-                                                            默认关闭。开启后整区统一识别并独立处理余物。
-                                                            标识 classification-unstackable-zone-routing。
-                                                        </p>
-                                                    </div>
-                                                    <input id="auto-unstackable-zone-routing"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch"
-                                                           aria-describedby="auto-unstackable-hint">
-                                                </div>
                                                 <section class="auto-config-section
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-packing-title">

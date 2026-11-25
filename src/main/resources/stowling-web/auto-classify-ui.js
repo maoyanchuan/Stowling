@@ -86,8 +86,6 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
-        unstackableRouting: document.querySelector("#auto-unstackable-zone-routing"),
-        foodPause: document.querySelector("#auto-food-pause-resume"),
         experimentsRoot: document.querySelector("#auto-experiments-settings"),
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
@@ -250,8 +248,6 @@
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
         elements.cacheEnabled.checked = draft.cachePolicy.enabled;
-        elements.unstackableRouting.checked = draft.unstackableZoneRoutingEnabled;
-        elements.foodPause.checked = draft.foodPauseResumeEnabled;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         Picker.group(elements.point, "coordinate");
@@ -319,9 +315,6 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
-            unstackableZoneRoutingEnabled: kind === "CLASSIFICATION"
-                && elements.unstackableRouting.checked,
-            foodPauseResumeEnabled: kind === "CLASSIFICATION" && elements.foodPause.checked,
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
@@ -412,15 +405,6 @@
             header.append(row.listening);
             card.append(header, body);
             if (standard) card.append(status);
-            if (draft.unstackableZoneRoutingEnabled) {
-                card.append(Stowling.element("p", "auto-config-note",
-                    "生效改动：不可堆叠区统一识别与专属溢出"
-                    + "（classification-unstackable-zone-routing）"));
-            }
-            if (draft.foodPauseResumeEnabled) {
-                card.append(Stowling.element("p", "auto-config-note",
-                    "生效改动：分类安全暂停进食后续接（classification-food-safe-pause）"));
-            }
             elements.list.append(card);
             rows.set(item.id, row);
         }
@@ -467,19 +451,11 @@
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
         const showExperiments = window.StowlingTaskDebugMode?.enabled() === true;
-        const routingRow = document.querySelector("#auto-unstackable-routing-row");
-        routingRow.hidden = !classification;
-        routingRow.inert = !classification;
-        elements.unstackableRouting.disabled = !classification;
-        const foodPauseRow = document.querySelector("#auto-food-pause-row");
-        foodPauseRow.hidden = !classification;
-        foodPauseRow.inert = !classification;
-        elements.foodPause.disabled = !classification;
         const packing = elements.cacheEnabled.closest("section");
         packing.hidden = classification;
         packing.inert = classification;
-        elements.experimentsRoot.hidden = !showExperiments;
-        elements.experimentsRoot.inert = !showExperiments;
+        elements.experimentsRoot.hidden = !showExperiments || classification;
+        elements.experimentsRoot.inert = !showExperiments || classification;
 
         const boxHost = document.querySelector("#auto-empty-box-settings");
         if (boxHost) boxHost.hidden = !classification;
@@ -593,13 +569,6 @@
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
         const activeExperiments = [];
-        if (classification && elements.foodPause.checked) {
-            activeExperiments.push("分类安全暂停进食后续接（classification-food-safe-pause）");
-        }
-        if (classification && elements.unstackableRouting.checked) {
-            activeExperiments.push("不可堆叠区统一识别与专属溢出"
-                + "（classification-unstackable-zone-routing）");
-        }
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
         }

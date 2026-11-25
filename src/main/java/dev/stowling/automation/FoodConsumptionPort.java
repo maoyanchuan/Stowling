@@ -11,6 +11,13 @@ public interface FoodConsumptionPort {
         return FoodConsumptionResult.failed("无法确认食物来源");
     }
 
+    default FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys,
+            boolean worldUseGuardEnabled) {
+        return worldUseGuardEnabled
+                ? FoodConsumptionResult.failed("当前环境不支持进食交互保护")
+                : startEating(itemId, allowedKeys);
+    }
+
     FoodConsumptionResult pollEating();
 
     void cancelEating();

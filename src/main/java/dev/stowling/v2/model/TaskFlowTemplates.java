@@ -71,6 +71,14 @@ public final class TaskFlowTemplates {
             String coordinateRef, String foodItemId, int triggerThreshold,
             int refillCount, boolean preferInventory
     ) {
+        return scheduledEating(coordinateRef, foodItemId, triggerThreshold, refillCount,
+                preferInventory, false);
+    }
+
+    public static List<TaskStep> scheduledEating(
+            String coordinateRef, String foodItemId, int triggerThreshold,
+            int refillCount, boolean preferInventory, boolean worldUseGuardEnabled
+    ) {
         List<TaskStep> meal = new ArrayList<>();
         List<TaskStep> beforeMeal = new ArrayList<>();
         if (coordinateRef != null) {
@@ -94,9 +102,11 @@ public final class TaskFlowTemplates {
                             Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId, NEGATE, "true")),
                     List.of(move, withdraw), List.of()));
         }
-        meal.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.EAT_FOOD,
-                Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId,
-                        ConfigValidator.ITEM_SOURCE, "protected")));
+        Map<String, String> eating = new LinkedHashMap<>();
+        eating.put(ConfigValidator.FOOD_ITEM_ID, foodItemId);
+        eating.put(ConfigValidator.ITEM_SOURCE, "protected");
+        if (worldUseGuardEnabled) eating.put(AutoEatOptions.WORLD_USE_GUARD, "true");
+        meal.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.EAT_FOOD, eating));
         TaskStep eatUntilFull = TaskStep.repeat(UUID.randomUUID(), hungerBelow(20), meal);
         beforeMeal.add(eatUntilFull);
         return List.of(TaskStep.conditional(UUID.randomUUID(), hungerBelow(triggerThreshold + 1),
@@ -139,7 +149,6 @@ public final class TaskFlowTemplates {
             boolean classificationTask
     ) {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
-        scan.remove(UnstackableZoneRouting.ENABLED);
         scan.remove(ConfigValidator.MARKER_SOURCES);
         scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
         scan.remove(ConfigValidator.CATEGORY_BINDING_ID);

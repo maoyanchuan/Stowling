@@ -4,12 +4,10 @@ import dev.stowling.automation.ContainerTarget;
 import java.util.List;
 import java.util.function.Predicate;
 
-/** Explicit task opt-in for zone-owned unstackable remainder routing. */
+/** Independent classification baseline for zone-owned unstackable remainder routing. */
 public final class UnstackableZoneRouting {
     public static final String MODULE = "ROUTE_UNSTACKABLE_ZONE_REMAINDERS";
     public static final String KIND = "UNSTACKABLE_ZONE";
-    public static final String ENABLED = "unstackableZoneRoutingEnabled";
-    public static final String CHANGE_ID = "classification-unstackable-zone-routing";
 
     private UnstackableZoneRouting() {
     }
@@ -22,8 +20,8 @@ public final class UnstackableZoneRouting {
     }
 
     public static CategoryZoneDefinition forExecution(CategoryZoneDefinition zone,
-            boolean enabled) {
-        if (!enabled || !isDedicated(zone)) return zone;
+            boolean classificationTask) {
+        if (!classificationTask || !isDedicated(zone)) return zone;
         var bindings = zone.bindings().stream().map(binding -> new CategoryBindingDefinition(
                 binding.id(), binding.markerArea(), binding.storageArea(), "UNSTACKABLE_ITEMS",
                 List.of(), binding.containerOverrides(), binding.standingArea(),

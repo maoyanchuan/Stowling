@@ -272,13 +272,19 @@ public final class ConfigStore {
         if (value == null || value.isJsonNull()) return;
         JsonObject options = requireObject(value, "autoEatOptions");
         requireFields(options, "autoEatOptions",
-                Set.of("autoRefill", "coordinateId", "refillCount", "preferInventory"),
+                Set.of("autoRefill", "coordinateId", "refillCount", "preferInventory",
+                        "worldUseGuardEnabled"),
                 Set.of("autoRefill", "refillCount", "preferInventory"));
         for (String key : Set.of("autoRefill", "preferInventory")) {
             JsonElement flag = options.get(key);
             if (!flag.isJsonPrimitive() || !flag.getAsJsonPrimitive().isBoolean()) {
                 throw new V2ValidationException("autoEatOptions." + key + " 必须是布尔值");
             }
+        }
+        JsonElement guard = options.get("worldUseGuardEnabled");
+        if (guard != null && (!guard.isJsonPrimitive()
+                || !guard.getAsJsonPrimitive().isBoolean())) {
+            throw new V2ValidationException("autoEatOptions.worldUseGuardEnabled 必须是布尔值");
         }
         JsonElement count = options.get("refillCount");
         try {
@@ -317,13 +323,13 @@ public final class ConfigStore {
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
-        allowed.add("unstackableZoneRoutingEnabled");
-        allowed.add("foodPauseResumeEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
             JsonObject definition = requireObject(definitions.get(index), path);
             for (String retired : List.of(
+                    "foodPauseResumeEnabled",
+                    "unstackableZoneRoutingEnabled",
                     "sameCategoryBoxBatching",
                     "classificationBaselineEnabled",
                     "classificationFullTargetHandoffEnabled",
@@ -333,16 +339,6 @@ public final class ConfigStore {
             }
 
             requireFields(definition, path, allowed, fields);
-            var foodPause = definition.get("foodPauseResumeEnabled");
-            if (foodPause != null && (!foodPause.isJsonPrimitive()
-                    || !foodPause.getAsJsonPrimitive().isBoolean())) {
-                throw new V2ValidationException("foodPauseResumeEnabled 必须是布尔值");
-            }
-            var routing = definition.get("unstackableZoneRoutingEnabled");
-            if (routing != null && (!routing.isJsonPrimitive()
-                    || !routing.getAsJsonPrimitive().isBoolean())) {
-                throw new V2ValidationException("unstackableZoneRoutingEnabled 必须是布尔值");
-            }
             var mixed = definition.get("robotWarehouseMixedBoxes");
             if (mixed != null && (!mixed.isJsonPrimitive()
                     || !mixed.getAsJsonPrimitive().isBoolean())) {

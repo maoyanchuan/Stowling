@@ -18,7 +18,16 @@ import java.util.UUID;
 public record AutoEatTask(UUID id, Settings settings) {
     public record Settings(String name, String foodItemId, UUID coordinateId,
             int foodLevelThreshold, int intervalSeconds, boolean enabled,
-            TaskPriority priority, boolean autoRefill, int refillCount, boolean preferInventory) {
+            TaskPriority priority, boolean autoRefill, int refillCount, boolean preferInventory,
+            boolean worldUseGuardEnabled) {
+        public Settings(String name, String foodItemId, UUID coordinateId,
+                int foodLevelThreshold, int intervalSeconds, boolean enabled,
+                TaskPriority priority, boolean autoRefill, int refillCount,
+                boolean preferInventory) {
+            this(name, foodItemId, coordinateId, foodLevelThreshold, intervalSeconds, enabled,
+                    priority, autoRefill, refillCount, preferInventory, false);
+        }
+
         public Settings(String name, String foodItemId, UUID coordinateId,
                 int foodLevelThreshold, int intervalSeconds, boolean enabled) {
             this(name, foodItemId, coordinateId, foodLevelThreshold, intervalSeconds, enabled,
@@ -44,8 +53,10 @@ public record AutoEatTask(UUID id, Settings settings) {
                     : ResourceReference.of(ResourceType.COORDINATE, coordinateId).encode();
             return new TaskDefinition(id, taskName, priority, false,
                     TaskFlowTemplates.scheduledEating(target, foodItemId, foodLevelThreshold,
-                            refillCount, preferInventory), null, null, false, false, null, null,
-                    new AutoEatOptions(autoRefill, coordinateId, refillCount, preferInventory));
+                            refillCount, preferInventory, worldUseGuardEnabled),
+                    null, null, false, false, null, null,
+                    new AutoEatOptions(autoRefill, coordinateId, refillCount, preferInventory,
+                            worldUseGuardEnabled));
         }
 
         TaskTriggerDefinition trigger(TaskDefinition task, boolean listening) {
@@ -89,7 +100,7 @@ public record AutoEatTask(UUID id, Settings settings) {
                     eat.parameters().get(ConfigValidator.FOOD_ITEM_ID), options.coordinateId(),
                     trigger.foodLevelThreshold(), trigger.intervalTicks() / 20, trigger.enabled(),
                     task.priority(), options.autoRefill(), options.refillCount(),
-                    options.preferInventory()));
+                    options.preferInventory(), options.worldUseGuardEnabled()));
         }
         UUID coordinate = null;
         if (meals.steps().size() == 2) {
@@ -109,6 +120,7 @@ public record AutoEatTask(UUID id, Settings settings) {
         return new AutoEatTask(task.id(), new Settings(task.name(),
                 eat.parameters().get(ConfigValidator.FOOD_ITEM_ID), coordinate,
                 trigger.foodLevelThreshold(), trigger.intervalTicks() / 20, trigger.enabled(),
-                task.priority(), coordinate != null, AutoEatOptions.DEFAULT_REFILL_COUNT, true));
+                task.priority(), coordinate != null, AutoEatOptions.DEFAULT_REFILL_COUNT, true,
+                Boolean.parseBoolean(eat.parameters().get(AutoEatOptions.WORLD_USE_GUARD))));
     }
 }

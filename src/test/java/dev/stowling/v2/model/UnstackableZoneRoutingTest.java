@@ -25,7 +25,7 @@ class UnstackableZoneRoutingTest {
     Path directory;
 
     @Test
-    void persistsZoneDestinationAndTaskOptInWithoutChangingTheDefaultFlow() throws Exception {
+    void persistsDedicatedZoneAndMigratesAllRetiredSwitchValuesToBaseline() throws Exception {
         var overflow = new RegionDefinition(UUID.randomUUID(), "Overflow", 20, 64, 0,
                 21, 64, 0);
         var source = new RegionDefinition(UUID.randomUUID(), "Source", 30, 64, 0,
@@ -38,29 +38,34 @@ class UnstackableZoneRoutingTest {
                 new AreaBounds(0, 60, 0, 0, 60, 0), "UNSTACKABLE_ITEMS");
         var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Armor", List.of(binding),
                 null, options);
-        var baseline = definition(source, zone, null);
-        var enabled = definition(source, zone, true);
-        var baselineSteps = AutoClassifyTaskFactory.tasks(baseline, List.of()).getFirst().steps();
-        var enabledTasks = AutoClassifyTaskFactory.tasks(enabled, List.of());
-        assertFalse(baseline.unstackableZoneRoutingEnabled());
-        assertFalse(baselineSteps.stream().anyMatch(step ->
-                UnstackableZoneRouting.MODULE.equals(step.moduleId())));
-        assertEquals(UnstackableZoneRouting.MODULE,
-                enabledTasks.getFirst().steps().get(2).moduleId());
-        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), enabledTasks,
-                List.of(source, overflow), List.of(zone), List.of(), List.of(), List.of(enabled));
+        var baseline = definition(source, zone);
+        var tasks = AutoClassifyTaskFactory.tasks(baseline, List.of());
+        assertEquals(UnstackableZoneRouting.MODULE, tasks.getFirst().steps().get(2).moduleId());
+        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), tasks,
+                List.of(source, overflow), List.of(zone), List.of(), List.of(), List.of(baseline));
         ConfigValidator.requireValid(config);
-        Path file = directory.resolve("config.json");
-        Files.writeString(file, new Gson().toJson(config));
-        var store = new ConfigStore(file);
-        var snapshot = store.read();
-        store.save(snapshot.revision(), snapshot.config());
-        var restored = new ConfigStore(file).read().config();
-        assertEquals(options, restored.categoryZones().getFirst().categoryOptions());
-        assertTrue(restored.autoClassifyTasks().getFirst().unstackableZoneRoutingEnabled());
+        for (Boolean routing : java.util.Arrays.asList(null, false, true)) {
+            for (Boolean pause : java.util.Arrays.asList(null, false, true)) {
+                var json = new Gson().toJsonTree(config).getAsJsonObject();
+                var owner = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
+                if (routing != null) owner.addProperty("unstackableZoneRoutingEnabled", routing);
+                if (pause != null) owner.addProperty("foodPauseResumeEnabled", pause);
+                Path file = directory.resolve("config-" + routing + "-" + pause + ".json");
+                Files.writeString(file, json.toString());
+                var store = new ConfigStore(file);
+                var snapshot = store.read();
+                store.save(snapshot.revision(), snapshot.config());
+                var restored = new ConfigStore(file).read().config();
+                assertEquals(options, restored.categoryZones().getFirst().categoryOptions());
+                assertTrue(restored.tasks().getFirst().steps().stream().anyMatch(step ->
+                        UnstackableZoneRouting.MODULE.equals(step.moduleId())));
+                assertFalse(Files.readString(file).contains("unstackableZoneRoutingEnabled"));
+                assertFalse(Files.readString(file).contains("foodPauseResumeEnabled"));
+            }
+        }
         assertThrows(V2ValidationException.class, () -> ConfigValidator.requireValid(
-                new AppConfig(config.schemaVersion(), List.of(), enabledTasks,
-                        List.of(source), List.of(zone), List.of(), List.of(), List.of(enabled))));
+                new AppConfig(config.schemaVersion(), List.of(), tasks,
+                        List.of(source), List.of(zone), List.of(), List.of(), List.of(baseline))));
     }
 
     @Test
@@ -74,7 +79,7 @@ class UnstackableZoneRoutingTest {
     }
 
     @Test
-    void isolatesExecutionRulesOnlyWhenEnabledAndKeepsTheSavedDraft() {
+    void isolatesIndependentClassificationAndKeepsOtherTasksAndSavedDrafts() {
         var global = new Gson().fromJson("{\"recognitionMode\":\"unstackable\"}",
                 CategoryZoneOptions.class);
         var local = new Gson().fromJson("{\"recognitionMode\":\"container-item\","
@@ -118,13 +123,13 @@ class UnstackableZoneRoutingTest {
     }
 
     private static AutoClassifyDefinition definition(RegionDefinition source,
-            CategoryZoneDefinition zone, Boolean enabled) {
+            CategoryZoneDefinition zone) {
         return new AutoClassifyDefinition(UUID.randomUUID(), "Sort", false, false, true,
                 null, null, "region:" + source.id(),
                 List.of(new AutoClassifyAreaDefinition("category-zone:" + zone.id())),
                 TaskPriority.NORMAL, false, null, null, null, null,
                 AutoClassifyDefinition.Kind.CLASSIFICATION, null, null, null, null,
-                null, null, enabled);
+                null, null);
     }
 
 }

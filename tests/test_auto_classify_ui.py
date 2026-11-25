@@ -726,24 +726,15 @@ function input(target) {
     assert.equal(scheduled, scheduledBeforeCollapse);
     window.confirm = () => true;
     element("#new-classification-task").dispatchEvent(new Event("click"));
-    assert.equal(experimentsRoot.hidden, false);
-    assert.equal(experimentsRoot.inert, false);
-    assert.equal(experimentsBody.hidden, true);
-    const routing = element("#auto-unstackable-zone-routing");
-    assert.equal(routing.checked, false);
-    experimentsHeader.dispatchEvent(new Event("click"));
-    routing.checked = true;
-    input(routing);
-    assert.equal(experimentsBody.hidden, false);
+    assert.equal(experimentsRoot.hidden, true);
+    assert.equal(experimentsRoot.inert, true);
     debugMode = false;
     document.dispatchEvent(new Event("stowling:task-debug-mode-changed"));
     assert.equal(experimentsRoot.hidden, true);
-    assert.equal(experimentsRoot.inert, true);
-    assert.equal(routing.checked, true);
     debugMode = true;
     document.dispatchEvent(new Event("stowling:task-debug-mode-changed"));
-    assert.equal(experimentsRoot.hidden, false);
-    assert.equal(routing.checked, true);
+    assert.equal(experimentsRoot.hidden, true);
+    assert.equal(experimentsRoot.inert, true);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

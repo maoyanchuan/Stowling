@@ -139,6 +139,7 @@ public final class TaskFlowTemplates {
             boolean classificationTask
     ) {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
+        scan.remove(UnstackableZoneRouting.ENABLED);
         scan.remove(ConfigValidator.MARKER_SOURCES);
         scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
         scan.remove(ConfigValidator.CATEGORY_BINDING_ID);

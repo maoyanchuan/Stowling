@@ -12,6 +12,8 @@ public final class StandardTaskModuleFactories {
 
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
+                factory(dev.stowling.v2.model.UnstackableZoneRouting.MODULE,
+                        UnstackableZoneRemaindersModule::create),
                 factory(dev.stowling.v2.model.EmptyBoxWarehousePolicy.SETTLE_MODULE,
                         (context, step) -> context.storageAutomation().settleEmptyBoxes(context)),
                 factory(dev.stowling.v2.model.ContainerCacheRefresh.MODULE,

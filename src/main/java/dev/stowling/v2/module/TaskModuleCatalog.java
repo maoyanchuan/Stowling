@@ -10,6 +10,12 @@ import java.util.List;
 
 public final class TaskModuleCatalog {
     private static final List<ModuleDefinition> MODULES = List.of(
+            action(dev.stowling.v2.model.UnstackableZoneRouting.MODULE,
+                    "处理不可堆叠区域余物", "使用该分类区的专属溢出配置。", List.of(
+                            reference(ConfigValidator.CACHE_LOCATION_REF,
+                                    "物品来源", "resource-reference", true),
+                            reference(ConfigValidator.CATEGORY_ZONE_REF,
+                                    "分类区", "category-zone-reference", true))),
             action(dev.stowling.v2.model.EmptyBoxWarehousePolicy.SETTLE_MODULE,
                     "归还分类空盒", "按物品来源的保留上限，将多余空盒归还空盒仓库。", List.of()),
             listener(

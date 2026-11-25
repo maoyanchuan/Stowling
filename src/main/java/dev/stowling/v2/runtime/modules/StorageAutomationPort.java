@@ -103,6 +103,10 @@ public interface StorageAutomationPort {
         throw new IllegalStateException("当前环境不支持读取物品堆叠上限");
     }
 
+    default Set<String> carriedUnstackableItems(TaskExecutionContext context) {
+        return Set.of();
+    }
+
     default Comparator<ContainerTarget> storageOrder(Map<String, Integer> items) {
         return (first, second) -> 0;
     }

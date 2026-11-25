@@ -15,13 +15,13 @@ public final class CategoryOptionsJson {
                 "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock",
                 "specifyStanding", "standingPosition", "bulkStacks", "ignoreMarkerPositions",
                 "ignoredMarkerPositions", "ignoreRepeatedBlocks", "multiItemBindingsEnabled",
-                "multiItemBindings"));
+                "multiItemBindings", "unstackableOverflowRef"));
         for (String key : Set.of("ignoreSupportBlock", "specifyStanding", "ignoreMarkerPositions",
                 "ignoreRepeatedBlocks", "multiItemBindingsEnabled")) {
             primitive(options.get(key), "boolean");
         }
         for (String key : Set.of("scopeMode", "recognitionMode", "storageMethod",
-                "noCacheLocation", "cacheDestination", "supportBlock")) {
+                "noCacheLocation", "cacheDestination", "supportBlock", "unstackableOverflowRef")) {
             primitive(options.get(key), "string");
         }
         integer(options.get("bulkStacks"));

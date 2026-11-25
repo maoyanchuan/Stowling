@@ -73,6 +73,7 @@ public final class TaskRunWorkspace {
         if (!classificationTask || !classificationDeliveryActive) return items;
         Map<String, Integer> active = new LinkedHashMap<>(items);
         active.keySet().removeIf(key -> {
+            if (zoneOwnsUnstackable(key)) return true;
             List<ContainerTarget> targets = resolvedStorageTargets(key);
             return !targets.isEmpty() && targets.stream().allMatch(target ->
                     ItemIdentity.matches(key, confirmedFullStorage
@@ -149,6 +150,30 @@ public final class TaskRunWorkspace {
     private final Map<ContainerTarget, Set<String>> resolvedStorage = new LinkedHashMap<>();
     private List<ClassificationLayoutEntry> classificationLayout = List.of();
     private boolean unstackableClassification;
+    private final Set<String> zoneOwnedUnstackableItems = new LinkedHashSet<>();
+    private Set<String> activeUnstackableRemainders = Set.of();
+
+    public synchronized void claimUnstackableRemainders(Set<String> keys) {
+        Set<String> pending = new LinkedHashSet<>(keys);
+        pending.removeAll(zoneOwnedUnstackableItems);
+        activeUnstackableRemainders = Set.copyOf(pending);
+        zoneOwnedUnstackableItems.addAll(pending);
+    }
+
+    public synchronized boolean zoneOwnsUnstackable(String key) {
+        return zoneOwnedUnstackableItems.contains(key);
+    }
+
+    public synchronized boolean activeUnstackableRemainder(String key) {
+        return activeUnstackableRemainders.contains(key);
+    }
+
+    public synchronized List<ContainerTarget> currentZoneStorageTargets(String key) {
+        return acceptedItemsByContainer.entrySet().stream()
+                .filter(entry -> ItemIdentity.matches(key, entry.getValue()))
+                .map(Map.Entry::getKey).toList();
+    }
+
     private final List<ContainerTarget> containerCandidates = new ArrayList<>();
     private final List<ContainerTarget> cacheContainers = new ArrayList<>();
     private Set<BlockPosition> partialBoxStoragePositions = Set.of();
@@ -608,6 +633,8 @@ public final class TaskRunWorkspace {
 
     public synchronized Set<String> remainingCacheCategories(ContainerTarget target) {
         Set<String> categories = new LinkedHashSet<>(withdrawItemIdsFor(target));
+        categories.removeIf(selector -> zoneOwnedUnstackableItems.stream()
+                .anyMatch(key -> ItemIdentity.matches(key, Set.of(selector))));
         if (classificationTask) categories.retainAll(classificationDemand);
         if (classificationTask) categories.removeIf(this::confirmedFullCategory);
         if (selectedContainer != null && selectedContainer.position().equals(target.position())) {

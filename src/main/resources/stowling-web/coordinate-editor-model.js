@@ -75,6 +75,7 @@
         }
         return {scopeMode: value.scopeMode || "single",
             recognitionMode: value.recognitionMode || "marker",
+            unstackableOverflowRef: String(value.unstackableOverflowRef || ""),
             storageMethod: value.storageMethod || "bulk",
             bulkStacks,
             noCacheLocation: value.noCacheLocation || "inside-box",
@@ -208,7 +209,8 @@
         const bindings = value.bindings.map(binding => {
             const options = binding.optionsEnabled ? binding.categoryOptions || globalOptions
                 : globalOptions;
-            validateRules(options);
+            const unstackable = globalOptions.recognitionMode === "unstackable";
+            if (!unstackable) validateRules(options);
             const original = binding.original || Zone.normalizeBinding({});
             const result = copy(original);
             result.name = String(binding.name ?? original.name ?? "").trim();
@@ -221,9 +223,12 @@
                     result[kind + key[0].toUpperCase() + key.slice(1)] = number;
                 }
             }
-            result.ruleId = options.recognitionMode === "container-item"
-                ? "MARKER_CONTAINER_CONTENTS" : options.recognitionMode === "unstackable"
-                    ? "UNSTACKABLE_ITEMS" : "DIRECT_BLOCK_ID";
+            if (!unstackable && options.recognitionMode === "unstackable") {
+                throw new Error("不可堆叠大类分类需要在整个分类区选择。");
+            }
+            result.ruleId = unstackable ? "UNSTACKABLE_ITEMS"
+                : options.recognitionMode === "container-item"
+                    ? "MARKER_CONTAINER_CONTENTS" : "DIRECT_BLOCK_ID";
             // Rotated marker chests cannot share a column with their wider storage slice.
             const separateBounds = ["X", "Z"].every(axis => {
                 const marker = [result[`markerFirst${axis}`], result[`markerSecond${axis}`]];
@@ -241,9 +246,10 @@
             }
             result.storagePolicy.partialBoxDestinationRef =
                 options.noCacheLocation === "specified" ? options.cacheDestination : null;
-            result.ignoredMarkerBlockIds = options.ignoreSupportBlock
+            result.ignoredMarkerBlockIds = !unstackable && options.ignoreSupportBlock
                 ? options.supportBlock.split(/[\s,，;；]+/).filter(Boolean) : [];
-            if (options.ignoreSupportBlock && !result.ignoredMarkerBlockIds.length) {
+            if (!unstackable && options.ignoreSupportBlock
+                    && !result.ignoredMarkerBlockIds.length) {
                 throw new Error("请填写要忽略的支撑方块 ID。");
             }
             if (options.specifyStanding != null) {

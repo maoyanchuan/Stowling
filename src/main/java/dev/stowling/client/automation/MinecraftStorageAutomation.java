@@ -447,6 +447,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    @Override
+    public Set<String> carriedUnstackableItems(TaskExecutionContext context) {
+        Set<String> owned = context.workspace().managedItems().keySet();
+        return inventoryStacks().stream()
+                .filter(stack -> owned.contains(MinecraftItemIdentity.key(stack)))
+                .flatMap(stack -> MinecraftItemIdentity.isBox(stack)
+                        ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                        : java.util.stream.Stream.of(stack))
+                .filter(MinecraftStorageAutomation::isUnstackableItem)
+                .map(MinecraftItemIdentity::key)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     private static boolean isUnstackableItem(ItemStack stack) {
         return !stack.isEmpty() && !MinecraftItemIdentity.isBox(stack)
                 && !stack.has(DataComponents.CUSTOM_NAME)
@@ -3493,6 +3506,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     ? robotWarehouseContainers(context, destination)
                     : overflowContainers(destination);
             if (destination != null && destinations.isEmpty()) {
+                if (dev.stowling.v2.model.UnstackableZoneRouting.KIND.equals(remainderKind)) {
+                    throw new IllegalStateException("不可堆叠溢出区没有可用容器，余物保留来源");
+                }
                 skipMessage = "所选仓库位置在当前维度无可用容器，溢出物品留在缓存";
                 return;
             }
@@ -3946,7 +3962,23 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             Map<String, List<ContainerTarget>> routes = new LinkedHashMap<>();
             Set<ContainerTarget> toCheck = new LinkedHashSet<>();
+            boolean zoneRouting = dev.stowling.v2.model.UnstackableZoneRouting.KIND
+                    .equals(remainderKind);
             for (String key : candidates.keySet()) {
+                if (zoneRouting) {
+                    if (!context.workspace().activeUnstackableRemainder(key)) continue;
+                    List<ContainerTarget> local = context.workspace().currentZoneStorageTargets(key);
+                    routes.put(key, local);
+                    for (ContainerTarget target : local) {
+                        toCheck.add(target);
+                        toCheck.addAll(partialStorage.computeIfAbsent(target, ignored ->
+                                target.storagePolicy().mode() == StorageMode.NORMAL ? List.of()
+                                        : partialBoxContainers(context, target.storagePolicy(),
+                                                configuration)));
+                    }
+                    continue;
+                }
+                if (!cleanupOnly && context.workspace().zoneOwnsUnstackable(key)) continue;
                 List<ContainerTarget> targets = context.workspace().resolvedStorageTargets(key);
                 if ("UNCLASSIFIABLE".equals(remainderKind)) {
                     routes.put(key, targets);
@@ -3965,10 +3997,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             toCheck.removeAll(checkedStorage.keySet());
             readStorageCapacity(toCheck.iterator(), () -> {
-                eligibleItems = dev.stowling.automation.ClassificationRemainderPlan.select(routes,
-                        "UNCLASSIFIABLE".equals(remainderKind),
-                        (target, key) -> storageIsFull(target, key,
-                                candidates.get(key).getMaxStackSize()));
+                if (zoneRouting) {
+                    eligibleItems = routes.entrySet().stream().filter(entry ->
+                            dev.stowling.v2.model.UnstackableZoneRouting.eligible(entry.getValue(),
+                                    target -> storageIsFull(target, entry.getKey(),
+                                            candidates.get(entry.getKey()).getMaxStackSize())))
+                            .map(Map.Entry::getKey)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                } else {
+                    eligibleItems = dev.stowling.automation.ClassificationRemainderPlan.select(
+                            routes, "UNCLASSIFIABLE".equals(remainderKind),
+                            (target, key) -> storageIsFull(target, key,
+                                    candidates.get(key).getMaxStackSize()));
+                }
                 after.run();
             });
         }
@@ -4101,7 +4142,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         String completionMessage() {
             if (skipMessage != null) return skipMessage;
             if (remainderKind != null) {
-                String label = "UNCLASSIFIABLE".equals(remainderKind) ? "不可分类" : "溢出";
+                String label = "UNCLASSIFIABLE".equals(remainderKind) ? "不可分类"
+                        : dev.stowling.v2.model.UnstackableZoneRouting.KIND.equals(remainderKind)
+                                ? "不可堆叠区域专属溢出" : "溢出";
                 return label + "物品存放结束，未能存入的物品保留在物品来源";
             }
             if (boxedOnly) return storedOrdinary ? "储存区溢出物品已装盒存入机器人仓库"

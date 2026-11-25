@@ -80,7 +80,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
     }
 
     private static boolean usesUnstackableCompatibility(AppConfig config) {
-        return config.categoryZones().stream().flatMap(zone -> zone.bindings().stream())
+        return config.categoryZones().stream()
+                .filter(zone -> zone.categoryOptions() == null
+                        || !"unstackable".equals(zone.categoryOptions().recognitionMode()))
+                .flatMap(zone -> zone.bindings().stream())
                 .anyMatch(binding -> UnstackableCategoryRule.ID.equals(binding.ruleId()))
                 || config.tasks().stream().anyMatch(task -> hasUnstackableStep(task.steps()));
     }
@@ -552,6 +555,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private static List<String> partialBoxReferences(AppConfig config, String reference) {
         List<String> names = new ArrayList<>();
         for (var zone : config.categoryZones()) {
+            if (zone.categoryOptions() != null
+                    && reference.equals(zone.categoryOptions().unstackableOverflowRef())) {
+                names.add(zone.name() + "·不可堆叠溢出区");
+            }
             if (zone.bindings().stream().anyMatch(binding -> reference.equals(
                     binding.storagePolicy().partialBoxDestinationRef()))) {
                 names.add(zone.name() + "·未满盒储存");
@@ -908,7 +915,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
                 request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds(),
                 request.followUpEnabled(), request.remainderPolicy(),
-                request.robotWarehouseMixedBoxes()
+                request.robotWarehouseMixedBoxes(), request.unstackableZoneRoutingEnabled()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -1003,7 +1010,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.remainderPolicy(),
                 request.robotWarehouseMixedBoxes() == null
                         ? existing.robotWarehouseMixedBoxes()
-                        : request.robotWarehouseMixedBoxes()
+                        : request.robotWarehouseMixedBoxes(),
+                request.unstackableZoneRoutingEnabled() == null
+                        ? existing.unstackableZoneRoutingEnabled()
+                        : request.unstackableZoneRoutingEnabled()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1606,7 +1616,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             Integer followUpDelaySeconds,
             Boolean followUpEnabled,
             dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
-            Boolean robotWarehouseMixedBoxes
+            Boolean robotWarehouseMixedBoxes,
+            Boolean unstackableZoneRoutingEnabled
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1633,7 +1644,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 overflowEnabled,
                 cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
                 detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds,
-                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes
+                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes,
+                unstackableZoneRoutingEnabled
         );
     }
 
@@ -1657,7 +1669,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                 definition.followUpEnabled(), definition.remainderPolicy(),
-                definition.robotWarehouseMixedBoxes()
+                definition.robotWarehouseMixedBoxes(), definition.unstackableZoneRoutingEnabled()
         );
     }
 
@@ -1697,7 +1709,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cleanupPolicy(), definition.overflowDestinationRef(),
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.followUpDelaySeconds(), definition.followUpEnabled(),
-                definition.remainderPolicy(), definition.robotWarehouseMixedBoxes()
+                definition.remainderPolicy(), definition.robotWarehouseMixedBoxes(),
+                definition.unstackableZoneRoutingEnabled()
         );
     }
 
@@ -2089,12 +2102,20 @@ public final class V2ControlServiceImpl implements V2ControlService {
                     : existingBinding == null ? null : existingBinding.categoryOptions();
             if (enabled && independent == null) independent = globalOptions;
             var effective = enabled ? independent : globalOptions;
-            if (effective != null) effective.validateActiveRules();
-            String ruleId = effective == null ? binding.ruleId() : effective.ruleId();
+            boolean unstackable = globalOptions != null
+                    && "unstackable".equals(globalOptions.recognitionMode());
+            if (!unstackable && effective != null) effective.validateActiveRules();
+            String ruleId = unstackable ? UnstackableCategoryRule.ID
+                    : effective == null ? binding.ruleId() : effective.ruleId();
+            if (!unstackable && globalOptions != null
+                    && UnstackableCategoryRule.ID.equals(ruleId)) {
+                throw new V2ValidationException("不可堆叠大类分类需要在整个分类区选择");
+            }
             var policy = effective == null ? binding.storagePolicy()
                     : effective.storagePolicy(binding.storagePolicy());
-            var ignored = effective == null ? binding.ignoredMarkerBlockIds()
-                    : effective.ignoredBlockIds();
+            var ignored = unstackable ? List.<String>of()
+                    : effective == null ? binding.ignoredMarkerBlockIds()
+                            : effective.ignoredBlockIds();
             result.add(new CategoryBindingDefinition(
                     id,
                     new AreaBounds(

@@ -1873,6 +1873,9 @@ textarea {
                                                         aria-hidden="true" tabindex="-1">
                                                     <option value="marker">标识物模式</option>
                                                     <option value="container-item">容器内物品识别</option>
+                                                        <option value="unstackable">
+                                                            不可堆叠大类分类
+                                                        </option>
                                                 </select>
                                                 <button id="category-recognition-mode-trigger"
                                                         class="category-select-trigger" type="button"
@@ -1912,10 +1915,54 @@ textarea {
                                                             <path d="m5 12 4 4L19 6"/>
                                                         </svg>
                                                     </button>
+<button class="category-select-option" type="button"
+                role="option" data-category-value="unstackable"
+                aria-selected="false" tabindex="-1">
+            <span>不可堆叠大类分类<small>整区按展示框大类分类，排除潜影盒</small></span>
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m5 12 4 4L19 6"/>
+            </svg>
+        </button>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="category-option-row">
+                                        <div id="category-unstackable-overflow-row" class="category-option-sub"
+             data-collapsed="true" hidden>
+            <label class="category-option-label" for="category-unstackable-overflow">
+                不可堆叠溢出区
+                <small>未匹配或已确认满箱的余物；需启用任务的专属溢出实验</small>
+            </label>
+            <div class="category-select-wrap" data-category-select="unstackableOverflowRef">
+                <select id="category-unstackable-overflow" hidden
+                        aria-hidden="true" tabindex="-1">
+                    <option value="">不设置，余物保留来源</option>
+                </select>
+                <button id="category-unstackable-overflow-trigger"
+                        class="category-select-trigger" type="button" role="combobox"
+                        aria-haspopup="listbox" aria-expanded="false"
+                        aria-controls="category-unstackable-overflow-menu"
+                        aria-label="不可堆叠溢出区">
+                    <span class="category-select-current">不设置，余物保留来源</span>
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="m6 9 6 6 6-6"/>
+                    </svg>
+                </button>
+                <div id="category-unstackable-overflow-menu" class="category-select-menu"
+                     role="listbox" aria-label="不可堆叠溢出区" hidden>
+                    <button class="category-select-option" type="button" role="option"
+                            data-category-value="" aria-selected="true" tabindex="-1">
+                        <span>不设置，余物保留来源<small>使用本区独立去向</small></span>
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                             fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="m5 12 4 4L19 6"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="category-option-row">
                                             <span class="category-option-label">储存方式</span>
                                             <div class="category-select-wrap"
                                                  data-category-select="storageMethod">
@@ -2352,7 +2399,8 @@ textarea {
      * supportBlock: string, bulkStacks: number, specifyStanding: boolean,
      * standingPosition: CoordinateCorner, ignoreMarkerPositions: boolean,
      * ignoredMarkerPositions: CoordinateCorner[], multiItemBindingsEnabled: boolean,
-     * multiItemBindings: CategoryItemBinding[], ignoreRepeatedBlocks: boolean}} CategoryOptions */
+     * multiItemBindings: CategoryItemBinding[], ignoreRepeatedBlocks: boolean,
+     * unstackableOverflowRef: string}} CategoryOptions */
 
     /** @typedef {{key: string, select: HTMLSelectElement, wrap: HTMLElement,
      * trigger: HTMLButtonElement, current: HTMLElement, menu: HTMLElement,
@@ -2491,7 +2539,7 @@ textarea {
             "add-position", "multi-bindings", "bindings-expand", "bindings-panel",
             "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel",
             "recognition-expand", "recognition-panel", "recognition-summary",
-            "bindings-summary"]) {
+            "bindings-summary", "unstackable-overflow", "unstackable-overflow-row"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
@@ -2739,6 +2787,7 @@ textarea {
         return {
             scopeMode: "single",
             recognitionMode: "marker",
+            unstackableOverflowRef: "",
             storageMethod: "bulk",
             noCacheLocation: "inside-box",
             ignoreSupportBlock: false,
@@ -2774,6 +2823,7 @@ textarea {
         const fields = context.fields;
         fields["scope-mode"].value = values.scopeMode;
         fields["recognition-mode"].value = values.recognitionMode;
+        fields["unstackable-overflow"].value = values.unstackableOverflowRef || "";
         fields["storage-method"].value = values.storageMethod;
         fields["no-cache-location"].value = values.noCacheLocation;
         fields["ignore-support"].checked = values.ignoreSupportBlock;
@@ -2806,6 +2856,7 @@ textarea {
         return {
             scopeMode: fields["scope-mode"].value,
             recognitionMode: fields["recognition-mode"].value,
+            unstackableOverflowRef: fields["unstackable-overflow"].value,
             storageMethod: fields["storage-method"].value,
             noCacheLocation: fields["no-cache-location"].value,
             ignoreSupportBlock: fields["ignore-support"].checked,
@@ -2825,6 +2876,45 @@ textarea {
         };
     }
 
+    /** @param {CategoryOptionsContext} context @param {boolean} animate @returns {void} */
+    function updateUnstackableMode(context, animate) {
+        const global = context === globalCategoryContext;
+        const unstackable = globalCategoryContext.fields["recognition-mode"].value
+            === "unstackable";
+        const recognition = context.selects.find(item => item.key === "recognitionMode");
+        const localRecognition = recognition.wrap.closest(".category-option-row");
+        if (!global) {
+            for (const option of recognition.menu.children) {
+                option.hidden = option.dataset.categoryValue === "unstackable";
+            }
+            recognition.options = Array.from(recognition.menu.children)
+                .filter(option => !option.hidden);
+        }
+        localRecognition.hidden = !global && unstackable;
+        localRecognition.inert = !global && unstackable;
+        for (const key of ["recognition-expand", "recognition-panel"]) {
+            const element = context.fields[key];
+            if (key === "recognition-panel") {
+                reveal(element, !unstackable && context.recognitionExpanded, animate);
+            } else {
+                element.hidden = unstackable;
+                element.inert = unstackable;
+            }
+        }
+        const bindingsRow = context.fields["multi-bindings"].closest(".category-option-row");
+        bindingsRow.hidden = unstackable;
+        bindingsRow.inert = unstackable;
+        reveal(context.fields["bindings-panel"], !unstackable
+            && context.fields["multi-bindings"].checked && context.bindingsExpanded, animate);
+        context.fields["unstackable-overflow"].disabled = !global || !unstackable;
+        reveal(context.fields["unstackable-overflow-row"], global && unstackable, animate);
+        if (categoryMenuOpen && (categoryMenuOpen.wrap.closest("[inert]")
+                || categoryMenuOpen.trigger.disabled)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
+        context.selects.forEach(syncCategorySelect);
+    }
+
     /** @param {CategoryOptionsContext} context @returns {boolean} */
     function validateCategoryOptions(context) {
         if (context.active === false) return true;
@@ -2841,7 +2931,8 @@ textarea {
             setStatus("请填写站立位置的 X、Y、Z 整数坐标。", "error");
             return false;
         }
-        return validateCustomRules(context);
+        return globalCategoryContext.fields["recognition-mode"].value === "unstackable"
+            || validateCustomRules(context);
     }
 
     /** @param {CategoryOptionsContext} [context] @param {boolean} [animate]
@@ -2880,6 +2971,7 @@ textarea {
             fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
         }
         updateCustomRuleState(context, animate);
+        updateUnstackableMode(context, animate);
     }
 
     /** @param {CategoryOptionsContext} context @returns {void} */
@@ -3264,6 +3356,14 @@ textarea {
         return structuredClone(options);
     }
 
+    /** @returns {CategoryOptions} */
+    function bindingDefaultOptions() {
+        const options = readCategoryOptions();
+        return {...options, unstackableOverflowRef: "",
+            recognitionMode: options.recognitionMode === "unstackable"
+                ? "marker" : options.recognitionMode};
+    }
+
     /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
     function createBindingOptions(binding) {
         const root = globalCategoryContext.root.cloneNode(true);
@@ -3292,7 +3392,7 @@ textarea {
             trigger.setAttribute("aria-expanded", "false");
         });
         const context = createCategoryOptionsContext(root);
-        writeCategoryOptions(binding.categoryOptions || readCategoryOptions(), context);
+        writeCategoryOptions(binding.categoryOptions || bindingDefaultOptions(), context);
         bindCategoryOptions(context);
         return context;
     }
@@ -3404,7 +3504,7 @@ textarea {
         /** @param {boolean} animate @returns {void} */
         const updateOverride = animate => {
             if (enabled.checked && !context.initialized) {
-                writeCategoryOptions(readCategoryOptions(), context);
+                writeCategoryOptions(bindingDefaultOptions(), context);
                 context.initialized = true;
             }
             context.active = enabled.checked;
@@ -4186,8 +4286,14 @@ textarea {
     function bindCategoryOptions(context) {
         for (const control of context.selects) {
             bindCategorySelect(control, () => {
-                if (control.select === context.fields["storage-method"]) {
+                if ([context.fields["storage-method"], context.fields["recognition-mode"]]
+                        .includes(control.select)) {
                     updateCategoryOptionState(context);
+                    if (context === globalCategoryContext) {
+                        for (const card of nodes.categoryBindings.children) {
+                            updateCategoryOptionState(bindingOptions.get(card), false);
+                        }
+                    }
                 }
             });
         }

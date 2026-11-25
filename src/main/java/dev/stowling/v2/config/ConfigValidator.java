@@ -183,6 +183,27 @@ public final class ConfigValidator {
                 validateCategoryZones(config.categoryZones());
         config.categoryZones().forEach(zone -> zone.bindings().forEach(binding ->
                 requirePartialDestination(binding.storagePolicy(), coordinates, regions)));
+        for (var zone : config.categoryZones()) {
+            if (zone.categoryOptions() == null) continue;
+            String overflow = zone.categoryOptions().unstackableOverflowRef();
+            if (overflow.isEmpty()) continue;
+            requireSpatialReference(overflow, coordinates, regions);
+            var ref = ResourceReference.parse(overflow);
+            AreaBounds bounds;
+            if (ref.type() == ResourceType.REGION) {
+                var region = regions.get(ref.uuid());
+                bounds = new AreaBounds(region.firstX(), region.firstY(), region.firstZ(),
+                        region.secondX(), region.secondY(), region.secondZ());
+            } else {
+                var point = coordinates.get(ref.uuid());
+                bounds = new AreaBounds(point.x(), point.y(), point.z(),
+                        point.x(), point.y(), point.z());
+            }
+            if (zone.bindings().stream().anyMatch(binding ->
+                    areasOverlap(bounds, binding.storageArea()))) {
+                throw new V2ValidationException("不可堆叠溢出区必须独立于本区分类储存范围");
+            }
+        }
         Map<UUID, TaskFolderDefinition> taskFolders = new LinkedHashMap<>();
         for (TaskFolderDefinition folder : config.taskFolders()) {
             if (taskFolders.putIfAbsent(folder.id(), folder) != null) {
@@ -291,6 +312,17 @@ public final class ConfigValidator {
                 }
             }
             requireSpatialReference(definition.cacheLocationRef(), coordinates, regions);
+            for (AutoClassifyAreaDefinition selected : definition.classificationAreas()) {
+                var selectedZone = categoryZones.get(
+                        ResourceReference.parse(selected.categoryZoneRef()).uuid());
+                if (selectedZone == null || selectedZone.categoryOptions() == null) continue;
+                String overflow = selectedZone.categoryOptions().unstackableOverflowRef();
+                if (overflow.isEmpty()) continue;
+                requireSpatialReference(overflow, coordinates, regions);
+                if (definition.cacheLocationRef().equals(overflow)) {
+                    throw new V2ValidationException("不可堆叠溢出区必须独立于物品来源");
+                }
+            }
             if (definition.unstackableRegionRef() != null && !regions.containsKey(
                     ResourceReference.parse(definition.unstackableRegionRef()).uuid())) {
                 throw new V2ValidationException("不可堆叠储存区不存在");
@@ -802,6 +834,13 @@ public final class ConfigValidator {
                     throw new V2ValidationException("缓存分类需要引用任务");
                 }
             }
+            case dev.stowling.v2.model.UnstackableZoneRouting.MODULE -> {
+                requireParameters(step, Set.of(CACHE_LOCATION_REF, CATEGORY_ZONE_REF),
+                        Set.of(CACHE_LOCATION_REF, CATEGORY_ZONE_REF));
+                requireSpatialReference(step.parameters().get(CACHE_LOCATION_REF),
+                        coordinates, regions);
+                requireCategoryZoneReference(step, categoryZones);
+            }
             case dev.stowling.v2.model.ClassificationRemainderPolicy.MODULE -> {
                 requireParameters(step, Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind"),
                         Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind"));
@@ -1131,7 +1170,8 @@ public final class ConfigValidator {
                         CONTAINER_TYPES,
                         MAX_VOLUME,
                         ALLOW_EMPTY_CONTAINER_SCAN,
-                        MARKER_SOURCES
+                        MARKER_SOURCES,
+                        dev.stowling.v2.model.UnstackableZoneRouting.ENABLED
                 ),
                 Set.of()
         );
@@ -1140,6 +1180,7 @@ public final class ConfigValidator {
         requireOptionalInteger(step, MAX_VOLUME, 1, 1_048_576);
         requireOptionalBoolean(step, ALLOW_EMPTY_CONTAINER_SCAN);
         requireOptionalMarkerSources(step);
+        requireOptionalBoolean(step, dev.stowling.v2.model.UnstackableZoneRouting.ENABLED);
     }
 
     private static void requireCoordinateStep(
@@ -1835,7 +1876,10 @@ public final class ConfigValidator {
                 try {
                     var effective = binding.optionsEnabled()
                             ? binding.categoryOptions() : zone.categoryOptions();
-                    if (effective != null) effective.validateActiveRules();
+                    if (effective != null
+                            && !UnstackableCategoryRule.ID.equals(binding.ruleId())) {
+                        effective.validateActiveRules();
+                    }
                     rules.require(binding.ruleId());
                 } catch (IllegalArgumentException exception) {
                     throw new V2ValidationException(
@@ -1903,7 +1947,8 @@ public final class ConfigValidator {
         for (var bindings : scopes.values()) {
             var first = bindings.getFirst();
             var options = first.optionsEnabled() ? first.categoryOptions() : zone.categoryOptions();
-            if (options == null) continue;
+            if (options == null || bindings.stream().allMatch(binding ->
+                    UnstackableCategoryRule.ID.equals(binding.ruleId()))) continue;
             try {
                 options.validateActiveRules();
                 if (!options.multiItemBindingsEnabled()) continue;

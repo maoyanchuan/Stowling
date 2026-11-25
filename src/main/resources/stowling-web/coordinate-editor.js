@@ -18,7 +18,8 @@
      * expansionStep: number, bulkStacks: number, specifyStanding: boolean|null,
      * standingPosition: CoordinateCorner|null, ignoreMarkerPositions: boolean,
      * ignoredMarkerPositions: CoordinateCorner[], ignoreRepeatedBlocks: boolean,
-     * multiItemBindingsEnabled: boolean, multiItemBindings: CategoryItemBinding[]}} CategoryOptions */
+     * multiItemBindingsEnabled: boolean, multiItemBindings: CategoryItemBinding[],
+     * unstackableOverflowRef: string}} CategoryOptions */
 
     /** @typedef {{key: string, select: HTMLSelectElement, wrap: HTMLElement,
      * trigger: HTMLButtonElement, current: HTMLElement, menu: HTMLElement,
@@ -132,7 +133,7 @@
             "add-position", "multi-bindings", "bindings-expand", "bindings-panel",
             "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel",
             "recognition-expand", "recognition-panel", "recognition-summary",
-            "bindings-summary"]) {
+            "bindings-summary", "unstackable-overflow", "unstackable-overflow-row"]) {
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
@@ -380,6 +381,7 @@
         return {
             scopeMode: "single",
             recognitionMode: "marker",
+            unstackableOverflowRef: "",
             storageMethod: "bulk",
             noCacheLocation: "inside-box",
             ignoreSupportBlock: false,
@@ -420,19 +422,11 @@
         values.bulkStacks = options.bulkStacks ?? 27;
         context.values = values;
         populateCacheOptions(context);
+        populateUnstackableOverflow(context, values.unstackableOverflowRef || "");
         const fields = context.fields;
-        const recognition = context.selects.find(item => item.key === "recognitionMode");
-        if (values.recognitionMode === "unstackable"
-                && !recognition.select.querySelector('[value="unstackable"]')) {
-            recognition.select.append(new Option("不可堆叠物品", "unstackable"));
-            const option = recognition.menu.firstElementChild.cloneNode(true);
-            option.dataset.categoryValue = "unstackable";
-            option.querySelector("span").textContent = "不可堆叠物品";
-            recognition.menu.append(option);
-            recognition.options = Array.from(recognition.menu.children);
-        }
         fields["scope-mode"].value = values.scopeMode;
         fields["recognition-mode"].value = values.recognitionMode;
+        fields["unstackable-overflow"].value = values.unstackableOverflowRef || "";
         fields["storage-method"].value = values.storageMethod;
         fields["no-cache-location"].value = values.noCacheLocation === "specified"
             ? values.cacheDestination : "inside-box";
@@ -467,6 +461,7 @@
             ...context.values,
             scopeMode: fields["scope-mode"].value,
             recognitionMode: fields["recognition-mode"].value,
+            unstackableOverflowRef: fields["unstackable-overflow"].value,
             storageMethod: fields["storage-method"].value,
             noCacheLocation: fields["no-cache-location"].value === "inside-box"
                 ? "inside-box" : "specified",
@@ -525,6 +520,46 @@
             fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
         }
         updateCustomRuleState(context, animate);
+        updateUnstackableMode(context, animate);
+    }
+
+    /** @param {CategoryOptionsContext} context @param {boolean} animate @returns {void} */
+    function updateUnstackableMode(context, animate) {
+        const global = context === globalCategoryContext;
+        const unstackable = globalCategoryContext.fields["recognition-mode"].value
+            === "unstackable";
+        const recognition = context.selects.find(item => item.key === "recognitionMode");
+        const localRecognition = recognition.wrap.closest(".category-option-row");
+        if (!global) {
+            for (const option of recognition.menu.children) {
+                option.hidden = option.dataset.categoryValue === "unstackable";
+            }
+            recognition.options = Array.from(recognition.menu.children)
+                .filter(option => !option.hidden);
+        }
+        localRecognition.hidden = !global && unstackable;
+        localRecognition.inert = !global && unstackable;
+        for (const key of ["recognition-expand", "recognition-panel"]) {
+            const element = context.fields[key];
+            if (key === "recognition-panel") {
+                reveal(element, !unstackable && context.recognitionExpanded, animate);
+            } else {
+                element.hidden = unstackable;
+                element.inert = unstackable;
+            }
+        }
+        const bindingsRow = context.fields["multi-bindings"].closest(".category-option-row");
+        bindingsRow.hidden = unstackable;
+        bindingsRow.inert = unstackable;
+        reveal(context.fields["bindings-panel"], !unstackable
+            && context.fields["multi-bindings"].checked && context.bindingsExpanded, animate);
+        context.fields["unstackable-overflow"].disabled = !global || !unstackable;
+        reveal(context.fields["unstackable-overflow-row"], global && unstackable, animate);
+        if (categoryMenuOpen && (categoryMenuOpen.wrap.closest("[inert]")
+                || categoryMenuOpen.trigger.disabled)) {
+            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        }
+        context.selects.forEach(syncCategorySelect);
     }
 
     /** @param {CategoryOptionsContext} context @returns {boolean} */
@@ -543,7 +578,8 @@
             setStatus("请填写站立位置的 X、Y、Z 整数坐标。", "error");
             return false;
         }
-        return validateCustomRules(context);
+        return globalCategoryContext.fields["recognition-mode"].value === "unstackable"
+            || validateCustomRules(context);
     }
 
     /** @param {CategoryOptionsContext} context @returns {void} */
@@ -925,6 +961,14 @@
         return false;
     }
 
+    /** @returns {CategoryOptions} */
+    function bindingDefaultOptions() {
+        const options = readCategoryOptions();
+        return {...options, unstackableOverflowRef: "",
+            recognitionMode: options.recognitionMode === "unstackable"
+                ? "marker" : options.recognitionMode};
+    }
+
     /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
     function createBindingOptions(binding) {
         const root = globalCategoryContext.root.cloneNode(true);
@@ -953,7 +997,7 @@
             trigger.setAttribute("aria-expanded", "false");
         });
         const context = createCategoryOptionsContext(root);
-        writeCategoryOptions(binding.categoryOptions || readCategoryOptions(), context);
+        writeCategoryOptions(binding.categoryOptions || bindingDefaultOptions(), context);
         bindCategoryOptions(context);
         return context;
     }
@@ -1071,7 +1115,7 @@
         /** @param {boolean} animate @returns {void} */
         const updateOverride = animate => {
             if (enabled.checked && !context.initialized) {
-                writeCategoryOptions(readCategoryOptions(), context);
+                writeCategoryOptions(bindingDefaultOptions(), context);
                 context.initialized = true;
             }
             enabled.setAttribute("aria-expanded", String(enabled.checked));
@@ -1820,6 +1864,31 @@
         control.options = Array.from(control.menu.children);
     }
 
+    /** @param {CategoryOptionsContext} context @param {string} saved @returns {void} */
+    function populateUnstackableOverflow(context, saved) {
+        const control = context.selects.find(item => item.key === "unstackableOverflowRef");
+        const empty = control.menu.firstElementChild.cloneNode(true);
+        control.select.replaceChildren(new Option("不设置，余物保留来源", ""));
+        control.menu.replaceChildren(empty);
+        const resources = coordinates.filter(item => item.saved
+            && ["point", "region"].includes(item.kind));
+        const choices = resources.map(item => [Model.ref(item), item.name, kindLabel(item.kind)]);
+        if (saved && !choices.some(item => item[0] === saved)) {
+            choices.push([saved, "原溢出位置已删除，请重新选择", "失效引用"]);
+        }
+        for (const [ref, name, description] of choices) {
+            control.select.add(new Option(name, ref));
+            const option = empty.cloneNode(true);
+            option.dataset.categoryValue = ref;
+            option.querySelector("span").replaceChildren(document.createTextNode(name));
+            const help = document.createElement("small");
+            help.textContent = description;
+            option.querySelector("span").append(help);
+            control.menu.append(option);
+        }
+        control.options = Array.from(control.menu.children);
+    }
+
     /** @param {boolean} [refreshEditor] @returns {Promise<void>} */
     async function loadDirectory(refreshEditor = true) {
         const response = await S.request("/v1/coordinate-resources");
@@ -2015,8 +2084,14 @@
     function bindCategoryOptions(context) {
         for (const control of context.selects) {
             bindCategorySelect(control, () => {
-                if (control.select === context.fields["storage-method"]) {
+                if ([context.fields["storage-method"], context.fields["recognition-mode"]]
+                        .includes(control.select)) {
                     updateCategoryOptionState(context);
+                    if (context === globalCategoryContext) {
+                        for (const card of nodes.categoryBindings.children) {
+                            updateCategoryOptionState(bindingOptions.get(card), false);
+                        }
+                    }
                 }
             });
         }

@@ -86,6 +86,7 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
+        unstackableRouting: document.querySelector("#auto-unstackable-zone-routing"),
         experimentsRoot: document.querySelector("#auto-experiments-settings"),
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
@@ -198,6 +199,13 @@
         elements.targets.replaceChildren();
         for (const zone of state.resources.categoryZones) {
             const option = new Option(zone.name || "未命名分类区", zone.id);
+            const unstackable = zone.bindings?.length
+                && zone.bindings.every(binding => binding.ruleId === "UNSTACKABLE_ITEMS");
+            if (unstackable) {
+                option.dataset.description = "不可堆叠大类分类 · "
+                    + (zone.categoryOptions?.unstackableOverflowRef
+                        ? "已配置专属溢出" : "余物保留来源");
+            }
             option.selected = selected.has(zone.id);
             elements.targets.append(option);
             selected.delete(zone.id);
@@ -241,6 +249,7 @@
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
         elements.cacheEnabled.checked = draft.cachePolicy.enabled;
+        elements.unstackableRouting.checked = draft.unstackableZoneRoutingEnabled;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         Picker.group(elements.point, "coordinate");
@@ -308,6 +317,8 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
+            unstackableZoneRoutingEnabled: kind === "CLASSIFICATION"
+                && elements.unstackableRouting.checked,
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
@@ -398,6 +409,11 @@
             header.append(row.listening);
             card.append(header, body);
             if (standard) card.append(status);
+            if (draft.unstackableZoneRoutingEnabled) {
+                card.append(Stowling.element("p", "auto-config-note",
+                    "生效改动：不可堆叠区统一识别与专属溢出"
+                    + "（classification-unstackable-zone-routing）"));
+            }
             elements.list.append(card);
             rows.set(item.id, row);
         }
@@ -443,8 +459,14 @@
         const kind = state.draft.kind;
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
-        const showExperiments = !classification
-            && window.StowlingTaskDebugMode?.enabled() === true;
+        const showExperiments = window.StowlingTaskDebugMode?.enabled() === true;
+        const routingRow = document.querySelector("#auto-unstackable-routing-row");
+        routingRow.hidden = !classification;
+        routingRow.inert = !classification;
+        elements.unstackableRouting.disabled = !classification;
+        const packing = elements.cacheEnabled.closest("section");
+        packing.hidden = classification;
+        packing.inert = classification;
         elements.experimentsRoot.hidden = !showExperiments;
         elements.experimentsRoot.inert = !showExperiments;
 
@@ -560,6 +582,10 @@
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
         const activeExperiments = [];
+        if (classification && elements.unstackableRouting.checked) {
+            activeExperiments.push("不可堆叠区统一识别与专属溢出"
+                + "（classification-unstackable-zone-routing）");
+        }
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
         }
@@ -612,8 +638,7 @@
      */
     function phaseEnabled(phase) {
         if (phase === "experiments") {
-            return state.draft.kind !== "CLASSIFICATION"
-                && window.StowlingTaskDebugMode?.enabled() === true;
+            return window.StowlingTaskDebugMode?.enabled() === true;
         }
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;

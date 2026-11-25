@@ -47,6 +47,55 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void savesDedicatedZoneAndTaskExperimentThroughAuthenticatedApi() throws Exception {
+        Path file = directory.resolve("unstackable-zone.json");
+        var store = new ConfigStore(file);
+        var source = new RegionDefinition(UUID.randomUUID(), "Source", 100, 64, 0, 101, 64, 0);
+        var overflow = new RegionDefinition(UUID.randomUUID(), "Overflow", 110, 64, 0, 111, 64, 0);
+        store.save(store.loadOrReset().revision(), new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                List.of(), List.of(), List.of(source, overflow), List.of()));
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        try (var fixture = new Fixture(service)) {
+            var payload = JsonParser.parseString(categoryZone("Equipment")).getAsJsonObject();
+            var options = new JsonObject();
+            options.addProperty("scopeMode", "selection");
+            options.addProperty("recognitionMode", "unstackable");
+            options.addProperty("unstackableOverflowRef", "region:" + overflow.id());
+            payload.add("categoryOptions", options);
+            assertEquals(401, fixture.send("/v1/category-zones", "POST",
+                    payload.toString(), false).statusCode());
+            var created = fixture.send("/v1/category-zones", "POST", payload.toString(), true);
+            assertEquals(201, created.statusCode());
+            var zone = object(created).getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            assertEquals("region:" + overflow.id(), zone.getAsJsonObject("categoryOptions")
+                    .get("unstackableOverflowRef").getAsString());
+            assertEquals("UNSTACKABLE_ITEMS", zone.getAsJsonArray("bindings").get(0)
+                    .getAsJsonObject().get("ruleId").getAsString());
+            var task = new JsonObject();
+            task.addProperty("name", "Equipment sorting");
+            task.addProperty("kind", "CLASSIFICATION");
+            task.addProperty("cacheLocationRef", "region:" + source.id());
+            task.addProperty("collectionPriority", "NORMAL");
+            task.addProperty("unstackableZoneRoutingEnabled", true);
+            task.add("classificationAreas", JsonParser.parseString(
+                    "[{\"categoryZoneRef\":\"category-zone:" + zone.get("id").getAsString()
+                            + "\"}]"));
+            assertEquals(401, fixture.send("/v1/auto-classify-tasks", "POST",
+                    task.toString(), false).statusCode());
+            var saved = fixture.send("/v1/auto-classify-tasks", "POST", task.toString(), true);
+            assertEquals(201, saved.statusCode());
+            assertTrue(object(saved).getAsJsonObject("item")
+                    .get("unstackableZoneRoutingEnabled").getAsBoolean());
+            assertTrue(new ConfigStore(file).read().config().autoClassifyTasks().getFirst()
+                    .unstackableZoneRoutingEnabled());
+            task.addProperty("unstackableZoneRoutingEnabled", "true");
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    task.toString(), true).statusCode());
+        }
+    }
+
+    @Test
     void acceptsAutoEatPriorityAndRefillOptionsAndRejectsInvalidValues() throws Exception {
         try (var fixture = fixture()) {
             var response = object(fixture.send("/v1/auto-eat-tasks", "GET", null, true));

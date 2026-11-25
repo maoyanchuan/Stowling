@@ -20,9 +20,42 @@ public record CategoryZoneOptions(
         List<CategoryPositionDraft> ignoredMarkerPositions,
         boolean ignoreRepeatedBlocks,
         boolean multiItemBindingsEnabled,
-        List<CategoryItemBinding> multiItemBindings
+        List<CategoryItemBinding> multiItemBindings,
+        String unstackableOverflowRef
 ) {
+    public CategoryZoneOptions(
+            String scopeMode,
+            String recognitionMode,
+            String storageMethod,
+            String noCacheLocation,
+            String cacheDestination,
+            boolean ignoreSupportBlock,
+            String supportBlock,
+            Boolean specifyStanding,
+            BlockPosition standingPosition,
+            Integer bulkStacks,
+            boolean ignoreMarkerPositions,
+            List<CategoryPositionDraft> ignoredMarkerPositions,
+            boolean ignoreRepeatedBlocks,
+            boolean multiItemBindingsEnabled,
+            List<CategoryItemBinding> multiItemBindings
+    ) {
+        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
+                ignoreSupportBlock, supportBlock, specifyStanding, standingPosition,
+                bulkStacks, ignoreMarkerPositions, ignoredMarkerPositions,
+                ignoreRepeatedBlocks, multiItemBindingsEnabled, multiItemBindings, null);
+    }
+
     public CategoryZoneOptions {
+        unstackableOverflowRef = unstackableOverflowRef == null
+                ? "" : unstackableOverflowRef.trim();
+        if (!unstackableOverflowRef.isEmpty()) {
+            var ref = ResourceReference.parse(unstackableOverflowRef);
+            if (ref.type() != ResourceType.COORDINATE && ref.type() != ResourceType.REGION) {
+                throw new IllegalArgumentException("不可堆叠溢出区请选择坐标点或容器区域");
+            }
+            unstackableOverflowRef = ref.encode();
+        }
         scopeMode = choice(scopeMode, "single", Set.of("single", "selection"));
         recognitionMode = choice(recognitionMode, "marker",
                 Set.of("marker", "container-item", "unstackable"));

@@ -602,6 +602,33 @@
         }
     }
 
+    #stowling-settings-standard .sample-debug-mode,
+    #stowling-settings-standard .sample-debug-title {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    #stowling-settings-standard .sample-debug-mode {
+        justify-content: flex-end;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 13px;
+        cursor: pointer;
+    }
+    #stowling-settings-standard .sample-debug-badge {
+        padding: 2px 6px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.4;
+        white-space: nowrap;
+    }
+    #stowling-settings-standard #sample-batching-row[hidden] {
+        display: none !important;
+    }
     </style>
 </head>
 <body>
@@ -2929,6 +2956,11 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             <p>统一模块标题、设置行、展开区域与输入控件的样式。</p>
         </div>
 <div id="stowling-settings-standard" aria-label="任务模块布局">
+    <label class="sample-debug-mode" for="sample-debug-mode">
+        <span>调试模式</span>
+        <input id="sample-debug-mode" class="sample-switch cursor-interaction"
+               type="checkbox" role="switch">
+    </label>
     <section class="sample-module" aria-labelledby="sample-module-title">
         <header class="sample-header">
             <h2 id="sample-module-title" class="sample-title">
@@ -3175,6 +3207,21 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 </div>
             </div>
             <p id="sample-target-order" class="sample-description" aria-live="polite" hidden></p>
+            <div id="sample-batching-row" class="sample-row" hidden inert>
+                <div class="sample-setting-copy">
+                    <label class="sample-debug-title" for="sample-batching">
+                        <span>同类多盒合批</span>
+                        <span class="sample-debug-badge">调试选项</span>
+                    </label>
+                    <p class="sample-description" id="sample-batching-description">
+                        连续打包并集中运送同类盒子，减少往返。
+                    </p>
+                </div>
+                <input id="sample-batching" class="sample-switch cursor-interaction"
+                       type="checkbox" role="switch" aria-describedby="sample-batching-description"
+                       checked disabled>
+            </div>
+
 
             <h3 class="sample-section-title">单个物品最大售卖数量</h3>
             <div class="sample-row sample-number-row">
@@ -3218,7 +3265,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         running: false, expanded: true, valley: false, wuling: true,
         valleyExpanded: false, wulingExpanded: false, strategyExpanded: false,
         strategy: "price", maximum: "320", valleyReserve: "64", wulingReserve: "64",
-        priceThreshold: "10", stockThreshold: "640", targetZones: []
+        priceThreshold: "10", stockThreshold: "640", targetZones: [],
+        debugMode: false, sameCategoryBoxBatching: true
     };
 
     /**
@@ -3280,6 +3328,13 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     /** @param {boolean} [animate] @returns {void} */
     function renderUI(animate = false) {
         renderRunState();
+        root.querySelector("#sample-debug-mode").checked = ui.debugMode;
+        const batchingRow = root.querySelector("#sample-batching-row");
+        batchingRow.hidden = !ui.debugMode;
+        batchingRow.inert = !ui.debugMode;
+        const batching = root.querySelector("#sample-batching");
+        batching.checked = ui.sameCategoryBoxBatching;
+        batching.disabled = !ui.debugMode;
         collapse.setAttribute("aria-expanded", String(ui.expanded));
         const moduleAction = ui.expanded ? "收起" : "展开";
         collapse.setAttribute("aria-label", `${moduleAction}售卖弹性物资设置`);
@@ -3361,6 +3416,15 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         }
     } catch {
         // Missing or malformed sample data falls back to the visible initial state.
+    }
+
+    for (const [id, key] of [["sample-debug-mode", "debugMode"],
+        ["sample-batching", "sameCategoryBoxBatching"]]) {
+        root.querySelector(`#${id}`).addEventListener("change", (event) => {
+            ui[key] = event.target.checked;
+            renderUI();
+            remember();
+        });
     }
 
     /** @param {boolean} open @param {boolean} [focus] @param {boolean} [animate] @returns {void} */

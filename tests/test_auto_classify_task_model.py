@@ -929,3 +929,39 @@ def test_target_selection_order_survives_payload_save_and_reload() -> None:
         return model.draftFromTask(payload).classificationAreas.map(area => area.categoryZoneId);
     })()""")
     assert result == ["b", "a", "c"]
+
+
+def test_same_category_box_batching_defaults_on_for_new_and_legacy_tasks() -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return [model.newDraft("CLASSIFICATION").sameCategoryBoxBatching,
+            model.draftFromTask({kind: "CLASSIFICATION"}).sameCategoryBoxBatching];
+    })()""")
+    assert result == [True, True]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_same_category_box_batching_survives_save_reload_and_other_edits(enabled: bool) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const resources = {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]};
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}], sameCategoryBoxBatching: """
+        + json.dumps(enabled) + """};
+        const loaded = model.draftFromTask(model.payload(draft, resources));
+        loaded.overflowEnabled = false;
+        return model.payload(loaded, resources).sameCategoryBoxBatching;
+    })()""")
+    assert result is enabled
+
+
+@pytest.mark.parametrize("value", ["false", 0, {}, []])
+def test_same_category_box_batching_rejects_non_boolean_values(value: Any) -> None:
+    errors = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
+            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
+            sameCategoryBoxBatching: """ + json.dumps(value) + """},
+            {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
+    })()""")
+    assert errors == ["同类多盒合批开关需为布尔值"]

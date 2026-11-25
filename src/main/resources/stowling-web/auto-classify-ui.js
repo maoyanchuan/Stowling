@@ -86,6 +86,8 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
+        batching: document.querySelector("#auto-same-category-batching"),
+        batchingRow: document.querySelector("#auto-same-category-batching-row"),
         warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
         warehouseBody: document.querySelector("#robot-warehouse-body")
     };
@@ -248,6 +250,7 @@
             draft.overflowDestinationRef, "请选择机器人仓库区域");
         Picker.group(elements.warehouse, undefined, "regions", false);
         elements.warehouseMixed.checked = draft.robotWarehouseMixedBoxes;
+        elements.batching.checked = draft.sameCategoryBoxBatching;
         const available = [...state.regularTasks, ...state.items]
             .filter(task => task.id !== draft.id)
             .map(task => ({id: "task:" + task.id, name: task.name}));
@@ -304,6 +307,7 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
+            sameCategoryBoxBatching: elements.batching.checked,
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
@@ -546,6 +550,11 @@
         }
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
+        const showBatching = !pickup && window.StowlingTaskDebugMode?.enabled() === true;
+        elements.batchingRow.hidden = !showBatching;
+        elements.batchingRow.inert = !showBatching;
+        elements.batching.disabled = disabled || !showBatching
+            || !elements.classifyEnabled.checked;
         selectView?.refresh(true);
     }
 
@@ -860,6 +869,7 @@
     document.addEventListener("stowling:refresh-task-status", ({detail}) => {
         syncClassificationRuns(detail.pending || []);
     });
+    document.addEventListener("stowling:task-debug-mode-changed", updateControls);
     Stowling.onConnected(loadResources);
     updateControls();
     window.setInterval(updateControls, 3000);

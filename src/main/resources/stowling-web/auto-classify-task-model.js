@@ -54,6 +54,7 @@
             overflowEnabled: false,
             overflowDestinationRef: "",
             robotWarehouseMixedBoxes: true,
+            sameCategoryBoxBatching: true,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY},
             cleanupDestinationRef: "",
             facilities: {},
@@ -96,6 +97,7 @@
             overflowEnabled: item?.overflowEnabled === true,
             overflowDestinationRef: String(item?.overflowDestinationRef || ""),
             robotWarehouseMixedBoxes: item?.robotWarehouseMixedBoxes !== false,
+            sameCategoryBoxBatching: item?.sameCategoryBoxBatching !== false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...item?.remainderPolicy},
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
@@ -160,6 +162,10 @@
      */
     function validateDraft(draft, resources) {
         const errors = [];
+        if (draft?.sameCategoryBoxBatching != null
+                && typeof draft.sameCategoryBoxBatching !== "boolean") {
+            errors.push("同类多盒合批开关需为布尔值");
+        }
         const policy = {...DEFAULT_CACHE_POLICY, ...draft?.cachePolicy};
         if (typeof policy.enabled !== "boolean") {
             errors.push("打包缓存开关需为布尔值");
@@ -256,6 +262,7 @@
             overflowEnabled: draft.overflowEnabled === true,
             overflowDestinationRef: draft.overflowDestinationRef || "",
             robotWarehouseMixedBoxes: draft.robotWarehouseMixedBoxes !== false,
+            sameCategoryBoxBatching: draft.sameCategoryBoxBatching !== false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy},
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},

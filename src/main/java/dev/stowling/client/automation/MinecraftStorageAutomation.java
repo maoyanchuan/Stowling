@@ -2067,7 +2067,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             .nonEmptyItemCopyStream().toList())) * stack.getCount()).sum();
             int looseItems = sum(raw(stock));
             if (plan == null) {
-                shareFullBox = StoragePackingPlanner.canPack(false,
+                shareFullBox = !context.workspace().sameCategoryBoxBatching()
+                        && StoragePackingPlanner.canPack(false,
                         Math.addExact(looseItems, partialItems), 0, stackSize)
                         && hasCompanionStock();
             }
@@ -2079,7 +2080,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     "category=" + category + "; looseReserved=" + plan.looseReserved()
                             + "; materialToPack=" + plan.materialToPack()
                             + "; boxes=" + plan.plannedBoxes()
-                            + "; nextLoad=" + sum(round.load()));
+                            + "; nextLoad=" + sum(round.load())
+                            + "; sameCategoryBoxBatching="
+                            + context.workspace().sameCategoryBoxBatching());
             if ((shareFullBox && fullBoxes > 0) || fullBoxes >= remainingBatchSlots()
                     || round.load().isEmpty() || !cleanupAvailable()) {
                 prepareReservedLoose();

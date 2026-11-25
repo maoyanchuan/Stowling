@@ -1281,6 +1281,8 @@ public final class TaskRunManager {
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
         workspace.setDiagnostics(diagnostics);
         PreparedRun prepared = queued.prepared;
+        workspace.configureSameCategoryBoxBatching(prepared.taskSettings == null
+                || prepared.taskSettings.sameCategoryBoxBatching());
         diagnostics.captureContext(running.runId(), new TaskDiagnosticContext(clock.instant(),
                 diagnosticVersions, running, prepared.task, prepared.interruptionTask,
                 prepared.taskSettings, diagnosticStorageSettings.get(),

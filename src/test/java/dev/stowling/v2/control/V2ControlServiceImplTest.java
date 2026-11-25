@@ -36,6 +36,58 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServiceImplTest {
     @Test
+    void batchingDefaultsOnAndExplicitOffSurvivesEditsRunSwitchesAndReload() throws Exception {
+        Path path = directory.resolve("classification-batching.json");
+        var store = new ConfigStore(path);
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store,
+                new TaskRunManager(new FailedNavigation()), List::of);
+        var point = createPoint(service, "Cache");
+        String pointRef = "coordinate:" + point.id();
+        var zone = service.createCategoryZone(new CategoryZoneRequest("Storage",
+                List.of(new CategoryBindingRequest(10, 64, 0, 10, 64, 0,
+                        11, 64, 0, 11, 64, 0, "DIRECT_BLOCK_ID", List.of(), List.of()))))
+                .categoryZones().getFirst();
+        var created = service.createAutoClassifyTask(new AutoClassifyTaskRequest(
+                "Sort", false, null, null, null, pointRef,
+                List.of(new AutoClassifyAreaRequest("category-zone:" + zone.id())),
+                TaskPriority.NORMAL, null, null, null, null,
+                dev.stowling.v2.model.AutoClassifyDefinition.Kind.CLASSIFICATION, null));
+        assertTrue(created.item().sameCategoryBoxBatching());
+
+        var gson = new com.google.gson.Gson();
+        var edit = gson.toJsonTree(created.item()).getAsJsonObject();
+        edit.addProperty("revision", created.revision());
+        edit.addProperty("sameCategoryBoxBatching", false);
+        var disabled = service.updateAutoClassifyTask(created.item().id(),
+                gson.fromJson(edit, AutoClassifyTaskUpdateRequest.class));
+        assertFalse(disabled.item().sameCategoryBoxBatching());
+
+        edit.remove("sameCategoryBoxBatching");
+        edit.addProperty("revision", disabled.revision());
+        edit.addProperty("name", "Renamed sort");
+        var renamed = service.updateAutoClassifyTask(created.item().id(),
+                gson.fromJson(edit, AutoClassifyTaskUpdateRequest.class));
+        assertFalse(renamed.item().sameCategoryBoxBatching());
+        var started = service.startAutoClassifyTask(created.item().id(),
+                new RevisionRequest(renamed.revision()));
+        assertFalse(started.item().sameCategoryBoxBatching());
+        var stopped = service.stopAutoClassifyTask(created.item().id(),
+                new RevisionRequest(started.revision()));
+        assertFalse(stopped.item().sameCategoryBoxBatching());
+        var reopened = new ConfigStore(path).loadOrReset().config();
+        assertFalse(reopened.autoClassifyTasks().getFirst().sameCategoryBoxBatching());
+
+        var legacy = com.google.gson.JsonParser.parseString(
+                java.nio.file.Files.readString(path)).getAsJsonObject();
+        legacy.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .remove("sameCategoryBoxBatching");
+        java.nio.file.Files.writeString(path, gson.toJson(legacy));
+        assertTrue(new ConfigStore(path).loadOrReset().config().autoClassifyTasks()
+                .getFirst().sameCategoryBoxBatching());
+    }
+
+    @Test
     void retainsDisabledRefillDraftAndTaskPriorityAcrossReloads() {
         Path path = directory.resolve("auto-eat-refill.json");
         var store = new ConfigStore(path);

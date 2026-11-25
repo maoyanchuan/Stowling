@@ -12,6 +12,7 @@
     <script src="/common.js" defer></script>
     <script src="/resource-picker.js" defer></script>
     <script src="/settings-ui.js" defer></script>
+    <script src="/task-debug-mode.js" defer></script>
     <script src="/task-select-ui.js" defer></script>
     <script src="/v2-task-model.js" defer></script>
     <script src="/coordinate-model.js" defer></script>
@@ -106,8 +107,15 @@
                                 <h2 id="task-display-title">已保存任务</h2>
                                 <span id="move-task-count" class="count-label">0</span>
                             </div>
-                            <button id="refresh-move-tasks" class="ghost compact"
-                                    type="button">刷新</button>
+                            <div class="task-heading-actions">
+                                <label class="task-debug-mode" for="task-debug-mode">
+                                    <span>调试模式</span>
+                                    <input id="task-debug-mode" class="settings-switch"
+                                           type="checkbox" role="switch">
+                                </label>
+                                <button id="refresh-move-tasks" class="ghost compact"
+                                        type="button">刷新</button>
+                            </div>
                         </div>
                         <p id="move-resources-message" class="field-message"
                            role="status">连接后可查看已保存任务</p>
@@ -980,6 +988,27 @@
                                                 <p id="auto-classification-order"
                                                    class="settings-description compact-help"
                                                    aria-live="polite" hidden></p>
+                                                <div id="auto-same-category-batching-row"
+                                                     class="settings-row" hidden inert>
+                                                    <div class="settings-copy">
+                                                        <label class="task-debug-title"
+                                                               for="auto-same-category-batching">
+                                                            <span>同类多盒合批</span>
+                                                            <span class="task-debug-badge">
+                                                                调试选项
+                                                            </span>
+                                                        </label>
+                                                        <span id="auto-batching-description"
+                                                              class="settings-description">
+                                                            连续打包并集中运送同类盒子，减少往返。
+                                                        </span>
+                                                    </div>
+                                                    <input id="auto-same-category-batching"
+                                                           class="settings-switch" type="checkbox"
+                                                           role="switch" checked disabled
+                                                           aria-describedby=
+                                                               "auto-batching-description">
+                                                </div>
                                                 <p id="combined-classification-help" class="auto-config-note">
                                                     在「坐标 → 区域 → 分类区」设置分类方式与储存范围。
                                                     拾取物存入缓存后才创建后台分类任务。

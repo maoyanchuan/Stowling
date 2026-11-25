@@ -994,7 +994,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
+                optionalBooleanValue(json, "sameCategoryBoxBatching")
         );
     }
 
@@ -1021,7 +1022,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
+                optionalBooleanValue(json, "sameCategoryBoxBatching")
         );
     }
 
@@ -1105,6 +1107,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "cachePolicy",
                 "remainderPolicy",
                 "robotWarehouseMixedBoxes",
+                "sameCategoryBoxBatching",
                 "kind",
                 "followUpTaskRef",
                 "followUpDelaySeconds",
@@ -2052,6 +2055,10 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry(
                         "/settings-ui.js",
                         read("stowling-web/settings-ui.js", js)
+                ),
+                Map.entry(
+                        "/task-debug-mode.js",
+                        read("stowling-web/task-debug-mode.js", js)
                 ),
                 Map.entry(
                         "/icon.svg",

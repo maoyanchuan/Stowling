@@ -18,6 +18,16 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
+    private boolean sameCategoryBoxBatching = true;
+
+    public synchronized void configureSameCategoryBoxBatching(boolean enabled) {
+        sameCategoryBoxBatching = enabled;
+    }
+
+    public synchronized boolean sameCategoryBoxBatching() {
+        return sameCategoryBoxBatching;
+    }
+
     private boolean retainPickupCargo;
 
     public synchronized void retainPickupCargoOnFailure() {

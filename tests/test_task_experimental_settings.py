@@ -47,7 +47,8 @@ def test_task_experiments_are_after_cleanup_and_before_delete_actions() -> None:
     assert page.attrs["auto-experiments-toggle"]["aria-expanded"] == "false"
     assert page.attrs["auto-experiments-toggle"]["aria-controls"] == "auto-experiments-body"
     assert "hidden" in page.attrs["auto-experiments-body"]
-    assert "type" not in page.attrs[menu]
+    assert "hidden" in page.attrs[menu]
+    assert "inert" in page.attrs[menu]
 
 
 def test_all_existing_experimental_controls_share_the_footer_submenu() -> None:
@@ -71,5 +72,7 @@ def test_runnable_template_places_experiments_last_with_an_independent_disclosur
     assert "sample-experiments-detail" in page.parents["sample-batching"]
     assert page.attrs["sample-experiments-expand"]["aria-expanded"] == "false"
     assert page.attrs["sample-experiments-expand"]["aria-controls"] == "sample-experiments-detail"
+    assert "hidden" in page.attrs["sample-experiments"]
+    assert "inert" in page.attrs["sample-experiments"]
     assert "hidden" in page.attrs["sample-experiments-detail"]
     assert "sample-experiments" not in page.parents["sample-enabled"]

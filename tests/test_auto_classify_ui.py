@@ -660,9 +660,19 @@ function input(target) {
     assert.equal(delay.disabled, false);
     assert.equal(scheduled, 4);
 
+    const experimentsRoot = element("#auto-experiments-settings");
     const experimentsHeader = element("#auto-experiments-toggle");
     const experimentsBody = element("#auto-experiments-body");
+    assert.equal(experimentsRoot.hidden, true);
+    assert.equal(experimentsRoot.inert, true);
     assert.equal(experimentsBody.hidden, true);
+    experimentsHeader.dispatchEvent(new Event("click"));
+    assert.equal(experimentsBody.hidden, true);
+    let debugMode = true;
+    window.StowlingTaskDebugMode = {enabled: () => debugMode};
+    document.dispatchEvent(new Event("stowling:task-debug-mode-changed"));
+    assert.equal(experimentsRoot.hidden, false);
+    assert.equal(experimentsRoot.inert, false);
     const scheduledBeforeExpand = scheduled;
     experimentsHeader.dispatchEvent(new Event("click"));
     assert.equal(experimentsBody.hidden, false);
@@ -698,6 +708,21 @@ function input(target) {
     experimentsHeader.dispatchEvent(new Event("click"));
     assert.equal(experimentsBody.hidden, false);
     assert.equal(packingBody.hidden, false);
+    assert.equal(scheduled, scheduledBeforeCollapse);
+    debugMode = false;
+    document.dispatchEvent(new Event("stowling:task-debug-mode-changed"));
+    assert.equal(experimentsRoot.hidden, true);
+    assert.equal(experimentsRoot.inert, true);
+    assert.equal(experimentsBody.hidden, true);
+    assert.equal(packing.checked, true);
+    assert.equal(threshold.value, "65");
+    assert.equal(scheduled, scheduledBeforeCollapse);
+    debugMode = true;
+    document.dispatchEvent(new Event("stowling:task-debug-mode-changed"));
+    assert.equal(experimentsRoot.hidden, false);
+    assert.equal(experimentsBody.hidden, false);
+    assert.equal(packing.checked, true);
+    assert.equal(threshold.value, "65");
     assert.equal(scheduled, scheduledBeforeCollapse);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """

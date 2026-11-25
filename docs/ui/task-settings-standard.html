@@ -3232,7 +3232,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 <input id="sample-maximum" class="sample-number"
                     type="number" min="1" max="99999" step="1" value="320">
             </div>
-            <section id="sample-experiments" aria-label="实验性设置">
+            <section id="sample-experiments" aria-label="实验性设置" hidden inert>
                 <button id="sample-experiments-expand" type="button"
                     class="sample-row sample-experiments-toggle cursor-interaction"
                     aria-expanded="false" aria-controls="sample-experiments-detail">
@@ -3376,15 +3376,19 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         const batching = root.querySelector("#sample-batching");
         batching.checked = ui.sameCategoryBoxBatching;
         batching.disabled = !ui.debugMode;
+        const experimentsRoot = root.querySelector("#sample-experiments");
+        experimentsRoot.hidden = !ui.debugMode;
+        experimentsRoot.inert = !ui.debugMode;
+        const experimentsExpanded = ui.debugMode && ui.experimentsExpanded;
         const experiments = root.querySelector("#sample-experiments-expand");
-        experiments.setAttribute("aria-expanded", String(ui.experimentsExpanded));
+        experiments.setAttribute("aria-expanded", String(experimentsExpanded));
         experiments.setAttribute("aria-label",
-            `${ui.experimentsExpanded ? "收起" : "展开"}实验性设置`);
+            `${experimentsExpanded ? "收起" : "展开"}实验性设置`);
         experiments.title = ui.sameCategoryBoxBatching ? "同类多盒合批（sameCategoryBoxBatching）" : "";
         root.querySelector("#sample-experiments-summary").textContent = ui.sameCategoryBoxBatching
             ? "已开启 1 项" : "未启用实验性设置";
         root.querySelector("#sample-experiments-hint").hidden = ui.debugMode;
-        reveal(root.querySelector("#sample-experiments-detail"), ui.experimentsExpanded, animate);
+        reveal(root.querySelector("#sample-experiments-detail"), experimentsExpanded, animate);
 
         collapse.setAttribute("aria-expanded", String(ui.expanded));
         const moduleAction = ui.expanded ? "收起" : "展开";
@@ -3470,6 +3474,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     }
 
     root.querySelector("#sample-experiments-expand").addEventListener("click", () => {
+        if (!ui.debugMode) return;
         ui.experimentsExpanded = !ui.experimentsExpanded;
         renderUI(true);
         remember();

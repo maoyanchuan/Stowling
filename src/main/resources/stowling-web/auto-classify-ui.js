@@ -86,6 +86,7 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
+        experimentsRoot: document.querySelector("#auto-experiments-settings"),
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
         experimentsSummary: document.querySelector("#auto-experiments-summary"),
@@ -471,6 +472,10 @@
         const kind = state.draft.kind;
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
+        const showExperiments = window.StowlingTaskDebugMode?.enabled() === true;
+        elements.experimentsRoot.hidden = !showExperiments;
+        elements.experimentsRoot.inert = !showExperiments;
+
         const boxHost = document.querySelector("#auto-empty-box-settings");
         if (boxHost) boxHost.hidden = !classification;
         cleanup.setSupplyVisible?.(!classification);
@@ -669,6 +674,9 @@
      * @returns {boolean}
      */
     function phaseEnabled(phase) {
+        if (phase === "experiments") {
+            return window.StowlingTaskDebugMode?.enabled() === true;
+        }
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;
         if (phase === "classification") return elements.classifyEnabled.checked;

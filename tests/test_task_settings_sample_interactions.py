@@ -266,6 +266,8 @@ def test_experiments_menu_collapses_without_changing_saved_switch_or_run_state()
     result = run_sample("""(async () => {
         load();
         const initiallyClosed = node('experiments-detail').hidden;
+        node('debug-mode').checked = true;
+        node('debug-mode').emit('change');
         node('experiments-expand').emit('click');
         animations.at(-1).finish();
         await Promise.resolve();
@@ -288,3 +290,32 @@ def test_experiments_menu_collapses_without_changing_saved_switch_or_run_state()
     assert result == {"initiallyClosed": True, "opened": True, "closed": True,
                       "batching": False, "running": False, "summary": "未启用实验性设置",
                       "timings": [200, 150]}
+
+
+
+def test_experiments_display_preference_hides_the_whole_menu_and_keeps_execution_values() -> None:
+    result = run_sample("""(async () => {
+        load();
+        const initialHidden = node('experiments').hidden;
+        const initialInert = node('experiments').inert;
+        node('experiments-expand').emit('click');
+        const stayedClosed = node('experiments-detail').hidden;
+        node('debug-mode').checked = true;
+        node('debug-mode').emit('change');
+        const shown = !node('experiments').hidden;
+        node('experiments-expand').emit('click');
+        animations.at(-1).finish();
+        await Promise.resolve();
+        node('debug-mode').checked = false;
+        node('debug-mode').emit('change');
+        const hiddenAgain = node('experiments').hidden && node('experiments').inert;
+        const preserved = node('batching').checked;
+        node('debug-mode').checked = true;
+        node('debug-mode').emit('change');
+        return {initialHidden, initialInert, stayedClosed, shown, hiddenAgain, preserved,
+            shownAgain:!node('experiments').hidden, reopened:!node('experiments-detail').hidden,
+            running:node('enabled').checked};
+    })()""")
+    assert result == {"initialHidden": True, "initialInert": True, "stayedClosed": True,
+                      "shown": True, "hiddenAgain": True, "preserved": True,
+                      "shownAgain": True, "reopened": True, "running": False}

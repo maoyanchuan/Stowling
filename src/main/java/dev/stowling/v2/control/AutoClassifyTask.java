@@ -34,8 +34,49 @@ public record AutoClassifyTask(
         dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
         Boolean robotWarehouseMixedBoxes,
         Boolean sameCategoryBoxBatching,
-        Boolean classificationBaselineEnabled
+        Boolean classificationBaselineEnabled,
+        Boolean classificationFullTargetHandoffEnabled,
+        Boolean classificationPartialCacheOnDemandEnabled,
+        Boolean classificationCachedEmptyBoxSettlementEnabled
 ) {
+    public AutoClassifyTask(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            AutoClassifyDetection detection,
+            String cacheLocationRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            TaskPriority classificationPriority,
+            String collectionTaskRef,
+            String classificationTaskRef,
+            String interruptionTaskRef,
+            List<UUID> triggerIds,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String overflowDestinationRef,
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer followUpDelaySeconds,
+            boolean followUpEnabled,
+            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
+            Boolean robotWarehouseMixedBoxes,
+            Boolean sameCategoryBoxBatching,
+            Boolean classificationBaselineEnabled
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheLocationRef, classificationAreas, collectionPriority,
+                classificationPriority, collectionTaskRef, classificationTaskRef,
+                interruptionTaskRef, triggerIds, overflowEnabled, cleanupPolicy,
+                overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                followUpDelaySeconds, followUpEnabled, remainderPolicy,
+                robotWarehouseMixedBoxes, sameCategoryBoxBatching,
+                classificationBaselineEnabled, null, null, null);
+    }
+
     public AutoClassifyTask(
             UUID id,
             String name,

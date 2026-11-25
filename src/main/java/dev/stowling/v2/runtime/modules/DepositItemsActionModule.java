@@ -74,7 +74,9 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
             return TaskModuleResult.succeeded("没有需要存入的物品");
         }
         if (!context.workspace().selectedStorageUsesCacheFallback()
-                && target.storagePolicy().mode() != dev.stowling.v2.model.StorageMode.NORMAL) {
+                && (target.storagePolicy().mode() != dev.stowling.v2.model.StorageMode.NORMAL
+                        || context.workspace().fullTargetHandoffEnabled()
+                                && context.workspace().isClassificationStorage(target))) {
             packing = context.storageAutomation().deposit(context, target, requested);
             return handlePacking(packing.start());
         }
@@ -104,6 +106,11 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 && !context.storageAutomation().hasTemporaryResources(
                         context.workspace().inventoryAccount().ownerId())) {
             context.workspace().markTargetUnavailable(target, result.message());
+            if (context.workspace().fullTargetHandoffEnabled()
+                    && context.workspace().hasManagedItems()
+                    && itemsForSource(context, itemSource).isEmpty()) {
+                return TaskModuleResult.succeeded("当前可投递物品已处理，确认满箱余物留待后续阶段");
+            }
             if (!itemsForSource(context, itemSource).isEmpty()) {
                 return TaskModuleResult.succeeded(result.message() + "；尝试同组下一箱");
             }

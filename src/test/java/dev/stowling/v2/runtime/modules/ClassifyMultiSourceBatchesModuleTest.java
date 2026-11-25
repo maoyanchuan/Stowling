@@ -119,6 +119,19 @@ class ClassifyMultiSourceBatchesModuleTest {
         assertTrue(fixture.workspace.sameCategoryBoxBatching());
     }
 
+    @Test
+    void confirmedFullRemaindersStayCarriedWhileOtherDeliveriesFinish() {
+        var fixture = new Fixture(0, true);
+        fixture.full.addAll(List.of(STONE_BOX, BACKUP));
+        assertEquals(TaskModuleState.SUCCEEDED, fixture.finish().state());
+        assertEquals(List.of("take:0", "take:1", "store:10", "store:11", "store:12"),
+                fixture.events);
+        assertFalse(fixture.workspace.hasCarriedItems());
+        assertEquals(Map.of(STONE, 64), fixture.workspace.managedItems());
+        fixture.workspace.endClassificationDelivery();
+        assertEquals(Map.of(STONE, 64), fixture.workspace.carriedItems());
+    }
+
     private static ContainerTarget target(int x) {
         return new ContainerTarget(new BlockPosition(x, 64, 0), "minecraft:chest");
     }
@@ -131,7 +144,7 @@ class ClassifyMultiSourceBatchesModuleTest {
     }
 
     private static final class Fixture implements ContainerWithdrawalPort, ContainerTransferPort,
-            NavigationPort {
+            NavigationPort, StorageAutomationPort {
         private final TaskRunWorkspace workspace = new TaskRunWorkspace();
         private final List<String> events = new ArrayList<>();
         private final List<ContainerTarget> failed = new ArrayList<>();
@@ -145,6 +158,11 @@ class ClassifyMultiSourceBatchesModuleTest {
         private ContainerTarget pendingTarget;
 
         private Fixture(int tools) {
+            this(tools, false);
+        }
+
+        private Fixture(int tools, boolean handoff) {
+            workspace.configureClassificationVisits(handoff, false, false);
             if (tools > 0) physical.put("minecraft:wooden_pickaxe", tools);
             stock.put(FIRST, new LinkedHashMap<>(Map.of(STONE, 64)));
             stock.put(SECOND, new LinkedHashMap<>(Map.of(DIRT, 64)));
@@ -165,7 +183,7 @@ class ClassifyMultiSourceBatchesModuleTest {
                     dev.stowling.automation.CategoryMarkerCachePort.UNAVAILABLE,
                     dev.stowling.automation.FoodConsumptionPort.UNAVAILABLE,
                     unused(CategoryZonePort.class), Map.of(), Map.of(), Map.of(), workspace,
-                    inventory, StorageAutomationPort.UNAVAILABLE);
+                    inventory, this);
             module = new ClassifyMultiSourceBatchesModule(context);
         }
 
@@ -225,6 +243,37 @@ class ClassifyMultiSourceBatchesModuleTest {
                 else physical.put(key, remaining);
             });
             return ContainerTransferResult.succeeded("confirmed", Map.of());
+        }
+
+        @Override
+        public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+            throw new AssertionError("Unexpected cleanup");
+        }
+
+        @Override
+        public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                Map<String, Integer> items) {
+            return new TaskModuleExecutor() {
+                @Override
+                public TaskModuleResult start() {
+                    var result = startDeposit(target, items);
+                    if (full.contains(target)) {
+                        workspace.recordConfirmedFullStorage(target,
+                                workspace.acceptedItemsByContainer().get(target));
+                    }
+                    workspace.consumeDeposit("carried", items, result.remaining());
+                    return TaskModuleResult.succeeded(result.message());
+                }
+
+                @Override
+                public TaskModuleResult tick() {
+                    return start();
+                }
+
+                @Override
+                public void cancel() {
+                }
+            };
         }
 
         @Override

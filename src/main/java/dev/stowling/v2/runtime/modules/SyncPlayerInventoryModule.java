@@ -23,6 +23,7 @@ final class SyncPlayerInventoryModule implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult start() {
+        context.workspace().endClassificationDelivery();
         return tick();
     }
 

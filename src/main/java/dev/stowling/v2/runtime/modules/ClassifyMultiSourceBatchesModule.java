@@ -175,7 +175,9 @@ final class ClassifyMultiSourceBatchesModule implements TaskModuleExecutor {
 
     private TaskModuleResult blocked(String reason) {
         context.workspace().markTargetUnavailable(target, reason);
-        context.workspace().recordClassificationIssue(target, reason);
+        if (!context.workspace().hasConfirmedFullStorage(target)) {
+            context.workspace().recordClassificationIssue(target, reason);
+        }
         return select();
     }
 

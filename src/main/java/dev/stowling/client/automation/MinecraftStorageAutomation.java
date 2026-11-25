@@ -76,6 +76,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     private final Map<UUID, IntakeStash> intakeStashes = new LinkedHashMap<>();
     private final Map<TaskRunWorkspace, Map<BlockPosition, CacheSnapshot>> cacheSnapshotsByRun =
             new WeakHashMap<>();
+    private final Map<TaskRunWorkspace, Map<BlockPosition, CacheSnapshot>> storageSnapshotsByRun =
+            new WeakHashMap<>();
     private final Map<TaskRunWorkspace, List<ContainerTarget>> boxWarehouses = new WeakHashMap<>();
 
     public MinecraftStorageAutomation(Minecraft minecraft, StorageSettingsStore settings) {
@@ -148,7 +150,32 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
             Map<String, Integer> items) {
+        if (context.workspace().fullTargetHandoffEnabled()
+                && target.storagePolicy().mode() == StorageMode.NORMAL) {
+            return new PlainClassificationDeposit(context, target, items);
+        }
         return new Packing(context, target, items);
+    }
+
+    private final class PlainClassificationDeposit extends Session {
+        private final ContainerTarget target;
+        private final Map<String, Integer> items;
+
+        PlainClassificationDeposit(TaskExecutionContext context, ContainerTarget target,
+                Map<String, Integer> items) {
+            super(context);
+            this.target = target;
+            this.items = Map.copyOf(items);
+        }
+
+        @Override
+        void initialize() {
+            transfer(target, items, false, () -> {
+                if (items.keySet().stream().anyMatch(key -> owned().getOrDefault(key, 0) > 0)) {
+                    context.workspace().markTargetUnavailable(target, "分类目标未能接收全部余量");
+                }
+            });
+        }
     }
 
     @Override
@@ -516,13 +543,79 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 fullBoxKeys.add(key);
             }
         }
+        if (context.workspace().partialCacheOnDemandEnabled()) {
+            occupied.stream().filter(MinecraftItemIdentity::isBox)
+                    .filter(stack -> !stack.has(DataComponents.CUSTOM_NAME)).forEach(stack ->
+                            context.workspace().recordClassificationBoxContents(
+                                    MinecraftItemIdentity.key(stack),
+                                    MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                                            .map(MinecraftItemIdentity::key)
+                                            .collect(java.util.stream.Collectors.toSet())));
+        }
         CacheSnapshot snapshot = new CacheSnapshot(
                 stacks.size(), Map.copyOf(counts), occupied, Map.copyOf(stackSizes),
                 Set.copyOf(fullBoxKeys));
+        if (context.workspace().cachedEmptyBoxSettlementEnabled()
+                && (context.workspace().cacheContainers().stream()
+                        .anyMatch(cache -> sameContainer(cache, target))
+                    || context.workspace().containerScan().stream()
+                            .flatMap(scan -> scan.containers().stream())
+                            .anyMatch(cache -> sameContainer(cache, target)))) {
+            context.workspace().recordSettlementSource(target, snapshot.counts());
+        }
         context.workspace().recordCacheContents(target, snapshot.counts());
         cacheSnapshotsByRun.computeIfAbsent(context.workspace(), ignored -> new LinkedHashMap<>())
                 .put(target.position(), snapshot);
         return snapshot;
+    }
+
+    private void rememberStorageCapacity(TaskExecutionContext context, ContainerTarget target,
+            List<ItemStack> contents) {
+        CacheSnapshot snapshot = recordCacheContents(context, target, contents);
+        storageSnapshotsByRun.computeIfAbsent(context.workspace(), ignored -> new LinkedHashMap<>())
+                .put(target.position(), snapshot);
+        Set<String> full = new LinkedHashSet<>();
+        StoragePolicy policy = target.storagePolicy();
+        if (!contents.isEmpty() && policy.partialBoxDestinationRef() == null) {
+            for (String category : context.workspace().acceptedItemsByContainer()
+                    .getOrDefault(target, Set.of())) {
+                String key = category.startsWith("=") ? category.substring(1) : category;
+                int size = java.util.stream.Stream.concat(
+                        contents.stream(), inventoryStacks().stream())
+                        .filter(stack -> !stack.isEmpty())
+                        .flatMap(stack -> MinecraftItemIdentity.isBox(stack)
+                                ? MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
+                                : java.util.stream.Stream.of(stack))
+                        .filter(stack -> ItemIdentity.matches(MinecraftItemIdentity.key(stack),
+                                Set.of(category)))
+                        .findFirst().map(ItemStack::getMaxStackSize).orElse(64);
+                boolean boxSpace = policy.mode() != StorageMode.NORMAL
+                        && containsFittingStorageBox(contents, key, size);
+                if (!ClassificationOverflowCapacity.hasSpace(policy, transferSlots(contents),
+                        contents.size(), key, size, boxSpace)) full.add(category);
+            }
+        }
+        context.workspace().recordConfirmedFullStorage(target, full);
+    }
+
+    private static boolean containsFittingStorageBox(List<ItemStack> contents, String key,
+            int stackSize) {
+        return contents.stream().filter(MinecraftItemIdentity::isBox)
+                .filter(stack -> ItemIdentity.base(key).equals(
+                        MinecraftItemIdentity.boxCategory(stack)))
+                .anyMatch(stack -> !ShulkerTransferPlanner.fitting(boxSlots(stack),
+                        StoragePackingPlanner.BOX_SLOTS, Map.of(key, 1),
+                        Map.of(key, stackSize)).isEmpty());
+    }
+
+    private Optional<List<ItemStack>> confirmedStorageContents(TaskExecutionContext context,
+            ContainerTarget target) {
+        return Optional.ofNullable(storageSnapshotsByRun
+                .getOrDefault(context.workspace(), Map.of()).get(target.position())).map(snapshot -> {
+            List<ItemStack> contents = new ArrayList<>(snapshot.stacks());
+            while (contents.size() < snapshot.slots()) contents.add(ItemStack.EMPTY);
+            return List.copyOf(contents);
+        });
     }
 
     private Optional<List<ItemStack>> confirmedCacheContents(TaskExecutionContext context,
@@ -648,6 +741,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             boolean inPackingPlan = cacheSnapshots != null
                     && cacheSnapshots.containsKey(target.position());
             List<ItemStack> contents = access.contents();
+            if (context.workspace().fullTargetHandoffEnabled()
+                    && context.workspace().acceptedItemsByContainer().containsKey(target)) {
+                rememberStorageCapacity(context, target, contents);
+            }
             if (!inPackingPlan && context.workspace().cacheContents(target).isEmpty()
                     && context.workspace().containerScan().stream()
                             .flatMap(scan -> scan.containers().stream())
@@ -817,6 +914,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     StoragePackingPlanner.BOX_SLOTS);
         }
 
+        List<ContainerTarget> emptyBoxAccountingCaches() {
+            return classificationCaches(context);
+        }
+
+        int recordedEmptyBoxCount(ContainerTarget target) {
+            return context.workspace().cacheContents(target)
+                    .map(EmptyBoxSupplyPlan::emptyCount).orElse(0);
+        }
+
         final List<ContainerTarget> emptyBoxReturns(ContainerTarget preferred) {
             return emptyBoxReturnsForSources(preferred == null ? List.of() : List.of(preferred));
         }
@@ -829,9 +935,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
             if (policy != null) {
                 sources.clear();
-                var caches = classificationCaches(context);
-                int existing = caches.stream().mapToInt(target -> context.workspace()
-                        .cacheContents(target).map(EmptyBoxSupplyPlan::emptyCount).orElse(0)).sum();
+                var caches = emptyBoxAccountingCaches();
+                int existing = caches.stream().mapToInt(this::recordedEmptyBoxCount).sum();
                 sources.addAll(EmptyBoxSupplyPlan.classificationReturns(caches,
                         emptyBoxWarehouse(context), policy.enabled(), existing,
                         policy.retainedLimit()));
@@ -866,11 +971,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             var candidates = destinations;
             var target = candidates.get(index);
             int maximum = Integer.MAX_VALUE;
-            if (policy != null && policy.enabled() && classificationCaches(context).stream()
+            if (policy != null && policy.enabled() && emptyBoxAccountingCaches().stream()
                     .anyMatch(cache -> sameContainer(cache, target))) {
-                int cached = classificationCaches(context).stream().mapToInt(cache -> context
-                        .workspace().cacheContents(cache).map(EmptyBoxSupplyPlan::emptyCount)
-                        .orElse(0)).sum();
+                int cached = emptyBoxAccountingCaches().stream()
+                        .mapToInt(this::recordedEmptyBoxCount).sum();
                 maximum = Math.max(0, policy.retainedLimit() - cached);
             }
             var batch = EmptyBoxSupplyPlan.returnBatch(owned(), maximum);
@@ -2940,6 +3044,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .toList();
             Map<String, Integer> full = fullBoxes(boxes);
             if (!full.isEmpty()) {
+                if (context.workspace().fullTargetHandoffEnabled()
+                        && contents.stream().noneMatch(ItemStack::isEmpty)) {
+                    throw new IllegalStateException("已确认分类箱无法接收本批满盒，继续其他投递");
+                }
                 transferFullBoxes(full, this::inspectContents);
                 return;
             }
@@ -3921,18 +4029,25 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void readStorageCapacity(java.util.Iterator<ContainerTarget> pending,
                 Runnable after) {
-            if (!pending.hasNext()) {
-                after.run();
+            while (pending.hasNext()) {
+                ContainerTarget target = pending.next();
+                var confirmed = context.workspace().fullTargetHandoffEnabled()
+                        ? confirmedStorageContents(context, target)
+                        : Optional.<List<ItemStack>>empty();
+                if (confirmed.isPresent()) {
+                    checkedStorage.put(target, confirmed.orElseThrow());
+                    continue;
+                }
+                read(target, contents -> {
+                    checkedStorage.put(target, contents);
+                    readStorageCapacity(pending, after);
+                }, () -> {
+                    checkedStorage.put(target, List.of());
+                    readStorageCapacity(pending, after);
+                });
                 return;
             }
-            ContainerTarget target = pending.next();
-            read(target, contents -> {
-                checkedStorage.put(target, contents);
-                readStorageCapacity(pending, after);
-            }, () -> {
-                checkedStorage.put(target, List.of());
-                readStorageCapacity(pending, after);
-            });
+            after.run();
         }
 
         private boolean storageIsFull(ContainerTarget target, String key, int stackSize) {
@@ -4071,12 +4186,58 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (policy == null || !policy.enabled()) return;
             limit = policy.retainedLimit();
             caches = classificationCaches(context);
+            if (context.workspace().cachedEmptyBoxSettlementEnabled()) {
+                List<ContainerTarget> recorded = new ArrayList<>(caches);
+                recorded.addAll(context.workspace().recordedSettlementSources());
+                caches = EmptyBoxSupplyPlan.sources(recorded, null, List.of());
+            }
             var warehouseTargets = emptyBoxWarehouse(context);
             if (caches.stream().anyMatch(cache -> warehouseTargets.stream()
                     .anyMatch(target -> sameContainer(cache, target)))) {
                 throw new IllegalStateException("空盒仓库不能与物品来源重叠，请调整区域");
             }
-            inspectCaches(0);
+            if (context.workspace().cachedEmptyBoxSettlementEnabled()) {
+                returnEmptyBoxes(this::settleCached);
+            } else {
+                inspectCaches(0);
+            }
+        }
+
+        @Override
+        List<ContainerTarget> emptyBoxAccountingCaches() {
+            return context.workspace().cachedEmptyBoxSettlementEnabled()
+                    ? caches : super.emptyBoxAccountingCaches();
+        }
+
+        @Override
+        int recordedEmptyBoxCount(ContainerTarget target) {
+            return context.workspace().cachedEmptyBoxSettlementEnabled()
+                    ? EmptyBoxSupplyPlan.emptyCount(context.workspace().settlementContents(target))
+                    : super.recordedEmptyBoxCount(target);
+        }
+
+        private void settleCached() {
+            var plan = EmptyBoxSupplyPlan.cachedSurplus(caches,
+                    context.workspace()::settlementContents, limit);
+            if (plan.isEmpty()) return;
+            var entry = plan.entrySet().iterator().next();
+            ContainerTarget cache = entry.getKey();
+            int keep = entry.getValue();
+            int count = EmptyBoxSupplyPlan.emptyCount(context.workspace().settlementContents(cache));
+            int capacity = (int) minecraft.player.getInventory().getNonEquipmentItems().stream()
+                    .filter(ItemStack::isEmpty).count();
+            if (capacity == 0) {
+                throw new IllegalStateException("背包没有空位搬运缓存空盒，请腾出空间后重试");
+            }
+            var access = MinecraftStorageAccess.collect(minecraft, context, cache, current ->
+                    EmptyBoxSupplyPlan.surplus(emptyBoxCounts(current), keep, capacity));
+            steps.add(new Step(access, () -> {
+                recordCacheContents(context, cache, access.contents());
+                if (EmptyBoxSupplyPlan.emptyCount(emptyBoxCounts(access.contents())) >= count) {
+                    throw new IllegalStateException("缓存空盒取出未确认，停止归还");
+                }
+                returnEmptyBoxes(this::settleCached);
+            }));
         }
 
         private void inspectCaches(int index) {

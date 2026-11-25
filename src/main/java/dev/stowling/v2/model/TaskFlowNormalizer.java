@@ -66,7 +66,10 @@ public final class TaskFlowNormalizer {
                     definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                     definition.followUpEnabled(), definition.remainderPolicy(),
                     definition.robotWarehouseMixedBoxes(), definition.sameCategoryBoxBatching(),
-                    definition.classificationBaselineEnabled());
+                    definition.classificationBaselineEnabled(),
+                    definition.classificationFullTargetHandoffEnabled(),
+                    definition.classificationPartialCacheOnDemandEnabled(),
+                    definition.classificationCachedEmptyBoxSettlementEnabled());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }

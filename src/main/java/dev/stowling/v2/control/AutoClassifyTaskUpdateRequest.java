@@ -27,8 +27,42 @@ public record AutoClassifyTaskUpdateRequest(
         dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
         Boolean robotWarehouseMixedBoxes,
         Boolean sameCategoryBoxBatching,
-        Boolean classificationBaselineEnabled
+        Boolean classificationBaselineEnabled,
+        Boolean classificationFullTargetHandoffEnabled,
+        Boolean classificationPartialCacheOnDemandEnabled,
+        Boolean classificationCachedEmptyBoxSettlementEnabled
 ) {
+    public AutoClassifyTaskUpdateRequest(
+            String revision,
+            String name,
+            Boolean enabled,
+            Boolean collectionEnabled,
+            Boolean classificationEnabled,
+            AutoClassifyDetectionRequest detection,
+            String cacheLocationRef,
+            List<AutoClassifyAreaRequest> classificationAreas,
+            TaskPriority collectionPriority,
+            Boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String overflowDestinationRef,
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled,
+            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
+            Boolean robotWarehouseMixedBoxes,
+            Boolean sameCategoryBoxBatching,
+            Boolean classificationBaselineEnabled
+    ) {
+        this(revision, name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheLocationRef, classificationAreas, collectionPriority, overflowEnabled,
+                cleanupPolicy, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                followUpDelaySeconds, followUpEnabled, remainderPolicy,
+                robotWarehouseMixedBoxes, sameCategoryBoxBatching,
+                classificationBaselineEnabled, null, null, null);
+    }
+
     public AutoClassifyTaskUpdateRequest(
             String revision,
             String name,

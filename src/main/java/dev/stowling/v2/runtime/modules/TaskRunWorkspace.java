@@ -18,6 +18,122 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
+    private boolean fullTargetHandoff;
+    private boolean partialCacheOnDemand;
+    private boolean cachedEmptyBoxSettlement;
+    private boolean classificationDeliveryActive;
+    private final Map<BlockPosition, Map<String, Integer>> settlementCaches = new LinkedHashMap<>();
+    private final Map<BlockPosition, ContainerTarget> settlementSources = new LinkedHashMap<>();
+
+    public synchronized void recordSettlementSource(ContainerTarget target,
+            Map<String, Integer> contents) {
+        if (cachedEmptyBoxSettlement) {
+            settlementSources.putIfAbsent(target.position(), target);
+            settlementCaches.put(target.position(), Map.copyOf(contents));
+        }
+    }
+
+    public synchronized List<ContainerTarget> recordedSettlementSources() {
+        return List.copyOf(settlementSources.values());
+    }
+
+    public synchronized Map<String, Integer> settlementContents(ContainerTarget target) {
+        return settlementCaches.getOrDefault(target.position(), Map.of());
+    }
+
+    private void recordSettlementTransfer(ContainerTarget target, Map<String, Integer> moved,
+            boolean withdraw) {
+        Map<String, Integer> previous = settlementCaches.get(target.position());
+        if (previous == null) return;
+        Map<String, Integer> next = new LinkedHashMap<>(previous);
+        for (var entry : moved.entrySet()) {
+            int count = next.getOrDefault(entry.getKey(), 0)
+                    + (withdraw ? -entry.getValue() : entry.getValue());
+            if (count < 0) {
+                settlementCaches.remove(target.position());
+                return;
+            }
+            if (count == 0) next.remove(entry.getKey());
+            else next.put(entry.getKey(), count);
+        }
+        settlementCaches.put(target.position(), Map.copyOf(next));
+    }
+
+    private Set<String> classificationDemand = Set.of();
+    private final Map<String, Set<String>> classificationBoxContents = new LinkedHashMap<>();
+    private final Map<BlockPosition, Set<String>> confirmedFullStorage = new LinkedHashMap<>();
+
+    public synchronized void configureClassificationVisits(boolean handoff, boolean partials,
+            boolean emptyBoxes) {
+        fullTargetHandoff = handoff;
+        partialCacheOnDemand = partials;
+        cachedEmptyBoxSettlement = emptyBoxes;
+    }
+
+    public synchronized boolean fullTargetHandoffEnabled() {
+        return fullTargetHandoff;
+    }
+
+    public synchronized boolean partialCacheOnDemandEnabled() {
+        return partialCacheOnDemand;
+    }
+
+    public synchronized boolean cachedEmptyBoxSettlementEnabled() {
+        return cachedEmptyBoxSettlement;
+    }
+
+    public synchronized void endClassificationDelivery() {
+        classificationDeliveryActive = false;
+    }
+
+    public synchronized void recordClassificationBoxContents(String key, Set<String> contents) {
+        classificationBoxContents.put(key, Set.copyOf(contents));
+    }
+
+    public synchronized Set<String> classificationDemand(List<ContainerTarget> sources,
+            Set<String> categories) {
+        Set<String> stock = new LinkedHashSet<>(inventoryAccount.managedItems().keySet());
+        sources.forEach(source -> stock.addAll(cacheInventory
+                .getOrDefault(source.position(), Map.of()).keySet()));
+        Set<String> result = new LinkedHashSet<>();
+        for (String category : categories) {
+            if (stock.stream().anyMatch(key -> ItemIdentity.matches(key, Set.of(category))
+                    || classificationBoxContents.getOrDefault(key, Set.of()).stream()
+                            .anyMatch(item -> ItemIdentity.matches(item, Set.of(category))))) {
+                result.add(category);
+            }
+        }
+        return Set.copyOf(result);
+    }
+
+    public synchronized void setClassificationDemand(Set<String> categories) {
+        classificationDemand = Set.copyOf(categories);
+    }
+
+    public synchronized boolean hasConfirmedFullStorage(ContainerTarget target) {
+        return fullTargetHandoff
+                && !confirmedFullStorage.getOrDefault(target.position(), Set.of()).isEmpty();
+    }
+
+    public synchronized void recordConfirmedFullStorage(ContainerTarget target,
+            Set<String> categories) {
+        if (fullTargetHandoff) {
+            confirmedFullStorage.put(target.position(), Set.copyOf(categories));
+        }
+    }
+
+    private Map<String, Integer> activeClassificationItems(Map<String, Integer> items) {
+        if (!fullTargetHandoff || !classificationDeliveryActive) return items;
+        Map<String, Integer> active = new LinkedHashMap<>(items);
+        active.keySet().removeIf(key -> {
+            List<ContainerTarget> targets = resolvedStorageTargets(key);
+            return !targets.isEmpty() && targets.stream().allMatch(target ->
+                    ItemIdentity.matches(key, confirmedFullStorage
+                            .getOrDefault(target.position(), Set.of())));
+        });
+        return Map.copyOf(active);
+    }
+
     private boolean classificationBaselineEnabled;
     private final Map<BlockPosition, String> classificationIssues = new LinkedHashMap<>();
     private final Set<BlockPosition> blockedClassificationSources = new LinkedHashSet<>();
@@ -229,7 +345,7 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized Map<String, Integer> carriedItems() {
-        return inventoryAccount.itemsForSource("carried");
+        return activeClassificationItems(inventoryAccount.itemsForSource("carried"));
     }
 
     public synchronized Map<String, Integer> managedItems() {
@@ -245,11 +361,11 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized boolean hasCarriedItems() {
-        return !inventoryAccount.itemsForSource("carried").isEmpty();
+        return !carriedItems().isEmpty();
     }
 
     public synchronized Map<String, Integer> itemsForSource(String source) {
-        return inventoryAccount.itemsForSource(source);
+        return "carried".equals(source) ? carriedItems() : inventoryAccount.itemsForSource(source);
     }
 
     public synchronized void consumeDeposit(
@@ -314,6 +430,7 @@ public final class TaskRunWorkspace {
 
     public synchronized void recordCacheTransfer(ContainerTarget target, Map<String, Integer> moved,
             boolean withdraw) {
+        recordSettlementTransfer(target, moved, withdraw);
         Map<String, Integer> previous = cacheInventory.get(target.position());
         if (previous == null) return;
         if (withdraw && moved.entrySet().stream().anyMatch(entry ->
@@ -348,13 +465,24 @@ public final class TaskRunWorkspace {
             Set<String> categories) {
         if (classificationBaselineEnabled
                 && blockedClassificationSources.contains(target.position())) return false;
+        Set<String> usable = new LinkedHashSet<>(categories);
+        if (partialCacheOnDemand) usable.retainAll(classificationDemand);
+        if (fullTargetHandoff) usable.removeIf(this::confirmedFullCategory);
+        if ((partialCacheOnDemand || fullTargetHandoff) && usable.isEmpty()) return false;
         Map<String, Integer> items = cacheInventory.get(target.position());
-        boolean exactItems = categories.stream().anyMatch(key -> key.startsWith("="));
+        boolean exactItems = usable.stream().anyMatch(key -> key.startsWith("="));
         return items == null || items.keySet().stream()
                 .anyMatch(key -> (exactItems
                             ? ItemIdentity.isBox(key) && !ItemIdentity.isEmptyBox(key)
                             : ItemIdentity.isMixedBox(key))
-                        || ItemIdentity.matches(key, categories));
+                        || ItemIdentity.matches(key, usable));
+    }
+
+    private boolean confirmedFullCategory(String category) {
+        List<ContainerTarget> targets = targetContainers.stream().filter(target ->
+                acceptedItemsByContainer.getOrDefault(target, Set.of()).contains(category)).toList();
+        return !targets.isEmpty() && targets.stream().allMatch(target -> confirmedFullStorage
+                .getOrDefault(target.position(), Set.of()).contains(category));
     }
 
     public synchronized boolean hasMixedCacheStock(ContainerTarget target) {
@@ -367,6 +495,9 @@ public final class TaskRunWorkspace {
         Map<BlockPosition, Map<String, Integer>> copy = new LinkedHashMap<>(cacheInventory);
         copy.put(target.position(), Map.copyOf(items));
         cacheInventory = Map.copyOf(copy);
+        if (settlementCaches.containsKey(target.position())) {
+            settlementCaches.put(target.position(), Map.copyOf(items));
+        }
     }
 
     public synchronized void setCategoryMatch(
@@ -419,6 +550,7 @@ public final class TaskRunWorkspace {
             List<ClassificationLayoutEntry> layout,
             Set<BlockPosition> partialBoxStoragePositions
     ) {
+        classificationDeliveryActive = fullTargetHandoff;
         classificationLayout = List.copyOf(layout);
         unstackableClassification = false;
         this.partialBoxStoragePositions = Set.copyOf(partialBoxStoragePositions);
@@ -442,7 +574,8 @@ public final class TaskRunWorkspace {
         containerCursor = 0;
         triedStorage.clear();
         storageRoute.clear();
-        selectedContainer = null;
+        selectedContainer = fullTargetHandoff && containerScan != null
+                ? containerScan.containers().stream().findFirst().orElse(null) : null;
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
         cacheHasMore = false;
@@ -582,6 +715,8 @@ public final class TaskRunWorkspace {
 
     public synchronized Set<String> remainingCacheCategories(ContainerTarget target) {
         Set<String> categories = new LinkedHashSet<>(withdrawItemIdsFor(target));
+        if (partialCacheOnDemand) categories.retainAll(classificationDemand);
+        if (fullTargetHandoff) categories.removeIf(this::confirmedFullCategory);
         if (selectedContainer != null && selectedContainer.position().equals(target.position())) {
             categories.removeIf(key ->
                     deferredCacheCategories.contains(key.startsWith("=")
@@ -630,6 +765,9 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized boolean cacheHasMore() {
+        if (fullTargetHandoff && classificationDeliveryActive && selectedContainer != null
+                && !hasRecordedClassifiableStock(selectedContainer,
+                        remainingCacheCategories(selectedContainer))) return false;
         return cacheHasMore;
     }
 

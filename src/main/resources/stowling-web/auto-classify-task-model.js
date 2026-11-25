@@ -1,6 +1,21 @@
 (() => {
     "use strict";
 
+    const classificationVisitChanges = Object.freeze([
+        {field: "classificationFullTargetHandoffEnabled",
+            id: "classification-full-target-handoff",
+            control: "auto-full-handoff",
+            label: "分类箱满后继续交付其他物品"},
+        {field: "classificationPartialCacheOnDemandEnabled",
+            id: "classification-partial-cache-on-demand",
+            control: "auto-partial-demand",
+            label: "按来源物品处理不满盒缓存"},
+        {field: "classificationCachedEmptyBoxSettlementEnabled",
+            id: "classification-empty-box-cache-settlement",
+            control: "auto-empty-settlement",
+            label: "空盒收尾复用本轮库存"}
+    ]);
+
     const DEFAULT_CACHE_POLICY = Object.freeze({
         enabled: false, mode: "PACK_FIRST", thresholdPercent: 80
     });
@@ -67,6 +82,9 @@
             robotWarehouseMixedBoxes: true,
             sameCategoryBoxBatching: true,
             classificationBaselineEnabled: false,
+            classificationFullTargetHandoffEnabled: false,
+            classificationPartialCacheOnDemandEnabled: false,
+            classificationCachedEmptyBoxSettlementEnabled: false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY},
             cleanupDestinationRef: "",
             facilities: {},
@@ -112,6 +130,12 @@
             sameCategoryBoxBatching: item?.sameCategoryBoxBatching !== false,
             classificationBaselineEnabled: item?.kind === "CLASSIFICATION"
                 && item?.classificationBaselineEnabled === true,
+            classificationFullTargetHandoffEnabled: item?.kind === "CLASSIFICATION"
+                && item?.classificationFullTargetHandoffEnabled === true,
+            classificationPartialCacheOnDemandEnabled: item?.kind === "CLASSIFICATION"
+                && item?.classificationPartialCacheOnDemandEnabled === true,
+            classificationCachedEmptyBoxSettlementEnabled: item?.kind === "CLASSIFICATION"
+                && item?.classificationCachedEmptyBoxSettlementEnabled === true,
             remainderPolicy: remainderPolicy(item?.remainderPolicy),
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
@@ -183,6 +207,11 @@
         if (draft?.sameCategoryBoxBatching != null
                 && typeof draft.sameCategoryBoxBatching !== "boolean") {
             errors.push("同类多盒合批开关需为布尔值");
+        }
+        for (const change of classificationVisitChanges) {
+            if (draft?.[change.field] != null && typeof draft[change.field] !== "boolean") {
+                errors.push(change.label + "开关需为布尔值");
+            }
         }
         const policy = {...DEFAULT_CACHE_POLICY, ...draft?.cachePolicy};
         if (typeof policy.enabled !== "boolean") {
@@ -283,6 +312,12 @@
             sameCategoryBoxBatching: draft.sameCategoryBoxBatching !== false,
             classificationBaselineEnabled: draft.kind === "CLASSIFICATION"
                 && draft.classificationBaselineEnabled === true,
+            classificationFullTargetHandoffEnabled: draft.kind === "CLASSIFICATION"
+                && draft.classificationFullTargetHandoffEnabled === true,
+            classificationPartialCacheOnDemandEnabled: draft.kind === "CLASSIFICATION"
+                && draft.classificationPartialCacheOnDemandEnabled === true,
+            classificationCachedEmptyBoxSettlementEnabled: draft.kind === "CLASSIFICATION"
+                && draft.classificationCachedEmptyBoxSettlementEnabled === true,
             remainderPolicy: remainderPolicy(draft.remainderPolicy),
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},
@@ -399,6 +434,7 @@
     }
 
     window.StowlingAutoClassifyTaskModel = Object.freeze({
+        classificationVisitChanges,
         draftFromTask,
         newDraft,
         payload,

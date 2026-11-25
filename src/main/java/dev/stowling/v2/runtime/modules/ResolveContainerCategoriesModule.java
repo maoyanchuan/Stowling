@@ -129,6 +129,12 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
             }
         }
         Set<String> categories = result.categories().keySet();
+        List<ContainerTarget> demandSources = new ArrayList<>();
+        if (cacheScan != null) demandSources.addAll(cacheScan.containers());
+        demandSources.addAll(context.storageAutomation().recoveryContainers(context));
+        Set<String> demand = context.workspace().classificationDemand(demandSources, categories);
+        context.workspace().setClassificationDemand(demand);
+
         List<ContainerTarget> cacheTargets = new ArrayList<>();
         if (cacheScan != null) {
             cacheScan.containers().stream()
@@ -136,7 +142,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                             .hasRecordedClassifiableStock(target, categories))
                     .forEach(cacheTargets::add);
         }
-        for (ContainerTarget temporary : context.storageAutomation().recoveryContainers(context)) {
+        for (ContainerTarget temporary : demandSources) {
             if (!context.workspace().hasRecordedClassifiableStock(temporary, categories)) continue;
             if (cacheTargets.stream().noneMatch(value ->
                     value.position().equals(temporary.position()))
@@ -145,8 +151,11 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 cacheTargets.add(temporary);
             }
         }
-        List<ContainerTarget> partialBoxes = context.storageAutomation()
-                .partialBoxSources(context, targets);
+        List<ContainerTarget> partialTargets = context.workspace().partialCacheOnDemandEnabled()
+                ? targets.stream().filter(target -> accepted.getOrDefault(target, Set.of())
+                        .stream().anyMatch(demand::contains)).toList() : targets;
+        List<ContainerTarget> partialBoxes = partialTargets.isEmpty() ? List.of()
+                : context.storageAutomation().partialBoxSources(context, partialTargets);
         Set<BlockPosition> partialBoxPositions = new LinkedHashSet<>();
         partialBoxes.forEach(target -> partialBoxPositions.addAll(target.entrances()));
         context.workspace().setResolvedCategories(

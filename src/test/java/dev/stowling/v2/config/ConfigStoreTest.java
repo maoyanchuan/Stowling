@@ -37,6 +37,34 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void classificationVisitSwitchesPersistIndependentlyAndRejectWrongTypes() throws Exception {
+        AppConfig initial = automaticConfiguration(false);
+        var original = initial.autoClassifyTasks().getFirst();
+        for (int mask = 0; mask < 8; mask++) {
+            var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
+                    false, true, null, null, original.cacheLocationRef(),
+                    original.classificationAreas(), original.collectionPriority(),
+                    original.overflowEnabled(), original.cleanupPolicy(), null,
+                    original.overflowDestinationRef(), null,
+                    AutoClassifyDefinition.Kind.CLASSIFICATION, null, null, null, null,
+                    null, null, true, false, (mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0);
+            var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
+                    AutoClassifyTaskFactory.tasks(definition, List.of()), initial.regions(),
+                    initial.categoryZones(), List.of(), List.of(), List.of(definition));
+            Path path = directory.resolve("classification-visits-" + mask + ".json");
+            var store = new ConfigStore(path);
+            store.save(store.loadOrReset().revision(), config);
+            var restored = new ConfigStore(path).read().config().autoClassifyTasks().getFirst();
+            assertEquals(definition, restored);
+            var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+            var task = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
+            task.addProperty("classificationPartialCacheOnDemandEnabled", "true");
+            Files.writeString(path, json.toString());
+            assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+        }
+    }
+
+    @Test
     void upgradesSavedMixedAllocationWithoutResavingOrLosingIndependentDrafts() throws Exception {
         var global = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
                 "", false, "", false, null, 27);

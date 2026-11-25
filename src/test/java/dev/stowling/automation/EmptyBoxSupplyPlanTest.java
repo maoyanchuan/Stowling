@@ -12,6 +12,33 @@ import org.junit.jupiter.api.Test;
 
 class EmptyBoxSupplyPlanTest {
     @Test
+    void cachedSettlementVisitsOnlySurplusSourcesAndSharesTheRetentionLimit() {
+        var first = new ContainerTarget(new BlockPosition(0, 64, 0), "minecraft:chest");
+        var second = new ContainerTarget(new BlockPosition(1, 64, 0), "minecraft:chest");
+        var unread = new ContainerTarget(new BlockPosition(2, 64, 0), "minecraft:chest");
+        Map<ContainerTarget, Map<String, Integer>> contents = Map.of(
+                first, Map.of("minecraft:shulker_box", 6, "minecraft:stone", 64),
+                second, Map.of("minecraft:red_shulker_box", 7));
+        assertEquals(Map.of(second, 3), EmptyBoxSupplyPlan.cachedSurplus(
+                List.of(first, second, unread), target -> contents.getOrDefault(target, Map.of()), 9));
+        assertTrue(EmptyBoxSupplyPlan.cachedSurplus(List.of(first, unread),
+                target -> contents.getOrDefault(target, Map.of()), 9).isEmpty());
+        assertEquals(Map.of(first, 0, second, 0), EmptyBoxSupplyPlan.cachedSurplus(
+                List.of(first, second), target -> contents.getOrDefault(target, Map.of()), 0));
+    }
+
+    @Test
+    void cachedSettlementRecomputesAfterConfirmedTransfersAndDeduplicatesSources() {
+        var source = new ContainerTarget(new BlockPosition(0, 64, 0), "minecraft:chest");
+        var counts = new java.util.HashMap<String, Integer>();
+        counts.put("minecraft:shulker_box", 12);
+        assertEquals(Map.of(source, 9), EmptyBoxSupplyPlan.cachedSurplus(
+                List.of(source, source), target -> counts, 9));
+        counts.put("minecraft:shulker_box", 9);
+        assertTrue(EmptyBoxSupplyPlan.cachedSurplus(List.of(source), target -> counts, 9).isEmpty());
+    }
+
+    @Test
     void aReturnBatchIncludesAllOwnedEmptyColorsAndRespectsTheRemainingCacheQuota() {
         String plain = "minecraft:shulker_box#plain";
         String black = "minecraft:black_shulker_box#black";

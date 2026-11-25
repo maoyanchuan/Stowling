@@ -98,7 +98,8 @@ public final class AutoClassifyTaskFactory {
                             area.categoryZoneRef(),
                             scan,
                             preResolveSteps,
-                            definition.classificationBaselineEnabled()
+                            definition.classificationBaselineEnabled(),
+                            definition.classificationFullTargetHandoffEnabled()
                     )
             );
         }

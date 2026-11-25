@@ -10,6 +10,7 @@ final class OverflowItemsModule {
     }
 
     static TaskModuleExecutor create(TaskExecutionContext context, TaskStep step) {
+        context.workspace().endClassificationDelivery();
         if (dev.stowling.v2.model.ClassificationRemainderPolicy.MODULE.equals(step.moduleId())) {
             return context.storageAutomation().routeClassificationRemainders(context,
                     ResourceReference.parse(step.parameters().get(

@@ -138,6 +138,18 @@ public final class TaskFlowTemplates {
             List<TaskStep> preResolveSteps,
             boolean classificationBaselineEnabled
     ) {
+        return sortByCategoryZone(cacheRegionRef, categoryZoneRef, scanParameters,
+                preResolveSteps, classificationBaselineEnabled, false);
+    }
+
+    public static List<TaskStep> sortByCategoryZone(
+            String cacheRegionRef,
+            String categoryZoneRef,
+            Map<String, String> scanParameters,
+            List<TaskStep> preResolveSteps,
+            boolean classificationBaselineEnabled,
+            boolean fullTargetHandoff
+    ) {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
         scan.remove(ConfigValidator.MARKER_SOURCES);
         scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
@@ -163,7 +175,7 @@ public final class TaskFlowTemplates {
         if (classificationBaselineEnabled) {
             classify.add(TaskStep.action(UUID.randomUUID(), ClassificationBaseline.MODULE, Map.of()));
         } else {
-            classify.addAll(sortTail());
+            classify.addAll(sortTail(fullTargetHandoff));
         }
         return List.of(
                 scanStep,
@@ -547,6 +559,10 @@ public final class TaskFlowTemplates {
     }
 
     private static List<TaskStep> sortTail() {
+        return sortTail(false);
+    }
+
+    private static List<TaskStep> sortTail(boolean fullTargetHandoff) {
         TaskStep selectContainer = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.SELECT_CONTAINER,
@@ -610,9 +626,16 @@ public final class TaskFlowTemplates {
         TaskStep assertClean = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
-                Map.of()
+                fullTargetHandoff ? Map.of(ConfigValidator.ITEM_SOURCE, "carried") : Map.of()
         );
-        return List.of(processContainers, assertClean);
+        if (!fullTargetHandoff) return List.of(processContainers, assertClean);
+        TaskStep deliverRetained = TaskStep.repeat(UUID.randomUUID(), depositCarried.parameters(),
+                List.of(TaskStep.action(UUID.randomUUID(), selectStorage.moduleId(),
+                                selectStorage.parameters()),
+                        TaskStep.action(UUID.randomUUID(), moveToStorage.moduleId(),
+                                moveToStorage.parameters()),
+                        TaskStep.action(UUID.randomUUID(), deposit.moduleId(), deposit.parameters())));
+        return List.of(deliverRetained, processContainers, assertClean);
     }
 
     private static Map<String, String> conditionParameters(

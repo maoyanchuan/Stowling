@@ -29,8 +29,46 @@ public record AutoClassifyDefinition(
         ClassificationRemainderPolicy remainderPolicy,
         Boolean robotWarehouseMixedBoxes,
         Boolean sameCategoryBoxBatching,
-        Boolean classificationBaselineEnabled
+        Boolean classificationBaselineEnabled,
+        Boolean classificationFullTargetHandoffEnabled,
+        Boolean classificationPartialCacheOnDemandEnabled,
+        Boolean classificationCachedEmptyBoxSettlementEnabled
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef,
+            String overflowDestinationRef,
+            CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer detectionIntervalSeconds,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled,
+            ClassificationRemainderPolicy remainderPolicy,
+            Boolean robotWarehouseMixedBoxes,
+            Boolean sameCategoryBoxBatching,
+            Boolean classificationBaselineEnabled
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
+                collectionPriority, overflowEnabled, cleanupPolicy, unstackableRegionRef,
+                overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                detectionIntervalSeconds, followUpDelaySeconds, followUpEnabled,
+                remainderPolicy, robotWarehouseMixedBoxes, sameCategoryBoxBatching,
+                classificationBaselineEnabled, null, null, null);
+    }
+
     public AutoClassifyDefinition(
             UUID id,
             String name,
@@ -281,6 +319,12 @@ public record AutoClassifyDefinition(
     public static final int MAX_FOLLOW_UP_DELAY_SECONDS = 86_400;
 
     public AutoClassifyDefinition {
+        classificationFullTargetHandoffEnabled = Boolean.TRUE.equals(classificationFullTargetHandoffEnabled)
+                && kind == Kind.CLASSIFICATION;
+        classificationPartialCacheOnDemandEnabled = Boolean.TRUE.equals(classificationPartialCacheOnDemandEnabled)
+                && kind == Kind.CLASSIFICATION;
+        classificationCachedEmptyBoxSettlementEnabled = Boolean.TRUE.equals(classificationCachedEmptyBoxSettlementEnabled)
+                && kind == Kind.CLASSIFICATION;
         classificationBaselineEnabled = Boolean.TRUE.equals(classificationBaselineEnabled)
                 && kind == Kind.CLASSIFICATION;
         sameCategoryBoxBatching = sameCategoryBoxBatching == null

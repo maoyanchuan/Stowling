@@ -909,7 +909,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds(),
                 request.followUpEnabled(), request.remainderPolicy(),
                 request.robotWarehouseMixedBoxes(), request.sameCategoryBoxBatching(),
-                request.classificationBaselineEnabled()
+                request.classificationBaselineEnabled(),
+                request.classificationFullTargetHandoffEnabled(),
+                request.classificationPartialCacheOnDemandEnabled(),
+                request.classificationCachedEmptyBoxSettlementEnabled()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -1010,7 +1013,16 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.sameCategoryBoxBatching(),
                 request.classificationBaselineEnabled() == null
                         ? existing.classificationBaselineEnabled()
-                        : request.classificationBaselineEnabled()
+                        : request.classificationBaselineEnabled(),
+                request.classificationFullTargetHandoffEnabled() == null
+                        ? existing.classificationFullTargetHandoffEnabled()
+                        : request.classificationFullTargetHandoffEnabled(),
+                request.classificationPartialCacheOnDemandEnabled() == null
+                        ? existing.classificationPartialCacheOnDemandEnabled()
+                        : request.classificationPartialCacheOnDemandEnabled(),
+                request.classificationCachedEmptyBoxSettlementEnabled() == null
+                        ? existing.classificationCachedEmptyBoxSettlementEnabled()
+                        : request.classificationCachedEmptyBoxSettlementEnabled()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1615,7 +1627,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
             dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
             Boolean robotWarehouseMixedBoxes,
             Boolean sameCategoryBoxBatching,
-            Boolean classificationBaselineEnabled
+            Boolean classificationBaselineEnabled,
+            Boolean classificationFullTargetHandoffEnabled,
+            Boolean classificationPartialCacheOnDemandEnabled,
+            Boolean classificationCachedEmptyBoxSettlementEnabled
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1643,7 +1658,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
                 detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds,
                 followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes, sameCategoryBoxBatching,
-                classificationBaselineEnabled
+                classificationBaselineEnabled,
+                classificationFullTargetHandoffEnabled,
+                classificationPartialCacheOnDemandEnabled,
+                classificationCachedEmptyBoxSettlementEnabled
         );
     }
 
@@ -1668,7 +1686,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                 definition.followUpEnabled(), definition.remainderPolicy(),
                 definition.robotWarehouseMixedBoxes(), definition.sameCategoryBoxBatching(),
-                definition.classificationBaselineEnabled()
+                definition.classificationBaselineEnabled(),
+                definition.classificationFullTargetHandoffEnabled(),
+                definition.classificationPartialCacheOnDemandEnabled(),
+                definition.classificationCachedEmptyBoxSettlementEnabled()
         );
     }
 
@@ -1710,7 +1731,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.followUpDelaySeconds(), definition.followUpEnabled(),
                 definition.remainderPolicy(), definition.robotWarehouseMixedBoxes(),
                 definition.sameCategoryBoxBatching(),
-                definition.classificationBaselineEnabled()
+                definition.classificationBaselineEnabled(),
+                definition.classificationFullTargetHandoffEnabled(),
+                definition.classificationPartialCacheOnDemandEnabled(),
+                definition.classificationCachedEmptyBoxSettlementEnabled()
         );
     }
 

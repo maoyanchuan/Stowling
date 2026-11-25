@@ -17,6 +17,21 @@ public final class EmptyBoxSupplyPlan {
                 .mapToInt(Map.Entry::getValue).sum();
     }
 
+    /** Plans only real surplus visits from already recorded source inventories. */
+    public static Map<ContainerTarget, Integer> cachedSurplus(List<ContainerTarget> sources,
+            java.util.function.Function<ContainerTarget, Map<String, Integer>> contents,
+            int retainedLimit) {
+        Map<ContainerTarget, Integer> result = new LinkedHashMap<>();
+        int remaining = Math.max(0, retainedLimit);
+        for (ContainerTarget source : sources(sources, null, List.of())) {
+            int count = emptyCount(contents.apply(source));
+            int keep = Math.min(remaining, count);
+            remaining -= keep;
+            if (count > keep) result.put(source, keep);
+        }
+        return java.util.Collections.unmodifiableMap(result);
+    }
+
     public static Map<String, Integer> returnBatch(Map<String, Integer> owned, int maximum) {
         return surplus(owned, 0, maximum);
     }

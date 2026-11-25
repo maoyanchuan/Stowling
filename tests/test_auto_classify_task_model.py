@@ -1033,3 +1033,52 @@ def test_same_category_box_batching_rejects_non_boolean_values(value: Any) -> No
             {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
     })()""")
     assert errors == ["同类多盒合批开关需为布尔值"]
+
+
+@pytest.mark.parametrize("mask", range(8))
+def test_classification_visit_switches_survive_save_and_reload_independently(mask: int) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const changes = model.classificationVisitChanges;
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}]};
+        const defaults = changes.map(change => draft[change.field]);
+        changes.forEach((change, index) => draft[change.field] = Boolean("""
+        + str(mask) + """ & (1 << index)));
+        const resources = {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]};
+        const saved = model.payload(draft, resources);
+        const restored = model.draftFromTask(saved);
+        return {defaults, saved: changes.map(change => saved[change.field]),
+            restored: changes.map(change => restored[change.field]),
+            batching: restored.sameCategoryBoxBatching};
+    })()""")
+    expected = [bool(mask & (1 << index)) for index in range(3)]
+    assert result == {"defaults": [False] * 3, "saved": expected,
+                      "restored": expected, "batching": True}
+
+
+@pytest.mark.parametrize("kind", ["PICKUP", "COMBINED"])
+def test_other_task_kinds_cannot_inherit_classification_visit_changes(kind: str) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const task = {kind: """ + json.dumps(kind) + """};
+        model.classificationVisitChanges.forEach(change => task[change.field] = true);
+        const draft = model.draftFromTask(task);
+        return model.classificationVisitChanges.map(change => draft[change.field]);
+    })()""")
+    assert result == [False] * 3
+
+
+@pytest.mark.parametrize("invalid", ["true", 1, [], {}])
+def test_classification_visit_switches_reject_non_boolean_values(invalid: Any) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return model.classificationVisitChanges.map(change => {
+            const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+                classificationAreas: [{categoryZoneId: "zone"}]};
+            draft[change.field] = """ + json.dumps(invalid) + """;
+            return model.validateDraft(draft, {regions: [{id: "cache"}],
+                categoryZones: [{id: "zone"}]}).includes(change.label + "开关需为布尔值");
+        });
+    })()""")
+    assert result == [True] * 3

@@ -299,3 +299,15 @@
 
 本轮用户明确要求改变通用视觉或交互规范时，同步更新标准 HTML、此提示词和相关用例。
 只新增业务字段时沿用模板，不顺手重画模板。未获要求时不将模板规范推广为全站重设计。
+
+
+### 分类重复访问调试开关
+
+独立分类任务在调试模式中新增三个默认关闭的标准开关：
+“分类箱满后继续交付其他物品”“按来源物品处理不满盒缓存”“空盒收尾复用本轮库存”。
+分别保存 `classificationFullTargetHandoffEnabled`、
+`classificationPartialCacheOnDemandEnabled`、`classificationCachedEmptyBoxSettlementEnabled`。
+三项与运行开关、调试入口显示偏好及现有取料交付顺序开关分离，支持独立保存和组合。
+隐藏调试入口时保留执行值；已开启项的名称及稳定标识仍显示在状态说明和任务标题提示中。
+沿用当前标准设置行、开关、浅绿／深灰主题，不调整通用模板外观或交互。
+执行差异及验证状态以 `docs/task-flows/classification.md` 为准。

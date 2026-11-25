@@ -319,6 +319,9 @@ public final class ConfigStore {
         allowed.add("robotWarehouseMixedBoxes");
         allowed.add("sameCategoryBoxBatching");
         allowed.add("classificationBaselineEnabled");
+        allowed.add("classificationFullTargetHandoffEnabled");
+        allowed.add("classificationPartialCacheOnDemandEnabled");
+        allowed.add("classificationCachedEmptyBoxSettlementEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -338,6 +341,16 @@ public final class ConfigStore {
             if (baseline != null && !baseline.isJsonNull() && (!baseline.isJsonPrimitive()
                     || !baseline.getAsJsonPrimitive().isBoolean())) {
                 throw new V2ValidationException("classificationBaselineEnabled 必须是布尔值");
+            }
+            for (String field : List.of(
+                    "classificationFullTargetHandoffEnabled",
+                    "classificationPartialCacheOnDemandEnabled",
+                    "classificationCachedEmptyBoxSettlementEnabled")) {
+                var flag = definition.get(field);
+                if (flag != null && !flag.isJsonNull() && (!flag.isJsonPrimitive()
+                        || !flag.getAsJsonPrimitive().isBoolean())) {
+                    throw new V2ValidationException(field + " 必须是布尔值");
+                }
             }
             requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireCachePolicy(definition.get("cachePolicy"));

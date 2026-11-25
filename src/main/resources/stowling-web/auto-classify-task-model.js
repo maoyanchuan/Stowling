@@ -11,7 +11,7 @@
     const INTEGER_PATTERN = /^\d+$/;
     const DEFAULT_REMAINDER_POLICY = Object.freeze({
         unclassifiableEnabled: false, unclassifiableDestinationRef: null,
-        overflowEnabled: false, overflowDestinationRef: null
+        overflowEnabled: false, overflowDestinationRef: null, robotWarehouseFirstEnabled: false
     });
 
     /**
@@ -327,8 +327,11 @@
      * @returns {void} */
     function validateRemainders(draft, resources, errors) {
         const policy = {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy};
+        if (typeof policy.robotWarehouseFirstEnabled !== "boolean") {
+            errors.push("溢出阶段先机器人仓库需为布尔值");
+        }
         const places = cacheLocations(resources);
-        for (const [key, label] of [["unclassifiable", "不可分类"], ["overflow", "溢出"]]) {
+        for (const [key, label] of [["unclassifiable", "不可分类"], ["overflow", "总溢出"]]) {
             if (typeof policy[`${key}Enabled`] !== "boolean") {
                 errors.push(label + "开关需为布尔值");
             }

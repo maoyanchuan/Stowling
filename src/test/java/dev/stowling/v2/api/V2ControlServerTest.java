@@ -509,7 +509,7 @@ class V2ControlServerTest {
                 "coordinate:%s","retainInCache":true,"cacheLimit":9}},
                 "remainderPolicy":{"unclassifiableEnabled":true,
                 "unclassifiableDestinationRef":"coordinate:%s","overflowEnabled":true,
-                "overflowDestinationRef":"coordinate:%s"},
+                "overflowDestinationRef":"coordinate:%s","robotWarehouseFirstEnabled":true},
                 "overflowEnabled":true,"overflowDestinationRef":"region:%s",
                 "robotWarehouseMixedBoxes":false}
                 """.formatted(point.id(), region.id(), zone.id(), point.id(), point.id(), point.id(),
@@ -537,6 +537,10 @@ class V2ControlServerTest {
                     body.replace("\"robotWarehouseMixedBoxes\":false",
                             "\"robotWarehouseMixedBoxes\":\"false\""), true).statusCode());
             var remainders = item.getAsJsonObject("remainderPolicy");
+            assertTrue(remainders.get("robotWarehouseFirstEnabled").getAsBoolean());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"robotWarehouseFirstEnabled\":true",
+                            "\"robotWarehouseFirstEnabled\":\"true\""), true).statusCode());
             assertTrue(remainders.get("unclassifiableEnabled").getAsBoolean());
             assertEquals("coordinate:" + point.id(),
                     remainders.get("overflowDestinationRef").getAsString());

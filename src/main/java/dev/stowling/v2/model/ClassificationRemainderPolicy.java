@@ -2,18 +2,27 @@ package dev.stowling.v2.model;
 
 /** Task-local destinations for items left after all selected category zones have run. */
 public record ClassificationRemainderPolicy(boolean unclassifiableEnabled,
-        String unclassifiableDestinationRef, boolean overflowEnabled, String overflowDestinationRef) {
+        String unclassifiableDestinationRef, boolean overflowEnabled, String overflowDestinationRef,
+        boolean robotWarehouseFirstEnabled) {
     public static final String MODULE = "ROUTE_CLASSIFICATION_REMAINDERS";
     public static final String KIND = "remainderKind";
     public static final String UNCLASSIFIABLE = "UNCLASSIFIABLE";
     public static final String OVERFLOW = "OVERFLOW";
+    public static final String ROBOT_FIRST = "robotWarehouseFirstEnabled";
     public static final ClassificationRemainderPolicy DEFAULT =
             new ClassificationRemainderPolicy(false, null, false, null);
+
+    public ClassificationRemainderPolicy(boolean unclassifiableEnabled,
+            String unclassifiableDestinationRef, boolean overflowEnabled,
+            String overflowDestinationRef) {
+        this(unclassifiableEnabled, unclassifiableDestinationRef, overflowEnabled,
+                overflowDestinationRef, false);
+    }
 
     public ClassificationRemainderPolicy {
         unclassifiableDestinationRef = destination(unclassifiableDestinationRef,
                 unclassifiableEnabled, "不可分类");
-        overflowDestinationRef = destination(overflowDestinationRef, overflowEnabled, "溢出");
+        overflowDestinationRef = destination(overflowDestinationRef, overflowEnabled, "总溢出");
     }
 
     private static String destination(String value, boolean enabled, String label) {
@@ -31,7 +40,7 @@ public record ClassificationRemainderPolicy(boolean unclassifiableEnabled,
 
     public void requireSeparateSource(String source) {
         if (source.equals(unclassifiableDestinationRef) || source.equals(overflowDestinationRef)) {
-            throw new IllegalArgumentException("不可分类和溢出存放位置必须与物品来源分开");
+            throw new IllegalArgumentException("不可分类和总溢出位置必须与物品来源分开");
         }
     }
 }

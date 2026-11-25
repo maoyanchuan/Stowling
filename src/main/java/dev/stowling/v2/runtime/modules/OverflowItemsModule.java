@@ -24,8 +24,15 @@ final class OverflowItemsModule {
         var destination = ResourceReferenceSupport.optionalReference(step, TaskModuleIds.TARGET_REF,
                 ResourceType.WAREHOUSE);
         if (ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId())) {
-            return context.storageAutomation().robotWarehouseForCache(context, reference,
+            TaskModuleExecutor robot = context.storageAutomation().robotWarehouseForCache(
+                    context, reference,
                     destination, TaskModuleSupport.booleanParameter(step, "mixedBoxes", true));
+            return TaskModuleSupport.booleanParameter(step,
+                    dev.stowling.v2.model.ClassificationRemainderPolicy.ROBOT_FIRST, false)
+                    ? new RobotWarehouseOverflowHandoff(robot, () -> !context.storageAutomation()
+                            .hasTemporaryResources(
+                                    context.workspace().inventoryAccount().ownerId()))
+                    : robot;
         }
         var region = reference == null ? null : ResourceReferenceSupport.region(context, reference);
         return context.storageAutomation().overflow(context, region);

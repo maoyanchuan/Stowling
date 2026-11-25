@@ -108,14 +108,25 @@ public final class AutoClassifyTaskFactory {
                     remainders.unclassifiableDestinationRef(),
                     ClassificationRemainderPolicy.UNCLASSIFIABLE));
         }
-        if (remainders.overflowEnabled()) {
-            classificationSteps.add(routeRemainder(definition.cacheLocationRef(),
-                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW));
-        }
+        List<TaskStep> overflowSteps = new ArrayList<>();
+        boolean robotFirst = definition.kind() == Kind.CLASSIFICATION
+                && remainders.robotWarehouseFirstEnabled() && remainders.overflowEnabled();
         if (definition.overflowEnabled()) {
-            classificationSteps.add(TaskFlowTemplates.overflow(definition.cacheLocationRef(),
-                    definition.overflowDestinationRef(), definition.robotWarehouseMixedBoxes()));
+            TaskStep robot = TaskFlowTemplates.overflow(definition.cacheLocationRef(),
+                    definition.overflowDestinationRef(), definition.robotWarehouseMixedBoxes());
+            if (robotFirst) {
+                Map<String, String> parameters = new LinkedHashMap<>(robot.parameters());
+                parameters.put(ClassificationRemainderPolicy.ROBOT_FIRST, "true");
+                robot = TaskStep.action(robot.id(), robot.moduleId(), parameters);
+            }
+            overflowSteps.add(robot);
         }
+        if (remainders.overflowEnabled()) {
+            TaskStep total = routeRemainder(definition.cacheLocationRef(),
+                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW);
+            overflowSteps.add(robotFirst ? overflowSteps.size() : 0, total);
+        }
+        classificationSteps.addAll(overflowSteps);
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
                 definition.cacheLocationRef(), Map.of()
         ));

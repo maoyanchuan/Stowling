@@ -459,7 +459,9 @@
         boxSettings?.refresh();
         const remainderHost = document.querySelector("#auto-remainder-settings");
         if (remainderHost) remainderHost.hidden = pickup;
-        remainderSettings?.refresh();
+        remainderSettings?.refresh({standalone: classification,
+            robotEnabled: elements.warehouseEnabled.checked,
+            debugEnabled: window.StowlingTaskDebugMode?.enabled() === true, disabled});
         elements.form.dataset.kind = kind || "COMBINED";
         elements.draft.classList.toggle("pickup-task-module", pickup || classification);
         elements.draftBody.classList.toggle("pickup-task-body", pickup || classification);

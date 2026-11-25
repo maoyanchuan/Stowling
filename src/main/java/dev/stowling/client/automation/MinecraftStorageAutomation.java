@@ -4137,16 +4137,21 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         Cleanup(TaskExecutionContext context, TaskCleanupRouting routing) {
             super(context);
             this.routing = routing;
+            if (routing.robotWarehouseFirstEnabled()) addRobotFallback();
             if (routing.overflowDestination() != null) {
                 fallbacks.add(() -> new Overflow(context, null, false,
                         routing.overflowDestination(), "OVERFLOW", true, true));
             }
+            if (!routing.robotWarehouseFirstEnabled()) addRobotFallback();
+            if (routing.legacyOverflowEnabled()) {
+                fallbacks.add(() -> new Overflow(context, null, false, null));
+            }
+        }
+
+        private void addRobotFallback() {
             if (routing.robotWarehouse() != null) {
                 fallbacks.add(() -> new Overflow(context, null, true,
                         routing.robotWarehouse(), null, routing.mixedBoxes(), true));
-            }
-            if (routing.legacyOverflowEnabled()) {
-                fallbacks.add(() -> new Overflow(context, null, false, null));
             }
         }
 

@@ -364,9 +364,11 @@ public final class ConfigStore {
         if (value == null || value.isJsonNull()) return;
         var policy = requireObject(value, "remainderPolicy");
         requireFields(policy, "remainderPolicy", Set.of("unclassifiableEnabled",
-                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef"),
+                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef",
+                "robotWarehouseFirstEnabled"),
                 Set.of());
-        for (String key : List.of("unclassifiableEnabled", "overflowEnabled")) {
+        for (String key : List.of("unclassifiableEnabled", "overflowEnabled",
+                "robotWarehouseFirstEnabled")) {
             var enabled = policy.get(key);
             if (enabled != null && (!enabled.isJsonPrimitive()
                     || !enabled.getAsJsonPrimitive().isBoolean())) {

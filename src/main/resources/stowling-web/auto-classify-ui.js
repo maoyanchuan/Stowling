@@ -88,6 +88,9 @@
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
         batching: document.querySelector("#auto-same-category-batching"),
         batchingRow: document.querySelector("#auto-same-category-batching-row"),
+        baseline: document.querySelector("#auto-classification-baseline"),
+        baselineRow: document.querySelector("#auto-classification-baseline-row"),
+        baselineStatus: document.querySelector("#auto-classification-baseline-status"),
         warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
         warehouseBody: document.querySelector("#robot-warehouse-body")
     };
@@ -251,6 +254,7 @@
         Picker.group(elements.warehouse, undefined, "regions", false);
         elements.warehouseMixed.checked = draft.robotWarehouseMixedBoxes;
         elements.batching.checked = draft.sameCategoryBoxBatching;
+        elements.baseline.checked = draft.classificationBaselineEnabled;
         const available = [...state.regularTasks, ...state.items]
             .filter(task => task.id !== draft.id)
             .map(task => ({id: "task:" + task.id, name: task.name}));
@@ -308,6 +312,7 @@
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
             sameCategoryBoxBatching: elements.batching.checked,
+            classificationBaselineEnabled: elements.baseline.checked,
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
@@ -372,6 +377,11 @@
             if (standard) {
                 header.className = "pickup-task-header";
                 const title = Stowling.element("h3", "pickup-task-title", item.name);
+                if (classification && item.classificationBaselineEnabled === true) {
+                    const badge = Stowling.element("span", "task-debug-badge", "调试改动已开启");
+                    badge.title = "classification-multi-source-fixed-order";
+                    title.append(badge);
+                }
                 title.prepend(pickupIcon());
                 if (classification) {
                     title.firstElementChild.firstElementChild.setAttribute("d",
@@ -554,7 +564,18 @@
         elements.batchingRow.hidden = !showBatching;
         elements.batchingRow.inert = !showBatching;
         elements.batching.disabled = disabled || !showBatching
-            || !elements.classifyEnabled.checked;
+            || !elements.classifyEnabled.checked || elements.baseline.checked;
+        const baselineEnabled = state.draft.kind === "CLASSIFICATION"
+            && elements.baseline.checked;
+        const showBaseline = state.draft.kind === "CLASSIFICATION"
+            && window.StowlingTaskDebugMode?.enabled() === true;
+        elements.baselineRow.hidden = !showBaseline;
+        elements.baselineRow.inert = !showBaseline;
+        elements.baseline.disabled = disabled || !showBaseline;
+        elements.baselineStatus.hidden = !baselineEnabled;
+        elements.baselineStatus.textContent = baselineEnabled
+            ? "已开启 classification-multi-source-fixed-order；同类多盒合批的保存值保留，"
+                + "本轮使用多物品共享批次。" : "";
         selectView?.refresh(true);
     }
 

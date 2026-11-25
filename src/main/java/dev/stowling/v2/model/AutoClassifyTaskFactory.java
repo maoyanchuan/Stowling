@@ -97,7 +97,8 @@ public final class AutoClassifyTaskFactory {
                             definition.cacheLocationRef(),
                             area.categoryZoneRef(),
                             scan,
-                            preResolveSteps
+                            preResolveSteps,
+                            definition.classificationBaselineEnabled()
                     )
             );
         }
@@ -122,6 +123,10 @@ public final class AutoClassifyTaskFactory {
         if (boxWarehouse != null && boxWarehouse.enabled()) {
             classificationSteps.add(TaskStep.action(UUID.randomUUID(),
                     EmptyBoxWarehousePolicy.SETTLE_MODULE, Map.of()));
+        }
+        if (definition.classificationBaselineEnabled()) {
+            classificationSteps.add(TaskStep.action(UUID.randomUUID(),
+                    ClassificationBaseline.SUMMARY, Map.of()));
         }
         List<TaskDefinition> result = new ArrayList<>();
         if (definition.kind() != Kind.CLASSIFICATION) {

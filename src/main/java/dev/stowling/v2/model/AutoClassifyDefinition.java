@@ -28,8 +28,42 @@ public record AutoClassifyDefinition(
         Boolean followUpEnabled,
         ClassificationRemainderPolicy remainderPolicy,
         Boolean robotWarehouseMixedBoxes,
-        Boolean sameCategoryBoxBatching
+        Boolean sameCategoryBoxBatching,
+        Boolean classificationBaselineEnabled
 ) {
+    public AutoClassifyDefinition(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            String detectionCoordinateRef,
+            Integer pickupRadius,
+            String cacheLocationRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String unstackableRegionRef,
+            String overflowDestinationRef,
+            CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer detectionIntervalSeconds,
+            Integer followUpDelaySeconds,
+            Boolean followUpEnabled,
+            ClassificationRemainderPolicy remainderPolicy,
+            Boolean robotWarehouseMixedBoxes,
+            Boolean sameCategoryBoxBatching
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled,
+                detectionCoordinateRef, pickupRadius, cacheLocationRef, classificationAreas,
+                collectionPriority, overflowEnabled, cleanupPolicy, unstackableRegionRef,
+                overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                detectionIntervalSeconds, followUpDelaySeconds, followUpEnabled,
+                remainderPolicy, robotWarehouseMixedBoxes, sameCategoryBoxBatching, null);
+    }
+
     public AutoClassifyDefinition(
             UUID id,
             String name,
@@ -247,6 +281,8 @@ public record AutoClassifyDefinition(
     public static final int MAX_FOLLOW_UP_DELAY_SECONDS = 86_400;
 
     public AutoClassifyDefinition {
+        classificationBaselineEnabled = Boolean.TRUE.equals(classificationBaselineEnabled)
+                && kind == Kind.CLASSIFICATION;
         sameCategoryBoxBatching = sameCategoryBoxBatching == null
                 || sameCategoryBoxBatching;
         detectionIntervalSeconds = detectionIntervalSeconds == null

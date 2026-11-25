@@ -1859,6 +1859,18 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             ContainerTarget next = visits.next(new BlockPosition(feet.getX(), feet.getY(),
                     feet.getZ())).orElse(null);
             if (next == null) return;
+            if (context.workspace().classificationBaselineEnabled()) {
+                read(next, contents -> {
+                    recordCacheContents(context, next, contents);
+                    scanned++;
+                    visitNext();
+                }, () -> {
+                    context.workspace().recordClassificationSourceIssue(next,
+                            "物品来源盘点受阻，未将未知库存当作空箱");
+                    visitNext();
+                });
+                return;
+            }
             readCache(next, contents -> {
                 scanned++;
                 visitNext();

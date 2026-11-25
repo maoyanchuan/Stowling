@@ -55,6 +55,7 @@
             overflowDestinationRef: "",
             robotWarehouseMixedBoxes: true,
             sameCategoryBoxBatching: true,
+            classificationBaselineEnabled: false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY},
             cleanupDestinationRef: "",
             facilities: {},
@@ -98,6 +99,8 @@
             overflowDestinationRef: String(item?.overflowDestinationRef || ""),
             robotWarehouseMixedBoxes: item?.robotWarehouseMixedBoxes !== false,
             sameCategoryBoxBatching: item?.sameCategoryBoxBatching !== false,
+            classificationBaselineEnabled: item?.kind === "CLASSIFICATION"
+                && item?.classificationBaselineEnabled === true,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...item?.remainderPolicy},
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
@@ -162,6 +165,10 @@
      */
     function validateDraft(draft, resources) {
         const errors = [];
+        if (draft?.classificationBaselineEnabled != null
+                && typeof draft.classificationBaselineEnabled !== "boolean") {
+            errors.push("分类取料与交付顺序开关需为布尔值");
+        }
         if (draft?.sameCategoryBoxBatching != null
                 && typeof draft.sameCategoryBoxBatching !== "boolean") {
             errors.push("同类多盒合批开关需为布尔值");
@@ -263,6 +270,8 @@
             overflowDestinationRef: draft.overflowDestinationRef || "",
             robotWarehouseMixedBoxes: draft.robotWarehouseMixedBoxes !== false,
             sameCategoryBoxBatching: draft.sameCategoryBoxBatching !== false,
+            classificationBaselineEnabled: draft.kind === "CLASSIFICATION"
+                && draft.classificationBaselineEnabled === true,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy},
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},

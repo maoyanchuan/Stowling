@@ -18,6 +18,44 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
+    private boolean classificationBaselineEnabled;
+    private final Map<BlockPosition, String> classificationIssues = new LinkedHashMap<>();
+    private final Set<BlockPosition> blockedClassificationSources = new LinkedHashSet<>();
+
+    public synchronized void configureClassificationBaseline(boolean enabled) {
+        classificationBaselineEnabled = enabled;
+    }
+
+    public synchronized boolean classificationBaselineEnabled() {
+        return classificationBaselineEnabled;
+    }
+
+    public synchronized void recordClassificationIssue(ContainerTarget target, String reason) {
+        classificationIssues.put(target.position(), reason);
+        dev.stowling.v2.runtime.TaskTrace.event("CLASSIFICATION", "classification.blocked",
+                "position=" + target.position() + "; reason=" + reason);
+    }
+
+    public synchronized String classificationSummary() {
+        if (classificationIssues.isEmpty()) return "分类本轮执行结束，未记录受阻目标";
+        return "分类本轮结束，" + classificationIssues.size() + " 处未完成："
+                + classificationIssues.entrySet().stream()
+                        .map(entry -> entry.getKey() + "：" + entry.getValue())
+                        .collect(java.util.stream.Collectors.joining("；"));
+    }
+
+    public synchronized void recordClassificationSourceIssue(ContainerTarget source, String reason) {
+        blockedClassificationSources.add(source.position());
+        recordClassificationIssue(source, reason);
+    }
+
+    public synchronized void selectClassificationSource(ContainerTarget source) {
+        selectedContainer = source;
+        deferredCacheCategories.clear();
+        cacheHasMore = true;
+        resetStorageSelection();
+    }
+
     private boolean sameCategoryBoxBatching = true;
 
     public synchronized void configureSameCategoryBoxBatching(boolean enabled) {
@@ -25,7 +63,7 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized boolean sameCategoryBoxBatching() {
-        return sameCategoryBoxBatching;
+        return !classificationBaselineEnabled && sameCategoryBoxBatching;
     }
 
     private boolean retainPickupCargo;
@@ -308,6 +346,8 @@ public final class TaskRunWorkspace {
 
     public synchronized boolean hasRecordedClassifiableStock(ContainerTarget target,
             Set<String> categories) {
+        if (classificationBaselineEnabled
+                && blockedClassificationSources.contains(target.position())) return false;
         Map<String, Integer> items = cacheInventory.get(target.position());
         boolean exactItems = categories.stream().anyMatch(key -> key.startsWith("="));
         return items == null || items.keySet().stream()
@@ -632,7 +672,10 @@ public final class TaskRunWorkspace {
                                 acceptedItemsByContainer.getOrDefault(candidate, Set.of()))))
                 .toList();
         Optional<ContainerTarget> next;
-        if (!classificationLayout.isEmpty()) {
+        if (classificationBaselineEnabled) {
+            next = ClassificationRoutePlanner.fixedOrder(classificationLayout, candidates)
+                    .stream().findFirst();
+        } else if (!classificationLayout.isEmpty()) {
             next = ClassificationRoutePlanner.planLayout(classificationLayout, candidates,
                     acceptedItemsByContainer, items.keySet(), order).stream().findFirst();
         } else if ("carried".equals(itemSource) && selectedContainer != null

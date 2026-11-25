@@ -995,7 +995,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
                 optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "sameCategoryBoxBatching")
+                optionalBooleanValue(json, "sameCategoryBoxBatching"),
+                optionalBooleanValue(json, "classificationBaselineEnabled")
         );
     }
 
@@ -1023,7 +1024,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
                 optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "sameCategoryBoxBatching")
+                optionalBooleanValue(json, "sameCategoryBoxBatching"),
+                optionalBooleanValue(json, "classificationBaselineEnabled")
         );
     }
 
@@ -1108,6 +1110,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "remainderPolicy",
                 "robotWarehouseMixedBoxes",
                 "sameCategoryBoxBatching",
+                "classificationBaselineEnabled",
                 "kind",
                 "followUpTaskRef",
                 "followUpDelaySeconds",

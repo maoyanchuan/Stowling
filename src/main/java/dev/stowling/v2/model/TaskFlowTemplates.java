@@ -127,6 +127,17 @@ public final class TaskFlowTemplates {
             Map<String, String> scanParameters,
             List<TaskStep> preResolveSteps
     ) {
+        return sortByCategoryZone(cacheRegionRef, categoryZoneRef, scanParameters,
+                preResolveSteps, false);
+    }
+
+    public static List<TaskStep> sortByCategoryZone(
+            String cacheRegionRef,
+            String categoryZoneRef,
+            Map<String, String> scanParameters,
+            List<TaskStep> preResolveSteps,
+            boolean classificationBaselineEnabled
+    ) {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
         scan.remove(ConfigValidator.MARKER_SOURCES);
         scan.remove(ConfigValidator.ALLOW_EMPTY_CONTAINER_SCAN);
@@ -149,7 +160,11 @@ public final class TaskFlowTemplates {
         );
         List<TaskStep> classify = new ArrayList<>(preResolveSteps);
         classify.add(resolveStep);
-        classify.addAll(sortTail());
+        if (classificationBaselineEnabled) {
+            classify.add(TaskStep.action(UUID.randomUUID(), ClassificationBaseline.MODULE, Map.of()));
+        } else {
+            classify.addAll(sortTail());
+        }
         return List.of(
                 scanStep,
                 TaskStep.conditional(

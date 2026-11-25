@@ -908,7 +908,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.cleanupPolicy(), request.overflowDestinationRef(), request.cachePolicy(),
                 request.kind(), request.followUpTaskRef(), request.followUpDelaySeconds(),
                 request.followUpEnabled(), request.remainderPolicy(),
-                request.robotWarehouseMixedBoxes(), request.sameCategoryBoxBatching()
+                request.robotWarehouseMixedBoxes(), request.sameCategoryBoxBatching(),
+                request.classificationBaselineEnabled()
         );
         List<TaskDefinition> tasks = new ArrayList<>(current.config().tasks());
         tasks.addAll(AutoClassifyTaskFactory.tasks(
@@ -1006,7 +1007,10 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         : request.robotWarehouseMixedBoxes(),
                 request.sameCategoryBoxBatching() == null
                         ? existing.sameCategoryBoxBatching()
-                        : request.sameCategoryBoxBatching()
+                        : request.sameCategoryBoxBatching(),
+                request.classificationBaselineEnabled() == null
+                        ? existing.classificationBaselineEnabled()
+                        : request.classificationBaselineEnabled()
         );
         Set<UUID> oldTaskIds = AutoClassifyTaskFactory.ownedTaskIds(
                 List.of(existing)
@@ -1610,7 +1614,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             Boolean followUpEnabled,
             dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
             Boolean robotWarehouseMixedBoxes,
-            Boolean sameCategoryBoxBatching
+            Boolean sameCategoryBoxBatching,
+            Boolean classificationBaselineEnabled
     ) {
         if (kind != Kind.CLASSIFICATION && (detection == null
                 || detection.coordinateRef() == null || detection.coordinateRef().isBlank())) {
@@ -1637,7 +1642,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 overflowEnabled,
                 cleanupPolicy, null, overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
                 detection == null ? null : detection.intervalSeconds(), followUpDelaySeconds,
-                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes, sameCategoryBoxBatching
+                followUpEnabled, remainderPolicy, robotWarehouseMixedBoxes, sameCategoryBoxBatching,
+                classificationBaselineEnabled
         );
     }
 
@@ -1661,7 +1667,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                 definition.followUpEnabled(), definition.remainderPolicy(),
-                definition.robotWarehouseMixedBoxes(), definition.sameCategoryBoxBatching()
+                definition.robotWarehouseMixedBoxes(), definition.sameCategoryBoxBatching(),
+                definition.classificationBaselineEnabled()
         );
     }
 
@@ -1702,7 +1709,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                 definition.followUpDelaySeconds(), definition.followUpEnabled(),
                 definition.remainderPolicy(), definition.robotWarehouseMixedBoxes(),
-                definition.sameCategoryBoxBatching()
+                definition.sameCategoryBoxBatching(),
+                definition.classificationBaselineEnabled()
         );
     }
 

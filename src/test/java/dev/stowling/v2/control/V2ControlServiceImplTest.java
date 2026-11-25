@@ -54,37 +54,49 @@ class V2ControlServiceImplTest {
                 TaskPriority.NORMAL, null, null, null, null,
                 dev.stowling.v2.model.AutoClassifyDefinition.Kind.CLASSIFICATION, null));
         assertTrue(created.item().sameCategoryBoxBatching());
+        assertFalse(created.item().classificationBaselineEnabled());
 
         var gson = new com.google.gson.Gson();
         var edit = gson.toJsonTree(created.item()).getAsJsonObject();
         edit.addProperty("revision", created.revision());
         edit.addProperty("sameCategoryBoxBatching", false);
+        edit.addProperty("classificationBaselineEnabled", true);
         var disabled = service.updateAutoClassifyTask(created.item().id(),
                 gson.fromJson(edit, AutoClassifyTaskUpdateRequest.class));
         assertFalse(disabled.item().sameCategoryBoxBatching());
+        assertTrue(disabled.item().classificationBaselineEnabled());
 
         edit.remove("sameCategoryBoxBatching");
+        edit.remove("classificationBaselineEnabled");
         edit.addProperty("revision", disabled.revision());
         edit.addProperty("name", "Renamed sort");
         var renamed = service.updateAutoClassifyTask(created.item().id(),
                 gson.fromJson(edit, AutoClassifyTaskUpdateRequest.class));
         assertFalse(renamed.item().sameCategoryBoxBatching());
+        assertTrue(renamed.item().classificationBaselineEnabled());
         var started = service.startAutoClassifyTask(created.item().id(),
                 new RevisionRequest(renamed.revision()));
         assertFalse(started.item().sameCategoryBoxBatching());
+        assertTrue(started.item().classificationBaselineEnabled());
         var stopped = service.stopAutoClassifyTask(created.item().id(),
                 new RevisionRequest(started.revision()));
         assertFalse(stopped.item().sameCategoryBoxBatching());
+        assertTrue(stopped.item().classificationBaselineEnabled());
         var reopened = new ConfigStore(path).loadOrReset().config();
         assertFalse(reopened.autoClassifyTasks().getFirst().sameCategoryBoxBatching());
+        assertTrue(reopened.autoClassifyTasks().getFirst().classificationBaselineEnabled());
 
         var legacy = com.google.gson.JsonParser.parseString(
                 java.nio.file.Files.readString(path)).getAsJsonObject();
         legacy.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
                 .remove("sameCategoryBoxBatching");
+        legacy.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .remove("classificationBaselineEnabled");
         java.nio.file.Files.writeString(path, gson.toJson(legacy));
         assertTrue(new ConfigStore(path).loadOrReset().config().autoClassifyTasks()
                 .getFirst().sameCategoryBoxBatching());
+        assertFalse(new ConfigStore(path).loadOrReset().config().autoClassifyTasks()
+                .getFirst().classificationBaselineEnabled());
     }
 
     @Test

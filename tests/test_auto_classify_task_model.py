@@ -940,6 +940,54 @@ def test_same_category_box_batching_defaults_on_for_new_and_legacy_tasks() -> No
     assert result == [True, True]
 
 
+def test_classification_baseline_defaults_off_for_new_and_legacy_tasks() -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return [model.newDraft("CLASSIFICATION").classificationBaselineEnabled,
+            model.draftFromTask({kind: "CLASSIFICATION"}).classificationBaselineEnabled];
+    })()""")
+    assert result == [False, False]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_classification_baseline_preserves_the_saved_batching_draft(enabled: bool) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const resources = {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]};
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}], sameCategoryBoxBatching: true,
+            classificationBaselineEnabled: """ + json.dumps(enabled) + """};
+        const loaded = model.draftFromTask(model.payload(draft, resources));
+        loaded.overflowEnabled = false;
+        const saved = model.payload(loaded, resources);
+        return [saved.classificationBaselineEnabled, saved.sameCategoryBoxBatching];
+    })()""")
+    assert result == [enabled, True]
+
+
+@pytest.mark.parametrize("value", ["false", 0, {}, []])
+def test_classification_baseline_rejects_non_boolean_values(value: Any) -> None:
+    errors = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
+            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
+            classificationBaselineEnabled: """ + json.dumps(value) + """},
+            {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
+    })()""")
+    assert errors == ["分类取料与交付顺序开关需为布尔值"]
+
+
+def test_pickup_task_cannot_enable_the_classification_cycle() -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {...model.newDraft("PICKUP"), coordinateId: "point",
+            cacheLocationRef: "region:cache", classificationBaselineEnabled: true};
+        return model.payload(draft, {coordinates: [{id: "point"}],
+            regions: [{id: "cache"}]}).classificationBaselineEnabled;
+    })()""")
+    assert result is False
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 def test_same_category_box_batching_survives_save_reload_and_other_edits(enabled: bool) -> None:
     result = _run("""(() => {

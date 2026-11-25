@@ -318,6 +318,7 @@ public final class ConfigStore {
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
         allowed.add("sameCategoryBoxBatching");
+        allowed.add("classificationBaselineEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -332,6 +333,11 @@ public final class ConfigStore {
             if (batching != null && !batching.isJsonNull() && (!batching.isJsonPrimitive()
                     || !batching.getAsJsonPrimitive().isBoolean())) {
                 throw new V2ValidationException("sameCategoryBoxBatching 必须是布尔值");
+            }
+            var baseline = definition.get("classificationBaselineEnabled");
+            if (baseline != null && !baseline.isJsonNull() && (!baseline.isJsonPrimitive()
+                    || !baseline.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("classificationBaselineEnabled 必须是布尔值");
             }
             requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireCachePolicy(definition.get("cachePolicy"));

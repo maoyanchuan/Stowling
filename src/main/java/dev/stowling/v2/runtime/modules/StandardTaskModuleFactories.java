@@ -12,6 +12,10 @@ public final class StandardTaskModuleFactories {
 
     public static List<TaskModuleRuntimeFactory> create() {
         return List.of(
+                factory(dev.stowling.v2.model.ClassificationBaseline.MODULE,
+                        (context, step) -> new ClassifyMultiSourceBatchesModule(context)),
+                factory(dev.stowling.v2.model.ClassificationBaseline.SUMMARY,
+                        (context, step) -> new ClassificationSummaryModule(context)),
                 factory(dev.stowling.v2.model.EmptyBoxWarehousePolicy.SETTLE_MODULE,
                         (context, step) -> context.storageAutomation().settleEmptyBoxes(context)),
                 factory(dev.stowling.v2.model.ContainerCacheRefresh.MODULE,

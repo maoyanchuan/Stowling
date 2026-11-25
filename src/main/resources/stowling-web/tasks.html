@@ -988,6 +988,30 @@
                                                 <p id="auto-classification-order"
                                                    class="settings-description compact-help"
                                                    aria-live="polite" hidden></p>
+                                                <div id="auto-classification-baseline-row"
+                                                     class="settings-row" hidden inert>
+                                                    <div class="settings-copy">
+                                                        <label class="task-debug-title"
+                                                               for="auto-classification-baseline">
+                                                            <span>分类取料与交付顺序</span>
+                                                            <span class="task-debug-badge">
+                                                                调试选项
+                                                            </span>
+                                                        </label>
+                                                        <span id="auto-baseline-description"
+                                                              class="settings-description">
+                                                            多来源共享批次，按固定箱序交付并汇总受阻。
+                                                        </span>
+                                                    </div>
+                                                    <input id="auto-classification-baseline"
+                                                           class="settings-switch" type="checkbox"
+                                                           role="switch" disabled
+                                                           aria-describedby=
+                                                               "auto-baseline-description">
+                                                </div>
+                                                <p id="auto-classification-baseline-status"
+                                                   class="settings-description compact-help"
+                                                   role="status" hidden></p>
                                                 <div id="auto-same-category-batching-row"
                                                      class="settings-row" hidden inert>
                                                     <div class="settings-copy">

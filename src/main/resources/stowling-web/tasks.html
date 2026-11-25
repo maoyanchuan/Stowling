@@ -850,76 +850,7 @@
                                                         </div>
                                                     </div>
                                                 </section>
-                                                <section class="auto-config-section
-                                                                auto-cache-submenu"
-                                                         aria-labelledby="auto-packing-title">
-                                                    <div class="auto-phase-header">
-                                                        <button id="auto-packing-toggle"
-                                                                class="auto-phase-toggle"
-                                                                type="button"
-                                                                aria-expanded="false"
-                                                                aria-controls="auto-packing-body">
-                                                            <strong id="auto-packing-title">
-                                                                打包缓存
-                                                            </strong>
-                                                            <span class="auto-experimental-tag">
-                                                                实验性
-                                                            </span>
-                                                            <span class="move-task-chevron"
-                                                                  aria-hidden="true">⌄</span>
-                                                        </button>
-                                                        <label class="auto-phase-switch"
-                                                               for="auto-cache-packing-enabled">
-                                                            <span class="visually-hidden">
-                                                                打包缓存（实验性）
-                                                            </span>
-                                                            <input id="auto-cache-packing-enabled"
-                                                                   type="checkbox" role="switch">
-                                                            <span class="auto-switch-track"
-                                                                  aria-hidden="true"></span>
-                                                        </label>
-                                                    </div>
-                                                    <div id="auto-packing-body"
-                                                         class="auto-phase-body" hidden>
-                                                        <p id="combined-packing-help" class="auto-config-note">
-                                                            实验性功能，默认关闭。开启后，在拾取过程中
-                                                            处理缓存容量不足，尝试装盒或分类腾出空间。
-                                                            关闭后只执行普通拾取和存入缓存。
-                                                        </p>
-                                                        <p id="pickup-packing-help"
-                                                           class="auto-config-note" hidden>
-                                                            按缓存箱已占用的槽位计算；达到阈值后尝试
-                                                            装盒回存，需要空潜影盒供应。
-                                                        </p>
-                                                        <div class="move-fields">
-                                                            <label class="move-field"
-                                                                   for="auto-cache-mode">
-                                                                <span>缓存达到阈值后</span>
-                                                                <select id="auto-cache-mode">
-                                                                    <option value="PACK_FIRST">
-                                                                        打包优先
-                                                                    </option>
-                                                                    <option value="CLASSIFY_FIRST">
-                                                                        分类优先
-                                                                    </option>
-                                                                </select>
-                                                            </label>
-                                                            <label class="move-field"
-                                                                   for="auto-cache-threshold">
-                                                                <span>缓存容量阈值（%）</span>
-                                                                <input id="auto-cache-threshold"
-                                                                       type="number" min="1"
-                                                                       max="100"
-                                                                       step="1" value="80" required>
-                                                            </label>
-                                                        </div>
-                                                        <p id="combined-packing-mode-help" class="auto-config-note">
-                                                            按所有缓存箱已占用的槽位计算，默认 80%。
-                                                            打包优先会将投料装盒回存，盒子也放不下时再分类；
-                                                            分类优先会先腾出缓存空间。装盒需要空潜影盒供应。
-                                                        </p>
-                                                    </div>
-                                                </section>
+
                                                 <label class="move-field move-priority"
                                                        for="auto-collect-priority">
                                                     <span>任务优先级</span>
@@ -988,117 +919,6 @@
                                                 <p id="auto-classification-order"
                                                    class="settings-description compact-help"
                                                    aria-live="polite" hidden></p>
-                                                <div id="auto-classification-baseline-row"
-                                                     class="settings-row" hidden inert>
-                                                    <div class="settings-copy">
-                                                        <label class="task-debug-title"
-                                                               for="auto-classification-baseline">
-                                                            <span>分类取料与交付顺序</span>
-                                                            <span class="task-debug-badge">
-                                                                调试选项
-                                                            </span>
-                                                        </label>
-                                                        <span id="auto-baseline-description"
-                                                              class="settings-description">
-                                                            多来源共享批次，按固定箱序交付并汇总受阻。
-                                                        </span>
-                                                    </div>
-                                                    <input id="auto-classification-baseline"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch" disabled
-                                                           aria-describedby=
-                                                               "auto-baseline-description">
-                                                </div>
-                                                <p id="auto-classification-baseline-status"
-                                                   class="settings-description compact-help"
-                                                   role="status" hidden></p>
-                                                <div id="auto-full-handoff-row"
-                                                     class="settings-row" hidden inert>
-                                                    <div class="settings-copy">
-                                                        <label class="task-debug-title"
-                                                               for="auto-full-handoff">
-                                                            <span>分类箱满后继续交付其他物品</span>
-                                                            <span class="task-debug-badge">
-                                                                调试选项
-                                                            </span>
-                                                        </label>
-                                                        <span id="auto-full-handoff-description"
-                                                              class="settings-description">
-                                                            满箱余物留在背包，继续其他投递，并复用本轮容量结果。
-                                                        </span>
-                                                    </div>
-                                                    <input id="auto-full-handoff"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch" disabled
-                                                           aria-describedby=
-                                                               "auto-full-handoff-description">
-                                                </div>
-                                                <div id="auto-partial-demand-row"
-                                                     class="settings-row" hidden inert>
-                                                    <div class="settings-copy">
-                                                        <label class="task-debug-title"
-                                                               for="auto-partial-demand">
-                                                            <span>按来源物品处理不满盒缓存</span>
-                                                            <span class="task-debug-badge">
-                                                                调试选项
-                                                            </span>
-                                                        </label>
-                                                        <span id="auto-partial-demand-description"
-                                                              class="settings-description">
-                                                            来源有当前区分类物品时，才处理对应类别的不满盒缓存。
-                                                        </span>
-                                                    </div>
-                                                    <input id="auto-partial-demand"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch" disabled
-                                                           aria-describedby=
-                                                               "auto-partial-demand-description">
-                                                </div>
-                                                <div id="auto-empty-settlement-row"
-                                                     class="settings-row" hidden inert>
-                                                    <div class="settings-copy">
-                                                        <label class="task-debug-title"
-                                                               for="auto-empty-settlement">
-                                                            <span>空盒收尾复用本轮库存</span>
-                                                            <span class="task-debug-badge">
-                                                                调试选项
-                                                            </span>
-                                                        </label>
-                                                        <span id="auto-empty-settlement-description"
-                                                              class="settings-description">
-                                                            按本轮库存记录结算空盒，只访问需要实际搬运的位置。
-                                                        </span>
-                                                    </div>
-                                                    <input id="auto-empty-settlement"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch" disabled
-                                                           aria-describedby=
-                                                               "auto-empty-settlement-description">
-                                                </div>
-                                                <p id="auto-classification-visits-status"
-                                                   class="settings-description compact-help"
-                                                   role="status" hidden></p>
-                                                <div id="auto-same-category-batching-row"
-                                                     class="settings-row" hidden inert>
-                                                    <div class="settings-copy">
-                                                        <label class="task-debug-title"
-                                                               for="auto-same-category-batching">
-                                                            <span>同类多盒合批</span>
-                                                            <span class="task-debug-badge">
-                                                                调试选项
-                                                            </span>
-                                                        </label>
-                                                        <span id="auto-batching-description"
-                                                              class="settings-description">
-                                                            连续打包并集中运送同类盒子，减少往返。
-                                                        </span>
-                                                    </div>
-                                                    <input id="auto-same-category-batching"
-                                                           class="settings-switch" type="checkbox"
-                                                           role="switch" checked disabled
-                                                           aria-describedby=
-                                                               "auto-batching-description">
-                                                </div>
                                                 <p id="combined-classification-help" class="auto-config-note">
                                                     在「坐标 → 区域 → 分类区」设置分类方式与储存范围。
                                                     拾取物存入缓存后才创建后台分类任务。
@@ -1220,6 +1040,217 @@
                                             </div>
                                         </section>
                                         <div id="auto-cleanup-settings"></div>
+                                        <section id="auto-experiments-settings"
+                                                 class="auto-config-section"
+                                                 aria-labelledby="auto-experiments-title">
+                                            <div class="auto-phase-header">
+                                                <button id="auto-experiments-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="auto-experiments-body">
+                                                    <span class="auto-phase-copy">
+                                                        <strong id="auto-experiments-title">
+                                                            实验性设置
+                                                        </strong>
+                                                        <small id="auto-experiments-summary">
+                                                            展开查看本任务的实验性设置
+                                                        </small>
+                                                    </span>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true"></span>
+                                                </button>
+                                            </div>
+                                            <div id="auto-experiments-body"
+                                                 class="auto-phase-body" hidden>
+                                                <section class="auto-config-section
+                                                                auto-cache-submenu"
+                                                         aria-labelledby="auto-packing-title">
+                                                    <div class="auto-phase-header">
+                                                        <button id="auto-packing-toggle"
+                                                                class="auto-phase-toggle"
+                                                                type="button"
+                                                                aria-expanded="false"
+                                                                aria-controls="auto-packing-body">
+                                                            <strong id="auto-packing-title">
+                                                                打包缓存
+                                                            </strong>
+                                                            <span class="auto-experimental-tag">
+                                                                实验性
+                                                            </span>
+                                                            <span class="move-task-chevron"
+                                                                  aria-hidden="true">⌄</span>
+                                                        </button>
+                                                        <label class="auto-phase-switch"
+                                                               for="auto-cache-packing-enabled">
+                                                            <span class="visually-hidden">
+                                                                打包缓存（实验性）
+                                                            </span>
+                                                            <input id="auto-cache-packing-enabled"
+                                                                   type="checkbox" role="switch">
+                                                            <span class="auto-switch-track"
+                                                                  aria-hidden="true"></span>
+                                                        </label>
+                                                    </div>
+                                                    <div id="auto-packing-body"
+                                                         class="auto-phase-body" hidden>
+                                                        <p id="combined-packing-help" class="auto-config-note">
+                                                            实验性功能，默认关闭。开启后，在拾取过程中
+                                                            处理缓存容量不足，尝试装盒或分类腾出空间。
+                                                            关闭后只执行普通拾取和存入缓存。
+                                                        </p>
+                                                        <p id="pickup-packing-help"
+                                                           class="auto-config-note" hidden>
+                                                            按缓存箱已占用的槽位计算；达到阈值后尝试
+                                                            装盒回存，需要空潜影盒供应。
+                                                        </p>
+                                                        <div class="move-fields">
+                                                            <label class="move-field"
+                                                                   for="auto-cache-mode">
+                                                                <span>缓存达到阈值后</span>
+                                                                <select id="auto-cache-mode">
+                                                                    <option value="PACK_FIRST">
+                                                                        打包优先
+                                                                    </option>
+                                                                    <option value="CLASSIFY_FIRST">
+                                                                        分类优先
+                                                                    </option>
+                                                                </select>
+                                                            </label>
+                                                            <label class="move-field"
+                                                                   for="auto-cache-threshold">
+                                                                <span>缓存容量阈值（%）</span>
+                                                                <input id="auto-cache-threshold"
+                                                                       type="number" min="1"
+                                                                       max="100"
+                                                                       step="1" value="80" required>
+                                                            </label>
+                                                        </div>
+                                                        <p id="combined-packing-mode-help" class="auto-config-note">
+                                                            按所有缓存箱已占用的槽位计算，默认 80%。
+                                                            打包优先会将投料装盒回存，盒子也放不下时再分类；
+                                                            分类优先会先腾出缓存空间。装盒需要空潜影盒供应。
+                                                        </p>
+                                                    </div>
+                                                </section>
+                                                <div id="auto-classification-experiments">
+                                                    <p id="auto-experiments-hint"
+                                                       class="settings-description compact-help">
+                                                        开启页面调试模式后可编辑以下设置，隐藏入口保留保存值。
+                                                    </p>
+                                                    <div id="auto-classification-baseline-row"
+                                                         class="settings-row" hidden inert>
+                                                        <div class="settings-copy">
+                                                            <label class="task-debug-title"
+                                                                   for="auto-classification-baseline">
+                                                                <span>分类取料与交付顺序</span>
+                                                                <span class="task-debug-badge">
+                                                                    调试选项
+                                                                </span>
+                                                            </label>
+                                                            <span id="auto-baseline-description"
+                                                                  class="settings-description">
+                                                                多来源共享批次，按固定箱序交付并汇总受阻。
+                                                            </span>
+                                                        </div>
+                                                        <input id="auto-classification-baseline"
+                                                               class="settings-switch" type="checkbox"
+                                                               role="switch" disabled
+                                                               aria-describedby=
+                                                                   "auto-baseline-description">
+                                                    </div>
+                                                    <p id="auto-classification-baseline-status"
+                                                       class="settings-description compact-help"
+                                                       role="status" hidden></p>
+                                                    <div id="auto-full-handoff-row"
+                                                         class="settings-row" hidden inert>
+                                                        <div class="settings-copy">
+                                                            <label class="task-debug-title"
+                                                                   for="auto-full-handoff">
+                                                                <span>分类箱满后继续交付其他物品</span>
+                                                                <span class="task-debug-badge">
+                                                                    调试选项
+                                                                </span>
+                                                            </label>
+                                                            <span id="auto-full-handoff-description"
+                                                                  class="settings-description">
+                                                                满箱余物留在背包，继续其他投递，并复用本轮容量结果。
+                                                            </span>
+                                                        </div>
+                                                        <input id="auto-full-handoff"
+                                                               class="settings-switch" type="checkbox"
+                                                               role="switch" disabled
+                                                               aria-describedby=
+                                                                   "auto-full-handoff-description">
+                                                    </div>
+                                                    <div id="auto-partial-demand-row"
+                                                         class="settings-row" hidden inert>
+                                                        <div class="settings-copy">
+                                                            <label class="task-debug-title"
+                                                                   for="auto-partial-demand">
+                                                                <span>按来源物品处理不满盒缓存</span>
+                                                                <span class="task-debug-badge">
+                                                                    调试选项
+                                                                </span>
+                                                            </label>
+                                                            <span id="auto-partial-demand-description"
+                                                                  class="settings-description">
+                                                                来源有当前区分类物品时，才处理对应类别的不满盒缓存。
+                                                            </span>
+                                                        </div>
+                                                        <input id="auto-partial-demand"
+                                                               class="settings-switch" type="checkbox"
+                                                               role="switch" disabled
+                                                               aria-describedby=
+                                                                   "auto-partial-demand-description">
+                                                    </div>
+                                                    <div id="auto-empty-settlement-row"
+                                                         class="settings-row" hidden inert>
+                                                        <div class="settings-copy">
+                                                            <label class="task-debug-title"
+                                                                   for="auto-empty-settlement">
+                                                                <span>空盒收尾复用本轮库存</span>
+                                                                <span class="task-debug-badge">
+                                                                    调试选项
+                                                                </span>
+                                                            </label>
+                                                            <span id="auto-empty-settlement-description"
+                                                                  class="settings-description">
+                                                                按本轮库存记录结算空盒，只访问需要实际搬运的位置。
+                                                            </span>
+                                                        </div>
+                                                        <input id="auto-empty-settlement"
+                                                               class="settings-switch" type="checkbox"
+                                                               role="switch" disabled
+                                                               aria-describedby=
+                                                                   "auto-empty-settlement-description">
+                                                    </div>
+                                                    <p id="auto-classification-visits-status"
+                                                       class="settings-description compact-help"
+                                                       role="status" hidden></p>
+                                                    <div id="auto-same-category-batching-row"
+                                                         class="settings-row" hidden inert>
+                                                        <div class="settings-copy">
+                                                            <label class="task-debug-title"
+                                                                   for="auto-same-category-batching">
+                                                                <span>同类多盒合批</span>
+                                                                <span class="task-debug-badge">
+                                                                    调试选项
+                                                                </span>
+                                                            </label>
+                                                            <span id="auto-batching-description"
+                                                                  class="settings-description">
+                                                                连续打包并集中运送同类盒子，减少往返。
+                                                            </span>
+                                                        </div>
+                                                        <input id="auto-same-category-batching"
+                                                               class="settings-switch" type="checkbox"
+                                                               role="switch" checked disabled
+                                                               aria-describedby=
+                                                                   "auto-batching-description">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">

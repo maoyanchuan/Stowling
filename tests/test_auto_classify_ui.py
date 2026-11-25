@@ -130,8 +130,8 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
     html = read("tasks.html")
     javascript = read("auto-classify-ui.js")
     collect = between(html, 'id="auto-collect-body"', 'for="auto-collect-priority"')
-    pickup = between(collect, 'id="auto-pickup-toggle"', 'id="auto-packing-toggle"')
-    packing = between(collect, 'id="auto-packing-toggle"', '</section>')
+    pickup = between(collect, 'id="auto-pickup-toggle"', '</section>')
+    packing = between(html, 'id="auto-packing-toggle"', '</section>')
 
     assert "掉落物拾取" in pickup
     assert 'id="auto-collect-enabled"' in pickup
@@ -155,7 +155,7 @@ def test_cache_submenus_have_named_switches_and_experimental_packing() -> None:
 def test_pickup_settings_group_detection_and_allow_packing_details() -> None:
     html = read("tasks.html")
     javascript = read("auto-classify-ui.js")
-    pickup = between(html, 'id="auto-pickup-body"', 'id="auto-packing-toggle"')
+    pickup = between(html, 'id="auto-pickup-body"', '</section>')
     follow_up = between(html, 'id="auto-follow-up-field"', 'id="auto-cleanup-settings"')
 
     for field in ("auto-detection-point", "auto-pickup-radius", "auto-detection-interval"):
@@ -660,6 +660,13 @@ function input(target) {
     assert.equal(delay.disabled, false);
     assert.equal(scheduled, 4);
 
+    const experimentsHeader = element("#auto-experiments-toggle");
+    const experimentsBody = element("#auto-experiments-body");
+    assert.equal(experimentsBody.hidden, true);
+    const scheduledBeforeExpand = scheduled;
+    experimentsHeader.dispatchEvent(new Event("click"));
+    assert.equal(experimentsBody.hidden, false);
+    assert.equal(scheduled, scheduledBeforeExpand);
     const packing = element("#auto-cache-packing-enabled");
     const packingHeader = element("#auto-packing-toggle");
     const packingBody = element("#auto-packing-body");
@@ -682,6 +689,16 @@ function input(target) {
     input(packing);
     assert.equal(packingBody.hidden, false);
     assert.equal(threshold.value, "65");
+    const scheduledBeforeCollapse = scheduled;
+    experimentsHeader.dispatchEvent(new Event("click"));
+    assert.equal(experimentsBody.hidden, true);
+    assert.equal(packing.checked, true);
+    assert.equal(threshold.value, "65");
+    assert.equal(scheduled, scheduledBeforeCollapse);
+    experimentsHeader.dispatchEvent(new Event("click"));
+    assert.equal(experimentsBody.hidden, false);
+    assert.equal(packingBody.hidden, false);
+    assert.equal(scheduled, scheduledBeforeCollapse);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

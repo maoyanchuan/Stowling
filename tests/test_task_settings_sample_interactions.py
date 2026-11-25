@@ -260,3 +260,31 @@ def test_main_menu_animates_both_directions_without_changing_task_or_settings() 
         "beforeFinish": False, "closed": True, "opened": True,
         "timings": [150, 200], "value": "180", "running": False,
     }
+
+
+def test_experiments_menu_collapses_without_changing_saved_switch_or_run_state() -> None:
+    result = run_sample("""(async () => {
+        load();
+        const initiallyClosed = node('experiments-detail').hidden;
+        node('experiments-expand').emit('click');
+        animations.at(-1).finish();
+        await Promise.resolve();
+        const opened = !node('experiments-detail').hidden;
+        node('debug-mode').checked = true;
+        node('debug-mode').emit('change');
+        node('batching').checked = false;
+        node('batching').emit('change');
+        node('experiments-expand').emit('click');
+        animations.at(-1).finish();
+        await Promise.resolve();
+        node('debug-mode').checked = false;
+        node('debug-mode').emit('change');
+        load();
+        return {initiallyClosed, opened, closed:node('experiments-detail').hidden,
+            batching:node('batching').checked, running:node('enabled').checked,
+            summary:node('experiments-summary').textContent,
+            timings:animations.map(animation => animation.options.duration)};
+    })()""")
+    assert result == {"initiallyClosed": True, "opened": True, "closed": True,
+                      "batching": False, "running": False, "summary": "未启用实验性设置",
+                      "timings": [200, 150]}

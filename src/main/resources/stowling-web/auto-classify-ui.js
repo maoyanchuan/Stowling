@@ -36,7 +36,7 @@
         active: false,
         expanded: false,
         phase: {collection: false, pickup: false, packing: false,
-            classification: false, followUp: false, warehouse: false}
+            classification: false, followUp: false, warehouse: false, experiments: false}
     };
     const elements = {
         list: document.querySelector("#auto-task-list"),
@@ -86,6 +86,11 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
+        experimentsHeader: document.querySelector("#auto-experiments-toggle"),
+        experimentsBody: document.querySelector("#auto-experiments-body"),
+        experimentsSummary: document.querySelector("#auto-experiments-summary"),
+        experimentsHint: document.querySelector("#auto-experiments-hint"),
+        classificationExperiments: document.querySelector("#auto-classification-experiments"),
         batching: document.querySelector("#auto-same-category-batching"),
         batchingRow: document.querySelector("#auto-same-category-batching-row"),
         baseline: document.querySelector("#auto-classification-baseline"),
@@ -488,6 +493,9 @@
             ? "不创建任务" : elements.followUp.value
                 ? `任务完成 ${elements.followUpDelay.value} 秒后创建` : "请选择后续任务";
         elements.collectHeader.closest(".auto-config-section").hidden = classification;
+        elements.packingHeader.closest(".auto-config-section").hidden = classification;
+        elements.classificationExperiments.hidden = pickup;
+
         elements.classifyHeader.closest(".auto-config-section").hidden = pickup;
         elements.warehouseEnabled.closest(".auto-config-section").hidden = pickup;
         elements.cacheMode.closest(".move-field").hidden = pickup;
@@ -541,7 +549,8 @@
             ["packing", elements.packingHeader, elements.packingBody],
             ["classification", elements.classifyHeader, elements.classifyBody],
             ["followUp", elements.followUpHeader, elements.followUpBody],
-            ["warehouse", elements.warehouseHeader, elements.warehouseBody]
+            ["warehouse", elements.warehouseHeader, elements.warehouseBody],
+            ["experiments", elements.experimentsHeader, elements.experimentsBody]
         ];
         for (const [phase, header, body] of phaseStates) {
             if (!header || !body) {
@@ -555,12 +564,13 @@
             const expanded = enabled && (alwaysOpen || state.phase[phase]);
             header.setAttribute("aria-expanded", String(expanded));
             const labels = {collection: "缓存", pickup: "掉落物拾取点", packing: "打包缓存",
-                classification: "后台分类", followUp: "任务结束后创建任务", warehouse: "机器人仓库"};
+                classification: "后台分类", followUp: "任务结束后创建任务",
+                warehouse: "机器人仓库", experiments: "实验性"};
             header.setAttribute("aria-label",
                 `${expanded ? "收起" : "展开"}${labels[phase]}设置`);
             void window.StowlingSettings.reveal(body, expanded);
             header.closest(".auto-config-section").dataset.enabled = String(enabled);
-            if (phase === "collection") continue;
+            if (phase === "collection" || phase === "experiments") continue;
             for (const control of body.querySelectorAll("input, select, textarea, button")) {
                 if (!enabled && !phaseDisabledControls.has(control)) {
                     phaseDisabledControls.set(control, control.disabled);
@@ -600,6 +610,20 @@
         }
         visitsStatus.hidden = activeVisits.length === 0;
         visitsStatus.textContent = activeVisits.length ? "已开启：" + activeVisits.join("；") : "";
+        const activeExperiments = [...activeVisits];
+        if (baselineEnabled) {
+            activeExperiments.unshift("分类取料与交付顺序（classification-multi-source-fixed-order）");
+        }
+        if (!pickup && elements.batching.checked && !baselineEnabled) {
+            activeExperiments.push("同类多盒合批（sameCategoryBoxBatching）");
+        }
+        if (!classification && elements.cacheEnabled.checked) {
+            activeExperiments.push("打包缓存（cachePolicy.enabled）");
+        }
+        elements.experimentsHint.hidden = window.StowlingTaskDebugMode?.enabled() === true;
+        elements.experimentsSummary.textContent = activeExperiments.length
+            ? `已开启 ${activeExperiments.length} 项` : "未启用实验性设置";
+        elements.experimentsHeader.title = activeExperiments.join("；");
         selectView?.refresh(true);
     }
 
@@ -634,6 +658,7 @@
         state.phase.classification = false;
         state.phase.followUp = false;
         state.phase.warehouse = false;
+        state.phase.experiments = false;
         syncForm();
         renderList();
         showMessage(item ? "已保存" : "配置完整后自动保存");
@@ -849,6 +874,13 @@
     elements.collectHeader.addEventListener("click", () => togglePhase("collection"));
     elements.pickupHeader.addEventListener("click", () => togglePhase("pickup"));
     elements.packingHeader.addEventListener("click", () => togglePhase("packing"));
+    elements.experimentsHeader.addEventListener("click", () => togglePhase("experiments"));
+    elements.experimentsBody.addEventListener("invalid", (event) => {
+        state.phase.experiments = true;
+        if (elements.packingBody.contains(event.target)) state.phase.packing = true;
+        updateControls();
+    }, true);
+
     elements.classifyHeader.addEventListener("click", () => togglePhase("classification"));
     elements.followUpHeader.addEventListener("click", () => togglePhase("followUp"));
     elements.warehouseHeader.addEventListener("click", () => togglePhase("warehouse"));

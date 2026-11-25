@@ -595,6 +595,25 @@
             min-height: max(58px, var(--sample-row-height));
         }
     }
+    #stowling-settings-standard .sample-experiments-toggle {
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--sample-text);
+        font: inherit;
+        text-align: left;
+    }
+    #stowling-settings-standard .sample-experiments-toggle .sample-description {
+        display: block;
+    }
+    #stowling-settings-standard .sample-experiments-toggle > svg {
+        flex-shrink: 0;
+        transition: transform 160ms ease-out;
+    }
+    #stowling-settings-standard .sample-experiments-toggle[aria-expanded="true"] > svg {
+        transform: rotate(90deg);
+    }
     @media (prefers-reduced-motion: reduce) {
         #stowling-settings-standard *,
         #stowling-settings-standard *::after {
@@ -3207,28 +3226,50 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 </div>
             </div>
             <p id="sample-target-order" class="sample-description" aria-live="polite" hidden></p>
-            <div id="sample-batching-row" class="sample-row" hidden inert>
-                <div class="sample-setting-copy">
-                    <label class="sample-debug-title" for="sample-batching">
-                        <span>同类多盒合批</span>
-                        <span class="sample-debug-badge">调试选项</span>
-                    </label>
-                    <p class="sample-description" id="sample-batching-description">
-                        连续打包并集中运送同类盒子，减少往返。
-                    </p>
-                </div>
-                <input id="sample-batching" class="sample-switch cursor-interaction"
-                       type="checkbox" role="switch" aria-describedby="sample-batching-description"
-                       checked disabled>
-            </div>
-
-
             <h3 class="sample-section-title">单个物品最大售卖数量</h3>
             <div class="sample-row sample-number-row">
                 <label class="sample-row-label" for="sample-maximum">最大售卖数量</label>
                 <input id="sample-maximum" class="sample-number"
                     type="number" min="1" max="99999" step="1" value="320">
             </div>
+            <section id="sample-experiments" aria-label="实验性设置">
+                <button id="sample-experiments-expand" type="button"
+                    class="sample-row sample-experiments-toggle cursor-interaction"
+                    aria-expanded="false" aria-controls="sample-experiments-detail">
+                    <span class="sample-setting-copy">
+                        <span class="sample-row-label">实验性设置</span>
+                        <span id="sample-experiments-summary" class="sample-description">
+                            展开查看本任务的实验性设置
+                        </span>
+                    </span>
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m9 6 6 6-6 6"/>
+                    </svg>
+                </button>
+                <div id="sample-experiments-detail" class="sample-detail" hidden>
+                    <div class="sample-detail-inner">
+                        <p id="sample-experiments-hint" class="sample-description">
+                            开启页面调试模式后可编辑，收起菜单或隐藏入口会保留保存值。
+                        </p>
+                        <div id="sample-batching-row" class="sample-row" hidden inert>
+                            <div class="sample-setting-copy">
+                                <label class="sample-debug-title" for="sample-batching">
+                                    <span>同类多盒合批</span>
+                                    <span class="sample-debug-badge">调试选项</span>
+                                </label>
+                                <p class="sample-description" id="sample-batching-description">
+                                    连续打包并集中运送同类盒子，减少往返。
+                                </p>
+                            </div>
+                            <input id="sample-batching" class="sample-switch cursor-interaction"
+                                   type="checkbox" role="switch" aria-describedby="sample-batching-description"
+                                   checked disabled>
+                        </div>
+                    </div>
+                </div>
+            </section>
             </div>
         </div>
     </section>
@@ -3266,7 +3307,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         valleyExpanded: false, wulingExpanded: false, strategyExpanded: false,
         strategy: "price", maximum: "320", valleyReserve: "64", wulingReserve: "64",
         priceThreshold: "10", stockThreshold: "640", targetZones: [],
-        debugMode: false, sameCategoryBoxBatching: true
+        debugMode: false, sameCategoryBoxBatching: true, experimentsExpanded: false
     };
 
     /**
@@ -3335,6 +3376,16 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         const batching = root.querySelector("#sample-batching");
         batching.checked = ui.sameCategoryBoxBatching;
         batching.disabled = !ui.debugMode;
+        const experiments = root.querySelector("#sample-experiments-expand");
+        experiments.setAttribute("aria-expanded", String(ui.experimentsExpanded));
+        experiments.setAttribute("aria-label",
+            `${ui.experimentsExpanded ? "收起" : "展开"}实验性设置`);
+        experiments.title = ui.sameCategoryBoxBatching ? "同类多盒合批（sameCategoryBoxBatching）" : "";
+        root.querySelector("#sample-experiments-summary").textContent = ui.sameCategoryBoxBatching
+            ? "已开启 1 项" : "未启用实验性设置";
+        root.querySelector("#sample-experiments-hint").hidden = ui.debugMode;
+        reveal(root.querySelector("#sample-experiments-detail"), ui.experimentsExpanded, animate);
+
         collapse.setAttribute("aria-expanded", String(ui.expanded));
         const moduleAction = ui.expanded ? "收起" : "展开";
         collapse.setAttribute("aria-label", `${moduleAction}售卖弹性物资设置`);
@@ -3417,6 +3468,12 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     } catch {
         // Missing or malformed sample data falls back to the visible initial state.
     }
+
+    root.querySelector("#sample-experiments-expand").addEventListener("click", () => {
+        ui.experimentsExpanded = !ui.experimentsExpanded;
+        renderUI(true);
+        remember();
+    });
 
     for (const [id, key] of [["sample-debug-mode", "debugMode"],
         ["sample-batching", "sameCategoryBoxBatching"]]) {

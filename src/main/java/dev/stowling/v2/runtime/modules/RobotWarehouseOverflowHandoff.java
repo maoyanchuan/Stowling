@@ -2,7 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import java.util.function.BooleanSupplier;
 
-/** Allows the opt-in total overflow stage to inspect confirmed warehouse leftovers. */
+/** Allows an enabled total overflow stage to inspect confirmed warehouse leftovers. */
 final class RobotWarehouseOverflowHandoff implements TaskModuleExecutor {
     private final TaskModuleExecutor warehouse;
     private final BooleanSupplier resourcesRecovered;

@@ -2,22 +2,14 @@ package dev.stowling.v2.model;
 
 /** Task-local destinations for items left after all selected category zones have run. */
 public record ClassificationRemainderPolicy(boolean unclassifiableEnabled,
-        String unclassifiableDestinationRef, boolean overflowEnabled, String overflowDestinationRef,
-        boolean robotWarehouseFirstEnabled) {
+        String unclassifiableDestinationRef, boolean overflowEnabled, String overflowDestinationRef) {
     public static final String MODULE = "ROUTE_CLASSIFICATION_REMAINDERS";
     public static final String KIND = "remainderKind";
     public static final String UNCLASSIFIABLE = "UNCLASSIFIABLE";
     public static final String OVERFLOW = "OVERFLOW";
-    public static final String ROBOT_FIRST = "robotWarehouseFirstEnabled";
+    public static final String TOTAL_OVERFLOW_FOLLOWS = "totalOverflowFollows";
     public static final ClassificationRemainderPolicy DEFAULT =
             new ClassificationRemainderPolicy(false, null, false, null);
-
-    public ClassificationRemainderPolicy(boolean unclassifiableEnabled,
-            String unclassifiableDestinationRef, boolean overflowEnabled,
-            String overflowDestinationRef) {
-        this(unclassifiableEnabled, unclassifiableDestinationRef, overflowEnabled,
-                overflowDestinationRef, false);
-    }
 
     public ClassificationRemainderPolicy {
         unclassifiableDestinationRef = destination(unclassifiableDestinationRef,

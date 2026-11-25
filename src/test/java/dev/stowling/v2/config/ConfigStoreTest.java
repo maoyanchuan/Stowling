@@ -1,6 +1,7 @@
 package dev.stowling.v2.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -249,6 +250,34 @@ class ConfigStoreTest {
                 .autoClassifyTasks().getFirst().cachePolicy();
         assertTrue(!migrated.enabled());
         assertEquals(65, migrated.thresholdPercent());
+    }
+
+    @Test
+    void retiredRobotPriorityMigratesBothValuesAndIsNotSavedAgain() throws Exception {
+        for (boolean retired : List.of(false, true)) {
+            Path path = directory.resolve("retired-priority-" + retired + ".json");
+            var root = JsonParser.parseString(new Gson().toJson(automaticConfiguration(true)))
+                    .getAsJsonObject();
+            root.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                    .getAsJsonObject("remainderPolicy")
+                    .addProperty("robotWarehouseFirstEnabled", retired);
+            for (var task : root.getAsJsonArray("tasks")) {
+                for (var stepValue : task.getAsJsonObject().getAsJsonArray("steps")) {
+                    var step = stepValue.getAsJsonObject();
+                    if ("ROBOT_WAREHOUSE".equals(step.get("moduleId").getAsString())) {
+                        step.getAsJsonObject("parameters")
+                                .addProperty("robotWarehouseFirstEnabled", "" + retired);
+                    }
+                }
+            }
+            Files.writeString(path, root.toString());
+            var store = new ConfigStore(path);
+            var migrated = store.read();
+            assertTrue(migrated.config().autoClassifyTasks().getFirst().overflowEnabled());
+            assertFalse(new Gson().toJson(migrated.config()).contains("robotWarehouseFirstEnabled"));
+            store.save(migrated.revision(), migrated.config());
+            assertFalse(Files.readString(path).contains("robotWarehouseFirstEnabled"));
+        }
     }
 
     @Test

@@ -108,25 +108,7 @@ public final class AutoClassifyTaskFactory {
                     remainders.unclassifiableDestinationRef(),
                     ClassificationRemainderPolicy.UNCLASSIFIABLE));
         }
-        List<TaskStep> overflowSteps = new ArrayList<>();
-        boolean robotFirst = definition.kind() == Kind.CLASSIFICATION
-                && remainders.robotWarehouseFirstEnabled() && remainders.overflowEnabled();
-        if (definition.overflowEnabled()) {
-            TaskStep robot = TaskFlowTemplates.overflow(definition.cacheLocationRef(),
-                    definition.overflowDestinationRef(), definition.robotWarehouseMixedBoxes());
-            if (robotFirst) {
-                Map<String, String> parameters = new LinkedHashMap<>(robot.parameters());
-                parameters.put(ClassificationRemainderPolicy.ROBOT_FIRST, "true");
-                robot = TaskStep.action(robot.id(), robot.moduleId(), parameters);
-            }
-            overflowSteps.add(robot);
-        }
-        if (remainders.overflowEnabled()) {
-            TaskStep total = routeRemainder(definition.cacheLocationRef(),
-                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW);
-            overflowSteps.add(robotFirst ? overflowSteps.size() : 0, total);
-        }
-        classificationSteps.addAll(overflowSteps);
+        classificationSteps.addAll(classificationOverflowSteps(definition));
         classificationSteps.addAll(TaskFlowTemplates.reconcileInventory(
                 definition.cacheLocationRef(), Map.of()
         ));
@@ -158,6 +140,26 @@ public final class AutoClassifyTaskFactory {
                         definition.cacheLocationRef()), TaskInterruptionMode.NONE, null,
                 false, false, null, definition.cleanupPolicy()));
         return List.copyOf(result);
+    }
+
+    static List<TaskStep> classificationOverflowSteps(AutoClassifyDefinition definition) {
+        List<TaskStep> steps = new ArrayList<>();
+        var remainders = definition.remainderPolicy();
+        if (definition.overflowEnabled()) {
+            TaskStep robot = TaskFlowTemplates.overflow(definition.cacheLocationRef(),
+                    definition.overflowDestinationRef(), definition.robotWarehouseMixedBoxes());
+            if (remainders.overflowEnabled()) {
+                Map<String, String> parameters = new LinkedHashMap<>(robot.parameters());
+                parameters.put(ClassificationRemainderPolicy.TOTAL_OVERFLOW_FOLLOWS, "true");
+                robot = TaskStep.action(robot.id(), robot.moduleId(), parameters);
+            }
+            steps.add(robot);
+        }
+        if (remainders.overflowEnabled()) {
+            steps.add(routeRemainder(definition.cacheLocationRef(),
+                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW));
+        }
+        return List.copyOf(steps);
     }
 
     private static TaskStep routeRemainder(String source, String destination, String kind) {

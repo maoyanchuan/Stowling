@@ -823,12 +823,14 @@ public final class ConfigValidator {
             case PACK_OVERFLOW, ROBOT_WAREHOUSE -> {
                 requireParameters(step, ROBOT_WAREHOUSE.equals(step.moduleId())
                         ? Set.of(REGION_REF, CACHE_LOCATION_REF, TARGET_REF, "mixedBoxes",
-                                dev.stowling.v2.model.ClassificationRemainderPolicy.ROBOT_FIRST)
+                                dev.stowling.v2.model.ClassificationRemainderPolicy
+                                        .TOTAL_OVERFLOW_FOLLOWS)
                         : Set.of(REGION_REF), Set.of());
                 if (ROBOT_WAREHOUSE.equals(step.moduleId())) {
                     requireOptionalBoolean(step, "mixedBoxes");
                     requireOptionalBoolean(step,
-                            dev.stowling.v2.model.ClassificationRemainderPolicy.ROBOT_FIRST);
+                            dev.stowling.v2.model.ClassificationRemainderPolicy
+                                    .TOTAL_OVERFLOW_FOLLOWS);
                 }
                 if (step.parameters().containsKey(REGION_REF)) {
                     requireRegionReference(step, regions, REGION_REF);

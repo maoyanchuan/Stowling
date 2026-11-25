@@ -405,7 +405,7 @@ def test_overflow_contains_robot_and_keeps_independent_switches_and_keyboard_sel
 
 
 @pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
-def test_total_overflow_precedes_robot_in_ui_and_debug_order_survives_hidden_entry(
+def test_total_overflow_precedes_robot_in_ui_and_warehouse_first_is_the_baseline(
     classification_page: Any, theme: str, width: int,
 ) -> None:
     page = classification_page
@@ -415,7 +415,7 @@ def test_total_overflow_precedes_robot_in_ui_and_debug_order_survives_hidden_ent
     summary = page.locator("#auto-overflow-toggle")
     assert summary.locator("strong").inner_text() == "溢出处理"
     assert "未启用" in summary.inner_text()
-    assert page.locator("#auto-robot-warehouse-first-row").is_hidden()
+    assert page.locator("#auto-robot-warehouse-first-row").count() == 0
     summary.click()
     settle(page)
     total = page.locator("#auto-overflow-storage-settings")
@@ -432,29 +432,25 @@ def test_total_overflow_precedes_robot_in_ui_and_debug_order_survives_hidden_ent
     assert "仅总溢出" in summary.inner_text()
     page.locator("#robot-warehouse-enabled").check()
     page.wait_for_function("backend.item.overflowEnabled === true")
-    assert "总溢出 → 机器人仓库" in summary.inner_text()
+    assert "机器人仓库 → 总溢出" in summary.inner_text()
+    assert "机器人仓库未能存入的余量" in total.inner_text()
 
     page.evaluate("""() => {
         window.StowlingTaskDebugMode = {enabled: () => true};
         document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
     }""")
-    first = page.locator("#auto-robot-warehouse-first")
-    first.check()
-    page.wait_for_function("backend.item.remainderPolicy.robotWarehouseFirstEnabled === true")
+    assert page.locator("#auto-robot-warehouse-first").count() == 0
     assert "机器人仓库 → 总溢出" in summary.inner_text()
-    assert "机器人仓库未能存入的余量" in total.inner_text()
 
     page.evaluate("""() => {
         window.StowlingTaskDebugMode = {enabled: () => false};
         document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
     }""")
-    assert first.is_hidden()
-    status = page.locator("#auto-robot-warehouse-first-status")
-    assert status.is_visible()
-    assert "classification-robot-warehouse-first" in status.inner_text()
+    assert page.locator("#auto-robot-warehouse-first-status").count() == 0
     page.locator("#robot-warehouse-enabled").uncheck()
     page.wait_for_function("backend.item.overflowEnabled === false")
-    assert page.evaluate("backend.item.remainderPolicy.robotWarehouseFirstEnabled") is True
+    assert page.evaluate("Object.hasOwn(backend.item.remainderPolicy,"
+                         "'robotWarehouseFirstEnabled')") is False
     assert "仅总溢出" in summary.inner_text()
     page.locator("#auto-overflow-storage-enabled").uncheck()
     page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === false")
@@ -464,9 +460,8 @@ def test_total_overflow_precedes_robot_in_ui_and_debug_order_survives_hidden_ent
     assert "仅机器人仓库" in summary.inner_text()
 
     page.locator("#refresh-move-tasks").click()
-    page.wait_for_function("backend.item.remainderPolicy.robotWarehouseFirstEnabled === true")
-    assert status.is_visible()
-    assert first.is_checked()
+    page.wait_for_function("""document.querySelector('#auto-overflow-toggle')
+        .textContent.includes('仅机器人仓库')""")
     assert page.locator("#auto-overflow-storage-location").input_value() == "region:reserve"
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 

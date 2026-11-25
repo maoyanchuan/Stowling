@@ -31,56 +31,28 @@
         const section = Settings.disclosure("溢出处理", "", body);
         section.root.id = "auto-overflow-settings";
         section.summary.id = "auto-overflow-toggle";
-        const first = document.createElement("input");
-        first.id = "auto-robot-warehouse-first";
-        Settings.switchControl(first, "溢出阶段先机器人仓库");
-        const debugRow = S.element("div", "settings-row");
-        debugRow.id = "auto-robot-warehouse-first-row";
-        const copy = S.element("div", "settings-copy");
-        const label = S.element("label", "task-debug-title");
-        label.htmlFor = first.id;
-        label.append(S.element("span", "", "溢出阶段先机器人仓库"),
-            S.element("span", "task-debug-badge", "调试选项"));
-        const note = S.element("span", "settings-description",
-            "先按纯盒／杂盒入库，再将未接收余量送往总溢出。");
-        note.id = "auto-robot-warehouse-first-description";
-        first.setAttribute("aria-describedby", note.id);
-        copy.append(label, note);
-        debugRow.append(copy, first);
-        const status = S.element("p", "settings-description compact-help");
-        status.id = "auto-robot-warehouse-first-status";
-        status.setAttribute("role", "status");
-        host.append(unclassifiable.root, section.root, debugRow, status);
-        let context = {standalone: false, robotEnabled: false, debugEnabled: false, disabled: false};
+        host.append(unclassifiable.root, section.root);
+        let context = {robotEnabled: false};
 
         /** @param {object} [options] @returns {void} */
         function refresh(options = {}) {
             context = {...context, ...options};
             unclassifiable.refresh();
             overflow.refresh();
-            const robotFirst = context.standalone && first.checked;
             const total = overflow.enabled.checked;
             const robot = context.robotEnabled;
             section.description.textContent = total && robot
-                ? `执行顺序：${robotFirst ? "机器人仓库 → 总溢出" : "总溢出 → 机器人仓库"}`
+                ? "执行顺序：机器人仓库 → 总溢出"
                 : total ? "仅总溢出；未接收余量保留在来源。"
                     : robot ? "仅机器人仓库；按纯盒／杂盒方式入库。"
                         : "未启用；溢出物品保留在来源。";
-            overflow.root.querySelector(".settings-description").textContent = robotFirst && robot
+            overflow.root.querySelector(".settings-description").textContent = robot
                 ? "接收机器人仓库未能存入的余量；放不下的物品保留在来源。"
                 : "所有对应分类目标均已满时直接转存；未接收余量保留在来源。";
-            debugRow.hidden = !(context.standalone && context.debugEnabled);
-            debugRow.inert = debugRow.hidden;
-            first.disabled = context.disabled || debugRow.hidden;
-            status.hidden = !robotFirst;
-            status.textContent = robotFirst
-                ? "已开启 classification-robot-warehouse-first：机器人仓库优先，总溢出接收余量。"
-                : "";
         }
 
         /** @param {object} values @returns {void} */
         function set(values = {}) {
-            first.checked = values?.robotWarehouseFirstEnabled === true;
             const settings = [["unclassifiable", unclassifiable], ["overflow", overflow]];
             for (const [key, setting] of settings) {
                 setting.enabled.checked = values?.[`${key}Enabled`] === true;
@@ -115,8 +87,7 @@
                 unclassifiableEnabled: unclassifiable.enabled.checked,
                 unclassifiableDestinationRef: unclassifiable.location.value || null,
                 overflowEnabled: overflow.enabled.checked,
-                overflowDestinationRef: overflow.location.value || null,
-                robotWarehouseFirstEnabled: first.checked
+                overflowDestinationRef: overflow.location.value || null
             };
         }
 

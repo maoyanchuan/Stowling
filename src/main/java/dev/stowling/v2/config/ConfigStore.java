@@ -363,12 +363,12 @@ public final class ConfigStore {
     private static void requireRemainderPolicy(JsonElement value) {
         if (value == null || value.isJsonNull()) return;
         var policy = requireObject(value, "remainderPolicy");
+        // The verified warehouse-first order replaces both values of the retired debug switch.
+        policy.remove("robotWarehouseFirstEnabled");
         requireFields(policy, "remainderPolicy", Set.of("unclassifiableEnabled",
-                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef",
-                "robotWarehouseFirstEnabled"),
+                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef"),
                 Set.of());
-        for (String key : List.of("unclassifiableEnabled", "overflowEnabled",
-                "robotWarehouseFirstEnabled")) {
+        for (String key : List.of("unclassifiableEnabled", "overflowEnabled")) {
             var enabled = policy.get(key);
             if (enabled != null && (!enabled.isJsonPrimitive()
                     || !enabled.getAsJsonPrimitive().isBoolean())) {

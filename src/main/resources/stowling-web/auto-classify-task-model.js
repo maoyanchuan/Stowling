@@ -11,8 +11,19 @@
     const INTEGER_PATTERN = /^\d+$/;
     const DEFAULT_REMAINDER_POLICY = Object.freeze({
         unclassifiableEnabled: false, unclassifiableDestinationRef: null,
-        overflowEnabled: false, overflowDestinationRef: null, robotWarehouseFirstEnabled: false
+        overflowEnabled: false, overflowDestinationRef: null
     });
+
+    /** @param {object} [value] @returns {object} */
+    function remainderPolicy(value = {}) {
+        const policy = {...DEFAULT_REMAINDER_POLICY, ...value};
+        return {
+            unclassifiableEnabled: policy.unclassifiableEnabled,
+            unclassifiableDestinationRef: policy.unclassifiableDestinationRef,
+            overflowEnabled: policy.overflowEnabled,
+            overflowDestinationRef: policy.overflowDestinationRef
+        };
+    }
 
     /**
      * @param {string} type
@@ -101,7 +112,7 @@
             sameCategoryBoxBatching: item?.sameCategoryBoxBatching !== false,
             classificationBaselineEnabled: item?.kind === "CLASSIFICATION"
                 && item?.classificationBaselineEnabled === true,
-            remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...item?.remainderPolicy},
+            remainderPolicy: remainderPolicy(item?.remainderPolicy),
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
             facilities: item?.cleanupPolicy || {},
@@ -272,7 +283,7 @@
             sameCategoryBoxBatching: draft.sameCategoryBoxBatching !== false,
             classificationBaselineEnabled: draft.kind === "CLASSIFICATION"
                 && draft.classificationBaselineEnabled === true,
-            remainderPolicy: {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy},
+            remainderPolicy: remainderPolicy(draft.remainderPolicy),
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},
             collectionEnabled: draft.collectionEnabled,
@@ -327,9 +338,6 @@
      * @returns {void} */
     function validateRemainders(draft, resources, errors) {
         const policy = {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy};
-        if (typeof policy.robotWarehouseFirstEnabled !== "boolean") {
-            errors.push("溢出阶段先机器人仓库需为布尔值");
-        }
         const places = cacheLocations(resources);
         for (const [key, label] of [["unclassifiable", "不可分类"], ["overflow", "总溢出"]]) {
             if (typeof policy[`${key}Enabled`] !== "boolean") {

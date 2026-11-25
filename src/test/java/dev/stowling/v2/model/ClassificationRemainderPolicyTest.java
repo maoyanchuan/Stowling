@@ -31,7 +31,7 @@ class ClassificationRemainderPolicyTest {
     }
 
     @Test
-    void routingRunsAfterAllZonesAndBeforeTheRobotWarehouse() {
+    void routingRunsAfterAllZonesWithRobotBeforeTotalOverflow() {
         var policy = new ClassificationRemainderPolicy(true, reference("coordinate"),
                 true, reference("region"));
         String source = reference("region");
@@ -47,8 +47,8 @@ class ClassificationRemainderPolicyTest {
         assertEquals(policy.unclassifiableDestinationRef(),
                 steps.get(4).parameters().get(ConfigValidator.TARGET_REF));
         assertEquals(ClassificationRemainderPolicy.OVERFLOW,
-                steps.get(5).parameters().get(ClassificationRemainderPolicy.KIND));
-        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, steps.get(6).moduleId());
+                steps.get(6).parameters().get(ClassificationRemainderPolicy.KIND));
+        assertEquals(ConfigValidator.ROBOT_WAREHOUSE, steps.get(5).moduleId());
         var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
                 AutoClassifyTaskFactory.tasks(definition, List.of()), List.of(), List.of(),
                 List.of(), List.of(), List.of(definition));

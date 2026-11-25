@@ -537,10 +537,7 @@ class V2ControlServerTest {
                     body.replace("\"robotWarehouseMixedBoxes\":false",
                             "\"robotWarehouseMixedBoxes\":\"false\""), true).statusCode());
             var remainders = item.getAsJsonObject("remainderPolicy");
-            assertTrue(remainders.get("robotWarehouseFirstEnabled").getAsBoolean());
-            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
-                    body.replace("\"robotWarehouseFirstEnabled\":true",
-                            "\"robotWarehouseFirstEnabled\":\"true\""), true).statusCode());
+            assertFalse(remainders.has("robotWarehouseFirstEnabled"));
             assertTrue(remainders.get("unclassifiableEnabled").getAsBoolean());
             assertEquals("coordinate:" + point.id(),
                     remainders.get("overflowDestinationRef").getAsString());

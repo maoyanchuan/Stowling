@@ -28,7 +28,7 @@ final class OverflowItemsModule {
                     context, reference,
                     destination, TaskModuleSupport.booleanParameter(step, "mixedBoxes", true));
             return TaskModuleSupport.booleanParameter(step,
-                    dev.stowling.v2.model.ClassificationRemainderPolicy.ROBOT_FIRST, false)
+                    dev.stowling.v2.model.ClassificationRemainderPolicy.TOTAL_OVERFLOW_FOLLOWS, false)
                     ? new RobotWarehouseOverflowHandoff(robot, () -> !context.storageAutomation()
                             .hasTemporaryResources(
                                     context.workspace().inventoryAccount().ownerId()))

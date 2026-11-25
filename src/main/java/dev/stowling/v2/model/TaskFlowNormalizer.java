@@ -118,8 +118,12 @@ public final class TaskFlowNormalizer {
     private static AppConfig normalizeTasks(AppConfig config) {
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
+        Map<UUID, AutoClassifyDefinition> overflowOwners = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> pickups = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
+            if (definition.kind() != AutoClassifyDefinition.Kind.PICKUP) {
+                overflowOwners.put(definition.classificationTaskId(), definition);
+            }
             if (definition.kind() == AutoClassifyDefinition.Kind.PICKUP
                     && !definition.cachePolicy().enabled()) {
                 pickups.put(definition.id(), definition);
@@ -139,6 +143,7 @@ public final class TaskFlowNormalizer {
                 .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
                 .map(task -> inheritLayoutRecognition(task, autoClassifications.get(task.id())))
                 .map(task -> upgradeAutoClassification(task, autoClassifications.get(task.id())))
+                .map(task -> classificationOverflowBaseline(task, overflowOwners.get(task.id())))
                 .map(task -> autoCleanupPolicy(task, config.autoClassifyTasks()))
                 .map(task -> upgradePickupCycle(task, pickups.get(task.id())))
                 .map(task -> pickupFollowUpDelay(task, config.autoClassifyTasks()))
@@ -293,6 +298,43 @@ public final class TaskFlowNormalizer {
                 task.interruptionMode(), task.interruptionTaskRef(),
                 task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
                 task.cleanupPolicy(), task.autoEatOptions());
+    }
+
+    private static TaskDefinition classificationOverflowBaseline(TaskDefinition task,
+            AutoClassifyDefinition definition) {
+        if (definition == null) return task;
+        List<TaskStep> steps = new ArrayList<>();
+        Map<String, UUID> existingIds = new LinkedHashMap<>();
+        int insertion = -1;
+        for (TaskStep step : task.steps()) {
+            if (isClassificationOverflow(step)) {
+                if (insertion < 0) insertion = steps.size();
+                existingIds.putIfAbsent(step.moduleId(), step.id());
+            } else {
+                if (insertion < 0 && ConfigValidator.SYNC_PLAYER_INVENTORY.equals(step.moduleId())) {
+                    insertion = steps.size();
+                }
+                steps.add(step);
+            }
+        }
+        if (insertion < 0) insertion = steps.size();
+        List<TaskStep> overflow = AutoClassifyTaskFactory.classificationOverflowSteps(definition)
+                .stream().map(step -> TaskStep.action(existingIds.getOrDefault(step.moduleId(),
+                                definition.derivedId("overflow-baseline:" + step.moduleId())),
+                        step.moduleId(), step.parameters())).toList();
+        steps.addAll(insertion, overflow);
+        if (steps.equals(task.steps())) return task;
+        return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
+                steps, task.interruptionMode(), task.interruptionTaskRef(),
+                task.defaultInterruptionFlow(), task.requeueAfterInterruption(), task.folderId(),
+                task.cleanupPolicy(), task.autoEatOptions());
+    }
+
+    private static boolean isClassificationOverflow(TaskStep step) {
+        return ConfigValidator.ROBOT_WAREHOUSE.equals(step.moduleId())
+                || ClassificationRemainderPolicy.MODULE.equals(step.moduleId())
+                && ClassificationRemainderPolicy.OVERFLOW.equals(
+                        step.parameters().get(ClassificationRemainderPolicy.KIND));
     }
 
     private static boolean hasTaskRecognitionOverrides(List<TaskStep> steps) {

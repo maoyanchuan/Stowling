@@ -44,8 +44,7 @@ def _run(expression: str) -> Any:
 def test_remainder_destinations_survive_save_and_reload(enabled: bool) -> None:
     policy = {"unclassifiableEnabled": enabled,
               "unclassifiableDestinationRef": "coordinate:unmatched",
-              "overflowEnabled": enabled, "overflowDestinationRef": "region:overflow",
-              "robotWarehouseFirstEnabled": enabled}
+              "overflowEnabled": enabled, "overflowDestinationRef": "region:overflow"}
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
         const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
@@ -72,26 +71,24 @@ def test_remainder_destinations_reject_missing_or_source_locations(ref: str | No
     assert "不可分类" in errors[0]
 
 
-def test_robot_first_is_off_for_new_and_legacy_classification_tasks() -> None:
+@pytest.mark.parametrize("retired", [False, True])
+def test_retired_robot_priority_is_removed_without_losing_remainder_destinations(
+    retired: bool,
+) -> None:
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
-        return [model.newDraft("CLASSIFICATION").remainderPolicy.robotWarehouseFirstEnabled,
-            model.draftFromTask({kind: "CLASSIFICATION", remainderPolicy: {}})
-                .remainderPolicy.robotWarehouseFirstEnabled];
+        const draft = model.draftFromTask({kind: "CLASSIFICATION",
+            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneRef:
+                "category-zone:zone"}], remainderPolicy: {overflowEnabled: true,
+                overflowDestinationRef: "region:reserve", robotWarehouseFirstEnabled: """
+        + json.dumps(retired) + """}});
+        const saved = model.payload(draft, {regions: [{id: "cache"}, {id: "reserve"}],
+            categoryZones: [{id: "zone"}]});
+        return [Object.hasOwn(draft.remainderPolicy, "robotWarehouseFirstEnabled"),
+            Object.hasOwn(saved.remainderPolicy, "robotWarehouseFirstEnabled"),
+            saved.remainderPolicy.overflowEnabled, saved.remainderPolicy.overflowDestinationRef];
     })()""")
-    assert result == [False, False]
-
-
-@pytest.mark.parametrize("value", [None, "true", 1])
-def test_robot_first_rejects_non_boolean_settings(value: Any) -> None:
-    errors = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
-            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
-            remainderPolicy: {robotWarehouseFirstEnabled: """ + json.dumps(value) + """}},
-            {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
-    })()""")
-    assert errors == ["溢出阶段先机器人仓库需为布尔值"]
+    assert result == [False, False, True, "region:reserve"]
 
 
 @pytest.mark.parametrize("enabled,retain", [(False, True), (True, False), (True, True)])

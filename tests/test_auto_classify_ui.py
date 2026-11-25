@@ -724,6 +724,11 @@ function input(target) {
     assert.equal(packing.checked, true);
     assert.equal(threshold.value, "65");
     assert.equal(scheduled, scheduledBeforeCollapse);
+    window.confirm = () => true;
+    element("#new-classification-task").dispatchEvent(new Event("click"));
+    assert.equal(experimentsRoot.hidden, true);
+    assert.equal(experimentsRoot.inert, true);
+    assert.equal(experimentsBody.hidden, true);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

@@ -1281,17 +1281,8 @@ public final class TaskRunManager {
         workspace.configureCleanup(queued.prepared.task.cleanupPolicy());
         workspace.setDiagnostics(diagnostics);
         PreparedRun prepared = queued.prepared;
-        workspace.configureClassificationVisits(
-                prepared.taskSettings != null
-                        && prepared.taskSettings.classificationFullTargetHandoffEnabled(),
-                prepared.taskSettings != null
-                        && prepared.taskSettings.classificationPartialCacheOnDemandEnabled(),
-                prepared.taskSettings != null
-                        && prepared.taskSettings.classificationCachedEmptyBoxSettlementEnabled());
-        workspace.configureClassificationBaseline(prepared.taskSettings != null
-                && prepared.taskSettings.classificationBaselineEnabled());
-        workspace.configureSameCategoryBoxBatching(prepared.taskSettings == null
-                || prepared.taskSettings.sameCategoryBoxBatching());
+        workspace.configureClassificationTask(prepared.taskSettings != null
+                && prepared.taskSettings.kind() == AutoClassifyDefinition.Kind.CLASSIFICATION);
         diagnostics.captureContext(running.runId(), new TaskDiagnosticContext(clock.instant(),
                 diagnosticVersions, running, prepared.task, prepared.interruptionTask,
                 prepared.taskSettings, diagnosticStorageSettings.get(),

@@ -67,22 +67,3 @@ def test_debug_mode_defaults_off_and_survives_storage_failure(
         assert result["stored"] == "true"
 
 
-def test_task_debug_option_is_hidden_and_preserves_the_saved_value() -> None:
-    page = (WEB / "tasks.html").read_text(encoding="utf-8")
-    ui = (WEB / "auto-classify-ui.js").read_text(encoding="utf-8")
-    template = (ROOT / "docs/ui/task-settings-standard.html").read_text(encoding="utf-8")
-    server = (ROOT / "src/main/java/dev/stowling/v2/api/V2ControlServer.java").read_text(
-        encoding="utf-8",
-    )
-    assert page.index('/task-debug-mode.js') < page.index('/auto-classify-ui.js')
-    assert 'class="settings-row" hidden inert' in page
-    assert 'task-debug-badge' in page and "调试选项" in page
-    assert 'const showBatching = !pickup && window.StowlingTaskDebugMode?.enabled()' in ui
-    assert 'elements.batchingRow.hidden = !showBatching' in ui
-    assert 'elements.batchingRow.inert = !showBatching' in ui
-    assert 'elements.batching.checked = draft.sameCategoryBoxBatching' in ui
-    assert 'sameCategoryBoxBatching: elements.batching.checked' in ui
-    assert '"stowling:task-debug-mode-changed", updateControls' in ui
-    assert '"/task-debug-mode.js"' in server
-    assert 'id="sample-batching-row" class="sample-row" hidden inert' in template
-    assert 'debugMode: false, sameCategoryBoxBatching: true' in template

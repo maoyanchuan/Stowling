@@ -65,11 +65,7 @@ public final class TaskFlowNormalizer {
                     definition.cachePolicy(), definition.kind(), definition.followUpTaskRef(),
                     definition.detectionIntervalSeconds(), definition.followUpDelaySeconds(),
                     definition.followUpEnabled(), definition.remainderPolicy(),
-                    definition.robotWarehouseMixedBoxes(), definition.sameCategoryBoxBatching(),
-                    definition.classificationBaselineEnabled(),
-                    definition.classificationFullTargetHandoffEnabled(),
-                    definition.classificationPartialCacheOnDemandEnabled(),
-                    definition.classificationCachedEmptyBoxSettlementEnabled());
+                    definition.robotWarehouseMixedBoxes());
             definitions.add(updated);
             migrated.put(updated.classificationTaskId(), updated);
         }
@@ -119,11 +115,15 @@ public final class TaskFlowNormalizer {
     }
 
     private static AppConfig normalizeTasks(AppConfig config) {
+        Map<UUID, AutoClassifyDefinition> independentClassifications = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoCollections = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> autoClassifications = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> overflowOwners = new LinkedHashMap<>();
         Map<UUID, AutoClassifyDefinition> pickups = new LinkedHashMap<>();
         for (AutoClassifyDefinition definition : config.autoClassifyTasks()) {
+            if (definition.kind() == AutoClassifyDefinition.Kind.CLASSIFICATION) {
+                independentClassifications.put(definition.classificationTaskId(), definition);
+            }
             if (definition.kind() != AutoClassifyDefinition.Kind.PICKUP) {
                 overflowOwners.put(definition.classificationTaskId(), definition);
             }
@@ -141,6 +141,9 @@ public final class TaskFlowNormalizer {
             originalTasks.put(task.id(), task);
         }
         List<TaskDefinition> baseTasks = config.tasks().stream()
+                .map(task -> independentClassifications.containsKey(task.id())
+                        ? rebuildAutoClassification(task, independentClassifications.get(task.id()),
+                                "classification-mainline") : task)
                 .map(task -> normalizeTask(task, autoCollections.containsKey(task.id())
                         || autoClassifications.containsKey(task.id())))
                 .map(task -> upgradeAutoCollection(task, autoCollections.get(task.id())))
@@ -294,8 +297,9 @@ public final class TaskFlowNormalizer {
 
     private static TaskDefinition rebuildAutoClassification(TaskDefinition task,
             AutoClassifyDefinition definition, String role) {
-        List<TaskStep> steps = AutoClassifyTaskFactory.tasks(definition, List.of())
-                .get(1).steps();
+        List<TaskStep> steps = AutoClassifyTaskFactory.tasks(definition, List.of()).stream()
+                .filter(generated -> generated.id().equals(definition.classificationTaskId()))
+                .findFirst().orElseThrow().steps();
         return new TaskDefinition(task.id(), task.name(), task.priority(), task.repeatWhenIdle(),
                 remapStepIds(steps, definition.derivedId(role)),
                 task.interruptionMode(), task.interruptionTaskRef(),

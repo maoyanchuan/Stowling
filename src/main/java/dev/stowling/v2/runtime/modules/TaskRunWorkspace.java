@@ -18,68 +18,20 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TaskRunWorkspace {
-    private boolean fullTargetHandoff;
-    private boolean partialCacheOnDemand;
-    private boolean cachedEmptyBoxSettlement;
+    private boolean classificationTask;
     private boolean classificationDeliveryActive;
-    private final Map<BlockPosition, Map<String, Integer>> settlementCaches = new LinkedHashMap<>();
-    private final Map<BlockPosition, ContainerTarget> settlementSources = new LinkedHashMap<>();
-
-    public synchronized void recordSettlementSource(ContainerTarget target,
-            Map<String, Integer> contents) {
-        if (cachedEmptyBoxSettlement) {
-            settlementSources.putIfAbsent(target.position(), target);
-            settlementCaches.put(target.position(), Map.copyOf(contents));
-        }
-    }
-
-    public synchronized List<ContainerTarget> recordedSettlementSources() {
-        return List.copyOf(settlementSources.values());
-    }
-
-    public synchronized Map<String, Integer> settlementContents(ContainerTarget target) {
-        return settlementCaches.getOrDefault(target.position(), Map.of());
-    }
-
-    private void recordSettlementTransfer(ContainerTarget target, Map<String, Integer> moved,
-            boolean withdraw) {
-        Map<String, Integer> previous = settlementCaches.get(target.position());
-        if (previous == null) return;
-        Map<String, Integer> next = new LinkedHashMap<>(previous);
-        for (var entry : moved.entrySet()) {
-            int count = next.getOrDefault(entry.getKey(), 0)
-                    + (withdraw ? -entry.getValue() : entry.getValue());
-            if (count < 0) {
-                settlementCaches.remove(target.position());
-                return;
-            }
-            if (count == 0) next.remove(entry.getKey());
-            else next.put(entry.getKey(), count);
-        }
-        settlementCaches.put(target.position(), Map.copyOf(next));
-    }
 
     private Set<String> classificationDemand = Set.of();
     private final Map<String, Set<String>> classificationBoxContents = new LinkedHashMap<>();
     private final Map<BlockPosition, Set<String>> confirmedFullStorage = new LinkedHashMap<>();
 
-    public synchronized void configureClassificationVisits(boolean handoff, boolean partials,
-            boolean emptyBoxes) {
-        fullTargetHandoff = handoff;
-        partialCacheOnDemand = partials;
-        cachedEmptyBoxSettlement = emptyBoxes;
+    /** Identifies an independent classification run, never a persisted execution switch. */
+    public synchronized void configureClassificationTask(boolean classification) {
+        classificationTask = classification;
     }
 
-    public synchronized boolean fullTargetHandoffEnabled() {
-        return fullTargetHandoff;
-    }
-
-    public synchronized boolean partialCacheOnDemandEnabled() {
-        return partialCacheOnDemand;
-    }
-
-    public synchronized boolean cachedEmptyBoxSettlementEnabled() {
-        return cachedEmptyBoxSettlement;
+    public synchronized boolean classificationTask() {
+        return classificationTask;
     }
 
     public synchronized void endClassificationDelivery() {
@@ -110,20 +62,15 @@ public final class TaskRunWorkspace {
         classificationDemand = Set.copyOf(categories);
     }
 
-    public synchronized boolean hasConfirmedFullStorage(ContainerTarget target) {
-        return fullTargetHandoff
-                && !confirmedFullStorage.getOrDefault(target.position(), Set.of()).isEmpty();
-    }
-
     public synchronized void recordConfirmedFullStorage(ContainerTarget target,
             Set<String> categories) {
-        if (fullTargetHandoff) {
+        if (classificationTask) {
             confirmedFullStorage.put(target.position(), Set.copyOf(categories));
         }
     }
 
     private Map<String, Integer> activeClassificationItems(Map<String, Integer> items) {
-        if (!fullTargetHandoff || !classificationDeliveryActive) return items;
+        if (!classificationTask || !classificationDeliveryActive) return items;
         Map<String, Integer> active = new LinkedHashMap<>(items);
         active.keySet().removeIf(key -> {
             List<ContainerTarget> targets = resolvedStorageTargets(key);
@@ -132,54 +79,6 @@ public final class TaskRunWorkspace {
                             .getOrDefault(target.position(), Set.of())));
         });
         return Map.copyOf(active);
-    }
-
-    private boolean classificationBaselineEnabled;
-    private final Map<BlockPosition, String> classificationIssues = new LinkedHashMap<>();
-    private final Set<BlockPosition> blockedClassificationSources = new LinkedHashSet<>();
-
-    public synchronized void configureClassificationBaseline(boolean enabled) {
-        classificationBaselineEnabled = enabled;
-    }
-
-    public synchronized boolean classificationBaselineEnabled() {
-        return classificationBaselineEnabled;
-    }
-
-    public synchronized void recordClassificationIssue(ContainerTarget target, String reason) {
-        classificationIssues.put(target.position(), reason);
-        dev.stowling.v2.runtime.TaskTrace.event("CLASSIFICATION", "classification.blocked",
-                "position=" + target.position() + "; reason=" + reason);
-    }
-
-    public synchronized String classificationSummary() {
-        if (classificationIssues.isEmpty()) return "分类本轮执行结束，未记录受阻目标";
-        return "分类本轮结束，" + classificationIssues.size() + " 处未完成："
-                + classificationIssues.entrySet().stream()
-                        .map(entry -> entry.getKey() + "：" + entry.getValue())
-                        .collect(java.util.stream.Collectors.joining("；"));
-    }
-
-    public synchronized void recordClassificationSourceIssue(ContainerTarget source, String reason) {
-        blockedClassificationSources.add(source.position());
-        recordClassificationIssue(source, reason);
-    }
-
-    public synchronized void selectClassificationSource(ContainerTarget source) {
-        selectedContainer = source;
-        deferredCacheCategories.clear();
-        cacheHasMore = true;
-        resetStorageSelection();
-    }
-
-    private boolean sameCategoryBoxBatching = true;
-
-    public synchronized void configureSameCategoryBoxBatching(boolean enabled) {
-        sameCategoryBoxBatching = enabled;
-    }
-
-    public synchronized boolean sameCategoryBoxBatching() {
-        return !classificationBaselineEnabled && sameCategoryBoxBatching;
     }
 
     private boolean retainPickupCargo;
@@ -430,7 +329,6 @@ public final class TaskRunWorkspace {
 
     public synchronized void recordCacheTransfer(ContainerTarget target, Map<String, Integer> moved,
             boolean withdraw) {
-        recordSettlementTransfer(target, moved, withdraw);
         Map<String, Integer> previous = cacheInventory.get(target.position());
         if (previous == null) return;
         if (withdraw && moved.entrySet().stream().anyMatch(entry ->
@@ -463,12 +361,10 @@ public final class TaskRunWorkspace {
 
     public synchronized boolean hasRecordedClassifiableStock(ContainerTarget target,
             Set<String> categories) {
-        if (classificationBaselineEnabled
-                && blockedClassificationSources.contains(target.position())) return false;
         Set<String> usable = new LinkedHashSet<>(categories);
-        if (partialCacheOnDemand) usable.retainAll(classificationDemand);
-        if (fullTargetHandoff) usable.removeIf(this::confirmedFullCategory);
-        if ((partialCacheOnDemand || fullTargetHandoff) && usable.isEmpty()) return false;
+        if (classificationTask) usable.retainAll(classificationDemand);
+        if (classificationTask) usable.removeIf(this::confirmedFullCategory);
+        if (classificationTask && usable.isEmpty()) return false;
         Map<String, Integer> items = cacheInventory.get(target.position());
         boolean exactItems = usable.stream().anyMatch(key -> key.startsWith("="));
         return items == null || items.keySet().stream()
@@ -495,9 +391,6 @@ public final class TaskRunWorkspace {
         Map<BlockPosition, Map<String, Integer>> copy = new LinkedHashMap<>(cacheInventory);
         copy.put(target.position(), Map.copyOf(items));
         cacheInventory = Map.copyOf(copy);
-        if (settlementCaches.containsKey(target.position())) {
-            settlementCaches.put(target.position(), Map.copyOf(items));
-        }
     }
 
     public synchronized void setCategoryMatch(
@@ -550,7 +443,7 @@ public final class TaskRunWorkspace {
             List<ClassificationLayoutEntry> layout,
             Set<BlockPosition> partialBoxStoragePositions
     ) {
-        classificationDeliveryActive = fullTargetHandoff;
+        classificationDeliveryActive = classificationTask;
         classificationLayout = List.copyOf(layout);
         unstackableClassification = false;
         this.partialBoxStoragePositions = Set.copyOf(partialBoxStoragePositions);
@@ -574,7 +467,7 @@ public final class TaskRunWorkspace {
         containerCursor = 0;
         triedStorage.clear();
         storageRoute.clear();
-        selectedContainer = fullTargetHandoff && containerScan != null
+        selectedContainer = classificationTask && containerScan != null
                 ? containerScan.containers().stream().findFirst().orElse(null) : null;
         selectedStorageTarget = null;
         storageUsesCacheFallback = false;
@@ -715,8 +608,8 @@ public final class TaskRunWorkspace {
 
     public synchronized Set<String> remainingCacheCategories(ContainerTarget target) {
         Set<String> categories = new LinkedHashSet<>(withdrawItemIdsFor(target));
-        if (partialCacheOnDemand) categories.retainAll(classificationDemand);
-        if (fullTargetHandoff) categories.removeIf(this::confirmedFullCategory);
+        if (classificationTask) categories.retainAll(classificationDemand);
+        if (classificationTask) categories.removeIf(this::confirmedFullCategory);
         if (selectedContainer != null && selectedContainer.position().equals(target.position())) {
             categories.removeIf(key ->
                     deferredCacheCategories.contains(key.startsWith("=")
@@ -765,7 +658,7 @@ public final class TaskRunWorkspace {
     }
 
     public synchronized boolean cacheHasMore() {
-        if (fullTargetHandoff && classificationDeliveryActive && selectedContainer != null
+        if (classificationTask && classificationDeliveryActive && selectedContainer != null
                 && !hasRecordedClassifiableStock(selectedContainer,
                         remainingCacheCategories(selectedContainer))) return false;
         return cacheHasMore;
@@ -810,10 +703,7 @@ public final class TaskRunWorkspace {
                                 acceptedItemsByContainer.getOrDefault(candidate, Set.of()))))
                 .toList();
         Optional<ContainerTarget> next;
-        if (classificationBaselineEnabled) {
-            next = ClassificationRoutePlanner.fixedOrder(classificationLayout, candidates)
-                    .stream().findFirst();
-        } else if (!classificationLayout.isEmpty()) {
+        if (!classificationLayout.isEmpty()) {
             next = ClassificationRoutePlanner.planLayout(classificationLayout, candidates,
                     acceptedItemsByContainer, items.keySet(), order).stream().findFirst();
         } else if ("carried".equals(itemSource) && selectedContainer != null

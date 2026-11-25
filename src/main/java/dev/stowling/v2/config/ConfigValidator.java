@@ -788,9 +788,6 @@ public final class ConfigValidator {
         }
         switch (step.moduleId()) {
             case "SETTLE_EMPTY_BOXES" -> requireParameters(step, Set.of(), Set.of());
-            case dev.stowling.v2.model.ClassificationBaseline.MODULE,
-                    dev.stowling.v2.model.ClassificationBaseline.SUMMARY ->
-                    requireParameters(step, Set.of(), Set.of());
             case "MANAGE_CACHE_INTAKE" -> {
                 requireParameters(step, Set.of("cacheIntakeMode", "cacheThresholdPercent",
                         "classificationTaskRef"), Set.of("cacheIntakeMode",

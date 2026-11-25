@@ -151,7 +151,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 cacheTargets.add(temporary);
             }
         }
-        List<ContainerTarget> partialTargets = context.workspace().partialCacheOnDemandEnabled()
+        List<ContainerTarget> partialTargets = context.workspace().classificationTask()
                 ? targets.stream().filter(target -> accepted.getOrDefault(target, Set.of())
                         .stream().anyMatch(demand::contains)).toList() : targets;
         List<ContainerTarget> partialBoxes = partialTargets.isEmpty() ? List.of()

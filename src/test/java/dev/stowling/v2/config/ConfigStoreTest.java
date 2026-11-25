@@ -36,31 +36,57 @@ class ConfigStoreTest {
     @TempDir
     Path directory;
 
+
     @Test
-    void classificationVisitSwitchesPersistIndependentlyAndRejectWrongTypes() throws Exception {
-        AppConfig initial = automaticConfiguration(false);
+    void retiredClassificationSettingsAndStoredExperimentalStepsMigrateToOneBaseline()
+            throws Exception {
+        var initial = automaticConfiguration(false);
         var original = initial.autoClassifyTasks().getFirst();
-        for (int mask = 0; mask < 8; mask++) {
-            var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
-                    false, true, null, null, original.cacheLocationRef(),
-                    original.classificationAreas(), original.collectionPriority(),
-                    original.overflowEnabled(), original.cleanupPolicy(), null,
-                    original.overflowDestinationRef(), null,
-                    AutoClassifyDefinition.Kind.CLASSIFICATION, null, null, null, null,
-                    null, null, true, false, (mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0);
-            var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
-                    AutoClassifyTaskFactory.tasks(definition, List.of()), initial.regions(),
-                    initial.categoryZones(), List.of(), List.of(), List.of(definition));
-            Path path = directory.resolve("classification-visits-" + mask + ".json");
+        var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
+                false, true, null, null, original.cacheLocationRef(),
+                original.classificationAreas(), original.collectionPriority(),
+                original.overflowEnabled(), original.cleanupPolicy(), null,
+                original.overflowDestinationRef(), null,
+                AutoClassifyDefinition.Kind.CLASSIFICATION, null, null, null, null,
+                original.remainderPolicy(), original.robotWarehouseMixedBoxes());
+        var config = new AppConfig(initial.schemaVersion(), initial.coordinates(),
+                AutoClassifyTaskFactory.tasks(definition, List.of()), initial.regions(),
+                initial.categoryZones(), List.of(), List.of(), List.of(definition));
+        var retired = List.of("sameCategoryBoxBatching", "classificationBaselineEnabled",
+                "classificationFullTargetHandoffEnabled", "classificationPartialCacheOnDemandEnabled",
+                "classificationCachedEmptyBoxSettlementEnabled");
+        var gson = new com.google.gson.Gson();
+        for (int mask = 0; mask < 32; mask++) {
+            var json = gson.toJsonTree(config).getAsJsonObject();
+            var legacy = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
+            for (int index = 0; index < retired.size(); index++) {
+                legacy.addProperty(retired.get(index), (mask & (1 << index)) != 0);
+            }
+            for (var value : json.getAsJsonArray("tasks")) {
+                var task = value.getAsJsonObject();
+                if (!task.get("id").getAsString().equals(definition.classificationTaskId()
+                        .toString())) continue;
+                var oldSteps = new com.google.gson.JsonArray();
+                for (String module : List.of("CLASSIFY_MULTI_SOURCE_BATCHES",
+                        "SUMMARIZE_CLASSIFICATION_BATCHES")) {
+                    oldSteps.add(gson.toJsonTree(dev.stowling.v2.model.TaskStep.action(
+                            UUID.randomUUID(), module, Map.of())));
+                }
+                task.add("steps", oldSteps);
+            }
+            Path path = directory.resolve("classification-mainline-" + mask + ".json");
+            Files.writeString(path, gson.toJson(json));
             var store = new ConfigStore(path);
-            store.save(store.loadOrReset().revision(), config);
-            var restored = new ConfigStore(path).read().config().autoClassifyTasks().getFirst();
-            assertEquals(definition, restored);
-            var json = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
-            var task = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
-            task.addProperty("classificationPartialCacheOnDemandEnabled", "true");
-            Files.writeString(path, json.toString());
-            assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+            var restored = store.read();
+            assertEquals(definition, restored.config().autoClassifyTasks().getFirst());
+            String normalized = gson.toJson(restored.config());
+            for (String field : retired) assertFalse(normalized.contains(field));
+            assertFalse(normalized.contains("CLASSIFY_MULTI_SOURCE_BATCHES"));
+            assertFalse(normalized.contains("SUMMARIZE_CLASSIFICATION_BATCHES"));
+            assertTrue(normalized.contains("WITHDRAW_ITEMS"));
+            store.save(restored.revision(), restored.config());
+            for (String field : retired) assertFalse(Files.readString(path).contains(field));
+            assertEquals(restored.config(), new ConfigStore(path).read().config());
         }
     }
 

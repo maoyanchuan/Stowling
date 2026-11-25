@@ -14,16 +14,6 @@ public final class ClassificationRoutePlanner {
     private ClassificationRoutePlanner() {
     }
 
-    public static List<ContainerTarget> fixedOrder(List<ClassificationLayoutEntry> layout,
-            List<ContainerTarget> candidates) {
-        Set<ContainerTarget> result = new LinkedHashSet<>();
-        for (ClassificationLayoutEntry entry : layout) {
-            entry.containers().stream().filter(candidates::contains).forEach(result::add);
-        }
-        result.addAll(candidates);
-        return List.copyOf(result);
-    }
-
     /** Keeps slice and marker order; capacity preferences only choose a marker's destination. */
     public static List<ContainerTarget> planLayout(
             List<ClassificationLayoutEntry> layout,

@@ -169,35 +169,6 @@ def test_pure_partial_box_categories_prepare_in_the_same_withdrawal_when_space_r
     assert "int slots = remainingBatchSlots();" in batch
 
 
-def test_single_box_sharing_only_applies_when_same_category_batching_is_disabled() -> None:
-    source = (ROOT / "src/main/java/dev/stowling/client/automation/"
-              "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
-    round_plan = source.split("private void prepareRound()", 1)[1].split(
-        "private void returnUnusedRaw(", 1
-    )[0]
-    assert "StoragePackingPlanner.canPack(false," in round_plan
-    assert "&& hasCompanionStock()" in round_plan
-    assert "shareFullBox = !context.workspace().sameCategoryBoxBatching()" in round_plan
-    assert "shareFullBox && fullBoxes > 0" in round_plan
-
-    gather = source.split("private void gather(int index)", 1)[1].split(
-        "private void gatherLoose(", 1
-    )[0]
-    assert "if (shareFullBox) slots = Math.min(slots, 1);" in gather
-    assert "shareFullBox && !snapshot.fullBoxKeys().contains(key)" in gather
-    assert "after.getOrDefault(key, 0) > before.getOrDefault(key, 0)" in gather
-    assert gather.index("transfer(source,") < gather.index("finishCategoryLoad();")
-
-    companions = source.split("private void loadCompanionCategories()", 1)[1].split(
-        "private boolean hasCompanionStock()", 1
-    )[0]
-    assert "candidates.addAll(looseStock);" in companions
-    assert "nextPolicy.mode() == StorageMode.NORMAL" in companions
-    assert companions.index("startCategory(retained)") < companions.index(
-        "gatherOtherCategories(0)"
-    )
-
-
 def test_partial_box_lookup_uses_resolved_settings() -> None:
     source = (ROOT / "src/main/java/dev/stowling/client/automation/"
               "MinecraftStorageAutomation.java").read_text(encoding="utf-8")
@@ -217,20 +188,3 @@ def test_box_only_refill_space_comes_from_the_configured_partial_cache() -> None
     )
 
 
-def test_batching_uses_the_run_snapshot_and_keeps_existing_capacity_limits() -> None:
-    java = ROOT / "src/main/java/dev/stowling"
-    manager = (java / "v2/runtime/TaskRunManager.java").read_text(encoding="utf-8")
-    workspace = (java / "v2/runtime/modules/TaskRunWorkspace.java").read_text(encoding="utf-8")
-    source = (java / "client/automation/MinecraftStorageAutomation.java").read_text(
-        encoding="utf-8",
-    )
-    assert "private boolean sameCategoryBoxBatching = true;" in workspace
-    assert "workspace.configureSameCategoryBoxBatching(prepared.taskSettings == null" in manager
-    assert "|| prepared.taskSettings.sameCategoryBoxBatching()" in manager
-    batch = source.split("private final class CachePackingBatch", 1)[1].split(
-        "private record CachedBox", 1,
-    )[0]
-    assert "fullBoxes >= remainingBatchSlots()" in batch
-    assert "round.load().isEmpty() || !cleanupAvailable()" in batch
-    assert "inventory.size() - RESERVED_INVENTORY_SLOTS" in batch
-    assert "transfer(source, inventoryFitting(wanted, snapshot), true" in batch

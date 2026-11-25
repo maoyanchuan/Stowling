@@ -274,8 +274,8 @@ def test_experiments_menu_collapses_without_changing_saved_switch_or_run_state()
         const opened = !node('experiments-detail').hidden;
         node('debug-mode').checked = true;
         node('debug-mode').emit('change');
-        node('batching').checked = false;
-        node('batching').emit('change');
+        node('experiment-option').checked = false;
+        node('experiment-option').emit('change');
         node('experiments-expand').emit('click');
         animations.at(-1).finish();
         await Promise.resolve();
@@ -283,7 +283,7 @@ def test_experiments_menu_collapses_without_changing_saved_switch_or_run_state()
         node('debug-mode').emit('change');
         load();
         return {initiallyClosed, opened, closed:node('experiments-detail').hidden,
-            batching:node('batching').checked, running:node('enabled').checked,
+            batching:node('experiment-option').checked, running:node('enabled').checked,
             summary:node('experiments-summary').textContent,
             timings:animations.map(animation => animation.options.duration)};
     })()""")
@@ -306,10 +306,12 @@ def test_experiments_display_preference_hides_the_whole_menu_and_keeps_execution
         node('experiments-expand').emit('click');
         animations.at(-1).finish();
         await Promise.resolve();
+        node('experiment-option').checked = true;
+        node('experiment-option').emit('change');
         node('debug-mode').checked = false;
         node('debug-mode').emit('change');
         const hiddenAgain = node('experiments').hidden && node('experiments').inert;
-        const preserved = node('batching').checked;
+        const preserved = node('experiment-option').checked;
         node('debug-mode').checked = true;
         node('debug-mode').emit('change');
         return {initialHidden, initialInert, stayedClosed, shown, hiddenAgain, preserved,

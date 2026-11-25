@@ -994,12 +994,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "sameCategoryBoxBatching"),
-                optionalBooleanValue(json, "classificationBaselineEnabled"),
-                optionalBooleanValue(json, "classificationFullTargetHandoffEnabled"),
-                optionalBooleanValue(json, "classificationPartialCacheOnDemandEnabled"),
-                optionalBooleanValue(json, "classificationCachedEmptyBoxSettlementEnabled")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1026,12 +1021,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "sameCategoryBoxBatching"),
-                optionalBooleanValue(json, "classificationBaselineEnabled"),
-                optionalBooleanValue(json, "classificationFullTargetHandoffEnabled"),
-                optionalBooleanValue(json, "classificationPartialCacheOnDemandEnabled"),
-                optionalBooleanValue(json, "classificationCachedEmptyBoxSettlementEnabled")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1117,11 +1107,6 @@ public final class V2ControlServer implements AutoCloseable {
                 "cachePolicy",
                 "remainderPolicy",
                 "robotWarehouseMixedBoxes",
-                "sameCategoryBoxBatching",
-                "classificationBaselineEnabled",
-                "classificationFullTargetHandoffEnabled",
-                "classificationPartialCacheOnDemandEnabled",
-                "classificationCachedEmptyBoxSettlementEnabled",
 
                 "kind",
                 "followUpTaskRef",

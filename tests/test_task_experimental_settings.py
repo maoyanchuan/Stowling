@@ -51,16 +51,14 @@ def test_task_experiments_are_after_cleanup_and_before_delete_actions() -> None:
     assert "inert" in page.attrs[menu]
 
 
-def test_all_existing_experimental_controls_share_the_footer_submenu() -> None:
+def test_classification_experiments_are_removed_and_pickup_packing_remains_in_the_footer() -> None:
     page = markup(WEB / "tasks.html")
-    controls = ["auto-classification-baseline", "auto-full-handoff", "auto-partial-demand",
-                "auto-empty-settlement", "auto-same-category-batching",
-                "auto-cache-packing-enabled", "auto-cache-mode", "auto-cache-threshold"]
-    for control in controls:
+    for removed in ("auto-classification-baseline", "auto-full-handoff", "auto-partial-demand",
+                    "auto-empty-settlement", "auto-same-category-batching"):
+        assert removed not in page.attrs
+    for control in ("auto-cache-packing-enabled", "auto-cache-mode", "auto-cache-threshold"):
         assert page.order.count(control) == 1
         assert "auto-experiments-body" in page.parents[control]
-        assert "auto-collect-body" not in page.parents[control]
-        assert "auto-sort-body" not in page.parents[control]
     for control in ("auto-detection-point", "auto-cache-location",
                     "robot-warehouse-enabled", "auto-follow-up-enabled"):
         assert "auto-experiments-body" not in page.parents[control]
@@ -69,7 +67,7 @@ def test_all_existing_experimental_controls_share_the_footer_submenu() -> None:
 def test_runnable_template_places_experiments_last_with_an_independent_disclosure() -> None:
     page = markup(ROOT / "docs/ui/task-settings-standard.html")
     assert page.order.index("sample-maximum") < page.order.index("sample-experiments")
-    assert "sample-experiments-detail" in page.parents["sample-batching"]
+    assert "sample-experiments-detail" in page.parents["sample-experiment-option"]
     assert page.attrs["sample-experiments-expand"]["aria-expanded"] == "false"
     assert page.attrs["sample-experiments-expand"]["aria-controls"] == "sample-experiments-detail"
     assert "hidden" in page.attrs["sample-experiments"]

@@ -136,19 +136,7 @@ public final class TaskFlowTemplates {
             String categoryZoneRef,
             Map<String, String> scanParameters,
             List<TaskStep> preResolveSteps,
-            boolean classificationBaselineEnabled
-    ) {
-        return sortByCategoryZone(cacheRegionRef, categoryZoneRef, scanParameters,
-                preResolveSteps, classificationBaselineEnabled, false);
-    }
-
-    public static List<TaskStep> sortByCategoryZone(
-            String cacheRegionRef,
-            String categoryZoneRef,
-            Map<String, String> scanParameters,
-            List<TaskStep> preResolveSteps,
-            boolean classificationBaselineEnabled,
-            boolean fullTargetHandoff
+            boolean classificationTask
     ) {
         Map<String, String> scan = new LinkedHashMap<>(scanParameters);
         scan.remove(ConfigValidator.MARKER_SOURCES);
@@ -172,11 +160,7 @@ public final class TaskFlowTemplates {
         );
         List<TaskStep> classify = new ArrayList<>(preResolveSteps);
         classify.add(resolveStep);
-        if (classificationBaselineEnabled) {
-            classify.add(TaskStep.action(UUID.randomUUID(), ClassificationBaseline.MODULE, Map.of()));
-        } else {
-            classify.addAll(sortTail(fullTargetHandoff));
-        }
+        classify.addAll(sortTail(classificationTask));
         return List.of(
                 scanStep,
                 TaskStep.conditional(
@@ -562,7 +546,7 @@ public final class TaskFlowTemplates {
         return sortTail(false);
     }
 
-    private static List<TaskStep> sortTail(boolean fullTargetHandoff) {
+    private static List<TaskStep> sortTail(boolean classificationTask) {
         TaskStep selectContainer = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.SELECT_CONTAINER,
@@ -626,9 +610,9 @@ public final class TaskFlowTemplates {
         TaskStep assertClean = TaskStep.action(
                 UUID.randomUUID(),
                 ConfigValidator.ASSERT_NO_MANAGED_ITEMS,
-                fullTargetHandoff ? Map.of(ConfigValidator.ITEM_SOURCE, "carried") : Map.of()
+                classificationTask ? Map.of(ConfigValidator.ITEM_SOURCE, "carried") : Map.of()
         );
-        if (!fullTargetHandoff) return List.of(processContainers, assertClean);
+        if (!classificationTask) return List.of(processContainers, assertClean);
         TaskStep deliverRetained = TaskStep.repeat(UUID.randomUUID(), depositCarried.parameters(),
                 List.of(TaskStep.action(UUID.randomUUID(), selectStorage.moduleId(),
                                 selectStorage.parameters()),

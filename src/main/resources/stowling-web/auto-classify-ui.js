@@ -90,22 +90,9 @@
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
         experimentsSummary: document.querySelector("#auto-experiments-summary"),
-        experimentsHint: document.querySelector("#auto-experiments-hint"),
-        classificationExperiments: document.querySelector("#auto-classification-experiments"),
-        batching: document.querySelector("#auto-same-category-batching"),
-        batchingRow: document.querySelector("#auto-same-category-batching-row"),
-        baseline: document.querySelector("#auto-classification-baseline"),
-        baselineRow: document.querySelector("#auto-classification-baseline-row"),
-        baselineStatus: document.querySelector("#auto-classification-baseline-status"),
         warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
         warehouseBody: document.querySelector("#robot-warehouse-body")
     };
-    const visitControls = Auto.classificationVisitChanges.map(change => ({
-        ...change,
-        toggle: document.querySelector(`#${change.control}`),
-        row: document.querySelector(`#${change.control}-row`)
-    }));
-    const visitsStatus = document.querySelector("#auto-classification-visits-status");
     const rows = new Map();
     for (const content of elements.form.querySelectorAll(
         ".auto-phase-body:not(#auto-collect-body), .settings-detail")) {
@@ -265,9 +252,6 @@
             draft.overflowDestinationRef, "请选择机器人仓库区域");
         Picker.group(elements.warehouse, undefined, "regions", false);
         elements.warehouseMixed.checked = draft.robotWarehouseMixedBoxes;
-        elements.batching.checked = draft.sameCategoryBoxBatching;
-        elements.baseline.checked = draft.classificationBaselineEnabled;
-        for (const change of visitControls) change.toggle.checked = draft[change.field] === true;
         const available = [...state.regularTasks, ...state.items]
             .filter(task => task.id !== draft.id)
             .map(task => ({id: "task:" + task.id, name: task.name}));
@@ -324,9 +308,6 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
-            sameCategoryBoxBatching: elements.batching.checked,
-            classificationBaselineEnabled: elements.baseline.checked,
-            ...Object.fromEntries(visitControls.map(change => [change.field, change.toggle.checked])),
             remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
@@ -391,16 +372,6 @@
             if (standard) {
                 header.className = "pickup-task-header";
                 const title = Stowling.element("h3", "pickup-task-title", item.name);
-                const activeChanges = Auto.classificationVisitChanges
-                    .filter(change => item[change.field] === true).map(change => change.id);
-                if (item.classificationBaselineEnabled === true) {
-                    activeChanges.unshift("classification-multi-source-fixed-order");
-                }
-                if (classification && activeChanges.length > 0) {
-                    const badge = Stowling.element("span", "task-debug-badge", "调试改动已开启");
-                    badge.title = activeChanges.join("；");
-                    title.append(badge);
-                }
                 title.prepend(pickupIcon());
                 if (classification) {
                     title.firstElementChild.firstElementChild.setAttribute("d",
@@ -472,7 +443,8 @@
         const kind = state.draft.kind;
         const pickup = kind === "PICKUP";
         const classification = kind === "CLASSIFICATION";
-        const showExperiments = window.StowlingTaskDebugMode?.enabled() === true;
+        const showExperiments = !classification
+            && window.StowlingTaskDebugMode?.enabled() === true;
         elements.experimentsRoot.hidden = !showExperiments;
         elements.experimentsRoot.inert = !showExperiments;
 
@@ -499,7 +471,6 @@
                 ? `任务完成 ${elements.followUpDelay.value} 秒后创建` : "请选择后续任务";
         elements.collectHeader.closest(".auto-config-section").hidden = classification;
         elements.packingHeader.closest(".auto-config-section").hidden = classification;
-        elements.classificationExperiments.hidden = pickup;
 
         elements.classifyHeader.closest(".auto-config-section").hidden = pickup;
         elements.warehouseEnabled.closest(".auto-config-section").hidden = pickup;
@@ -588,44 +559,10 @@
         }
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
-        const showBatching = !pickup && window.StowlingTaskDebugMode?.enabled() === true;
-        elements.batchingRow.hidden = !showBatching;
-        elements.batchingRow.inert = !showBatching;
-        elements.batching.disabled = disabled || !showBatching
-            || !elements.classifyEnabled.checked || elements.baseline.checked;
-        const baselineEnabled = state.draft.kind === "CLASSIFICATION"
-            && elements.baseline.checked;
-        const showBaseline = state.draft.kind === "CLASSIFICATION"
-            && window.StowlingTaskDebugMode?.enabled() === true;
-        elements.baselineRow.hidden = !showBaseline;
-        elements.baselineRow.inert = !showBaseline;
-        elements.baseline.disabled = disabled || !showBaseline;
-        elements.baselineStatus.hidden = !baselineEnabled;
-        elements.baselineStatus.textContent = baselineEnabled
-            ? "已开启 classification-multi-source-fixed-order；同类多盒合批的保存值保留，"
-                + "本轮使用多物品共享批次。" : "";
-        const activeVisits = [];
-        for (const change of visitControls) {
-            change.row.hidden = !showBaseline;
-            change.row.inert = !showBaseline;
-            change.toggle.disabled = disabled || !showBaseline;
-            if (state.draft.kind === "CLASSIFICATION" && change.toggle.checked) {
-                activeVisits.push(change.label + "（" + change.id + "）");
-            }
-        }
-        visitsStatus.hidden = activeVisits.length === 0;
-        visitsStatus.textContent = activeVisits.length ? "已开启：" + activeVisits.join("；") : "";
-        const activeExperiments = [...activeVisits];
-        if (baselineEnabled) {
-            activeExperiments.unshift("分类取料与交付顺序（classification-multi-source-fixed-order）");
-        }
-        if (!pickup && elements.batching.checked && !baselineEnabled) {
-            activeExperiments.push("同类多盒合批（sameCategoryBoxBatching）");
-        }
+        const activeExperiments = [];
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
         }
-        elements.experimentsHint.hidden = window.StowlingTaskDebugMode?.enabled() === true;
         elements.experimentsSummary.textContent = activeExperiments.length
             ? `已开启 ${activeExperiments.length} 项` : "未启用实验性设置";
         elements.experimentsHeader.title = activeExperiments.join("；");
@@ -675,7 +612,8 @@
      */
     function phaseEnabled(phase) {
         if (phase === "experiments") {
-            return window.StowlingTaskDebugMode?.enabled() === true;
+            return state.draft.kind !== "CLASSIFICATION"
+                && window.StowlingTaskDebugMode?.enabled() === true;
         }
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;

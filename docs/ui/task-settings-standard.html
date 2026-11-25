@@ -645,7 +645,7 @@
         line-height: 1.4;
         white-space: nowrap;
     }
-    #stowling-settings-standard #sample-batching-row[hidden] {
+    #stowling-settings-standard #sample-experiment-option-row[hidden] {
         display: none !important;
     }
     </style>
@@ -3253,19 +3253,19 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                         <p id="sample-experiments-hint" class="sample-description">
                             开启页面调试模式后可编辑，收起菜单或隐藏入口会保留保存值。
                         </p>
-                        <div id="sample-batching-row" class="sample-row" hidden inert>
+                        <div id="sample-experiment-option-row" class="sample-row" hidden inert>
                             <div class="sample-setting-copy">
-                                <label class="sample-debug-title" for="sample-batching">
-                                    <span>同类多盒合批</span>
+                                <label class="sample-debug-title" for="sample-experiment-option">
+                                    <span>实验性选项示例</span>
                                     <span class="sample-debug-badge">调试选项</span>
                                 </label>
-                                <p class="sample-description" id="sample-batching-description">
-                                    连续打包并集中运送同类盒子，减少往返。
+                                <p class="sample-description" id="sample-experiment-option-description">
+                                    仅展示实验性设置的独立开关与展开交互。
                                 </p>
                             </div>
-                            <input id="sample-batching" class="sample-switch cursor-interaction"
-                                   type="checkbox" role="switch" aria-describedby="sample-batching-description"
-                                   checked disabled>
+                            <input id="sample-experiment-option" class="sample-switch cursor-interaction"
+                                   type="checkbox" role="switch" aria-describedby="sample-experiment-option-description"
+                                   disabled>
                         </div>
                     </div>
                 </div>
@@ -3307,7 +3307,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         valleyExpanded: false, wulingExpanded: false, strategyExpanded: false,
         strategy: "price", maximum: "320", valleyReserve: "64", wulingReserve: "64",
         priceThreshold: "10", stockThreshold: "640", targetZones: [],
-        debugMode: false, sameCategoryBoxBatching: true, experimentsExpanded: false
+        debugMode: false, experimentalExampleEnabled: false, experimentsExpanded: false
     };
 
     /**
@@ -3370,12 +3370,12 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     function renderUI(animate = false) {
         renderRunState();
         root.querySelector("#sample-debug-mode").checked = ui.debugMode;
-        const batchingRow = root.querySelector("#sample-batching-row");
+        const batchingRow = root.querySelector("#sample-experiment-option-row");
         batchingRow.hidden = !ui.debugMode;
         batchingRow.inert = !ui.debugMode;
-        const batching = root.querySelector("#sample-batching");
-        batching.checked = ui.sameCategoryBoxBatching;
-        batching.disabled = !ui.debugMode;
+        const experimentOption = root.querySelector("#sample-experiment-option");
+        experimentOption.checked = ui.experimentalExampleEnabled;
+        experimentOption.disabled = !ui.debugMode;
         const experimentsRoot = root.querySelector("#sample-experiments");
         experimentsRoot.hidden = !ui.debugMode;
         experimentsRoot.inert = !ui.debugMode;
@@ -3384,8 +3384,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         experiments.setAttribute("aria-expanded", String(experimentsExpanded));
         experiments.setAttribute("aria-label",
             `${experimentsExpanded ? "收起" : "展开"}实验性设置`);
-        experiments.title = ui.sameCategoryBoxBatching ? "同类多盒合批（sameCategoryBoxBatching）" : "";
-        root.querySelector("#sample-experiments-summary").textContent = ui.sameCategoryBoxBatching
+        experiments.title = ui.experimentalExampleEnabled ? "实验性选项示例（experimental-example）" : "";
+        root.querySelector("#sample-experiments-summary").textContent = ui.experimentalExampleEnabled
             ? "已开启 1 项" : "未启用实验性设置";
         root.querySelector("#sample-experiments-hint").hidden = ui.debugMode;
         reveal(root.querySelector("#sample-experiments-detail"), experimentsExpanded, animate);
@@ -3481,7 +3481,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     });
 
     for (const [id, key] of [["sample-debug-mode", "debugMode"],
-        ["sample-batching", "sameCategoryBoxBatching"]]) {
+        ["sample-experiment-option", "experimentalExampleEnabled"]]) {
         root.querySelector(`#${id}`).addEventListener("change", (event) => {
             ui[key] = event.target.checked;
             renderUI();

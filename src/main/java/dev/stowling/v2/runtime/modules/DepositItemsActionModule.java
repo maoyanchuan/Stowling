@@ -75,7 +75,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
         }
         if (!context.workspace().selectedStorageUsesCacheFallback()
                 && (target.storagePolicy().mode() != dev.stowling.v2.model.StorageMode.NORMAL
-                        || context.workspace().fullTargetHandoffEnabled()
+                        || context.workspace().classificationTask()
                                 && context.workspace().isClassificationStorage(target))) {
             packing = context.storageAutomation().deposit(context, target, requested);
             return handlePacking(packing.start());
@@ -106,7 +106,7 @@ final class DepositItemsActionModule implements TaskModuleExecutor {
                 && !context.storageAutomation().hasTemporaryResources(
                         context.workspace().inventoryAccount().ownerId())) {
             context.workspace().markTargetUnavailable(target, result.message());
-            if (context.workspace().fullTargetHandoffEnabled()
+            if (context.workspace().classificationTask()
                     && context.workspace().hasManagedItems()
                     && itemsForSource(context, itemSource).isEmpty()) {
                 return TaskModuleResult.succeeded("当前可投递物品已处理，确认满箱余物留待后续阶段");

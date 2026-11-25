@@ -150,7 +150,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
             Map<String, Integer> items) {
-        if (context.workspace().fullTargetHandoffEnabled()
+        if (context.workspace().classificationTask()
                 && target.storagePolicy().mode() == StorageMode.NORMAL) {
             return new PlainClassificationDeposit(context, target, items);
         }
@@ -543,7 +543,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 fullBoxKeys.add(key);
             }
         }
-        if (context.workspace().partialCacheOnDemandEnabled()) {
+        if (context.workspace().classificationTask()) {
             occupied.stream().filter(MinecraftItemIdentity::isBox)
                     .filter(stack -> !stack.has(DataComponents.CUSTOM_NAME)).forEach(stack ->
                             context.workspace().recordClassificationBoxContents(
@@ -555,14 +555,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         CacheSnapshot snapshot = new CacheSnapshot(
                 stacks.size(), Map.copyOf(counts), occupied, Map.copyOf(stackSizes),
                 Set.copyOf(fullBoxKeys));
-        if (context.workspace().cachedEmptyBoxSettlementEnabled()
-                && (context.workspace().cacheContainers().stream()
-                        .anyMatch(cache -> sameContainer(cache, target))
-                    || context.workspace().containerScan().stream()
-                            .flatMap(scan -> scan.containers().stream())
-                            .anyMatch(cache -> sameContainer(cache, target)))) {
-            context.workspace().recordSettlementSource(target, snapshot.counts());
-        }
         context.workspace().recordCacheContents(target, snapshot.counts());
         cacheSnapshotsByRun.computeIfAbsent(context.workspace(), ignored -> new LinkedHashMap<>())
                 .put(target.position(), snapshot);
@@ -741,7 +733,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             boolean inPackingPlan = cacheSnapshots != null
                     && cacheSnapshots.containsKey(target.position());
             List<ItemStack> contents = access.contents();
-            if (context.workspace().fullTargetHandoffEnabled()
+            if (context.workspace().classificationTask()
                     && context.workspace().acceptedItemsByContainer().containsKey(target)) {
                 rememberStorageCapacity(context, target, contents);
             }
@@ -914,15 +906,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     StoragePackingPlanner.BOX_SLOTS);
         }
 
-        List<ContainerTarget> emptyBoxAccountingCaches() {
-            return classificationCaches(context);
-        }
-
-        int recordedEmptyBoxCount(ContainerTarget target) {
-            return context.workspace().cacheContents(target)
-                    .map(EmptyBoxSupplyPlan::emptyCount).orElse(0);
-        }
-
         final List<ContainerTarget> emptyBoxReturns(ContainerTarget preferred) {
             return emptyBoxReturnsForSources(preferred == null ? List.of() : List.of(preferred));
         }
@@ -935,8 +918,9 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             var policy = context.workspace().cleanupPolicy().emptyBoxWarehouse();
             if (policy != null) {
                 sources.clear();
-                var caches = emptyBoxAccountingCaches();
-                int existing = caches.stream().mapToInt(this::recordedEmptyBoxCount).sum();
+                var caches = classificationCaches(context);
+                int existing = caches.stream().mapToInt(target -> context.workspace()
+                        .cacheContents(target).map(EmptyBoxSupplyPlan::emptyCount).orElse(0)).sum();
                 sources.addAll(EmptyBoxSupplyPlan.classificationReturns(caches,
                         emptyBoxWarehouse(context), policy.enabled(), existing,
                         policy.retainedLimit()));
@@ -971,10 +955,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             var candidates = destinations;
             var target = candidates.get(index);
             int maximum = Integer.MAX_VALUE;
-            if (policy != null && policy.enabled() && emptyBoxAccountingCaches().stream()
+            if (policy != null && policy.enabled() && classificationCaches(context).stream()
                     .anyMatch(cache -> sameContainer(cache, target))) {
-                int cached = emptyBoxAccountingCaches().stream()
-                        .mapToInt(this::recordedEmptyBoxCount).sum();
+                int cached = classificationCaches(context).stream().mapToInt(cache -> context
+                        .workspace().cacheContents(cache).map(EmptyBoxSupplyPlan::emptyCount)
+                        .orElse(0)).sum();
                 maximum = Math.max(0, policy.retainedLimit() - cached);
             }
             var batch = EmptyBoxSupplyPlan.returnBatch(owned(), maximum);
@@ -1963,18 +1948,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             ContainerTarget next = visits.next(new BlockPosition(feet.getX(), feet.getY(),
                     feet.getZ())).orElse(null);
             if (next == null) return;
-            if (context.workspace().classificationBaselineEnabled()) {
-                read(next, contents -> {
-                    recordCacheContents(context, next, contents);
-                    scanned++;
-                    visitNext();
-                }, () -> {
-                    context.workspace().recordClassificationSourceIssue(next,
-                            "物品来源盘点受阻，未将未知库存当作空箱");
-                    visitNext();
-                });
-                return;
-            }
             readCache(next, contents -> {
                 scanned++;
                 visitNext();
@@ -2002,7 +1975,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int looseDeficit;
         private int existingBoxSpace;
         private CachePackingBatchPlan plan;
-        private boolean shareFullBox;
 
         CachePackingBatch(TaskExecutionContext context, ContainerTarget cache, String category,
                 ContainerTarget destination) {
@@ -2182,12 +2154,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .mapToInt(stack -> sum(raw(MinecraftItemIdentity.contents(stack)
                             .nonEmptyItemCopyStream().toList())) * stack.getCount()).sum();
             int looseItems = sum(raw(stock));
-            if (plan == null) {
-                shareFullBox = !context.workspace().sameCategoryBoxBatching()
-                        && StoragePackingPlanner.canPack(false,
-                        Math.addExact(looseItems, partialItems), 0, stackSize)
-                        && hasCompanionStock();
-            }
             int largestBefore = largestPartial(partials);
             CachePackingRound round = packingRound(stock, partials, looseItems, partialItems,
                     fullBoxes, largestBefore);
@@ -2197,9 +2163,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                             + "; materialToPack=" + plan.materialToPack()
                             + "; boxes=" + plan.plannedBoxes()
                             + "; nextLoad=" + sum(round.load())
-                            + "; sameCategoryBoxBatching="
-                            + context.workspace().sameCategoryBoxBatching());
-            if ((shareFullBox && fullBoxes > 0) || fullBoxes >= remainingBatchSlots()
+                            + "; batching=same-category");
+            if (fullBoxes >= remainingBatchSlots()
                     || round.load().isEmpty() || !cleanupAvailable()) {
                 prepareReservedLoose();
                 return;
@@ -2247,7 +2212,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void prepareReservedLoose() {
-            shareFullBox = shareFullBox && fullCount() > 0;
             gather(0);
         }
 
@@ -2283,7 +2247,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             CacheSnapshot snapshot = cacheSnapshots.get(source.position());
             Map<String, Integer> wanted = new LinkedHashMap<>();
             int slots = remainingBatchSlots();
-            if (shareFullBox) slots = Math.min(slots, 1);
             for (ItemStack stack : snapshot.stacks()) {
                 if (slots == 0) break;
                 if (!MinecraftItemIdentity.isBox(stack)
@@ -2292,21 +2255,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                                 || isRetainedPartialSource(source, partialSources))
                                 && !MinecraftItemIdentity.full(stack)) continue;
                 String key = MinecraftItemIdentity.key(stack);
-                if (shareFullBox && !snapshot.fullBoxKeys().contains(key)) continue;
                 int amount = Math.min(stack.getCount(), slots);
                 wanted.merge(key, amount, Math::addExact);
                 slots -= amount;
             }
-            Map<String, Integer> before = shareFullBox ? owned() : Map.of();
-            transfer(source, inventoryFitting(wanted, snapshot), true, () -> {
-                Map<String, Integer> after = shareFullBox ? owned() : Map.of();
-                if (shareFullBox && wanted.keySet().stream().anyMatch(key ->
-                        after.getOrDefault(key, 0) > before.getOrDefault(key, 0))) {
-                    finishCategoryLoad();
-                } else {
-                    gather(index + 1);
-                }
-            });
+            transfer(source, inventoryFitting(wanted, snapshot), true, () -> gather(index + 1));
         }
 
         private void gatherLoose(int index, int wanted) {
@@ -2367,13 +2320,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 }
             }
             gatherOtherCategories(0);
-        }
-
-        private boolean hasCompanionStock() {
-            Set<String> remaining = context.workspace().remainingCacheCategories(initialCache);
-            return cacheSnapshots.values().stream().flatMap(snapshot ->
-                    snapshot.counts().keySet().stream()).filter(key -> !ItemIdentity.isEmptyBox(key))
-                    .anyMatch(key -> isCompanionCategory(ItemIdentity.category(key), remaining));
         }
 
         private Set<String> companionLooseCategories() {
@@ -3044,7 +2990,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .toList();
             Map<String, Integer> full = fullBoxes(boxes);
             if (!full.isEmpty()) {
-                if (context.workspace().fullTargetHandoffEnabled()
+                if (context.workspace().classificationTask()
                         && contents.stream().noneMatch(ItemStack::isEmpty)) {
                     throw new IllegalStateException("已确认分类箱无法接收本批满盒，继续其他投递");
                 }
@@ -4031,7 +3977,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 Runnable after) {
             while (pending.hasNext()) {
                 ContainerTarget target = pending.next();
-                var confirmed = context.workspace().fullTargetHandoffEnabled()
+                var confirmed = context.workspace().classificationTask()
                         ? confirmedStorageContents(context, target)
                         : Optional.<List<ItemStack>>empty();
                 if (confirmed.isPresent()) {
@@ -4186,58 +4132,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (policy == null || !policy.enabled()) return;
             limit = policy.retainedLimit();
             caches = classificationCaches(context);
-            if (context.workspace().cachedEmptyBoxSettlementEnabled()) {
-                List<ContainerTarget> recorded = new ArrayList<>(caches);
-                recorded.addAll(context.workspace().recordedSettlementSources());
-                caches = EmptyBoxSupplyPlan.sources(recorded, null, List.of());
-            }
             var warehouseTargets = emptyBoxWarehouse(context);
             if (caches.stream().anyMatch(cache -> warehouseTargets.stream()
                     .anyMatch(target -> sameContainer(cache, target)))) {
                 throw new IllegalStateException("空盒仓库不能与物品来源重叠，请调整区域");
             }
-            if (context.workspace().cachedEmptyBoxSettlementEnabled()) {
-                returnEmptyBoxes(this::settleCached);
-            } else {
-                inspectCaches(0);
-            }
-        }
-
-        @Override
-        List<ContainerTarget> emptyBoxAccountingCaches() {
-            return context.workspace().cachedEmptyBoxSettlementEnabled()
-                    ? caches : super.emptyBoxAccountingCaches();
-        }
-
-        @Override
-        int recordedEmptyBoxCount(ContainerTarget target) {
-            return context.workspace().cachedEmptyBoxSettlementEnabled()
-                    ? EmptyBoxSupplyPlan.emptyCount(context.workspace().settlementContents(target))
-                    : super.recordedEmptyBoxCount(target);
-        }
-
-        private void settleCached() {
-            var plan = EmptyBoxSupplyPlan.cachedSurplus(caches,
-                    context.workspace()::settlementContents, limit);
-            if (plan.isEmpty()) return;
-            var entry = plan.entrySet().iterator().next();
-            ContainerTarget cache = entry.getKey();
-            int keep = entry.getValue();
-            int count = EmptyBoxSupplyPlan.emptyCount(context.workspace().settlementContents(cache));
-            int capacity = (int) minecraft.player.getInventory().getNonEquipmentItems().stream()
-                    .filter(ItemStack::isEmpty).count();
-            if (capacity == 0) {
-                throw new IllegalStateException("背包没有空位搬运缓存空盒，请腾出空间后重试");
-            }
-            var access = MinecraftStorageAccess.collect(minecraft, context, cache, current ->
-                    EmptyBoxSupplyPlan.surplus(emptyBoxCounts(current), keep, capacity));
-            steps.add(new Step(access, () -> {
-                recordCacheContents(context, cache, access.contents());
-                if (EmptyBoxSupplyPlan.emptyCount(emptyBoxCounts(access.contents())) >= count) {
-                    throw new IllegalStateException("缓存空盒取出未确认，停止归还");
-                }
-                returnEmptyBoxes(this::settleCached);
-            }));
+            inspectCaches(0);
         }
 
         private void inspectCaches(int index) {

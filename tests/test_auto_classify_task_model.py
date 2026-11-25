@@ -371,7 +371,6 @@ def test_draft_from_task_rejects_untyped_or_wrongly_typed_references() -> None:
     }
 
 
-
 def test_payload_serializes_only_post_fields_and_round_trips() -> None:
     result = _run(
         """
@@ -503,7 +502,6 @@ def test_payload_serializes_only_post_fields_and_round_trips() -> None:
         "cleanupDestinationRef": "",
         "facilities": {"destinationRef": None, "resumeMode": "RESTART"},
     }
-
 
 
 def test_legacy_recognition_is_discarded_without_requiring_category_rules() -> None:
@@ -951,134 +949,21 @@ def test_target_selection_order_survives_payload_save_and_reload() -> None:
     assert result == ["b", "a", "c"]
 
 
-def test_same_category_box_batching_defaults_on_for_new_and_legacy_tasks() -> None:
+@pytest.mark.parametrize("legacy_value", [True, False])
+def test_retired_classification_fields_are_not_sent_or_restored(legacy_value: bool) -> None:
+    fields = ["sameCategoryBoxBatching", "classificationBaselineEnabled",
+              "classificationFullTargetHandoffEnabled", "classificationPartialCacheOnDemandEnabled",
+              "classificationCachedEmptyBoxSettlementEnabled"]
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
-        return [model.newDraft("CLASSIFICATION").sameCategoryBoxBatching,
-            model.draftFromTask({kind: "CLASSIFICATION"}).sameCategoryBoxBatching];
-    })()""")
-    assert result == [True, True]
-
-
-def test_classification_baseline_defaults_off_for_new_and_legacy_tasks() -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        return [model.newDraft("CLASSIFICATION").classificationBaselineEnabled,
-            model.draftFromTask({kind: "CLASSIFICATION"}).classificationBaselineEnabled];
-    })()""")
-    assert result == [False, False]
-
-
-@pytest.mark.parametrize("enabled", [True, False])
-def test_classification_baseline_preserves_the_saved_batching_draft(enabled: bool) -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        const resources = {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]};
-        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
-            classificationAreas: [{categoryZoneId: "zone"}], sameCategoryBoxBatching: true,
-            classificationBaselineEnabled: """ + json.dumps(enabled) + """};
-        const loaded = model.draftFromTask(model.payload(draft, resources));
-        loaded.overflowEnabled = false;
-        const saved = model.payload(loaded, resources);
-        return [saved.classificationBaselineEnabled, saved.sameCategoryBoxBatching];
-    })()""")
-    assert result == [enabled, True]
-
-
-@pytest.mark.parametrize("value", ["false", 0, {}, []])
-def test_classification_baseline_rejects_non_boolean_values(value: Any) -> None:
-    errors = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
-            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
-            classificationBaselineEnabled: """ + json.dumps(value) + """},
-            {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
-    })()""")
-    assert errors == ["分类取料与交付顺序开关需为布尔值"]
-
-
-def test_pickup_task_cannot_enable_the_classification_cycle() -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        const draft = {...model.newDraft("PICKUP"), coordinateId: "point",
-            cacheLocationRef: "region:cache", classificationBaselineEnabled: true};
-        return model.payload(draft, {coordinates: [{id: "point"}],
-            regions: [{id: "cache"}]}).classificationBaselineEnabled;
-    })()""")
-    assert result is False
-
-
-@pytest.mark.parametrize("enabled", [True, False])
-def test_same_category_box_batching_survives_save_reload_and_other_edits(enabled: bool) -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        const resources = {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]};
-        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
-            classificationAreas: [{categoryZoneId: "zone"}], sameCategoryBoxBatching: """
-        + json.dumps(enabled) + """};
-        const loaded = model.draftFromTask(model.payload(draft, resources));
-        loaded.overflowEnabled = false;
-        return model.payload(loaded, resources).sameCategoryBoxBatching;
-    })()""")
-    assert result is enabled
-
-
-@pytest.mark.parametrize("value", ["false", 0, {}, []])
-def test_same_category_box_batching_rejects_non_boolean_values(value: Any) -> None:
-    errors = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        return model.validateDraft({...model.newDraft("CLASSIFICATION"),
-            cacheLocationRef: "region:cache", classificationAreas: [{categoryZoneId: "zone"}],
-            sameCategoryBoxBatching: """ + json.dumps(value) + """},
-            {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]});
-    })()""")
-    assert errors == ["同类多盒合批开关需为布尔值"]
-
-
-@pytest.mark.parametrize("mask", range(8))
-def test_classification_visit_switches_survive_save_and_reload_independently(mask: int) -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        const changes = model.classificationVisitChanges;
+        const fields = """ + json.dumps(fields) + """;
         const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
             classificationAreas: [{categoryZoneId: "zone"}]};
-        const defaults = changes.map(change => draft[change.field]);
-        changes.forEach((change, index) => draft[change.field] = Boolean("""
-        + str(mask) + """ & (1 << index)));
-        const resources = {regions: [{id: "cache"}], categoryZones: [{id: "zone"}]};
-        const saved = model.payload(draft, resources);
-        const restored = model.draftFromTask(saved);
-        return {defaults, saved: changes.map(change => saved[change.field]),
-            restored: changes.map(change => restored[change.field]),
-            batching: restored.sameCategoryBoxBatching};
+        fields.forEach(field => draft[field] = """ + json.dumps(legacy_value) + """);
+        const saved = model.payload(draft, {regions: [{id: "cache"}],
+            categoryZones: [{id: "zone"}]});
+        const restored = model.draftFromTask({...saved, ...Object.fromEntries(
+            fields.map(field => [field, """ + json.dumps(legacy_value) + """]))});
+        return fields.map(field => [Object.hasOwn(saved, field), Object.hasOwn(restored, field)]);
     })()""")
-    expected = [bool(mask & (1 << index)) for index in range(3)]
-    assert result == {"defaults": [False] * 3, "saved": expected,
-                      "restored": expected, "batching": True}
-
-
-@pytest.mark.parametrize("kind", ["PICKUP", "COMBINED"])
-def test_other_task_kinds_cannot_inherit_classification_visit_changes(kind: str) -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        const task = {kind: """ + json.dumps(kind) + """};
-        model.classificationVisitChanges.forEach(change => task[change.field] = true);
-        const draft = model.draftFromTask(task);
-        return model.classificationVisitChanges.map(change => draft[change.field]);
-    })()""")
-    assert result == [False] * 3
-
-
-@pytest.mark.parametrize("invalid", ["true", 1, [], {}])
-def test_classification_visit_switches_reject_non_boolean_values(invalid: Any) -> None:
-    result = _run("""(() => {
-        const model = window.StowlingAutoClassifyTaskModel;
-        return model.classificationVisitChanges.map(change => {
-            const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
-                classificationAreas: [{categoryZoneId: "zone"}]};
-            draft[change.field] = """ + json.dumps(invalid) + """;
-            return model.validateDraft(draft, {regions: [{id: "cache"}],
-                categoryZones: [{id: "zone"}]}).includes(change.label + "开关需为布尔值");
-        });
-    })()""")
-    assert result == [True] * 3
+    assert result == [[False, False]] * len(fields)

@@ -317,40 +317,24 @@ public final class ConfigStore {
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
-        allowed.add("sameCategoryBoxBatching");
-        allowed.add("classificationBaselineEnabled");
-        allowed.add("classificationFullTargetHandoffEnabled");
-        allowed.add("classificationPartialCacheOnDemandEnabled");
-        allowed.add("classificationCachedEmptyBoxSettlementEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
             JsonObject definition = requireObject(definitions.get(index), path);
+            for (String retired : List.of(
+                    "sameCategoryBoxBatching",
+                    "classificationBaselineEnabled",
+                    "classificationFullTargetHandoffEnabled",
+                    "classificationPartialCacheOnDemandEnabled",
+                    "classificationCachedEmptyBoxSettlementEnabled")) {
+                definition.remove(retired);
+            }
+
             requireFields(definition, path, allowed, fields);
             var mixed = definition.get("robotWarehouseMixedBoxes");
             if (mixed != null && (!mixed.isJsonPrimitive()
                     || !mixed.getAsJsonPrimitive().isBoolean())) {
                 throw new V2ValidationException("robotWarehouseMixedBoxes 必须是布尔值");
-            }
-            var batching = definition.get("sameCategoryBoxBatching");
-            if (batching != null && !batching.isJsonNull() && (!batching.isJsonPrimitive()
-                    || !batching.getAsJsonPrimitive().isBoolean())) {
-                throw new V2ValidationException("sameCategoryBoxBatching 必须是布尔值");
-            }
-            var baseline = definition.get("classificationBaselineEnabled");
-            if (baseline != null && !baseline.isJsonNull() && (!baseline.isJsonPrimitive()
-                    || !baseline.getAsJsonPrimitive().isBoolean())) {
-                throw new V2ValidationException("classificationBaselineEnabled 必须是布尔值");
-            }
-            for (String field : List.of(
-                    "classificationFullTargetHandoffEnabled",
-                    "classificationPartialCacheOnDemandEnabled",
-                    "classificationCachedEmptyBoxSettlementEnabled")) {
-                var flag = definition.get(field);
-                if (flag != null && !flag.isJsonNull() && (!flag.isJsonPrimitive()
-                        || !flag.getAsJsonPrimitive().isBoolean())) {
-                    throw new V2ValidationException(field + " 必须是布尔值");
-                }
             }
             requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireCachePolicy(definition.get("cachePolicy"));

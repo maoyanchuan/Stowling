@@ -539,9 +539,11 @@ public final class TaskFlowNormalizer {
                 step.kind(),
                 step.parameters()
         );
-        if (parameters.containsKey("unstackableZoneRoutingEnabled")) {
+        if (parameters.containsKey("unstackableZoneRoutingEnabled")
+                || parameters.containsKey("worldUseGuardEnabled")) {
             parameters = new LinkedHashMap<>(parameters);
             parameters.remove("unstackableZoneRoutingEnabled");
+            parameters.remove("worldUseGuardEnabled");
         }
         if (autoClassify && overflow) {
             parameters = new LinkedHashMap<>(parameters);

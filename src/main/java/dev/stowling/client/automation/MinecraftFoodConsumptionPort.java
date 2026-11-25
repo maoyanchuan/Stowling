@@ -73,22 +73,15 @@ public final class MinecraftFoodConsumptionPort
 
     @Override
     public FoodConsumptionResult startEating(String itemId) {
-        return beginEating(itemId, null, false);
+        return beginEating(itemId, null);
     }
 
     @Override
     public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys) {
-        return beginEating(itemId, Set.copyOf(allowedKeys), false);
+        return beginEating(itemId, Set.copyOf(allowedKeys));
     }
 
-    @Override
-    public FoodConsumptionResult startEating(String itemId, Set<String> allowedKeys,
-            boolean worldUseGuardEnabled) {
-        return beginEating(itemId, Set.copyOf(allowedKeys), worldUseGuardEnabled);
-    }
-
-    private FoodConsumptionResult beginEating(String itemId, Set<String> allowedKeys,
-            boolean worldUseGuardEnabled) {
+    private FoodConsumptionResult beginEating(String itemId, Set<String> allowedKeys) {
         Objects.requireNonNull(itemId, "itemId");
         if (!scheduler.isClientThread()) {
             return FoodConsumptionResult.failed(
@@ -158,7 +151,7 @@ public final class MinecraftFoodConsumptionPort
                 allowedKeys != null,
                 !useKeyWasDown
         );
-        useGuard.begin(worldUseGuardEnabled);
+        useGuard.begin();
         return FoodConsumptionResult.pending("正在进食 " + itemId);
     }
 

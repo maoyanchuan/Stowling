@@ -57,15 +57,12 @@ def test_merged_classification_controls_are_removed() -> None:
         assert control not in page.attrs
 
 
-def test_eating_guard_uses_existing_footer_structure() -> None:
+def test_merged_eating_guard_has_no_experimental_controls() -> None:
     page = markup(WEB / "tasks.html")
-    control = "auto-eat-world-use-guard"
-    assert "auto-eat-experiments-body" in page.parents[control]
-    assert page.order.index("auto-eat-prefer-inventory") < page.order.index(control)
-    assert page.order.index(control) < page.order.index("delete-auto-eat")
-    assert "checked" not in page.attrs[control]
-    assert "inert" in page.attrs["auto-eat-experiments"]
-    assert page.attrs["auto-eat-experiments-toggle"]["aria-expanded"] == "false"
+    for control in ("auto-eat-experiments", "auto-eat-world-use-guard",
+                    "auto-eat-experiment-active"):
+        assert control not in page.attrs
+    assert page.order.index("auto-eat-prefer-inventory") < page.order.index("delete-auto-eat")
 
 
 def test_classification_experiments_are_removed_and_pickup_packing_remains_in_the_footer() -> None:

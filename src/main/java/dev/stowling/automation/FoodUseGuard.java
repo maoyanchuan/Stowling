@@ -1,11 +1,11 @@
 package dev.stowling.automation;
 
-/** Active only while an opted-in automatic meal owns the use key. */
+/** Active only while an automatic meal owns the use key. */
 public final class FoodUseGuard {
     private volatile boolean blocking;
 
-    public void begin(boolean enabled) {
-        blocking = enabled;
+    public void begin() {
+        blocking = true;
     }
 
     public void end() {

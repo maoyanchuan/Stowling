@@ -106,14 +106,13 @@ class V2ControlServerTest {
             payload.addProperty("autoRefill", false);
             payload.addProperty("refillCount", 23);
             payload.addProperty("preferInventory", false);
-            payload.addProperty("worldUseGuardEnabled", true);
             assertEquals(401, fixture.send("/v1/auto-eat-tasks", "POST",
                     payload.toString(), false).statusCode());
             var created = fixture.send("/v1/auto-eat-tasks", "POST", payload.toString(), true);
             assertEquals(201, created.statusCode());
             response = object(created);
-            assertTrue(response.getAsJsonArray("items").get(0).getAsJsonObject()
-                    .getAsJsonObject("settings").get("worldUseGuardEnabled").getAsBoolean());
+            assertFalse(response.getAsJsonArray("items").get(0).getAsJsonObject()
+                    .getAsJsonObject("settings").has("worldUseGuardEnabled"));
             var settings = response.getAsJsonArray("items").get(0).getAsJsonObject()
                     .getAsJsonObject("settings");
             assertEquals("NORMAL", settings.get("priority").getAsString());
@@ -121,10 +120,6 @@ class V2ControlServerTest {
             assertFalse(settings.get("autoRefill").getAsBoolean());
             assertFalse(settings.get("preferInventory").getAsBoolean());
             payload.add("revision", response.get("revision"));
-            payload.addProperty("worldUseGuardEnabled", "true");
-            assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",
-                    payload.toString(), true).statusCode());
-            payload.addProperty("worldUseGuardEnabled", true);
             for (int count : List.of(0, 2305)) {
                 payload.addProperty("refillCount", count);
                 assertEquals(400, fixture.send("/v1/auto-eat-tasks", "POST",

@@ -12,7 +12,6 @@ final class EatFoodModule implements TaskModuleExecutor {
     private final TaskExecutionContext context;
     private final String foodItemId;
     private final String itemSource;
-    private final boolean worldUseGuardEnabled;
     private boolean eatingActive;
     private boolean stopRequested;
 
@@ -23,8 +22,6 @@ final class EatFoodModule implements TaskModuleExecutor {
                 TaskModuleIds.FOOD_ITEM_ID
         );
         itemSource = step.parameters().get(TaskModuleIds.ITEM_SOURCE);
-        worldUseGuardEnabled = Boolean.parseBoolean(step.parameters().get(
-                dev.stowling.v2.model.AutoEatOptions.WORLD_USE_GUARD));
     }
 
     @Override
@@ -44,9 +41,7 @@ final class EatFoodModule implements TaskModuleExecutor {
             return TaskModuleResult.failed(protectedFood ? "背包没有锁定的指定食物: " + foodItemId
                     : "本次任务没有从食物箱取到指定食物: " + foodItemId);
         }
-        return handleResult(worldUseGuardEnabled
-                ? context.foodConsumption().startEating(foodItemId, allowed, true)
-                : context.foodConsumption().startEating(foodItemId, allowed));
+        return handleResult(context.foodConsumption().startEating(foodItemId, allowed));
     }
 
     @Override

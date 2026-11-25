@@ -22,10 +22,6 @@
     const preferInventory = Settings.switchControl($("auto-eat-prefer-inventory"));
     const coordinate = $("auto-eat-coordinate");
     const message = $("auto-eat-message");
-    const worldUseGuard = Settings.switchControl($("auto-eat-world-use-guard"));
-    const experiments = $("auto-eat-experiments");
-    const experimentsToggle = $("auto-eat-experiments-toggle");
-    let experimentsExpanded = false;
     const selects = window.StowlingTaskSelect.create(form);
     const rows = new Map();
     let tasks = [];
@@ -83,15 +79,6 @@
                 : row.enabled ? "监听中" : "已暂停";
         }
         updateSource();
-        const debug = window.StowlingTaskDebugMode?.enabled() === true;
-        experiments.hidden = !debug;
-        experiments.inert = !debug;
-        disclose(experimentsToggle, $("auto-eat-experiments-body"), debug && experimentsExpanded);
-        experimentsToggle.setAttribute("aria-label",
-            `${debug && experimentsExpanded ? "收起" : "展开"}实验性设置`);
-        $("auto-eat-experiments-summary").textContent = worldUseGuard.checked
-            ? "已开启 1 项" : "未启用实验性设置";
-        $("auto-eat-experiment-active").hidden = !worldUseGuard.checked;
     }
 
     /** @returns {void} */
@@ -139,10 +126,6 @@
             });
             header.append(title, button, listening);
             row.append(header, body, state);
-            if (settings.worldUseGuardEnabled) {
-                row.append(S.element("p", "auto-config-note",
-                    "生效改动：进食期间阻止额外右键交互（auto-eat-world-use-guard）"));
-            }
             list.append(row);
             rows.set(task.id, {button, body, status: state, listening,
                 name: settings.name, enabled: settings.enabled});
@@ -222,8 +205,6 @@
      * @returns {void}
      */
     function fillForm(settings) {
-        worldUseGuard.checked = settings?.worldUseGuardEnabled === true;
-        experimentsExpanded = false;
         $("auto-eat-food").value = settings?.foodItemId ?? "minecraft:bread";
         $("auto-eat-threshold").value = settings?.foodLevelThreshold ?? 18;
         $("auto-eat-interval").value = settings?.intervalSeconds ?? 60;
@@ -344,8 +325,7 @@
                 priority: $("auto-eat-priority").value,
                 autoRefill: source.checked,
                 refillCount: refillCount.valueAsNumber,
-                preferInventory: preferInventory.checked,
-                worldUseGuardEnabled: worldUseGuard.checked
+                preferInventory: preferInventory.checked
             });
             if (!body.foodItemId || !form.checkValidity()) {
                 showMessage("请填写有效的食物和进食设置", true);
@@ -417,11 +397,6 @@
     remove.addEventListener("click", () => {
         if (window.confirm("删除这个自动进食任务？")) void save(true);
     });
-    experimentsToggle.addEventListener("click", () => {
-        experimentsExpanded = !experimentsExpanded;
-        updateControls();
-    });
-    document.addEventListener("stowling:task-debug-mode-changed", updateControls);
     $("refresh-move-tasks").addEventListener("click", () => void load());
     document.addEventListener("stowling:task-switch-changed", ({detail}) => {
         if (revision === detail.previousRevision) revision = detail.revision;

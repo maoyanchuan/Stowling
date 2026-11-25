@@ -957,7 +957,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "intervalSeconds");
         requireFieldsAny(json, Set.of("revision", "name", "foodItemId", "coordinateId",
                 "foodLevelThreshold", "intervalSeconds", "enabled", "priority", "autoRefill",
-                "refillCount", "preferInventory", "worldUseGuardEnabled"), required);
+                "refillCount", "preferInventory"), required);
         UUID coordinate = optionalUuid(json, "coordinateId");
         Boolean autoRefill = optionalBooleanValue(json, "autoRefill");
         Integer refillCount = optionalInteger(json, "refillCount");
@@ -969,8 +969,7 @@ public final class V2ControlServer implements AutoCloseable {
                         : autoRefill,
                 refillCount == null
                         ? dev.stowling.v2.model.AutoEatOptions.DEFAULT_REFILL_COUNT : refillCount,
-                preferInventory == null || preferInventory,
-                Boolean.TRUE.equals(optionalBooleanValue(json, "worldUseGuardEnabled")));
+                preferInventory == null || preferInventory);
     }
 
     private static AutoClassifyTaskRequest autoClassifyRequest(

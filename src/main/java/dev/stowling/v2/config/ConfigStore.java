@@ -271,20 +271,16 @@ public final class ConfigStore {
     private static void requireAutoEatOptions(JsonElement value) {
         if (value == null || value.isJsonNull()) return;
         JsonObject options = requireObject(value, "autoEatOptions");
+        // All retired values now use the same verified eating interaction baseline.
+        options.remove("worldUseGuardEnabled");
         requireFields(options, "autoEatOptions",
-                Set.of("autoRefill", "coordinateId", "refillCount", "preferInventory",
-                        "worldUseGuardEnabled"),
+                Set.of("autoRefill", "coordinateId", "refillCount", "preferInventory"),
                 Set.of("autoRefill", "refillCount", "preferInventory"));
         for (String key : Set.of("autoRefill", "preferInventory")) {
             JsonElement flag = options.get(key);
             if (!flag.isJsonPrimitive() || !flag.getAsJsonPrimitive().isBoolean()) {
                 throw new V2ValidationException("autoEatOptions." + key + " 必须是布尔值");
             }
-        }
-        JsonElement guard = options.get("worldUseGuardEnabled");
-        if (guard != null && (!guard.isJsonPrimitive()
-                || !guard.getAsJsonPrimitive().isBoolean())) {
-            throw new V2ValidationException("autoEatOptions.worldUseGuardEnabled 必须是布尔值");
         }
         JsonElement count = options.get("refillCount");
         try {

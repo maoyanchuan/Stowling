@@ -71,14 +71,6 @@ public final class TaskFlowTemplates {
             String coordinateRef, String foodItemId, int triggerThreshold,
             int refillCount, boolean preferInventory
     ) {
-        return scheduledEating(coordinateRef, foodItemId, triggerThreshold, refillCount,
-                preferInventory, false);
-    }
-
-    public static List<TaskStep> scheduledEating(
-            String coordinateRef, String foodItemId, int triggerThreshold,
-            int refillCount, boolean preferInventory, boolean worldUseGuardEnabled
-    ) {
         List<TaskStep> meal = new ArrayList<>();
         List<TaskStep> beforeMeal = new ArrayList<>();
         if (coordinateRef != null) {
@@ -102,11 +94,9 @@ public final class TaskFlowTemplates {
                             Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId, NEGATE, "true")),
                     List.of(move, withdraw), List.of()));
         }
-        Map<String, String> eating = new LinkedHashMap<>();
-        eating.put(ConfigValidator.FOOD_ITEM_ID, foodItemId);
-        eating.put(ConfigValidator.ITEM_SOURCE, "protected");
-        if (worldUseGuardEnabled) eating.put(AutoEatOptions.WORLD_USE_GUARD, "true");
-        meal.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.EAT_FOOD, eating));
+        meal.add(TaskStep.action(UUID.randomUUID(), ConfigValidator.EAT_FOOD,
+                Map.of(ConfigValidator.FOOD_ITEM_ID, foodItemId,
+                        ConfigValidator.ITEM_SOURCE, "protected")));
         TaskStep eatUntilFull = TaskStep.repeat(UUID.randomUUID(), hungerBelow(20), meal);
         beforeMeal.add(eatUntilFull);
         return List.of(TaskStep.conditional(UUID.randomUUID(), hungerBelow(triggerThreshold + 1),

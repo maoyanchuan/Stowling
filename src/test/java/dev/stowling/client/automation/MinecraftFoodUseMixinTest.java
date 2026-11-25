@@ -14,7 +14,7 @@ class MinecraftFoodUseMixinTest {
         var hook = new MinecraftFoodUseMixin() {};
         var guard = hook.stowling$foodUseGuard();
         assertFalse(vanillaUseCancelled(hook));
-        guard.begin(true);
+        guard.begin();
         // Vanilla observes isUsingItem=false before the end-of-tick eating poll runs.
         assertTrue(vanillaUseCancelled(hook));
         assertTrue(vanillaUseCancelled(hook));
@@ -23,14 +23,13 @@ class MinecraftFoodUseMixinTest {
     }
 
     @Test
-    void disabledMealsAndOtherClientsKeepVanillaInteraction() throws Exception {
+    void manualUseAndOtherClientsKeepVanillaInteraction() throws Exception {
         var first = new MinecraftFoodUseMixin() {};
         var second = new MinecraftFoodUseMixin() {};
-        first.stowling$foodUseGuard().begin(true);
+        first.stowling$foodUseGuard().begin();
         assertTrue(vanillaUseCancelled(first));
         assertFalse(vanillaUseCancelled(second));
         first.stowling$foodUseGuard().end();
-        first.stowling$foodUseGuard().begin(false);
         assertFalse(vanillaUseCancelled(first));
     }
 

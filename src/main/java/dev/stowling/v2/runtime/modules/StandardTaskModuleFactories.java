@@ -2,6 +2,7 @@ package dev.stowling.v2.runtime.modules;
 
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskCleanupRouting;
 import java.util.List;
 import java.util.function.BiFunction;
 
@@ -26,7 +27,7 @@ public final class StandardTaskModuleFactories {
                         OverflowItemsModule::create),
                 factory("GLOBAL_INVENTORY_CLEANUP",
                         (context, step) -> context.storageAutomation().cleanup(context,
-                                TaskModuleSupport.booleanParameter(step, "overflowEnabled", false))),
+                                TaskCleanupRouting.fromParameters(step.parameters()))),
                 factory(
                         TaskModuleIds.MOVE_TO_COORDINATE,
                         MoveToCoordinateModule::new

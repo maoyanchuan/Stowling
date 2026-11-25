@@ -13,6 +13,7 @@ import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskCleanupRouting;
 import dev.stowling.v2.model.TaskInteractionCompiler;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
@@ -814,9 +815,7 @@ public final class TaskRunManager {
         if (requiresGlobalCleanup()) {
             cleanup = new TaskDefinition(UUID.randomUUID(), "全局物品收尾",
                     List.of(TaskStep.action(UUID.randomUUID(), "GLOBAL_INVENTORY_CLEANUP",
-                            Map.of("overflowEnabled", Boolean.toString(
-                                            usesModule(active.prepared.steps,
-                                                    ConfigValidator.PACK_OVERFLOW))))));
+                            TaskCleanupRouting.fromSteps(active.prepared.steps).parameters())));
         }
         if (cleanup == null || !active.workspace.hasManagedItems()
                 && !registry.storageAutomation().hasTemporaryResources(
@@ -863,11 +862,6 @@ public final class TaskRunManager {
                     "中断收尾异常: " + safeMessage(exception)
             );
         }
-    }
-
-    private static boolean usesModule(List<TaskStep> steps, String moduleId) {
-        return steps.stream().anyMatch(step -> moduleId.equals(step.moduleId())
-                || usesModule(step.steps(), moduleId) || usesModule(step.otherwise(), moduleId));
     }
 
     private void failInterruption(String message) {

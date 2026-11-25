@@ -28,6 +28,7 @@ import dev.stowling.v2.model.AppConfig;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
+import dev.stowling.v2.model.TaskCleanupRouting;
 import dev.stowling.v2.model.TaskInterruptionMode;
 import dev.stowling.v2.model.TaskPriority;
 import dev.stowling.v2.model.TaskStep;
@@ -135,6 +136,90 @@ class TaskInterruptionLifecycleTest {
         assertEquals(1000, gathered.get());
         assertTrue(manager.runs().stream().anyMatch(run -> run.taskId().equals(background.id())
                 && run.state() == TaskRunState.SUCCEEDED));
+    }
+
+    @Test
+    void newCleanupRoutingSurvivesPreemptionAndCancellationWithItsTaskSnapshot() {
+        for (boolean cancel : List.of(false, true)) {
+            for (boolean mixed : List.of(false, true)) {
+                RecordingNavigation navigation = new RecordingNavigation();
+                TaskModuleRuntimeRegistry registry = registry(navigation);
+                AtomicReference<TaskCleanupRouting> received = new AtomicReference<>();
+                var overflow = new RegionDefinition(UUID.randomUUID(), "Overflow",
+                        10, 64, 0, 11, 64, 0);
+                var warehouse = new RegionDefinition(UUID.randomUUID(), "Robot",
+                        20, 64, 0, 21, 64, 0);
+                var cache = new RegionDefinition(UUID.randomUUID(), "Cache",
+                        0, 64, 0, 1, 64, 0);
+                String overflowRef = "region:" + overflow.id();
+                String robotRef = "region:" + warehouse.id();
+                registry.setStorageAutomation(
+                        new dev.stowling.v2.runtime.modules.StorageAutomationPort() {
+                            @Override
+                            public boolean cleanupEnabled() {
+                                return true;
+                            }
+
+                            @Override
+                            public TaskModuleExecutor deposit(TaskExecutionContext context,
+                                    ContainerTarget target, Map<String, Integer> items) {
+                                throw new AssertionError("unused");
+                            }
+
+                            @Override
+                            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                                throw new AssertionError("must preserve new cleanup routing");
+                            }
+
+                            @Override
+                            public TaskModuleExecutor cleanup(TaskExecutionContext context,
+                                    TaskCleanupRouting routing) {
+                                received.set(routing);
+                                assertEquals(Map.of("minecraft:iron_ingot", 1),
+                                        context.workspace().managedItems());
+                                return new TestAction(context) {
+                                    @Override
+                                    public TaskModuleResult start() {
+                                        context.workspace().consumeDeposit("managed",
+                                                context.workspace().managedItems(), Map.of());
+                                        return TaskModuleResult.succeeded("cleaned");
+                                    }
+                                };
+                            }
+                        });
+                var direct = TaskStep.action(UUID.randomUUID(), "ROUTE_CLASSIFICATION_REMAINDERS",
+                        Map.of("cacheLocationRef", "region:" + cache.id(), "targetRef", overflowRef,
+                                "remainderKind", "OVERFLOW"));
+                var robot = TaskStep.action(UUID.randomUUID(), "ROBOT_WAREHOUSE",
+                        Map.of("targetRef", robotRef, "mixedBoxes", Boolean.toString(mixed)));
+                TaskDefinition background = task("Classify", TaskPriority.BACKGROUND,
+                        TaskInterruptionMode.NONE, actionStep(ADD_MANAGED), actionStep(SLOW),
+                        direct, robot);
+                TaskDefinition urgent = task("Pickup", TaskPriority.URGENT,
+                        TaskInterruptionMode.NONE, actionStep(NOOP));
+                AppConfig config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                        List.of(background, urgent), List.of(cache, overflow, warehouse), List.of(),
+                        List.of());
+                TaskRunManager manager = new TaskRunManager(navigation, registry);
+                TaskRunSnapshot run = manager.start(background, config, null);
+                manager.tick();
+                // Later configuration changes must not replace the active run's choices.
+                var changed = new TaskDefinition(background.id(), "Updated",
+                        List.of(actionStep(NOOP)));
+                manager.refreshTriggers(new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
+                        List.of(), List.of(changed, urgent)));
+                if (cancel) manager.cancelTask(background.id());
+                else manager.start(urgent, config, null);
+                for (int tick = 0; tick < 24; tick++) manager.tick();
+
+                assertEquals(new TaskCleanupRouting(false,
+                        dev.stowling.v2.model.ResourceReference.parse(overflowRef),
+                        dev.stowling.v2.model.ResourceReference.parse(robotRef), mixed),
+                        received.get());
+                assertEquals(cancel ? TaskRunState.CANCELLED : TaskRunState.PREEMPTED,
+                        runState(manager, run.runId()));
+            }
+        }
     }
 
     @Test

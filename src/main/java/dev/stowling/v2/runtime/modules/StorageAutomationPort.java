@@ -5,6 +5,7 @@ import dev.stowling.automation.DroppedItem;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskCleanupRouting;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,13 @@ public interface StorageAutomationPort {
 
     default TaskModuleExecutor cleanup(TaskExecutionContext context, boolean overflowEnabled) {
         return cleanup(context);
+    }
+
+    default TaskModuleExecutor cleanup(TaskExecutionContext context, TaskCleanupRouting routing) {
+        if (routing.overflowDestination() != null || routing.robotWarehouse() != null) {
+            throw new IllegalStateException("当前环境不支持任务指定的收尾溢出位置");
+        }
+        return cleanup(context, routing.legacyOverflowEnabled());
     }
 
     default TaskModuleExecutor overflow(TaskExecutionContext context,

@@ -11,6 +11,12 @@ public final class RobotWarehousePackingPlan {
     private RobotWarehousePackingPlan() {
     }
 
+    public static boolean acceptsIntact(List<ShulkerTransferPlanner.Slot> contents,
+            boolean mixedBoxes) {
+        return mixedBoxes || contents.stream().filter(slot -> slot.count() > 0)
+                .map(slot -> ItemIdentity.base(slot.key())).distinct().limit(2).count() <= 1;
+    }
+
     public static Optional<String> select(List<Box> boxes, Map<String, Integer> incoming,
             Map<String, Integer> stackSizes) {
         return select(boxes, incoming, stackSizes, true);

@@ -28,6 +28,7 @@ import dev.stowling.v2.model.StorageMode;
 import dev.stowling.v2.model.StoragePackingPlanner;
 import dev.stowling.v2.model.StoragePolicy;
 import dev.stowling.v2.model.TaskStep;
+import dev.stowling.v2.model.TaskCleanupRouting;
 import dev.stowling.v2.runtime.modules.ContainerBatchWithdrawal;
 import dev.stowling.v2.runtime.modules.StorageAutomationPort;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
@@ -268,7 +269,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     @Override
     public TaskModuleExecutor cleanup(TaskExecutionContext context, boolean overflowEnabled) {
-        return new Cleanup(context, overflowEnabled);
+        return cleanup(context, new TaskCleanupRouting(overflowEnabled, null, null, true));
+    }
+
+    @Override
+    public TaskModuleExecutor cleanup(TaskExecutionContext context, TaskCleanupRouting routing) {
+        return new Cleanup(context, routing);
     }
 
     @Override
@@ -3354,6 +3360,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private final ResourceReference destination;
         private final String remainderKind;
         private final boolean mixedBoxes;
+        private final boolean cleanupOnly;
         private String skipMessage;
         private boolean warehouseReady;
         private String warehouseScope;
@@ -3389,12 +3396,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
                 ResourceReference destination, String remainderKind, boolean mixedBoxes) {
+            this(context, cacheLocation, boxedOnly, destination, remainderKind, mixedBoxes, false);
+        }
+
+        Overflow(TaskExecutionContext context, ResourceReference cacheLocation, boolean boxedOnly,
+                ResourceReference destination, String remainderKind, boolean mixedBoxes,
+                boolean cleanupOnly) {
             super(context);
             this.cacheLocation = cacheLocation;
             this.boxedOnly = boxedOnly;
             this.destination = destination;
             this.remainderKind = remainderKind;
             this.mixedBoxes = mixedBoxes;
+            this.cleanupOnly = cleanupOnly;
         }
 
         @Override
@@ -3496,6 +3510,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 prepareWarehouse();
                 box = filled;
                 reusedFrom = null;
+                if (cleanupOnly) {
+                    storeOverflowBox(0);
+                    return;
+                }
                 if (!mixedBoxes && ItemIdentity.MIXED_BOX_CATEGORY.equals(
                         MinecraftItemIdentity.boxCategory(box))) {
                     String category = MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
@@ -3709,6 +3727,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             reusedFrom = null;
             box = inventoryStacks().stream().filter(MinecraftItemIdentity::isBox)
                     .filter(stack -> owned().getOrDefault(MinecraftItemIdentity.key(stack), 0) > 0)
+                    .filter(stack -> !cleanupOnly || isEmptyBox(stack))
                     .filter(this::eligibleBox)
                     .filter(stack -> !RobotWarehousePackingPlan.fitting(boxSlots(stack),
                             StoragePackingPlanner.BOX_SLOTS, rawOwned(), inventoryStackSizes(),
@@ -3930,6 +3949,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private boolean eligibleBox(ItemStack stack) {
+            if (cleanupOnly && boxedOnly
+                    && !RobotWarehousePackingPlan.acceptsIntact(boxSlots(stack), mixedBoxes)) {
+                return false;
+            }
             if (stack.has(DataComponents.CUSTOM_NAME)) {
                 return eligibleItems.contains(MinecraftItemIdentity.key(stack));
             }
@@ -4092,13 +4115,24 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class Cleanup extends Session {
         private List<ContainerTarget> targets;
-        private final boolean overflowEnabled;
-        private boolean overflowAttempted;
+        private final TaskCleanupRouting routing;
+        private final Deque<Supplier<TaskModuleExecutor>> fallbacks = new ArrayDeque<>();
         private String lastFailure = "";
 
-        Cleanup(TaskExecutionContext context, boolean overflowEnabled) {
+        Cleanup(TaskExecutionContext context, TaskCleanupRouting routing) {
             super(context);
-            this.overflowEnabled = overflowEnabled;
+            this.routing = routing;
+            if (routing.overflowDestination() != null) {
+                fallbacks.add(() -> new Overflow(context, null, false,
+                        routing.overflowDestination(), "OVERFLOW", true, true));
+            }
+            if (routing.robotWarehouse() != null) {
+                fallbacks.add(() -> new Overflow(context, null, true,
+                        routing.robotWarehouse(), null, routing.mixedBoxes(), true));
+            }
+            if (routing.legacyOverflowEnabled()) {
+                fallbacks.add(() -> new Overflow(context, null, false, null));
+            }
         }
 
         @Override
@@ -4117,7 +4151,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             targets = destinations.stream()
                     .sorted(Comparator.comparingDouble(target -> distance(target.position())))
                     .toList();
-            if (targets.isEmpty() && !overflowEnabled) {
+            if (targets.isEmpty() && !routing.enabled()) {
                 throw new IllegalStateException("任务未配置可用的中断存放位置，请配置后重试");
             }
             depositAll(0);
@@ -4128,10 +4162,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             if (index >= targets.size()) {
-                if (overflowEnabled && !overflowAttempted) {
-                    overflowAttempted = true;
-                    steps.add(new Step(new Overflow(context, null, false, null),
-                            () -> depositAll(index)));
+                Supplier<TaskModuleExecutor> next = fallbacks.pollFirst();
+                if (next != null) {
+                    TaskModuleExecutor fallback = next.get();
+                    steps.add(new Step(fallback, () -> depositAll(index), () -> {
+                        if (hasTemporaryResources(owner())) {
+                            throw new IllegalStateException("收尾溢出仍有未回收潜影盒，等待恢复");
+                        }
+                        lastFailure = fallback.tick().message();
+                        depositAll(index);
+                    }));
                     return;
                 }
                 throw new IllegalStateException("任务指定存放位置未能接收剩余 " + sum(owned())

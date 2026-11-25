@@ -1,6 +1,7 @@
 package dev.stowling.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.RobotWarehousePackingPlan.Box;
@@ -11,6 +12,24 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class RobotWarehousePackingPlanTest {
+    @Test
+    void cleanupKeepsMixedBoxesIntactOnlyWhenTheWarehouseAllowsThem() {
+        var contents = List.of(new Slot("minecraft:stone", 64, 64),
+                new Slot("minecraft:dirt", 32, 64));
+
+        assertFalse(RobotWarehousePackingPlan.acceptsIntact(contents, false));
+        assertTrue(RobotWarehousePackingPlan.acceptsIntact(contents, true));
+    }
+
+    @Test
+    void cleanupCanStorePurePartialBoxesWithDifferentComponentsWithoutUnpackingThem() {
+        var contents = List.of(new Slot("minecraft:stone#variant-a", 16, 64),
+                new Slot("minecraft:stone#variant-b", 8, 64));
+
+        assertTrue(RobotWarehousePackingPlan.acceptsIntact(contents, false));
+        assertTrue(RobotWarehousePackingPlan.acceptsIntact(List.of(), false));
+    }
+
     @Test
     void pureModeOnlyReusesABoxWithMatchingContents() {
         var mixed = new Box("mixed", List.of(new Slot("minecraft:stone", 64, 64),

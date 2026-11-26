@@ -367,9 +367,11 @@ public final class ConfigStore {
         // The verified warehouse-first order replaces both values of the retired debug switch.
         policy.remove("robotWarehouseFirstEnabled");
         requireFields(policy, "remainderPolicy", Set.of("unclassifiableEnabled",
-                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef"),
+                "unclassifiableDestinationRef", "overflowEnabled", "overflowDestinationRef",
+                "overflowPackingEnabled"),
                 Set.of());
-        for (String key : List.of("unclassifiableEnabled", "overflowEnabled")) {
+        for (String key : List.of("unclassifiableEnabled", "overflowEnabled",
+                "overflowPackingEnabled")) {
             var enabled = policy.get(key);
             if (enabled != null && (!enabled.isJsonPrimitive()
                     || !enabled.getAsJsonPrimitive().isBoolean())) {

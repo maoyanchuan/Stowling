@@ -20,6 +20,7 @@ import dev.stowling.v2.model.CategoryZoneExpansionAxis;
 import dev.stowling.v2.model.CategoryZoneExpansionDefinition;
 import dev.stowling.v2.model.CategoryZoneOptions;
 import dev.stowling.v2.model.CategoryZoneTiler;
+import dev.stowling.v2.model.ClassificationRemainderPolicy;
 import dev.stowling.v2.model.ContainerCacheRefresh;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
@@ -38,6 +39,82 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigStoreTest {
     @TempDir
     Path directory;
+
+    @Test
+    void overflowPackingSwitchSurvivesDiskSaveAndRestartWithTotalOverflowOnOrOff() {
+        for (boolean total : List.of(false, true)) {
+            for (boolean pack : List.of(false, true)) {
+                var config = overflowPackingConfiguration(total, pack);
+                var store = new ConfigStore(directory.resolve("packing-" + total + pack + ".json"));
+                var saved = store.save(store.loadOrReset().revision(), config);
+                var reopened = new ConfigStore(directory.resolve("packing-" + total + pack + ".json"))
+                        .read();
+                assertEquals(saved, reopened);
+                var definition = reopened.config().autoClassifyTasks().getFirst();
+                assertEquals(total, definition.remainderPolicy().overflowEnabled());
+                assertEquals(pack, definition.remainderPolicy().overflowPackingEnabled());
+                assertTrue(definition.overflowEnabled());
+                var snapshot = dev.stowling.v2.model.TaskCleanupRouting.fromSteps(
+                        reopened.config().tasks().getFirst().steps());
+                assertEquals(total && pack, snapshot.overflowPackingEnabled());
+            }
+        }
+    }
+
+    @Test
+    void missingOverflowPackingFieldDefaultsOffWithoutRewritingLegacyFile() throws Exception {
+        var json = new Gson().toJsonTree(overflowPackingConfiguration(true, false))
+                .getAsJsonObject();
+        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonObject("remainderPolicy").remove("overflowPackingEnabled");
+        var path = directory.resolve("packing-legacy.json");
+        Files.writeString(path, json.toString());
+        var loaded = new ConfigStore(path).read();
+        assertFalse(loaded.config().autoClassifyTasks().getFirst()
+                .remainderPolicy().overflowPackingEnabled());
+        assertEquals(json.toString(), Files.readString(path));
+    }
+
+    @Test
+    void overflowPackingRejectsNonBooleansAndUnknownFieldsWithoutChangingTheFile() throws Exception {
+        for (String value : List.of("\"true\"", "1", "null")) {
+            var json = new Gson().toJsonTree(overflowPackingConfiguration(true, false))
+                    .getAsJsonObject();
+            json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                    .getAsJsonObject("remainderPolicy")
+                    .add("overflowPackingEnabled", JsonParser.parseString(value));
+            var path = directory.resolve("packing-invalid.json");
+            Files.writeString(path, json.toString());
+            var error = assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+            assertTrue(error.getMessage().contains("overflowPackingEnabled 必须是布尔值"));
+            assertEquals(json.toString(), Files.readString(path));
+        }
+        var json = new Gson().toJsonTree(overflowPackingConfiguration(true, true)).getAsJsonObject();
+        json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject()
+                .getAsJsonObject("remainderPolicy").addProperty("unknownPackingField", true);
+        var path = directory.resolve("packing-unknown.json");
+        Files.writeString(path, json.toString());
+        var error = assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+        assertTrue(error.getMessage().contains("unknownPackingField"));
+        assertEquals(json.toString(), Files.readString(path));
+    }
+
+    private static AppConfig overflowPackingConfiguration(boolean total, boolean pack) {
+        var initial = automaticConfiguration(true);
+        var original = initial.autoClassifyTasks().getFirst();
+        var policy = new ClassificationRemainderPolicy(false, null, total,
+                "coordinate:" + initial.coordinates().getFirst().id(), pack);
+        var definition = new AutoClassifyDefinition(original.id(), original.name(), false,
+                false, true, null, null, original.cacheLocationRef(),
+                original.classificationAreas(), original.collectionPriority(), true,
+                original.cleanupPolicy(), null, original.overflowDestinationRef(), null,
+                AutoClassifyDefinition.Kind.CLASSIFICATION, null, null, null, false,
+                policy, original.robotWarehouseMixedBoxes());
+        return new AppConfig(initial.schemaVersion(), initial.coordinates(),
+                AutoClassifyTaskFactory.tasks(definition, List.of()), initial.regions(),
+                initial.categoryZones(), List.of(), List.of(), List.of(definition),
+                initial.coordinateCatalog());
+    }
 
     @Test
     void refreshMultiAreaOrderAndIndependentPauseSwitchRoundTrip() throws Exception {

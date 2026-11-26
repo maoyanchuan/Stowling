@@ -627,6 +627,7 @@ class V2ControlServerTest {
             assertTrue(!area.has("markerSources"));
             var update = JsonParser.parseString(body).getAsJsonObject();
             update.add("revision", object(response).get("revision"));
+            update.getAsJsonObject("remainderPolicy").remove("robotWarehouseFirstEnabled");
             update.getAsJsonObject("remainderPolicy").addProperty("unclassifiableEnabled", false);
             update.getAsJsonObject("remainderPolicy").addProperty("overflowEnabled", false);
             String path = "/v1/auto-classify-tasks/" + item.get("id").getAsString();
@@ -635,6 +636,19 @@ class V2ControlServerTest {
             assertEquals(200, updated.statusCode());
             assertEquals(update.getAsJsonObject("remainderPolicy"),
                     object(updated).getAsJsonObject("item").getAsJsonObject("remainderPolicy"));
+            var reopened = new ConfigStore(directory.resolve("layout-recognition.json"))
+                    .read().config().autoClassifyTasks().getFirst().remainderPolicy();
+            assertFalse(reopened.overflowEnabled());
+            assertTrue(reopened.overflowPackingEnabled());
+
+            update.add("revision", object(updated).get("revision"));
+            update.getAsJsonObject("remainderPolicy").addProperty("overflowEnabled", true);
+            update.getAsJsonObject("remainderPolicy").addProperty("overflowPackingEnabled", false);
+            assertEquals(200, fixture.send(path, "PUT", update.toString(), true).statusCode());
+            var packingOff = new ConfigStore(directory.resolve("layout-recognition.json"))
+                    .read().config().autoClassifyTasks().getFirst().remainderPolicy();
+            assertTrue(packingOff.overflowEnabled());
+            assertFalse(packingOff.overflowPackingEnabled());
         }
     }
 

@@ -2,6 +2,10 @@
     "use strict";
 
     const moduleId = "REFRESH_CONTAINER_CACHE";
+    const experiments = Object.freeze([
+        ["multiAreaEnabled", "多选区按选择顺序刷新", "refresh-multi-area-sequence"],
+        ["foodPauseResumeEnabled", "进食安全暂停后续刷", "refresh-food-safe-pause"]
+    ]);
     const runLabels = Object.freeze({
         QUEUED: "排队中",
         RUNNING: "运行中",
@@ -31,9 +35,11 @@
         }));
         return {
             kinds,
-            targetRef: parameters.targetRef || "",
+            targetRefs: readTargets(parameters),
             categoryStorageOnlyEnabled:
-                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true"
+                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true",
+            ...Object.fromEntries(experiments.map(([key]) =>
+                [key, String(parameters[key]).toLowerCase() === "true"]))
         };
     }
 
@@ -43,13 +49,30 @@
             throw new Error("至少启用一类容器");
         }
         return {
-            targetRef: draft.targetRef,
+            targetRefs: JSON.stringify(draft.targetRefs),
             ...Object.fromEntries(Object.entries(draft.kinds).map(([key, value]) =>
                 [key, String(value)])),
             categoryStorageOnlyEnabled: String(Boolean(draft.categoryStorageOnlyEnabled)),
+            ...Object.fromEntries(experiments.map(([key]) => [key, String(Boolean(draft[key]))])),
             scanMarkers: "false",
             includeMarkersInInventory: "false"
         };
+    }
+
+    /** @param {object} parameters @returns {string[]} */
+    function readTargets(parameters) {
+        const values = parameters.targetRefs === undefined
+            ? [parameters.targetRef].filter(Boolean) : JSON.parse(parameters.targetRefs);
+        if (!Array.isArray(values) || values.some(value => typeof value !== "string" || !value)) {
+            throw new Error("选区列表格式无效");
+        }
+        return [...new Set(values)];
+    }
+
+    /** @param {string[]} saved @param {string[]} selected @returns {string[]} */
+    function selectionOrder(saved, selected) {
+        return [...saved.filter(value => selected.includes(value)),
+            ...selected.filter(value => !saved.includes(value))];
     }
 
     /** @param {object} draft @returns {object} */
@@ -84,7 +107,7 @@
     }
 
     globalThis.StowlingRefreshCacheModel = Object.freeze({
-        isRefreshTask, settings, parameters, schedulePayload, taskSwitch
+        isRefreshTask, settings, parameters, schedulePayload, taskSwitch, selectionOrder
     });
     if (typeof document === "undefined") return;
 
@@ -103,6 +126,13 @@
     const list = id("refresh-cache-list");
     const target = id("refresh-cache-target");
     const categoryStorage = Settings.switchControl(id("refresh-category-storage-only"));
+    const experimentControls = Object.fromEntries(experiments.map(([key, , control]) =>
+        [key, Settings.switchControl(id(control))]));
+    const experimentMenu = id("refresh-experiments-settings");
+    const experimentToggle = id("refresh-experiments-toggle");
+    const experimentBody = id("refresh-experiments-body");
+    let experimentsExpanded = false;
+    let selection = [];
     const kinds = [...form.querySelectorAll("[data-refresh-kind]")]
         .map((input) => Settings.switchControl(input));
     const kindSelection = id("refresh-kind-selection");
@@ -141,11 +171,26 @@
 
     /** @returns {void} */
     function controls() {
-        const layout = target.value.startsWith("category-zone:");
+        const layout = selection.some(value => value.startsWith("category-zone:"));
         id("refresh-cache-target-note").textContent = layout && !categoryStorage.checked
             ? "请启用下方的“分类区仅刷新储存容器”开关。"
             : layout ? "只刷新各绑定组储存区内已启用类型的容器，不打开识别区箱子。"
-                : "刷新此区域内已启用类型的容器缓存。";
+                : "按选择顺序逐区刷新，各选区内就近开箱。";
+        const debug = Boolean(window.StowlingTaskDebugMode?.enabled());
+        experimentMenu.hidden = !debug;
+        experimentMenu.inert = !debug;
+        experimentToggle.setAttribute("aria-expanded", String(experimentsExpanded));
+        void Settings.reveal(experimentBody, debug && experimentsExpanded);
+        const enabledExperiments = experiments.filter(([key]) => experimentControls[key].checked);
+        id("refresh-experiments-summary").textContent = enabledExperiments.length
+            ? "已开启：" + enabledExperiments.map(([, label]) => label).join("、") : "未启用";
+        for (const option of target.options) {
+            option.dataset.selectionOrder = String(selection.indexOf(option.value));
+        }
+        const names = selection.map(value => locations.get(value) || "已失效选区：" + value);
+        id("refresh-target-order").textContent = names.length > 1
+            ? "执行顺序：" + names.join(" → ") : "";
+        id("refresh-target-order").hidden = names.length < 2;
         void Settings.reveal(id("refresh-daily-field"), mode.value === "DAILY");
         void Settings.reveal(id("refresh-interval-field"), mode.value === "INTERVAL");
         time.disabled = mode.value !== "DAILY";
@@ -160,7 +205,7 @@
         draftCard.hidden = !isDraft;
         draftToggle.disabled = disabled;
         disclose(draftToggle, draftBody, isDraft && current.expanded);
-        for (const [taskId, {button, body, toggle, status}] of savedCards) {
+        for (const [taskId, {button, body, toggle, status, experimentStatus}] of savedCards) {
             const selected = current?.task?.id === taskId;
             const dirty = selected && current.dirty;
             const scheduled = Boolean(schedules[taskId]);
@@ -169,17 +214,28 @@
                 ?.steps[0].parameters);
             const enabled = selected ? categoryStorage.checked
                 : taskSettings.categoryStorageOnlyEnabled;
-            const category = (selected ? target.value : taskSettings.targetRef)
-                .startsWith("category-zone:");
-            const blocked = category && !enabled && !state.checked;
+            const refs = selected ? selection : taskSettings.targetRefs;
+            const category = refs.some(value => value.startsWith("category-zone:"));
+            const multi = selected ? experimentControls.multiAreaEnabled.checked
+                : taskSettings.multiAreaEnabled;
+            const invalid = !refs.length || refs.some(value => !locations.has(value));
+            const blocked = (invalid || category && !enabled || refs.length > 1 && !multi)
+                && !state.checked;
             button.disabled = disabled;
             toggle.checked = pendingSwitch?.id === taskId ? pendingSwitch.enabled : state.checked;
             toggle.disabled = disabled || dirty || blocked || (state.stopping && !state.checked);
             toggle.setAttribute("aria-busy", String(pendingSwitch?.id === taskId));
-            toggle.title = blocked ? "请先开启分类区仅刷新储存容器"
+            toggle.title = blocked ? invalid ? "请选择有效选区"
+                : category && !enabled ? "请先开启分类区仅刷新储存容器"
+                    : "请在实验性设置中开启多选区按选择顺序刷新"
                 : dirty ? "修改保存后可切换任务"
                 : state.checked ? "停止任务" : "启动任务";
             status.textContent = dirty ? "未保存修改" : state.label;
+            const active = experiments.filter(([key]) => selected
+                ? experimentControls[key].checked : taskSettings[key]);
+            experimentStatus.textContent = active.map(([, label, code]) =>
+                label + "（" + code + "）").join("、");
+            experimentStatus.hidden = !active.length;
             disclose(button, body, selected && current.expanded);
         }
         selects.refresh(true);
@@ -263,21 +319,31 @@
             toggle.addEventListener("change", () => void setRunning(task.id, toggle.checked));
             header.append(title, edit, toggle);
             body.append(nextLabel);
-            card.append(header, body, status);
+            const experimentStatus = S.element("p", "refresh-task-timing field-message");
+            experimentStatus.setAttribute("role", "status");
+            card.append(header, body, status, experimentStatus);
             if (current?.task?.id === task.id) body.append(form);
             list.append(card);
-            savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel});
+            savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel,
+                experimentStatus});
         }
         controls();
         renderNextTimes();
         syncCount();
     }
 
-    /** @param {string} selected @returns {void} */
+    /** @param {string[]} selected @returns {void} */
     function renderOptions(selected) {
-        target.replaceChildren(new Option("选择区域或分类区", ""));
+        selection = [...selected];
+        target.replaceChildren();
         for (const [value, label] of locations) target.append(new Option(label, value));
-        target.value = locations.has(selected) ? selected : "";
+        for (const value of selection) {
+            if (!locations.has(value)) target.append(new Option("已失效选区：" + value, value));
+        }
+        for (const option of target.options) {
+            option.selected = selection.includes(option.value);
+            option.dataset.selectionOrder = String(selection.indexOf(option.value));
+        }
         window.StowlingResourcePicker?.group(target, undefined, "regions", false);
     }
 
@@ -286,9 +352,10 @@
         const draft = settings(task?.steps?.[0]?.parameters);
         const schedule = task && schedules[task.id];
         current.zone = schedule?.zoneId || browserZone;
-        renderOptions(draft.targetRef);
+        renderOptions(draft.targetRefs);
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
         categoryStorage.checked = draft.categoryStorageOnlyEnabled;
+        for (const [key] of experiments) experimentControls[key].checked = draft[key];
         mode.value = schedule?.mode || "MANUAL";
         time.value = schedule?.time || "04:00";
         const minutes = schedule?.intervalMinutes || 60;
@@ -312,6 +379,7 @@
                 schedule: task ? schedules[task.id] : undefined};
             row.body.append(form);
             kindDisclosure.setExpanded(false);
+            experimentsExpanded = false;
             fillForm(task);
         }
         controls();
@@ -364,7 +432,7 @@
         for (const zone of resources.categoryZones || []) {
             locations.set("category-zone:" + zone.id, "分类区 · " + zone.name);
         }
-        if (current) renderOptions(target.value);
+        if (current) renderOptions(selection);
         ready = true;
         apply(response);
     }
@@ -402,7 +470,7 @@
         if (!current?.dirty || busy || !S.isConnected()) return;
         try {
             const taskId = current.task?.id;
-            if (!target.value) throw new Error("请选择刷新选区");
+            if (!selection.length) throw new Error("请选择刷新选区");
             if (mode.value === "DAILY" && !time.value) throw new Error("请输入每天触发时间");
             if (mode.value === "INTERVAL" && interval.validity?.valid === false) {
                 throw new Error("请输入有效的正整数时间间隔");
@@ -418,10 +486,12 @@
                     ...(taskId ? {id: current.task.steps[0].id} : {}),
                     moduleId,
                     parameters: parameters({
-                        targetRef: target.value,
+                        targetRefs: selection,
                         kinds: Object.fromEntries(kinds.map((input) =>
                             [input.dataset.refreshKind, input.checked])),
-                        categoryStorageOnlyEnabled: categoryStorage.checked
+                        categoryStorageOnlyEnabled: categoryStorage.checked,
+                        ...Object.fromEntries(experiments.map(([key]) =>
+                            [key, experimentControls[key].checked]))
                     })
                 }]
             };
@@ -544,6 +614,15 @@
     });
     draftToggle.addEventListener("click", () => open());
     remove.addEventListener("click", () => void deleteTask());
+    target.addEventListener("input", () => {
+        selection = selectionOrder(selection,
+            Array.from(target.selectedOptions, option => option.value));
+    });
+    experimentToggle.addEventListener("click", () => {
+        experimentsExpanded = !experimentsExpanded;
+        controls();
+    });
+    document.addEventListener("stowling:task-debug-mode-changed", controls);
     form.addEventListener("input", () => {
         if (!current) return;
         current.dirty = true;

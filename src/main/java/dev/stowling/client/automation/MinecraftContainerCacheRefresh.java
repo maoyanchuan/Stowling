@@ -12,6 +12,7 @@ import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.ContainerCacheRefresh;
 import dev.stowling.v2.model.RegionDefinition;
+import dev.stowling.v2.model.ResourceReference;
 import dev.stowling.v2.model.ResourceType;
 import dev.stowling.v2.runtime.TaskTrace;
 import dev.stowling.v2.runtime.modules.TaskExecutionContext;
@@ -72,6 +73,11 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     private TaskModuleResult terminal;
     private boolean stopRequested;
     private ContainerInspectionPort readSession;
+    private int targetIndex;
+    private ResourceReference target;
+    private String areaName;
+    private boolean pauseRequested;
+    private boolean paused;
 
     MinecraftContainerCacheRefresh(Minecraft minecraft, MinecraftContainerRegionScanner scanner,
             TaskExecutionContext context, ContainerCacheRefresh options) {
@@ -87,7 +93,11 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult start() {
-        if (options.target().type() == ResourceType.CATEGORY_ZONE && !options.markerOnly()
+        if (options.targets().size() > 1 && !options.multiAreaEnabled()) {
+            return TaskModuleResult.failed("请在实验性设置中开启“多选区按选择顺序刷新”");
+        }
+        if (options.targets().stream().anyMatch(reference ->
+                reference.type() == ResourceType.CATEGORY_ZONE) && !options.markerOnly()
                 && !options.categoryStorageOnlyEnabled()) {
             return TaskModuleResult.failed("请在刷新缓存设置中开启“分类区仅刷新储存容器”");
         }
@@ -98,13 +108,24 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         if (options.includeMarkersInInventory() && scope == null) {
             return TaskModuleResult.failed("无法识别当前世界，不能保存识别区库存设置");
         }
+        return startArea();
+    }
+
+    private TaskModuleResult startArea() {
+        target = options.targets().get(targetIndex);
+        bindings = List.of();
+        markerBindings = List.of();
+        markerAreas = List.of();
         String name = selectAreas();
+        areaName = name;
         if (scanAreas.isEmpty()) {
-            return TaskModuleResult.succeeded("选区没有需要刷新的容器");
+            return options.targets().size() == 1
+                    ? TaskModuleResult.succeeded("选区没有需要刷新的容器")
+                    : TaskModuleResult.running("选区没有需要刷新的容器");
         }
         var player = world.position();
         scanAreas.stream().flatMap(area -> ContainerCacheRefreshPlan.chunks(
-                        options.target().uuid(), name, area).stream())
+                        target.uuid(), name, area).stream())
                 .distinct()
                 .sorted(Comparator.comparingDouble(chunk -> {
                     var center = ContainerCacheRefreshPlan.chunkCenter(chunk);
@@ -121,9 +142,9 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private String selectAreas() {
-        UUID id = options.target().uuid();
+        UUID id = target.uuid();
         String name;
-        if (options.target().type() == ResourceType.REGION) {
+        if (target.type() == ResourceType.REGION) {
             RegionDefinition region = context.regions().get(id);
             storageAreas = List.of(bounds(region));
             name = region.name();
@@ -132,7 +153,8 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
             bindings = zone.bindings();
             storageAreas = bindings.stream().map(CategoryBindingDefinition::storageArea)
                     .distinct().toList();
-            if (!options.categoryStorageOnly() && (options.scanMarkers() || options.markerOnly())) {
+            if (!options.categoryStorageOnly(target)
+                    && (options.scanMarkers() || options.markerOnly())) {
                 markerBindings = bindings.stream().filter(binding ->
                         ContainerContentsCategoryRule.ID.equals(binding.ruleId())).toList();
                 markerAreas = (options.markerOnly() ? markerBindings : bindings).stream()
@@ -152,7 +174,15 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     @Override
     public TaskModuleResult tick() {
         try {
-            return tickRefresh();
+            var result = tickRefresh();
+            if (options.targets().size() > 1 && terminal == null) {
+                String detail = result.message().startsWith("已刷新 ") ? result.message()
+                        : "已刷新 " + succeeded + " 个 · " + result.message();
+                String message = "选区 " + (targetIndex + 1) + "/" + options.targets().size()
+                        + "「" + areaName + "」 · " + detail;
+                return new TaskModuleResult(result.state(), message);
+            }
+            return result;
         } catch (RuntimeException failure) {
             closeReadSession();
             throw failure;
@@ -170,6 +200,19 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
             cancel();
             return TaskModuleResult.failed("游戏世界已断开或切换，刷新已结束");
         }
+        if (pauseRequested) {
+            if (inspecting && inspections().canPauseBeforeOpen()) {
+                containers.addFirst(selected);
+                selected = null;
+                inspecting = false;
+            }
+            if (!inspecting && selected == null) {
+                stopTravel();
+                closeReadSession();
+                paused = true;
+                return TaskModuleResult.waiting("已到开箱安全节点，等待进食");
+            }
+        }
         if (inspecting) {
             return handleInspection(inspections().pollInspection());
         }
@@ -186,6 +229,10 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         }
         if (!chunks.isEmpty()) {
             return scanNextChunk();
+        }
+        if (targetIndex + 1 < options.targets().size()) {
+            targetIndex++;
+            return startArea();
         }
         return finish();
     }
@@ -257,7 +304,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private void collectTarget(ContainerTarget found) {
-        if (options.categoryStorageOnly() && !touches(found, storageAreas)) {
+        if (options.categoryStorageOnly(target) && !touches(found, storageAreas)) {
             return;
         }
         for (var binding : matchingMarkerBindings(found)) {
@@ -414,6 +461,22 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
                 : TaskModuleResult.failed(summary + "，" + failures + " 处失败。"
                         + "首个失败位置 " + firstFailure);
         return terminal;
+    }
+
+    @Override
+    public void requestPauseAtSafeNode() {
+        if (options.foodPauseResume()) pauseRequested = true;
+    }
+
+    @Override
+    public boolean pausedAtSafeNode() {
+        return paused;
+    }
+
+    @Override
+    public void resumeFromPause() {
+        pauseRequested = false;
+        paused = false;
     }
 
     @Override

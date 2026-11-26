@@ -173,11 +173,15 @@
                                                     刷新此区域内已启用类型的容器缓存。
                                                 </span>
                                             </span>
-                                            <select id="refresh-cache-target" required
+                                            <select id="refresh-cache-target" required multiple
+                                                    data-placeholder="选择区域或分类区"
+                                                    data-summary-limit="2" data-selection-noun="选区"
                                                     data-option-description="普通区域或分类区储存容器"
                                                     aria-describedby="refresh-cache-target-note">
                                             </select>
                                         </div>
+                                        <p id="refresh-target-order" class="move-target-note"
+                                           aria-live="polite" hidden></p>
                                         <label class="move-field refresh-cache-switch-row">
                                             <span class="settings-copy">
                                                 <span>分类区仅刷新储存容器</span>
@@ -288,6 +292,55 @@
                                                 </label>
                                             </div>
                                         </div>
+                                        <section id="refresh-experiments-settings"
+                                                 class="auto-config-section"
+                                                 aria-labelledby="refresh-experiments-title"
+                                                 hidden inert>
+                                            <div class="auto-phase-header">
+                                                <button id="refresh-experiments-toggle"
+                                                        class="auto-phase-toggle" type="button"
+                                                        aria-expanded="false"
+                                                        aria-controls="refresh-experiments-body">
+                                                    <span class="auto-phase-copy">
+                                                        <strong id="refresh-experiments-title">
+                                                            实验性设置
+                                                        </strong>
+                                                        <small id="refresh-experiments-summary">
+                                                            未启用
+                                                        </small>
+                                                    </span>
+                                                    <span class="move-task-chevron"
+                                                          aria-hidden="true"></span>
+                                                </button>
+                                            </div>
+                                            <div id="refresh-experiments-body"
+                                                 class="auto-phase-body" hidden inert>
+                                                <div class="task-settings-inner">
+                                                    <label class="move-field
+                                                                  refresh-cache-switch-row">
+                                                        <span class="settings-copy">
+                                                            <span>多选区按选择顺序刷新</span>
+                                                            <span class="settings-description">
+                                                                默认关闭；逐区处理，重叠区域的箱子本轮去重。
+                                                            </span>
+                                                        </span>
+                                                        <input id="refresh-multi-area-sequence"
+                                                               type="checkbox">
+                                                    </label>
+                                                    <label class="move-field
+                                                                  refresh-cache-switch-row">
+                                                        <span class="settings-copy">
+                                                            <span>进食安全暂停后续刷</span>
+                                                            <span class="settings-description">
+                                                                默认关闭；安全关箱后进食，吃完继续剩余箱子。
+                                                            </span>
+                                                        </span>
+                                                        <input id="refresh-food-safe-pause"
+                                                               type="checkbox">
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </section>
                                         <p id="refresh-cache-message" class="field-message"
                                            role="status" aria-live="polite" hidden></p>
                                         <div class="coordinate-task-actions">

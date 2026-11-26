@@ -17,6 +17,18 @@ import org.junit.jupiter.api.Test;
 
 class TaskModuleCatalogTest {
     @Test
+    void refreshDescribesOrderedAreasAndBothIndependentDefaultOffExperiments() {
+        var module = TaskModuleCatalog.modules().stream().filter(candidate ->
+                candidate.id().equals("REFRESH_CONTAINER_CACHE")).findFirst().orElseThrow();
+        assertFalse(parameter(module, "targetRef").required());
+        assertFalse(parameter(module, "targetRefs").required());
+        for (String key : List.of("multiAreaEnabled", "foodPauseResumeEnabled")) {
+            assertEquals("boolean", parameter(module, key).kind());
+            assertEquals("false", parameter(module, key).defaultValue());
+        }
+    }
+
+    @Test
     void keepsUnstackableMaterialCollectionEnabledByDefault() {
         var module = TaskModuleCatalog.modules().stream().filter(candidate ->
                 candidate.id().equals("COLLECT_SCHEMATIC_MATERIALS")).findFirst().orElseThrow();

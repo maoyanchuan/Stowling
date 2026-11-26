@@ -44,6 +44,110 @@ class MinecraftContainerCacheRefreshTest {
     private static final AreaBounds STANDING = new AreaBounds(20, 65, 0, 20, 65, 0);
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void multiAreaRefreshRequiresItsSwitchAndKeepsSelectionOrderWithOverlapDedup(boolean enabled) {
+        var world = new World();
+        world.loadAll = true;
+        var first = new RegionDefinition(UUID.randomUUID(), "First", 18, 64, 0, 18, 64, 0);
+        var second = new RegionDefinition(UUID.randomUUID(), "Second", 15, 64, 0, 18, 64, 0);
+        var chest = new ContainerTarget(FIRST, "minecraft:chest", null, null, PARTNER);
+        var last = new ContainerTarget(LAST, "minecraft:barrel");
+        world.regionTargets = Map.of(first.id(), List.of(last), second.id(), List.of(chest, last));
+        var inspection = new Inspection();
+        var ports = TaskModuleRuntimeRegistry.unavailablePorts(world);
+        var context = new TaskExecutionContext(world, ports.droppedItems(),
+                ports.containerRegions(), ports.containerTransfers(), ports.containerWithdrawals(),
+                inspection, CategoryMarkerCachePort.UNAVAILABLE, ports.categoryZones(), Map.of(),
+                Map.of(first.id(), first, second.id(), second), Map.of(), new TaskRunWorkspace());
+        var options = ContainerCacheRefresh.from(Map.of("targetRefs",
+                new com.google.gson.Gson().toJson(List.of("region:" + first.id(),
+                        "region:" + second.id())), "multiAreaEnabled", Boolean.toString(enabled)));
+        var refresh = new MinecraftContainerCacheRefresh(context, options, world);
+        var started = refresh.start();
+        if (!enabled) {
+            assertEquals(TaskModuleState.FAILED, started.state());
+            assertTrue(world.scanned.isEmpty());
+            assertEquals(0, inspection.sessions);
+            return;
+        }
+        assertTrue(refresh.tick().message().contains("选区 1/2「First」"));
+        assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
+        assertEquals(List.of(LAST, FIRST), inspection.session.opened);
+        assertEquals(List.of(first.id(), second.id()), world.scanned.stream()
+                .map(RegionDefinition::id).distinct().toList());
+    }
+
+    @Test
+    void foodPauseWaitsForCacheConfirmationAndResumesRemainingBoxesFromCurrentPosition() {
+        var world = new World();
+        world.loadAll = true;
+        world.memory = "before";
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, Map.of("foodPauseResumeEnabled", "true"));
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        refresh.tick();
+        var firstSession = inspection.session;
+        refresh.requestPauseAtSafeNode();
+        refresh.tick();
+        assertFalse(refresh.pausedAtSafeNode());
+        assertEquals(0, firstSession.canceled);
+        world.memory = "confirmed";
+        refresh.tick();
+        refresh.tick();
+        assertTrue(refresh.pausedAtSafeNode());
+        assertEquals(List.of(FIRST), firstSession.opened);
+        assertEquals(1, firstSession.canceled);
+        world.reachable = Set.of(LAST);
+        world.memory = null;
+        refresh.resumeFromPause();
+        refresh.tick();
+        assertFalse(refresh.pausedAtSafeNode());
+        assertEquals(2, inspection.sessions);
+        assertEquals(List.of(LAST), inspection.session.opened);
+        assertEquals(TaskModuleState.FAILED, finish(refresh).state());
+        assertEquals(List.of(LAST, BLOCKED), inspection.session.opened);
+        assertEquals(List.of(FIRST), firstSession.opened);
+    }
+
+    @Test
+    void pauseDuringApproachReturnsUnopenedTargetToQueueInsteadOfSkippingIt() {
+        var world = new World();
+        world.loadAll = true;
+        var inspection = new Inspection();
+        inspection.canPauseBeforeOpen = true;
+        var refresh = refresh(world, inspection, Map.of("foodPauseResumeEnabled", "true"));
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        refresh.tick();
+        refresh.requestPauseAtSafeNode();
+        refresh.tick();
+        assertTrue(refresh.pausedAtSafeNode());
+        refresh.resumeFromPause();
+        assertEquals(TaskModuleState.FAILED, finish(refresh).state());
+        assertEquals(List.of(FIRST, BLOCKED, LAST), inspection.session.opened);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void pauseHookIsInactiveWhenDisabledAndExplicitStopNeverResumes(boolean enabled) {
+        var world = new World();
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection,
+                Map.of("foodPauseResumeEnabled", Boolean.toString(enabled)));
+        refresh.start();
+        refresh.tick();
+        refresh.requestPauseAtSafeNode();
+        refresh.tick();
+        assertEquals(enabled, refresh.pausedAtSafeNode());
+        refresh.cancel();
+        assertEquals(TaskModuleState.SUCCEEDED, refresh.tick().state());
+        assertEquals(enabled ? 0 : 1, inspection.sessions);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"true", "false", "invalid", ""})
     void baselineCollectsLoadedSlicesAndUsesOneSessionRegardlessOfRetiredFlags(String legacy) {
         var world = new World();
@@ -361,6 +465,7 @@ class MinecraftContainerCacheRefreshTest {
         private final List<BlockPosition> travel = new ArrayList<>();
         private final List<RegionDefinition> scanned = new ArrayList<>();
         private List<ContainerTarget> scanTargets;
+        private Map<UUID, List<ContainerTarget>> regionTargets;
         private boolean loadAll;
         private boolean available = true;
         private Set<BlockPosition> reachable = Set.of();
@@ -395,6 +500,8 @@ class MinecraftContainerCacheRefreshTest {
         @Override
         public ContainerScanResult scan(RegionDefinition chunk, ContainerCacheRefresh options) {
             scanned.add(chunk);
+            if (regionTargets != null) return ContainerScanResult.success(
+                    regionTargets.get(chunk.id()));
             if (scanTargets != null) return ContainerScanResult.success(scanTargets);
             var chest = new ContainerTarget(FIRST, "minecraft:chest", null, null, PARTNER);
             return ContainerScanResult.success(chunk.firstX() < 16 ? List.of(chest)
@@ -431,10 +538,12 @@ class MinecraftContainerCacheRefreshTest {
         private int sessions;
         private Inspection session;
         private RuntimeException pollFailure;
+        private boolean canPauseBeforeOpen;
         @Override
         public ContainerInspectionPort openReadSession() {
             sessions++;
             session = new Inspection();
+            session.canPauseBeforeOpen = canPauseBeforeOpen;
             return session;
         }
 
@@ -451,6 +560,11 @@ class MinecraftContainerCacheRefreshTest {
             return BLOCKED.equals(opened.getLast())
                     ? ContainerInspectionResult.failed("cannot open")
                     : ContainerInspectionResult.success("empty", Set.of());
+        }
+
+        @Override
+        public boolean canPauseBeforeOpen() {
+            return canPauseBeforeOpen;
         }
 
         @Override

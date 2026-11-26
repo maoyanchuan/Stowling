@@ -334,12 +334,16 @@ public final class TaskModuleCatalog {
                     "前往选区并打开容器，刷新库存与识别区标记。",
                     List.of(
                             reference(ConfigValidator.TARGET_REF, "选区",
-                                    "region-category-zone-reference", true),
+                                    "region-category-zone-reference", false),
+                            text(dev.stowling.v2.model.ContainerCacheRefresh.TARGET_REFS,
+                                    "选区列表", false),
                             refreshSwitch("chests", "箱子", true),
                             refreshSwitch("barrels", "木桶", true),
                             refreshSwitch("shulkerBoxes", "潜影盒", true),
                             refreshSwitch("otherContainers", "其他容器", false),
                             refreshSwitch("categoryStorageOnlyEnabled", "分类区仅刷新储存容器", false),
+                            refreshSwitch("multiAreaEnabled", "多选区按选择顺序刷新", false),
+                            refreshSwitch("foodPauseResumeEnabled", "进食安全暂停后续刷", false),
                             refreshSwitch("scanMarkers", "扫描识别区", false),
                             refreshSwitch("includeMarkersInInventory", "识别区物品计入库存", false)
                     )

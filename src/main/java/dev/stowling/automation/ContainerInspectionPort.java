@@ -12,6 +12,11 @@ public interface ContainerInspectionPort {
 
     ContainerInspectionResult pollInspection();
 
+    /** Caller may close the session before yielding only when no open request was sent. */
+    default boolean canPauseBeforeOpen() {
+        return false;
+    }
+
     void cancelInspection();
 
     ContainerInspectionPort UNAVAILABLE = new ContainerInspectionPort() {

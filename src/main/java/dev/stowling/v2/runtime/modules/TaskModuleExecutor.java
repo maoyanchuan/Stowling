@@ -7,6 +7,16 @@ public interface TaskModuleExecutor {
 
     void cancel();
 
+    default void requestPauseAtSafeNode() {
+    }
+
+    default boolean pausedAtSafeNode() {
+        return false;
+    }
+
+    default void resumeFromPause() {
+    }
+
     default void requestStop() {
         cancel();
     }

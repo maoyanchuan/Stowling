@@ -1229,6 +1229,11 @@ public final class TaskFlowNormalizer {
             TaskStep step,
             ResourceReference reference
     ) {
+        if (ContainerCacheRefresh.MODULE.equals(step.moduleId())
+                && step.parameters().containsKey(ContainerCacheRefresh.TARGET_REFS)
+                && ContainerCacheRefresh.readTargets(step.parameters()).contains(reference)) {
+            return true;
+        }
         for (Map.Entry<String, String> entry : step.parameters().entrySet()) {
             if (parameterReferences(entry.getKey(), entry.getValue(), reference)) {
                 return true;

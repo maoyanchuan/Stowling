@@ -92,6 +92,11 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
     }
 
     @Override
+    public boolean canPauseBeforeOpen() {
+        return scheduler.isClientThread() && (active == null || !active.requestedOpen());
+    }
+
+    @Override
     public void cancelInspection() {
         if (!scheduler.isClientThread()) return;
         if (active != null) {

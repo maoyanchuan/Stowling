@@ -40,6 +40,33 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void refreshMultiAreaOrderAndIndependentPauseSwitchRoundTrip() throws Exception {
+        var first = new RegionDefinition(UUID.randomUUID(), "First", 0, 64, 0, 1, 64, 0);
+        var second = new RegionDefinition(UUID.randomUUID(), "Second", 8, 64, 0, 9, 64, 0);
+        for (boolean multi : List.of(false, true)) {
+            for (boolean food : List.of(false, true)) {
+                var parameters = Map.of("targetRefs", new Gson().toJson(List.of(
+                        "region:" + second.id(), "region:" + first.id())),
+                        "multiAreaEnabled", Boolean.toString(multi),
+                        "foodPauseResumeEnabled", Boolean.toString(food));
+                var task = new TaskDefinition(UUID.randomUUID(), "Refresh", List.of(
+                        TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                                parameters)));
+                var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                        List.of(task), List.of(first, second), List.of());
+                Path path = directory.resolve("refresh-order-" + multi + "-" + food + ".json");
+                Files.writeString(path, new Gson().toJson(config));
+                var store = new ConfigStore(path);
+                var restored = store.read();
+                assertEquals(parameters, restored.config().tasks().getFirst()
+                        .steps().getFirst().parameters());
+                store.save(restored.revision(), restored.config());
+                assertEquals(restored.config(), new ConfigStore(path).read().config());
+            }
+        }
+    }
+
+    @Test
     void savedRefreshFlagsMigrateWithoutLosingTheOrdinaryCategorySwitch() throws Exception {
         var region = new RegionDefinition(UUID.randomUUID(), "Refresh", 0, 64, 0, 4, 64, 0);
         for (boolean storageOnly : List.of(false, true)) {

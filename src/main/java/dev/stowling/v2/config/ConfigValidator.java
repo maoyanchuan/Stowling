@@ -886,10 +886,15 @@ public final class ConfigValidator {
                 var keys = dev.stowling.v2.model.ContainerCacheRefresh.BOOLEAN_FIELDS;
                 Set<String> fields = new HashSet<>(keys);
                 fields.add(TARGET_REF);
-                requireParameters(step, fields, Set.of(TARGET_REF));
+                fields.add(dev.stowling.v2.model.ContainerCacheRefresh.TARGET_REFS);
+                String selectedField = step.parameters().containsKey(
+                        dev.stowling.v2.model.ContainerCacheRefresh.TARGET_REFS)
+                        ? dev.stowling.v2.model.ContainerCacheRefresh.TARGET_REFS : TARGET_REF;
+                requireParameters(step, fields, Set.of(selectedField));
                 var refresh = dev.stowling.v2.model.ContainerCacheRefresh.from(step.parameters());
-                requireInteractionResource(refresh.target().encode(), coordinates, regions,
-                        categoryZones);
+                for (var target : refresh.targets()) {
+                    requireInteractionResource(target.encode(), coordinates, regions, categoryZones);
+                }
             }
             case dev.stowling.v2.model.MaterialRequirements.MODULE -> {
                 var materials = dev.stowling.v2.model.MaterialRequirements.PARAMETER;

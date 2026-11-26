@@ -26,6 +26,24 @@ import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
     @Test
+    void refreshValidatesEverySelectedResourceIncludingWhenTheExperimentIsOff() {
+        var zone = categoryZone("Storage");
+        var region = new RegionDefinition(UUID.randomUUID(), "Cache", 0, 64, 0, 1, 64, 0);
+        var values = Map.of("targetRefs", new com.google.gson.Gson().toJson(List.of(
+                "region:" + region.id(), "category-zone:" + zone.id())));
+        var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE, values);
+        assertDoesNotThrow(() -> ConfigValidator.requireValidStep(step, Map.of(),
+                Map.of(region.id(), region), Map.of(zone.id(), zone)));
+        assertThrows(V2ValidationException.class, () -> ConfigValidator.requireValidStep(step,
+                Map.of(), Map.of(region.id(), region), Map.of()));
+        assertThrows(V2ValidationException.class, () -> ConfigValidator.requireValidStep(step,
+                Map.of(), Map.of(), Map.of(zone.id(), zone)));
+        assertThrows(V2ValidationException.class, () -> ConfigValidator.requireValidStep(
+                TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE, Map.of()),
+                Map.of(), Map.of(), Map.of()));
+    }
+
+    @Test
     void refreshRejectsRemovedFlagsInNewRequests() {
         var zone = categoryZone("Storage");
         for (String field : List.of("reuseSafeHandEnabled", "nearbyRouteEnabled")) {

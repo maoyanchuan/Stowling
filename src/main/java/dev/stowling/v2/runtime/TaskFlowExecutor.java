@@ -126,7 +126,7 @@ public final class TaskFlowExecutor {
             TaskStep step = frame.steps.get(frame.index);
             if (action == null && pauseRequested && safePauseNode(frame, step)) {
                 pausedAtSafeNode = true;
-                return TaskModuleResult.waiting("分类已到进食安全节点");
+                return TaskModuleResult.waiting("任务已到进食安全节点");
             }
             TaskModuleResult result = switch (step.kind()) {
                 case ACTION -> tickAction(frame, step);
@@ -171,6 +171,12 @@ public final class TaskFlowExecutor {
 
     public synchronized void requestPauseAtSafeNode() {
         pauseRequested = true;
+        if (action != null) {
+            traced(action.frame, () -> {
+                action.executor.requestPauseAtSafeNode();
+                return null;
+            });
+        }
     }
 
     public synchronized boolean pausedAtSafeNode() {
@@ -178,8 +184,15 @@ public final class TaskFlowExecutor {
     }
 
     public synchronized void resumeFromPause() {
+        boolean wasRequested = pauseRequested || pausedAtSafeNode;
         pauseRequested = false;
         pausedAtSafeNode = false;
+        if (wasRequested && action != null) {
+            traced(action.frame, () -> {
+                action.executor.resumeFromPause();
+                return null;
+            });
+        }
     }
 
     private boolean safePauseNode(Frame frame, TaskStep step) {
@@ -226,7 +239,13 @@ public final class TaskFlowExecutor {
                 return host.createAction(step);
             }));
         }
+        if (pauseRequested) pausedAtSafeNode = false;
         TaskModuleResult result = invokeAction();
+        if (pauseRequested && (result.state() == TaskModuleState.RUNNING
+                || result.state() == TaskModuleState.WAITING)
+                && traced(frame, () -> action.executor.pausedAtSafeNode())) {
+            pausedAtSafeNode = true;
+        }
         if (result.state() == TaskModuleState.FAILED) {
             ActionState failed = action;
             action = null;

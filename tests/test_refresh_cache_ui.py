@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -34,10 +35,19 @@ const model = globalThis.StowlingRefreshCacheModel;
 const draft = model.settings();
 assert.deepEqual(draft.kinds, {chests: true, barrels: true, shulkerBoxes: true,
     otherContainers: false});
-draft.targetRef = "category-zone:layout";
+draft.targetRefs = ["category-zone:layout"];
 assert.equal(draft.categoryStorageOnlyEnabled, false);
 draft.categoryStorageOnlyEnabled = true;
 assert.deepEqual(model.settings(model.parameters(draft)), draft);
+assert.equal(draft.multiAreaEnabled, false);
+assert.equal(draft.foodPauseResumeEnabled, false);
+assert.deepEqual(model.settings({targetRef: 'region:old'}).targetRefs, ['region:old']);
+assert.deepEqual(model.selectionOrder(['region:b', 'region:a'], ['region:a', 'region:c']),
+    ['region:a', 'region:c']);
+assert.deepEqual(model.selectionOrder(['region:b'], ['region:a', 'region:b']),
+    ['region:b', 'region:a']);
+assert.throws(() => model.settings({targetRefs: '{}'}));
+
 for (const key of ['reuseSafeHandEnabled', 'nearbyRouteEnabled']) {
     for (const value of ['true', 'false', 'invalid', '']) {
         const normalized = model.settings({...model.parameters(draft), [key]: value});
@@ -49,7 +59,7 @@ assert.equal(model.parameters(draft).scanMarkers, "false");
 assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
 assert.equal(model.settings({categoryStorageOnlyEnabled: "false"})
     .categoryStorageOnlyEnabled, false);
-draft.targetRef = "region:region";
+draft.targetRefs = ["region:region"];
 assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
 for (const key of Object.keys(draft.kinds)) draft.kinds[key] = false;
 assert.throws(() => model.parameters(draft));
@@ -78,6 +88,11 @@ const assert = require("node:assert/strict");
 
 class Element extends EventTarget {
     children = [];
+    dataset = {};
+    /** @returns {Element[]} */
+    get options() { return this.children; }
+    /** @returns {Element[]} */
+    get selectedOptions() { return this.children.filter(child => child.selected); }
     value = "";
     classList = {/** @returns {void} */ toggle() {}};
     /** @param {...Element} nodes @returns {void} */
@@ -111,7 +126,10 @@ globalThis.document = Object.assign(new EventTarget(), {
     /** @returns {Element} */
     createElement() { return new Element(); }
 });
-globalThis.Option = Element;
+globalThis.Option = class extends Element {
+    /** @param {string} text @param {string} value */
+    constructor(text, value) { super(); this.textContent = text; this.value = value; }
+};
 globalThis.CustomEvent = class extends Event {
     /** @param {string} type @param {object} options */
     constructor(type, options) {
@@ -468,8 +486,12 @@ def test_refresh_dropdown_keyboard_and_upward_placement(refresh_page: Any) -> No
     assert "选择普通区域" not in menu.inner_text()
     assert menu.evaluate("node => getComputedStyle(node).rowGap") == "6px"
     menu.get_by_role("option", name="区域 · 备用仓选区").press("Enter")
+    page.keyboard.press("Escape")
     assert target.evaluate("node => node === document.activeElement")
-    page.wait_for_function("backend.tasks[0].steps[0].parameters.targetRef === 'region:reserve'")
+    page.wait_for_function(
+        "JSON.parse(backend.tasks[0].steps[0].parameters.targetRefs)"
+        ".join(',') === 'region:stock,region:reserve'"
+    )
     settle_refresh(page)
     page.set_viewport_size({"width": 800, "height": 420})
     mode = page.locator("#refresh-schedule-mode + .task-select-trigger")
@@ -534,7 +556,9 @@ def test_refresh_category_storage_is_a_normal_setting_and_retains_its_value(
     run = page.locator("#refresh-cache-list .pickup-task-header input")
     assert switch.is_visible()
     assert not switch.is_checked()
-    assert page.locator("#refresh-experiments-settings").count() == 0
+    assert page.locator("#refresh-experiments-settings").evaluate(
+        "node => node.hidden && node.inert"
+    )
     assert page.locator("#refresh-reuse-safe-hand, #refresh-nearby-route").count() == 0
     assert switch.evaluate("node => !node.closest('[hidden], [inert]')")
     assert switch.evaluate("node => Boolean(node.closest('#refresh-cache-form'))")
@@ -542,9 +566,11 @@ def test_refresh_category_storage_is_a_normal_setting_and_retains_its_value(
     page.locator("#refresh-cache-target + .task-select-trigger").click()
     menu = page.locator(".task-select-menu:not([hidden])")
     assert "仓库资源" in menu.inner_text()
+    menu.get_by_role("option", name="区域 · 主仓选区").click()
     menu.get_by_role("option", name="分类区 · 分类仓库").click()
+    page.keyboard.press("Escape")
     page.wait_for_function(
-        "backend.tasks[0].steps[0].parameters.targetRef === 'category-zone:category'"
+        "JSON.parse(backend.tasks[0].steps[0].parameters.targetRefs)[0] === 'category-zone:category'"
     )
     settle_refresh(page)
     assert run.is_disabled()
@@ -574,11 +600,11 @@ def test_refresh_category_storage_is_a_normal_setting_and_retains_its_value(
     page.locator("#task-debug-mode").check()
     settle_refresh(page)
     assert switch.is_visible() and switch.is_checked()
-    assert page.locator("#refresh-experiments-settings").count() == 0
+    assert page.locator("#refresh-experiments-settings").is_visible()
     page.locator("#task-debug-mode").uncheck()
     page.locator("#refresh-cache-list .pickup-task-expand").click()
     settle_refresh(page)
-    assert page.locator("#refresh-cache-list > article > p").count() == 0
+    assert page.locator("#refresh-cache-list > article > p").is_hidden()
     open_refresh(page)
     assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
     assert switch.is_checked()
@@ -613,6 +639,102 @@ def test_refresh_saving_old_tasks_drops_retired_execution_flags(
     )
     saved = page.evaluate("backend.tasks[0].steps[0].parameters")
     assert "reuseSafeHandEnabled" not in saved and "nearbyRouteEnabled" not in saved
-    assert saved["targetRef"] == "region:stock"
+    assert json.loads(saved["targetRefs"]) == ["region:stock"]
     assert saved["chests"] == saved["barrels"] == saved["shulkerBoxes"] == "true"
-    assert page.locator("#refresh-experiments-settings").count() == 0
+    assert page.locator("#refresh-experiments-settings").evaluate(
+        "node => node.hidden && node.inert"
+    )
+
+
+@pytest.mark.parametrize("theme,width", [
+    ("green", 1000), ("gray", 1000), ("green", 390), ("gray", 390)
+])
+def test_refresh_multi_selection_and_independent_food_pause_survive_hidden_menu(
+    refresh_page: Any, theme: str, width: int
+) -> None:
+    page = refresh_page
+    page.set_viewport_size({"width": width, "height": 1300})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_refresh(page)
+    trigger = page.locator("#refresh-cache-target + .task-select-trigger")
+    trigger.click()
+    menu = page.locator(".task-select-menu:not([hidden])")
+    assert menu.get_attribute("aria-multiselectable") == "true"
+    menu.get_by_role("option", name="区域 · 备用仓选区").click()
+    page.keyboard.press("Escape")
+    page.wait_for_function(
+        "JSON.parse(backend.tasks[0].steps[0].parameters.targetRefs).length === 2"
+    )
+    settle_refresh(page)
+    run = page.locator("#refresh-cache-list .pickup-task-header input")
+    assert run.is_disabled()
+    assert "主仓选区 → 区域 · 备用仓选区" in page.locator("#refresh-target-order").inner_text()
+    page.locator("#task-debug-mode").check()
+    summary = page.locator("#refresh-experiments-toggle")
+    assert summary.get_attribute("aria-expanded") == "false"
+    summary.click()
+    settle_refresh(page)
+    multi = page.locator("#refresh-multi-area-sequence")
+    food = page.locator("#refresh-food-safe-pause")
+    assert not multi.is_checked() and not food.is_checked()
+    multi.check()
+    page.wait_for_function("backend.tasks[0].steps[0].parameters.multiAreaEnabled === 'true'")
+    settle_refresh(page)
+    assert run.is_enabled()
+    food.focus()
+    food.press("Space")
+    page.wait_for_function("backend.tasks[0].steps[0].parameters.foodPauseResumeEnabled === 'true'")
+    settle_refresh(page)
+    summary.click()
+    settle_refresh(page)
+    page.locator("#task-debug-mode").uncheck()
+    assert page.locator("#refresh-experiments-settings").evaluate(
+        "node => node.hidden && node.inert"
+    )
+    writes = page.evaluate("backend.requests.filter(item => item.method !== 'GET').length")
+    page.locator("#refresh-cache-list .pickup-task-expand").click()
+    settle_refresh(page)
+    badge = page.locator("#refresh-cache-list > article > p")
+    assert badge.is_visible()
+    assert "refresh-food-safe-pause" in badge.inner_text()
+    assert "refresh-multi-area-sequence" in badge.inner_text()
+    open_refresh(page)
+    assert json.loads(page.evaluate("backend.tasks[0].steps[0].parameters.targetRefs")) == [
+        "region:stock", "region:reserve"
+    ]
+    assert food.is_checked() and multi.is_checked()
+    assert page.evaluate("backend.requests.filter(item => item.method !== 'GET').length") == writes
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert page.evaluate("backend.requests.every(item => !/\\/(start|stop)$/.test(item.path))")
+
+
+def test_refresh_reselect_appends_and_resource_refresh_preserves_order_and_deleted_refs(
+    refresh_page: Any
+) -> None:
+    page = refresh_page
+    page.evaluate("""() => {
+        backend.tasks[0].steps[0].parameters = {
+            targetRefs: JSON.stringify(['region:reserve', 'region:stock', 'region:deleted']),
+            multiAreaEnabled: 'true', foodPauseResumeEnabled: 'true'
+        };
+        document.dispatchEvent(new CustomEvent('stowling:tasks-changed'));
+    }""")
+    settle_refresh(page)
+    open_refresh(page)
+    trigger = page.locator("#refresh-cache-target + .task-select-trigger")
+    assert trigger.inner_text().startswith("已选 3 个选区")
+    assert page.locator("#refresh-cache-list .pickup-task-header input").is_disabled()
+    trigger.click()
+    menu = page.locator(".task-select-menu:not([hidden])")
+    menu.get_by_role("option", name="已失效选区：region:deleted").click()
+    menu.get_by_role("option", name="区域 · 备用仓选区").click()
+    menu.get_by_role("option", name="区域 · 备用仓选区").click()
+    page.keyboard.press("Escape")
+    page.wait_for_function(
+        "JSON.parse(backend.tasks[0].steps[0].parameters.targetRefs).join(',')"
+        " === 'region:stock,region:reserve'"
+    )
+    settle_refresh(page)
+    page.locator("#refresh-move-tasks").click()
+    settle_refresh(page)
+    assert "主仓选区 → 区域 · 备用仓选区" in page.locator("#refresh-target-order").inner_text()

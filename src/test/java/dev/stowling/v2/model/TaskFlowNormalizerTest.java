@@ -12,6 +12,17 @@ import org.junit.jupiter.api.Test;
 
 class TaskFlowNormalizerTest {
     @Test
+    void everySelectedRefreshAreaPreventsResourceDeletion() {
+        var first = new ResourceReference(ResourceType.REGION, UUID.randomUUID().toString());
+        var second = new ResourceReference(ResourceType.CATEGORY_ZONE, UUID.randomUUID().toString());
+        var definition = task(TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                Map.of("targetRefs", new com.google.gson.Gson().toJson(List.of(first.encode(),
+                        second.encode())), "foodPauseResumeEnabled", "true")));
+        assertTrue(TaskFlowNormalizer.references(definition, first));
+        assertTrue(TaskFlowNormalizer.references(definition, second));
+    }
+
+    @Test
     void refreshBaselineMigrationCleansNestedStepsAndPreservesOtherModules() {
         for (String hand : List.of("true", "false", "invalid", "")) {
             for (String route : List.of("true", "false", "invalid", "")) {

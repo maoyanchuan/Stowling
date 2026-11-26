@@ -888,9 +888,6 @@ public final class ConfigValidator {
                 fields.add(TARGET_REF);
                 requireParameters(step, fields, Set.of(TARGET_REF));
                 var refresh = dev.stowling.v2.model.ContainerCacheRefresh.from(step.parameters());
-                if (refresh.target().type() == ResourceType.CATEGORY_ZONE && !refresh.markerOnly()) {
-                    throw new V2ValidationException("刷新缓存任务请选择普通区域");
-                }
                 requireInteractionResource(refresh.target().encode(), coordinates, regions,
                         categoryZones);
             }

@@ -11,6 +11,7 @@ import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideDefinition;
 import dev.stowling.v2.model.CategoryContainerOverrideMode;
 import dev.stowling.v2.model.CategoryZoneDefinition;
+import dev.stowling.v2.model.ContainerCacheRefresh;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.TaskDefinition;
@@ -24,6 +25,25 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
+    @Test
+    void refreshAcceptsExistingCategoryZonesAndPreservesDisabledExperimentDrafts() {
+        var zone = categoryZone("Storage");
+        for (String enabled : List.of("true", "false")) {
+            var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                    Map.of("targetRef", "category-zone:" + zone.id(),
+                            "categoryStorageOnlyEnabled", enabled));
+            assertDoesNotThrow(() -> ConfigValidator.requireValidStep(step, Map.of(), Map.of(),
+                    Map.of(zone.id(), zone)));
+            assertThrows(V2ValidationException.class, () -> ConfigValidator.requireValidStep(
+                    step, Map.of(), Map.of(), Map.of()));
+        }
+        var invalid = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                Map.of("targetRef", "category-zone:" + zone.id(),
+                        "categoryStorageOnlyEnabled", "invalid"));
+        assertThrows(IllegalArgumentException.class, () -> ConfigValidator.requireValidStep(
+                invalid, Map.of(), Map.of(), Map.of(zone.id(), zone)));
+    }
+
     @Test
     void validatesFolderNamesAndTaskAssignments() {
         CoordinatePoint point = point("Home");

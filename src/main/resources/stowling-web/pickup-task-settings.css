@@ -569,7 +569,8 @@ body[data-page] .task-select-option:focus-visible {
     }
 
     body[data-page] :is(.auto-eat-task-form, .refresh-cache-task-form)
-        :is(.auto-eat-switch-row, .refresh-cache-switch-row) {
+        :is(.auto-eat-switch-row, .refresh-cache-switch-row),
+    body[data-page] .refresh-cache-task-form .move-field.refresh-cache-switch-row {
         flex-wrap: nowrap;
     }
 
@@ -604,6 +605,10 @@ body[data-page] .task-select-option:focus-visible {
     padding: 14px 20px 0;
     font-size: 14px;
     overflow-wrap: anywhere;
+}
+
+.refresh-cache-task-module > .refresh-task-timing {
+    padding-bottom: 14px;
 }
 
 @media (max-width: 480px) {

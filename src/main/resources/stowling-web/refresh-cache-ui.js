@@ -2,6 +2,7 @@
     "use strict";
 
     const moduleId = "REFRESH_CONTAINER_CACHE";
+    const storageExperiment = "refresh-category-storage-only";
     const runLabels = Object.freeze({
         QUEUED: "排队中",
         RUNNING: "运行中",
@@ -32,8 +33,8 @@
         return {
             kinds,
             targetRef: parameters.targetRef || "",
-            scanMarkers: String(parameters.scanMarkers).toLowerCase() === "true",
-            includeMarkers: String(parameters.includeMarkersInInventory).toLowerCase() === "true"
+            categoryStorageOnlyEnabled:
+                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true"
         };
     }
 
@@ -42,13 +43,13 @@
         if (!Object.values(draft.kinds).some(Boolean)) {
             throw new Error("至少启用一类容器");
         }
-        const scanMarkers = draft.targetRef.startsWith("category-zone:") && draft.scanMarkers;
         return {
             targetRef: draft.targetRef,
             ...Object.fromEntries(Object.entries(draft.kinds).map(([key, value]) =>
                 [key, String(value)])),
-            scanMarkers: String(scanMarkers),
-            includeMarkersInInventory: String(scanMarkers && draft.includeMarkers)
+            categoryStorageOnlyEnabled: String(Boolean(draft.categoryStorageOnlyEnabled)),
+            scanMarkers: "false",
+            includeMarkersInInventory: "false"
         };
     }
 
@@ -102,8 +103,11 @@
     const fieldset = form.querySelector("fieldset");
     const list = id("refresh-cache-list");
     const target = id("refresh-cache-target");
-    const markerScan = Settings.switchControl(id("refresh-scan-markers"));
-    const markerStock = Settings.switchControl(id("refresh-include-markers"));
+    const categoryStorage = Settings.switchControl(id("refresh-category-storage-only"));
+    const experiments = id("refresh-experiments-settings");
+    const experimentsToggle = id("refresh-experiments-toggle");
+    const experimentsBody = id("refresh-experiments-body");
+    let experimentsExpanded = false;
     const kinds = [...form.querySelectorAll("[data-refresh-kind]")]
         .map((input) => Settings.switchControl(input));
     const kindSelection = id("refresh-kind-selection");
@@ -143,10 +147,17 @@
     /** @returns {void} */
     function controls() {
         const layout = target.value.startsWith("category-zone:");
-        void Settings.reveal(id("refresh-marker-field"), layout);
-        void Settings.reveal(id("refresh-marker-stock-field"), layout && markerScan.checked);
-        markerScan.disabled = !layout;
-        markerStock.disabled = !layout || !markerScan.checked;
+        const debug = Boolean(window.StowlingTaskDebugMode?.enabled());
+        experiments.hidden = !debug;
+        experiments.inert = !debug;
+        experimentsToggle.setAttribute("aria-expanded", String(experimentsExpanded));
+        void Settings.reveal(experimentsBody, debug && experimentsExpanded);
+        id("refresh-experiments-summary").textContent = categoryStorage.checked
+            ? "已开启：分类区仅刷新储存容器" : "未启用";
+        id("refresh-cache-target-note").textContent = layout && !categoryStorage.checked
+            ? "请开启调试模式，在实验性设置中启用“分类区仅刷新储存容器”。"
+            : layout ? "只刷新各绑定组储存区内已启用类型的容器，不打开识别区箱子。"
+                : "刷新此区域内已启用类型的容器缓存。";
         void Settings.reveal(id("refresh-daily-field"), mode.value === "DAILY");
         void Settings.reveal(id("refresh-interval-field"), mode.value === "INTERVAL");
         time.disabled = mode.value !== "DAILY";
@@ -161,18 +172,30 @@
         draftCard.hidden = !isDraft;
         draftToggle.disabled = disabled;
         disclose(draftToggle, draftBody, isDraft && current.expanded);
-        for (const [taskId, {button, body, toggle, status}] of savedCards) {
+        for (const [taskId, {button, body, toggle, status, experimentStatus}] of savedCards) {
             const selected = current?.task?.id === taskId;
             const dirty = selected && current.dirty;
             const scheduled = Boolean(schedules[taskId]);
             const state = taskSwitch(scheduled, enabledSchedules.has(taskId), runStates.get(taskId));
+            const taskSettings = settings(tasks.find((task) => task.id === taskId)
+                ?.steps[0].parameters);
+            const enabled = selected ? categoryStorage.checked
+                : taskSettings.categoryStorageOnlyEnabled;
+            const category = (selected ? target.value : taskSettings.targetRef)
+                .startsWith("category-zone:");
+            const blocked = category && !enabled && !state.checked;
             button.disabled = disabled;
             toggle.checked = pendingSwitch?.id === taskId ? pendingSwitch.enabled : state.checked;
-            toggle.disabled = disabled || dirty || (state.stopping && !state.checked);
+            toggle.disabled = disabled || dirty || blocked || (state.stopping && !state.checked);
             toggle.setAttribute("aria-busy", String(pendingSwitch?.id === taskId));
-            toggle.title = dirty ? "修改保存后可切换任务"
+            toggle.title = blocked ? "请先开启分类区仅刷新储存容器实验"
+                : dirty ? "修改保存后可切换任务"
                 : state.checked ? "停止任务" : "启动任务";
             status.textContent = dirty ? "未保存修改" : state.label;
+            experimentStatus.hidden = !enabled;
+            experimentStatus.textContent = enabled
+                ? "已开启：分类区仅刷新储存容器（" + storageExperiment + "）"
+                : "";
             disclose(button, body, selected && current.expanded);
         }
         selects.refresh(true);
@@ -256,10 +279,13 @@
             toggle.addEventListener("change", () => void setRunning(task.id, toggle.checked));
             header.append(title, edit, toggle);
             body.append(nextLabel);
-            card.append(header, body, status);
+            const experimentStatus = S.element("p", "refresh-task-timing field-message");
+            experimentStatus.setAttribute("role", "status");
+            card.append(header, body, status, experimentStatus);
             if (current?.task?.id === task.id) body.append(form);
             list.append(card);
-            savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel});
+            savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel,
+                experimentStatus});
         }
         controls();
         renderNextTimes();
@@ -268,7 +294,7 @@
 
     /** @param {string} selected @returns {void} */
     function renderOptions(selected) {
-        target.replaceChildren(new Option("选择普通区域", ""));
+        target.replaceChildren(new Option("选择区域或分类区", ""));
         for (const [value, label] of locations) target.append(new Option(label, value));
         target.value = locations.has(selected) ? selected : "";
         window.StowlingResourcePicker?.group(target, undefined, "regions", false);
@@ -281,8 +307,7 @@
         current.zone = schedule?.zoneId || browserZone;
         renderOptions(draft.targetRef);
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
-        markerScan.checked = draft.scanMarkers;
-        markerStock.checked = draft.includeMarkers;
+        categoryStorage.checked = draft.categoryStorageOnlyEnabled;
         mode.value = schedule?.mode || "MANUAL";
         time.value = schedule?.time || "04:00";
         const minutes = schedule?.intervalMinutes || 60;
@@ -306,6 +331,7 @@
                 schedule: task ? schedules[task.id] : undefined};
             row.body.append(form);
             kindDisclosure.setExpanded(false);
+            experimentsExpanded = false;
             fillForm(task);
         }
         controls();
@@ -354,6 +380,9 @@
         locations = new Map();
         for (const region of resources.regions) {
             locations.set("region:" + region.id, "区域 · " + region.name);
+        }
+        for (const zone of resources.categoryZones || []) {
+            locations.set("category-zone:" + zone.id, "分类区 · " + zone.name);
         }
         if (current) renderOptions(target.value);
         ready = true;
@@ -412,8 +441,7 @@
                         targetRef: target.value,
                         kinds: Object.fromEntries(kinds.map((input) =>
                             [input.dataset.refreshKind, input.checked])),
-                        scanMarkers: markerScan.checked,
-                        includeMarkers: markerStock.checked
+                        categoryStorageOnlyEnabled: categoryStorage.checked
                     })
                 }]
             };
@@ -536,6 +564,11 @@
     });
     draftToggle.addEventListener("click", () => open());
     remove.addEventListener("click", () => void deleteTask());
+    experimentsToggle.addEventListener("click", () => {
+        experimentsExpanded = !experimentsExpanded;
+        controls();
+    });
+    document.addEventListener("stowling:task-debug-mode-changed", controls);
     form.addEventListener("input", () => {
         if (!current) return;
         current.dirty = true;

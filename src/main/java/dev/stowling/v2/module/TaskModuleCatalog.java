@@ -339,6 +339,7 @@ public final class TaskModuleCatalog {
                             refreshSwitch("barrels", "木桶", true),
                             refreshSwitch("shulkerBoxes", "潜影盒", true),
                             refreshSwitch("otherContainers", "其他容器", false),
+                            refreshSwitch("categoryStorageOnlyEnabled", "分类区仅刷新储存容器", false),
                             refreshSwitch("scanMarkers", "扫描识别区", false),
                             refreshSwitch("includeMarkersInInventory", "识别区物品计入库存", false)
                     )

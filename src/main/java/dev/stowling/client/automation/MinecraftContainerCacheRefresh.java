@@ -85,6 +85,10 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult start() {
+        if (options.target().type() == ResourceType.CATEGORY_ZONE && !options.markerOnly()
+                && !options.categoryStorageOnlyEnabled()) {
+            return TaskModuleResult.failed("请在实验性设置中开启“分类区仅刷新储存容器”");
+        }
         if (!world.available()) {
             return TaskModuleResult.failed("进入游戏世界后才能刷新容器缓存");
         }
@@ -126,7 +130,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
             bindings = zone.bindings();
             storageAreas = bindings.stream().map(CategoryBindingDefinition::storageArea)
                     .distinct().toList();
-            if (options.scanMarkers() || options.markerOnly()) {
+            if (!options.categoryStorageOnly() && (options.scanMarkers() || options.markerOnly())) {
                 markerBindings = bindings.stream().filter(binding ->
                         ContainerContentsCategoryRule.ID.equals(binding.ruleId())).toList();
                 markerAreas = (options.markerOnly() ? markerBindings : bindings).stream()
@@ -223,6 +227,9 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private void collectTarget(ContainerTarget found) {
+        if (options.categoryStorageOnly() && !touches(found, storageAreas)) {
+            return;
+        }
         for (var binding : matchingMarkerBindings(found)) {
             found.entrances().stream().filter(binding.markerArea()::contains)
                     .forEach(observedMarkers.get(binding.id())::add);

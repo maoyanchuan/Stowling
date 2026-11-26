@@ -16,8 +16,9 @@ def test_refresh_task_has_range_switches_and_schedule_controls() -> None:
     assert 'src="/refresh-cache-ui.js"' in html
     assert 'id="new-refresh-cache-task"' in html
     assert 'id="refresh-cache-target"' in html
-    assert 'id="refresh-scan-markers"' in html
-    assert 'id="refresh-include-markers"' in html
+    assert 'id="refresh-category-storage-only"' in html
+    assert 'id="refresh-scan-markers"' not in html
+    assert 'id="refresh-include-markers"' not in html
     for value in ("MANUAL", "DAILY", "INTERVAL"):
         assert f'value="{value}"' in html
 
@@ -34,9 +35,13 @@ const draft = model.settings();
 assert.deepEqual(draft.kinds, {chests: true, barrels: true, shulkerBoxes: true,
     otherContainers: false});
 draft.targetRef = "category-zone:layout";
-draft.scanMarkers = true;
-draft.includeMarkers = true;
+assert.equal(draft.categoryStorageOnlyEnabled, false);
+draft.categoryStorageOnlyEnabled = true;
 assert.deepEqual(model.settings(model.parameters(draft)), draft);
+assert.equal(model.parameters(draft).scanMarkers, "false");
+assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
+assert.equal(model.settings({categoryStorageOnlyEnabled: "false"})
+    .categoryStorageOnlyEnabled, false);
 draft.targetRef = "region:region";
 assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
 for (const key of Object.keys(draft.kinds)) draft.kinds[key] = false;
@@ -236,7 +241,7 @@ def refresh_page() -> Iterator[Any]:
         page.set_content(re.sub(r"<link\b[^>]*>", "", html))
         page.evaluate("""() => {
             const ids = ['refresh-cache-editor', 'refresh-cache-list',
-                'new-refresh-cache-task', 'refresh-move-tasks'];
+                'new-refresh-cache-task', 'refresh-move-tasks', 'task-debug-mode'];
             document.body.replaceChildren(...ids.map(id => document.getElementById(id)));
             document.body.style.padding = '16px';
         }""")
@@ -275,7 +280,10 @@ def refresh_page() -> Iterator[Any]:
                     backend.requests.push({path, method, body});
                     if (path === '/v1/coordinate-resources') return {regions: [
                         {id: 'stock', name: '主仓选区'}, {id: 'reserve', name: '备用仓选区'}
-                    ], catalog: {}};
+                    ], categoryZones: [{id: 'category', name: '分类仓库'}], catalog: {
+                        folders: [{id: 'warehouse-folder', name: '仓库资源'}],
+                        placements: {'category-zone:category': 'warehouse-folder'}
+                    }};
                     const scheduled = backend.schedules[backend.tasks[0].id];
                     let taskId;
                     if (method === 'POST' && /\/(start|stop)$/.test(path)) {
@@ -303,7 +311,7 @@ def refresh_page() -> Iterator[Any]:
             };
         """)
         for name in ("resource-picker.js", "settings-ui.js", "task-select-ui.js",
-                     "task-autosave.js", "refresh-cache-ui.js"):
+                     "task-debug-mode.js", "task-autosave.js", "refresh-cache-ui.js"):
             page.add_script_tag(content=(WEB / name).read_text(encoding="utf-8"))
         page.evaluate("async () => {for (const handler of backend.handlers) await handler();}")
         yield page
@@ -311,6 +319,8 @@ def refresh_page() -> Iterator[Any]:
 
 
 def settle_refresh(page: Any) -> None:
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame("
+                  "() => requestAnimationFrame(resolve)))")
     page.wait_for_function("document.getAnimations().length === 0")
 
 
@@ -327,6 +337,7 @@ def select_refresh_mode(page: Any, name: str) -> None:
     settle_refresh(page)
     page.wait_for_function("document.querySelector('#refresh-cache-message').textContent"
                            " === '已自动保存'")
+    settle_refresh(page)
 
 
 @pytest.mark.parametrize("theme,width", [
@@ -422,10 +433,12 @@ def test_refresh_schedule_drafts_survive_strategy_changes(refresh_page: Any) -> 
     select_refresh_mode(page, "每天固定时间")
     page.locator("#refresh-daily-time").fill("06:15")
     page.wait_for_function("backend.schedules['refresh/1'].time === '06:15'")
+    settle_refresh(page)
     select_refresh_mode(page, "每隔指定时长")
     assert page.locator("#refresh-daily-field").evaluate("node => node.hidden && node.inert")
     page.locator("#refresh-interval").fill("3")
     page.wait_for_function("backend.schedules['refresh/1'].intervalMinutes === 180")
+    settle_refresh(page)
     select_refresh_mode(page, "仅手动")
     assert page.locator("#refresh-interval-field").evaluate("node => node.hidden && node.inert")
     assert page.locator("#refresh-interval").is_disabled()
@@ -444,16 +457,17 @@ def test_refresh_dropdown_keyboard_and_upward_placement(refresh_page: Any) -> No
     target = page.locator("#refresh-cache-target + .task-select-trigger")
     target.press("ArrowDown")
     menu = page.locator(".task-select-menu:not([hidden])")
-    assert menu.get_by_role("option").count() == 2
+    assert menu.get_by_role("option").count() == 3
     assert "选择普通区域" not in menu.inner_text()
     assert menu.evaluate("node => getComputedStyle(node).rowGap") == "6px"
-    menu.get_by_role("option").first.press("End")
-    menu.get_by_role("option").last.press("Enter")
+    menu.get_by_role("option", name="区域 · 备用仓选区").press("Enter")
     assert target.evaluate("node => node === document.activeElement")
     page.wait_for_function("backend.tasks[0].steps[0].parameters.targetRef === 'region:reserve'")
+    settle_refresh(page)
     page.set_viewport_size({"width": 800, "height": 420})
     mode = page.locator("#refresh-schedule-mode + .task-select-trigger")
     mode.evaluate("node => node.scrollIntoView({block: 'end'})")
+    settle_refresh(page)
     mode.press("ArrowDown")
     assert menu.get_attribute("data-placement") == "above"
     assert menu.get_by_role("option", selected=True).count() == 1
@@ -497,3 +511,93 @@ def test_refresh_run_failure_restores_switch_and_draft_stays_editable(refresh_pa
     assert draft.locator(".pickup-task-header input").is_disabled()
     assert page.locator("#refresh-cache-target").is_enabled()
     assert page.locator("#refresh-cache-target").input_value() == ""
+
+
+@pytest.mark.parametrize("theme,width", [
+    ("green", 1000), ("gray", 1000), ("green", 390), ("gray", 390)
+])
+def test_refresh_category_storage_selection_and_experiment_persist(
+    refresh_page: Any, theme: str, width: int
+) -> None:
+    page = refresh_page
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_refresh(page)
+    experiments = page.locator("#refresh-experiments-settings")
+    summary = page.locator("#refresh-experiments-toggle")
+    body = page.locator("#refresh-experiments-body")
+    switch = page.locator("#refresh-category-storage-only")
+    run = page.locator("#refresh-cache-list .pickup-task-header input")
+    assert experiments.evaluate("node => node.hidden && node.inert")
+    assert not switch.is_checked()
+
+    page.locator("#refresh-cache-target + .task-select-trigger").click()
+    menu = page.locator(".task-select-menu:not([hidden])")
+    assert "仓库资源" in menu.inner_text()
+    menu.get_by_role("option", name="分类区 · 分类仓库").click()
+    page.wait_for_function(
+        "backend.tasks[0].steps[0].parameters.targetRef === 'category-zone:category'"
+    )
+    assert run.is_disabled()
+    assert "请开启调试模式" in page.locator("#refresh-cache-target-note").inner_text()
+
+    page.locator("#task-debug-mode").check()
+    assert experiments.is_visible()
+    assert summary.get_attribute("aria-expanded") == "false"
+    assert body.evaluate("node => node.hidden && node.inert")
+    summary.click()
+    settle_refresh(page)
+    switch.check()
+    page.wait_for_function(
+        "backend.tasks[0].steps[0].parameters.categoryStorageOnlyEnabled === 'true'"
+    )
+    settle_refresh(page)
+    saved = page.evaluate("backend.tasks[0].steps[0].parameters")
+    assert saved["scanMarkers"] == saved["includeMarkersInInventory"] == "false"
+    assert run.is_enabled()
+    assert not run.is_checked()
+    assert "不打开识别区箱子" in page.locator("#refresh-cache-target-note").inner_text()
+    assert page.locator("#refresh-scan-markers, #refresh-include-markers").count() == 0
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    switch_bounds = switch.bounding_box()
+    row_bounds = switch.locator("xpath=..").bounding_box()
+    assert switch_bounds is not None
+    assert row_bounds is not None
+    assert (switch_bounds["width"], switch_bounds["height"]) == (56, 32)
+    assert switch_bounds["x"] + switch_bounds["width"] == (
+        row_bounds["x"] + row_bounds["width"]
+    )
+    screenshot = WEB.parents[3] / "build" / "reports" / "refresh-cache-ui"
+    screenshot.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(screenshot / f"category-{theme}-{width}.png"), full_page=True)
+
+    summary.click()
+    settle_refresh(page)
+    assert switch.is_checked()
+    writes = page.evaluate("backend.requests.filter(item => item.method !== 'GET').length")
+    page.locator("#task-debug-mode").uncheck()
+    assert experiments.evaluate("node => node.hidden && node.inert")
+    page.locator("#refresh-cache-list .pickup-task-expand").click()
+    settle_refresh(page)
+    badge = page.locator("#refresh-cache-list > article > p")
+    assert badge.is_visible()
+    assert "refresh-category-storage-only" in badge.inner_text()
+    open_refresh(page)
+    assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
+    assert switch.is_checked()
+    assert page.evaluate(
+        "backend.requests.filter(item => item.method !== 'GET').length"
+    ) == writes
+    assert page.evaluate("backend.requests.every(item => !/\\/(start|stop)$/.test(item.path))")
+
+    page.locator("#task-debug-mode").check()
+    assert summary.get_attribute("aria-expanded") == "false"
+    summary.click()
+    settle_refresh(page)
+    switch.uncheck()
+    page.wait_for_function(
+        "backend.tasks[0].steps[0].parameters.categoryStorageOnlyEnabled === 'false'"
+    )
+    assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
+    assert run.is_disabled()
+    assert badge.is_hidden()

@@ -12,6 +12,7 @@ public final class ContainerApproach {
     private final Deque<BlockPosition> entrances;
     private final boolean multipleEntrances;
     private final boolean avoidPickups;
+    private final boolean reusePosition;
     private BlockPosition navigating;
     private BlockPosition reached;
 
@@ -22,15 +23,30 @@ public final class ContainerApproach {
 
     public ContainerApproach(NavigationPort navigation, AreaBounds standingArea,
             Collection<BlockPosition> entrances, boolean avoidPickups) {
+        this(navigation, standingArea, entrances, avoidPickups, false);
+    }
+
+    public ContainerApproach(NavigationPort navigation, AreaBounds standingArea,
+            Collection<BlockPosition> entrances, boolean avoidPickups, boolean reusePosition) {
         this.navigation = navigation;
         this.standingArea = standingArea;
         this.entrances = new ArrayDeque<>(entrances);
         multipleEntrances = entrances.size() > 1;
         this.avoidPickups = avoidPickups;
+        this.reusePosition = reusePosition;
     }
 
     public NavigationStatus tick() {
         reached = null;
+        if (reusePosition) {
+            for (BlockPosition entrance : entrances) {
+                if (navigation.isWithinInteractionRange(entrance, null, avoidPickups)) {
+                    cancel();
+                    reached = entrance;
+                    return NavigationStatus.ARRIVED;
+                }
+            }
+        }
         if (multipleEntrances) {
             for (BlockPosition entrance : entrances) {
                 if (navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups)) {

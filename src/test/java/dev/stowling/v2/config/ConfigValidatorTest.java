@@ -26,6 +26,23 @@ import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
     @Test
+    void refreshValidatesNearbyRouteExecutionSwitch() {
+        var zone = categoryZone("Storage");
+        for (String enabled : List.of("true", "false")) {
+            var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                    Map.of("targetRef", "category-zone:" + zone.id(),
+                            "nearbyRouteEnabled", enabled));
+            assertDoesNotThrow(() -> ConfigValidator.requireValidStep(step, Map.of(), Map.of(),
+                    Map.of(zone.id(), zone)));
+        }
+        var invalid = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                Map.of("targetRef", "category-zone:" + zone.id(),
+                        "nearbyRouteEnabled", "invalid"));
+        assertThrows(IllegalArgumentException.class, () -> ConfigValidator.requireValidStep(
+                invalid, Map.of(), Map.of(), Map.of(zone.id(), zone)));
+    }
+
+    @Test
     void refreshAcceptsSafeHandExperimentForBothValuesAndRejectsInvalidValues() {
         var zone = categoryZone("Storage");
         for (String enabled : List.of("true", "false")) {

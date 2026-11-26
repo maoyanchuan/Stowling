@@ -4,6 +4,7 @@
     const moduleId = "REFRESH_CONTAINER_CACHE";
     const storageExperiment = "refresh-category-storage-only";
     const handExperiment = "refresh-reuse-safe-hand";
+    const routeExperiment = "refresh-nearby-route";
     const runLabels = Object.freeze({
         QUEUED: "排队中",
         RUNNING: "运行中",
@@ -36,7 +37,8 @@
             targetRef: parameters.targetRef || "",
             categoryStorageOnlyEnabled:
                 String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true",
-            reuseSafeHandEnabled: String(parameters.reuseSafeHandEnabled).toLowerCase() === "true"
+            reuseSafeHandEnabled: String(parameters.reuseSafeHandEnabled).toLowerCase() === "true",
+            nearbyRouteEnabled: String(parameters.nearbyRouteEnabled).toLowerCase() === "true"
         };
     }
 
@@ -51,6 +53,7 @@
                 [key, String(value)])),
             categoryStorageOnlyEnabled: String(Boolean(draft.categoryStorageOnlyEnabled)),
             reuseSafeHandEnabled: String(Boolean(draft.reuseSafeHandEnabled)),
+            nearbyRouteEnabled: String(Boolean(draft.nearbyRouteEnabled)),
             scanMarkers: "false",
             includeMarkersInInventory: "false"
         };
@@ -108,6 +111,7 @@
     const target = id("refresh-cache-target");
     const categoryStorage = Settings.switchControl(id("refresh-category-storage-only"));
     const reuseSafeHand = Settings.switchControl(id("refresh-reuse-safe-hand"));
+    const nearbyRoute = Settings.switchControl(id("refresh-nearby-route"));
     const experiments = id("refresh-experiments-settings");
     const experimentsToggle = id("refresh-experiments-toggle");
     const experimentsBody = id("refresh-experiments-body");
@@ -159,6 +163,7 @@
         const activeExperiments = [];
         if (categoryStorage.checked) activeExperiments.push("分类区仅刷新储存容器");
         if (reuseSafeHand.checked) activeExperiments.push("连续开箱复用安全槽位");
+        if (nearbyRoute.checked) activeExperiments.push("刷新时优先原地开箱与就近寻路");
         id("refresh-experiments-summary").textContent = activeExperiments.length
             ? "已开启：" + activeExperiments.join("、") : "未启用";
         id("refresh-cache-target-note").textContent = layout && !categoryStorage.checked
@@ -203,6 +208,8 @@
             const active = [];
             if (enabled) active.push("分类区仅刷新储存容器（" + storageExperiment + "）");
             if (reuseHand) active.push("连续开箱复用安全槽位（" + handExperiment + "）");
+            const route = selected ? nearbyRoute.checked : taskSettings.nearbyRouteEnabled;
+            if (route) active.push("刷新时优先原地开箱与就近寻路（" + routeExperiment + "）");
             experimentStatus.hidden = !active.length;
             experimentStatus.textContent = active.length ? "已开启：" + active.join("、") : "";
             disclose(button, body, selected && current.expanded);
@@ -318,6 +325,7 @@
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
         categoryStorage.checked = draft.categoryStorageOnlyEnabled;
         reuseSafeHand.checked = draft.reuseSafeHandEnabled;
+        nearbyRoute.checked = draft.nearbyRouteEnabled;
         mode.value = schedule?.mode || "MANUAL";
         time.value = schedule?.time || "04:00";
         const minutes = schedule?.intervalMinutes || 60;
@@ -452,7 +460,8 @@
                         kinds: Object.fromEntries(kinds.map((input) =>
                             [input.dataset.refreshKind, input.checked])),
                         categoryStorageOnlyEnabled: categoryStorage.checked,
-                        reuseSafeHandEnabled: reuseSafeHand.checked
+                        reuseSafeHandEnabled: reuseSafeHand.checked,
+                        nearbyRouteEnabled: nearbyRoute.checked
                     })
                 }]
             };

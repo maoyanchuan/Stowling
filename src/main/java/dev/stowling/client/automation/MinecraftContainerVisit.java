@@ -31,6 +31,7 @@ final class MinecraftContainerVisit {
     private int visitTicks;
     private final MinecraftContainerOpenHand hand;
     private final boolean restoreHandOnOpen;
+    private final boolean reusePosition;
 
     MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target) {
         this(minecraft, navigation, target, true);
@@ -50,6 +51,17 @@ final class MinecraftContainerVisit {
     private MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation,
             ContainerTarget target, boolean avoidPickups, MinecraftContainerOpenHand hand,
             boolean restoreHandOnOpen) {
+        this(minecraft, navigation, target, avoidPickups, hand, restoreHandOnOpen, false);
+    }
+
+    MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation, ContainerTarget target,
+            MinecraftContainerOpenHand hand, boolean retainHand, boolean reusePosition) {
+        this(minecraft, navigation, target, true, hand, !retainHand, reusePosition);
+    }
+
+    private MinecraftContainerVisit(Minecraft minecraft, NavigationPort navigation,
+            ContainerTarget target, boolean avoidPickups, MinecraftContainerOpenHand hand,
+            boolean restoreHandOnOpen, boolean reusePosition) {
         this.minecraft = minecraft;
         this.navigation = dev.stowling.v2.runtime.TaskTracePorts.wrap(NavigationPort.class,
                 navigation);
@@ -57,9 +69,10 @@ final class MinecraftContainerVisit {
         this.avoidPickups = avoidPickups;
         this.hand = hand;
         this.restoreHandOnOpen = restoreHandOnOpen;
+        this.reusePosition = reusePosition;
         entrances = new ArrayList<>(target.entrances());
         approach = new ContainerApproach(this.navigation, target.standingArea(), entrances,
-                avoidPickups);
+                avoidPickups, reusePosition);
     }
 
     TaskModuleResult tick() {
@@ -86,7 +99,7 @@ final class MinecraftContainerVisit {
             }
             openTicks = 0;
             approach = new ContainerApproach(navigation, target.standingArea(), entrances,
-                    avoidPickups);
+                    avoidPickups, reusePosition);
             openRequested = null;
         }
         if (minecraft.gui.screen() != null) {

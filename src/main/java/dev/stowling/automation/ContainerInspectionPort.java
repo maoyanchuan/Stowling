@@ -8,6 +8,11 @@ public interface ContainerInspectionPort {
         return this;
     }
 
+    /** Explicit task-owned options; ordinary inspections retain their existing policy. */
+    default ContainerInspectionPort openReadSession(boolean reuseSafeHand, boolean reusePosition) {
+        return reuseSafeHand ? openReadSession() : this;
+    }
+
     ContainerInspectionResult startInspection(ContainerTarget target);
 
     ContainerInspectionResult pollInspection();

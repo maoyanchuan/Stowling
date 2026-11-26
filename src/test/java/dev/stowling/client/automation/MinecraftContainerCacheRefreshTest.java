@@ -45,6 +45,104 @@ class MinecraftContainerCacheRefreshTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
+    void nearbyRouteCollectsLoadedSlicesThenPrioritizesReachableNeighbors(boolean enabled) {
+        var world = new World();
+        world.loadAll = true;
+        world.reachable = Set.of(LAST);
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, false, enabled);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        assertEquals(enabled ? 2 : 1, world.scanned.size());
+        assertEquals(enabled ? List.of() : List.of(FIRST), inspection.opened);
+        assertEquals(TaskModuleState.FAILED, finish(refresh).state());
+        var used = enabled ? inspection.session : inspection;
+        assertEquals(enabled ? List.of(LAST, FIRST, BLOCKED) : List.of(FIRST, BLOCKED, LAST),
+                used.opened);
+        assertEquals(enabled ? 1 : 0, inspection.sessions);
+        assertFalse(inspection.retainHand);
+        assertEquals(enabled, inspection.reusePosition);
+    }
+
+    @Test
+    void nearbyRouteUsesDoubleChestPartnerAndStandingAreaDistance() {
+        var far = new ContainerTarget(new BlockPosition(100, 64, 0), "minecraft:chest",
+                STANDING, null, PARTNER);
+        var near = new ContainerTarget(LAST, "minecraft:chest",
+                new AreaBounds(100, 64, 0, 100, 64, 0));
+        assertEquals(far, ContainerCacheRefreshPlan.next(List.of(near, far), FIRST,
+                PARTNER::equals));
+        assertEquals(far, ContainerCacheRefreshPlan.next(List.of(near, far), FIRST,
+                point -> false));
+    }
+
+    @Test
+    void nearbyRouteReevaluatesReachAfterEachRead() {
+        var world = new World();
+        world.loadAll = true;
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, true, true);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        refresh.tick();
+        assertEquals(List.of(FIRST), inspection.session.opened);
+        refresh.tick();
+        world.reachable = Set.of(LAST);
+        refresh.tick();
+        assertEquals(List.of(FIRST, LAST), inspection.session.opened);
+        assertTrue(inspection.retainHand);
+        refresh.requestStop();
+        refresh.tick();
+        assertEquals(1, inspection.session.canceled);
+        assertTrue(world.travel.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void nearbyRouteSessionClosesOnStopOrDisconnectWithoutOpeningMore(boolean disconnect) {
+        var world = new World();
+        world.loadAll = true;
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, false, true);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        refresh.tick();
+        if (disconnect) world.available = false;
+        else refresh.requestStop();
+        assertEquals(disconnect ? TaskModuleState.FAILED : TaskModuleState.SUCCEEDED,
+                refresh.tick().state());
+        assertEquals(List.of(FIRST), inspection.session.opened);
+        assertEquals(1, inspection.session.canceled);
+        refresh.cancel();
+        assertEquals(1, inspection.session.canceled);
+    }
+
+    @Test
+    void nearbyRouteWaitsForTheCacheBeforeOpeningAnotherContainer() {
+        var world = new World();
+        world.loadAll = true;
+        world.memory = "before";
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, false, true);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        refresh.tick();
+        assertEquals(TaskModuleState.WAITING, refresh.tick().state());
+        assertEquals(TaskModuleState.WAITING, refresh.tick().state());
+        assertEquals(List.of(FIRST), inspection.session.opened);
+        world.memory = "after";
+        refresh.tick();
+        refresh.tick();
+        assertEquals(List.of(FIRST, BLOCKED), inspection.session.opened);
+        refresh.cancel();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     void refreshUsesAnIsolatedReadSessionOnlyWhenEnabledAndReleasesItAfterFailures(boolean enabled) {
         var world = new World();
         var inspection = new Inspection();
@@ -162,7 +260,8 @@ class MinecraftContainerCacheRefreshTest {
         var cache = new MarkerCache();
         var refresh = categoryRefresh(world, inspection, cache,
                 Map.of("categoryStorageOnlyEnabled", Boolean.toString(enabled),
-                        "markerOnly", "true", "reuseSafeHandEnabled", "true"));
+                        "markerOnly", "true", "reuseSafeHandEnabled", "true",
+                        "nearbyRouteEnabled", "true"));
         assertEquals(TaskModuleState.RUNNING, refresh.start().state());
         assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
         assertEquals(List.of(MARKER), inspection.opened);
@@ -268,6 +367,11 @@ class MinecraftContainerCacheRefreshTest {
 
     private static MinecraftContainerCacheRefresh refresh(World world, Inspection inspection,
             boolean enabled, boolean reuseHand) {
+        return refresh(world, inspection, enabled, reuseHand, false);
+    }
+
+    private static MinecraftContainerCacheRefresh refresh(World world, Inspection inspection,
+            boolean enabled, boolean reuseHand, boolean nearbyRoute) {
         UUID regionId = UUID.randomUUID();
         var region = new RegionDefinition(regionId, "Test", 15, 64, 0, 18, 64, 0);
         var ports = TaskModuleRuntimeRegistry.unavailablePorts(world);
@@ -277,7 +381,8 @@ class MinecraftContainerCacheRefreshTest {
                 Map.of(regionId, region), Map.of(), new TaskRunWorkspace());
         var settings = ContainerCacheRefresh.from(Map.of("targetRef", "region:" + regionId,
                 "categoryStorageOnlyEnabled", Boolean.toString(enabled),
-                "reuseSafeHandEnabled", Boolean.toString(reuseHand)));
+                "reuseSafeHandEnabled", Boolean.toString(reuseHand),
+                "nearbyRouteEnabled", Boolean.toString(nearbyRoute)));
         return new MinecraftContainerCacheRefresh(context, settings, world);
     }
 
@@ -288,6 +393,8 @@ class MinecraftContainerCacheRefreshTest {
         private List<ContainerTarget> scanTargets;
         private boolean loadAll;
         private boolean available = true;
+        private Set<BlockPosition> reachable = Set.of();
+        private Object memory;
         private int stopCount;
 
         @Override
@@ -298,6 +405,11 @@ class MinecraftContainerCacheRefreshTest {
         @Override
         public BlockPosition position() {
             return FIRST;
+        }
+
+        @Override
+        public boolean inReach(BlockPosition target) {
+            return reachable.contains(target);
         }
 
         @Override
@@ -322,7 +434,7 @@ class MinecraftContainerCacheRefreshTest {
 
         @Override
         public Object memoryStamp(ContainerTarget target) {
-            return null;
+            return memory;
         }
 
         @Override
@@ -349,6 +461,15 @@ class MinecraftContainerCacheRefreshTest {
         private int sessions;
         private Inspection session;
         private RuntimeException pollFailure;
+        private boolean retainHand;
+        private boolean reusePosition;
+
+        @Override
+        public ContainerInspectionPort openReadSession(boolean reuseHand, boolean reusePosition) {
+            this.retainHand = reuseHand;
+            this.reusePosition = reusePosition;
+            return openReadSession();
+        }
 
         @Override
         public ContainerInspectionPort openReadSession() {

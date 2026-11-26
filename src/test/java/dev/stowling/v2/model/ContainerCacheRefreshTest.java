@@ -10,6 +10,20 @@ import org.junit.jupiter.api.Test;
 
 class ContainerCacheRefreshTest {
     @Test
+    void nearbyRouteDefaultsOffAndNeverAppliesToInternalMarkerRefresh() {
+        String target = "category-zone:" + java.util.UUID.randomUUID();
+        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target)).nearbyRoute());
+        assertTrue(ContainerCacheRefresh.from(Map.of("targetRef", target,
+                "nearbyRouteEnabled", "true")).nearbyRoute());
+        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
+                "nearbyRouteEnabled", "false")).nearbyRoute());
+        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
+                "nearbyRouteEnabled", "true", "markerOnly", "true")).nearbyRoute());
+        assertThrows(IllegalArgumentException.class, () -> ContainerCacheRefresh.from(
+                Map.of("targetRef", target, "nearbyRouteEnabled", "invalid")));
+    }
+
+    @Test
     void readSessionDefaultsOffAndOnlyAppliesOutsideInternalMarkerRefresh() {
         String target = "category-zone:" + UUID.randomUUID();
         assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target)).reuseSafeHand());

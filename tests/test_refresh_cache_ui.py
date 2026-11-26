@@ -39,7 +39,10 @@ assert.equal(draft.categoryStorageOnlyEnabled, false);
 draft.categoryStorageOnlyEnabled = true;
 assert.equal(draft.reuseSafeHandEnabled, false);
 draft.reuseSafeHandEnabled = true;
+assert.equal(draft.nearbyRouteEnabled, false);
+draft.nearbyRouteEnabled = true;
 assert.deepEqual(model.settings(model.parameters(draft)), draft);
+assert.equal(model.settings({nearbyRouteEnabled: "false"}).nearbyRouteEnabled, false);
 assert.equal(model.settings({reuseSafeHandEnabled: "false"}).reuseSafeHandEnabled, false);
 assert.equal(model.parameters(draft).scanMarkers, "false");
 assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
@@ -609,15 +612,22 @@ def test_refresh_category_storage_selection_and_experiment_persist(
 @pytest.mark.parametrize("theme,width", [
     ("green", 1000), ("gray", 1000), ("green", 390), ("gray", 390)
 ])
-def test_refresh_safe_hand_switch_saves_and_survives_hidden_debug_menu(
-    refresh_page: Any, theme: str, width: int
+@pytest.mark.parametrize("control,field,label,experiment", [
+    ("refresh-reuse-safe-hand", "reuseSafeHandEnabled", "连续开箱复用安全槽位",
+     "refresh-reuse-safe-hand"),
+    ("refresh-nearby-route", "nearbyRouteEnabled", "刷新时优先原地开箱与就近寻路",
+     "refresh-nearby-route"),
+])
+def test_refresh_execution_switch_saves_and_survives_hidden_debug_menu(
+    refresh_page: Any, theme: str, width: int, control: str, field: str,
+    label: str, experiment: str
 ) -> None:
     page = refresh_page
     page.set_viewport_size({"width": width, "height": 1200})
     page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
     open_refresh(page)
     experiments = page.locator("#refresh-experiments-settings")
-    switch = page.locator("#refresh-reuse-safe-hand")
+    switch = page.locator("#" + control)
     summary = page.locator("#refresh-experiments-toggle")
     assert not switch.is_checked()
     page.locator("#task-debug-mode").check()
@@ -627,11 +637,13 @@ def test_refresh_safe_hand_switch_saves_and_survives_hidden_debug_menu(
     switch.focus()
     switch.press("Space")
     page.wait_for_function(
-        "backend.tasks[0].steps[0].parameters.reuseSafeHandEnabled === 'true'"
+        f"backend.tasks[0].steps[0].parameters.{field} === 'true'"
     )
     settle_refresh(page)
     assert not page.locator("#refresh-category-storage-only").is_checked()
-    assert "连续开箱复用安全槽位" in summary.inner_text()
+    other = "reuseSafeHandEnabled" if field == "nearbyRouteEnabled" else "nearbyRouteEnabled"
+    assert page.evaluate(f"backend.tasks[0].steps[0].parameters.{other}") == "false"
+    assert label in summary.inner_text()
     switch_bounds = switch.bounding_box()
     row_bounds = switch.locator("xpath=..").bounding_box()
     assert switch_bounds is not None and row_bounds is not None
@@ -640,7 +652,7 @@ def test_refresh_safe_hand_switch_saves_and_survives_hidden_debug_menu(
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     screenshot = WEB.parents[3] / "build" / "reports" / "refresh-cache-ui"
     screenshot.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(screenshot / f"safe-hand-{theme}-{width}.png"), full_page=True)
+    page.screenshot(path=str(screenshot / f"{control}-{theme}-{width}.png"), full_page=True)
 
     summary.click()
     settle_refresh(page)
@@ -651,7 +663,7 @@ def test_refresh_safe_hand_switch_saves_and_survives_hidden_debug_menu(
     settle_refresh(page)
     badge = page.locator("#refresh-cache-list > article > p")
     assert badge.is_visible()
-    assert "refresh-reuse-safe-hand" in badge.inner_text()
+    assert experiment in badge.inner_text()
     open_refresh(page)
     assert switch.is_checked()
     assert page.evaluate("backend.requests.filter(item => item.method !== 'GET').length") == writes
@@ -660,7 +672,7 @@ def test_refresh_safe_hand_switch_saves_and_survives_hidden_debug_menu(
     settle_refresh(page)
     switch.uncheck()
     page.wait_for_function(
-        "backend.tasks[0].steps[0].parameters.reuseSafeHandEnabled === 'false'"
+        f"backend.tasks[0].steps[0].parameters.{field} === 'false'"
     )
     assert badge.is_hidden()
     assert page.evaluate("backend.requests.every(item => !/\\/(start|stop)$/.test(item.path))")

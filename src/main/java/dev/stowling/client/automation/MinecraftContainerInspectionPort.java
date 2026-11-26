@@ -19,25 +19,33 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
     private final ClientActionScheduler scheduler;
     private final NavigationPort navigation;
     private final boolean retainHand;
+    private final boolean reusePosition;
     private MinecraftContainerOpenHand hand;
     private MinecraftContainerVisit active;
 
     public MinecraftContainerInspectionPort(Minecraft minecraft, ClientActionScheduler scheduler,
             NavigationPort navigation) {
-        this(minecraft, scheduler, navigation, false);
+        this(minecraft, scheduler, navigation, false, false);
     }
 
     private MinecraftContainerInspectionPort(Minecraft minecraft, ClientActionScheduler scheduler,
-            NavigationPort navigation, boolean retainHand) {
+            NavigationPort navigation, boolean retainHand, boolean reusePosition) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.navigation = Objects.requireNonNull(navigation, "navigation");
         this.retainHand = retainHand;
+        this.reusePosition = reusePosition;
     }
 
     @Override
     public ContainerInspectionPort openReadSession() {
-        return new MinecraftContainerInspectionPort(minecraft, scheduler, navigation, true);
+        return openReadSession(true, false);
+    }
+
+    @Override
+    public ContainerInspectionPort openReadSession(boolean reuseSafeHand, boolean reusePosition) {
+        return new MinecraftContainerInspectionPort(minecraft, scheduler, navigation,
+                reuseSafeHand, reusePosition);
     }
 
     @Override
@@ -49,8 +57,9 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
             return ContainerInspectionResult.failed("已有容器检查正在进行");
         }
         if (retainHand && hand == null) hand = new MinecraftContainerOpenHand(minecraft, true);
-        active = retainHand ? new MinecraftContainerVisit(minecraft, navigation, target, hand)
-                : new MinecraftContainerVisit(minecraft, navigation, target);
+        var visitHand = retainHand ? hand : new MinecraftContainerOpenHand(minecraft);
+        active = new MinecraftContainerVisit(minecraft, navigation, target, visitHand,
+                retainHand, reusePosition);
         return ContainerInspectionResult.pending("准备前往容器");
     }
 

@@ -176,6 +176,11 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         if (selected != null) {
             return confirmMemory();
         }
+        if (options.nearbyRoute()) {
+            var loaded = chunks.stream().filter(chunk -> world.chunkLoaded(
+                    ContainerCacheRefreshPlan.chunkCenter(chunk))).findFirst();
+            if (loaded.isPresent()) return scanChunk(loaded.get());
+        }
         if (!containers.isEmpty()) {
             return openNext();
         }
@@ -187,16 +192,30 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
     private TaskModuleResult scanNextChunk() {
         RegionDefinition chunk = chunks.getFirst();
+        if (options.nearbyRoute() && travelTarget == null) {
+            var player = world.position();
+            chunk = chunks.stream().min(Comparator.comparingDouble(candidate -> {
+                var point = ContainerCacheRefreshPlan.chunkCenter(candidate);
+                return Math.hypot((double) point.x() - player.x(),
+                        (double) point.z() - player.z());
+            })).orElseThrow();
+            chunks.remove(chunk);
+            chunks.addFirst(chunk);
+        }
         BlockPosition center = ContainerCacheRefreshPlan.chunkCenter(chunk);
         if (!world.chunkLoaded(center)) {
             return loadChunk(center);
         }
+        return scanChunk(chunk);
+    }
+
+    private TaskModuleResult scanChunk(RegionDefinition chunk) {
         stopTravel();
-        chunks.removeFirst();
+        chunks.remove(chunk);
         var scan = world.scan(chunk, options);
         if (!scan.succeeded()) {
             missingChunks = true;
-            reportFailure(center, scan.message());
+            reportFailure(ContainerCacheRefreshPlan.chunkCenter(chunk), scan.message());
         } else {
             for (ContainerTarget target : scan.containers()) {
                 collectTarget(target);
@@ -261,7 +280,14 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private TaskModuleResult openNext() {
-        selected = containers.removeFirst();
+        if (options.nearbyRoute()) {
+            selected = ContainerCacheRefreshPlan.next(containers, world.position(), world::inReach);
+            containers.remove(selected);
+            TaskTrace.event("DECISION", "refresh.nearbyRoute", "target=" + selected.position()
+                    + "; pending=" + containers.size(), 0, false);
+        } else {
+            selected = containers.removeFirst();
+        }
         boolean storage = touches(selected, storageAreas);
         markerOnlyTarget = !storage && touches(selected, markerAreas);
         needsInventory = !options.markerOnly()
@@ -272,10 +298,12 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private ContainerInspectionPort inspections() {
-        if (!options.reuseSafeHand()) return context.containerInspections();
+        if (!options.reuseSafeHand() && !options.nearbyRoute()) return context.containerInspections();
         if (readSession == null) {
             readSession = dev.stowling.v2.runtime.TaskTracePorts.wrap(ContainerInspectionPort.class,
-                    context.containerInspections().openReadSession());
+                    options.nearbyRoute() ? context.containerInspections().openReadSession(
+                            options.reuseSafeHand(), true)
+                            : context.containerInspections().openReadSession());
         }
         return readSession;
     }
@@ -414,6 +442,8 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
         BlockPosition position();
 
+        boolean inReach(BlockPosition target);
+
         String scope();
 
         boolean chunkLoaded(BlockPosition center);
@@ -435,6 +465,12 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         public BlockPosition position() {
             var point = minecraft.player.blockPosition();
             return new BlockPosition(point.getX(), point.getY(), point.getZ());
+        }
+
+        @Override
+        public boolean inReach(BlockPosition target) {
+            return minecraft.player.isWithinBlockInteractionRange(
+                    new BlockPos(target.x(), target.y(), target.z()), 0.0D);
         }
 
         @Override

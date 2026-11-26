@@ -30,6 +30,7 @@ dependencies {
     include "org.xerial:sqlite-jdbc:3.54.1.0"
 
     compileOnly files('libs/baritone-api-fabric-1.19.0.jar')
+    testImplementation files('libs/baritone-api-fabric-1.19.0.jar')
     implementation 'maven.modrinth:chest-tracker-port:2.8.4+26.2'
 
     testImplementation "com.google.code.gson:gson:2.13.2"

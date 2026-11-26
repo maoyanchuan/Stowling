@@ -11,6 +11,7 @@ import dev.stowling.automation.NavigationPort;
 import dev.stowling.automation.NavigationStatus;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.schedule.StopOutcome;
+import dev.stowling.v2.category.ContainerContentsCategoryRule;
 import dev.stowling.v2.config.ConfigStore;
 import dev.stowling.v2.config.ConfigValidator;
 import dev.stowling.v2.config.V2RevisionConflictException;
@@ -34,7 +35,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-
+class V2ControlServiceImplTest {
     @Test
     void classificationResponsesAndEditsUseTheBaselineWithoutRetiredExecutionSwitches() {
         Path path = directory.resolve("classification-mainline.json");
@@ -461,8 +462,10 @@ import org.junit.jupiter.api.io.TempDir;
                 original.defaultInterruptionFlow(), original.requeueAfterInterruption(),
                 original.folderId()));
         assertEquals(policy, updated.tasks().getFirst().cleanupPolicy());
-        assertThrows(V2ValidationException.class, () -> service.deleteCoordinate(destination.id(),
-                new RevisionRequest(updated.revision())));
+        var blocked = assertThrows(CoordinateInUseException.class,
+                () -> service.deleteCoordinate(destination.id(),
+                        new RevisionRequest(updated.revision())));
+        assertTrue(blocked.taskNames().contains("Gather"));
     }
 
     @TempDir
@@ -665,7 +668,7 @@ import org.junit.jupiter.api.io.TempDir;
                                 34,
                                 64,
                                 18,
-                                "CONTAINER_CONTENTS",
+                                ContainerContentsCategoryRule.ID,
                                 List.of(),
                                 List.of()
                         ))
@@ -687,12 +690,13 @@ import org.junit.jupiter.api.io.TempDir;
                                 44,
                                 64,
                                 18,
-                                "CONTAINER_CONTENTS",
+                                ContainerContentsCategoryRule.ID,
                                 List.of(),
                                 List.of()
                         ))
                 )
-        ).categoryZones().getFirst();
+        ).categoryZones().stream().filter(item -> "Container classification".equals(item.name()))
+                .findFirst().orElseThrow();
 
         var overflowId = UUID.randomUUID();
         service.editCoordinateDirectory(service.coordinateDirectory().revision(), catalog ->
@@ -1009,7 +1013,7 @@ import org.junit.jupiter.api.io.TempDir;
                         new RevisionRequest(created.revision())
                 )
         );
-        assertEquals(List.of("Pickup trigger"), exception.taskNames());
+        assertEquals(List.of("Pickup", "Pickup trigger"), exception.taskNames());
     }
 
     @Test

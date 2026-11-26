@@ -7,12 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.ItemIdentity;
 import java.util.List;
-import net.minecraft.SharedConstants;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.Bootstrap;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -22,19 +20,18 @@ import org.junit.jupiter.api.Test;
 class MinecraftRecoveredBoxIdentityTest {
     @BeforeAll
     static void initializeRegistries() {
-        SharedConstants.tryDetectVersion();
-        Bootstrap.bootStrap();
+        MinecraftTestBootstrap.initialize();
     }
 
     @Test
     void emptyContainerEncodingDoesNotHideAnOtherwiseIdenticalRecoveredBox() {
-        ItemStack expected = new ItemStack(Items.BLUE_SHULKER_BOX);
+        ItemStack expected = new ItemStack(Items.DYED_SHULKER_BOX.blue());
         expected.set(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
-        ItemStack actual = new ItemStack(Items.BLUE_SHULKER_BOX);
+        ItemStack actual = new ItemStack(Items.DYED_SHULKER_BOX.blue());
 
         assertTrue(MinecraftItemIdentity.sameRecoveredBox(expected, actual));
         assertFalse(MinecraftItemIdentity.sameRecoveredBox(expected,
-                new ItemStack(Items.RED_SHULKER_BOX)));
+                new ItemStack(Items.DYED_SHULKER_BOX.red())));
         assertEquals(MinecraftItemIdentity.key(expected), MinecraftItemIdentity.key(actual));
     }
 
@@ -107,7 +104,7 @@ class MinecraftRecoveredBoxIdentityTest {
     }
 
     private static ItemStack box(List<ItemStack> contents) {
-        ItemStack box = new ItemStack(Items.BLUE_SHULKER_BOX);
+        ItemStack box = new ItemStack(Items.DYED_SHULKER_BOX.blue());
         box.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(contents));
         return box;
     }

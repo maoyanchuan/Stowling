@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-
+class EmptyBoxSupplyPlanTest {
     @Test
     void aReturnBatchIncludesAllOwnedEmptyColorsAndRespectsTheRemainingCacheQuota() {
         String plain = "minecraft:shulker_box#plain";

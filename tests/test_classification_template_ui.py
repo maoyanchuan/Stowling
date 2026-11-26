@@ -106,6 +106,11 @@ def open_settings(page: Any) -> None:
     settle(page)
 
 
+def set_robot_warehouse(page: Any, enabled: bool) -> None:
+    if page.locator("#robot-warehouse-enabled").is_checked() != enabled:
+        page.locator('label[for="robot-warehouse-enabled"]').click()
+
+
 @pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
 def test_total_overflow_packing_saves_and_survives_hidden_debug_and_collapsed_task(
     classification_page: Any, theme: str, width: int,
@@ -282,7 +287,7 @@ def test_warehouse_switch_and_disclosure_keep_the_selected_resource(classificati
     open_settings(page)
     page.locator("#auto-overflow-toggle").click()
     settle(page)
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     assert page.locator("#robot-warehouse-body").is_hidden()
     page.locator("#robot-warehouse-toggle").click()
     settle(page)
@@ -315,7 +320,7 @@ def test_remainder_pickers_have_no_create_link_and_warehouse_control_fits_its_ro
     open_settings(page)
     page.locator("#auto-overflow-toggle").click()
     settle(page)
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     page.locator("#robot-warehouse-toggle").click()
     settle(page)
     host = page.locator("#auto-remainder-settings")
@@ -337,7 +342,7 @@ def test_robot_warehouse_region_and_box_mode_survive_disabling_and_reload(
     open_settings(page)
     page.locator("#auto-overflow-toggle").click()
     settle(page)
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     page.locator("#robot-warehouse-toggle").click()
     settle(page)
     row = page.locator("#robot-warehouse-location-field")
@@ -348,12 +353,12 @@ def test_robot_warehouse_region_and_box_mode_survive_disabling_and_reload(
     assert mode.is_checked()
     mode.uncheck()
     page.wait_for_function("backend.item.robotWarehouseMixedBoxes === false")
-    page.locator("#robot-warehouse-enabled").uncheck()
+    set_robot_warehouse(page, False)
     page.wait_for_function("backend.item.overflowEnabled === false")
     assert page.evaluate("backend.item.overflowDestinationRef") == "region:reserve"
     page.locator("#refresh-move-tasks").click()
     page.wait_for_function("document.querySelector('#robot-warehouse-enabled').disabled === false")
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     page.locator("#robot-warehouse-toggle").click()
     settle(page)
     assert not mode.is_checked()
@@ -376,7 +381,7 @@ def test_closed_robot_submenu_keeps_one_rounded_hover_background(
     open_settings(page)
     page.locator("#auto-overflow-toggle").click()
     settle(page)
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     toggle = page.locator("#robot-warehouse-toggle")
     toggle.click()
     settle(page)
@@ -406,6 +411,8 @@ def test_closed_robot_submenu_keeps_one_rounded_hover_background(
 def test_remainder_destinations_save_and_keep_drafts_when_disabled(classification_page: Any) -> None:
     page = classification_page
     open_settings(page)
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
     enabled = page.locator("#auto-unclassifiable-enabled")
     enabled.check()
     settle(page)
@@ -427,6 +434,58 @@ def test_remainder_destinations_save_and_keep_drafts_when_disabled(classificatio
     settle(page)
     assert enabled.is_checked()
     assert page.locator("#auto-unclassifiable-location").is_hidden()
+    assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == []
+
+
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_overflow_groups_all_remainders_and_summarizes_the_saved_execution_order(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    section = page.locator("#auto-overflow-settings")
+    summary = page.locator("#auto-overflow-toggle")
+    assert page.locator("#auto-remainder-settings > #auto-unclassifiable-settings").count() == 0
+    assert section.locator("#auto-unclassifiable-settings").count() == 1
+    assert section.locator("#auto-overflow-storage-settings").count() == 1
+    assert section.locator("#robot-warehouse-settings").count() == 1
+    assert section.evaluate("""node => [...node.querySelectorAll(
+        'section.settings-option, #robot-warehouse-settings')].map(item => item.id)""") == [
+        "auto-unclassifiable-settings", "auto-overflow-storage-settings", "robot-warehouse-settings",
+    ]
+    enabled = page.locator("#auto-unclassifiable-enabled")
+    assert enabled.is_hidden()
+    summary.press("Space")
+    settle(page)
+    enabled.check()
+    settle(page)
+    row = page.locator(".move-field:has(#auto-unclassifiable-location)")
+    row.locator(".task-select-trigger").click()
+    page.get_by_role("option", name="备用缓存").click()
+    page.wait_for_function("backend.item.remainderPolicy?.unclassifiableEnabled === true")
+    assert "仅不可分类" in summary.inner_text()
+    set_robot_warehouse(page, True)
+    page.wait_for_function("backend.item.overflowEnabled === true")
+    page.locator("#auto-overflow-storage-enabled").check()
+    settle(page)
+    total = page.locator(".move-field:has(#auto-overflow-storage-location)")
+    total.locator(".task-select-trigger").click()
+    page.get_by_role("option", name="备用缓存").click()
+    page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === true")
+    assert "不可分类 → 机器人仓库 → 总溢出" in summary.inner_text()
+    summary.press("Space")
+    settle(page)
+    assert enabled.is_hidden() and enabled.is_checked()
+    assert page.locator("#robot-warehouse-enabled").is_checked()
+    assert page.locator("#auto-overflow-storage-enabled").is_checked()
+    assert page.locator("#auto-unclassifiable-location").input_value() == "region:reserve"
+    assert "不可分类 → 机器人仓库 → 总溢出" in summary.inner_text()
+    summary.press("Space")
+    settle(page)
+    assert enabled.is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == []
 
 
@@ -454,7 +513,7 @@ def test_overflow_contains_robot_and_keeps_independent_switches_and_keyboard_sel
         "backend.item.remainderPolicy?.overflowDestinationRef === 'region:reserve'"
     )
     assert not page.locator("#robot-warehouse-enabled").is_checked()
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     page.wait_for_function("backend.item.overflowEnabled === true")
     page.locator("#auto-overflow-toggle").click()
     settle(page)
@@ -494,7 +553,7 @@ def test_total_overflow_precedes_robot_in_ui_and_warehouse_first_is_the_baseline
     page.get_by_role("option", name="备用缓存").click()
     page.wait_for_function("backend.item.remainderPolicy?.overflowEnabled === true")
     assert "仅总溢出" in summary.inner_text()
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     page.wait_for_function("backend.item.overflowEnabled === true")
     assert "机器人仓库 → 总溢出" in summary.inner_text()
     assert "机器人仓库未能存入的余量" in total.inner_text()
@@ -511,7 +570,7 @@ def test_total_overflow_precedes_robot_in_ui_and_warehouse_first_is_the_baseline
         document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
     }""")
     assert page.locator("#auto-robot-warehouse-first-status").count() == 0
-    page.locator("#robot-warehouse-enabled").uncheck()
+    set_robot_warehouse(page, False)
     page.wait_for_function("backend.item.overflowEnabled === false")
     assert page.evaluate("Object.hasOwn(backend.item.remainderPolicy,"
                          "'robotWarehouseFirstEnabled')") is False
@@ -519,7 +578,7 @@ def test_total_overflow_precedes_robot_in_ui_and_warehouse_first_is_the_baseline
     page.locator("#auto-overflow-storage-enabled").uncheck()
     page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === false")
     assert "未启用" in summary.inner_text()
-    page.locator("#robot-warehouse-enabled").check()
+    set_robot_warehouse(page, True)
     page.wait_for_function("backend.item.overflowEnabled === true")
     assert "仅机器人仓库" in summary.inner_text()
 

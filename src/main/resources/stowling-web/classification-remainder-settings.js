@@ -27,11 +27,11 @@
             "未匹配任何目标分类区的物品，送往所选位置。");
         const overflow = destinationSetting("overflow-storage", "总溢出", "");
         const body = S.element("div");
-        body.append(overflow.root, robot);
+        body.append(unclassifiable.root, overflow.root, robot);
         const section = Settings.disclosure("溢出处理", "", body);
         section.root.id = "auto-overflow-settings";
         section.summary.id = "auto-overflow-toggle";
-        host.append(unclassifiable.root, section.root);
+        host.append(section.root);
         let context = {robotEnabled: false};
 
         /** @param {object} [options] @returns {void} */
@@ -46,6 +46,13 @@
                 : total ? "仅总溢出；未接收余量保留在来源。"
                     : robot ? "仅机器人仓库；按纯盒／杂盒方式入库。"
                         : "未启用；溢出物品保留在来源。";
+            if (unclassifiable.enabled.checked) {
+                const following = [robot ? "机器人仓库" : "", total ? "总溢出" : ""]
+                    .filter(Boolean);
+                section.description.textContent = following.length
+                    ? "执行顺序：不可分类 → " + following.join(" → ")
+                    : "仅不可分类；其他余物保留在来源。";
+            }
             overflow.root.querySelector(".settings-description").textContent = robot
                 ? "接收机器人仓库未能存入的余量；放不下的物品保留在来源。"
                 : "所有对应分类目标均已满时直接转存；未接收余量保留在来源。";

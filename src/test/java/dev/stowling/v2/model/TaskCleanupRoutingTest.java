@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.v2.config.ConfigValidator;
+import dev.stowling.automation.ContainerTarget;
+import dev.stowling.domain.BlockPosition;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -72,6 +74,25 @@ class TaskCleanupRoutingTest {
         assertFalse(routing.legacyOverflowEnabled());
         assertFalse(routing.mixedBoxes());
         assertTrue(routing.enabled());
+    }
+
+    @Test
+    void cleanupUsesPackingForEitherEntranceOfTheTotalOverflowChestOnlyWhenEnabled() {
+        var first = new BlockPosition(1, 64, 0);
+        var second = new BlockPosition(2, 64, 0);
+        var doubleChest = new ContainerTarget(first, "minecraft:chest", null, null, second);
+        var alias = new ContainerTarget(second, "minecraft:chest");
+        var separate = new ContainerTarget(new BlockPosition(8, 64, 0), "minecraft:chest");
+        for (boolean pack : List.of(false, true)) {
+            var routing = new TaskCleanupRouting(false, reference(ref("region")), null, true, pack);
+            assertEquals(pack, routing.packsContainer(doubleChest, List.of(alias)));
+            assertEquals(pack, routing.packsContainer(alias, List.of(doubleChest)));
+            assertFalse(routing.packsContainer(separate, List.of(doubleChest)));
+            assertFalse(routing.packsContainer(alias, List.of()));
+            assertEquals(routing, TaskCleanupRouting.fromParameters(routing.parameters()));
+        }
+        assertFalse(new TaskCleanupRouting(false, null, null, true, true)
+                .packsContainer(alias, List.of(doubleChest)));
     }
 
     private static AutoClassifyDefinition definition(boolean overflow, boolean robot,

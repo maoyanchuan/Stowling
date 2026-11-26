@@ -160,6 +160,7 @@ def test_total_overflow_packing_saves_and_survives_hidden_debug_and_collapsed_ta
     page.get_by_role("option", name="备用缓存").click()
     page.wait_for_function("backend.item.remainderPolicy?.overflowEnabled === true")
     assert page.evaluate("backend.item.remainderPolicy.overflowPackingEnabled") is True
+    assert "先续装已有未满盒" in page.locator("#auto-overflow-storage-settings").inner_text()
     assert "已启用" in indicator.inner_text()
     page.locator("#auto-overflow-storage-enabled").uncheck()
     page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === false")

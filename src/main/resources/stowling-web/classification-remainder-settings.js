@@ -49,6 +49,11 @@
             overflow.root.querySelector(".settings-description").textContent = robot
                 ? "接收机器人仓库未能存入的余量；放不下的物品保留在来源。"
                 : "所有对应分类目标均已满时直接转存；未接收余量保留在来源。";
+            if (total && context.packingEnabled) {
+                overflow.root.querySelector(".settings-description").textContent =
+                    "送入此位置的任务物品先续装已有未满盒，再使用空盒；"
+                    + "不可分类共用此位置时同样打包。";
+            }
         }
 
         /** @param {object} values @returns {void} */

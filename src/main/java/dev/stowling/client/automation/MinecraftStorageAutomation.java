@@ -344,7 +344,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
     @Override
     public TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
             ResourceReference cache, ResourceReference destination, String kind, boolean pack) {
-        if (pack && !dev.stowling.v2.model.ClassificationRemainderPolicy.OVERFLOW.equals(kind)) {
+        if (pack && !Set.of("OVERFLOW", "UNCLASSIFIABLE").contains(kind)) {
             throw new IllegalArgumentException("打包实验仅适用于总溢出");
         }
         return new Overflow(context, cache, pack, destination, kind);
@@ -3608,6 +3608,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     storeOverflowBox(0);
                     return;
                 }
+                if (packingToTotalOverflow() && !box.has(DataComponents.CUSTOM_NAME)
+                        && !MinecraftItemIdentity.full(box)) {
+                    Set<String> contents = MinecraftItemIdentity.contents(box)
+                            .nonEmptyItemCopyStream().map(MinecraftItemIdentity::key)
+                            .map(ItemIdentity::exact)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                    unpackOverflowBox(contents, true);
+                    return;
+                }
                 if (!mixedBoxes && ItemIdentity.MIXED_BOX_CATEGORY.equals(
                         MinecraftItemIdentity.boxCategory(box))) {
                     String category = MinecraftItemIdentity.contents(box).nonEmptyItemCopyStream()
@@ -3745,10 +3754,6 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void findReusableOverflowBox(int index) {
-            if (cleanupOnly && remainderKind != null) {
-                useOwnedOrEmptyBox();
-                return;
-            }
             if (index >= destinations.size()) {
                 useOwnedOrEmptyBox();
                 return;
@@ -3779,7 +3784,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     .map(stack -> new RobotWarehousePackingPlan.Box(MinecraftItemIdentity.key(stack),
                             boxSlots(stack))).toList();
             var selected = RobotWarehousePackingPlan.select(candidates, rawOwned(),
-                    inventoryStackSizes(), mixedBoxes);
+                    inventoryStackSizes(), mixedBoxes, packingToTotalOverflow());
             if (selected.isEmpty()) {
                 findReusableOverflowBox(following);
                 return;
@@ -3973,6 +3978,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                     candidates.putIfAbsent(MinecraftItemIdentity.key(stack), stack);
                 }
             }
+            if (cleanupOnly && packingToTotalOverflow()) {
+                eligibleItems = Set.copyOf(candidates.keySet());
+                after.run();
+                return;
+            }
             Map<String, List<ContainerTarget>> routes = new LinkedHashMap<>();
             Set<ContainerTarget> toCheck = new LinkedHashSet<>();
             boolean zoneRouting = dev.stowling.v2.model.UnstackableZoneRouting.KIND
@@ -4088,6 +4098,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             return MinecraftItemIdentity.contents(stack).nonEmptyItemCopyStream()
                     .map(MinecraftItemIdentity::key).allMatch(eligibleItems::contains);
+        }
+
+        private boolean packingToTotalOverflow() {
+            return boxedOnly && remainderKind != null;
         }
 
         private void drainVerifiedSource(List<ItemStack> contents) {
@@ -4248,6 +4262,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
     private final class Cleanup extends Session {
         private List<ContainerTarget> targets;
+        private List<ContainerTarget> packedOverflowTargets = List.of();
         private final TaskCleanupRouting routing;
         private final Deque<Supplier<TaskModuleExecutor>> fallbacks = new ArrayDeque<>();
         private String lastFailure = "";
@@ -4285,6 +4300,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             List<ContainerTarget> destinations = taskCleanupContainers(context, configuration);
+            if (routing.overflowPackingEnabled() && routing.overflowDestination() != null) {
+                packedOverflowTargets = robotWarehouseContainers(context,
+                        routing.overflowDestination());
+            }
             targets = destinations.stream()
                     .sorted(Comparator.comparingDouble(target -> distance(target.position())))
                     .toList();
@@ -4301,14 +4320,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (index >= targets.size()) {
                 Supplier<TaskModuleExecutor> next = fallbacks.pollFirst();
                 if (next != null) {
-                    TaskModuleExecutor fallback = next.get();
-                    steps.add(new Step(fallback, () -> depositAll(index), () -> {
-                        if (hasTemporaryResources(owner())) {
-                            throw new IllegalStateException("收尾溢出仍有未回收潜影盒，等待恢复");
-                        }
-                        lastFailure = fallback.tick().message();
-                        depositAll(index);
-                    }));
+                    settleWith(next.get(), index);
                     return;
                 }
                 throw new IllegalStateException("任务指定存放位置未能接收剩余 " + sum(owned())
@@ -4316,6 +4328,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         + (lastFailure.isEmpty() ? "" : "；最后一次失败：" + lastFailure));
             }
             ContainerTarget target = targets.get(index);
+            if (routing.packsContainer(target, packedOverflowTargets)) {
+                settleWith(new Overflow(context, null, true, routing.overflowDestination(),
+                        "OVERFLOW", true, true), index + 1);
+                return;
+            }
             Map<String, Integer> items = owned();
             if (target.entrances().stream()
                     .anyMatch(context.workspace().partialBoxStoragePositions()::contains)
@@ -4330,6 +4347,16 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         lastFailure = access.tick().message();
                         depositAll(index + 1);
                     }));
+        }
+
+        private void settleWith(TaskModuleExecutor action, int following) {
+            steps.add(new Step(action, () -> depositAll(following), () -> {
+                if (hasTemporaryResources(owner())) {
+                    throw new IllegalStateException("收尾溢出仍有未回收潜影盒，等待恢复");
+                }
+                lastFailure = action.tick().message();
+                depositAll(following);
+            }));
         }
     }
 

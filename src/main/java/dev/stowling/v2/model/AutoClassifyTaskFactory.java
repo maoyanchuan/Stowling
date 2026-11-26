@@ -110,7 +110,7 @@ public final class AutoClassifyTaskFactory {
         }
         var remainders = definition.remainderPolicy();
         if (remainders.unclassifiableEnabled()) {
-            classificationSteps.add(routeRemainder(definition.cacheLocationRef(),
+            classificationSteps.add(routeRemainder(definition,
                     remainders.unclassifiableDestinationRef(),
                     ClassificationRemainderPolicy.UNCLASSIFIABLE));
         }
@@ -158,23 +158,25 @@ public final class AutoClassifyTaskFactory {
             steps.add(robot);
         }
         if (remainders.overflowEnabled()) {
-            var total = routeRemainder(definition.cacheLocationRef(),
-                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW);
-            if (definition.kind() == Kind.CLASSIFICATION && remainders.overflowPackingEnabled()) {
-                Map<String, String> parameters = new LinkedHashMap<>(total.parameters());
-                parameters.put(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED, "true");
-                total = TaskStep.action(total.id(), total.moduleId(), parameters);
-            }
-            steps.add(total);
+            steps.add(routeRemainder(definition, remainders.overflowDestinationRef(),
+                    ClassificationRemainderPolicy.OVERFLOW));
         }
         return List.copyOf(steps);
     }
 
-    private static TaskStep routeRemainder(String source, String destination, String kind) {
-        return TaskStep.action(UUID.randomUUID(), ClassificationRemainderPolicy.MODULE,
-                Map.of(ConfigValidator.CACHE_LOCATION_REF, source,
-                        ConfigValidator.TARGET_REF, destination,
-                        ClassificationRemainderPolicy.KIND, kind));
+    private static TaskStep routeRemainder(AutoClassifyDefinition definition,
+            String destination, String kind) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put(ConfigValidator.CACHE_LOCATION_REF, definition.cacheLocationRef());
+        parameters.put(ConfigValidator.TARGET_REF, destination);
+        parameters.put(ClassificationRemainderPolicy.KIND, kind);
+        var policy = definition.remainderPolicy();
+        if (definition.kind() == Kind.CLASSIFICATION && policy.overflowEnabled()
+                && policy.overflowPackingEnabled()
+                && destination.equals(policy.overflowDestinationRef())) {
+            parameters.put(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED, "true");
+        }
+        return TaskStep.action(UUID.randomUUID(), ClassificationRemainderPolicy.MODULE, parameters);
     }
 
     public static List<TaskTriggerDefinition> triggers(

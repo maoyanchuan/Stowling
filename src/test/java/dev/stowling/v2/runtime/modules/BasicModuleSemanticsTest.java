@@ -405,6 +405,7 @@ class BasicModuleSemanticsTest {
     @Test
     void totalOverflowPassesTheExplicitPackingFlagToStorage() {
         List<Boolean> requests = new ArrayList<>();
+        List<String> kinds = new ArrayList<>();
         var destination = ResourceReference.parse("region:" + UUID.randomUUID());
         StorageAutomationPort storage = new StorageAutomationPort() {
             @Override
@@ -422,8 +423,8 @@ class BasicModuleSemanticsTest {
             public TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
                     ResourceReference cache, ResourceReference target, String kind, boolean pack) {
                 requests.add(pack);
+                kinds.add(kind);
                 assertEquals(destination, target);
-                assertEquals("OVERFLOW", kind);
                 return new TaskModuleExecutor() {
                     @Override
                     public TaskModuleResult start() {
@@ -448,17 +449,21 @@ class BasicModuleSemanticsTest {
                 base.containerInspections(), base.categoryMarkerCache(), base.foodConsumption(),
                 base.categoryZonesPort(), base.coordinates(), base.regions(), base.categoryZones(),
                 base.workspace(), base.inventory(), storage);
-        for (String value : List.of("absent", "false", "true")) {
-            var parameters = new java.util.LinkedHashMap<String, String>();
-            parameters.put(ConfigValidator.CACHE_LOCATION_REF, "region:" + UUID.randomUUID());
-            parameters.put(ConfigValidator.TARGET_REF, destination.encode());
-            parameters.put("remainderKind", "OVERFLOW");
-            if (!"absent".equals(value)) parameters.put("overflowPackingEnabled", value);
-            var action = OverflowItemsModule.create(context, TaskStep.action(UUID.randomUUID(),
-                    "ROUTE_CLASSIFICATION_REMAINDERS", parameters));
-            assertEquals(TaskModuleState.SUCCEEDED, action.start().state());
+        for (String kind : List.of("OVERFLOW", "UNCLASSIFIABLE")) {
+            for (String value : List.of("absent", "false", "true")) {
+                var parameters = new java.util.LinkedHashMap<String, String>();
+                parameters.put(ConfigValidator.CACHE_LOCATION_REF, "region:" + UUID.randomUUID());
+                parameters.put(ConfigValidator.TARGET_REF, destination.encode());
+                parameters.put("remainderKind", kind);
+                if (!"absent".equals(value)) parameters.put("overflowPackingEnabled", value);
+                var action = OverflowItemsModule.create(context, TaskStep.action(UUID.randomUUID(),
+                        "ROUTE_CLASSIFICATION_REMAINDERS", parameters));
+                assertEquals(TaskModuleState.SUCCEEDED, action.start().state());
+            }
         }
-        assertEquals(List.of(false, false, true), requests);
+        assertEquals(List.of(false, false, true, false, false, true), requests);
+        assertEquals(List.of("OVERFLOW", "OVERFLOW", "OVERFLOW",
+                "UNCLASSIFIABLE", "UNCLASSIFIABLE", "UNCLASSIFIABLE"), kinds);
     }
 
     @Test

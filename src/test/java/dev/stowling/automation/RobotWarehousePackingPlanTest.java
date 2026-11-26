@@ -13,6 +13,26 @@ import org.junit.jupiter.api.Test;
 
 class RobotWarehousePackingPlanTest {
     @Test
+    void totalOverflowFillsExistingStockBeforeUsingAnEmptyBoxEvenWhenItAcceptsLess() {
+        var empty = new Box("empty", List.of());
+        var partial = new Box("partial",
+                Collections.nCopies(27, new Slot("minecraft:stone", 63, 64)));
+        var incoming = Map.of("minecraft:stone", 64);
+        var sizes = Map.of("minecraft:stone", 64);
+        assertEquals("empty", RobotWarehousePackingPlan.select(List.of(empty, partial),
+                incoming, sizes, true).orElseThrow());
+        assertEquals("partial", RobotWarehousePackingPlan.select(List.of(empty, partial),
+                incoming, sizes, true, true).orElseThrow());
+        assertEquals(Map.of("minecraft:stone", 27), RobotWarehousePackingPlan.fitting(
+                partial.slots(), 27, incoming, sizes, true));
+        assertTrue(RobotWarehousePackingPlan.select(List.of(empty),
+                incoming, sizes, true, true).isEmpty());
+        var full = new Box("full", Collections.nCopies(27, new Slot("minecraft:stone", 64, 64)));
+        assertTrue(RobotWarehousePackingPlan.select(List.of(full, empty),
+                incoming, sizes, true, true).isEmpty());
+    }
+
+    @Test
     void cleanupKeepsMixedBoxesIntactOnlyWhenTheWarehouseAllowsThem() {
         var contents = List.of(new Slot("minecraft:stone", 64, 64),
                 new Slot("minecraft:dirt", 32, 64));

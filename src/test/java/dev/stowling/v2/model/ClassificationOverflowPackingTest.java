@@ -79,10 +79,65 @@ class ClassificationOverflowPackingTest {
         assertTrue(snapshot.overflowPackingEnabled());
     }
 
+    @Test
+    void sharedUnclassifiableDestinationUsesTheSamePackingSwitchAndMigratesSavedSteps() {
+        for (var kind : AutoClassifyDefinition.Kind.values()) {
+            for (boolean total : List.of(false, true)) {
+                for (boolean pack : List.of(false, true)) {
+                    for (boolean shared : List.of(false, true)) {
+                        var definition = definition(kind, total, pack, shared);
+                        var tasks = AutoClassifyTaskFactory.tasks(definition, List.of());
+                        if (kind == AutoClassifyDefinition.Kind.PICKUP) continue;
+                        var task = tasks.stream().filter(value -> value.id()
+                                .equals(definition.classificationTaskId())).findFirst().orElseThrow();
+                        var unclassifiable = task.steps().stream().filter(step ->
+                                ClassificationRemainderPolicy.UNCLASSIFIABLE.equals(step.parameters()
+                                        .get(ClassificationRemainderPolicy.KIND)))
+                                .findFirst().orElseThrow();
+                        boolean expected = kind == AutoClassifyDefinition.Kind.CLASSIFICATION
+                                && total && pack && shared;
+                        assertEquals(expected, Boolean.parseBoolean(unclassifiable.parameters()
+                                .get(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED)));
+                        var legacySteps = task.steps().stream().map(step -> {
+                            var parameters = new java.util.LinkedHashMap<>(step.parameters());
+                            parameters.remove(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED);
+                            return new TaskStep(step.id(), step.kind(), step.moduleId(), parameters,
+                                    step.steps(), step.otherwise());
+                        }).toList();
+                        var legacyTask = new TaskDefinition(task.id(), task.name(), task.priority(),
+                                task.repeatWhenIdle(), legacySteps, task.interruptionMode(),
+                                task.interruptionTaskRef(), task.defaultInterruptionFlow(),
+                                task.requeueAfterInterruption(), task.folderId(), task.cleanupPolicy());
+                        var legacyTasks = tasks.stream().map(value -> value.id().equals(task.id())
+                                ? legacyTask : value).toList();
+                        var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                                legacyTasks, List.of(), List.of(), List.of(), List.of(),
+                                List.of(definition));
+                        var normalized = TaskFlowNormalizer.normalize(config);
+                        var restored = normalized.tasks().stream().filter(value -> value.id()
+                                .equals(task.id())).flatMap(value -> value.steps().stream())
+                                .filter(step -> ClassificationRemainderPolicy.UNCLASSIFIABLE.equals(
+                                        step.parameters().get(ClassificationRemainderPolicy.KIND)))
+                                .findFirst().orElseThrow();
+                        assertEquals(expected, Boolean.parseBoolean(restored.parameters()
+                                .get(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED)));
+                        assertEquals(normalized, TaskFlowNormalizer.normalize(normalized));
+                    }
+                }
+            }
+        }
+    }
+
     private static AutoClassifyDefinition definition(AutoClassifyDefinition.Kind kind,
             boolean enabled, boolean pack) {
-        var policy = new ClassificationRemainderPolicy(true, ref("coordinate"), enabled,
-                ref("region"), pack);
+        return definition(kind, enabled, pack, false);
+    }
+
+    private static AutoClassifyDefinition definition(AutoClassifyDefinition.Kind kind,
+            boolean enabled, boolean pack, boolean shared) {
+        String destination = ref("region");
+        var policy = new ClassificationRemainderPolicy(true,
+                shared ? destination : ref("coordinate"), enabled, destination, pack);
         return new AutoClassifyDefinition(UUID.randomUUID(), "Sort", false, true, true,
                 ref("coordinate"), 8, ref("region"),
                 List.of(new AutoClassifyAreaDefinition(ref("category-zone"))),

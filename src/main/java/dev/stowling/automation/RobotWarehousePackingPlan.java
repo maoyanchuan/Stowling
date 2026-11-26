@@ -24,10 +24,18 @@ public final class RobotWarehousePackingPlan {
 
     public static Optional<String> select(List<Box> boxes, Map<String, Integer> incoming,
             Map<String, Integer> stackSizes, boolean mixedBoxes) {
+        return select(boxes, incoming, stackSizes, mixedBoxes, false);
+    }
+
+    public static Optional<String> select(List<Box> boxes, Map<String, Integer> incoming,
+            Map<String, Integer> stackSizes, boolean mixedBoxes, boolean existingContentsOnly) {
         String selected = null;
         int mostFitting = 0;
         int mostStored = 0;
         for (Box box : boxes) {
+            if (existingContentsOnly && box.slots().stream().noneMatch(slot -> slot.count() > 0)) {
+                continue;
+            }
             int fitting = fitting(box.slots(), StoragePackingPlanner.BOX_SLOTS,
                     incoming, stackSizes, mixedBoxes).values().stream()
                     .mapToInt(Integer::intValue).sum();

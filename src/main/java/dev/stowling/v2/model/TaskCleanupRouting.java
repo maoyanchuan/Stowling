@@ -1,5 +1,6 @@
 package dev.stowling.v2.model;
 
+import dev.stowling.automation.ContainerTarget;
 import dev.stowling.v2.config.ConfigValidator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -82,5 +83,11 @@ public record TaskCleanupRouting(boolean legacyOverflowEnabled,
 
     public boolean enabled() {
         return legacyOverflowEnabled || overflowDestination != null || robotWarehouse != null;
+    }
+
+    public boolean packsContainer(ContainerTarget target, List<ContainerTarget> overflowTargets) {
+        return overflowPackingEnabled && overflowDestination != null
+                && overflowTargets.stream().anyMatch(overflow -> target.entrances().stream()
+                        .anyMatch(overflow.entrances()::contains));
     }
 }

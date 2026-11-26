@@ -1,5 +1,6 @@
 package dev.stowling.client.automation;
 
+import dev.stowling.automation.ContainerInspectionPort;
 import dev.stowling.automation.ContainerInspectionResult;
 import dev.stowling.automation.ContainerScanResult;
 import dev.stowling.automation.ContainerTarget;
@@ -70,6 +71,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     private String firstFailure;
     private TaskModuleResult terminal;
     private boolean stopRequested;
+    private ContainerInspectionPort readSession;
 
     MinecraftContainerCacheRefresh(Minecraft minecraft, MinecraftContainerRegionScanner scanner,
             TaskExecutionContext context, ContainerCacheRefresh options) {
@@ -149,6 +151,15 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
     @Override
     public TaskModuleResult tick() {
+        try {
+            return tickRefresh();
+        } catch (RuntimeException failure) {
+            closeReadSession();
+            throw failure;
+        }
+    }
+
+    private TaskModuleResult tickRefresh() {
         if (stopRequested && terminal == null) {
             cancel();
         }
@@ -160,7 +171,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
             return TaskModuleResult.failed("游戏世界已断开或切换，刷新已结束");
         }
         if (inspecting) {
-            return handleInspection(context.containerInspections().pollInspection());
+            return handleInspection(inspections().pollInspection());
         }
         if (selected != null) {
             return confirmMemory();
@@ -257,7 +268,23 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
                 && (storage || markerOnlyTarget && options.includeMarkersInInventory());
         previousMemory = needsInventory ? world.memoryStamp(selected) : null;
         inspecting = true;
-        return handleInspection(context.containerInspections().startInspection(selected));
+        return handleInspection(inspections().startInspection(selected));
+    }
+
+    private ContainerInspectionPort inspections() {
+        if (!options.reuseSafeHand()) return context.containerInspections();
+        if (readSession == null) {
+            readSession = dev.stowling.v2.runtime.TaskTracePorts.wrap(ContainerInspectionPort.class,
+                    context.containerInspections().openReadSession());
+        }
+        return readSession;
+    }
+
+    private void closeReadSession() {
+        if (readSession != null) {
+            readSession.cancelInspection();
+            readSession = null;
+        }
     }
 
     private TaskModuleResult handleInspection(ContainerInspectionResult result) {
@@ -350,6 +377,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private TaskModuleResult finish() {
+        closeReadSession();
         if (!missingChunks) {
             markerReads.forEach((binding, entries) ->
                     entries.keySet().retainAll(observedMarkers.get(binding)));
@@ -375,10 +403,9 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     @Override
     public void cancel() {
         stopTravel();
-        if (inspecting) {
-            context.containerInspections().cancelInspection();
-            inspecting = false;
-        }
+        if (inspecting && readSession == null) context.containerInspections().cancelInspection();
+        inspecting = false;
+        closeReadSession();
         terminal = TaskModuleResult.succeeded("已停止刷新");
     }
 

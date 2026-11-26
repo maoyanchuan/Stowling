@@ -3,6 +3,7 @@
 
     const moduleId = "REFRESH_CONTAINER_CACHE";
     const storageExperiment = "refresh-category-storage-only";
+    const handExperiment = "refresh-reuse-safe-hand";
     const runLabels = Object.freeze({
         QUEUED: "排队中",
         RUNNING: "运行中",
@@ -34,7 +35,8 @@
             kinds,
             targetRef: parameters.targetRef || "",
             categoryStorageOnlyEnabled:
-                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true"
+                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true",
+            reuseSafeHandEnabled: String(parameters.reuseSafeHandEnabled).toLowerCase() === "true"
         };
     }
 
@@ -48,6 +50,7 @@
             ...Object.fromEntries(Object.entries(draft.kinds).map(([key, value]) =>
                 [key, String(value)])),
             categoryStorageOnlyEnabled: String(Boolean(draft.categoryStorageOnlyEnabled)),
+            reuseSafeHandEnabled: String(Boolean(draft.reuseSafeHandEnabled)),
             scanMarkers: "false",
             includeMarkersInInventory: "false"
         };
@@ -104,6 +107,7 @@
     const list = id("refresh-cache-list");
     const target = id("refresh-cache-target");
     const categoryStorage = Settings.switchControl(id("refresh-category-storage-only"));
+    const reuseSafeHand = Settings.switchControl(id("refresh-reuse-safe-hand"));
     const experiments = id("refresh-experiments-settings");
     const experimentsToggle = id("refresh-experiments-toggle");
     const experimentsBody = id("refresh-experiments-body");
@@ -152,8 +156,11 @@
         experiments.inert = !debug;
         experimentsToggle.setAttribute("aria-expanded", String(experimentsExpanded));
         void Settings.reveal(experimentsBody, debug && experimentsExpanded);
-        id("refresh-experiments-summary").textContent = categoryStorage.checked
-            ? "已开启：分类区仅刷新储存容器" : "未启用";
+        const activeExperiments = [];
+        if (categoryStorage.checked) activeExperiments.push("分类区仅刷新储存容器");
+        if (reuseSafeHand.checked) activeExperiments.push("连续开箱复用安全槽位");
+        id("refresh-experiments-summary").textContent = activeExperiments.length
+            ? "已开启：" + activeExperiments.join("、") : "未启用";
         id("refresh-cache-target-note").textContent = layout && !categoryStorage.checked
             ? "请开启调试模式，在实验性设置中启用“分类区仅刷新储存容器”。"
             : layout ? "只刷新各绑定组储存区内已启用类型的容器，不打开识别区箱子。"
@@ -192,10 +199,12 @@
                 : dirty ? "修改保存后可切换任务"
                 : state.checked ? "停止任务" : "启动任务";
             status.textContent = dirty ? "未保存修改" : state.label;
-            experimentStatus.hidden = !enabled;
-            experimentStatus.textContent = enabled
-                ? "已开启：分类区仅刷新储存容器（" + storageExperiment + "）"
-                : "";
+            const reuseHand = selected ? reuseSafeHand.checked : taskSettings.reuseSafeHandEnabled;
+            const active = [];
+            if (enabled) active.push("分类区仅刷新储存容器（" + storageExperiment + "）");
+            if (reuseHand) active.push("连续开箱复用安全槽位（" + handExperiment + "）");
+            experimentStatus.hidden = !active.length;
+            experimentStatus.textContent = active.length ? "已开启：" + active.join("、") : "";
             disclose(button, body, selected && current.expanded);
         }
         selects.refresh(true);
@@ -308,6 +317,7 @@
         renderOptions(draft.targetRef);
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
         categoryStorage.checked = draft.categoryStorageOnlyEnabled;
+        reuseSafeHand.checked = draft.reuseSafeHandEnabled;
         mode.value = schedule?.mode || "MANUAL";
         time.value = schedule?.time || "04:00";
         const minutes = schedule?.intervalMinutes || 60;
@@ -441,7 +451,8 @@
                         targetRef: target.value,
                         kinds: Object.fromEntries(kinds.map((input) =>
                             [input.dataset.refreshKind, input.checked])),
-                        categoryStorageOnlyEnabled: categoryStorage.checked
+                        categoryStorageOnlyEnabled: categoryStorage.checked,
+                        reuseSafeHandEnabled: reuseSafeHand.checked
                     })
                 }]
             };

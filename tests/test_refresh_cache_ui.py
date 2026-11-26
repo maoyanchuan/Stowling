@@ -37,7 +37,10 @@ assert.deepEqual(draft.kinds, {chests: true, barrels: true, shulkerBoxes: true,
 draft.targetRef = "category-zone:layout";
 assert.equal(draft.categoryStorageOnlyEnabled, false);
 draft.categoryStorageOnlyEnabled = true;
+assert.equal(draft.reuseSafeHandEnabled, false);
+draft.reuseSafeHandEnabled = true;
 assert.deepEqual(model.settings(model.parameters(draft)), draft);
+assert.equal(model.settings({reuseSafeHandEnabled: "false"}).reuseSafeHandEnabled, false);
 assert.equal(model.parameters(draft).scanMarkers, "false");
 assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
 assert.equal(model.settings({categoryStorageOnlyEnabled: "false"})
@@ -601,3 +604,63 @@ def test_refresh_category_storage_selection_and_experiment_persist(
     assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
     assert run.is_disabled()
     assert badge.is_hidden()
+
+
+@pytest.mark.parametrize("theme,width", [
+    ("green", 1000), ("gray", 1000), ("green", 390), ("gray", 390)
+])
+def test_refresh_safe_hand_switch_saves_and_survives_hidden_debug_menu(
+    refresh_page: Any, theme: str, width: int
+) -> None:
+    page = refresh_page
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_refresh(page)
+    experiments = page.locator("#refresh-experiments-settings")
+    switch = page.locator("#refresh-reuse-safe-hand")
+    summary = page.locator("#refresh-experiments-toggle")
+    assert not switch.is_checked()
+    page.locator("#task-debug-mode").check()
+    assert summary.get_attribute("aria-expanded") == "false"
+    summary.click()
+    settle_refresh(page)
+    switch.focus()
+    switch.press("Space")
+    page.wait_for_function(
+        "backend.tasks[0].steps[0].parameters.reuseSafeHandEnabled === 'true'"
+    )
+    settle_refresh(page)
+    assert not page.locator("#refresh-category-storage-only").is_checked()
+    assert "连续开箱复用安全槽位" in summary.inner_text()
+    switch_bounds = switch.bounding_box()
+    row_bounds = switch.locator("xpath=..").bounding_box()
+    assert switch_bounds is not None and row_bounds is not None
+    assert (switch_bounds["width"], switch_bounds["height"]) == (56, 32)
+    assert switch_bounds["x"] + switch_bounds["width"] == row_bounds["x"] + row_bounds["width"]
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    screenshot = WEB.parents[3] / "build" / "reports" / "refresh-cache-ui"
+    screenshot.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(screenshot / f"safe-hand-{theme}-{width}.png"), full_page=True)
+
+    summary.click()
+    settle_refresh(page)
+    writes = page.evaluate("backend.requests.filter(item => item.method !== 'GET').length")
+    page.locator("#task-debug-mode").uncheck()
+    assert experiments.evaluate("node => node.hidden && node.inert")
+    page.locator("#refresh-cache-list .pickup-task-expand").click()
+    settle_refresh(page)
+    badge = page.locator("#refresh-cache-list > article > p")
+    assert badge.is_visible()
+    assert "refresh-reuse-safe-hand" in badge.inner_text()
+    open_refresh(page)
+    assert switch.is_checked()
+    assert page.evaluate("backend.requests.filter(item => item.method !== 'GET').length") == writes
+    page.locator("#task-debug-mode").check()
+    summary.click()
+    settle_refresh(page)
+    switch.uncheck()
+    page.wait_for_function(
+        "backend.tasks[0].steps[0].parameters.reuseSafeHandEnabled === 'false'"
+    )
+    assert badge.is_hidden()
+    assert page.evaluate("backend.requests.every(item => !/\\/(start|stop)$/.test(item.path))")

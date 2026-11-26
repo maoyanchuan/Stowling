@@ -10,6 +10,20 @@ import org.junit.jupiter.api.Test;
 
 class ContainerCacheRefreshTest {
     @Test
+    void readSessionDefaultsOffAndOnlyAppliesOutsideInternalMarkerRefresh() {
+        String target = "category-zone:" + UUID.randomUUID();
+        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target)).reuseSafeHand());
+        assertTrue(ContainerCacheRefresh.from(Map.of("targetRef", target,
+                "reuseSafeHandEnabled", "true")).reuseSafeHand());
+        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
+                "reuseSafeHandEnabled", "false")).reuseSafeHand());
+        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
+                "reuseSafeHandEnabled", "true", "markerOnly", "true")).reuseSafeHand());
+        assertThrows(IllegalArgumentException.class, () -> ContainerCacheRefresh.from(
+                Map.of("targetRef", target, "reuseSafeHandEnabled", "invalid")));
+    }
+
+    @Test
     void categoryStorageRefreshDefaultsOffAndParsesPersistedSwitch() {
         String target = "category-zone:" + UUID.randomUUID();
         assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target))

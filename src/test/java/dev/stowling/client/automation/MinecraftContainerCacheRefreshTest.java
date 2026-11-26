@@ -2,6 +2,7 @@ package dev.stowling.client.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.stowling.automation.CategoryMarkerCachePort;
@@ -41,6 +42,80 @@ class MinecraftContainerCacheRefreshTest {
     private static final BlockPosition MARKER = new BlockPosition(64, 64, 0);
     private static final BlockPosition SECOND_STORAGE = new BlockPosition(-10, 64, 0);
     private static final AreaBounds STANDING = new AreaBounds(20, 65, 0, 20, 65, 0);
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void refreshUsesAnIsolatedReadSessionOnlyWhenEnabledAndReleasesItAfterFailures(boolean enabled) {
+        var world = new World();
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, enabled);
+        refresh.start();
+        assertEquals(TaskModuleState.FAILED, finish(refresh).state());
+        Inspection used = enabled ? inspection.session : inspection;
+        assertEquals(List.of(FIRST, BLOCKED, LAST), used.opened);
+        assertEquals(enabled ? 1 : 0, inspection.sessions);
+        assertEquals(enabled ? 1 : 0, used.canceled);
+        if (enabled) assertTrue(inspection.opened.isEmpty());
+    }
+
+    @Test
+    void sessionIsReleasedOnSuccessfulCompletion() {
+        var world = new World();
+        world.loadAll = true;
+        world.scanTargets = List.of(new ContainerTarget(FIRST, "minecraft:chest"));
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, true);
+        refresh.start();
+        assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
+        assertEquals(List.of(FIRST), inspection.session.opened);
+        assertEquals(1, inspection.session.canceled);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void stopReleasesSessionDuringAndBetweenInspections(boolean between) {
+        var world = new World();
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, true);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        if (between) refresh.tick();
+        refresh.requestStop();
+        assertEquals(TaskModuleState.SUCCEEDED, refresh.tick().state());
+        assertEquals(List.of(FIRST), inspection.session.opened);
+        assertEquals(1, inspection.session.canceled);
+        refresh.cancel();
+        assertEquals(1, inspection.session.canceled);
+    }
+
+    @Test
+    void disconnectReleasesSessionAndPreventsMoreOpens() {
+        var world = new World();
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, true);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        refresh.tick();
+        world.available = false;
+        assertEquals(TaskModuleState.FAILED, refresh.tick().state());
+        assertEquals(List.of(FIRST), inspection.session.opened);
+        assertEquals(1, inspection.session.canceled);
+    }
+
+    @Test
+    void inspectionExceptionReleasesTheRetainedHandSession() {
+        var world = new World();
+        var inspection = new Inspection();
+        var refresh = refresh(world, inspection, false, true);
+        refresh.start();
+        refresh.tick();
+        refresh.tick();
+        inspection.session.pollFailure = new IllegalStateException("unsafe hand");
+        assertThrows(IllegalStateException.class, refresh::tick);
+        assertEquals(1, inspection.session.canceled);
+    }
 
     @Test
     void disabledCategoryExperimentDoesNotScanOrOpenAnyContainer() {
@@ -87,11 +162,12 @@ class MinecraftContainerCacheRefreshTest {
         var cache = new MarkerCache();
         var refresh = categoryRefresh(world, inspection, cache,
                 Map.of("categoryStorageOnlyEnabled", Boolean.toString(enabled),
-                        "markerOnly", "true"));
+                        "markerOnly", "true", "reuseSafeHandEnabled", "true"));
         assertEquals(TaskModuleState.RUNNING, refresh.start().state());
         assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
         assertEquals(List.of(MARKER), inspection.opened);
         assertEquals(1, cache.writes);
+        assertEquals(0, inspection.sessions);
     }
 
     @Test
@@ -187,6 +263,11 @@ class MinecraftContainerCacheRefreshTest {
 
     private static MinecraftContainerCacheRefresh refresh(World world, Inspection inspection,
             boolean enabled) {
+        return refresh(world, inspection, enabled, false);
+    }
+
+    private static MinecraftContainerCacheRefresh refresh(World world, Inspection inspection,
+            boolean enabled, boolean reuseHand) {
         UUID regionId = UUID.randomUUID();
         var region = new RegionDefinition(regionId, "Test", 15, 64, 0, 18, 64, 0);
         var ports = TaskModuleRuntimeRegistry.unavailablePorts(world);
@@ -195,7 +276,8 @@ class MinecraftContainerCacheRefreshTest {
                 inspection, CategoryMarkerCachePort.UNAVAILABLE, ports.categoryZones(), Map.of(),
                 Map.of(regionId, region), Map.of(), new TaskRunWorkspace());
         var settings = ContainerCacheRefresh.from(Map.of("targetRef", "region:" + regionId,
-                "categoryStorageOnlyEnabled", Boolean.toString(enabled)));
+                "categoryStorageOnlyEnabled", Boolean.toString(enabled),
+                "reuseSafeHandEnabled", Boolean.toString(reuseHand)));
         return new MinecraftContainerCacheRefresh(context, settings, world);
     }
 
@@ -205,11 +287,12 @@ class MinecraftContainerCacheRefreshTest {
         private final List<RegionDefinition> scanned = new ArrayList<>();
         private List<ContainerTarget> scanTargets;
         private boolean loadAll;
+        private boolean available = true;
         private int stopCount;
 
         @Override
         public boolean available() {
-            return true;
+            return available;
         }
 
         @Override
@@ -263,6 +346,16 @@ class MinecraftContainerCacheRefreshTest {
         private final List<BlockPosition> opened = new ArrayList<>();
         private final List<ContainerTarget> targets = new ArrayList<>();
         private int canceled;
+        private int sessions;
+        private Inspection session;
+        private RuntimeException pollFailure;
+
+        @Override
+        public ContainerInspectionPort openReadSession() {
+            sessions++;
+            session = new Inspection();
+            return session;
+        }
 
         @Override
         public ContainerInspectionResult startInspection(ContainerTarget target) {
@@ -273,6 +366,7 @@ class MinecraftContainerCacheRefreshTest {
 
         @Override
         public ContainerInspectionResult pollInspection() {
+            if (pollFailure != null) throw pollFailure;
             return BLOCKED.equals(opened.getLast())
                     ? ContainerInspectionResult.failed("cannot open")
                     : ContainerInspectionResult.success("empty", Set.of());

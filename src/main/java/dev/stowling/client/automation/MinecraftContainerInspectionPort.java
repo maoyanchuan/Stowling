@@ -18,13 +18,26 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
     private final Minecraft minecraft;
     private final ClientActionScheduler scheduler;
     private final NavigationPort navigation;
+    private final boolean retainHand;
+    private MinecraftContainerOpenHand hand;
     private MinecraftContainerVisit active;
 
     public MinecraftContainerInspectionPort(Minecraft minecraft, ClientActionScheduler scheduler,
             NavigationPort navigation) {
+        this(minecraft, scheduler, navigation, false);
+    }
+
+    private MinecraftContainerInspectionPort(Minecraft minecraft, ClientActionScheduler scheduler,
+            NavigationPort navigation, boolean retainHand) {
         this.minecraft = Objects.requireNonNull(minecraft, "minecraft");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.navigation = Objects.requireNonNull(navigation, "navigation");
+        this.retainHand = retainHand;
+    }
+
+    @Override
+    public ContainerInspectionPort openReadSession() {
+        return new MinecraftContainerInspectionPort(minecraft, scheduler, navigation, true);
     }
 
     @Override
@@ -35,7 +48,9 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
         if (active != null) {
             return ContainerInspectionResult.failed("已有容器检查正在进行");
         }
-        active = new MinecraftContainerVisit(minecraft, navigation, target);
+        if (retainHand && hand == null) hand = new MinecraftContainerOpenHand(minecraft, true);
+        active = retainHand ? new MinecraftContainerVisit(minecraft, navigation, target, hand)
+                : new MinecraftContainerVisit(minecraft, navigation, target);
         return ContainerInspectionResult.pending("准备前往容器");
     }
 
@@ -75,10 +90,15 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
 
     @Override
     public void cancelInspection() {
-        if (scheduler.isClientThread() && active != null) {
+        if (!scheduler.isClientThread()) return;
+        if (active != null) {
             active.cancelNavigation();
             closeOpenedContainer();
             active = null;
+        }
+        if (hand != null) {
+            hand.restore();
+            hand = null;
         }
     }
 

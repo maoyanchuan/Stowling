@@ -3,6 +3,11 @@ package dev.stowling.automation;
 import java.util.Objects;
 
 public interface ContainerInspectionPort {
+    /** A task-owned read session; cancel it even between inspections to release its hand slot. */
+    default ContainerInspectionPort openReadSession() {
+        return this;
+    }
+
     ContainerInspectionResult startInspection(ContainerTarget target);
 
     ContainerInspectionResult pollInspection();

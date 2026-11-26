@@ -12,6 +12,35 @@ import org.junit.jupiter.api.Test;
 
 class TaskFlowNormalizerTest {
     @Test
+    void refreshBaselineMigrationCleansNestedStepsAndPreservesOtherModules() {
+        for (String hand : List.of("true", "false", "invalid", "")) {
+            for (String route : List.of("true", "false", "invalid", "")) {
+                var values = Map.of("targetRef", "region:" + UUID.randomUUID(),
+                        "categoryStorageOnlyEnabled", "true", "chests", "false",
+                        "reuseSafeHandEnabled", hand, "nearbyRouteEnabled", route);
+                var refresh = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                        values);
+                var other = TaskStep.action(UUID.randomUUID(), "OTHER_MODULE", values);
+                var branch = TaskStep.conditional(UUID.randomUUID(),
+                        Map.of("condition", "ALWAYS"), List.of(refresh), List.of(refresh));
+                var original = task(refresh, branch, other);
+                var normalized = TaskFlowNormalizer.normalize(config(original)).tasks().getFirst();
+                var expected = Map.of("targetRef", values.get("targetRef"),
+                        "categoryStorageOnlyEnabled", "true", "chests", "false");
+                assertEquals(original.id(), normalized.id());
+                assertEquals(refresh.id(), normalized.steps().getFirst().id());
+                assertEquals(expected, normalized.steps().getFirst().parameters());
+                assertEquals(expected, normalized.steps().get(1).steps().getFirst().parameters());
+                assertEquals(expected,
+                        normalized.steps().get(1).otherwise().getFirst().parameters());
+                assertEquals(values, normalized.steps().getLast().parameters());
+                assertEquals(normalized, TaskFlowNormalizer.normalize(config(normalized))
+                        .tasks().getFirst());
+            }
+        }
+    }
+
+    @Test
     void expandsLegacyAutoEatIntoConditionalFlow() {
         UUID coordinate = UUID.randomUUID();
         TaskDefinition task = task(new TaskStep(

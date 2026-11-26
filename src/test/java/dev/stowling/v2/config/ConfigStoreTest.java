@@ -20,10 +20,13 @@ import dev.stowling.v2.model.CategoryZoneExpansionAxis;
 import dev.stowling.v2.model.CategoryZoneExpansionDefinition;
 import dev.stowling.v2.model.CategoryZoneOptions;
 import dev.stowling.v2.model.CategoryZoneTiler;
+import dev.stowling.v2.model.ContainerCacheRefresh;
 import dev.stowling.v2.model.CoordinatePoint;
 import dev.stowling.v2.model.RegionDefinition;
 import dev.stowling.v2.model.StoragePolicy;
+import dev.stowling.v2.model.TaskDefinition;
 import dev.stowling.v2.model.TaskPriority;
+import dev.stowling.v2.model.TaskStep;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -35,6 +38,37 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigStoreTest {
     @TempDir
     Path directory;
+
+    @Test
+    void savedRefreshFlagsMigrateWithoutLosingTheOrdinaryCategorySwitch() throws Exception {
+        var region = new RegionDefinition(UUID.randomUUID(), "Refresh", 0, 64, 0, 4, 64, 0);
+        for (boolean storageOnly : List.of(false, true)) {
+            for (String legacy : List.of("true", "false", "invalid", "")) {
+                var parameters = Map.of("targetRef", "region:" + region.id(),
+                        "categoryStorageOnlyEnabled", Boolean.toString(storageOnly),
+                        "reuseSafeHandEnabled", legacy, "nearbyRouteEnabled", legacy);
+                var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
+                        parameters);
+                var task = new TaskDefinition(UUID.randomUUID(), "Refresh", List.of(step));
+                var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(),
+                        List.of(task), List.of(region), List.of());
+                Path path = directory.resolve("refresh-" + storageOnly + "-" + legacy + ".json");
+                Files.writeString(path, new Gson().toJson(config));
+                var store = new ConfigStore(path);
+                var restored = store.read();
+                var clean = restored.config().tasks().getFirst().steps().getFirst();
+                assertEquals(step.id(), clean.id());
+                assertEquals(Map.of("targetRef", "region:" + region.id(),
+                        "categoryStorageOnlyEnabled", Boolean.toString(storageOnly)),
+                        clean.parameters());
+                store.save(restored.revision(), restored.config());
+                String saved = Files.readString(path);
+                assertFalse(saved.contains("reuseSafeHandEnabled"));
+                assertFalse(saved.contains("nearbyRouteEnabled"));
+                assertEquals(restored.config(), new ConfigStore(path).read().config());
+            }
+        }
+    }
 
 
     @Test

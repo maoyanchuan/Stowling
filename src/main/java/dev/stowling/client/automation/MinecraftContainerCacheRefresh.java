@@ -89,7 +89,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     public TaskModuleResult start() {
         if (options.target().type() == ResourceType.CATEGORY_ZONE && !options.markerOnly()
                 && !options.categoryStorageOnlyEnabled()) {
-            return TaskModuleResult.failed("请在实验性设置中开启“分类区仅刷新储存容器”");
+            return TaskModuleResult.failed("请在刷新缓存设置中开启“分类区仅刷新储存容器”");
         }
         if (!world.available()) {
             return TaskModuleResult.failed("进入游戏世界后才能刷新容器缓存");
@@ -176,7 +176,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         if (selected != null) {
             return confirmMemory();
         }
-        if (options.nearbyRoute()) {
+        if (!options.markerOnly()) {
             var loaded = chunks.stream().filter(chunk -> world.chunkLoaded(
                     ContainerCacheRefreshPlan.chunkCenter(chunk))).findFirst();
             if (loaded.isPresent()) return scanChunk(loaded.get());
@@ -192,7 +192,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
 
     private TaskModuleResult scanNextChunk() {
         RegionDefinition chunk = chunks.getFirst();
-        if (options.nearbyRoute() && travelTarget == null) {
+        if (!options.markerOnly() && travelTarget == null) {
             var player = world.position();
             chunk = chunks.stream().min(Comparator.comparingDouble(candidate -> {
                 var point = ContainerCacheRefreshPlan.chunkCenter(candidate);
@@ -280,7 +280,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private TaskModuleResult openNext() {
-        if (options.nearbyRoute()) {
+        if (!options.markerOnly()) {
             selected = ContainerCacheRefreshPlan.next(containers, world.position(), world::inReach);
             containers.remove(selected);
             TaskTrace.event("DECISION", "refresh.nearbyRoute", "target=" + selected.position()
@@ -298,12 +298,10 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
     }
 
     private ContainerInspectionPort inspections() {
-        if (!options.reuseSafeHand() && !options.nearbyRoute()) return context.containerInspections();
+        if (options.markerOnly()) return context.containerInspections();
         if (readSession == null) {
             readSession = dev.stowling.v2.runtime.TaskTracePorts.wrap(ContainerInspectionPort.class,
-                    options.nearbyRoute() ? context.containerInspections().openReadSession(
-                            options.reuseSafeHand(), true)
-                            : context.containerInspections().openReadSession());
+                    context.containerInspections().openReadSession());
         }
         return readSession;
     }

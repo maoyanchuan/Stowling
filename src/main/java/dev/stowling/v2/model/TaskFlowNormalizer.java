@@ -749,6 +749,10 @@ public final class TaskFlowNormalizer {
             return Map.copyOf(result);
         }
         switch (moduleId) {
+            case ContainerCacheRefresh.MODULE -> {
+                result.remove("reuseSafeHandEnabled");
+                result.remove("nearbyRouteEnabled");
+            }
             case ConfigValidator.MOVE_TO_COORDINATE,
                     ConfigValidator.WITHDRAW_FOOD -> {
                 moveAlias(

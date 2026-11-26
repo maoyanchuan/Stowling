@@ -1,40 +1,27 @@
 package dev.stowling.v2.model;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ContainerCacheRefreshTest {
     @Test
-    void nearbyRouteDefaultsOffAndNeverAppliesToInternalMarkerRefresh() {
-        String target = "category-zone:" + java.util.UUID.randomUUID();
-        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target)).nearbyRoute());
-        assertTrue(ContainerCacheRefresh.from(Map.of("targetRef", target,
-                "nearbyRouteEnabled", "true")).nearbyRoute());
-        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
-                "nearbyRouteEnabled", "false")).nearbyRoute());
-        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
-                "nearbyRouteEnabled", "true", "markerOnly", "true")).nearbyRoute());
-        assertThrows(IllegalArgumentException.class, () -> ContainerCacheRefresh.from(
-                Map.of("targetRef", target, "nearbyRouteEnabled", "invalid")));
-    }
-
-    @Test
-    void readSessionDefaultsOffAndOnlyAppliesOutsideInternalMarkerRefresh() {
-        String target = "category-zone:" + UUID.randomUUID();
-        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target)).reuseSafeHand());
-        assertTrue(ContainerCacheRefresh.from(Map.of("targetRef", target,
-                "reuseSafeHandEnabled", "true")).reuseSafeHand());
-        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
-                "reuseSafeHandEnabled", "false")).reuseSafeHand());
-        assertFalse(ContainerCacheRefresh.from(Map.of("targetRef", target,
-                "reuseSafeHandEnabled", "true", "markerOnly", "true")).reuseSafeHand());
-        assertThrows(IllegalArgumentException.class, () -> ContainerCacheRefresh.from(
-                Map.of("targetRef", target, "reuseSafeHandEnabled", "invalid")));
+    void retiredExecutionFlagsNoLongerChangeRefreshSettings() {
+        String target = "region:" + UUID.randomUUID();
+        var baseline = ContainerCacheRefresh.from(Map.of("targetRef", target));
+        for (String hand : List.of("true", "false", "invalid", "")) {
+            for (String route : List.of("true", "false", "invalid", "")) {
+                assertEquals(baseline,
+                        ContainerCacheRefresh.from(Map.of("targetRef", target,
+                                "reuseSafeHandEnabled", hand, "nearbyRouteEnabled", route)));
+            }
+        }
     }
 
     @Test

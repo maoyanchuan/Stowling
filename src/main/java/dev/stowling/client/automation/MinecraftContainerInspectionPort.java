@@ -39,13 +39,7 @@ public final class MinecraftContainerInspectionPort implements ContainerInspecti
 
     @Override
     public ContainerInspectionPort openReadSession() {
-        return openReadSession(true, false);
-    }
-
-    @Override
-    public ContainerInspectionPort openReadSession(boolean reuseSafeHand, boolean reusePosition) {
-        return new MinecraftContainerInspectionPort(minecraft, scheduler, navigation,
-                reuseSafeHand, reusePosition);
+        return new MinecraftContainerInspectionPort(minecraft, scheduler, navigation, true, true);
     }
 
     @Override

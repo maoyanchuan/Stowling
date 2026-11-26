@@ -3,14 +3,9 @@ package dev.stowling.automation;
 import java.util.Objects;
 
 public interface ContainerInspectionPort {
-    /** A task-owned read session; cancel it even between inspections to release its hand slot. */
+    /** Refresh-owned session: reuse the safe hand and reachable position until canceled. */
     default ContainerInspectionPort openReadSession() {
         return this;
-    }
-
-    /** Explicit task-owned options; ordinary inspections retain their existing policy. */
-    default ContainerInspectionPort openReadSession(boolean reuseSafeHand, boolean reusePosition) {
-        return reuseSafeHand ? openReadSession() : this;
     }
 
     ContainerInspectionResult startInspection(ContainerTarget target);

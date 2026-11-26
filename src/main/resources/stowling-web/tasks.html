@@ -178,6 +178,16 @@
                                                     aria-describedby="refresh-cache-target-note">
                                             </select>
                                         </div>
+                                        <label class="move-field refresh-cache-switch-row">
+                                            <span class="settings-copy">
+                                                <span>分类区仅刷新储存容器</span>
+                                                <span class="settings-description">
+                                                    默认关闭；分类区仅打开储存区，不扫描识别区。
+                                                </span>
+                                            </span>
+                                            <input id="refresh-category-storage-only"
+                                                   type="checkbox">
+                                        </label>
                                         <details id="refresh-kind-settings"
                                                  class="settings-disclosure">
                                             <summary id="refresh-kind-summary" class="settings-row"
@@ -278,67 +288,6 @@
                                                 </label>
                                             </div>
                                         </div>
-                                        <section id="refresh-experiments-settings"
-                                                 class="auto-config-section"
-                                                 aria-labelledby="refresh-experiments-title"
-                                                 hidden inert>
-                                            <div class="auto-phase-header">
-                                                <button id="refresh-experiments-toggle"
-                                                        class="auto-phase-toggle" type="button"
-                                                        aria-expanded="false"
-                                                        aria-controls="refresh-experiments-body">
-                                                    <span class="auto-phase-copy">
-                                                        <strong id="refresh-experiments-title">
-                                                            实验性设置
-                                                        </strong>
-                                                        <small id="refresh-experiments-summary">
-                                                            未启用
-                                                        </small>
-                                                    </span>
-                                                    <span class="move-task-chevron"
-                                                          aria-hidden="true"></span>
-                                                </button>
-                                            </div>
-                                            <div id="refresh-experiments-body"
-                                                 class="auto-phase-body" hidden inert>
-                                                <div class="task-settings-inner">
-                                                    <label class="move-field
-                                                                  refresh-cache-switch-row">
-                                                        <span class="settings-copy">
-                                                            <span>分类区仅刷新储存容器</span>
-                                                            <span class="settings-description">
-                                                                默认关闭；仅打开储存区，不扫描识别区。
-                                                            </span>
-                                                        </span>
-                                                        <input id="refresh-category-storage-only"
-                                                               type="checkbox">
-                                                    </label>
-                                                    <label class="move-field
-                                                                  refresh-cache-switch-row">
-                                                        <span class="settings-copy">
-                                                            <span>连续开箱复用安全槽位</span>
-                                                            <span class="settings-description">
-                                                                默认关闭；减少反复切槽，结束时还原。
-                                                            </span>
-                                                        </span>
-                                                        <input id="refresh-reuse-safe-hand"
-                                                               type="checkbox">
-                                                    </label>
-                                                    <label class="move-field
-                                                                  refresh-cache-switch-row">
-                                                        <span class="settings-copy">
-                                                            <span>刷新时优先原地开箱与就近寻路</span>
-                                                            <span class="settings-description">
-                                                                默认关闭；先开周围够得到的箱子，
-                                                                再就近移动；原地开箱不要求进入各组站位。
-                                                            </span>
-                                                        </span>
-                                                        <input id="refresh-nearby-route"
-                                                               type="checkbox">
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </section>
                                         <p id="refresh-cache-message" class="field-message"
                                            role="status" aria-live="polite" hidden></p>
                                         <div class="coordinate-task-actions">

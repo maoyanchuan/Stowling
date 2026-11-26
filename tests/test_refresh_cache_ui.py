@@ -37,13 +37,14 @@ assert.deepEqual(draft.kinds, {chests: true, barrels: true, shulkerBoxes: true,
 draft.targetRef = "category-zone:layout";
 assert.equal(draft.categoryStorageOnlyEnabled, false);
 draft.categoryStorageOnlyEnabled = true;
-assert.equal(draft.reuseSafeHandEnabled, false);
-draft.reuseSafeHandEnabled = true;
-assert.equal(draft.nearbyRouteEnabled, false);
-draft.nearbyRouteEnabled = true;
 assert.deepEqual(model.settings(model.parameters(draft)), draft);
-assert.equal(model.settings({nearbyRouteEnabled: "false"}).nearbyRouteEnabled, false);
-assert.equal(model.settings({reuseSafeHandEnabled: "false"}).reuseSafeHandEnabled, false);
+for (const key of ['reuseSafeHandEnabled', 'nearbyRouteEnabled']) {
+    for (const value of ['true', 'false', 'invalid', '']) {
+        const normalized = model.settings({...model.parameters(draft), [key]: value});
+        assert.equal(Object.hasOwn(normalized, key), false);
+        assert.equal(Object.hasOwn(model.parameters({...normalized, [key]: true}), key), false);
+    }
+}
 assert.equal(model.parameters(draft).scanMarkers, "false");
 assert.equal(model.parameters(draft).includeMarkersInInventory, "false");
 assert.equal(model.settings({categoryStorageOnlyEnabled: "false"})
@@ -522,20 +523,21 @@ def test_refresh_run_failure_restores_switch_and_draft_stays_editable(refresh_pa
 @pytest.mark.parametrize("theme,width", [
     ("green", 1000), ("gray", 1000), ("green", 390), ("gray", 390)
 ])
-def test_refresh_category_storage_selection_and_experiment_persist(
+def test_refresh_category_storage_is_a_normal_setting_and_retains_its_value(
     refresh_page: Any, theme: str, width: int
 ) -> None:
     page = refresh_page
     page.set_viewport_size({"width": width, "height": 1200})
     page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
     open_refresh(page)
-    experiments = page.locator("#refresh-experiments-settings")
-    summary = page.locator("#refresh-experiments-toggle")
-    body = page.locator("#refresh-experiments-body")
     switch = page.locator("#refresh-category-storage-only")
     run = page.locator("#refresh-cache-list .pickup-task-header input")
-    assert experiments.evaluate("node => node.hidden && node.inert")
+    assert switch.is_visible()
     assert not switch.is_checked()
+    assert page.locator("#refresh-experiments-settings").count() == 0
+    assert page.locator("#refresh-reuse-safe-hand, #refresh-nearby-route").count() == 0
+    assert switch.evaluate("node => !node.closest('[hidden], [inert]')")
+    assert switch.evaluate("node => Boolean(node.closest('#refresh-cache-form'))")
 
     page.locator("#refresh-cache-target + .task-select-trigger").click()
     menu = page.locator(".task-select-menu:not([hidden])")
@@ -544,135 +546,73 @@ def test_refresh_category_storage_selection_and_experiment_persist(
     page.wait_for_function(
         "backend.tasks[0].steps[0].parameters.targetRef === 'category-zone:category'"
     )
-    assert run.is_disabled()
-    assert "请开启调试模式" in page.locator("#refresh-cache-target-note").inner_text()
-
-    page.locator("#task-debug-mode").check()
-    assert experiments.is_visible()
-    assert summary.get_attribute("aria-expanded") == "false"
-    assert body.evaluate("node => node.hidden && node.inert")
-    summary.click()
     settle_refresh(page)
-    switch.check()
+    assert run.is_disabled()
+    assert "请启用下方" in page.locator("#refresh-cache-target-note").inner_text()
+    switch.focus()
+    switch.press("Space")
     page.wait_for_function(
         "backend.tasks[0].steps[0].parameters.categoryStorageOnlyEnabled === 'true'"
     )
     settle_refresh(page)
     saved = page.evaluate("backend.tasks[0].steps[0].parameters")
     assert saved["scanMarkers"] == saved["includeMarkersInInventory"] == "false"
-    assert run.is_enabled()
-    assert not run.is_checked()
+    assert "reuseSafeHandEnabled" not in saved and "nearbyRouteEnabled" not in saved
+    assert run.is_enabled() and not run.is_checked()
     assert "不打开识别区箱子" in page.locator("#refresh-cache-target-note").inner_text()
-    assert page.locator("#refresh-scan-markers, #refresh-include-markers").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    switch_bounds = switch.bounding_box()
-    row_bounds = switch.locator("xpath=..").bounding_box()
-    assert switch_bounds is not None
-    assert row_bounds is not None
-    assert (switch_bounds["width"], switch_bounds["height"]) == (56, 32)
-    assert switch_bounds["x"] + switch_bounds["width"] == (
-        row_bounds["x"] + row_bounds["width"]
-    )
-    screenshot = WEB.parents[3] / "build" / "reports" / "refresh-cache-ui"
-    screenshot.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(screenshot / f"category-{theme}-{width}.png"), full_page=True)
-
-    summary.click()
-    settle_refresh(page)
-    assert switch.is_checked()
-    writes = page.evaluate("backend.requests.filter(item => item.method !== 'GET').length")
-    page.locator("#task-debug-mode").uncheck()
-    assert experiments.evaluate("node => node.hidden && node.inert")
-    page.locator("#refresh-cache-list .pickup-task-expand").click()
-    settle_refresh(page)
-    badge = page.locator("#refresh-cache-list > article > p")
-    assert badge.is_visible()
-    assert "refresh-category-storage-only" in badge.inner_text()
-    open_refresh(page)
-    assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
-    assert switch.is_checked()
-    assert page.evaluate(
-        "backend.requests.filter(item => item.method !== 'GET').length"
-    ) == writes
-    assert page.evaluate("backend.requests.every(item => !/\\/(start|stop)$/.test(item.path))")
-
-    page.locator("#task-debug-mode").check()
-    assert summary.get_attribute("aria-expanded") == "false"
-    summary.click()
-    settle_refresh(page)
-    switch.uncheck()
-    page.wait_for_function(
-        "backend.tasks[0].steps[0].parameters.categoryStorageOnlyEnabled === 'false'"
-    )
-    assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
-    assert run.is_disabled()
-    assert badge.is_hidden()
-
-
-@pytest.mark.parametrize("theme,width", [
-    ("green", 1000), ("gray", 1000), ("green", 390), ("gray", 390)
-])
-@pytest.mark.parametrize("control,field,label,experiment", [
-    ("refresh-reuse-safe-hand", "reuseSafeHandEnabled", "连续开箱复用安全槽位",
-     "refresh-reuse-safe-hand"),
-    ("refresh-nearby-route", "nearbyRouteEnabled", "刷新时优先原地开箱与就近寻路",
-     "refresh-nearby-route"),
-])
-def test_refresh_execution_switch_saves_and_survives_hidden_debug_menu(
-    refresh_page: Any, theme: str, width: int, control: str, field: str,
-    label: str, experiment: str
-) -> None:
-    page = refresh_page
-    page.set_viewport_size({"width": width, "height": 1200})
-    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
-    open_refresh(page)
-    experiments = page.locator("#refresh-experiments-settings")
-    switch = page.locator("#" + control)
-    summary = page.locator("#refresh-experiments-toggle")
-    assert not switch.is_checked()
-    page.locator("#task-debug-mode").check()
-    assert summary.get_attribute("aria-expanded") == "false"
-    summary.click()
-    settle_refresh(page)
-    switch.focus()
-    switch.press("Space")
-    page.wait_for_function(
-        f"backend.tasks[0].steps[0].parameters.{field} === 'true'"
-    )
-    settle_refresh(page)
-    assert not page.locator("#refresh-category-storage-only").is_checked()
-    other = "reuseSafeHandEnabled" if field == "nearbyRouteEnabled" else "nearbyRouteEnabled"
-    assert page.evaluate(f"backend.tasks[0].steps[0].parameters.{other}") == "false"
-    assert label in summary.inner_text()
     switch_bounds = switch.bounding_box()
     row_bounds = switch.locator("xpath=..").bounding_box()
     assert switch_bounds is not None and row_bounds is not None
     assert (switch_bounds["width"], switch_bounds["height"]) == (56, 32)
     assert switch_bounds["x"] + switch_bounds["width"] == row_bounds["x"] + row_bounds["width"]
-    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     screenshot = WEB.parents[3] / "build" / "reports" / "refresh-cache-ui"
     screenshot.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(screenshot / f"{control}-{theme}-{width}.png"), full_page=True)
+    page.screenshot(path=str(screenshot / f"mainline-{theme}-{width}.png"), full_page=True)
 
-    summary.click()
-    settle_refresh(page)
     writes = page.evaluate("backend.requests.filter(item => item.method !== 'GET').length")
+    page.locator("#task-debug-mode").check()
+    settle_refresh(page)
+    assert switch.is_visible() and switch.is_checked()
+    assert page.locator("#refresh-experiments-settings").count() == 0
     page.locator("#task-debug-mode").uncheck()
-    assert experiments.evaluate("node => node.hidden && node.inert")
     page.locator("#refresh-cache-list .pickup-task-expand").click()
     settle_refresh(page)
-    badge = page.locator("#refresh-cache-list > article > p")
-    assert badge.is_visible()
-    assert experiment in badge.inner_text()
+    assert page.locator("#refresh-cache-list > article > p").count() == 0
     open_refresh(page)
+    assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
     assert switch.is_checked()
     assert page.evaluate("backend.requests.filter(item => item.method !== 'GET').length") == writes
-    page.locator("#task-debug-mode").check()
-    summary.click()
-    settle_refresh(page)
     switch.uncheck()
     page.wait_for_function(
-        f"backend.tasks[0].steps[0].parameters.{field} === 'false'"
+        "backend.tasks[0].steps[0].parameters.categoryStorageOnlyEnabled === 'false'"
     )
-    assert badge.is_hidden()
+    settle_refresh(page)
+    assert page.locator("#refresh-cache-target").input_value() == "category-zone:category"
+    assert run.is_disabled()
     assert page.evaluate("backend.requests.every(item => !/\\/(start|stop)$/.test(item.path))")
+
+
+@pytest.mark.parametrize("legacy", ["true", "false", "invalid"])
+def test_refresh_saving_old_tasks_drops_retired_execution_flags(
+    refresh_page: Any, legacy: str
+) -> None:
+    page = refresh_page
+    page.evaluate("""legacy => {
+        const parameters = backend.tasks[0].steps[0].parameters;
+        parameters.reuseSafeHandEnabled = legacy;
+        parameters.nearbyRouteEnabled = legacy;
+        document.dispatchEvent(new CustomEvent('stowling:tasks-changed'));
+    }""", legacy)
+    settle_refresh(page)
+    open_refresh(page)
+    switch = page.locator("#refresh-category-storage-only")
+    switch.check()
+    page.wait_for_function(
+        "backend.tasks[0].steps[0].parameters.categoryStorageOnlyEnabled === 'true'"
+    )
+    saved = page.evaluate("backend.tasks[0].steps[0].parameters")
+    assert "reuseSafeHandEnabled" not in saved and "nearbyRouteEnabled" not in saved
+    assert saved["targetRef"] == "region:stock"
+    assert saved["chests"] == saved["barrels"] == saved["shulkerBoxes"] == "true"
+    assert page.locator("#refresh-experiments-settings").count() == 0

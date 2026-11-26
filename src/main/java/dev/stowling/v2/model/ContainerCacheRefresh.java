@@ -5,8 +5,7 @@ import java.util.Set;
 
 public record ContainerCacheRefresh(ResourceReference target, boolean chests, boolean barrels,
         boolean shulkerBoxes, boolean otherContainers, boolean scanMarkers,
-        boolean includeMarkersInInventory, boolean markerOnly, boolean categoryStorageOnlyEnabled,
-        boolean reuseSafeHandEnabled, boolean nearbyRouteEnabled) {
+        boolean includeMarkersInInventory, boolean markerOnly, boolean categoryStorageOnlyEnabled) {
     public static final String MODULE = "REFRESH_CONTAINER_CACHE";
     public static final String TARGET_REF = "targetRef";
     public static final String CHESTS = "chests";
@@ -17,11 +16,8 @@ public record ContainerCacheRefresh(ResourceReference target, boolean chests, bo
     public static final String INCLUDE_MARKERS = "includeMarkersInInventory";
     public static final String MARKER_ONLY = "markerOnly";
     public static final String CATEGORY_STORAGE_ONLY = "categoryStorageOnlyEnabled";
-    public static final String REUSE_SAFE_HAND = "reuseSafeHandEnabled";
-    public static final String NEARBY_ROUTE = "nearbyRouteEnabled";
     public static final Set<String> BOOLEAN_FIELDS = Set.of(CHESTS, BARRELS, SHULKER_BOXES,
-            OTHER_CONTAINERS, SCAN_MARKERS, INCLUDE_MARKERS, MARKER_ONLY, CATEGORY_STORAGE_ONLY,
-            REUSE_SAFE_HAND, NEARBY_ROUTE);
+            OTHER_CONTAINERS, SCAN_MARKERS, INCLUDE_MARKERS, MARKER_ONLY, CATEGORY_STORAGE_ONLY);
 
     public ContainerCacheRefresh {
         if (target.type() != ResourceType.REGION && target.type() != ResourceType.CATEGORY_ZONE) {
@@ -47,17 +43,7 @@ public record ContainerCacheRefresh(ResourceReference target, boolean chests, bo
                 readBoolean(parameters, SCAN_MARKERS, false),
                 readBoolean(parameters, INCLUDE_MARKERS, false),
                 readBoolean(parameters, MARKER_ONLY, false),
-                readBoolean(parameters, CATEGORY_STORAGE_ONLY, false),
-                readBoolean(parameters, REUSE_SAFE_HAND, false),
-                readBoolean(parameters, NEARBY_ROUTE, false));
-    }
-
-    public boolean nearbyRoute() {
-        return nearbyRouteEnabled && !markerOnly;
-    }
-
-    public boolean reuseSafeHand() {
-        return reuseSafeHandEnabled && !markerOnly;
+                readBoolean(parameters, CATEGORY_STORAGE_ONLY, false));
     }
 
     public boolean categoryStorageOnly() {

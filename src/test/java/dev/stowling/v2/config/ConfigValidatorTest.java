@@ -26,41 +26,18 @@ import org.junit.jupiter.api.Test;
 
 class ConfigValidatorTest {
     @Test
-    void refreshValidatesNearbyRouteExecutionSwitch() {
+    void refreshRejectsRemovedFlagsInNewRequests() {
         var zone = categoryZone("Storage");
-        for (String enabled : List.of("true", "false")) {
+        for (String field : List.of("reuseSafeHandEnabled", "nearbyRouteEnabled")) {
             var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
-                    Map.of("targetRef", "category-zone:" + zone.id(),
-                            "nearbyRouteEnabled", enabled));
-            assertDoesNotThrow(() -> ConfigValidator.requireValidStep(step, Map.of(), Map.of(),
-                    Map.of(zone.id(), zone)));
+                    Map.of("targetRef", "category-zone:" + zone.id(), field, "false"));
+            assertThrows(V2ValidationException.class, () -> ConfigValidator.requireValidStep(
+                    step, Map.of(), Map.of(), Map.of(zone.id(), zone)));
         }
-        var invalid = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
-                Map.of("targetRef", "category-zone:" + zone.id(),
-                        "nearbyRouteEnabled", "invalid"));
-        assertThrows(IllegalArgumentException.class, () -> ConfigValidator.requireValidStep(
-                invalid, Map.of(), Map.of(), Map.of(zone.id(), zone)));
     }
 
     @Test
-    void refreshAcceptsSafeHandExperimentForBothValuesAndRejectsInvalidValues() {
-        var zone = categoryZone("Storage");
-        for (String enabled : List.of("true", "false")) {
-            var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
-                    Map.of("targetRef", "category-zone:" + zone.id(),
-                            "reuseSafeHandEnabled", enabled));
-            assertDoesNotThrow(() -> ConfigValidator.requireValidStep(step, Map.of(), Map.of(),
-                    Map.of(zone.id(), zone)));
-        }
-        var invalid = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,
-                Map.of("targetRef", "category-zone:" + zone.id(),
-                        "reuseSafeHandEnabled", "invalid"));
-        assertThrows(IllegalArgumentException.class, () -> ConfigValidator.requireValidStep(
-                invalid, Map.of(), Map.of(), Map.of(zone.id(), zone)));
-    }
-
-    @Test
-    void refreshAcceptsExistingCategoryZonesAndPreservesDisabledExperimentDrafts() {
+    void refreshAcceptsBothCategoryStorageSwitchValuesAndRejectsInvalidValues() {
         var zone = categoryZone("Storage");
         for (String enabled : List.of("true", "false")) {
             var step = TaskStep.action(UUID.randomUUID(), ContainerCacheRefresh.MODULE,

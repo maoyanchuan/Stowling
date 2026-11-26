@@ -2,9 +2,6 @@
     "use strict";
 
     const moduleId = "REFRESH_CONTAINER_CACHE";
-    const storageExperiment = "refresh-category-storage-only";
-    const handExperiment = "refresh-reuse-safe-hand";
-    const routeExperiment = "refresh-nearby-route";
     const runLabels = Object.freeze({
         QUEUED: "排队中",
         RUNNING: "运行中",
@@ -36,9 +33,7 @@
             kinds,
             targetRef: parameters.targetRef || "",
             categoryStorageOnlyEnabled:
-                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true",
-            reuseSafeHandEnabled: String(parameters.reuseSafeHandEnabled).toLowerCase() === "true",
-            nearbyRouteEnabled: String(parameters.nearbyRouteEnabled).toLowerCase() === "true"
+                String(parameters.categoryStorageOnlyEnabled).toLowerCase() === "true"
         };
     }
 
@@ -52,8 +47,6 @@
             ...Object.fromEntries(Object.entries(draft.kinds).map(([key, value]) =>
                 [key, String(value)])),
             categoryStorageOnlyEnabled: String(Boolean(draft.categoryStorageOnlyEnabled)),
-            reuseSafeHandEnabled: String(Boolean(draft.reuseSafeHandEnabled)),
-            nearbyRouteEnabled: String(Boolean(draft.nearbyRouteEnabled)),
             scanMarkers: "false",
             includeMarkersInInventory: "false"
         };
@@ -110,12 +103,6 @@
     const list = id("refresh-cache-list");
     const target = id("refresh-cache-target");
     const categoryStorage = Settings.switchControl(id("refresh-category-storage-only"));
-    const reuseSafeHand = Settings.switchControl(id("refresh-reuse-safe-hand"));
-    const nearbyRoute = Settings.switchControl(id("refresh-nearby-route"));
-    const experiments = id("refresh-experiments-settings");
-    const experimentsToggle = id("refresh-experiments-toggle");
-    const experimentsBody = id("refresh-experiments-body");
-    let experimentsExpanded = false;
     const kinds = [...form.querySelectorAll("[data-refresh-kind]")]
         .map((input) => Settings.switchControl(input));
     const kindSelection = id("refresh-kind-selection");
@@ -155,19 +142,8 @@
     /** @returns {void} */
     function controls() {
         const layout = target.value.startsWith("category-zone:");
-        const debug = Boolean(window.StowlingTaskDebugMode?.enabled());
-        experiments.hidden = !debug;
-        experiments.inert = !debug;
-        experimentsToggle.setAttribute("aria-expanded", String(experimentsExpanded));
-        void Settings.reveal(experimentsBody, debug && experimentsExpanded);
-        const activeExperiments = [];
-        if (categoryStorage.checked) activeExperiments.push("分类区仅刷新储存容器");
-        if (reuseSafeHand.checked) activeExperiments.push("连续开箱复用安全槽位");
-        if (nearbyRoute.checked) activeExperiments.push("刷新时优先原地开箱与就近寻路");
-        id("refresh-experiments-summary").textContent = activeExperiments.length
-            ? "已开启：" + activeExperiments.join("、") : "未启用";
         id("refresh-cache-target-note").textContent = layout && !categoryStorage.checked
-            ? "请开启调试模式，在实验性设置中启用“分类区仅刷新储存容器”。"
+            ? "请启用下方的“分类区仅刷新储存容器”开关。"
             : layout ? "只刷新各绑定组储存区内已启用类型的容器，不打开识别区箱子。"
                 : "刷新此区域内已启用类型的容器缓存。";
         void Settings.reveal(id("refresh-daily-field"), mode.value === "DAILY");
@@ -184,7 +160,7 @@
         draftCard.hidden = !isDraft;
         draftToggle.disabled = disabled;
         disclose(draftToggle, draftBody, isDraft && current.expanded);
-        for (const [taskId, {button, body, toggle, status, experimentStatus}] of savedCards) {
+        for (const [taskId, {button, body, toggle, status}] of savedCards) {
             const selected = current?.task?.id === taskId;
             const dirty = selected && current.dirty;
             const scheduled = Boolean(schedules[taskId]);
@@ -200,18 +176,10 @@
             toggle.checked = pendingSwitch?.id === taskId ? pendingSwitch.enabled : state.checked;
             toggle.disabled = disabled || dirty || blocked || (state.stopping && !state.checked);
             toggle.setAttribute("aria-busy", String(pendingSwitch?.id === taskId));
-            toggle.title = blocked ? "请先开启分类区仅刷新储存容器实验"
+            toggle.title = blocked ? "请先开启分类区仅刷新储存容器"
                 : dirty ? "修改保存后可切换任务"
                 : state.checked ? "停止任务" : "启动任务";
             status.textContent = dirty ? "未保存修改" : state.label;
-            const reuseHand = selected ? reuseSafeHand.checked : taskSettings.reuseSafeHandEnabled;
-            const active = [];
-            if (enabled) active.push("分类区仅刷新储存容器（" + storageExperiment + "）");
-            if (reuseHand) active.push("连续开箱复用安全槽位（" + handExperiment + "）");
-            const route = selected ? nearbyRoute.checked : taskSettings.nearbyRouteEnabled;
-            if (route) active.push("刷新时优先原地开箱与就近寻路（" + routeExperiment + "）");
-            experimentStatus.hidden = !active.length;
-            experimentStatus.textContent = active.length ? "已开启：" + active.join("、") : "";
             disclose(button, body, selected && current.expanded);
         }
         selects.refresh(true);
@@ -295,13 +263,10 @@
             toggle.addEventListener("change", () => void setRunning(task.id, toggle.checked));
             header.append(title, edit, toggle);
             body.append(nextLabel);
-            const experimentStatus = S.element("p", "refresh-task-timing field-message");
-            experimentStatus.setAttribute("role", "status");
-            card.append(header, body, status, experimentStatus);
+            card.append(header, body, status);
             if (current?.task?.id === task.id) body.append(form);
             list.append(card);
-            savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel,
-                experimentStatus});
+            savedCards.set(task.id, {button: edit, body, toggle, status, nextLabel});
         }
         controls();
         renderNextTimes();
@@ -324,8 +289,6 @@
         renderOptions(draft.targetRef);
         for (const input of kinds) input.checked = draft.kinds[input.dataset.refreshKind];
         categoryStorage.checked = draft.categoryStorageOnlyEnabled;
-        reuseSafeHand.checked = draft.reuseSafeHandEnabled;
-        nearbyRoute.checked = draft.nearbyRouteEnabled;
         mode.value = schedule?.mode || "MANUAL";
         time.value = schedule?.time || "04:00";
         const minutes = schedule?.intervalMinutes || 60;
@@ -349,7 +312,6 @@
                 schedule: task ? schedules[task.id] : undefined};
             row.body.append(form);
             kindDisclosure.setExpanded(false);
-            experimentsExpanded = false;
             fillForm(task);
         }
         controls();
@@ -459,9 +421,7 @@
                         targetRef: target.value,
                         kinds: Object.fromEntries(kinds.map((input) =>
                             [input.dataset.refreshKind, input.checked])),
-                        categoryStorageOnlyEnabled: categoryStorage.checked,
-                        reuseSafeHandEnabled: reuseSafeHand.checked,
-                        nearbyRouteEnabled: nearbyRoute.checked
+                        categoryStorageOnlyEnabled: categoryStorage.checked
                     })
                 }]
             };
@@ -584,11 +544,6 @@
     });
     draftToggle.addEventListener("click", () => open());
     remove.addEventListener("click", () => void deleteTask());
-    experimentsToggle.addEventListener("click", () => {
-        experimentsExpanded = !experimentsExpanded;
-        controls();
-    });
-    document.addEventListener("stowling:task-debug-mode-changed", controls);
     form.addEventListener("input", () => {
         if (!current) return;
         current.dirty = true;

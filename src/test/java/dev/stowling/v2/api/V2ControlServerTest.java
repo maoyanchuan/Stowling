@@ -558,7 +558,8 @@ class V2ControlServerTest {
                 "coordinate:%s","retainInCache":true,"cacheLimit":9}},
                 "remainderPolicy":{"unclassifiableEnabled":true,
                 "unclassifiableDestinationRef":"coordinate:%s","overflowEnabled":true,
-                "overflowDestinationRef":"coordinate:%s","robotWarehouseFirstEnabled":true},
+                "overflowDestinationRef":"coordinate:%s","robotWarehouseFirstEnabled":true,
+                "overflowPackingEnabled":true},
                 "overflowEnabled":true,"overflowDestinationRef":"region:%s",
                 "robotWarehouseMixedBoxes":false}
                 """.formatted(point.id(), region.id(), zone.id(), point.id(), point.id(), point.id(),
@@ -587,6 +588,10 @@ class V2ControlServerTest {
                             "\"robotWarehouseMixedBoxes\":\"false\""), true).statusCode());
             var remainders = item.getAsJsonObject("remainderPolicy");
             assertFalse(remainders.has("robotWarehouseFirstEnabled"));
+            assertTrue(remainders.get("overflowPackingEnabled").getAsBoolean());
+            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                    body.replace("\"overflowPackingEnabled\":true",
+                            "\"overflowPackingEnabled\":\"true\""), true).statusCode());
             assertTrue(remainders.get("unclassifiableEnabled").getAsBoolean());
             assertEquals("coordinate:" + point.id(),
                     remainders.get("overflowDestinationRef").getAsString());

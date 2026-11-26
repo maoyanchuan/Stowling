@@ -61,7 +61,8 @@ def test_merged_classification_switches_are_not_saved_or_returned(enabled: bool)
 def test_remainder_destinations_survive_save_and_reload(enabled: bool) -> None:
     policy = {"unclassifiableEnabled": enabled,
               "unclassifiableDestinationRef": "coordinate:unmatched",
-              "overflowEnabled": enabled, "overflowDestinationRef": "region:overflow"}
+              "overflowEnabled": enabled, "overflowDestinationRef": "region:overflow",
+              "overflowPackingEnabled": False}
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
         const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
@@ -72,6 +73,24 @@ def test_remainder_destinations_survive_save_and_reload(enabled: bool) -> None:
         return model.draftFromTask(saved).remainderPolicy;
     })()""")
     assert result == policy
+
+
+@pytest.mark.parametrize("total", [False, True])
+@pytest.mark.parametrize("pack", [False, True])
+def test_total_overflow_packing_draft_survives_save_and_reload(total: bool, pack: bool) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}], remainderPolicy: {
+                overflowEnabled: """ + json.dumps(total) + """, overflowPackingEnabled: """
+        + json.dumps(pack) + """, overflowDestinationRef: "region:overflow"}};
+        const saved = model.payload(draft, {regions: [{id: "cache"}, {id: "overflow"}],
+            categoryZones: [{id: "zone"}]});
+        const loaded = model.draftFromTask(saved).remainderPolicy;
+        return [model.newDraft("CLASSIFICATION").remainderPolicy.overflowPackingEnabled,
+            loaded.overflowEnabled, loaded.overflowPackingEnabled, loaded.overflowDestinationRef];
+    })()""")
+    assert result == [False, total, pack, "region:overflow"]
 
 
 @pytest.mark.parametrize("ref", [None, "region:deleted", "region:cache"])

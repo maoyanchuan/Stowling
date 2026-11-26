@@ -8,9 +8,14 @@ import java.util.Map;
 /** Storage fallbacks copied from the interrupted task's frozen execution plan. */
 public record TaskCleanupRouting(boolean legacyOverflowEnabled,
         ResourceReference overflowDestination, ResourceReference robotWarehouse,
-        boolean mixedBoxes) {
+        boolean mixedBoxes, boolean overflowPackingEnabled) {
     public static final String OVERFLOW_DESTINATION = "overflowDestinationRef";
     public static final String ROBOT_WAREHOUSE = "robotWarehouseRef";
+
+    public TaskCleanupRouting(boolean legacyOverflowEnabled, ResourceReference overflowDestination,
+            ResourceReference robotWarehouse, boolean mixedBoxes) {
+        this(legacyOverflowEnabled, overflowDestination, robotWarehouse, mixedBoxes, false);
+    }
 
     public static TaskCleanupRouting fromSteps(List<TaskStep> steps) {
         Map<String, String> parameters = new LinkedHashMap<>();
@@ -39,6 +44,9 @@ public record TaskCleanupRouting(boolean legacyOverflowEnabled,
                             step.parameters().get(ClassificationRemainderPolicy.KIND))) {
                 parameters.put(OVERFLOW_DESTINATION,
                         step.parameters().get(ConfigValidator.TARGET_REF));
+                parameters.put(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED,
+                        step.parameters().getOrDefault(
+                                ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED, "false"));
             }
             collect(step.steps(), parameters);
             collect(step.otherwise(), parameters);
@@ -49,7 +57,9 @@ public record TaskCleanupRouting(boolean legacyOverflowEnabled,
         return new TaskCleanupRouting(Boolean.parseBoolean(parameters.get("overflowEnabled")),
                 reference(parameters.get(OVERFLOW_DESTINATION)),
                 reference(parameters.get(ROBOT_WAREHOUSE)),
-                Boolean.parseBoolean(parameters.getOrDefault("mixedBoxes", "true")));
+                Boolean.parseBoolean(parameters.getOrDefault("mixedBoxes", "true")),
+                Boolean.parseBoolean(parameters.get(
+                        ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED)));
     }
 
     private static ResourceReference reference(String value) {
@@ -60,6 +70,9 @@ public record TaskCleanupRouting(boolean legacyOverflowEnabled,
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("overflowEnabled", Boolean.toString(legacyOverflowEnabled));
         parameters.put("mixedBoxes", Boolean.toString(mixedBoxes));
+        if (overflowPackingEnabled) {
+            parameters.put(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED, "true");
+        }
         if (overflowDestination != null) {
             parameters.put(OVERFLOW_DESTINATION, overflowDestination.encode());
         }

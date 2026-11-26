@@ -90,6 +90,7 @@
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
         experimentsSummary: document.querySelector("#auto-experiments-summary"),
+        overflowPacking: document.querySelector("#auto-overflow-packing-enabled"),
         warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
         warehouseBody: document.querySelector("#robot-warehouse-body")
     };
@@ -274,6 +275,7 @@
         boxSettings?.set(draft.facilities.emptyBoxWarehouse);
         remainderSettings?.resources(Auto.cacheLocations(state.resources));
         remainderSettings?.set(draft.remainderPolicy);
+        elements.overflowPacking.checked = draft.remainderPolicy.overflowPackingEnabled;
         renderClassificationTargets();
         updateControls();
     }
@@ -315,7 +317,10 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
-            remainderPolicy: remainderSettings?.read() || state.draft.remainderPolicy,
+            remainderPolicy: {
+                ...(remainderSettings?.read() || state.draft.remainderPolicy),
+                overflowPackingEnabled: elements.overflowPacking.checked
+            },
             facilities: {...cleanup.read(), ...(kind === "CLASSIFICATION" && boxSettings
                 ? {emptyBoxWarehouse: boxSettings.read()} : {})},
             cleanupDestinationRef: cleanup.read().destinationRef || ""
@@ -375,7 +380,10 @@
                 body.append(elements.form);
             }
             const header = Stowling.element("div", "task-card-header");
-            const row = {button, body, status};
+            const experimentStatus = Stowling.element("p", "auto-experiment-status field-message");
+            experimentStatus.setAttribute("role", "status");
+            experimentStatus.hidden = true;
+            const row = {button, body, status, experimentStatus};
             if (standard) {
                 header.className = "pickup-task-header";
                 const title = Stowling.element("h3", "pickup-task-title", item.name);
@@ -405,6 +413,7 @@
             header.append(row.listening);
             card.append(header, body);
             if (standard) card.append(status);
+            card.append(experimentStatus);
             elements.list.append(card);
             rows.set(item.id, row);
         }
@@ -454,8 +463,11 @@
         const packing = elements.cacheEnabled.closest("section");
         packing.hidden = classification;
         packing.inert = classification;
-        elements.experimentsRoot.hidden = !showExperiments || classification;
-        elements.experimentsRoot.inert = !showExperiments || classification;
+        elements.experimentsRoot.hidden = !showExperiments;
+        elements.experimentsRoot.inert = !showExperiments;
+        const overflowPackingRow = elements.overflowPacking.closest("label");
+        overflowPackingRow.hidden = !classification;
+        overflowPackingRow.inert = !classification;
 
         const boxHost = document.querySelector("#auto-empty-box-settings");
         if (boxHost) boxHost.hidden = !classification;
@@ -527,6 +539,12 @@
             row.status.textContent = pending ? "正在切换任务状态"
                 : active ? classification ? "排队或运行中" : "监听中"
                     : selected && state.dirty ? "未保存修改" : "已保存";
+            const policy = selected ? state.draft.remainderPolicy : item.remainderPolicy;
+            const packingEnabled = classification && policy?.overflowPackingEnabled === true;
+            row.experimentStatus.hidden = !packingEnabled;
+            row.experimentStatus.textContent = packingEnabled
+                ? "总溢出先打包（classification-total-overflow-packing）"
+                    + (policy.overflowEnabled ? "：已启用" : "：已保存，待开启总溢出") : "";
         }
         const phaseStates = [
             ["collection", elements.collectHeader, elements.collectBody],
@@ -571,6 +589,9 @@
         const activeExperiments = [];
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
+        }
+        if (classification && elements.overflowPacking.checked) {
+            activeExperiments.push("总溢出先打包（classification-total-overflow-packing）");
         }
         elements.experimentsSummary.textContent = activeExperiments.length
             ? `已开启 ${activeExperiments.length} 项` : "未启用实验性设置";

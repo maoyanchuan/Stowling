@@ -11,7 +11,7 @@
     const INTEGER_PATTERN = /^\d+$/;
     const DEFAULT_REMAINDER_POLICY = Object.freeze({
         unclassifiableEnabled: false, unclassifiableDestinationRef: null,
-        overflowEnabled: false, overflowDestinationRef: null
+        overflowEnabled: false, overflowDestinationRef: null, overflowPackingEnabled: false
     });
 
     /** @param {object} [value] @returns {object} */
@@ -21,7 +21,8 @@
             unclassifiableEnabled: policy.unclassifiableEnabled,
             unclassifiableDestinationRef: policy.unclassifiableDestinationRef,
             overflowEnabled: policy.overflowEnabled,
-            overflowDestinationRef: policy.overflowDestinationRef
+            overflowDestinationRef: policy.overflowDestinationRef,
+            overflowPackingEnabled: policy.overflowPackingEnabled
         };
     }
 
@@ -322,6 +323,9 @@
      * @returns {void} */
     function validateRemainders(draft, resources, errors) {
         const policy = {...DEFAULT_REMAINDER_POLICY, ...draft.remainderPolicy};
+        if (typeof policy.overflowPackingEnabled !== "boolean") {
+            errors.push("总溢出打包开关需为布尔值");
+        }
         const places = cacheLocations(resources);
         for (const [key, label] of [["unclassifiable", "不可分类"], ["overflow", "总溢出"]]) {
             if (typeof policy[`${key}Enabled`] !== "boolean") {

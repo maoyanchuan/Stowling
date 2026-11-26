@@ -57,6 +57,15 @@ def test_merged_classification_controls_are_removed() -> None:
         assert control not in page.attrs
 
 
+def test_total_overflow_packing_is_an_independent_footer_experiment() -> None:
+    page = markup(WEB / "tasks.html")
+    control = "auto-overflow-packing-enabled"
+    assert "auto-experiments-body" in page.parents[control]
+    assert page.attrs[control]["role"] == "switch"
+    assert "checked" not in page.attrs[control]
+    assert page.attrs[control]["aria-describedby"] == "auto-overflow-packing-help"
+
+
 def test_merged_eating_guard_has_no_experimental_controls() -> None:
     page = markup(WEB / "tasks.html")
     for control in ("auto-eat-experiments", "auto-eat-world-use-guard",

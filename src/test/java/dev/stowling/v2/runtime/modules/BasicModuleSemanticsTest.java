@@ -403,6 +403,65 @@ class BasicModuleSemanticsTest {
     }
 
     @Test
+    void totalOverflowPassesTheExplicitPackingFlagToStorage() {
+        List<Boolean> requests = new ArrayList<>();
+        var destination = ResourceReference.parse("region:" + UUID.randomUUID());
+        StorageAutomationPort storage = new StorageAutomationPort() {
+            @Override
+            public TaskModuleExecutor deposit(TaskExecutionContext context, ContainerTarget target,
+                    Map<String, Integer> items) {
+                throw new AssertionError("must route through remainder storage");
+            }
+
+            @Override
+            public TaskModuleExecutor cleanup(TaskExecutionContext context) {
+                throw new AssertionError("must route through remainder storage");
+            }
+
+            @Override
+            public TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
+                    ResourceReference cache, ResourceReference target, String kind, boolean pack) {
+                requests.add(pack);
+                assertEquals(destination, target);
+                assertEquals("OVERFLOW", kind);
+                return new TaskModuleExecutor() {
+                    @Override
+                    public TaskModuleResult start() {
+                        return TaskModuleResult.succeeded("stored");
+                    }
+
+                    @Override
+                    public TaskModuleResult tick() {
+                        return start();
+                    }
+
+                    @Override
+                    public void cancel() {
+                    }
+                };
+            }
+        };
+        var base = context(new ForbiddenNavigation(), new RecordingTransfers(),
+                new FailedWithdrawals(), new FoodPort(), new TaskRunWorkspace());
+        var context = new TaskExecutionContext(base.navigation(), base.droppedItems(),
+                base.containerRegions(), base.containerTransfers(), base.containerWithdrawals(),
+                base.containerInspections(), base.categoryMarkerCache(), base.foodConsumption(),
+                base.categoryZonesPort(), base.coordinates(), base.regions(), base.categoryZones(),
+                base.workspace(), base.inventory(), storage);
+        for (String value : List.of("absent", "false", "true")) {
+            var parameters = new java.util.LinkedHashMap<String, String>();
+            parameters.put(ConfigValidator.CACHE_LOCATION_REF, "region:" + UUID.randomUUID());
+            parameters.put(ConfigValidator.TARGET_REF, destination.encode());
+            parameters.put("remainderKind", "OVERFLOW");
+            if (!"absent".equals(value)) parameters.put("overflowPackingEnabled", value);
+            var action = OverflowItemsModule.create(context, TaskStep.action(UUID.randomUUID(),
+                    "ROUTE_CLASSIFICATION_REMAINDERS", parameters));
+            assertEquals(TaskModuleState.SUCCEEDED, action.start().state());
+        }
+        assertEquals(List.of(false, false, true), requests);
+    }
+
+    @Test
     void overflowResolvesTheCacheRegionOrLimitsTheRequestToOwnedInventory() {
         RegionDefinition region = new RegionDefinition(UUID.randomUUID(), "Cache",
                 0, 64, 0, 2, 64, 2);

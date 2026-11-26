@@ -1045,13 +1045,14 @@ public final class V2ControlServer implements AutoCloseable {
         var policy = jsonObject(json.get("remainderPolicy"), "remainderPolicy");
         policy.remove("robotWarehouseFirstEnabled");
         requireFieldsAny(policy, Set.of("unclassifiableEnabled", "unclassifiableDestinationRef",
-                "overflowEnabled", "overflowDestinationRef"),
+                "overflowEnabled", "overflowDestinationRef", "overflowPackingEnabled"),
                 Set.of());
         return new dev.stowling.v2.model.ClassificationRemainderPolicy(
                 optionalBoolean(policy, "unclassifiableEnabled"),
                 optionalString(policy, "unclassifiableDestinationRef"),
                 optionalBoolean(policy, "overflowEnabled"),
-                optionalString(policy, "overflowDestinationRef"));
+                optionalString(policy, "overflowDestinationRef"),
+                optionalBoolean(policy, "overflowPackingEnabled"));
     }
 
     private static dev.stowling.v2.model.CacheIntakePolicy cachePolicy(JsonObject json) {

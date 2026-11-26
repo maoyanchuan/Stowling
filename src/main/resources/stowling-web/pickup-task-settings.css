@@ -654,6 +654,13 @@ body[data-page] .task-select-option:focus-visible {
     white-space: nowrap;
 }
 
+.pickup-task-module > .auto-experiment-status {
+    margin: 0;
+    padding: 14px 20px;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
 #auto-same-category-batching-row[hidden] {
     display: none !important;
 }

@@ -341,6 +341,15 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         return new Overflow(context, cache, false, destination, kind);
     }
 
+    @Override
+    public TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination, String kind, boolean pack) {
+        if (pack && !dev.stowling.v2.model.ClassificationRemainderPolicy.OVERFLOW.equals(kind)) {
+            throw new IllegalArgumentException("打包实验仅适用于总溢出");
+        }
+        return new Overflow(context, cache, pack, destination, kind);
+    }
+
     private String robotWarehouseScope() {
         if (minecraft.level == null || minecraft.player == null) {
             throw new IllegalStateException("进入世界后才能使用机器人仓库");
@@ -3501,7 +3510,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             if (cacheLocation == null && owned().isEmpty()) return;
-            if (remainderKind == null) warehouseScope = robotWarehouseScope();
+            if (remainderKind == null || boxedOnly) warehouseScope = robotWarehouseScope();
             destinations = boxedOnly || remainderKind != null
                     ? robotWarehouseContainers(context, destination)
                     : overflowContainers(destination);
@@ -3558,7 +3567,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void prepareWarehouse() {
-            if (remainderKind != null) return;
+            if (remainderKind != null && !boxedOnly) return;
             if (warehouseReady) return;
             if (!cleanupAvailable()) {
                 throw new IllegalStateException("溢出打包前请配置任务中断存放位置");
@@ -3572,7 +3581,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void packOwned() {
-            if (remainderKind != null) {
+            if (remainderKind != null && !boxedOnly) {
                 storeRoutedItems(0);
                 return;
             }
@@ -3736,6 +3745,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void findReusableOverflowBox(int index) {
+            if (cleanupOnly && remainderKind != null) {
+                useOwnedOrEmptyBox();
+                return;
+            }
             if (index >= destinations.size()) {
                 useOwnedOrEmptyBox();
                 return;
@@ -4145,6 +4158,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 String label = "UNCLASSIFIABLE".equals(remainderKind) ? "不可分类"
                         : dev.stowling.v2.model.UnstackableZoneRouting.KIND.equals(remainderKind)
                                 ? "不可堆叠区域专属溢出" : "溢出";
+                if (boxedOnly) return "总溢出打包存放结束（classification-total-overflow-packing）";
                 return label + "物品存放结束，未能存入的物品保留在物品来源";
             }
             if (boxedOnly) return storedOrdinary ? "储存区溢出物品已装盒存入机器人仓库"
@@ -4243,7 +4257,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             this.routing = routing;
             addRobotFallback();
             if (routing.overflowDestination() != null) {
-                fallbacks.add(() -> new Overflow(context, null, false,
+                fallbacks.add(() -> new Overflow(context, null, routing.overflowPackingEnabled(),
                         routing.overflowDestination(), "OVERFLOW", true, true));
             }
             if (routing.legacyOverflowEnabled()) {

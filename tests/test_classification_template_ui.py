@@ -106,6 +106,69 @@ def open_settings(page: Any) -> None:
     settle(page)
 
 
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_total_overflow_packing_saves_and_survives_hidden_debug_and_collapsed_task(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    menu = page.locator("#auto-experiments-settings")
+    toggle = page.locator("#auto-overflow-packing-enabled")
+    assert menu.is_hidden()
+    assert not toggle.is_checked()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => true};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    assert menu.is_visible()
+    assert page.locator("#auto-experiments-toggle").get_attribute("aria-expanded") == "false"
+    assert toggle.is_hidden()
+    page.locator("#auto-experiments-toggle").click()
+    settle(page)
+    toggle.press("Space")
+    page.wait_for_function("backend.item.remainderPolicy?.overflowPackingEnabled === true")
+    indicator = page.locator("#auto-task-list .auto-experiment-status")
+    assert indicator.is_visible()
+    assert "classification-total-overflow-packing" in indicator.inner_text()
+    assert "待开启总溢出" in indicator.inner_text()
+    assert not page.locator("#auto-cache-packing-enabled").is_visible()
+
+    page.locator("#auto-experiments-toggle").click()
+    settle(page)
+    assert toggle.is_checked() and toggle.is_hidden()
+    assert indicator.is_visible()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => false};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    assert menu.is_hidden()
+    assert menu.evaluate("node => node.inert")
+    assert toggle.is_checked()
+    page.locator("#auto-task-list .pickup-task-expand").click()
+    settle(page)
+    assert indicator.is_visible()
+    open_settings(page)
+    assert toggle.is_checked()
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    page.locator("#auto-overflow-storage-enabled").check()
+    settle(page)
+    row = page.locator(".move-field:has(#auto-overflow-storage-location)")
+    row.locator(".task-select-trigger").click()
+    page.get_by_role("option", name="备用缓存").click()
+    page.wait_for_function("backend.item.remainderPolicy?.overflowEnabled === true")
+    assert page.evaluate("backend.item.remainderPolicy.overflowPackingEnabled") is True
+    assert "已启用" in indicator.inner_text()
+    page.locator("#auto-overflow-storage-enabled").uncheck()
+    page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === false")
+    assert toggle.is_checked()
+    assert "待开启总溢出" in indicator.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == []
+
+
 def test_classification_header_separates_real_execution_and_configuration(
     classification_page: Any,
 ) -> None:

@@ -158,8 +158,14 @@ public final class AutoClassifyTaskFactory {
             steps.add(robot);
         }
         if (remainders.overflowEnabled()) {
-            steps.add(routeRemainder(definition.cacheLocationRef(),
-                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW));
+            var total = routeRemainder(definition.cacheLocationRef(),
+                    remainders.overflowDestinationRef(), ClassificationRemainderPolicy.OVERFLOW);
+            if (definition.kind() == Kind.CLASSIFICATION && remainders.overflowPackingEnabled()) {
+                Map<String, String> parameters = new LinkedHashMap<>(total.parameters());
+                parameters.put(ClassificationRemainderPolicy.OVERFLOW_PACKING_ENABLED, "true");
+                total = TaskStep.action(total.id(), total.moduleId(), parameters);
+            }
+            steps.add(total);
         }
         return List.copyOf(steps);
     }

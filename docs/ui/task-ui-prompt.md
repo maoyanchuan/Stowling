@@ -217,6 +217,12 @@
 不可分类物品不进入机器人仓库；混装潜影盒仅分离本次符合条件的物品，其余归还来源。
 新设置使用任务的 `remainderPolicy`，包含 `unclassifiableEnabled`、
 `unclassifiableDestinationRef`、`overflowEnabled` 和 `overflowDestinationRef`。
+独立分类在底部“实验性设置”提供“总溢出先打包”独立开关，保存到
+`remainderPolicy.overflowPackingEnabled`，默认关闭；须同时开启总溢出才执行装盒。
+仅调试显示开启时显示此菜单，默认收起；隐藏或收起不重置开关，任务收起后也显示
+已开启状态及 `classification-total-overflow-packing` 标识。开启后允许杂盒和不满盒，
+保持机器人仓库优先顺序，不影响不可分类、专属溢出、拾取或旧组合任务。
+中断收尾沿用运行快照中的打包值；完整约定见 `docs/task-flows/classification.md`。
 关闭、收起、保存和重新打开时保留存放位置；功能开关、菜单展开和任务运行分别维护。
 原有任务级 `overflowEnabled` 和 `overflowDestinationRef` 继续表示机器人仓库配置。
 机器人仓库可直接选择普通容器区域，无需分类区或分类标记，兼容已有仓库引用。

@@ -41,6 +41,12 @@ public interface StorageAutomationPort {
         throw new IllegalStateException("当前环境不支持不可分类和溢出存放");
     }
 
+    default TaskModuleExecutor routeClassificationRemainders(TaskExecutionContext context,
+            ResourceReference cache, ResourceReference destination, String kind, boolean pack) {
+        if (pack) throw new IllegalStateException("当前环境不支持总溢出打包实验");
+        return routeClassificationRemainders(context, cache, destination, kind);
+    }
+
     default TaskModuleExecutor refreshContainerCache(TaskExecutionContext context, TaskStep step) {
         throw new IllegalStateException("当前环境不支持刷新容器缓存");
     }

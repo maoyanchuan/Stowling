@@ -842,8 +842,14 @@ public final class ConfigValidator {
                 requireCategoryZoneReference(step, categoryZones);
             }
             case dev.stowling.v2.model.ClassificationRemainderPolicy.MODULE -> {
-                requireParameters(step, Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind"),
+                requireParameters(step, Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind",
+                                "overflowPackingEnabled"),
                         Set.of(CACHE_LOCATION_REF, TARGET_REF, "remainderKind"));
+                requireOptionalBoolean(step, "overflowPackingEnabled");
+                if (Boolean.parseBoolean(step.parameters().get("overflowPackingEnabled"))
+                        && !"OVERFLOW".equals(step.parameters().get("remainderKind"))) {
+                    throw new V2ValidationException("打包实验仅适用于总溢出");
+                }
                 requireSpatialReference(step.parameters().get(CACHE_LOCATION_REF),
                         coordinates, regions);
                 requireSpatialReference(step.parameters().get(TARGET_REF), coordinates, regions);

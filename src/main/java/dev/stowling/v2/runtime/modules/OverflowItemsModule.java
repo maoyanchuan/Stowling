@@ -16,7 +16,10 @@ final class OverflowItemsModule {
                     ResourceReference.parse(step.parameters().get(
                             ConfigValidator.CACHE_LOCATION_REF)),
                     ResourceReference.parse(step.parameters().get(ConfigValidator.TARGET_REF)),
-                    step.parameters().get(dev.stowling.v2.model.ClassificationRemainderPolicy.KIND));
+                    step.parameters().get(dev.stowling.v2.model.ClassificationRemainderPolicy.KIND),
+                    TaskModuleSupport.booleanParameter(step,
+                            dev.stowling.v2.model.ClassificationRemainderPolicy
+                                    .OVERFLOW_PACKING_ENABLED, false));
         }
         var reference = ResourceReferenceSupport.optionalReference(step, TaskModuleIds.REGION_REF,
                 ResourceType.REGION);

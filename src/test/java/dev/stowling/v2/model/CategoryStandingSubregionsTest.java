@@ -52,6 +52,32 @@ class CategoryStandingSubregionsTest {
     }
 
     @Test
+    void sharedStandingServesMultipleGroupsWithoutCombiningTheirStoragePolicies() {
+        var point = new CategoryStandingPoint(new CategoryPositionDraft(2, 64, 7),
+                null, null, true, false, "shared-standing");
+        var plan = new CategoryStandingPlan(true, List.of(point));
+        var first = new CategoryBindingDefinition(UUID.randomUUID(), MARKERS, STORAGE,
+                "MARKER_CONTAINER_CONTENTS", List.of(), List.of(), BASELINE,
+                StoragePolicy.DEFAULT, true, "前区", false, null, plan);
+        var boxes = new CategoryZoneOptions("selection", "container-item", "box", "inside-box",
+                "", false, "");
+        var second = new CategoryBindingDefinition(UUID.randomUUID(), MARKERS.shift(0, 0, 20),
+                STORAGE.shift(0, 0, 20), "MARKER_CONTAINER_CONTENTS", List.of(), List.of(),
+                BASELINE, boxes.storagePolicy(null), true, "后区", true, boxes, plan);
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "仓库", List.of(first, second));
+        var result = CategoryStandingSubregions.segments(zone, true);
+        assertEquals(2, result.size());
+        assertEquals(result.getFirst().binding().standingArea(),
+                result.getLast().binding().standingArea());
+        assertEquals(StorageMode.NORMAL, result.getFirst().binding().storagePolicy().mode());
+        assertEquals(StorageMode.BOX_ONLY, result.getLast().binding().storagePolicy().mode());
+        assertEquals(BASELINE, CategoryStandingSubregions.segments(zone, false)
+                .getFirst().binding().standingArea());
+        assertEquals("shared-standing", point.shift(5, 0).standingId());
+        assertEquals(new CategoryPositionDraft(7, 64, 7), point.shift(5, 0).position());
+    }
+
+    @Test
     void disablingStandingRemovesItsConstraintOnlyWithinTheExperiment() {
         var zone = zone(plan(false), false);
         assertNull(CategoryStandingSubregions.segments(zone, true)

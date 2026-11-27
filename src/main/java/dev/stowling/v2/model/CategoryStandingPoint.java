@@ -6,8 +6,14 @@ public record CategoryStandingPoint(
         AreaBounds markerArea,
         AreaBounds storageArea,
         boolean expanded,
-        Boolean subregionsEnabled
+        Boolean subregionsEnabled,
+        String standingId
 ) {
+    public CategoryStandingPoint(CategoryPositionDraft position, AreaBounds markerArea,
+            AreaBounds storageArea, boolean expanded, Boolean subregionsEnabled) {
+        this(position, markerArea, storageArea, expanded, subregionsEnabled, null);
+    }
+
     public CategoryStandingPoint(CategoryPositionDraft position, AreaBounds markerArea,
             AreaBounds storageArea, boolean expanded) {
         this(position, markerArea, storageArea, expanded, null);
@@ -34,7 +40,7 @@ public record CategoryStandingPoint(
         return new CategoryStandingPoint(shifted,
                 markerArea == null ? null : markerArea.shift(x, 0, z),
                 storageArea == null ? null : storageArea.shift(x, 0, z), expanded,
-                subregionsEnabled);
+                subregionsEnabled, standingId);
     }
 
     private static Integer shifted(Integer coordinate, int delta) {

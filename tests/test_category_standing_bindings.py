@@ -126,6 +126,7 @@ def select_standing_group(page: Any, index: int, name: str) -> None:
     picker = page.locator('[data-category-select="standingTarget"]').nth(index)
     picker.locator(".category-select-trigger").click()
     picker.locator(".category-select-option").filter(has_text=name).click()
+    page.keyboard.press("Escape")
 
 
 def test_main_menu_selection_saves_to_the_selected_groups_and_survives_copy(
@@ -238,4 +239,80 @@ def test_previous_custom_subregions_stay_selected_in_the_main_menu(editor_page: 
     page.locator('#coordinate-form button[type="submit"]').click()
     page.wait_for_function("window.__editorState.revision !== 'r0'")
     saved = page.evaluate("window.__editorState.categoryZones[0].bindings[0].standingPlan")
-    assert saved["points"] == points
+    assert [{key: value for key, value in point.items() if key != "standingId"}
+            for point in saved["points"]] == points
+    assert all(point["standingId"] for point in saved["points"])
+
+
+def configure_shared_standing(page: Any) -> None:
+    scope = page.locator('.category-options [data-category-select="scopeMode"]').first
+    scope.locator(".category-select-trigger").click()
+    scope.locator('[data-category-value="selection"]').click()
+    page.locator(".category-binding-name").first.fill("前区")
+    page.locator("#category-standing-enabled").check()
+    for axis, value in [("x", "2"), ("y", "63"), ("z", "2")]:
+        page.locator(f'[data-standing-axis="{axis}"]').fill(value)
+    page.locator("#add-category-binding").click()
+    page.locator(".category-binding-name").nth(1).fill("后区")
+    select_standing_group(page, 0, "后区")
+
+
+def test_shared_standing_reopens_and_copies_as_one_editor_then_updates_all_groups(
+    editor_page: Any,
+) -> None:
+    page = editor_page
+    configure_shared_standing(page)
+    assert page.locator(".category-standing-point").count() == 1
+    picker = page.locator('[data-category-select="standingTarget"]')
+    assert picker.locator("select").evaluate("node => node.selectedOptions.length") == 2
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones.length === 1")
+    saved = page.evaluate("window.__editorState.categoryZones[0].bindings")
+    first = saved[0]["standingPlan"]["points"][0]
+    second = saved[1]["standingPlan"]["points"][0]
+    assert first["standingId"] == second["standingId"]
+    assert first["position"] == second["position"]
+    assert page.locator(".category-standing-point").count() == 1
+    page.locator(".category-standing-plan > .category-option-row button").click()
+    page.locator('[data-standing-axis="z"]').fill("7")
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones[0].bindings[0]"
+                           ".standingPlan.points[0].position.z === 7")
+    latest = page.evaluate("window.__editorState.categoryZones[0].bindings")
+    assert all(group["standingPlan"]["points"][0]["position"]["z"] == 7 for group in latest)
+    page.locator("#duplicate-coordinate").click()
+    page.locator(".category-standing-plan > .category-option-row button").click()
+    assert page.locator(".category-standing-point").count() == 1
+    assert page.locator('[data-standing-axis="z"]').input_value() == "7"
+    assert page.locator(".category-standing-target").evaluate(
+        "node => node.selectedOptions.length") == 2
+
+
+def test_unselecting_one_region_keeps_the_other_shared_binding(editor_page: Any) -> None:
+    page = editor_page
+    configure_shared_standing(page)
+    select_standing_group(page, 0, "前区")
+    page.locator('#coordinate-form button[type="submit"]').click()
+    page.wait_for_function("window.__editorState.categoryZones.length === 1")
+    groups = page.evaluate("window.__editorState.categoryZones[0].bindings")
+    assert groups[0]["standingPlan"] == {"enabled": False, "points": []}
+    assert groups[1]["standingPlan"]["points"][0]["position"]["z"] == 2
+    assert page.locator(".category-standing-point").count() == 1
+
+
+@pytest.mark.parametrize("fixture", ["sample_page", "editor_page"])
+def test_multi_select_keyboard_keeps_menu_open_and_marks_each_selected_region(
+    request: pytest.FixtureRequest, fixture: str,
+) -> None:
+    page = request.getfixturevalue(fixture)
+    page.locator("#category-standing-enabled").check()
+    page.locator("#add-category-binding").click()
+    picker = page.locator('[data-category-select="standingTarget"]')
+    picker.locator(".category-select-trigger").press("ArrowDown")
+    page.keyboard.press("End")
+    page.keyboard.press("Space")
+    assert picker.locator(".category-select-menu").is_visible()
+    assert picker.locator('[role="option"][aria-selected="true"]').count() == 2
+    assert picker.locator('[role="listbox"]').get_attribute("aria-multiselectable") == "true"
+    page.keyboard.press("Escape")
+    assert picker.locator(".category-select-menu").is_hidden()

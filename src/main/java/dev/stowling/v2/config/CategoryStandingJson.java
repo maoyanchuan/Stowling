@@ -20,10 +20,11 @@ public final class CategoryStandingJson {
         for (JsonElement entry : points.getAsJsonArray()) {
             JsonObject point = CategoryOptionsJson.object(entry,
                     Set.of("position", "markerArea", "storageArea", "expanded",
-                            "subregionsEnabled"));
+                            "subregionsEnabled", "standingId"));
             CategoryOptionsJson.position(point.get("position"), true);
             CategoryOptionsJson.primitive(point.get("expanded"), "boolean");
             CategoryOptionsJson.primitive(point.get("subregionsEnabled"), "boolean");
+            CategoryOptionsJson.primitive(point.get("standingId"), "string");
             for (String key : Set.of("markerArea", "storageArea")) {
                 JsonElement raw = point.get(key);
                 if (raw == null || raw.isJsonNull()) continue;

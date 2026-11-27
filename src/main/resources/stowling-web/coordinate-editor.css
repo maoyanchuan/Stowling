@@ -1591,6 +1591,10 @@
         padding-left: 12px;
     }
 
+    :root body[data-coordinate-editor] .category-standing-picker .category-select-menu {
+        width: 100%;
+    }
+
     :root body[data-coordinate-editor] .category-rule-content,
     :root body[data-coordinate-editor] .category-recognition-panel {
         padding-left: 0;

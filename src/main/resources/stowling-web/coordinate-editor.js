@@ -221,11 +221,14 @@
 
     /** @param {CategorySelect} control @returns {void} */
     function syncCategorySelect(control) {
-        const selected = control.select.options[control.select.selectedIndex];
-        control.current.textContent = selected?.textContent || "";
+        const selected = Array.from(control.select.selectedOptions);
+        control.current.textContent = control.select.multiple
+            ? selected.length > 2 ? `已选 ${selected.length} 个区域`
+                : selected.map(option => option.textContent).join("、") || "请选择识别区与储存区"
+            : selected[0]?.textContent || "";
         control.trigger.disabled = control.select.disabled;
         control.options.forEach(option => {
-            const active = option.dataset.categoryValue === control.select.value;
+            const active = selected.some(value => value.value === option.dataset.categoryValue);
             option.setAttribute("aria-selected", String(active));
             option.tabIndex = active ? 0 : -1;
         });
@@ -254,8 +257,8 @@
         if (!open && categoryMenuOpen === control) categoryMenuOpen = null;
         if (!focus) return;
         if (open) {
-            control.options.find(option => option.dataset.categoryValue === control.select.value)
-                ?.focus();
+            (control.options.find(option => option.dataset.categoryValue === control.select.value)
+                || control.options[0])?.focus();
         } else {
             control.trigger.focus();
         }
@@ -264,10 +267,16 @@
     /** @param {CategorySelect} control @param {string} value @returns {void} */
     function selectCategoryOption(control, value) {
         if (!control.options.some(option => option.dataset.categoryValue === value)) return;
-        control.select.value = value;
+        control.changedValue = value;
+        if (control.select.multiple) {
+            const option = Array.from(control.select.options).find(option => option.value === value);
+            option.selected = !option.selected;
+        } else {
+            control.select.value = value;
+        }
         syncCategorySelect(control);
         control.select.dispatchEvent(new Event("change", {bubbles: true}));
-        setCategoryMenuOpen(control, false, true);
+        if (!control.select.multiple) setCategoryMenuOpen(control, false, true);
     }
 
     /** @returns {void} */
@@ -724,13 +733,25 @@
             options: Array.from(menu.children)};
     }
 
-    /** @param {string} value @param {string[][]} choices
-     * @param {(value: string) => void} changed @returns {object} */
-    function createStandingSelect(value, choices, changed) {
-        const control = createRuleTargetSelect(value, choices, "识别区与储存区");
+    /** @param {string[]} values @param {string[][]} choices
+     * @param {(values: string[], changed: string) => string[]} changed @returns {object} */
+    function createStandingSelect(values, choices, changed) {
+        const control = createRuleTargetSelect("", choices, "识别区与储存区（可多选）");
         control.wrap.dataset.categorySelect = "standingTarget";
         control.select.className = "category-standing-target";
-        bindCategorySelect(control, () => changed(control.select.value));
+        control.select.multiple = true;
+        control.menu.setAttribute("aria-multiselectable", "true");
+        Array.from(control.select.options).forEach(option => {
+            option.selected = values.includes(option.value);
+        });
+        bindCategorySelect(control, () => {
+            const selected = Array.from(control.select.selectedOptions, option => option.value);
+            const normalized = changed(selected, control.changedValue);
+            Array.from(control.select.options).forEach(option => {
+                option.selected = normalized.includes(option.value);
+            });
+            syncCategorySelect(control);
+        });
         syncCategorySelect(control);
         return {root: control.wrap, trigger: control.trigger,
             close: () => {
@@ -1205,6 +1226,7 @@
         });
         standingEditor = window.StowlingCategoryStanding.create(values, {
             groups: standingBindingChoices, createSelect: createStandingSelect, reveal,
+            nextId,
             bindInputs: window.Stowling?.bindCoordinateInputs,
             changed: () => { dirty = true; }
         });

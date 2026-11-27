@@ -27,7 +27,7 @@ class CategoryStandingPersistenceTest {
             throws Exception {
         var json = JsonParser.parseString("""
                 {"enabled":false,"points":[{"position":{"x":2,"y":null,"z":7},
-                "subregionsEnabled":false,"expanded":true,
+                "subregionsEnabled":false,"expanded":true,"standingId":"shared-standing",
                 "markerArea":{"firstX":0,"firstY":64,"firstZ":0,
                 "secondX":0,"secondY":64,"secondZ":4},
                 "storageArea":{"firstX":1,"firstY":64,"firstZ":0,
@@ -50,6 +50,7 @@ class CategoryStandingPersistenceTest {
         var restored = new ConfigStore(path).read().config().categoryZones()
                 .getFirst().bindings().getFirst();
         assertEquals(plan, restored.standingPlan());
+        assertEquals("shared-standing", restored.standingPlan().points().getFirst().standingId());
         assertFalse(restored.optionsEnabled());
     }
 
@@ -59,7 +60,8 @@ class CategoryStandingPersistenceTest {
                 "{\"points\":[{\"position\":{\"x\":1.5}}]}",
                 "{\"points\":[{\"position\":{\"y\":2147483648}}]}",
                 "{\"points\":[{\"storageArea\":{\"firstX\":0}}]}",
-                "{\"points\":[{\"unknown\":true}]}")) {
+                "{\"points\":[{\"unknown\":true}]}",
+                "{\"points\":[{\"standingId\":12}]}")) {
             assertThrows(V2ValidationException.class,
                     () -> CategoryStandingJson.validate(JsonParser.parseString(json)));
         }

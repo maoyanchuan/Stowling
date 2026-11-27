@@ -37,6 +37,17 @@
     /** @param {object[]} bindings @param {object} helpers @returns {object} */
     function create(bindings, helpers) {
         const states = new Map(bindings.map(binding => [binding.id, draft(binding).enabled]));
+        const shared = new Map();
+        for (const binding of bindings) {
+            for (const point of draft(binding).points) {
+                const identity = point.standingId || helpers.nextId();
+                const key = `${identity}:${JSON.stringify(point.position)}`;
+                if (!shared.has(key)) shared.set(key, {
+                    point: {...copy(point), standingId: identity}, targets: new Map()
+                });
+                shared.get(key).targets.set(binding.id, copy(point));
+            }
+        }
         const root = element("section", "category-standing-plan");
         const row = element("div", "category-option-row");
         const label = element("label", "category-option-label", "指定站立位置");
@@ -60,7 +71,7 @@
         body.id = "category-standing-detail";
         expand.setAttribute("aria-controls", body.id);
         const note = element("p", "settings-description",
-            "填写站立脚下方块坐标，再选择已配置的识别区与储存区。区域范围在下方绑定组维护。");
+            "填写站立脚下方块坐标，可多选识别区与储存区。区域范围在下方绑定组维护。");
         const list = element("div", "category-standing-list");
         const add = element("button", "ghost category-standing-add", "添加站立坐标");
         add.type = "button";
@@ -77,7 +88,8 @@
 
         /** @param {HTMLElement} entry @returns {boolean} */
         function active(entry) {
-            return enabled.checked && states.get(entry.bindingId) === true;
+            return enabled.checked && Array.from(entry.targets.keys())
+                .some(id => states.get(id) === true);
         }
 
         /** @param {boolean} [animate] @returns {void} */
@@ -95,20 +107,23 @@
                 toggle.setAttribute("aria-expanded", String(entry.expanded));
                 toggle.setAttribute("aria-label",
                     `${entry.expanded ? "收起" : "展开"}站位 ${index + 1}`);
-                entry.querySelector(".category-standing-state").textContent = active(entry)
-                    ? "已启用" : "未启用";
+                const enabledGroups = enabled.checked ? Array.from(entry.targets.keys())
+                    .filter(id => states.get(id) === true).length : 0;
+                entry.querySelector(".category-standing-state").textContent = enabledGroups
+                    ? `已启用 ${enabledGroups}/${entry.targets.size} 组`
+                    : `未启用 · ${entry.targets.size} 组`;
             });
         }
 
-        /** @param {object} [point] @param {string} [bindingId] @returns {void} */
-        function append(point = {position: {}, expanded: true}, bindingId = "") {
+        /** @param {object} [point] @param {Map<string, object>} [targets] @returns {void} */
+        function append(point = {position: {}, expanded: true}, targets = new Map()) {
             const identity = `standing-point-${++sequence}`;
-            const original = {bindingId, point: copy(point)};
-            const hasSubregions = point.subregionsEnabled
-                ?? Boolean(point.markerArea || point.storageArea);
+            const standingId = point.standingId || helpers.nextId();
+            const drafts = new Map(targets);
             const entry = element("article", "category-standing-point");
-            entry.bindingId = bindingId;
-            entry.custom = hasSubregions;
+            entry.targets = new Map(Array.from(targets, ([id, target]) => [id, {
+                custom: target.subregionsEnabled ?? Boolean(target.markerArea || target.storageArea)
+            }]));
             entry.expanded = Boolean(point.expanded);
             const heading = element("div", "category-standing-heading");
             const toggle = arrow();
@@ -144,27 +159,44 @@
             entry.refresh = () => {
                 picker?.close();
                 const groups = helpers.groups();
-                const choices = [["", "请选择识别区与储存区", "选择下方已配置的绑定组"],
-                    ...groups.map(group => [group.id, group.name, "使用该组的识别区与储存区"])];
-                const savedGroup = groups.find(group => group.id === original.bindingId);
-                if (hasSubregions && savedGroup) {
-                    choices.push([`${identity}-saved`, `${savedGroup.name} · 已保存子区`,
-                        "保留上一版的识别子区与储存子区范围"]);
+                const choices = groups.map(group => [group.id, group.name,
+                    "可多选，共用本站位坐标"]);
+                const options = new Map(groups.map(group => [group.id,
+                    {id: group.id, custom: false}]));
+                for (const group of groups) {
+                    const saved = drafts.get(group.id);
+                    if (!(saved?.subregionsEnabled
+                            ?? Boolean(saved?.markerArea || saved?.storageArea))) continue;
+                    const key = `${identity}-saved-${group.id}`;
+                    choices.push([key, `${group.name} · 已保存子区`, "保留原子区范围"]);
+                    options.set(key, {id: group.id, custom: true});
                 }
-                picker = helpers.createSelect(entry.custom ? `${identity}-saved`
-                    : entry.bindingId, choices, value => {
-                    entry.custom = value === `${identity}-saved`;
-                    entry.bindingId = entry.custom ? original.bindingId : value;
-                    if (enabled.checked && value) states.set(entry.bindingId, true);
-                    hint.textContent = entry.custom ? "保留已保存的子区范围。"
-                        : "区域坐标随所选绑定组更新。";
+                /** @returns {string[]} */
+                const selectedKeys = () => Array.from(entry.targets, ([id, target]) =>
+                    target.custom ? `${identity}-saved-${id}` : id);
+                picker = helpers.createSelect(selectedKeys(), choices, (values, changed) => {
+                    const next = new Map();
+                    for (const key of values) {
+                        const target = options.get(key);
+                        if (!target) continue;
+                        const previous = next.get(target.id);
+                        if (!previous || key === changed || previous.key !== changed) {
+                            next.set(target.id, {...target, key});
+                        }
+                    }
+                    entry.targets = next;
+                    const changedTarget = options.get(changed);
+                    if (enabled.checked && changedTarget && next.has(changedTarget.id)) {
+                        states.set(changedTarget.id, true);
+                    }
+                    hint.textContent = "可多选；所选各组共用本站位，已保存子区保留原范围。";
                     update();
                     helpers.changed();
+                    return selectedKeys();
                 });
                 pickerHost.replaceChildren(picker.root);
                 targetLabel.htmlFor = picker.trigger.id;
-                hint.textContent = entry.custom ? "保留已保存的子区范围。"
-                    : "区域坐标随所选绑定组更新。";
+                hint.textContent = "可多选；所选各组共用本站位，已保存子区保留原范围。";
             };
             const remove = element("button", "ghost danger category-standing-remove", "删除此站位");
             remove.type = "button";
@@ -184,23 +216,21 @@
                 update();
                 helpers.changed();
             });
-            /** @returns {object} */
-            entry.readStanding = () => ({...copy(original.point), position: Object.fromEntries(
-                ["x", "y", "z"].map(axis => [axis, fields[axis].value === "" ? null
-                    : fields[axis].valueAsNumber])), subregionsEnabled: entry.custom,
-                expanded: entry.expanded});
+            /** @param {string} id @returns {object} */
+            entry.readStanding = id => ({...copy(drafts.get(id) || {}), standingId,
+                position: Object.fromEntries(["x", "y", "z"].map(axis => [axis,
+                    fields[axis].value === "" ? null : fields[axis].valueAsNumber])),
+                subregionsEnabled: entry.targets.get(id).custom, expanded: entry.expanded});
             list.append(entry);
             entry.refresh();
             helpers.reveal(detail, entry.expanded, false);
         }
-        for (const binding of bindings) {
-            draft(binding).points.forEach(point => append(point, binding.id));
-        }
+        shared.forEach(value => append(value.point, value.targets));
         add.addEventListener("click", () => {
             const groups = helpers.groups();
             const id = groups.length === 1 ? groups[0].id : "";
             if (id) states.set(id, enabled.checked);
-            append(undefined, id);
+            append(undefined, id ? new Map([[id, {}]]) : new Map());
             update();
             helpers.changed();
             list.lastElementChild.querySelector("input").focus();
@@ -221,13 +251,14 @@
         update(false);
         return {root,
             refresh: () => { entries().forEach(entry => entry.refresh()); update(false); },
-            references: id => entries().some(entry => entry.bindingId === id),
-            valid: () => entries().every(entry => helpers.groups()
-                .some(group => group.id === entry.bindingId)),
+            references: id => entries().some(entry => entry.targets.has(id)),
+            valid: () => entries().every(entry => entry.targets.size > 0
+                && Array.from(entry.targets.keys()).every(id => helpers.groups()
+                    .some(group => group.id === id))),
             read: id => ({enabled: enabled.checked && states.get(id) === true
-                && entries().some(entry => entry.bindingId === id),
-                points: entries().filter(entry => entry.bindingId === id)
-                    .map(entry => entry.readStanding())})};
+                && entries().some(entry => entry.targets.has(id)),
+                points: entries().filter(entry => entry.targets.has(id))
+                    .map(entry => entry.readStanding(id))})};
     }
 
     window.StowlingCategoryStanding = Object.freeze({create, draft});

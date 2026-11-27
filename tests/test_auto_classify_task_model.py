@@ -7,6 +7,21 @@ from typing import Any
 import pytest
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_standing_subregion_experiment_defaults_off_and_survives_round_trip(enabled: bool) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneId: "zone"}], standingSubregionsEnabled: """
+        + json.dumps(enabled) + """};
+        const saved = model.payload(draft, {regions: [{id: "cache"}],
+            categoryZones: [{id: "zone"}]});
+        return [model.newDraft("CLASSIFICATION").standingSubregionsEnabled,
+            saved.standingSubregionsEnabled, model.draftFromTask(saved).standingSubregionsEnabled];
+    })()""")
+    assert result == [False, enabled, enabled]
+
+
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "main" / "resources" / "stowling-web"
 MODEL = WEB / "auto-classify-task-model.js"

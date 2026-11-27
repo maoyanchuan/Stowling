@@ -10,6 +10,27 @@ import pytest
 WEB = Path(__file__).resolve().parents[1] / "src/main/resources/stowling-web"
 
 
+def test_standing_experiment_persists_when_debug_display_is_hidden(classification_page: Any) -> None:
+    page = classification_page
+    open_settings(page)
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => true};
+        document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
+    }""")
+    page.locator("#auto-experiments-toggle").click()
+    page.locator("#auto-standing-subregions").check()
+    page.wait_for_function("backend.item.standingSubregionsEnabled === true")
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => false};
+        document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
+    }""")
+    assert page.locator("#auto-experiments-settings").is_hidden()
+    assert page.locator("#auto-experiments-settings").evaluate("node => node.inert")
+    assert page.locator("#auto-standing-active").is_visible()
+    assert "classification-standing-subregions" in page.locator("#auto-standing-active").inner_text()
+    assert page.locator("#auto-standing-subregions").is_checked()
+
+
 @pytest.fixture
 def classification_page() -> Iterator[Any]:
     playwright = pytest.importorskip("playwright.sync_api")

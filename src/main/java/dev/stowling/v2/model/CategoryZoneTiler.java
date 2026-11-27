@@ -162,7 +162,8 @@ public final class CategoryZoneTiler {
                 template.wholeStorage(),
                 template.name(),
                 template.optionsEnabled(),
-                template.categoryOptions()
+                template.categoryOptions(),
+                template.standingPlan() == null ? null : template.standingPlan().shift(x, z)
         );
     }
 
@@ -192,7 +193,8 @@ public final class CategoryZoneTiler {
                 template.wholeStorage(),
                 template.name(),
                 template.optionsEnabled(),
-                template.categoryOptions()
+                template.categoryOptions(),
+                shifted.standingPlan()
         );
     }
 

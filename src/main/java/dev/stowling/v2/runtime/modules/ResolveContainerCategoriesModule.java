@@ -72,7 +72,9 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         }
         Map<BlockPosition, Set<String>> markerContents = new LinkedHashMap<>();
         if (requiresContainerContents()) {
-            for (CategoryBindingDefinition binding : zone.bindings()) {
+            for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(
+                    zone, context.workspace().standingSubregionsEnabled())) {
+                var binding = segment.binding();
                 if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
                     continue;
                 }
@@ -92,20 +94,9 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 markerContents.putAll(cached);
             }
         }
-        CategoryZoneResult result = markerSources == null
-                ? context.categoryZonesPort().resolve(
-                        zone,
-                        containerTypes,
-                        maxVolume,
-                        markerContents
-                )
-                : context.categoryZonesPort().resolve(
-                        zone,
-                        containerTypes,
-                        maxVolume,
-                        markerContents,
-                        markerSources
-                );
+        CategoryZoneResult result = context.categoryZonesPort().resolve(zone, containerTypes,
+                maxVolume, markerContents, markerSources,
+                context.workspace().standingSubregionsEnabled());
         if (!result.succeeded()) {
             return TaskModuleResult.failed(result.message());
         }

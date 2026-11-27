@@ -19,7 +19,6 @@ import dev.stowling.v2.category.UnstackableCategoryRule;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.model.CategoryBindingDefinition;
 import dev.stowling.v2.model.CategoryZoneDefinition;
-import dev.stowling.v2.model.CategoryZoneTiler;
 import dev.stowling.v2.model.RegionDefinition;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -89,7 +88,7 @@ public final class MinecraftCategoryZoneResolver
                 containerTypes,
                 maxVolume,
                 markerContainerContents,
-                null
+                null, false
         );
     }
 
@@ -110,8 +109,19 @@ public final class MinecraftCategoryZoneResolver
                 containerTypes,
                 maxVolume,
                 markerContainerContents,
-                Set.copyOf(markerSources)
+                Set.copyOf(markerSources), false
         );
+    }
+
+    @Override
+    public CategoryZoneResult resolve(CategoryZoneDefinition zone, Set<String> containerTypes,
+            int maxVolume, Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources, boolean standingSubregionsEnabled) {
+        if (markerSources != null && markerSources.isEmpty()) {
+            return CategoryZoneResult.failure("未选择分类标记来源");
+        }
+        return resolveZone(zone, containerTypes, maxVolume, markerContainerContents,
+                markerSources, standingSubregionsEnabled);
     }
 
     private CategoryZoneResult resolveZone(
@@ -119,7 +129,8 @@ public final class MinecraftCategoryZoneResolver
             Set<String> containerTypes,
             int maxVolume,
             Map<BlockPosition, Set<String>> markerContainerContents,
-            Set<CategoryMarkerSource> markerSources
+            Set<CategoryMarkerSource> markerSources,
+            boolean standingSubregionsEnabled
     ) {
         Objects.requireNonNull(zone, "zone");
         Objects.requireNonNull(containerTypes, "containerTypes");
@@ -141,7 +152,7 @@ public final class MinecraftCategoryZoneResolver
                     containerTypes,
                     maxVolume,
                     markerContainerContents,
-                    markerSources
+                    markerSources, standingSubregionsEnabled
             );
         } catch (RuntimeException exception) {
             return CategoryZoneResult.failure(
@@ -156,13 +167,15 @@ public final class MinecraftCategoryZoneResolver
             Set<String> containerTypes,
             int maxVolume,
             Map<BlockPosition, Set<String>> markerContainerContents,
-            Set<CategoryMarkerSource> markerSources
+            Set<CategoryMarkerSource> markerSources,
+            boolean standingSubregionsEnabled
     ) {
         List<CategoryZoneClassifier.Scan> scans = new ArrayList<>();
-        for (int index = 0; index < zone.bindings().size(); index++) {
-            CategoryBindingDefinition binding = zone.bindings().get(index);
-            var options = binding.optionsEnabled()
-                    ? binding.categoryOptions() : zone.categoryOptions();
+        Map<BlockPosition, AreaBounds> assignedStances = new java.util.LinkedHashMap<>();
+        for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(
+                zone, standingSubregionsEnabled)) {
+            CategoryBindingDefinition binding = segment.binding();
+            var options = segment.options();
             Set<BlockPosition> excluded = options == null ? Set.of()
                     : Set.copyOf(options.excludedMarkerPositions());
             boolean unstackable = UnstackableCategoryRule.ID.equals(binding.ruleId());
@@ -188,9 +201,20 @@ public final class MinecraftCategoryZoneResolver
                         Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
                         markerSourcesFor(binding.ruleId(), markerSources), excluded);
             }
-            var template = CategoryZoneTiler.templateFor(zone, index);
+            if (standingSubregionsEnabled) {
+                for (var container : storageScan.containers()) {
+                    for (var entrance : container.entrances()) {
+                        if (assignedStances.containsKey(entrance) && !Objects.equals(
+                                assignedStances.get(entrance), binding.standingArea())) {
+                            return CategoryZoneResult.failure("双箱或容器跨越不同站位的子储存区："
+                                    + entrance + "，请调整子区边界");
+                        }
+                        assignedStances.put(entrance, binding.standingArea());
+                    }
+                }
+            }
             scans.add(new CategoryZoneClassifier.Scan(binding, options,
-                    binding.optionsEnabled() ? template.id() : null, markers,
+                    segment.scopeId(), markers,
                     storageScan.containers().stream().map(target ->
                             target.withStandingArea(binding.standingArea(), binding.storagePolicy()))
                             .toList()));

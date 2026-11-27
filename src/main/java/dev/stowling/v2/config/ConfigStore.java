@@ -319,6 +319,7 @@ public final class ConfigStore {
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
+        allowed.add("standingSubregionsEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -335,6 +336,11 @@ public final class ConfigStore {
             }
 
             requireFields(definition, path, allowed, fields);
+            var standing = definition.get("standingSubregionsEnabled");
+            if (standing != null && (!standing.isJsonPrimitive()
+                    || !standing.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("多站位实验开关必须是布尔值");
+            }
             var mixed = definition.get("robotWarehouseMixedBoxes");
             if (mixed != null && (!mixed.isJsonPrimitive()
                     || !mixed.getAsJsonPrimitive().isBoolean())) {
@@ -511,12 +517,14 @@ public final class ConfigStore {
                                 "wholeStorage",
                                 "name",
                                 "optionsEnabled",
-                                "categoryOptions"
+                                "categoryOptions",
+                                "standingPlan"
                         ),
                         Set.of("id", "markerArea", "storageArea", "ruleId")
                 );
                 requireCategoryOptions(binding.get("categoryOptions"),
                         bindingPath + ".categoryOptions");
+                CategoryStandingJson.validate(binding.get("standingPlan"));
                 requireArea(binding.get("markerArea"), "markerArea");
                 requireArea(binding.get("storageArea"), "storageArea");
                 JsonElement standing = binding.get("standingArea");

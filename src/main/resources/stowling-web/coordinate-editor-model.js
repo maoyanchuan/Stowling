@@ -145,6 +145,53 @@
         return {optionsEnabled: different, categoryOptions: different ? optionsPayload(local) : null};
     }
 
+    /** @param {object} binding @returns {object} */
+    function standingDraft(binding) {
+        if (binding.standingPlan) return copy(binding.standingPlan);
+        const standing = binding.standingArea;
+        return {enabled: Boolean(standing), points: standing ? [{position: {
+            x: standing.firstX, y: standing.firstY - 1, z: standing.firstZ
+        }, markerArea: null, storageArea: null, expanded: false}] : []};
+    }
+
+    /** @param {object} bounds @param {object} child @returns {boolean} */
+    function contains(bounds, child) {
+        return ["X", "Y", "Z"].every(axis => {
+            const values = [child[`first${axis}`], child[`second${axis}`]];
+            const parent = [bounds.first[axis.toLowerCase()], bounds.second[axis.toLowerCase()]];
+            return values.every(Number.isInteger) && Math.min(...values) >= Math.min(...parent)
+                && Math.max(...values) <= Math.max(...parent);
+        });
+    }
+
+    /** @param {object} plan @param {object} markers @param {object} storage @returns {void} */
+    function validateStanding(plan, markers, storage) {
+        if (!plan.enabled) return;
+        if (!plan.points.length) throw new Error("请至少添加一个站立位置。");
+        const used = [];
+        for (const point of plan.points) {
+            if (!point.position || ["x", "y", "z"].some(axis =>
+                !Number.isInteger(point.position[axis]) || point.position[axis] < -2147483648
+                    || point.position[axis] > (axis === "y" ? 2147483646 : 2147483647))) {
+                throw new Error("请填写站立脚下方块的 X、Y、Z 整数坐标。");
+            }
+            const mapped = point.subregionsEnabled ?? Boolean(point.markerArea || point.storageArea);
+            if (mapped && (!point.markerArea || !point.storageArea
+                    || !contains(markers, point.markerArea) || !contains(storage, point.storageArea))) {
+                throw new Error("子识别区与子储存区必须填写完整，并位于本绑定组的对应范围内。");
+            }
+            const target = mapped ? point.storageArea : area(storage);
+            if (used.some(previous => ["X", "Y", "Z"].every(axis =>
+                Math.min(previous[`first${axis}`], previous[`second${axis}`])
+                    <= Math.max(target[`first${axis}`], target[`second${axis}`])
+                && Math.max(previous[`first${axis}`], previous[`second${axis}`])
+                    >= Math.min(target[`first${axis}`], target[`second${axis}`])))) {
+                throw new Error("多个站位的子储存区不能重叠，请划分各自负责范围。");
+            }
+            used.push(target);
+        }
+    }
+
     /** @param {object} directory @returns {object[]} */
     function resources(directory) {
         const values = [];
@@ -169,6 +216,7 @@
                     markerRegion: region(binding.markerArea),
                     storageRegion: region(binding.storageArea),
                     original: copy(normalized.bindings[index]),
+                    standingPlan: standingDraft(binding),
                     ...bindingSettings(binding, options, raw)
                 })),
                 categoryOptions: options, originalOptions: copy(options),
@@ -215,6 +263,8 @@
             const result = copy(original);
             result.name = String(binding.name ?? original.name ?? "").trim();
             result.optionsEnabled = Boolean(binding.optionsEnabled);
+            result.standingPlan = copy(binding.standingPlan || standingDraft(original));
+            validateStanding(result.standingPlan, binding.markerRegion, binding.storageRegion);
             result.categoryOptions = binding.categoryOptions ? optionsPayload(binding.categoryOptions)
                 : null;
             for (const [kind, bounds] of [["marker", binding.markerRegion],

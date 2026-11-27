@@ -365,6 +365,39 @@ class MinecraftContainerCacheRefreshTest {
         assertEquals(List.of(FIRST, BLOCKED, LAST), inspection.session.opened);
     }
 
+    @Test
+    void classificationMarkerRefreshUsesTheGroupPointOnlyWhenItsExperimentIsEnabled() {
+        for (boolean enabled : List.of(false, true)) {
+            var world = new World();
+            world.loadAll = true;
+            world.scanTargets = List.of(new ContainerTarget(MARKER, "minecraft:chest"));
+            var inspection = new Inspection();
+            var markers = new AreaBounds(64, 64, 0, 64, 64, 0);
+            var plan = new dev.stowling.v2.model.CategoryStandingPlan(true, List.of(
+                    new dev.stowling.v2.model.CategoryStandingPoint(
+                            new dev.stowling.v2.model.CategoryPositionDraft(20, 64, 0),
+                            null, null, false)));
+            var binding = new CategoryBindingDefinition(UUID.randomUUID(), markers, markers,
+                    ContainerContentsCategoryRule.ID, List.of(), List.of(), null, null,
+                    false, "组", false, null, plan);
+            var zone = new CategoryZoneDefinition(UUID.randomUUID(), "仓库", List.of(binding));
+            var ports = TaskModuleRuntimeRegistry.unavailablePorts(world);
+            var workspace = new TaskRunWorkspace();
+            workspace.configureClassificationTask(true);
+            workspace.configureStandingSubregions(enabled);
+            var context = new TaskExecutionContext(world, ports.droppedItems(),
+                    ports.containerRegions(), ports.containerTransfers(), ports.containerWithdrawals(),
+                    inspection, new MarkerCache(), ports.categoryZones(), Map.of(), Map.of(),
+                    Map.of(zone.id(), zone), workspace);
+            var options = ContainerCacheRefresh.from(Map.of("targetRef", "category-zone:" + zone.id(),
+                    "markerOnly", "true"));
+            var refresh = new MinecraftContainerCacheRefresh(context, options, world);
+            refresh.start();
+            assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
+            assertEquals(enabled ? STANDING : null, inspection.targets.getFirst().standingArea());
+        }
+    }
+
     private static TaskModuleResult finish(MinecraftContainerCacheRefresh refresh) {
         for (int tick = 0; tick < 50; tick++) {
             var result = refresh.tick();

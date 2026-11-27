@@ -138,16 +138,14 @@ def test_first_enable_uses_current_global_settings(sample_page: Any) -> None:
     choose(global_options, "storageMethod", "mixed")
     choose(global_options, "recognitionMode", "container-item")
     global_options.locator('[id$="category-bulk-stacks"]').fill("18")
-    global_options.locator('[id$="category-specify-standing"]').check()
-    global_options.locator('[id$="category-standing-x"]').fill("-120")
     card = page.locator(".category-binding-card").first
     card.locator(".category-binding-enabled").check()
     assert selected(card, "storageMethod") == "mixed"
     assert selected(card, "recognitionMode") == "container-item"
     assert card.locator('[id$="category-no-cache-row"]').is_visible()
     assert card.locator('[id$="category-bulk-stacks"]').input_value() == "18"
-    assert card.locator('[id$="category-specify-standing"]').is_checked()
-    assert card.locator('[id$="category-standing-x"]').input_value() == "-120"
+    assert card.locator('[id$="category-specify-standing"]').is_hidden()
+    assert card.locator('.category-standing-plan').is_visible()
 
 
 def test_disabling_overrides_preserves_draft_and_binding_expansion(sample_page: Any) -> None:
@@ -358,39 +356,6 @@ def test_support_block_lines_survive_inheritance_save_and_copy(
 
 
 @pytest.mark.parametrize("scope", ["global", "binding"])
-def test_standing_switch_keyboard_disclosure_and_coordinate_draft(
-    sample_page: Any, scope: str,
-) -> None:
-    page = sample_page
-    root = options_root(page, scope)
-    enabled = root.locator('[id$="category-specify-standing"]')
-    expand = root.locator('[id$="category-standing-expand"]')
-    coordinates = root.locator('[id$="category-standing-row"]')
-    assert not enabled.is_checked()
-    assert coordinates.is_hidden()
-    enabled.focus()
-    page.keyboard.press("Space")
-    assert coordinates.is_visible()
-    assert enabled.get_attribute("aria-expanded") == "true"
-    for axis, value in (("x", "-123"), ("y", "70"), ("z", "456")):
-        coordinates.locator(f'[id$="category-standing-{axis}"]').fill(value)
-    expand.click()
-    assert enabled.is_checked()
-    assert coordinates.is_hidden()
-    assert enabled.get_attribute("aria-expanded") == "false"
-    expand.click()
-    assert coordinates.is_visible()
-    enabled.uncheck()
-    assert coordinates.is_hidden()
-    assert coordinates.locator("input").first.is_disabled()
-    enabled.check()
-    assert coordinates.is_visible()
-    for axis, value in (("x", "-123"), ("y", "70"), ("z", "456")):
-        assert coordinates.locator(f'[id$="category-standing-{axis}"]').input_value() == value
-    assert page.locator(".category-binding-card").first.get_attribute("data-collapsed") == "false"
-
-
-@pytest.mark.parametrize("scope", ["global", "binding"])
 def test_bulk_ratio_only_appears_in_mixed_storage_and_retains_its_value(
     sample_page: Any, scope: str,
 ) -> None:
@@ -412,40 +377,6 @@ def test_bulk_ratio_only_appears_in_mixed_storage_and_retains_its_value(
         assert stacks.input_value() == "36"
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-def test_saved_copied_options_preserve_standing_and_bulk_ratio_drafts(
-    sample_page: Any, enabled: bool,
-) -> None:
-    page = sample_page
-    global_options = page.locator(".category-options").first
-    choose(global_options, "storageMethod", "mixed")
-    global_options.locator('[id$="category-bulk-stacks"]').fill("18")
-    global_options.locator('[id$="category-specify-standing"]').check()
-    global_options.locator('[id$="category-standing-x"]').fill("-120")
-    card = options_root(page, "binding")
-    card.locator('[id$="category-bulk-stacks"]').fill("9")
-    card.locator('[id$="category-standing-x"]').fill("300")
-    card.locator('[id$="category-specify-standing"]').set_checked(enabled)
-    card.locator(".category-binding-enabled").set_checked(enabled)
-    global_options.locator('[id$="category-specify-standing"]').set_checked(enabled)
-    page.locator('button[type="submit"]').filter(has_text="保存坐标").click()
-    assert page.locator("#editor-status").inner_text() == "已保存分类区。"
-    page.locator("#duplicate-coordinate").click()
-    global_options = page.locator(".category-options").first
-    assert global_options.locator('[id$="category-bulk-stacks"]').input_value() == "18"
-    assert global_options.locator('[id$="category-specify-standing"]').is_checked() is enabled
-    global_options.locator('[id$="category-specify-standing"]').check()
-    assert global_options.locator('[id$="category-standing-x"]').input_value() == "-120"
-    card = page.locator(".category-binding-card").first
-    assert card.locator(".category-binding-enabled").is_checked() is enabled
-    card.locator(".category-binding-toggle").click()
-    card.locator(".category-binding-enabled").check()
-    assert card.locator('[id$="category-bulk-stacks"]').input_value() == "9"
-    assert card.locator('[id$="category-specify-standing"]').is_checked() is enabled
-    card.locator('[id$="category-specify-standing"]').check()
-    assert card.locator('[id$="category-standing-x"]').input_value() == "300"
-
-
 @pytest.mark.parametrize("scope", ["global", "binding"])
 def test_empty_active_options_prevent_saving(sample_page: Any, scope: str) -> None:
     page = sample_page
@@ -457,27 +388,5 @@ def test_empty_active_options_prevent_saving(sample_page: Any, scope: str) -> No
     save.click()
     assert "散货占比请填写" in page.locator("#editor-status").inner_text()
     stacks.fill("27")
-    root.locator('[id$="category-specify-standing"]').check()
-    root.locator('[id$="category-standing-y"]').fill("")
-    root.locator('[id$="category-standing-expand"]').click()
     save.click()
-    assert "请填写站立位置" in page.locator("#editor-status").inner_text()
-
-
-@pytest.mark.parametrize("scope", ["global", "binding"])
-def test_fast_standing_toggles_keep_the_latest_state(sample_page: Any, scope: str) -> None:
-    page = sample_page
-    root = options_root(page, scope)
-    page.emulate_media(reduced_motion="no-preference")
-    root.locator('[id$="category-specify-standing"]').evaluate("""async toggle => {
-        for (const checked of [true, false, true, false, true]) {
-            toggle.checked = checked;
-            toggle.dispatchEvent(new Event('change', {bubbles: true}));
-        }
-        for (const animation of document.getAnimations()) animation.finish();
-        await Promise.resolve();
-    }""")
-    coordinates = root.locator('[id$="category-standing-row"]')
-    assert coordinates.is_visible()
-    assert coordinates.evaluate("node => !node.inert")
-    assert coordinates.locator("input").first.is_editable()
+    assert page.locator("#editor-status").inner_text() == "已保存分类区。"

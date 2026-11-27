@@ -984,6 +984,47 @@
     transform: rotate(90deg);
 }
 
+:root body[data-coordinate-editor] .category-standing-plan {
+    min-width: 0;
+}
+
+:root body[data-coordinate-editor] .category-standing-plan .settings-description {
+    color: var(--muted);
+    margin: 4px 12px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+:root body[data-coordinate-editor] .category-standing-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+:root body[data-coordinate-editor] .category-standing-point {
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+}
+
+:root body[data-coordinate-editor] .category-standing-detail {
+    min-width: 0;
+    padding: 0 12px 12px;
+}
+
+:root body[data-coordinate-editor] .category-standing-detail .field-label {
+    margin-top: 8px;
+}
+
+:root body[data-coordinate-editor] .category-standing-detail .coordinate-region-grid {
+    margin: 8px 0 12px;
+}
+
+:root body[data-coordinate-editor] .category-standing-heading .category-option-expand {
+    flex: 0 0 auto;
+}
+
 :root body[data-coordinate-editor] .category-option-summary {
     color: var(--muted);
     font-size: 12px;

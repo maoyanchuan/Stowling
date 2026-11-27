@@ -75,7 +75,7 @@ public record CategoryZoneDefinition(
                 binding.storageArea(), binding.ruleId(), binding.ignoredMarkerBlockIds(),
                 binding.containerOverrides(), feet, policy,
                 binding.wholeStorage(), binding.name(), binding.optionsEnabled(),
-                binding.categoryOptions());
+                binding.categoryOptions(), binding.standingPlan());
     }
 
     private static String requireName(String value) {

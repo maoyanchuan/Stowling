@@ -7,6 +7,13 @@ import java.util.Map;
 import java.util.Set;
 
 public interface CategoryZonePort {
+    default CategoryZoneResult resolve(CategoryZoneDefinition zone, Set<String> containerTypes,
+            int maxVolume, Map<BlockPosition, Set<String>> contents,
+            Set<CategoryMarkerSource> sources, boolean standingSubregionsEnabled) {
+        return sources == null ? resolve(zone, containerTypes, maxVolume, contents)
+                : resolve(zone, containerTypes, maxVolume, contents, sources);
+    }
+
     CategoryZoneResult resolve(
             CategoryZoneDefinition zone,
             Set<String> containerTypes,

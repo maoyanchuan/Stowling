@@ -994,7 +994,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
+                optionalBooleanValue(json, "standingSubregionsEnabled")
         );
     }
 
@@ -1021,7 +1022,8 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
+                optionalBooleanValue(json, "standingSubregionsEnabled")
         );
     }
 
@@ -1107,7 +1109,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "cleanupPolicy",
                 "cachePolicy",
                 "remainderPolicy",
-                "robotWarehouseMixedBoxes",
+                "robotWarehouseMixedBoxes", "standingSubregionsEnabled",
 
                 "kind",
                 "followUpTaskRef",
@@ -1296,7 +1298,8 @@ public final class V2ControlServer implements AutoCloseable {
                             "wholeStorage",
                             "name",
                             "optionsEnabled",
-                            "categoryOptions"
+                            "categoryOptions",
+                            "standingPlan"
                     ),
                     Set.of(
                             "markerFirstX",
@@ -1335,7 +1338,8 @@ public final class V2ControlServer implements AutoCloseable {
                     optionalBoolean(binding, "wholeStorage"),
                     optionalString(binding, "name"),
                     optionalBooleanValue(binding, "optionsEnabled"),
-                    categoryOptions(binding)
+                    categoryOptions(binding),
+                    standingPlan(binding)
             ));
         }
         return List.copyOf(result);
@@ -1363,6 +1367,13 @@ public final class V2ControlServer implements AutoCloseable {
                         "refillLoose", "looseSlots", "partialBoxDestinationRef"),
                 Set.of("mode", "allowPartialBoxes"));
         return V2Json.gson().fromJson(policy, dev.stowling.v2.model.StoragePolicy.class);
+    }
+
+    private static dev.stowling.v2.model.CategoryStandingPlan standingPlan(JsonObject binding) {
+        JsonElement value = binding.get("standingPlan");
+        dev.stowling.v2.config.CategoryStandingJson.validate(value);
+        return value == null || value.isJsonNull() ? null : V2Json.gson().fromJson(value,
+                dev.stowling.v2.model.CategoryStandingPlan.class);
     }
 
     private static dev.stowling.v2.model.AreaBounds standingArea(JsonObject binding) {
@@ -1969,6 +1980,8 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
                 Map.entry("/coordinate-editor.js", read("stowling-web/coordinate-editor.js", js)),
+                Map.entry("/category-standing-ui.js",
+                        read("stowling-web/category-standing-ui.js", js)),
                 Map.entry("/coordinate-editor-model.js",
                         read("stowling-web/coordinate-editor-model.js", js)),
                 Map.entry("/coordinate-editor.css",

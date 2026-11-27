@@ -25,6 +25,7 @@
             storageSecondY: Number(storage.secondY ?? 64),
             storageSecondZ: Number(storage.secondZ ?? 0),
             standingArea: value?.standingArea ? normalizeArea(value.standingArea) : null,
+            ...(value?.standingPlan ? {standingPlan: structuredClone(value.standingPlan)} : {}),
             storagePolicy: normalizeStoragePolicy(value?.storagePolicy),
             ruleId: String(value?.ruleId || "DIRECT_BLOCK_ID"),
             wholeStorage: Boolean(value?.wholeStorage),
@@ -54,6 +55,21 @@
                 ? {partialBoxDestinationRef: String(value.partialBoxDestinationRef)} : {}),
             packingArea: value?.packingArea ? normalizeArea(value.packingArea) : null
         };
+    }
+
+    /** @param {object} plan @param {string} axis @param {number} delta @returns {object} */
+    function shiftStandingPlan(plan, axis, delta) {
+        const result = structuredClone(plan);
+        for (const point of result.points) {
+            const key = axis.toLowerCase();
+            if (point.position?.[key] != null) point.position[key] += delta;
+            for (const kind of ["markerArea", "storageArea"]) {
+                if (!point[kind]) continue;
+                point[kind][`first${axis}`] += delta;
+                point[kind][`second${axis}`] += delta;
+            }
+        }
+        return result;
     }
 
     /** @param {object} value @returns {object} */
@@ -166,6 +182,8 @@
                 storageSecondY: Number(binding.storageSecondY),
                 storageSecondZ: Number(binding.storageSecondZ),
                 standingArea: binding.standingArea ? normalizeArea(binding.standingArea) : null,
+                ...(binding.standingPlan
+                    ? {standingPlan: structuredClone(binding.standingPlan)} : {}),
                 storagePolicy: normalizeStoragePolicy(binding.storagePolicy),
                 ruleId: String(binding.ruleId),
                 wholeStorage: Boolean(binding.wholeStorage),
@@ -257,6 +275,9 @@
                 throw new RangeError("整排母版包含容器例外，请保留手动模式或先填写一片母版");
             }
             const result = { ...binding };
+            if (binding.standingPlan) {
+                result.standingPlan = shiftStandingPlan(binding.standingPlan, axis, anchor - minimum);
+            }
             if (binding.standingArea) {
                 const standing = normalizeArea(binding.standingArea);
                 for (const value of Object.values(standing)) {
@@ -339,6 +360,9 @@
         const delta = positive ? lower - minimum : upper - maximum;
         const templates = bindings.map((binding) => {
             const result = {...binding};
+            if (binding.standingPlan) {
+                result.standingPlan = shiftStandingPlan(binding.standingPlan, axis, delta);
+            }
             for (const kind of ["marker", "storage"]) {
                 for (const corner of ["First", "Second"]) {
                     result[`${kind}${corner}${axis}`] = Number(

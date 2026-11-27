@@ -32,8 +32,45 @@ public record AutoClassifyTask(
         Integer followUpDelaySeconds,
         boolean followUpEnabled,
         dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
-        Boolean robotWarehouseMixedBoxes
+        Boolean robotWarehouseMixedBoxes,
+        Boolean standingSubregionsEnabled
 ) {
+
+    public AutoClassifyTask(
+            UUID id,
+            String name,
+            boolean enabled,
+            boolean collectionEnabled,
+            boolean classificationEnabled,
+            AutoClassifyDetection detection,
+            String cacheLocationRef,
+            List<AutoClassifyAreaDefinition> classificationAreas,
+            TaskPriority collectionPriority,
+            TaskPriority classificationPriority,
+            String collectionTaskRef,
+            String classificationTaskRef,
+            String interruptionTaskRef,
+            List<UUID> triggerIds,
+            boolean overflowEnabled,
+            TaskCleanupPolicy cleanupPolicy,
+            String overflowDestinationRef,
+            dev.stowling.v2.model.CacheIntakePolicy cachePolicy,
+            Kind kind,
+            String followUpTaskRef,
+            Integer followUpDelaySeconds,
+            boolean followUpEnabled,
+            dev.stowling.v2.model.ClassificationRemainderPolicy remainderPolicy,
+            Boolean robotWarehouseMixedBoxes
+    ) {
+        this(id, name, enabled, collectionEnabled, classificationEnabled, detection,
+                cacheLocationRef, classificationAreas, collectionPriority,
+                classificationPriority, collectionTaskRef, classificationTaskRef,
+                interruptionTaskRef, triggerIds, overflowEnabled, cleanupPolicy,
+                overflowDestinationRef, cachePolicy, kind, followUpTaskRef,
+                followUpDelaySeconds, followUpEnabled, remainderPolicy,
+                robotWarehouseMixedBoxes, null);
+    }
+
     public AutoClassifyTask(
             UUID id,
             String name,

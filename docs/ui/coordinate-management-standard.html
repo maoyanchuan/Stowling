@@ -1569,7 +1569,48 @@ textarea {
         scroll-behavior: auto !important;
     }
 }
-    </style>
+    .category-standing-plan {
+    min-width: 0;
+}
+
+.category-standing-plan .settings-description {
+    color: var(--muted);
+    margin: 4px 12px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.category-standing-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+.category-standing-point {
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+}
+
+.category-standing-detail {
+    min-width: 0;
+    padding: 0 12px 12px;
+}
+
+.category-standing-detail .field-label {
+    margin-top: 8px;
+}
+
+.category-standing-detail .coordinate-region-grid {
+    margin: 8px 0 12px;
+}
+
+.category-standing-heading .category-option-expand {
+    flex: 0 0 auto;
+}
+
+</style>
 </head>
 <body>
     <header class="page-header">
@@ -2379,7 +2420,8 @@ textarea {
         </section>
     </main>
 
-    <script>
+    <script src="../../src/main/resources/stowling-web/category-standing-ui.js"></script>
+<script>
 (() => {
     "use strict";
 
@@ -2458,6 +2500,7 @@ textarea {
     let categoryMenuOpen = null;
     const reveals = new WeakMap();
     const bindingOptions = new WeakMap();
+    const standingEditors = new WeakMap();
     const nodes = {
         list: document.querySelector("#coordinate-list"),
         add: document.querySelector("#add-coordinate"),
@@ -2820,6 +2863,7 @@ textarea {
      * @returns {void} */
     function writeCategoryOptions(options, context = globalCategoryContext) {
         const values = {...defaultCategoryOptions(), ...options};
+        context.values = values;
         const fields = context.fields;
         fields["scope-mode"].value = values.scopeMode;
         fields["recognition-mode"].value = values.recognitionMode;
@@ -2867,12 +2911,8 @@ textarea {
             multiItemBindingsEnabled: fields["multi-bindings"].checked,
             multiItemBindings: Array.from(fields["rules-list"].children, readItemBinding),
             bulkStacks: fields["bulk-stacks"].valueAsNumber,
-            specifyStanding: fields["specify-standing"].checked,
-            standingPosition: {
-                x: fields["standing-x"].valueAsNumber,
-                y: fields["standing-y"].valueAsNumber,
-                z: fields["standing-z"].valueAsNumber
-            }
+            specifyStanding: context.values.specifyStanding ?? null,
+            standingPosition: context.values.standingPosition || null
         };
     }
 
@@ -2956,8 +2996,10 @@ textarea {
         );
         reveal(fields["support-block-row"], expanded, animate);
         fields["support-block"].disabled = !ignoreSupport;
+        fields["specify-standing"].closest(".category-option-row").hidden = true;
+        fields["specify-standing"].closest(".category-option-row").inert = true;
         const specifyStanding = fields["specify-standing"].checked;
-        const standingExpanded = specifyStanding && context.standingExpanded;
+        const standingExpanded = false;
         fields["standing-expand"].hidden = !specifyStanding;
         fields["standing-expand"].disabled = !specifyStanding;
         for (const control of [fields["standing-expand"], fields["specify-standing"]]) {
@@ -3536,7 +3578,15 @@ textarea {
         const actions = document.createElement("div");
         actions.className = "category-binding-actions";
         actions.append(remove);
-        content.append(detail, grid, actions);
+        const standing = window.StowlingCategoryStanding.create(binding, {
+            appendRegion: appendBindingRegion, readRegion: readBindingRegion, reveal,
+            currentRegions: () => ({markerRegion: readBindingRegion(grid, "marker"),
+                storageRegion: readBindingRegion(grid, "storage")}),
+            bindInputs: window.Stowling?.bindCoordinateInputs,
+            changed: () => {}
+        });
+        standingEditors.set(card, standing);
+        content.append(grid, standing.root, detail, actions);
         body.append(content);
         card.append(summary, body);
         setCategoryBindingOpen(card, open);
@@ -3601,6 +3651,7 @@ textarea {
                     || `绑定组 ${index + 1}`,
                 markerRegion,
                 storageRegion,
+                standingPlan: standingEditors.get(card).read(),
                 optionsEnabled: card.querySelector(".category-binding-enabled").checked,
                 categoryOptions: bindingOptions.get(card).initialized
                     ? readCategoryOptions(bindingOptions.get(card)) : undefined
@@ -3785,6 +3836,8 @@ textarea {
                 name: binding.name,
                 markerRegion: cloneRegion(binding.markerRegion),
                 storageRegion: cloneRegion(binding.storageRegion),
+                standingPlan: binding.standingPlan
+                    ? JSON.parse(JSON.stringify(binding.standingPlan)) : undefined,
                 optionsEnabled: Boolean(binding.optionsEnabled),
                 categoryOptions: binding.categoryOptions
                     ? cloneCategoryOptions(binding.categoryOptions) : undefined

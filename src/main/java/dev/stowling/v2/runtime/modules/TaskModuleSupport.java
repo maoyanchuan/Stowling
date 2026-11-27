@@ -164,7 +164,8 @@ final class TaskModuleSupport {
                 binding.wholeStorage(),
                 binding.name(),
                 binding.optionsEnabled(),
-                binding.categoryOptions()
+                binding.categoryOptions(),
+                binding.standingPlan()
         );
     }
 

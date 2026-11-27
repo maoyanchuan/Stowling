@@ -26,7 +26,7 @@ public final class UnstackableZoneRouting {
                 binding.id(), binding.markerArea(), binding.storageArea(), "UNSTACKABLE_ITEMS",
                 List.of(), binding.containerOverrides(), binding.standingArea(),
                 binding.storagePolicy(), false, binding.name(), binding.optionsEnabled(),
-                dedicatedOptions(binding.categoryOptions()))).toList();
+                dedicatedOptions(binding.categoryOptions()), binding.standingPlan())).toList();
         return new CategoryZoneDefinition(zone.id(), zone.name(), bindings, zone.expansion(),
                 dedicatedOptions(zone.categoryOptions()), zone.overallArea());
     }

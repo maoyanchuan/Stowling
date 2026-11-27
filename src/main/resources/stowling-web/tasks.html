@@ -1125,6 +1125,18 @@
                                             </div>
                                             <div id="auto-experiments-body"
                                                  class="auto-phase-body" hidden>
+                                                <label class="settings-row" hidden inert>
+                                                    <span class="settings-copy">
+                                                        <span>分类多站位与子区绑定</span>
+                                                        <small class="settings-description">
+                                                            使用坐标页各绑定组的站位及子区，
+                                                            关闭时保持原单站位流程。
+                                                        </small>
+                                                    </span>
+                                                    <input id="auto-standing-subregions"
+                                                           class="settings-switch"
+                                                           type="checkbox" role="switch">
+                                                </label>
                                                 <section class="auto-config-section
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-packing-title">
@@ -1198,6 +1210,11 @@
 
                                             </div>
                                         </section>
+                                        <p id="auto-standing-active"
+                                           class="settings-description" hidden>
+                                            已开启：分类多站位与子区绑定
+                                            · classification-standing-subregions
+                                        </p>
                                         <p id="auto-task-message" class="field-message"
                                            role="status" aria-live="polite"></p>
                                         <div class="move-form-actions">

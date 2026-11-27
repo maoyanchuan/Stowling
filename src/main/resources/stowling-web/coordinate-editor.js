@@ -10,7 +10,7 @@
 
     /** @typedef {{id: string, name?: string, markerRegion: CoordinateRegion,
      * storageRegion: CoordinateRegion, original?: object, optionsEnabled?: boolean,
-     * categoryOptions?: CategoryOptions}} CategoryBinding */
+     * categoryOptions?: CategoryOptions, standingPlan?: object}} CategoryBinding */
 
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
@@ -118,6 +118,7 @@
      * repeatsExpanded: boolean, recognitionExpanded: boolean,
      * ruleSelects: CategorySelect[]}} CategoryOptionsContext */
     const bindingOptions = new WeakMap();
+    const standingEditors = new WeakMap();
     const globalCategoryContext = createCategoryOptionsContext(
         document.querySelector(".category-options")
     );
@@ -475,13 +476,8 @@
             multiItemBindingsEnabled: fields["multi-bindings"].checked,
             multiItemBindings: Array.from(fields["rules-list"].children, readItemBinding),
             bulkStacks: fields["bulk-stacks"].valueAsNumber,
-            specifyStanding: context.values.specifyStanding === null
-                ? null : fields["specify-standing"].checked,
-            standingPosition: {
-                x: integerValue(fields["standing-x"].value),
-                y: integerValue(fields["standing-y"].value),
-                z: integerValue(fields["standing-z"].value)
-            }
+            specifyStanding: context.values.specifyStanding ?? null,
+            standingPosition: context.values.standingPosition || null
         };
     }
 
@@ -505,8 +501,10 @@
         );
         reveal(fields["support-block-row"], expanded, animate);
         fields["support-block"].disabled = !ignoreSupport;
+        fields["specify-standing"].closest(".category-option-row").hidden = true;
+        fields["specify-standing"].closest(".category-option-row").inert = true;
         const specifyStanding = fields["specify-standing"].checked;
-        const standingExpanded = specifyStanding && context.standingExpanded;
+        const standingExpanded = false;
         fields["standing-expand"].hidden = !specifyStanding;
         fields["standing-expand"].disabled = !specifyStanding;
         for (const control of [fields["standing-expand"], fields["specify-standing"]]) {
@@ -1147,7 +1145,15 @@
         const actions = document.createElement("div");
         actions.className = "category-binding-actions";
         actions.append(remove);
-        content.append(detail, grid, actions);
+        const standing = window.StowlingCategoryStanding.create(binding, {
+            appendRegion: appendBindingRegion, readRegion: readBindingRegion, reveal,
+            currentRegions: () => ({markerRegion: readBindingRegion(grid, "marker"),
+                storageRegion: readBindingRegion(grid, "storage")}),
+            bindInputs: window.Stowling?.bindCoordinateInputs,
+            changed: () => { dirty = true; }
+        });
+        standingEditors.set(card, standing);
+        content.append(grid, standing.root, detail, actions);
         body.append(content);
         card.append(summary, body);
         setCategoryBindingOpen(card, open);
@@ -1214,6 +1220,7 @@
                 original: card.originalBinding,
                 markerRegion,
                 storageRegion,
+                standingPlan: standingEditors.get(card).read(),
                 optionsEnabled: card.querySelector(".category-binding-enabled").checked,
                 categoryOptions: bindingOptions.get(card).initialized
                     ? readCategoryOptions(bindingOptions.get(card)) : null

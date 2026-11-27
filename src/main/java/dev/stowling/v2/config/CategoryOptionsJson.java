@@ -48,7 +48,7 @@ public final class CategoryOptionsJson {
         }
     }
 
-    private static JsonObject object(JsonElement value, Set<String> fields) {
+    static JsonObject object(JsonElement value, Set<String> fields) {
         if (!present(value) || !value.isJsonObject()) {
             throw new V2ValidationException("分类区设置必须使用对象");
         }
@@ -59,7 +59,7 @@ public final class CategoryOptionsJson {
         return result;
     }
 
-    private static void position(JsonElement value, boolean draft) {
+    static void position(JsonElement value, boolean draft) {
         if (!present(value)) return;
         JsonObject point = object(value, Set.of("x", "y", "z"));
         for (String axis : Set.of("x", "y", "z")) {
@@ -68,7 +68,7 @@ public final class CategoryOptionsJson {
         }
     }
 
-    private static void integer(JsonElement value) {
+    static void integer(JsonElement value) {
         if (!present(value)) return;
         if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) fail();
         try {
@@ -78,7 +78,7 @@ public final class CategoryOptionsJson {
         }
     }
 
-    private static void primitive(JsonElement value, String type) {
+    static void primitive(JsonElement value, String type) {
         if (!present(value)) return;
         if (!value.isJsonPrimitive()) fail();
         var primitive = value.getAsJsonPrimitive();

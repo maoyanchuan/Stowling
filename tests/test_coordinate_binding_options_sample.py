@@ -145,7 +145,8 @@ def test_first_enable_uses_current_global_settings(sample_page: Any) -> None:
     assert card.locator('[id$="category-no-cache-row"]').is_visible()
     assert card.locator('[id$="category-bulk-stacks"]').input_value() == "18"
     assert card.locator('[id$="category-specify-standing"]').is_hidden()
-    assert card.locator('.category-standing-plan').is_visible()
+    assert card.locator('.category-standing-plan').count() == 0
+    assert page.locator('#category-standing-settings').is_visible()
 
 
 def test_disabling_overrides_preserves_draft_and_binding_expansion(sample_page: Any) -> None:

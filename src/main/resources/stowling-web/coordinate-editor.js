@@ -118,7 +118,7 @@
      * repeatsExpanded: boolean, recognitionExpanded: boolean,
      * ruleSelects: CategorySelect[]}} CategoryOptionsContext */
     const bindingOptions = new WeakMap();
-    const standingEditors = new WeakMap();
+    let standingEditor = null;
     const globalCategoryContext = createCategoryOptionsContext(
         document.querySelector(".category-options")
     );
@@ -664,8 +664,9 @@
         context.fields["positions-list"].append(row);
     }
 
-    /** @param {string} value @returns {CategorySelect} */
-    function createRuleTargetSelect(value) {
+    /** @param {string} value @param {string[][]|null} [choices]
+     * @param {string} [label] @returns {CategorySelect} */
+    function createRuleTargetSelect(value, choices = null, label = "绑定目标") {
         const wrap = document.createElement("div");
         wrap.className = "category-select-wrap";
         wrap.dataset.categorySelect = "bindingTarget";
@@ -681,7 +682,7 @@
         trigger.setAttribute("role", "combobox");
         trigger.setAttribute("aria-haspopup", "listbox");
         trigger.setAttribute("aria-expanded", "false");
-        trigger.setAttribute("aria-label", "绑定目标");
+        trigger.setAttribute("aria-label", label);
         const current = document.createElement("span");
         current.className = "category-select-current";
         trigger.append(current, globalCategoryContext.selects[0].trigger
@@ -692,9 +693,9 @@
         menu.hidden = true;
         menu.inert = true;
         menu.setAttribute("role", "listbox");
-        menu.setAttribute("aria-label", "绑定目标");
+        menu.setAttribute("aria-label", label);
         trigger.setAttribute("aria-controls", menu.id);
-        const choices = [
+        choices ??= [
             ["marker-id", "识别物 ID", "当前范围内的同类标记共用规则"],
             ["marker-position", "标记坐标", "只绑定指定位置的一个标记"],
             ["container", "容器坐标", "直接追加到指定储存容器"]
@@ -721,6 +722,31 @@
         wrap.append(select, trigger, menu);
         return {key: "bindingTarget", select, wrap, trigger, current, menu,
             options: Array.from(menu.children)};
+    }
+
+    /** @param {string} value @param {string[][]} choices
+     * @param {(value: string) => void} changed @returns {object} */
+    function createStandingSelect(value, choices, changed) {
+        const control = createRuleTargetSelect(value, choices, "识别区与储存区");
+        control.wrap.dataset.categorySelect = "standingTarget";
+        control.select.className = "category-standing-target";
+        bindCategorySelect(control, () => changed(control.select.value));
+        syncCategorySelect(control);
+        return {root: control.wrap, trigger: control.trigger,
+            close: () => {
+                if (categoryMenuOpen === control) {
+                    setCategoryMenuOpen(control, false, false, false);
+                }
+            }};
+    }
+
+    /** @returns {object[]} */
+    function standingBindingChoices() {
+        return Array.from(nodes.categoryBindings.children, (card, index) => ({
+            id: card.dataset.bindingId,
+            name: card.querySelector(".category-binding-name").value.trim()
+                || `绑定组 ${index + 1}`
+        }));
     }
 
     /** @param {HTMLElement} form @returns {void} */
@@ -970,6 +996,7 @@
     /** @param {CategoryBinding} binding @returns {CategoryOptionsContext} */
     function createBindingOptions(binding) {
         const root = globalCategoryContext.root.cloneNode(true);
+        root.querySelector("#category-standing-settings")?.remove();
         root.querySelectorAll(".category-rule-list").forEach(list => list.replaceChildren());
         const prefix = `binding-${binding.id}-`;
         root.querySelectorAll("[id]").forEach(element => {
@@ -1069,6 +1096,7 @@
             event.stopPropagation();
         });
         name.addEventListener("keydown", event => event.stopPropagation());
+        name.addEventListener("input", () => standingEditor?.refresh());
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "ghost danger category-binding-remove";
@@ -1076,6 +1104,10 @@
         remove.addEventListener("click", event => {
             event.preventDefault();
             event.stopPropagation();
+            if (standingEditor?.references(card.dataset.bindingId)) {
+                setStatus("请先在主设置的指定站立位置中，更换或删除此组的站位绑定。", "error");
+                return;
+            }
             card.remove();
             dirty = true;
             updateCategoryBindingCards();
@@ -1145,15 +1177,7 @@
         const actions = document.createElement("div");
         actions.className = "category-binding-actions";
         actions.append(remove);
-        const standing = window.StowlingCategoryStanding.create(binding, {
-            appendRegion: appendBindingRegion, readRegion: readBindingRegion, reveal,
-            currentRegions: () => ({markerRegion: readBindingRegion(grid, "marker"),
-                storageRegion: readBindingRegion(grid, "storage")}),
-            bindInputs: window.Stowling?.bindCoordinateInputs,
-            changed: () => { dirty = true; }
-        });
-        standingEditors.set(card, standing);
-        content.append(grid, standing.root, detail, actions);
+        content.append(grid, detail, actions);
         body.append(content);
         card.append(summary, body);
         setCategoryBindingOpen(card, open);
@@ -1167,18 +1191,25 @@
             card.querySelector(".category-binding-name").placeholder = `绑定组 ${index + 1}`;
             card.querySelector(".category-binding-remove").disabled = cards.length <= 1;
         });
+        standingEditor?.refresh();
     }
 
     /** @param {CategoryBinding[]} bindings @returns {void} */
     function renderCategoryBindings(bindings) {
+        if (categoryMenuOpen) setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        standingEditor = null;
         const values = bindings.length ? bindings : [emptyBinding()];
-        if (categoryMenuOpen && nodes.categoryBindings.contains(categoryMenuOpen.wrap)) {
-            setCategoryMenuOpen(categoryMenuOpen, false, false, false);
-        }
         nodes.categoryBindings.replaceChildren();
         values.forEach((binding, index) => {
             nodes.categoryBindings.append(createCategoryBindingCard(binding, index));
         });
+        standingEditor = window.StowlingCategoryStanding.create(values, {
+            groups: standingBindingChoices, createSelect: createStandingSelect, reveal,
+            bindInputs: window.Stowling?.bindCoordinateInputs,
+            changed: () => { dirty = true; }
+        });
+        document.querySelector("#category-standing-settings")
+            .replaceChildren(standingEditor.root);
         updateCategoryBindingCards();
     }
 
@@ -1209,6 +1240,10 @@
     function readCategoryBindings() {
         const cards = Array.from(nodes.categoryBindings.children);
         if (!cards.length) return null;
+        if (standingEditor && !standingEditor.valid()) {
+            setStatus("请为每个站位选择有效的识别区与储存区。", "error");
+            return null;
+        }
         const bindings = cards.map((card, index) => {
             const markerRegion = readBindingRegion(card, "marker");
             const storageRegion = readBindingRegion(card, "storage");
@@ -1220,7 +1255,7 @@
                 original: card.originalBinding,
                 markerRegion,
                 storageRegion,
-                standingPlan: standingEditors.get(card).read(),
+                standingPlan: standingEditor.read(card.dataset.bindingId),
                 optionsEnabled: card.querySelector(".category-binding-enabled").checked,
                 categoryOptions: bindingOptions.get(card).initialized
                     ? readCategoryOptions(bindingOptions.get(card)) : null
@@ -1752,6 +1787,10 @@
                 nodes.categoryBindings.children, card => bindingOptions.get(card)
             )];
             if (!contexts.every(validateCategoryOptions)) return;
+            if (standingEditor && !standingEditor.valid()) {
+                setStatus("请为每个站位选择有效的识别区与储存区。", "error");
+                return;
+            }
             coordinate.overallRegion = readRegionFields(nodes.categoryOverall);
             coordinate.bindings = readCategoryBindings();
             coordinate.categoryOptions = readCategoryOptions();
